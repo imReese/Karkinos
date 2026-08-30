@@ -8,6 +8,7 @@ are grouped by owner:
 - `data/`: local data-source setup and market-data maintenance.
 - `broker/`: broker-evidence, conformance, and offline approval tools.
 - `ci/`: repository and release verification entry points.
+- `release/`: immutable native candidate staging, promotion, rollback, and status.
 
 These files are thin entry points; canonical financial and safety logic lives in
 the application packages such as `data`, `account_truth`, `analytics`, and
@@ -23,6 +24,7 @@ the application packages such as `data`, `account_truth`, `analytics`, and
 | `./scripts/service/manage_launch_agent.sh print-plist` | Render the macOS user-level production service definition without installing it. | Read-only; prints local paths and process arguments to the current terminal. |
 | `./scripts/service/manage_launch_agent.sh install\|status\|uninstall` | Explicitly install, inspect, or remove the current user's restartable Karkinos production service. | Writes or removes only `~/Library/LaunchAgents/com.karkinos.daily-candidate.plist`; starts or stops that exact service and writes its local log. |
 | `python scripts/service/repair_legacy_fund_trade_duplicates.py` | Preview or explicitly repair the narrowly scoped legacy fund-trade duplicate correction. | Requires the script's explicit acknowledgement; remains provider-free and does not submit orders, change capital authority, or silently rewrite unrelated ledger facts. |
+| `python scripts/release/manage_release.py stage\|discard\|promote\|rollback\|download\|status\|start` | Verify a macOS candidate archive, retain or discard it, health-check and atomically activate one full-SHA release, roll back to the single previous release, download over HTTPS with SHA-256 verification, or inspect runtime state. | Uses a locked `~/Library/Application Support/Karkinos` root. Only `current` and `previous` are active symlinks; `data/`, `config/`, and `logs/` are never included in immutable releases. `promote` requires `PROMOTE <full-sha>`; rollback requires `ROLLBACK <full-sha>`. No command contacts a broker or grants authority. |
 | `uv run python scripts/service/audit_daily_candidate_production.py --pretty` | Read the running local service's exact financial preflight, monitor, five-round research policy, 20-day / 50-order trial, and compact dependency-ordered operator checklist into one sanitized readiness report. | Loopback GET only; no provider/broker contact or database write. Repeated candidate blockers are counted instead of copied as operator noise, and invalid checklist authority fails closed. Exit `0` means ready to continue bounded forward paper/shadow collection, not GO, profit, execution, or capital authority; exit `2` is fail-closed non-ready. |
 | `uv run python scripts/data/configure_data_source.py` | Select AKShare or Tushare without placing credentials in `config.json` or command history. | Updates ignored local `config.json` and `.env`; Tushare tokens are entered interactively. |
 

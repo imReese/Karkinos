@@ -119,16 +119,20 @@ def test_release_reuses_exact_successful_main_ci_before_publishing() -> None:
     assert "packages: write" in release_workflow
     verifier_job, publisher_job = release_workflow.split("  release:\n", 1)
     assert "packages: write" not in verifier_job
-    assert "actions: read" not in publisher_job
+    assert "actions: read" in publisher_job
+    assert "python tools/download_candidate.py fetch" in publisher_job
+    assert "actions/download-artifact" not in publisher_job
     assert '--commit-sha "${GITHUB_SHA}"' not in release_workflow
     assert "org.opencontainers.image.revision=${{ github.sha }}" not in release_workflow
     assert (
         "org.opencontainers.image.revision=${{ needs.verify_main_code_ci.outputs.commit_sha }}"
         in release_workflow
     )
+    publisher_steps = publisher_job.split("      - name:")
+    assert all("uses: docker/build-push-action" not in step for step in publisher_steps)
     assert (
         release_workflow.index("Log in to GitHub Container Registry")
         < release_workflow.index("Compute release image plan and verify immutable tags")
         < release_workflow.index("Reverify remote tag and main ancestry")
-        < release_workflow.index("Build and push multi-architecture image")
+        < release_workflow.index("Promote candidate image by exact manifest digest")
     )

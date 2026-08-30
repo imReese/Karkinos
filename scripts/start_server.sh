@@ -13,12 +13,43 @@ fi
 
 cd "${REPO_ROOT}"
 
-RUN_DIR="${REPO_ROOT}/.run"
-LOG_DIR="${REPO_ROOT}/logs"
+MODE="${MODE:-${1:-dev}}"
+DEFAULT_KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
+KARKINOS_HOME_PATH="${KARKINOS_HOME:-${DEFAULT_KARKINOS_HOME}}"
+NATIVE_ENTRYPOINT="${KARKINOS_HOME_PATH}/current/bin/karkinos"
+NATIVE_RELEASE_DIR=""
+USE_NATIVE_RELEASE=false
+if [[ "${MODE}" == "prod" && (-L "${KARKINOS_HOME_PATH}/current" || -e "${KARKINOS_HOME_PATH}/current") ]]; then
+	if [[ "${KARKINOS_HOME_PATH}" != /* || ! -L "${KARKINOS_HOME_PATH}/current" || ! -x "${NATIVE_ENTRYPOINT}" ]]; then
+		echo "Error: current native release must be an executable release symlink." >&2
+		exit 1
+	fi
+	NATIVE_RELEASE_DIR="$(CDPATH='' cd -- "${KARKINOS_HOME_PATH}/current" && pwd -P)"
+	NATIVE_RELEASE_NAME="${NATIVE_RELEASE_DIR##*/}"
+	if [[ "${NATIVE_RELEASE_DIR}" != "${KARKINOS_HOME_PATH}/releases/${NATIVE_RELEASE_NAME}" ||
+		! "${NATIVE_RELEASE_NAME}" =~ ^sha-[0-9a-f]{40}$ ||
+		! -f "${NATIVE_RELEASE_DIR}/release.json" ]]; then
+		echo "Error: current native release pointer is invalid." >&2
+		exit 1
+	fi
+	USE_NATIVE_RELEASE=true
+	export KARKINOS_HOME="${KARKINOS_HOME_PATH}"
+	export KARKINOS_DATA_DIR="${KARKINOS_HOME_PATH}/data"
+	export KARKINOS_CONFIG_PATH="${KARKINOS_HOME_PATH}/config/config.json"
+	export KARKINOS_ENV_FILE="${KARKINOS_HOME_PATH}/config/.env"
+fi
+
+if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+	RUN_DIR="${KARKINOS_HOME_PATH}/.run"
+	LOG_DIR="${KARKINOS_HOME_PATH}/logs"
+else
+	RUN_DIR="${REPO_ROOT}/.run"
+	LOG_DIR="${REPO_ROOT}/logs"
+fi
 PID_FILE="${RUN_DIR}/server.pid"
 LOG_FILE="${LOG_DIR}/server.log"
-WEB_PID_FILE="${RUN_DIR}/web.pid"
-WEB_LOG_FILE="${LOG_DIR}/web.log"
+WEB_PID_FILE="${REPO_ROOT}/.run/web.pid"
+WEB_LOG_FILE="${REPO_ROOT}/logs/web.log"
 LOG_MAX_BYTES="${KARKINOS_LOG_MAX_BYTES:-20971520}"
 STARTUP_HEALTH_TIMEOUT_SECONDS="${KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-60}"
 FRONTEND_STARTUP_TIMEOUT_SECONDS="${KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS:-30}"
@@ -118,23 +149,23 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 	exit 0
 fi
 
-if ! command -v uv >/dev/null 2>&1; then
+if [[ "${USE_NATIVE_RELEASE}" != "true" ]] && ! command -v uv >/dev/null 2>&1; then
 	echo "Error: 'uv' was not found in PATH." >&2
 	echo "Install uv first, or make sure \$HOME/.local/bin/env exists and is loadable." >&2
 	exit 1
 fi
 
-if [[ "${MODE:-${1:-dev}}" == "dev" ]] && ! command -v npm >/dev/null 2>&1; then
+if [[ "${MODE}" == "dev" ]] && ! command -v npm >/dev/null 2>&1; then
 	echo "Error: npm was not found in PATH." >&2
 	exit 1
 fi
 
-if [[ ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
+if [[ "${USE_NATIVE_RELEASE}" != "true" && ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
 	echo "Error: pyproject.toml was not found. Are you running inside the Karkinos repository?" >&2
 	exit 1
 fi
 
-if ! UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" uv run python -c "import fastapi, uvicorn, aiosqlite, websockets" >/dev/null 2>&1; then
+if [[ "${USE_NATIVE_RELEASE}" != "true" ]] && ! UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" uv run python -c "import fastapi, uvicorn, aiosqlite, websockets" >/dev/null 2>&1; then
 	cat >&2 <<'EOF'
 Error: server dependencies are not installed.
 
@@ -149,7 +180,6 @@ EOF
 	exit 1
 fi
 
-MODE="${1:-dev}"
 NO_PROXY_ENV=(
 	-u http_proxy
 	-u https_proxy
@@ -207,7 +237,7 @@ karkinos_backend_is_ready() {
 			--max-time 2 "http://$(backend_probe_host):${BACKEND_PORT}/api/health" \
 			2>/dev/null
 	)" || return 1
-	[[ "${health_response}" == *'"schema_version":"karkinos.service_health.v1"'* && \
+	[[ "${health_response}" == *'"schema_version":"karkinos.service_health.v1"'* &&
 		"${health_response}" == *'"status":"alive"'* ]] || return 1
 	local live_response
 	live_response="$(
@@ -226,9 +256,9 @@ vite_frontend_is_ready() {
 }
 
 validate_startup_health_timeout() {
-	if [[ -z "${STARTUP_HEALTH_TIMEOUT_SECONDS}" || \
-		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" == *[!0-9]* || \
-		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" == "0" || \
+	if [[ -z "${STARTUP_HEALTH_TIMEOUT_SECONDS}" ||
+		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" == *[!0-9]* ||
+		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" == "0" ||
 		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" -gt 300 ]]; then
 		echo "Error: KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS must be an integer within [1, 300]." >&2
 		exit 1
@@ -237,9 +267,9 @@ validate_startup_health_timeout() {
 		echo "Error: curl is required to verify Karkinos service readiness." >&2
 		exit 1
 	fi
-	if [[ "${MODE}" == "dev" ]] && [[ -z "${FRONTEND_STARTUP_TIMEOUT_SECONDS}" || \
-		"${FRONTEND_STARTUP_TIMEOUT_SECONDS}" == *[!0-9]* || \
-		"${FRONTEND_STARTUP_TIMEOUT_SECONDS}" == "0" || \
+	if [[ "${MODE}" == "dev" ]] && [[ -z "${FRONTEND_STARTUP_TIMEOUT_SECONDS}" ||
+		"${FRONTEND_STARTUP_TIMEOUT_SECONDS}" == *[!0-9]* ||
+		"${FRONTEND_STARTUP_TIMEOUT_SECONDS}" == "0" ||
 		"${FRONTEND_STARTUP_TIMEOUT_SECONDS}" -gt 300 ]]; then
 		echo "Error: KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS must be an integer within [1, 300]." >&2
 		exit 1
@@ -343,40 +373,40 @@ preflight_backend_port() {
 }
 
 case "${MODE}" in
-	dev)
-		shift || true
-		SERVER_ARGS=(--reload --reload-exclude 'tests/**' --reload-exclude 'web/**' "$@")
-		;;
-	prod)
-		shift || true
-		SERVER_ARGS=("$@")
-		;;
-	-*)
-		MODE="dev"
-		SERVER_ARGS=(--reload --reload-exclude 'tests/**' --reload-exclude 'web/**' "$@")
-		;;
-	*)
-		echo "Error: unknown mode '${MODE}'." >&2
-		echo >&2
-		usage >&2
-		exit 1
-		;;
+dev)
+	shift || true
+	SERVER_ARGS=(--reload --reload-exclude 'tests/**' --reload-exclude 'web/**' "$@")
+	;;
+prod)
+	shift || true
+	SERVER_ARGS=("$@")
+	;;
+-*)
+	MODE="dev"
+	SERVER_ARGS=(--reload --reload-exclude 'tests/**' --reload-exclude 'web/**' "$@")
+	;;
+*)
+	echo "Error: unknown mode '${MODE}'." >&2
+	echo >&2
+	usage >&2
+	exit 1
+	;;
 esac
 
 BACKEND_HOST="127.0.0.1"
 BACKEND_PORT="8000"
 for ((i = 0; i < ${#SERVER_ARGS[@]}; i++)); do
 	case "${SERVER_ARGS[$i]}" in
-		--host)
-			if ((i + 1 < ${#SERVER_ARGS[@]})); then
-				BACKEND_HOST="${SERVER_ARGS[$((i + 1))]}"
-			fi
-			;;
-		--port)
-			if ((i + 1 < ${#SERVER_ARGS[@]})); then
-				BACKEND_PORT="${SERVER_ARGS[$((i + 1))]}"
-			fi
-			;;
+	--host)
+		if ((i + 1 < ${#SERVER_ARGS[@]})); then
+			BACKEND_HOST="${SERVER_ARGS[$((i + 1))]}"
+		fi
+		;;
+	--port)
+		if ((i + 1 < ${#SERVER_ARGS[@]})); then
+			BACKEND_PORT="${SERVER_ARGS[$((i + 1))]}"
+		fi
+		;;
 	esac
 done
 PRODUCT_ENTRY_URL="http://${BACKEND_HOST}:${BACKEND_PORT}"
@@ -423,7 +453,7 @@ if [[ "${MODE}" == "dev" ]]; then
 	pushd "${REPO_ROOT}/web" >/dev/null
 	npm run build
 	popd >/dev/null
-elif [[ ! -f "${REPO_ROOT}/web/dist/index.html" ]]; then
+elif [[ "${USE_NATIVE_RELEASE}" != "true" && ! -f "${REPO_ROOT}/web/dist/index.html" ]]; then
 	cat >&2 <<EOF
 Warning: web/dist/index.html was not found.
 The backend API will start, but ${PRODUCT_ENTRY_URL} cannot serve the product UI until the frontend is built.
@@ -443,16 +473,38 @@ if [[ "${REUSE_RESIDENT_BACKEND}" == "true" ]]; then
 		exit 0
 	fi
 else
-	echo "Starting Karkinos Web service from ${REPO_ROOT}"
-	echo "Log file: ${LOG_FILE}"
-	echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]-}"
-
-	if command -v setsid >/dev/null 2>&1; then
-		setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-			uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
+	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+		echo "Starting Karkinos Web service from ${NATIVE_RELEASE_DIR}"
+		echo "Log file: ${LOG_FILE}"
+		echo "Command: ${NATIVE_ENTRYPOINT} ${SERVER_ARGS[*]-}"
+		pushd "${NATIVE_RELEASE_DIR}/app" >/dev/null
+		if command -v setsid >/dev/null 2>&1; then
+			setsid nohup env "${NO_PROXY_ENV[@]}" \
+				KARKINOS_HOME="${KARKINOS_HOME_PATH}" \
+				KARKINOS_DATA_DIR="${KARKINOS_HOME_PATH}/data" \
+				KARKINOS_CONFIG_PATH="${KARKINOS_HOME_PATH}/config/config.json" \
+				KARKINOS_ENV_FILE="${KARKINOS_HOME_PATH}/config/.env" \
+				"${NATIVE_ENTRYPOINT}" ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
+		else
+			nohup env "${NO_PROXY_ENV[@]}" \
+				KARKINOS_HOME="${KARKINOS_HOME_PATH}" \
+				KARKINOS_DATA_DIR="${KARKINOS_HOME_PATH}/data" \
+				KARKINOS_CONFIG_PATH="${KARKINOS_HOME_PATH}/config/config.json" \
+				KARKINOS_ENV_FILE="${KARKINOS_HOME_PATH}/config/.env" \
+				"${NATIVE_ENTRYPOINT}" ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
+		fi
+		popd >/dev/null
 	else
-		nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-			uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
+		echo "Starting Karkinos Web service from ${REPO_ROOT}"
+		echo "Log file: ${LOG_FILE}"
+		echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]-}"
+		if command -v setsid >/dev/null 2>&1; then
+			setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+				uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
+		else
+			nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+				uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
+		fi
 	fi
 
 	LAUNCH_PID=$!
@@ -471,7 +523,7 @@ else
 	fi
 
 	echo "Karkinos Web service started with PID ${TRACKED_PID}"
-	if [[ -f "${REPO_ROOT}/web/dist/index.html" ]]; then
+	if [[ "${USE_NATIVE_RELEASE}" == "true" || -f "${REPO_ROOT}/web/dist/index.html" ]]; then
 		echo "Product entry: ${PRODUCT_ENTRY_URL}"
 		echo "Page refresh and direct links are served from web/dist via FastAPI."
 	fi

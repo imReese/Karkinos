@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -13,10 +14,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlencode, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-_FULL_SHA = re.compile(r"[0-9a-f]{40}")
+_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 _REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 _PENDING_STATUSES = {
     "in_progress",
@@ -40,6 +41,35 @@ class VerifiedSourceCI:
     required_job_ids: tuple[int, ...]
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Do not allow an API redirect to move the bearer token elsewhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise URLError("release_source_ci_api_redirect_rejected")
+
+
+urlopen = build_opener(_NoRedirectHandler()).open
+
+
+def _validate_api_url(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise SourceCIVerificationError("release_source_ci_api_url_invalid") from exc
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+        or "\x00" in value
+        or (port is not None and not 1 <= port <= 65535)
+    ):
+        raise SourceCIVerificationError("release_source_ci_api_url_invalid")
+    return value.rstrip("/")
+
+
 class GitHubActionsClient:
     def __init__(
         self,
@@ -51,7 +81,9 @@ class GitHubActionsClient:
     ) -> None:
         if not token:
             raise SourceCIVerificationError("release_source_ci_token_missing")
-        self._api_url = api_url.rstrip("/")
+        if _REPOSITORY.fullmatch(repository) is None:
+            raise SourceCIVerificationError("release_source_ci_repository_invalid")
+        self._api_url = _validate_api_url(api_url)
         self._repository = repository
         self._headers = {
             "Accept": "application/vnd.github+json",
@@ -139,6 +171,8 @@ def select_latest_exact_run(
     branch: str,
     event: str,
     commit_sha: str,
+    expected_run_id: int | None = None,
+    expected_run_attempt: int | None = None,
 ) -> Mapping[str, Any] | None:
     runs = _complete_page(payload, "workflow_runs")
     if not runs:
@@ -179,12 +213,28 @@ def select_latest_exact_run(
             raise SourceCIVerificationError("release_source_ci_run_url_invalid")
         validated.append(run)
 
+    if expected_run_id is not None:
+        matches = [run for run in validated if run["id"] == expected_run_id]
+        if len(matches) != 1:
+            raise SourceCIVerificationError(
+                "release_source_ci_expected_run_missing_or_ambiguous"
+            )
+        selected = matches[0]
+        if (
+            expected_run_attempt is not None
+            and selected["run_attempt"] != expected_run_attempt
+        ):
+            raise SourceCIVerificationError(
+                "release_source_ci_expected_run_attempt_mismatch"
+            )
+        return selected
+
     return max(
         validated,
         key=lambda run: (
-            int(run["run_number"]),
-            int(run["run_attempt"]),
-            int(run["id"]),
+            run["run_number"],
+            run["run_attempt"],
+            run["id"],
         ),
     )
 
@@ -243,9 +293,24 @@ def wait_for_verified_source_ci(
     required_job_names: Sequence[str],
     timeout_seconds: float,
     poll_interval_seconds: float,
+    expected_run_id: int | None = None,
+    expected_run_attempt: int | None = None,
 ) -> VerifiedSourceCI:
-    if timeout_seconds < 0 or poll_interval_seconds <= 0:
+    if (
+        not math.isfinite(timeout_seconds)
+        or timeout_seconds < 0
+        or not math.isfinite(poll_interval_seconds)
+        or poll_interval_seconds <= 0
+    ):
         raise ValueError("release_source_ci_poll_configuration_invalid")
+    if expected_run_id is not None and (
+        type(expected_run_id) is not int or expected_run_id <= 0
+    ):
+        raise ValueError("release_source_ci_expected_run_invalid")
+    if expected_run_attempt is not None and (
+        type(expected_run_attempt) is not int or expected_run_attempt <= 0
+    ):
+        raise ValueError("release_source_ci_expected_run_attempt_invalid")
     if not required_job_names or len(set(required_job_names)) != len(
         required_job_names
     ):
@@ -273,6 +338,8 @@ def wait_for_verified_source_ci(
             branch=branch,
             event=event,
             commit_sha=commit_sha,
+            expected_run_id=expected_run_id,
+            expected_run_attempt=expected_run_attempt,
         )
 
     while True:
@@ -285,8 +352,10 @@ def wait_for_verified_source_ci(
                     raise SourceCIVerificationError(
                         f"release_source_ci_run_not_success:{conclusion}"
                     )
-                run_id = int(run["id"])
-                run_attempt = int(run["run_attempt"])
+                run_id = _positive_int(run, "id", "release_source_ci_run_id_invalid")
+                run_attempt = _positive_int(
+                    run, "run_attempt", "release_source_ci_run_attempt_invalid"
+                )
                 job_ids = verify_required_jobs(
                     client.workflow_run_jobs(run_id=run_id),
                     required_job_names=required_job_names,
@@ -350,7 +419,7 @@ def _workflow_path_without_ref(value: Any) -> str | None:
 
 def _positive_int(payload: Mapping[str, Any], key: str, error: str) -> int:
     value = payload.get(key)
-    if not isinstance(value, int) or value <= 0:
+    if type(value) is not int or value <= 0:
         raise SourceCIVerificationError(error)
     return value
 
@@ -379,6 +448,8 @@ def main() -> int:
     parser.add_argument("--required-job", action="append", dest="required_jobs")
     parser.add_argument("--timeout-seconds", type=float, default=1200)
     parser.add_argument("--poll-interval-seconds", type=float, default=15)
+    parser.add_argument("--expected-run-id", type=int)
+    parser.add_argument("--expected-run-attempt", type=int)
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
 
@@ -397,7 +468,7 @@ def main() -> int:
             api_url=os.environ.get("GITHUB_API_URL", "https://api.github.com"),
             repository=args.repository,
             token=os.environ.get("GITHUB_TOKEN", ""),
-            api_version=os.environ.get("GITHUB_API_VERSION", "2026-03-10"),
+            api_version=os.environ.get("GITHUB_API_VERSION", "2022-11-28"),
         )
         result = wait_for_verified_source_ci(
             client,
@@ -411,6 +482,8 @@ def main() -> int:
             required_job_names=required_jobs,
             timeout_seconds=args.timeout_seconds,
             poll_interval_seconds=args.poll_interval_seconds,
+            expected_run_id=args.expected_run_id,
+            expected_run_attempt=args.expected_run_attempt,
         )
     except (SourceCIVerificationError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

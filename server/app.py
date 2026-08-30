@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +15,14 @@ from starlette.staticfiles import StaticFiles
 
 from server import __version__
 from server.bridge import EventBusBridge
+from server.config import ServerConfig
 from server.db import AppDatabase
 from server.dependencies import (
     AppState,
     AppStateContextMiddleware,
     bind_app_state,
 )
+from server.runtime_paths import resolve_static_dir
 from server.scheduler import TradingScheduler
 from server.services.trading_controls import TradingControlState
 from server.ws.hub import ConnectionHub
@@ -108,7 +110,9 @@ class SPAStaticFiles(StaticFiles):
         try:
             response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
-            if exc.status_code != 404 or not _is_spa_fallback_path(path):
+            if exc.status_code != 404:
+                raise
+            if not _is_spa_fallback_path(path):
                 raise
             return await super().get_response("index.html", scope)
 
@@ -163,9 +167,13 @@ async def lifespan(app: FastAPI):
     # create_app() loads the runtime config once and lifespan reuses the same
     # object so config.json remains a startup-only input.
     config_overrides = getattr(app.state, "config_overrides", {})
-    config = getattr(app.state, "runtime_config", None)
+    config: ServerConfig | None = cast(
+        ServerConfig | None, getattr(app.state, "runtime_config", None)
+    )
     if config is None:
-        config = load_runtime_config(ServerConfig, **config_overrides)
+        config = cast(
+            ServerConfig, load_runtime_config(ServerConfig, **config_overrides)
+        )
         app.state.runtime_config = config
     state.config = config
 
@@ -243,14 +251,19 @@ async def lifespan(app: FastAPI):
         "broker_statement_collector",
         BrokerStatementCollectorConfig(),
     )
+    try:
+        collector_poll_interval = float(collector_config.poll_interval_seconds)
+        collector_stability_delay = float(collector_config.stability_delay_seconds)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("broker_statement_collector_timing_invalid") from exc
     broker_statement_collector = LocalBrokerStatementCollector(
         repository=(
             BrokerEvidenceRepository(db.path) if collector_config.enabled else None
         ),
         path=collector_config.path,
         enabled=collector_config.enabled,
-        poll_interval_seconds=float(collector_config.poll_interval_seconds),
-        stability_delay_seconds=float(collector_config.stability_delay_seconds),
+        poll_interval_seconds=collector_poll_interval,
+        stability_delay_seconds=collector_stability_delay,
         max_file_bytes=collector_config.max_file_bytes,
     )
     state.broker_statement_collector = broker_statement_collector
@@ -275,9 +288,11 @@ async def lifespan(app: FastAPI):
     shadow_research_task = asyncio.create_task(
         run_ai_shadow_research_automation_loop(
             state=state,
-            research_service_builder=lambda external: build_strategy_research_write_service(
-                state,
-                external=external,
+            research_service_builder=lambda external: (
+                build_strategy_research_write_service(
+                    state,
+                    external=external,
+                )
             ),
         ),
         name="ai-shadow-research-automation",
@@ -405,7 +420,7 @@ def create_app(
     install_routers(app)
 
     # 挂载前端静态文件（生产构建）
-    dist_dir = Path("web/dist")
+    dist_dir = resolve_static_dir()
     if dist_dir.exists():
         app.mount(
             "/", SPAStaticFiles(directory=str(dist_dir), html=True), name="static"

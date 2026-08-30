@@ -16,7 +16,7 @@ from server.config_contract import (
     MIN_LIVE_POLL_INTERVAL_SECONDS,
     SUPPORTED_DATA_SOURCES,
 )
-from server.runtime_paths import resolve_data_dir
+from server.runtime_paths import resolve_data_dir, resolve_runtime_home
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -82,8 +82,12 @@ class RuntimeContext:
 
 
 def resolve_config_path() -> Path:
-    """Return the runtime config path, defaulting to ./config.json."""
-    return Path(os.environ.get("KARKINOS_CONFIG_PATH") or "config.json")
+    """Return the runtime config path without coupling native releases to cwd."""
+    configured = os.environ.get("KARKINOS_CONFIG_PATH")
+    if configured:
+        return Path(configured)
+    home = resolve_runtime_home()
+    return home / "config" / "config.json" if home is not None else Path("config.json")
 
 
 def load_runtime_environment_file(
@@ -93,7 +97,7 @@ def load_runtime_environment_file(
     required: bool = False,
 ) -> bool:
     """Load one dotenv file without overriding the existing process environment."""
-    from dotenv import dotenv_values
+    from dotenv import dotenv_values  # pyright: ignore[reportMissingImports]
 
     dotenv_path = Path(path)
     if not dotenv_path.exists():

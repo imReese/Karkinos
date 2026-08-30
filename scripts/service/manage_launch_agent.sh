@@ -10,8 +10,24 @@ DOMAIN="gui/${USER_ID}"
 SERVICE_TARGET="${DOMAIN}/${LABEL}"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${PLIST_DIR}/${LABEL}.plist"
-LOG_DIR="${REPO_ROOT}/logs"
-LOG_FILE="${LOG_DIR}/launch-agent-server.log"
+DEFAULT_KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
+KARKINOS_HOME_PATH="${KARKINOS_HOME:-${DEFAULT_KARKINOS_HOME}}"
+if [[ "${KARKINOS_HOME_PATH}" != /* ]]; then
+	echo "Error: KARKINOS_HOME must be an absolute path." >&2
+	exit 1
+fi
+NATIVE_ENTRYPOINT="${KARKINOS_HOME_PATH}/current/bin/karkinos"
+USE_NATIVE_RELEASE=false
+if [[ -L "${KARKINOS_HOME_PATH}/current" || -e "${KARKINOS_HOME_PATH}/current" ]]; then
+	USE_NATIVE_RELEASE=true
+fi
+if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+	LOG_DIR="${KARKINOS_HOME_PATH}/logs"
+	LOG_FILE="${LOG_DIR}/launch-agent-server.log"
+else
+	LOG_DIR="${REPO_ROOT}/logs"
+	LOG_FILE="${LOG_DIR}/launch-agent-server.log"
+fi
 UV_CACHE_PATH="${REPO_ROOT}/.uv-cache"
 BACKEND_HOST="127.0.0.1"
 BACKEND_PORT="${KARKINOS_BACKEND_PORT:-8000}"
@@ -34,6 +50,8 @@ Commands:
 
 Safety boundary:
   - This script does not edit config.json or .env.
+  - When ~/Library/Application Support/Karkinos/current exists, it runs only that immutable SHA release.
+  - Native release data, config, and logs remain under ~/Library/Application Support/Karkinos.
   - The live scheduler is part of the Karkinos service lifecycle and starts automatically.
   - Scheduler readiness does not establish financial readiness.
   - No command submits broker orders or changes capital authority.
@@ -80,12 +98,61 @@ xml_escape() {
 }
 
 render_plist() {
-	local uv_bin="$1"
-	local escaped_repo escaped_log escaped_cache escaped_uv
-	escaped_repo="$(printf '%s' "${REPO_ROOT}" | xml_escape)"
+	local uv_bin="${1:-}"
+	local escaped_workdir escaped_log escaped_cache escaped_home escaped_data escaped_config escaped_env escaped_entrypoint escaped_static
+	local program_entrypoint program_arguments environment_entries
+	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+		program_entrypoint="${NATIVE_ENTRYPOINT}"
+		escaped_entrypoint="$(printf '%s' "${program_entrypoint}" | xml_escape)"
+		escaped_workdir="$(printf '%s' "${KARKINOS_HOME_PATH}/current/app" | xml_escape)"
+		program_arguments=$(
+			cat <<EOF
+    <string>${escaped_entrypoint}</string>
+    <string>--host</string>
+    <string>${BACKEND_HOST}</string>
+    <string>--port</string>
+    <string>${BACKEND_PORT}</string>
+EOF
+		)
+	else
+		program_entrypoint="${uv_bin}"
+		escaped_entrypoint="$(printf '%s' "${program_entrypoint}" | xml_escape)"
+		escaped_workdir="$(printf '%s' "${REPO_ROOT}" | xml_escape)"
+		program_arguments=$(
+			cat <<EOF
+    <string>${escaped_entrypoint}</string>
+    <string>run</string>
+    <string>--frozen</string>
+    <string>python</string>
+    <string>-m</string>
+    <string>server</string>
+    <string>--host</string>
+    <string>${BACKEND_HOST}</string>
+    <string>--port</string>
+    <string>${BACKEND_PORT}</string>
+EOF
+		)
+	fi
 	escaped_log="$(printf '%s' "${LOG_FILE}" | xml_escape)"
 	escaped_cache="$(printf '%s' "${UV_CACHE_PATH}" | xml_escape)"
-	escaped_uv="$(printf '%s' "${uv_bin}" | xml_escape)"
+	escaped_home="$(printf '%s' "${KARKINOS_HOME_PATH}" | xml_escape)"
+	escaped_static="$(printf '%s' "${KARKINOS_HOME_PATH}/current/app/web/dist" | xml_escape)"
+	escaped_data="$(printf '%s' "${KARKINOS_HOME_PATH}/data" | xml_escape)"
+	escaped_config="$(printf '%s' "${KARKINOS_HOME_PATH}/config/config.json" | xml_escape)"
+	escaped_env="$(printf '%s' "${KARKINOS_HOME_PATH}/config/.env" | xml_escape)"
+	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+		environment_entries=$(
+			cat <<EOF
+    <key>KARKINOS_HOME</key><string>${escaped_home}</string>
+    <key>KARKINOS_DATA_DIR</key><string>${escaped_data}</string>
+    <key>KARKINOS_CONFIG_PATH</key><string>${escaped_config}</string>
+    <key>KARKINOS_ENV_FILE</key><string>${escaped_env}</string>
+    <key>KARKINOS_STATIC_DIR</key><string>${escaped_static}</string>
+EOF
+		)
+	else
+		environment_entries="    <key>UV_CACHE_DIR</key><string>${escaped_cache}</string>"
+	fi
 	cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -103,24 +170,15 @@ render_plist() {
     <string>-u</string><string>all_proxy</string>
     <string>-u</string><string>ALL_PROXY</string>
     <string>-u</string><string>DEFAULT_PROXY_URL</string>
-    <string>${escaped_uv}</string>
-    <string>run</string>
-    <string>--frozen</string>
-    <string>python</string>
-    <string>-m</string>
-    <string>server</string>
-    <string>--host</string>
-    <string>${BACKEND_HOST}</string>
-    <string>--port</string>
-    <string>${BACKEND_PORT}</string>
+${program_arguments}
   </array>
   <key>WorkingDirectory</key>
-  <string>${escaped_repo}</string>
+  <string>${escaped_workdir}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>NO_PROXY</key><string>127.0.0.1,localhost</string>
     <key>no_proxy</key><string>127.0.0.1,localhost</string>
-    <key>UV_CACHE_DIR</key><string>${escaped_cache}</string>
+${environment_entries}
   </dict>
   <key>RunAtLoad</key>
   <true/>
@@ -152,10 +210,10 @@ karkinos_service_is_ready() {
 		curl --noproxy '*' --fail --silent --show-error --max-time 2 \
 			"http://${BACKEND_HOST}:${BACKEND_PORT}/api/health" 2>/dev/null
 	)" || return 1
-	[[ "${response}" == *'"schema_version":"karkinos.service_health.v1"'* && \
-		"${response}" == *'"status":"alive"'* && \
-		"${response}" == *'"financial_readiness_claimed":false'* && \
-		"${response}" == *'"broker_submission_enabled":false'* && \
+	[[ "${response}" == *'"schema_version":"karkinos.service_health.v1"'* &&
+		"${response}" == *'"status":"alive"'* &&
+		"${response}" == *'"financial_readiness_claimed":false'* &&
+		"${response}" == *'"broker_submission_enabled":false'* &&
 		"${response}" == *'"capital_authority_changed":false'* ]] || return 1
 	local live_response
 	live_response="$(
@@ -192,12 +250,28 @@ print_compact_status() {
 }
 
 preflight_install() {
-	local uv_bin="$1"
+	local uv_bin="${1:-}"
 	require_positive_integer "${BACKEND_PORT}" "KARKINOS_BACKEND_PORT" 65535
 	require_positive_integer \
 		"${HEALTH_TIMEOUT_SECONDS}" \
 		"KARKINOS_LAUNCH_AGENT_HEALTH_TIMEOUT_SECONDS" \
 		300
+	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+		if [[ ! -L "${KARKINOS_HOME_PATH}/current" || ! -x "${NATIVE_ENTRYPOINT}" ]]; then
+			echo "Error: current native release must be an executable release symlink." >&2
+			exit 1
+		fi
+		local release_dir release_name
+		release_dir="$(CDPATH='' cd -- "${KARKINOS_HOME_PATH}/current" && pwd -P)"
+		release_name="${release_dir##*/}"
+		if [[ "${release_dir}" != "${KARKINOS_HOME_PATH}/releases/${release_name}" ||
+			! "${release_name}" =~ ^sha-[0-9a-f]{40}$ ||
+			! -f "${release_dir}/release.json" ]]; then
+			echo "Error: current native release pointer is invalid." >&2
+			exit 1
+		fi
+		return
+	fi
 	if [[ ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
 		echo "Error: pyproject.toml was not found under ${REPO_ROOT}." >&2
 		exit 1
@@ -214,8 +288,10 @@ preflight_install() {
 
 install_agent() {
 	require_darwin
-	local uv_bin
-	uv_bin="$(resolve_uv)"
+	local uv_bin=""
+	if [[ "${USE_NATIVE_RELEASE}" != "true" ]]; then
+		uv_bin="$(resolve_uv)"
+	fi
 	preflight_install "${uv_bin}"
 	if service_is_loaded; then
 		if [[ -f "${PLIST_PATH}" ]]; then
@@ -310,7 +386,11 @@ command="${1:-}"
 case "${command}" in
 print-plist)
 	require_positive_integer "${BACKEND_PORT}" "KARKINOS_BACKEND_PORT" 65535
-	render_plist "$(resolve_uv)"
+	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+		render_plist
+	else
+		render_plist "$(resolve_uv)"
+	fi
 	;;
 install)
 	install_agent

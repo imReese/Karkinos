@@ -4,7 +4,30 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-PID_FILE="${REPO_ROOT}/.run/server.pid"
+DEFAULT_KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
+KARKINOS_HOME_PATH="${KARKINOS_HOME:-${DEFAULT_KARKINOS_HOME}}"
+NATIVE_ENTRYPOINT="${KARKINOS_HOME_PATH}/current/bin/karkinos"
+USE_NATIVE_RELEASE=false
+if [[ -L "${KARKINOS_HOME_PATH}/current" || -e "${KARKINOS_HOME_PATH}/current" ]]; then
+	if [[ "${KARKINOS_HOME_PATH}" != /* || ! -L "${KARKINOS_HOME_PATH}/current" || ! -x "${NATIVE_ENTRYPOINT}" ]]; then
+		echo "Error: current native release must be an executable release symlink." >&2
+		exit 1
+	fi
+	NATIVE_RELEASE_DIR="$(CDPATH='' cd -- "${KARKINOS_HOME_PATH}/current" && pwd -P)"
+	NATIVE_RELEASE_NAME="${NATIVE_RELEASE_DIR##*/}"
+	if [[ "${NATIVE_RELEASE_DIR}" != "${KARKINOS_HOME_PATH}/releases/${NATIVE_RELEASE_NAME}" ||
+		! "${NATIVE_RELEASE_NAME}" =~ ^sha-[0-9a-f]{40}$ ||
+		! -f "${NATIVE_RELEASE_DIR}/release.json" ]]; then
+		echo "Error: current native release pointer is invalid." >&2
+		exit 1
+	fi
+	USE_NATIVE_RELEASE=true
+fi
+if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+	PID_FILE="${KARKINOS_HOME_PATH}/.run/server.pid"
+else
+	PID_FILE="${REPO_ROOT}/.run/server.pid"
+fi
 WEB_PID_FILE="${REPO_ROOT}/.run/web.pid"
 BACKEND_PORT="${KARKINOS_BACKEND_PORT:-8000}"
 FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
@@ -152,8 +175,12 @@ if resident_service_is_loaded; then
 	fi
 else
 	stop_pid_file "${PID_FILE}" "Karkinos Web service" || EXIT_STATUS=1
-	cleanup_orphans_by_command "${REPO_ROOT}/.venv/bin/python.* -m server" "Karkinos Web service" || EXIT_STATUS=1
-	cleanup_orphans_by_command "uv run python -m server" "Karkinos Web service" || EXIT_STATUS=1
+	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
+		cleanup_orphans_by_command "${NATIVE_ENTRYPOINT}.*server" "Karkinos native Web service" || EXIT_STATUS=1
+	else
+		cleanup_orphans_by_command "${REPO_ROOT}/.venv/bin/python.* -m server" "Karkinos Web service" || EXIT_STATUS=1
+		cleanup_orphans_by_command "uv run python -m server" "Karkinos Web service" || EXIT_STATUS=1
+	fi
 	cleanup_orphans_by_port "${BACKEND_PORT}" "Karkinos Web service" || EXIT_STATUS=1
 fi
 

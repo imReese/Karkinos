@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Sequence
@@ -20,6 +21,57 @@ _MISSING_MANIFEST_MARKERS = (
     "manifest unknown",
     "no such manifest",
 )
+_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def _inspect_registry(image_tag: str, *, raw: bool = False):
+    if not image_tag or any(character.isspace() for character in image_tag):
+        raise ValueError("release_image_tag_invalid")
+    try:
+        command = ["docker", "buildx", "imagetools", "inspect"]
+        if raw:
+            command.append("--raw")
+        command.append(image_tag)
+        return subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            f"immutable_release_image_tag_preflight_inconclusive:{image_tag}"
+        ) from exc
+
+
+def _registry_digest(image_tag: str, result) -> str:
+    matches = re.findall(
+        r"^Digest:\s+(sha256:[0-9a-f]{64})\s*$",
+        result.stdout,
+        re.MULTILINE,
+    )
+    if len(matches) != 1 or not _DIGEST.fullmatch(matches[0]):
+        raise RuntimeError(
+            f"immutable_release_image_tag_digest_unavailable:{image_tag}"
+        )
+    return matches[0]
+
+
+def assert_registry_image_tag_absent(image_tag: str) -> None:
+    """Reject an image reference unless the registry proves it is missing."""
+    result = _inspect_registry(image_tag, raw=True)
+    if result.returncode == 0:
+        raise ValueError(f"immutable_release_image_tag_already_exists:{image_tag}")
+
+    failure = f"{result.stdout}\n{result.stderr}".lower()
+    image_not_found = f"{image_tag.lower()}: not found" in failure
+    if not image_not_found and not any(
+        marker in failure for marker in _MISSING_MANIFEST_MARKERS
+    ):
+        raise RuntimeError(
+            f"immutable_release_image_tag_preflight_inconclusive:{image_tag}"
+        )
 
 
 @dataclass(frozen=True)
@@ -84,33 +136,38 @@ def build_release_image_plan(
     )
 
 
+def assert_registry_image_tag_compatible(image_tag: str, expected_digest: str) -> None:
+    """Allow a missing tag or the same immutable digest, never another digest."""
+    if _DIGEST.fullmatch(expected_digest) is None:
+        raise ValueError("release_image_digest_invalid")
+    result = _inspect_registry(image_tag)
+    if result.returncode != 0:
+        failure = f"{result.stdout}\n{result.stderr}".lower()
+        image_not_found = f"{image_tag.lower()}: not found" in failure
+        if image_not_found or any(
+            marker in failure for marker in _MISSING_MANIFEST_MARKERS
+        ):
+            return
+        raise RuntimeError(
+            f"immutable_release_image_tag_preflight_inconclusive:{image_tag}"
+        )
+    if _registry_digest(image_tag, result) != expected_digest:
+        raise ValueError(f"immutable_release_image_tag_digest_conflict:{image_tag}")
+
+
 def assert_immutable_image_tags_absent(plan: ReleaseImagePlan) -> None:
     """Reject a release when either immutable registry tag may already exist."""
 
     for image_tag in plan.immutable_image_tags:
-        try:
-            result = subprocess.run(
-                ["docker", "buildx", "imagetools", "inspect", "--raw", image_tag],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise RuntimeError(
-                f"immutable_release_image_tag_preflight_inconclusive:{image_tag}"
-            ) from exc
-        if result.returncode == 0:
-            raise ValueError(f"immutable_release_image_tag_already_exists:{image_tag}")
+        assert_registry_image_tag_absent(image_tag)
 
-        failure = f"{result.stdout}\n{result.stderr}".lower()
-        image_not_found = f"{image_tag.lower()}: not found" in failure
-        if not image_not_found and not any(
-            marker in failure for marker in _MISSING_MANIFEST_MARKERS
-        ):
-            raise RuntimeError(
-                f"immutable_release_image_tag_preflight_inconclusive:{image_tag}"
-            )
+
+def assert_immutable_image_tags_compatible(
+    plan: ReleaseImagePlan, expected_digest: str
+) -> None:
+    """Preflight immutable tags for safe first publish or exact-digest retry."""
+    for image_tag in plan.immutable_image_tags:
+        assert_registry_image_tag_compatible(image_tag, expected_digest)
 
 
 def _semver_key(tag: str) -> tuple[int, int, int, int, int]:
@@ -118,13 +175,16 @@ def _semver_key(tag: str) -> tuple[int, int, int, int, int]:
     if match is None:
         raise ValueError("release_tag_must_be_strict_semver")
     major, minor, patch, phase, phase_number = match.groups()
-    return (
-        int(major),
-        int(minor),
-        int(patch),
-        _PHASE_ORDER[phase],
-        int(phase_number or 0),
-    )
+    try:
+        return (
+            int(major),
+            int(minor),
+            int(patch),
+            _PHASE_ORDER[phase],
+            int(phase_number or 0),
+        )
+    except (KeyError, ValueError) as exc:
+        raise ValueError("release_tag_must_be_strict_semver") from exc
 
 
 def _read_server_version(path: Path) -> str:
@@ -139,7 +199,10 @@ def _read_server_version(path: Path) -> str:
 
 
 def _read_json_version(path: Path) -> str:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("web_version_not_found") from exc
     version = payload.get("version")
     if not isinstance(version, str) or not version:
         raise ValueError("web_version_not_found")
@@ -179,24 +242,42 @@ def main() -> int:
         "--verify-immutable-image-tags-absent",
         action="store_true",
     )
-    args = parser.parse_args()
-    repo_root = args.repo_root.resolve()
-    plan = build_release_image_plan(
-        tag=args.tag,
-        repository=args.repository,
-        commit_sha=args.commit_sha,
-        server_version=_read_server_version(repo_root / "server/__init__.py"),
-        web_version=_read_json_version(repo_root / "web/package.json"),
-        lock_version=_read_json_version(repo_root / "web/package-lock.json"),
-        existing_tags=_git_tags(repo_root),
+    parser.add_argument(
+        "--verify-immutable-image-tags-compatible",
+        action="store_true",
     )
-    if args.verify_immutable_image_tags_absent:
-        assert_immutable_image_tags_absent(plan)
-    if args.github_output is not None:
-        _append_github_outputs(args.github_output, plan)
-    else:
-        print(json.dumps(asdict(plan), sort_keys=True))
-    return 0
+    parser.add_argument("--expected-image-digest")
+    args = parser.parse_args()
+    try:
+        repo_root = args.repo_root.resolve()
+        plan = build_release_image_plan(
+            tag=args.tag,
+            repository=args.repository,
+            commit_sha=args.commit_sha,
+            server_version=_read_server_version(repo_root / "server/__init__.py"),
+            web_version=_read_json_version(repo_root / "web/package.json"),
+            lock_version=_read_json_version(repo_root / "web/package-lock.json"),
+            existing_tags=_git_tags(repo_root),
+        )
+        if (
+            args.verify_immutable_image_tags_absent
+            and args.verify_immutable_image_tags_compatible
+        ):
+            raise ValueError("release_image_tag_preflight_modes_conflict")
+        if args.verify_immutable_image_tags_absent:
+            assert_immutable_image_tags_absent(plan)
+        if args.verify_immutable_image_tags_compatible:
+            if args.expected_image_digest is None:
+                raise ValueError("release_image_digest_required")
+            assert_immutable_image_tags_compatible(plan, args.expected_image_digest)
+        if args.github_output is not None:
+            _append_github_outputs(args.github_output, plan)
+        else:
+            print(json.dumps(asdict(plan), sort_keys=True))
+        return 0
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
