@@ -12,6 +12,7 @@ from server.ai_runtime.provider_call_window import (
     ProviderCallDeferred,
     ProviderCallWindowConfigurationError,
     ProviderSendAdmission,
+    is_deepseek_endpoint,
     provider_send_admission_for,
 )
 
@@ -160,3 +161,18 @@ def test_send_admission_raises_before_the_caller_can_enter_transport() -> None:
 def test_only_deepseek_receives_the_versioned_pricing_profile() -> None:
     assert provider_send_admission_for("DeepSeek") is not None
     assert provider_send_admission_for("fixture-provider") is None
+
+
+@pytest.mark.unit
+def test_deepseek_endpoint_alias_receives_send_edge_admission() -> None:
+    admission = provider_send_admission_for(
+        "reviewed-provider-alias",
+        endpoint_origin="https://api.deepseek.com",
+        now=lambda: datetime(2026, 8, 31, 9, 0, tzinfo=SHANGHAI),
+    )
+
+    assert admission is not None
+    with pytest.raises(ProviderCallDeferred, match="deepseek_peak_pricing_window"):
+        admission.require_allowed()
+    assert is_deepseek_endpoint("https://deepseek.com.") is True
+    assert is_deepseek_endpoint("https://notdeepseek.com") is False

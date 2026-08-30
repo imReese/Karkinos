@@ -12,7 +12,10 @@ from server.ai_runtime.capture import (
     HumanContextCaptureRequest,
 )
 from server.ai_runtime.evidence import EvidenceIdentityMismatch
-from server.ai_runtime.karkinos_source import PersistedKarkinosCaptureSource
+from server.ai_runtime.karkinos_source import (
+    CaptureProjectionReaders,
+    PersistedKarkinosCaptureSource,
+)
 from server.routes.ai_research import build_capture_projection_readers
 
 NOW = "2026-07-13T12:30:00+00:00"
@@ -120,6 +123,38 @@ def _source(state) -> PersistedKarkinosCaptureSource:
         state,
         build_capture_projection_readers(),
     )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_research_only_capture_never_reads_portfolio_or_account_identity() -> (
+    None
+):
+    source = PersistedKarkinosCaptureSource(
+        SimpleNamespace(db=FixtureDatabase()),
+        None,
+    )
+    request = HumanContextCaptureRequest(
+        idempotency_key="source-research-only-001",
+        requested_by="human:reese",
+        research_question="Run normalized-notional discovery.",
+        account_alias="strategy-only",
+        evidence_types=(CaptureEvidenceType.RESEARCH_EVIDENCE,),
+        confirmation=CAPTURE_CONFIRMATION,
+        backtest_result_id=17,
+    )
+
+    batch = await source.load(request)
+
+    assert batch.valuation_snapshot_id.startswith("research-only:")
+    assert batch.ledger_cutoff_id == 0
+    assert batch.ledger_fingerprint.startswith("research-only:")
+    assert [item.tool_name for item in batch.projections] == ["research_evidence.read"]
+    payload = batch.projections[0].payload
+    assert payload["absolute_notional_values_redacted"] is True
+    assert "initial_cash" not in payload["performance_summary"]
+    assert "final_equity" not in payload["performance_summary"]
 
 
 @pytest.mark.unit

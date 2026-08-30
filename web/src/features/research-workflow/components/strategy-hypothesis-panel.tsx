@@ -43,8 +43,6 @@ function StrategyHypothesisWorkspace({
 }) {
   const {
     accountAlias,
-    accountReady,
-    accountSummary,
     assets,
     backtestConfirmed,
     canonical,
@@ -95,14 +93,9 @@ function StrategyHypothesisWorkspace({
       <StrategyHypothesisHeader copy={copy} onClose={() => setOpen(false)} />
 
       <StrategySelectionIdentity
-        accountBinding={
-          accountReady
-            ? `${accountSummary?.valuation_snapshot_id} · ledger ${accountSummary?.ledger_cutoff_id}`
-            : copy.missingAccount
-        }
-        accountReady={accountReady}
+        accountBinding={copy.notApplicable}
         copy={copy}
-        cost={costModelReference || copy.missingReviewedCosts}
+        cost={costModelReference || copy.missingCanonicalCosts}
         dataset={snapshot?.snapshot_id ?? copy.missingSnapshot}
         savedBacktest={report ? `#${report.id}` : copy.missingReport}
         universe={assets.map((asset) => asset.symbol).join(', ') || '—'}
@@ -225,7 +218,6 @@ function StrategyHypothesisWorkspace({
 
 function StrategySelectionIdentity({
   accountBinding,
-  accountReady,
   copy,
   cost,
   dataset,
@@ -234,7 +226,6 @@ function StrategySelectionIdentity({
   window,
 }: {
   accountBinding: string;
-  accountReady: boolean;
   copy: (typeof STRATEGY_HYPOTHESIS_COPY)[keyof typeof STRATEGY_HYPOTHESIS_COPY];
   cost: string;
   dataset: string;
@@ -249,11 +240,7 @@ function StrategySelectionIdentity({
       <Identity label={copy.window} value={window} mono />
       <Identity label={copy.universe} value={universe} mono />
       <Identity label={copy.cost} value={cost} mono />
-      <Identity
-        label={copy.accountBinding}
-        value={accountBinding}
-        mono={accountReady}
-      />
+      <Identity label={copy.accountBinding} value={accountBinding} />
     </div>
   );
 }
@@ -322,6 +309,7 @@ function StrategyHypothesisHeader({
       </div>
       <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
         <BoundaryBadge text={copy.noAuthority} />
+        <BoundaryBadge text={copy.researchOnly} />
         <BoundaryBadge text={copy.humanGated} />
       </div>
     </>

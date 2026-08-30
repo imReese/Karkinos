@@ -24,8 +24,7 @@ class ShadowResearchRunReplacementRepositoryMixin:
         market_date: str,
         input_fingerprint: str,
         baseline_seed_result_id: int,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
+        run_context: Mapping[str, Any],
         corrected_panel_rearm_evidence: Mapping[str, Any] | None,
         now: str,
     ) -> tuple[dict[str, Any], bool]:
@@ -53,8 +52,7 @@ class ShadowResearchRunReplacementRepositoryMixin:
             consumptions=consumptions,
             market_date=market_date,
             baseline_seed_result_id=baseline_seed_result_id,
-            valuation_snapshot_id=valuation_snapshot_id,
-            ledger_cutoff_id=ledger_cutoff_id,
+            run_context=run_context,
             now=now,
         )
 
@@ -214,8 +212,7 @@ class ShadowResearchRunReplacementRepositoryMixin:
         consumptions: Mapping[str, sqlite3.Row | None],
         market_date: str,
         baseline_seed_result_id: int,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
+        run_context: Mapping[str, Any],
         now: str,
     ) -> tuple[dict[str, Any], bool]:
         input_fingerprint = str(claim["input_fingerprint"])
@@ -263,6 +260,7 @@ class ShadowResearchRunReplacementRepositoryMixin:
             UPDATE ai_shadow_research_runs
             SET run_id=?, input_fingerprint=?, status='running',
                 baseline_seed_result_id=?, baseline_result_id=NULL,
+                research_capital_mode=?, research_context_id=?,
                 valuation_snapshot_id=?, ledger_cutoff_id=?,
                 session_id=NULL, failure_code=NULL, candidate_count=0,
                 created_at=?, updated_at=?
@@ -272,8 +270,10 @@ class ShadowResearchRunReplacementRepositoryMixin:
                 run_id,
                 input_fingerprint,
                 baseline_seed_result_id,
-                valuation_snapshot_id,
-                ledger_cutoff_id,
+                run_context["research_capital_mode"],
+                run_context["research_context_id"],
+                run_context["valuation_snapshot_id"],
+                run_context["ledger_cutoff_id"],
                 now,
                 now,
                 run["run_id"],

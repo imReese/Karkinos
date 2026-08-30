@@ -39,7 +39,7 @@ export function DashboardTodayQueue(props: DashboardTodayQueueProps) {
   const actionableCount = items.filter(
     (item) => item.priority !== 'normal',
   ).length;
-  const exceptionItems: ExceptionItem[] = items
+  const exceptionItems: (ExceptionItem & { alwaysVisible: boolean })[] = items
     .filter((item) => item.priority !== 'normal')
     .sort(
       (left, right) =>
@@ -78,10 +78,16 @@ export function DashboardTodayQueue(props: DashboardTodayQueueProps) {
           </a>
         ),
       evidence: item.meta,
+      alwaysVisible: item.alwaysVisible === true,
     }));
   const normalCount = items.length - actionableCount;
-  const primaryExceptionItems = exceptionItems.slice(0, 1);
-  const additionalExceptionItems = exceptionItems.slice(1);
+  const primaryExceptionItems = [
+    ...exceptionItems.slice(0, 1),
+    ...exceptionItems.slice(1).filter((item) => item.alwaysVisible),
+  ];
+  const additionalExceptionItems = exceptionItems
+    .slice(1)
+    .filter((item) => !item.alwaysVisible);
   const exceptionLabels =
     locale === 'zh'
       ? {

@@ -10,6 +10,7 @@ from typing import Any
 
 from core.types import BarFrequency
 from server.ai_runtime.contracts import content_fingerprint
+from server.ai_runtime.provider_call_window import ProviderCallDeferred
 from server.ai_runtime.strategy_research import StrategyResearchSelection
 from server.contracts.ai_shadow_research_automation import (
     CORRECTED_PANEL_CITATION_RESUME_ITERATION,
@@ -17,6 +18,7 @@ from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_MAX_CANDIDATES,
     SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_RUNTIME_CONTRACT,
     SHADOW_RESEARCH_TIMEZONE,
     TIMEOUT_RESUME_COMPLETED_ITERATIONS,
@@ -47,6 +49,7 @@ class AiShadowResearchWorkflowMixin:
         if preflight is not None:
             return preflight
 
+        self._require_deepseek_provider()
         provider_window_preflight, batch_deadline_at = (
             self._provider_batch_window_admission()
         )
@@ -79,33 +82,15 @@ class AiShadowResearchWorkflowMixin:
                 "market_date": prepared.market_date,
             }
 
-        try:
-            valuation = await asyncio.to_thread(self._build_current_valuation_snapshot)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            return self._record_preflight(
-                status="blocked_by_account_evidence",
-                failure_code=shadow_research_failure_code(exc),
-                market_date=prepared.market_date,
-            )
-        if deadline_preflight := self._batch_deadline_preflight(batch_deadline_at):
-            return deadline_preflight
-        if (
-            policy.require_complete_account_evidence
-            and valuation.get("status") != "complete"
-        ):
-            return self._record_preflight(
-                status="blocked_by_account_evidence",
-                failure_code="valuation_snapshot_not_complete",
-                market_date=prepared.market_date,
-            )
-        if str(valuation.get("trade_date")) != prepared.market_date:
-            return self._record_preflight(
-                status="blocked_by_account_evidence",
-                failure_code="valuation_market_date_mismatch",
-                market_date=prepared.market_date,
-            )
+        research_context, context_preflight = await self._research_context_for_run(
+            policy=policy,
+            prepared=prepared,
+            batch_deadline_at=batch_deadline_at,
+        )
+        if context_preflight is not None:
+            return context_preflight
+        assert research_context is not None
+        account_bound = research_context["account_fact_binding_present"] is True
 
         input_fingerprint = content_fingerprint(
             {
@@ -113,37 +98,28 @@ class AiShadowResearchWorkflowMixin:
                 "policy": policy.to_dict(),
                 **self._provider_window_input_evidence(batch_deadline_at),
                 "baseline_fingerprint": prepared.fingerprint,
-                "valuation_snapshot_id": valuation["snapshot_id"],
-                "ledger_cutoff_id": valuation["ledger_cutoff_id"],
+                "research_context": research_context,
             }
         )
-        selection_components = {
-            "universe": tuple(
-                asset["symbol"] for asset in prepared.request.assets or []
-            ),
-            "asset_classes": tuple(
-                asset["asset_class"] for asset in prepared.request.assets or []
-            ),
-            "dataset_snapshot_id": str(prepared.snapshot["snapshot_id"]),
-            "start_date": prepared.request.start_date,
-            "end_date": prepared.request.end_date,
-            "frequency": BarFrequency.DAILY.value,
-            "initial_cash": prepared.request.initial_cash,
-            "cost_model_reference": prepared.cost_model_reference,
-            "account_truth_freshness_as_of": shadow_research_market_close_as_of(
-                prepared.market_date,
-                policy.after_close_time,
-            ).isoformat(),
-            "valuation_snapshot_id": str(valuation["snapshot_id"]),
-            "ledger_cutoff_id": int(valuation["ledger_cutoff_id"]),
-        }
+        selection_components = self._selection_components(
+            policy=policy,
+            prepared=prepared,
+            research_context=research_context,
+            account_bound=account_bound,
+        )
         now_text = self._now().astimezone(timezone.utc).isoformat()
         run, reused = self._store.claim_run(
             market_date=prepared.market_date,
             input_fingerprint=input_fingerprint,
             baseline_seed_result_id=prepared.seed_result_id,
-            valuation_snapshot_id=str(valuation["snapshot_id"]),
-            ledger_cutoff_id=int(valuation["ledger_cutoff_id"]),
+            research_capital_mode=str(research_context["research_capital_mode"]),
+            research_context_id=str(research_context["context_id"]),
+            valuation_snapshot_id=(
+                str(research_context["valuation_snapshot_id"])
+                if account_bound
+                else None
+            ),
+            ledger_cutoff_id=int(research_context["ledger_cutoff_id"]),
             now=now_text,
             timeout_resume_input_evidence={
                 "baseline_fingerprint": prepared.fingerprint,
@@ -181,7 +157,6 @@ class AiShadowResearchWorkflowMixin:
                 saved_backtest_result_id=baseline_result_id,
                 **selection_components,
             )
-            self._require_deepseek_provider()
             research = self._build_research_service(external=True)
             local_research = self._build_research_service(external=False)
             resume_iteration = int(run.get("partial_resume_iteration") or 1)
@@ -317,6 +292,7 @@ class AiShadowResearchWorkflowMixin:
                 )
                 if candidate.get("status") not in {
                     "awaiting_human_approval",
+                    "evaluated_research_only",
                     "research_blocked",
                 }:
                     raise ShadowResearchRejected("sequential_iteration_not_complete")
@@ -334,6 +310,7 @@ class AiShadowResearchWorkflowMixin:
                 if candidates
                 and all(
                     item["status"] in {"awaiting_human_approval", "research_blocked"}
+                    or item["status"] == "evaluated_research_only"
                     for item in candidates
                 )
                 else "partial"
@@ -375,6 +352,25 @@ class AiShadowResearchWorkflowMixin:
             }
         except asyncio.CancelledError:
             raise
+        except ProviderCallDeferred as exc:
+            failure_code = shadow_research_failure_code(exc)
+            self._store.update_run(
+                run["run_id"],
+                now=self._utc_now(),
+                status="deferred_for_provider_off_peak",
+                failure_code=failure_code,
+            )
+            deferred = self._record_preflight(
+                status="deferred_for_provider_off_peak",
+                failure_code=failure_code,
+                market_date=prepared.market_date,
+                evidence=exc.decision.to_dict(),
+            )
+            return {
+                **deferred,
+                "run_id": run["run_id"],
+                "reused": False,
+            }
         except Exception as exc:
             logger.warning(
                 "After-close AI shadow research failed closed", exc_info=True
@@ -391,6 +387,90 @@ class AiShadowResearchWorkflowMixin:
                 "run_id": run["run_id"],
                 "failure_code": shadow_research_failure_code(exc),
             }
+
+    @staticmethod
+    def _selection_components(
+        *,
+        policy: Any,
+        prepared: Any,
+        research_context: Mapping[str, Any],
+        account_bound: bool,
+    ) -> dict[str, Any]:
+        return {
+            "universe": tuple(
+                asset["symbol"] for asset in prepared.request.assets or []
+            ),
+            "asset_classes": tuple(
+                asset["asset_class"] for asset in prepared.request.assets or []
+            ),
+            "dataset_snapshot_id": str(prepared.snapshot["snapshot_id"]),
+            "start_date": prepared.request.start_date,
+            "end_date": prepared.request.end_date,
+            "frequency": BarFrequency.DAILY.value,
+            "initial_cash": prepared.request.initial_cash,
+            "cost_model_reference": prepared.cost_model_reference,
+            "account_truth_freshness_as_of": (
+                shadow_research_market_close_as_of(
+                    prepared.market_date,
+                    policy.after_close_time,
+                ).isoformat()
+                if account_bound
+                else None
+            ),
+            "valuation_snapshot_id": (
+                str(research_context["valuation_snapshot_id"])
+                if account_bound
+                else None
+            ),
+            "ledger_cutoff_id": (
+                int(research_context["ledger_cutoff_id"]) if account_bound else None
+            ),
+        }
+
+    async def _research_context_for_run(
+        self,
+        *,
+        policy: Any,
+        prepared: Any,
+        batch_deadline_at: Any,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        if (
+            policy.research_capital_mode
+            == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+        ):
+            return self._nominal_research_binding(prepared), None
+        try:
+            valuation = await asyncio.to_thread(self._build_current_valuation_snapshot)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return None, self._record_preflight(
+                status="blocked_by_account_evidence",
+                failure_code=shadow_research_failure_code(exc),
+                market_date=prepared.market_date,
+            )
+        if deadline_preflight := self._batch_deadline_preflight(batch_deadline_at):
+            return None, deadline_preflight
+        if valuation.get("status") != "complete":
+            return None, self._record_preflight(
+                status="blocked_by_account_evidence",
+                failure_code="valuation_snapshot_not_complete",
+                market_date=prepared.market_date,
+            )
+        if str(valuation.get("trade_date")) != prepared.market_date:
+            return None, self._record_preflight(
+                status="blocked_by_account_evidence",
+                failure_code="valuation_market_date_mismatch",
+                market_date=prepared.market_date,
+            )
+        return {
+            "schema_version": "karkinos.ai.account_bound_research_context.v1",
+            "research_capital_mode": policy.research_capital_mode,
+            "context_id": str(valuation["snapshot_id"]),
+            "valuation_snapshot_id": str(valuation["snapshot_id"]),
+            "ledger_cutoff_id": int(valuation["ledger_cutoff_id"]),
+            "account_fact_binding_present": True,
+        }, None
 
     def _policy_preflight(self, policy: Any) -> dict[str, Any] | None:
         if not policy.enabled:

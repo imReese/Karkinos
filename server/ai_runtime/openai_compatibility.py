@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from .contracts import JsonObject
+from .provider_call_window import is_deepseek_provider_endpoint
 from .provider_connectivity_contracts import ProviderConnectivitySettings
 
 
 def edge_request_options(settings: ProviderConnectivitySettings) -> JsonObject:
     """Preserve configured reasoning while avoiding unsupported sampling knobs."""
-    provider = settings.provider_id.strip().lower()
-    if provider == "deepseek" or settings.endpoint_origin.endswith("deepseek.com"):
+    if is_deepseek_provider_endpoint(
+        settings.provider_id,
+        settings.endpoint_origin,
+    ):
         return {
             "thinking": {"type": "enabled"},
             "reasoning_effort": "high",

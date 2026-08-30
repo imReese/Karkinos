@@ -19,18 +19,24 @@ from core.types import BarFrequency, CommissionType, Symbol
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
+from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE
 from server.ai_runtime.provider_call_window import (
     DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderCallDeferred,
 )
 from server.ai_runtime.store import AiAuditStore
 from server.ai_runtime.strategy_research import (
     StrategyResearchAuditStore,
     StrategyResearchSelection,
 )
+from server.config import AIProviderConfig, ServerConfig
 from server.db import AppDatabase
 from server.dependencies import AppState
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION,
     SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
@@ -133,6 +139,49 @@ async def test_peak_pricing_window_defers_before_any_research_or_provider_claim(
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
+async def test_non_deepseek_builder_is_rejected_before_deepseek_window_scheduling(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    state = _state(db)
+    state.config = ServerConfig(
+        ai=AIProviderConfig(
+            enabled=True,
+            provider="openai",
+            model="fixture-model",
+            base_url="https://api.openai.com",
+        )
+    )
+    service = AiShadowResearchAutomationService(
+        state=state,
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: object(),
+        provider_call_window_policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+        now=lambda: datetime(2026, 8, 31, 16, 0, tzinfo=SHANGHAI),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+
+    with pytest.raises(
+        ShadowResearchRejected,
+        match="deepseek_provider_not_configured",
+    ):
+        await service.run_once()
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        assert conn.execute("SELECT COUNT(*) FROM automation_runs").fetchone()[0] == 0
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_shadow_research_runs").fetchone()[0]
+            == 0
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
 async def test_batch_deadline_is_rechecked_after_baseline_before_any_run_claim(
     tmp_path, monkeypatch
 ) -> None:
@@ -183,6 +232,10 @@ async def test_batch_deadline_is_rechecked_after_baseline_before_any_run_claim(
 @pytest.mark.trading_safety
 def test_shadow_policy_confirmation_literals_match_the_operator_contract() -> None:
     assert SHADOW_RESEARCH_POLICY_CONFIRMATION == (
+        "authorize_five_sequential_after_close_deepseek_normalized_notional_"
+        "strategy_research_without_account_strategy_trade_or_capital_authority"
+    )
+    assert SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION == (
         "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
         "daily_token_budget_or_strategy_or_trade_authority"
     )
@@ -202,7 +255,10 @@ def test_shadow_policy_persists_exact_provider_window_revision_and_rejects_drift
 ):
     payload = ShadowResearchPolicy().to_dict()
 
-    assert payload["schema_version"] == "karkinos.ai.shadow_research_policy.v3"
+    assert payload["schema_version"] == "karkinos.ai.shadow_research_policy.v4"
+    assert payload["research_capital_mode"] == "normalized_notional"
+    assert payload["require_complete_account_evidence"] is False
+    assert payload["promotion_requires_complete_account_evidence"] is True
     assert payload["provider_call_window_schema"] == (
         "karkinos.ai.provider_call_window.v1"
     )
@@ -228,7 +284,7 @@ def test_shadow_policy_persists_exact_provider_window_revision_and_rejects_drift
             None,
             "authorize_five_sequentialis_after_shadow_research_close_deepseek_strategy_research_without_"
             "daily_token_budget_or_strategy_or_trade_authority",
-            SHADOW_RESEARCH_POLICY_CONFIRMATION,
+            SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
         ),
         (
             SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 10,
@@ -249,16 +305,27 @@ def test_shadow_policy_reads_refactor_era_authorization_without_weakening_new_wr
             "daily_token_budget": daily_token_budget,
             "max_provider_calls_per_market_date": 10,
             "max_candidates_per_run": 5,
+            "require_complete_account_evidence": False,
             "authorization": authorization,
         }
     )
 
     assert policy.authorization == expected_authorization
+    assert policy.research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+    assert policy.require_complete_account_evidence is True
     assert policy.to_dict()["authorization"] == expected_authorization
 
 
 def _state(db: AppDatabase) -> AppState:
     state = AppState()
+    state.config = ServerConfig(
+        ai=AIProviderConfig(
+            enabled=True,
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            base_url="https://api.deepseek.com",
+        )
+    )
     state.db = db
     state.trading_controls = TradingControlState(db=db)
     return state
@@ -284,11 +351,25 @@ def _policy_payload(*, enabled: bool) -> dict:
         "token_budget_mode": SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
         "max_candidates_per_run": 5,
         "baseline_backtest_result_id": None,
-        "require_complete_account_evidence": True,
+        "research_capital_mode": SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+        "require_complete_account_evidence": False,
         "research_question": "Generate one falsifiable formula improvement.",
         "updated_by": "human:owner",
         "confirmation": (
             SHADOW_RESEARCH_POLICY_CONFIRMATION
+            if enabled
+            else SHADOW_RESEARCH_PAUSE_CONFIRMATION
+        ),
+    }
+
+
+def _account_bound_policy_payload(*, enabled: bool) -> dict:
+    return {
+        **_policy_payload(enabled=enabled),
+        "research_capital_mode": SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        "require_complete_account_evidence": True,
+        "confirmation": (
+            SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION
             if enabled
             else SHADOW_RESEARCH_PAUSE_CONFIRMATION
         ),
@@ -335,6 +416,8 @@ def _seed_completed_no_selection_for_corrected_panel_rearm(
         market_date="2026-08-21",
         input_fingerprint="sha256:single-stock-input",
         baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-old",
         valuation_snapshot_id="valuation-old",
         ledger_cutoff_id=1,
         now="2026-08-22T00:00:00+00:00",
@@ -526,6 +609,8 @@ def test_corrected_panel_rearm_is_exactly_one_bound_ten_call_envelope(
             market_date="2026-08-21",
             input_fingerprint="sha256:forty-stock-input",
             baseline_seed_result_id=1,
+            research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+            research_context_id="valuation-new",
             valuation_snapshot_id="valuation-new",
             ledger_cutoff_id=1,
             now="2026-08-23T01:01:00+00:00",
@@ -540,6 +625,8 @@ def test_corrected_panel_rearm_is_exactly_one_bound_ten_call_envelope(
         market_date="2026-08-21",
         input_fingerprint="sha256:forty-stock-input",
         baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-new",
         valuation_snapshot_id="valuation-new",
         ledger_cutoff_id=1,
         now="2026-08-23T01:02:00+00:00",
@@ -594,6 +681,8 @@ def _seed_corrected_panel_first_critique_failure(tmp_path):
         market_date="2026-08-21",
         input_fingerprint="sha256:forty-stock-input",
         baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-new",
         valuation_snapshot_id="valuation-new",
         ledger_cutoff_id=1,
         now="2026-08-23T01:01:00+00:00",
@@ -796,6 +885,8 @@ def test_corrected_panel_first_critique_resume_adds_one_call_and_reuses_checkpoi
         market_date="2026-08-21",
         input_fingerprint="sha256:forty-stock-input",
         baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-new",
         valuation_snapshot_id="valuation-new",
         ledger_cutoff_id=1,
         now="2026-08-23T02:01:00+00:00",
@@ -921,7 +1012,7 @@ async def test_corrected_panel_resume_runs_only_failed_critique_then_four_rounds
         research_service_builder=lambda external: fixture,
         now=lambda: datetime(2026, 8, 23, 8, 0, tzinfo=ZoneInfo("UTC")),
     )
-    service.update_policy(_policy_payload(enabled=True))
+    service.update_policy(_account_bound_policy_payload(enabled=True))
     monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
     monkeypatch.setattr(
         "server.services.ai_shadow_research_automation._build_corrected_panel_rearm_evidence",
@@ -1008,7 +1099,7 @@ def test_shadow_policy_defaults_disabled_and_requires_exact_standing_authorizati
 
     bounded = service.update_policy(
         {
-            **_policy_payload(enabled=True),
+            **_account_bound_policy_payload(enabled=True),
             "daily_token_budget": SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 10,
             "token_budget_mode": "legacy_bounded_daily",
             "confirmation": SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
@@ -1035,6 +1126,17 @@ def test_shadow_status_projects_candidate_without_full_backtest_evidence(
     tmp_path,
 ) -> None:
     service = _service(tmp_path)
+    run, reused = service._store.claim_run(
+        market_date="2026-08-26",
+        input_fingerprint="status-summary-input",
+        baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-status-summary",
+        valuation_snapshot_id="valuation-status-summary",
+        ledger_cutoff_id=1,
+        now="2026-08-26T08:00:00+00:00",
+    )
+    assert reused is False
     evidence_marker = "internal-full-backtest-evidence-must-not-reach-status"
     metric_summary = {
         "result_id": 1,
@@ -1057,6 +1159,8 @@ def test_shadow_status_projects_candidate_without_full_backtest_evidence(
     large_series = [evidence_marker] * 512
     full_comparison = {
         "schema_version": "karkinos.ai.shadow_research_comparison.v1",
+        "research_capital_mode": "account_bound",
+        "account_qualification_status": "blocked",
         "economic_hypothesis": "A bounded status projection fixture.",
         "baseline": {
             **metric_summary,
@@ -1078,7 +1182,7 @@ def test_shadow_status_projects_candidate_without_full_backtest_evidence(
         },
     }
     candidate = service._store.save_candidate(
-        run_id="run-status-summary",
+        run_id=run["run_id"],
         session_id="session-status-summary",
         draft_id="draft-status-summary",
         backtest_run_id="backtest-status-summary",
@@ -1262,6 +1366,8 @@ def test_provider_free_failed_run_can_be_rearmed_after_input_correction(
         market_date="2026-08-11",
         input_fingerprint="first-input-fingerprint",
         baseline_seed_result_id=8,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-first",
         valuation_snapshot_id="valuation-first",
         ledger_cutoff_id=11,
         now="2026-08-11T08:00:00+00:00",
@@ -1294,6 +1400,8 @@ def test_provider_free_failed_run_can_be_rearmed_after_input_correction(
         market_date="2026-08-11",
         input_fingerprint="corrected-input-fingerprint",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-corrected",
         valuation_snapshot_id="valuation-corrected",
         ledger_cutoff_id=12,
         now="2026-08-11T08:03:00+00:00",
@@ -1348,6 +1456,8 @@ def test_local_second_iteration_failure_resumes_from_completed_first_round(
         market_date=market_date,
         input_fingerprint="runtime-v9-input",
         baseline_seed_result_id=8,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=12,
         now=now,
@@ -1605,6 +1715,8 @@ def test_local_second_iteration_failure_resumes_from_completed_first_round(
         market_date=market_date,
         input_fingerprint="runtime-v10-input",
         baseline_seed_result_id=8,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=12,
         now="2026-08-23T11:01:00+00:00",
@@ -1679,6 +1791,8 @@ def test_owner_authorized_provider_retry_is_append_only_consumed_once_and_adds_e
         market_date="2026-08-11",
         input_fingerprint="provider-failed-input-fingerprint",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=12,
         now="2026-08-11T08:00:00+00:00",
@@ -1711,6 +1825,8 @@ def test_owner_authorized_provider_retry_is_append_only_consumed_once_and_adds_e
         market_date="2026-08-11",
         input_fingerprint=first["input_fingerprint"],
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=12,
         now="2026-08-11T08:03:00+00:00",
@@ -1754,6 +1870,8 @@ def test_owner_authorized_provider_retry_is_append_only_consumed_once_and_adds_e
         market_date="2026-08-11",
         input_fingerprint=first["input_fingerprint"],
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=12,
         now="2026-08-11T08:06:00+00:00",
@@ -1787,6 +1905,8 @@ def test_owner_authorized_provider_retry_is_append_only_consumed_once_and_adds_e
         market_date="2026-08-11",
         input_fingerprint="corrected-runtime-contract-input-fingerprint",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=12,
         now="2026-08-11T08:09:00+00:00",
@@ -1838,6 +1958,8 @@ def test_owner_authorized_provider_retry_is_append_only_consumed_once_and_adds_e
         market_date="2026-08-11",
         input_fingerprint=first["input_fingerprint"],
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=12,
         now="2026-08-11T08:19:00+00:00",
@@ -1885,6 +2007,8 @@ def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacit
         market_date="2026-08-21",
         input_fingerprint="first-provider-input",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:00:00+00:00",
@@ -1921,6 +2045,8 @@ def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacit
         market_date="2026-08-21",
         input_fingerprint="retry-runtime-input",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:04:00+00:00",
@@ -1989,6 +2115,8 @@ def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacit
         market_date="2026-08-21",
         input_fingerprint=replacement["input_fingerprint"],
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:08:00+00:00",
@@ -1999,6 +2127,8 @@ def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacit
         market_date="2026-08-21",
         input_fingerprint="corrected-citation-runtime-input",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:09:00+00:00",
@@ -2039,6 +2169,8 @@ def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacit
         market_date="2026-08-21",
         input_fingerprint="corrected-role-identity-runtime-input",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:12:00+00:00",
@@ -2099,6 +2231,8 @@ def test_output_truncation_extension_restores_exact_ten_calls_at_ceiling_thirtee
         market_date=market_date,
         input_fingerprint="first-output-contract",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:00:00+00:00",
@@ -2135,6 +2269,8 @@ def test_output_truncation_extension_restores_exact_ten_calls_at_ceiling_thirtee
         market_date=market_date,
         input_fingerprint="citation-contract",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:04:00+00:00",
@@ -2172,6 +2308,8 @@ def test_output_truncation_extension_restores_exact_ten_calls_at_ceiling_thirtee
         market_date=market_date,
         input_fingerprint="thinking-enabled-contract",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:08:00+00:00",
@@ -2226,6 +2364,8 @@ def test_output_truncation_extension_restores_exact_ten_calls_at_ceiling_thirtee
         market_date=market_date,
         input_fingerprint="thinking-disabled-contract",
         baseline_seed_result_id=25,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-complete",
         valuation_snapshot_id="valuation-complete",
         ledger_cutoff_id=24,
         now="2026-08-21T14:12:00+00:00",
@@ -2308,6 +2448,8 @@ async def test_enabled_legacy_bounded_policy_is_authorized_to_run(
         "authorization": SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     }
     legacy_payload.pop("token_budget_mode")
+    legacy_payload.pop("research_capital_mode")
+    legacy_payload.pop("require_complete_account_evidence")
     service._db.upsert_automation_policy_sync(
         policy_id="ai_shadow_research",
         payload=legacy_payload,
@@ -2337,12 +2479,15 @@ def test_export_requires_deepseek_identity_and_deepseek_endpoint(
     tmp_path, monkeypatch
 ) -> None:
     service = _service(tmp_path)
+    service._research_service_builder = lambda external: object()
     service._state.config = object()
 
     monkeypatch.setattr(
         "server.ai_runtime.provider_connectivity.load_provider_connectivity_settings",
         lambda config: SimpleNamespace(
-            provider_id="openai", endpoint_origin="https://api.deepseek.com/v1"
+            enabled=True,
+            provider_id="openai",
+            endpoint_origin="https://api.deepseek.com/v1",
         ),
     )
     with pytest.raises(
@@ -2353,7 +2498,9 @@ def test_export_requires_deepseek_identity_and_deepseek_endpoint(
     monkeypatch.setattr(
         "server.ai_runtime.provider_connectivity.load_provider_connectivity_settings",
         lambda config: SimpleNamespace(
-            provider_id="deepseek", endpoint_origin="https://proxy.example.com/v1"
+            enabled=True,
+            provider_id="deepseek",
+            endpoint_origin="https://proxy.example.com/v1",
         ),
     )
     with pytest.raises(
@@ -2364,7 +2511,9 @@ def test_export_requires_deepseek_identity_and_deepseek_endpoint(
     monkeypatch.setattr(
         "server.ai_runtime.provider_connectivity.load_provider_connectivity_settings",
         lambda config: SimpleNamespace(
-            provider_id="deepseek", endpoint_origin="https://api.deepseek.com/v1"
+            enabled=True,
+            provider_id="deepseek",
+            endpoint_origin="https://api.deepseek.com/v1",
         ),
     )
     service._require_deepseek_provider()
@@ -2651,8 +2800,19 @@ def test_human_candidate_approval_rejects_incomplete_or_drifted_gate(tmp_path) -
     db.init_sync()
     store = ShadowResearchStore(tmp_path / "app.db")
     store.init()
+    run, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="incomplete-gate-input",
+        baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-incomplete-gate",
+        valuation_snapshot_id="valuation-incomplete-gate",
+        ledger_cutoff_id=1,
+        now="2026-08-11T08:00:00+00:00",
+    )
+    assert reused is False
     candidate = store.save_candidate(
-        run_id="run-incomplete-gate",
+        run_id=run["run_id"],
         session_id="session-1",
         draft_id="draft-1",
         backtest_run_id="backtest-1",
@@ -2662,11 +2822,13 @@ def test_human_candidate_approval_rejects_incomplete_or_drifted_gate(tmp_path) -
         status="awaiting_human_approval",
         recommendation="paper_shadow_review",
         comparison={
+            "research_capital_mode": "account_bound",
+            "account_qualification_status": "passed",
             "promotion_gate": {
                 "schema_version": "karkinos.strategy_advancement_gate.v2",
                 "status": "pass",
                 "blockers": [],
-            }
+            },
         },
         now="2026-08-11T08:00:00+00:00",
     )
@@ -2716,10 +2878,16 @@ def _metrics(*, total_return: float, sharpe: float, drawdown: float) -> dict:
     }
 
 
-def _result(*, total_return: float, sharpe: float, drawdown: float) -> dict:
+def _result(
+    *,
+    total_return: float,
+    sharpe: float,
+    drawdown: float,
+    initial_cash: float = 100_000.0,
+) -> dict:
     return {
-        "initial_cash": 100_000.0,
-        "final_equity": 100_000.0 * (1 + total_return),
+        "initial_cash": initial_cash,
+        "final_equity": initial_cash * (1 + total_return),
         "total_return": total_return,
         "annual_return": total_return,
         "sharpe": sharpe,
@@ -2728,10 +2896,10 @@ def _result(*, total_return: float, sharpe: float, drawdown: float) -> dict:
         "win_rate": 0.5,
         "duration_days": 100,
         "equity_curve": [
-            {"timestamp": "2026-01-01T00:00:00", "equity": 100_000.0},
+            {"timestamp": "2026-01-01T00:00:00", "equity": initial_cash},
             {
                 "timestamp": "2026-08-11T00:00:00",
-                "equity": 100_000.0 * (1 + total_return),
+                "equity": initial_cash * (1 + total_return),
             },
         ],
         "metrics_json": _metrics(
@@ -2746,11 +2914,24 @@ def _result(*, total_return: float, sharpe: float, drawdown: float) -> dict:
     }
 
 
-def _prepared_baseline() -> PreparedBaseline:
+def _prepared_baseline(*, account_bound: bool = False) -> PreparedBaseline:
     cost_model_reference = (
-        "karkinos.backtest.reviewed_account_fee_schedule.v1:"
-        f"fee_review_{'a' * 32}:{'b' * 64}"
+        (
+            "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+            f"fee_review_{'a' * 32}:{'b' * 64}"
+        )
+        if account_bound
+        else CANONICAL_COST_MODEL_REFERENCE
     )
+    initial_cash = 100_000 if account_bound else 1_000_000
+    result = _result(total_return=0.05, sharpe=0.6, drawdown=0.12)
+    if not account_bound:
+        result["initial_cash"] = initial_cash
+        result["final_equity"] = initial_cash * 1.05
+        result["equity_curve"] = [
+            {**point, "equity": initial_cash * (1.05 if index else 1.0)}
+            for index, point in enumerate(result["equity_curve"])
+        ]
     return PreparedBaseline(
         seed_result_id=7,
         market_date="2026-08-11",
@@ -2758,17 +2939,26 @@ def _prepared_baseline() -> PreparedBaseline:
         request=BacktestRequest(
             start_date="2026-01-01",
             end_date="2026-08-11",
-            initial_cash=100_000,
+            initial_cash=initial_cash,
             strategy="dual_ma",
             assets=[{"symbol": "510300", "asset_class": "etf"}],
             oos_mode="rolling",
         ),
-        result=_result(total_return=0.05, sharpe=0.6, drawdown=0.12),
+        result=result,
         cost_model_reference=cost_model_reference,
-        fee_schedule_evidence={
-            "fee_schedule_review_id": "fee_review_" + "a" * 32,
-            "fee_schedule_review_fingerprint": "sha256:" + "b" * 64,
-        },
+        fee_schedule_evidence=(
+            {
+                "fee_schedule_review_id": "fee_review_" + "a" * 32,
+                "fee_schedule_review_fingerprint": "sha256:" + "b" * 64,
+                "account_specific": True,
+            }
+            if account_bound
+            else {
+                "cost_model_reference": CANONICAL_COST_MODEL_REFERENCE,
+                "fee_schedule_source": "canonical_default_estimate",
+                "account_specific": False,
+            }
+        ),
     )
 
 
@@ -3142,7 +3332,12 @@ async def test_five_round_policy_runs_sequential_generation_backtest_and_critiqu
     db.init_sync()
     store = ShadowResearchStore(tmp_path / "app.db")
     store.init()
-    candidate_payload = _result(total_return=0.12, sharpe=1.2, drawdown=0.08)
+    candidate_payload = _result(
+        total_return=0.12,
+        sharpe=1.2,
+        drawdown=0.08,
+        initial_cash=1_000_000.0,
+    )
     candidate_result_id = await db.save_backtest_result(
         config_json=json.dumps({"strategy": "ai_formula_research"}),
         initial_cash=candidate_payload["initial_cash"],
@@ -3178,14 +3373,23 @@ async def test_five_round_policy_runs_sequential_generation_backtest_and_critiqu
     monkeypatch.setattr(
         service, "_prepare_baseline", lambda policy: _prepared_baseline()
     )
+
+    def unexpected_valuation(*args, **kwargs):
+        raise AssertionError("normalized-notional discovery must not read valuation")
+
     monkeypatch.setattr(
         "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
-        _complete_valuation,
+        unexpected_valuation,
     )
 
     result = await service.run_once()
+    persisted_run = store.get_run(result["run_id"])
 
     assert result["run_status"] == "completed"
+    assert persisted_run["research_capital_mode"] == "normalized_notional"
+    assert str(persisted_run["research_context_id"]).startswith("nominal-research:")
+    assert persisted_run["valuation_snapshot_id"] == ""
+    assert persisted_run["ledger_cutoff_id"] == 0
     assert fixture.hypothesis_calls == 5
     assert fixture.backtest_calls == 5
     assert fixture.critique_calls == 5
@@ -3207,9 +3411,18 @@ async def test_five_round_policy_runs_sequential_generation_backtest_and_critiqu
     assert result["daily_backups"][0]["verification_status"] == "verified"
     assert result["daily_new_candidate_winner_id"] is None
     assert result["daily_winner_candidate_id"] is None
+    research_winner_candidate_id = result["daily_selections"][0][
+        "research_recommendation"
+    ]["research_winner_candidate_id"]
+    assert research_winner_candidate_id
+    assert result["daily_research_winner_candidate_id"] == (
+        research_winner_candidate_id
+    )
     assert result["research_outcome"] == {
-        "status": "no_new_candidate_current_strategy_unchanged",
+        "status": "best_available_formula_for_further_research",
         "new_candidate_winner_id": None,
+        "research_winner_candidate_id": research_winner_candidate_id,
+        "account_qualification_status": "not_evaluated",
         "incumbent_strategy_policy": (
             "leave_current_human_approved_strategy_unchanged"
         ),
@@ -3270,8 +3483,8 @@ async def test_fifth_round_timeout_resume_preserves_four_rounds_and_uses_two_cal
         research_service_builder=lambda external: fixture,
         now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
     )
-    service.update_policy(_policy_payload(enabled=True))
-    prepared = _prepared_baseline()
+    service.update_policy(_account_bound_policy_payload(enabled=True))
+    prepared = _prepared_baseline(account_bound=True)
     policy = service.get_policy()
     valuation = _complete_valuation(db, True)
     input_fingerprint = content_fingerprint(
@@ -3287,6 +3500,8 @@ async def test_fifth_round_timeout_resume_preserves_four_rounds_and_uses_two_cal
         market_date=prepared.market_date,
         input_fingerprint=input_fingerprint,
         baseline_seed_result_id=prepared.seed_result_id,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id=valuation["snapshot_id"],
         valuation_snapshot_id=valuation["snapshot_id"],
         ledger_cutoff_id=valuation["ledger_cutoff_id"],
         now="2026-08-11T08:00:00+00:00",
@@ -3397,6 +3612,8 @@ async def test_fifth_round_timeout_resume_preserves_four_rounds_and_uses_two_cal
             market_date=prepared.market_date,
             input_fingerprint=input_fingerprint,
             baseline_seed_result_id=prepared.seed_result_id,
+            research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+            research_context_id=valuation["snapshot_id"],
             valuation_snapshot_id=valuation["snapshot_id"],
             ledger_cutoff_id=valuation["ledger_cutoff_id"],
             now="2026-08-11T08:01:30+00:00",
@@ -3504,6 +3721,8 @@ def test_fifth_round_timeout_resume_fails_closed_on_completed_evidence_drift(
         market_date="2026-08-11",
         input_fingerprint="persisted-four-round-input",
         baseline_seed_result_id=7,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-latest",
         valuation_snapshot_id="valuation-latest",
         ledger_cutoff_id=11,
         now="2026-08-11T08:00:00+00:00",
@@ -3540,6 +3759,8 @@ def test_fifth_round_timeout_resume_fails_closed_on_completed_evidence_drift(
             market_date=run["market_date"],
             input_fingerprint=run["input_fingerprint"],
             baseline_seed_result_id=run["baseline_seed_result_id"],
+            research_capital_mode=run["research_capital_mode"],
+            research_context_id=run["research_context_id"],
             valuation_snapshot_id=run["valuation_snapshot_id"],
             ledger_cutoff_id=run["ledger_cutoff_id"],
             now="2026-08-11T08:02:00+00:00",
@@ -3563,7 +3784,12 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     db.init_sync()
     store = ShadowResearchStore(tmp_path / "app.db")
     store.init()
-    candidate_payload = _result(total_return=0.12, sharpe=1.2, drawdown=0.08)
+    candidate_payload = _result(
+        total_return=0.12,
+        sharpe=1.2,
+        drawdown=0.08,
+        initial_cash=1_000_000.0,
+    )
     candidate_result_id = await db.save_backtest_result(
         config_json=json.dumps({"strategy": "ai_formula_research"}),
         initial_cash=candidate_payload["initial_cash"],
@@ -3590,9 +3816,13 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     service.update_policy(_policy_payload(enabled=True))
     prepared = _prepared_baseline()
     monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
+
+    def unexpected_account_valuation(*args, **kwargs):
+        raise AssertionError("normalized-notional discovery must not read valuation")
+
     monkeypatch.setattr(
         "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
-        _complete_valuation,
+        unexpected_account_valuation,
     )
 
     first = await service.run_once()
@@ -3601,17 +3831,15 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     assert first["run_status"] == "completed"
     assert replay["reused"] is True
     assert fixture.hypothesis_calls == 5
-    assert fixture.hypothesis_requests[0].selection.valuation_snapshot_id == (
-        "valuation-latest"
-    )
-    assert fixture.hypothesis_requests[0].selection.ledger_cutoff_id == 11
-    assert fixture.hypothesis_requests[0].selection.has_account_binding is True
+    assert fixture.hypothesis_requests[0].selection.valuation_snapshot_id is None
+    assert fixture.hypothesis_requests[0].selection.ledger_cutoff_id is None
+    assert fixture.hypothesis_requests[0].selection.has_account_binding is False
     assert fixture.backtest_calls == 5
     assert fixture.critique_calls == 5
     candidate = first["candidates"][0]
-    assert candidate["recommendation"] == "keep_researching"
-    assert candidate["status"] == "research_blocked"
-    assert candidate["promotion_status"] == "blocked_by_evidence"
+    assert candidate["recommendation"] == "formula_research_candidate"
+    assert candidate["status"] == "evaluated_research_only"
+    assert candidate["promotion_status"] == "account_qualification_required"
     assert candidate["comparison"]["promotion_gate"]["status"] == "blocked"
     assert {
         "candidate_dataset_quality_not_clear",
@@ -3655,6 +3883,8 @@ async def test_running_market_date_claim_prevents_concurrent_provider_reentry(
         market_date="2026-08-11",
         input_fingerprint="another-scheduler-fingerprint",
         baseline_seed_result_id=7,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        research_context_id="valuation-latest",
         valuation_snapshot_id="valuation-latest",
         ledger_cutoff_id=11,
         now="2026-08-11T08:00:00+00:00",
@@ -3686,6 +3916,86 @@ class _RejectedHypothesisResearch(_FixtureResearch):
             "failure_code": "provider_citation_not_in_bound_input",
             "drafts": [],
         }
+
+
+class _SendEdgeDeferredHypothesisResearch(_FixtureResearch):
+    def __init__(self) -> None:
+        super().__init__(candidate_result_id=99)
+        self.provider_transport_calls = 0
+
+    async def generate_hypotheses(self, request):
+        self.hypothesis_calls += 1
+        decision = DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.evaluate(
+            datetime(2026, 8, 12, 9, 0, tzinfo=SHANGHAI)
+        )
+        raise ProviderCallDeferred(decision)
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_send_edge_window_defer_is_provider_free_and_rearmable(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    fixture = _SendEdgeDeferredHypothesisResearch()
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        provider_call_window_policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+        now=lambda: datetime(2026, 8, 12, 6, 54, tzinfo=SHANGHAI),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    monkeypatch.setattr(
+        service, "_prepare_baseline", lambda policy: _prepared_baseline()
+    )
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "deferred_for_provider_off_peak"
+    assert result["failure_code"] == "deepseek_peak_pricing_window"
+    assert fixture.provider_transport_calls == 0
+    call = store.get_provider_call(f"{result['run_id']}:hypothesis:iteration:01")
+    assert (call["status"], call["actual_tokens"], call["failure_code"]) == (
+        "deferred",
+        0,
+        "deepseek_peak_pricing_window",
+    )
+    usage = store.usage_for_market_date("2026-08-11")
+    assert usage["provider_calls"] == 0
+    assert usage["reserved_tokens"] == 0
+    assert usage["recorded_call_attempts"] == 1
+    assert usage["provider_free_rejections"] == 1
+
+    deferred_run = store.get_run(result["run_id"])
+    replacement, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="next-eligible-window-input",
+        baseline_seed_result_id=7,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+        research_context_id=str(deferred_run["research_context_id"]),
+        valuation_snapshot_id=None,
+        ledger_cutoff_id=0,
+        now="2026-08-12T10:00:00+00:00",
+    )
+    assert reused is False
+    assert replacement["status"] == "running"
+    assert replacement["run_id"] != result["run_id"]
+    replacement_call, reused = store.claim_provider_call(
+        call_id=f"{replacement['run_id']}:hypothesis:iteration:01",
+        run_id=replacement["run_id"],
+        market_date="2026-08-11",
+        call_kind="hypothesis_iteration",
+        call_limit=1,
+        now="2026-08-12T10:00:01+00:00",
+    )
+    assert reused is False
+    assert replacement_call["status"] == "reserved"
 
 
 @pytest.mark.unit
@@ -4003,7 +4313,11 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     )
 
     prepared = service._prepare_baseline(
-        ShadowResearchPolicy(baseline_backtest_result_id=seed_result_id)
+        ShadowResearchPolicy(
+            baseline_backtest_result_id=seed_result_id,
+            research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+            require_complete_account_evidence=True,
+        )
     )
 
     assert prepared.cost_model_reference == cost_model_reference
@@ -4020,6 +4334,21 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
         fill["fee_rule_version"] == cost_model_reference
         for fill in prepared.result["fills"]
     )
+
+    resolver_call_count = len(resolver_calls)
+    normalized = service._prepare_baseline(
+        ShadowResearchPolicy(baseline_backtest_result_id=seed_result_id)
+    )
+    assert len(resolver_calls) == resolver_call_count
+    assert normalized.cost_model_reference == (
+        "karkinos.backtest.multi_asset_commission.default.v1"
+    )
+    normalized_fee_evidence = normalized.result["metrics_json"][
+        "fee_component_evidence"
+    ]
+    assert normalized_fee_evidence["account_specific"] is False
+    assert normalized_fee_evidence["authorizes_execution"] is False
+    assert normalized.fee_schedule_evidence["authorizes_promotion"] is False
 
     etf_seed_result_id = asyncio.run(
         db.save_backtest_result(

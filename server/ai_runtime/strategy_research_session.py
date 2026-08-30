@@ -141,7 +141,11 @@ class StrategyResearchSessionMixin:
         reviewed_fee_schedule_resolution: Any | None,
     ) -> dict[str, Any]:
         if not selection.has_account_binding:
-            raise StrategyResearchRejected("research_account_binding_required")
+            return self._build_account_capital_evidence(
+                selection=selection,
+                account_evidence=None,
+                reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+            )
         context = self._ai_store.get_context(str(session["context_snapshot_id"]))
         account_records = []
         for reference_id in context.evidence_reference_ids:

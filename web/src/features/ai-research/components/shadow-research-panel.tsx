@@ -28,12 +28,16 @@ function isFiveRoundPolicy(policy: {
   daily_token_budget: number | null;
   token_budget_mode: 'unbounded_daily' | 'legacy_bounded_daily';
   max_candidates_per_run: number;
+  research_capital_mode: 'normalized_notional' | 'account_bound';
+  require_complete_account_evidence: boolean;
 }) {
   return (
     policy.max_provider_calls_per_market_date === MAX_PROVIDER_CALLS &&
     policy.daily_token_budget === null &&
     policy.token_budget_mode === 'unbounded_daily' &&
-    policy.max_candidates_per_run === MAX_CANDIDATES
+    policy.max_candidates_per_run === MAX_CANDIDATES &&
+    policy.research_capital_mode === 'normalized_notional' &&
+    policy.require_complete_account_evidence === false
   );
 }
 
@@ -45,10 +49,73 @@ const EMPTY_POLICY: ShadowResearchPolicyInput = {
   token_budget_mode: 'unbounded_daily',
   max_candidates_per_run: MAX_CANDIDATES,
   baseline_backtest_result_id: null,
-  require_complete_account_evidence: true,
+  research_capital_mode: 'normalized_notional',
+  require_complete_account_evidence: false,
   research_question: '',
   updated_by: 'human:owner',
 };
+
+function dailyResearchOutcome(
+  status: ShadowResearchAutomationStatus | undefined,
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY],
+) {
+  const selection = status?.daily_selections?.[0];
+  const researchWinner = status?.daily_research_winner_candidate_id ?? null;
+  const promotionWinner = status?.daily_winner_candidate_id ?? null;
+  if (researchWinner) {
+    return { value: researchWinner, detail: copy.researchNotQualified };
+  }
+  if (promotionWinner) {
+    return { value: promotionWinner, detail: copy.winnerBadge };
+  }
+  return {
+    value: copy.noWinner,
+    detail: selection
+      ? `${selection.market_date} · ${selection.observed_candidate_count}/${selection.expected_candidate_count}`
+      : '—',
+  };
+}
+
+function verifiedDailyCandidateIds(
+  status: ShadowResearchAutomationStatus | undefined,
+) {
+  const selections = status?.daily_selections ?? [];
+  const backups = status?.daily_backups ?? [];
+  const hasVerifiedBackup = (runId: string) =>
+    backups.some(
+      (backup) =>
+        backup.run_id === runId && backup.verification_status === 'verified',
+    );
+  return {
+    promotion: new Set(
+      selections
+        .filter(
+          (selection) =>
+            selection.status === 'winner_selected' &&
+            selection.integrity_status === 'verified' &&
+            hasVerifiedBackup(selection.run_id),
+        )
+        .map((selection) => selection.winner_candidate_id)
+        .filter((candidateId): candidateId is string => Boolean(candidateId)),
+    ),
+    research: new Set(
+      selections
+        .filter(
+          (selection) =>
+            selection.integrity_status === 'verified' &&
+            selection.research_recommendation?.status ===
+              'best_available_for_further_research' &&
+            selection.research_recommendation.account_qualified === false &&
+            hasVerifiedBackup(selection.run_id),
+        )
+        .map(
+          (selection) =>
+            selection.research_recommendation?.research_winner_candidate_id,
+        )
+        .filter((candidateId): candidateId is string => Boolean(candidateId)),
+    ),
+  };
+}
 
 export function ShadowResearchPanel() {
   const { locale } = usePreferences();
@@ -81,8 +148,8 @@ export function ShadowResearchPanel() {
         token_budget_mode: 'unbounded_daily',
         max_candidates_per_run: current.max_candidates_per_run,
         baseline_backtest_result_id: current.baseline_backtest_result_id,
-        require_complete_account_evidence:
-          current.require_complete_account_evidence,
+        research_capital_mode: 'normalized_notional',
+        require_complete_account_evidence: false,
         research_question: current.research_question,
         updated_by: current.updated_by,
       });
@@ -154,23 +221,9 @@ export function ShadowResearchPanel() {
   const providerWindow = status?.provider_call_window;
   const providerWindowEligible =
     providerWindow?.status !== 'deferred_for_provider_off_peak';
-  const latestSelection = status?.daily_selections?.[0];
   const latestBackup = status?.daily_backups?.[0];
-  const verifiedWinnerCandidateIds = new Set(
-    (status?.daily_selections ?? [])
-      .filter(
-        (selection) =>
-          selection.status === 'winner_selected' &&
-          selection.integrity_status === 'verified' &&
-          (status?.daily_backups ?? []).some(
-            (backup) =>
-              backup.run_id === selection.run_id &&
-              backup.verification_status === 'verified',
-          ),
-      )
-      .map((selection) => selection.winner_candidate_id)
-      .filter((candidateId): candidateId is string => Boolean(candidateId)),
-  );
+  const dailyOutcome = dailyResearchOutcome(status, copy);
+  const verifiedCandidateIds = verifiedDailyCandidateIds(status);
 
   return (
     <section
@@ -184,16 +237,8 @@ export function ShadowResearchPanel() {
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <StatusMetric
           label={copy.dailyWinner}
-          value={
-            status?.daily_new_candidate_winner_id
-              ? status.daily_new_candidate_winner_id
-              : copy.noWinner
-          }
-          detail={
-            latestSelection
-              ? `${latestSelection.market_date} · ${latestSelection.observed_candidate_count}/${latestSelection.expected_candidate_count}`
-              : '—'
-          }
+          value={dailyOutcome.value}
+          detail={dailyOutcome.detail}
         />
         <StatusMetric
           label={copy.backup}
@@ -365,6 +410,11 @@ export function ShadowResearchPanel() {
           {copy.fiveRoundPolicyBlocked}
         </p>
       )}
+      {status?.policy.enabled && !persistedPolicyReady && draftPolicyReady && (
+        <p className="mt-3 text-sm text-[var(--app-danger-text)]">
+          {copy.normalizedMigrationRequired}
+        </p>
+      )}
       {(query.isError ||
         updatePolicy.isError ||
         run.isError ||
@@ -392,7 +442,8 @@ export function ShadowResearchPanel() {
         pauseNotes={pauseNotes}
         pending={approve.isPending || pause.isPending}
         promotionStates={promotionStates}
-        verifiedWinnerCandidateIds={verifiedWinnerCandidateIds}
+        verifiedResearchWinnerCandidateIds={verifiedCandidateIds.research}
+        verifiedWinnerCandidateIds={verifiedCandidateIds.promotion}
       />
     </section>
   );
@@ -474,6 +525,7 @@ function ShadowCandidateList({
   pauseNotes,
   pending,
   promotionStates,
+  verifiedResearchWinnerCandidateIds,
   verifiedWinnerCandidateIds,
 }: {
   approvals: Record<string, boolean>;
@@ -491,6 +543,7 @@ function ShadowCandidateList({
   pauseNotes: Record<string, string>;
   pending: boolean;
   promotionStates: ReturnType<typeof useStrategyPromotionStatesQuery>;
+  verifiedResearchWinnerCandidateIds: Set<string>;
   verifiedWinnerCandidateIds: Set<string>;
 }) {
   if (candidates.length === 0) {
@@ -510,6 +563,9 @@ function ShadowCandidateList({
           candidate={candidate}
           copy={copy}
           isDailyWinner={verifiedWinnerCandidateIds.has(candidate.candidate_id)}
+          isResearchWinner={verifiedResearchWinnerCandidateIds.has(
+            candidate.candidate_id,
+          )}
           key={candidate.candidate_id}
           notes={notes}
           onPause={() => void onPause(candidate)}

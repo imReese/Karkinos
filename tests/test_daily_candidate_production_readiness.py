@@ -147,14 +147,16 @@ def _inputs() -> tuple[dict, dict]:
     research = {
         "schema_version": "karkinos.ai.shadow_research_automation.v1",
         "policy": {
-            "schema_version": "karkinos.ai.shadow_research_policy.v3",
+            "schema_version": "karkinos.ai.shadow_research_policy.v4",
             "enabled": True,
             "max_candidates_per_run": 5,
             "max_provider_calls_per_market_date": 10,
             "daily_token_budget": None,
             "token_budget_mode": "unbounded_daily",
             "authorization": SHADOW_RESEARCH_POLICY_CONFIRMATION,
-            "require_complete_account_evidence": True,
+            "research_capital_mode": "normalized_notional",
+            "require_complete_account_evidence": False,
+            "promotion_requires_complete_account_evidence": True,
         },
         "automatic_strategy_replacement_enabled": False,
         "production_strategy_mutation_enabled": False,

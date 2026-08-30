@@ -310,6 +310,19 @@ class DeterministicWorkflowOrchestrator:
                 context=context,
                 required=stage.required,
             )
+        except ProviderCallDeferred as exc:
+            self._block_provider_call_deferred(
+                workflow,
+                run_id=run_id,
+                stage_id=stage.stage_id,
+                response={
+                    "turns": response_history,
+                    "error": str(exc),
+                    "provider_call_window": exc.decision.to_dict(),
+                    "provider_contact_performed": False,
+                },
+            )
+            raise
         except PermissionError as exc:
             return self._fail_stage(
                 workflow,
@@ -584,6 +597,46 @@ class DeterministicWorkflowOrchestrator:
                 "partial_result": partial_result,
             },
             created_at=failed_at,
+        )
+        return workflow
+
+    def _block_provider_call_deferred(
+        self,
+        workflow: ResearchWorkflow,
+        *,
+        run_id: str,
+        stage_id: str,
+        response: dict[str, Any],
+    ) -> ResearchWorkflow:
+        """Persist a no-contact pricing defer without calling it provider failure."""
+
+        blocked_at = self._now()
+        failure_code = str(response["error"])
+        self._store.finish_agent_run(
+            run_id,
+            status=AgentRunStatus.BLOCKED,
+            response=response,
+            error_code=failure_code,
+            finished_at=blocked_at,
+        )
+        workflow = self._store.update_workflow(
+            workflow.workflow_id,
+            status=WorkflowStatus.BLOCKED,
+            current_stage_index=workflow.current_stage_index,
+            partial_result=bool(self._store.list_artifacts(workflow.workflow_id)),
+            failure_code=failure_code,
+            updated_at=blocked_at,
+        )
+        self._store.append_event(
+            workflow.workflow_id,
+            event_type="stage.blocked",
+            payload={
+                "stage_id": stage_id,
+                "run_id": run_id,
+                "failure_code": failure_code,
+                "provider_contact_performed": False,
+            },
+            created_at=blocked_at,
         )
         return workflow
 

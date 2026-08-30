@@ -75,8 +75,8 @@ def research_policy_blockers(
         blockers.append("unbounded_daily_token_policy_not_authorized")
     if policy.get("authorization") != policy_confirmation:
         blockers.append("five_sequential_iteration_authorization_missing")
-    if policy.get("require_complete_account_evidence") is not True:
-        blockers.append("complete_account_evidence_requirement_disabled")
+    if policy.get("promotion_requires_complete_account_evidence") is not True:
+        blockers.append("promotion_account_evidence_requirement_disabled")
     return blockers
 
 

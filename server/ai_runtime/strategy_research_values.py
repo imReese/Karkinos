@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from server.ai_runtime.contracts import JsonObject, WorkflowStatus
 from server.ai_runtime.openai_compatibility import edge_request_options
+from server.ai_runtime.provider_call_window import is_deepseek_provider_endpoint
 from server.ai_runtime.provider_connectivity_contracts import (
     ProviderConnectivitySettings,
 )
@@ -24,8 +25,8 @@ RESEARCH_TOOL = "research_evidence.read"
 ACCOUNT_STATE_TOOL = "account_state_projection.read"
 CATALOG_TOOL = "formula_operator_catalog.read"
 SELECTION_TOOL = "strategy_research_selection.read"
-HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v12"
-CRITIQUE_ROLE = "external.strategy_backtest_critic.v12"
+HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v13"
+CRITIQUE_ROLE = "external.strategy_backtest_critic.v13"
 HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 CRITIQUE_STAGE = "strategy_backtest_critique"
 
@@ -34,36 +35,37 @@ def strategy_research_request_options(
     settings: ProviderConnectivitySettings,
 ) -> JsonObject:
     """Reserve the response budget for the bounded final JSON contract."""
-    provider = settings.provider_id.strip().lower()
-    if provider == "deepseek" or settings.endpoint_origin.endswith("deepseek.com"):
+    if is_deepseek_provider_endpoint(
+        settings.provider_id,
+        settings.endpoint_origin,
+    ):
         return strategy_research_reasoning_policy()
     return edge_request_options(settings)
 
 
 CRITIQUE_CITATION_PATHS = (
-    "critique_input.canonical_backtest.initial_cash",
-    "critique_input.canonical_backtest.final_equity",
-    "critique_input.canonical_backtest.total_return",
-    "critique_input.canonical_backtest.annual_return",
-    "critique_input.canonical_backtest.sharpe",
-    "critique_input.canonical_backtest.sortino",
-    "critique_input.canonical_backtest.max_drawdown",
-    "critique_input.canonical_backtest.win_rate",
-    "critique_input.canonical_backtest.duration_days",
-    "critique_input.canonical_backtest.net_pnl",
-    "critique_input.canonical_backtest.gross_pnl_before_costs",
-    "critique_input.canonical_backtest.total_cost",
-    "critique_input.canonical_backtest.total_commission",
-    "critique_input.canonical_backtest.total_slippage",
-    "critique_input.canonical_backtest.total_trades",
-    "critique_input.canonical_backtest.gross_turnover",
+    "critique_input.canonical_backtest.performance_summary.total_return",
+    "critique_input.canonical_backtest.performance_summary.annual_return",
+    "critique_input.canonical_backtest.performance_summary.sharpe",
+    "critique_input.canonical_backtest.performance_summary.sortino",
+    "critique_input.canonical_backtest.performance_summary.max_drawdown",
+    "critique_input.canonical_backtest.performance_summary.win_rate",
+    "critique_input.canonical_backtest.performance_summary.duration_days",
+    "critique_input.canonical_backtest.after_cost_evidence.net_return_after_costs",
+    "critique_input.canonical_backtest.after_cost_evidence.gross_return_before_costs",
+    "critique_input.canonical_backtest.after_cost_evidence.total_cost_bps",
+    "critique_input.canonical_backtest.cost_summary.total_commission_bps",
+    "critique_input.canonical_backtest.cost_summary.total_slippage_bps",
+    "critique_input.canonical_backtest.cost_summary.total_cost_bps",
+    "critique_input.canonical_backtest.cost_summary.total_trades",
+    "critique_input.canonical_backtest.cost_summary.gross_turnover_ratio",
     "critique_input.canonical_backtest.after_cost_evidence",
     "critique_input.canonical_backtest.cost_summary",
     "critique_input.canonical_backtest.oos_validation.validation_mode",
     "critique_input.canonical_backtest.oos_validation.validation_status",
     "critique_input.canonical_backtest.oos_validation.fold_count",
-    "critique_input.canonical_backtest.oos_validation.aggregate.mean_out_of_sample_return",
-    "critique_input.canonical_backtest.oos_validation.aggregate.worst_out_of_sample_return",
+    "critique_input.canonical_backtest.oos_validation.mean_out_of_sample_return",
+    "critique_input.canonical_backtest.oos_validation.worst_out_of_sample_return",
     "critique_input.canonical_backtest.research_evidence_bundle.gate_status",
     "critique_input.canonical_backtest.research_evidence_bundle.analyzers",
     "critique_input.canonical_backtest.research_evidence_bundle.evidence_references",

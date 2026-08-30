@@ -156,12 +156,14 @@ class ShadowResearchProviderCallRepositoryMixin:
             f"""
             SELECT COUNT(*) AS recorded_calls,
                    COALESCE(SUM(CASE WHEN NOT (
-                       call.status='failed' AND COALESCE(call.actual_tokens, 0)=0
+                       call.status IN ('failed', 'deferred')
+                       AND COALESCE(call.actual_tokens, 0)=0
                        AND (call.failure_code IN ({placeholders})
                             OR partial_resume.resume_id IS NOT NULL)
                    ) THEN 1 ELSE 0 END), 0) AS calls,
                    COALESCE(SUM(CASE WHEN NOT (
-                       call.status='failed' AND COALESCE(call.actual_tokens, 0)=0
+                       call.status IN ('failed', 'deferred')
+                       AND COALESCE(call.actual_tokens, 0)=0
                        AND (call.failure_code IN ({placeholders})
                             OR partial_resume.resume_id IS NOT NULL)
                    ) THEN call.reserved_tokens ELSE 0 END), 0) AS reserved,

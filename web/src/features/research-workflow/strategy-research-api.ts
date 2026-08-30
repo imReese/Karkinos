@@ -3,6 +3,10 @@ import { useMutation } from '@tanstack/react-query';
 
 import { postJson } from '../../shared/api/client';
 
+export const CANONICAL_COST_MODEL_REFERENCE =
+  'karkinos.backtest.multi_asset_commission.default.v1';
+export const NORMALIZED_RESEARCH_NOTIONAL = 1_000_000;
+
 export type StrategyFormulaAst = {
   schema_version: 'karkinos.ai.formula_ast.v1';
   entry: Record<string, unknown>;
@@ -182,8 +186,8 @@ export type GenerateStrategyHypothesesInput = {
     frequency: '1d';
     initial_cash: number;
     cost_model_reference: string;
-    valuation_snapshot_id: string;
-    ledger_cutoff_id: number;
+    valuation_snapshot_id: string | null;
+    ledger_cutoff_id: number | null;
   };
 };
 

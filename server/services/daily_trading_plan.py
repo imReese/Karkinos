@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
+from server.services.daily_research_operation_preview import (
+    project_daily_research_operation_preview,
+    unavailable_daily_research_operation_preview,
+)
 from server.services.daily_trading_plan_constraints import (
     constraint_checks as _constraint_checks,
 )
@@ -59,6 +64,7 @@ def build_daily_trading_plan(
     decision_payload: dict[str, Any],
     config: Any,
     positions: dict[str, Any] | None = None,
+    research_operation_preview: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a read-only daily trading plan from existing decision evidence."""
     summary = _dict(decision_payload.get("summary"))
@@ -126,6 +132,11 @@ def build_daily_trading_plan(
         paper_shadow_ready_count=paper_shadow_ready_count,
         blockers=blockers,
     )
+    research_preview = project_daily_research_operation_preview(
+        research_operation_preview
+    ) or unavailable_daily_research_operation_preview(
+        "verified_daily_research_operation_preview_not_supplied"
+    )
 
     return {
         "schema_version": "karkinos.daily_trading_plan.v1",
@@ -152,6 +163,7 @@ def build_daily_trading_plan(
         "broker_bridge_status": "disabled",
         "order_intents": order_intents,
         "blockers": blockers,
+        "research_operation_preview": research_preview,
         "limitations": [
             "Daily trading plan is read-only and does not create orders, fills, or ledger entries.",
             "Order intents are manual-confirmation previews, not broker submissions.",

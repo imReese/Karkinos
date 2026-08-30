@@ -14,6 +14,10 @@ from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
     is_operator_approved_cost_model_reference,
 )
+from server.ai_runtime.strategy_research_privacy import (
+    NORMALIZED_RESEARCH_NOTIONAL,
+    NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
+)
 
 STRATEGY_HYPOTHESIS_DRAFT_CONTRACT = "karkinos.ai.strategy_hypothesis_draft.v1"
 STRATEGY_BACKTEST_CRITIQUE_CONTRACT = "karkinos.ai.strategy_backtest_critique.v1"
@@ -22,7 +26,7 @@ STRATEGY_RESEARCH_API_CONTRACT = "karkinos.ai.strategy_research_api.v1"
 STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT = (
     "karkinos.ai.strategy_iteration_context.v1"
 )
-STRATEGY_RESEARCH_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v13"
+STRATEGY_RESEARCH_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v14"
 SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 
 HYPOTHESIS_EXPORT_CONFIRMATION = (
@@ -118,7 +122,25 @@ class StrategyResearchSelection:
                 )
         if (self.valuation_snapshot_id is None) != (self.ledger_cutoff_id is None):
             raise StrategyResearchRejected("account_fact_binding_incomplete")
+        if (
+            not self.has_account_binding
+            and self.cost_model_reference != CANONICAL_COST_MODEL_REFERENCE
+        ):
+            raise StrategyResearchRejected(
+                "strategy_only_research_requires_canonical_cost_model"
+            )
+        if (
+            not self.has_account_binding
+            and self.initial_cash != NORMALIZED_RESEARCH_NOTIONAL
+        ):
+            raise StrategyResearchRejected(
+                "strategy_only_research_requires_normalized_notional"
+            )
         if self.has_account_binding:
+            if self.cost_model_reference == CANONICAL_COST_MODEL_REFERENCE:
+                raise StrategyResearchRejected(
+                    "account_bound_research_requires_reviewed_cost_model"
+                )
             if not str(self.valuation_snapshot_id or "").strip():
                 raise StrategyResearchRejected("valuation_snapshot_identity_invalid")
             if int(self.ledger_cutoff_id or 0) < 0:
@@ -183,6 +205,9 @@ class StrategyResearchSelection:
         payload.pop("valuation_snapshot_id", None)
         payload.pop("ledger_cutoff_id", None)
         payload.pop("sealed_end_date", None)
+        payload.pop("initial_cash", None)
+        if not self.has_account_binding:
+            payload["notional_policy_id"] = NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
         payload["account_fact_binding"] = (
             "present_but_identifiers_redacted"
             if self.has_account_binding

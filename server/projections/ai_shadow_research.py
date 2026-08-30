@@ -32,6 +32,8 @@ _COMPARISON_STATUS_FIELDS = (
     "failure_conditions",
     "limitations",
     "recommendation",
+    "research_capital_mode",
+    "account_qualification_status",
 )
 _BACKTEST_STATUS_FIELDS = (
     "result_id",

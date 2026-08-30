@@ -32,6 +32,7 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION,
     SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
     SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_RETRY_CONFIRMATION,
     SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION,
@@ -156,7 +157,7 @@ def test_hypothesis_route_requires_exact_human_export_confirmation(monkeypatch):
         },
     ],
 )
-def test_hypothesis_route_requires_real_account_and_reviewed_cost_binding(
+def test_hypothesis_route_requires_consistent_account_and_cost_binding(
     monkeypatch,
     invalid_selection,
 ):
@@ -169,6 +170,31 @@ def test_hypothesis_route_requires_real_account_and_reviewed_cost_binding(
 
     assert response.status_code == 422
     assert service.requests == []
+
+
+@pytest.mark.unit
+def test_hypothesis_route_accepts_provider_free_normalized_notional_selection(
+    monkeypatch,
+):
+    service = FixtureService()
+    client = _client(monkeypatch, service)
+    payload = _payload()
+    payload["selection"].update(
+        {
+            "cost_model_reference": (
+                "karkinos.backtest.multi_asset_commission.default.v1"
+            ),
+            "initial_cash": 1_000_000,
+            "valuation_snapshot_id": None,
+            "ledger_cutoff_id": None,
+        }
+    )
+
+    response = client.post("/api/ai/strategy-research/hypotheses", json=payload)
+
+    assert response.status_code == 200
+    assert service.requests[0].selection.has_account_binding is False
+    assert "initial_cash" not in service.requests[0].selection.to_external_dict()
 
 
 @pytest.mark.unit
@@ -404,7 +430,8 @@ def test_shadow_policy_accepts_five_sequential_iterations_without_daily_budget()
         "token_budget_mode": "unbounded_daily",
         "max_candidates_per_run": 5,
         "baseline_backtest_result_id": 8,
-        "require_complete_account_evidence": True,
+        "research_capital_mode": SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+        "require_complete_account_evidence": False,
         "research_question": "Generate five sequential revisions.",
         "updated_by": "human:owner",
         "confirmation": SHADOW_RESEARCH_POLICY_CONFIRMATION,
@@ -952,9 +979,20 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
 
 @pytest.mark.unit
 def test_deepseek_strategy_research_timeout_is_ten_minutes():
-    deepseek = SimpleNamespace(provider_id="DeepSeek")
-    other_provider = SimpleNamespace(provider_id="compatible-provider")
+    deepseek = SimpleNamespace(
+        provider_id="DeepSeek",
+        endpoint_origin="https://proxy.example.test",
+    )
+    deepseek_endpoint_alias = SimpleNamespace(
+        provider_id="compatible-provider",
+        endpoint_origin="https://api.deepseek.com",
+    )
+    other_provider = SimpleNamespace(
+        provider_id="compatible-provider",
+        endpoint_origin="https://ai.example.test",
+    )
 
     assert _strategy_research_model_timeout_seconds(deepseek) == 600.0
+    assert _strategy_research_model_timeout_seconds(deepseek_endpoint_alias) == 600.0
     assert _strategy_research_model_timeout_seconds(other_provider) == 180.0
     assert _strategy_research_model_timeout_seconds(None) == 180.0

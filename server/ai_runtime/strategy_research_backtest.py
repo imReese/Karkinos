@@ -52,6 +52,9 @@ from server.projections.backtest_result import (
     build_backtest_report_metrics_json,
     fill_to_response,
 )
+from server.projections.normalized_research_operation_preview import (
+    build_normalized_research_operation_preview,
+)
 from strategy.base import Strategy
 
 
@@ -351,6 +354,19 @@ class RestrictedFormulaBacktestAdapter:
                     handlers=handlers,
                     initial_cash=Decimal(str(selection.initial_cash)),
                     target_weight=target_weight,
+                ),
+                "normalized_research_operation_preview": (
+                    build_normalized_research_operation_preview(
+                        formula_ast=formula_ast,
+                        frames={
+                            str(symbol): handler._df.copy()
+                            for symbol, handler in handlers.items()
+                        },
+                        dataset_snapshot_id=selection.dataset_snapshot_id,
+                        formula_fingerprint=binding.fingerprint,
+                        research_window_end_date=selection.end_date,
+                        allocation_slots=allocation_slots,
+                    )
                 ),
                 "research_only": True,
                 "authority_effect": "none",

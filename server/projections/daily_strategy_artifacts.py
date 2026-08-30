@@ -10,6 +10,9 @@ from typing import Any
 from analytics.strategy_advancement_gate import (
     is_valid_passed_strategy_advancement_gate,
 )
+from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+)
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.daily_strategy_artifacts import (
     COMPLETE_CANDIDATE_STATUSES,
@@ -20,6 +23,9 @@ from server.contracts.daily_strategy_artifacts import (
     DAILY_STRATEGY_SELECTION_SCHEMA,
     DRAFT_BACKUP_FIELDS,
     DailyStrategyArtifactRejected,
+)
+from server.projections.normalized_research_recommendation import (
+    build_normalized_research_recommendation,
 )
 
 
@@ -168,6 +174,12 @@ def build_daily_strategy_selection(
             for ordinal, item in enumerate(eligible, start=1)
         ]
     winner_candidate_id = ranked[0]["candidate_id"] if ranked else None
+    normalized_research = build_normalized_research_recommendation(
+        run_id=run_id,
+        market_date=market_date,
+        candidates=candidates,
+        expected_candidate_count=expected_candidate_count,
+    )
     payload: dict[str, Any] = {
         "schema_version": DAILY_STRATEGY_SELECTION_SCHEMA,
         "selection_id": "",
@@ -175,6 +187,7 @@ def build_daily_strategy_selection(
         "market_date": market_date,
         "status": "winner_selected" if winner_candidate_id else "no_selection",
         "winner_candidate_id": winner_candidate_id,
+        "research_recommendation": normalized_research,
         "expected_candidate_count": expected_candidate_count,
         "observed_candidate_count": len(outcomes),
         "eligible_candidate_count": len(eligible),
@@ -239,6 +252,9 @@ def candidate_outcome(candidate: Mapping[str, Any]) -> dict[str, Any]:
         bool(candidate_id)
         and candidate.get("status") == "awaiting_human_approval"
         and candidate.get("recommendation") == "paper_shadow_review"
+        and comparison.get("research_capital_mode")
+        == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+        and comparison.get("account_qualification_status") == "passed"
         and is_valid_passed_strategy_advancement_gate(gate)
         and metrics is not None
     )
@@ -258,6 +274,10 @@ def candidate_outcome(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "draft_id": str(candidate.get("draft_id") or ""),
         "status": str(candidate.get("status") or ""),
         "recommendation": str(candidate.get("recommendation") or ""),
+        "research_capital_mode": str(comparison.get("research_capital_mode") or ""),
+        "account_qualification_status": str(
+            comparison.get("account_qualification_status") or ""
+        ),
         "eligible": eligible,
         "promotion_gate_status": str(gate.get("status") or "missing"),
         "promotion_gate_fingerprint": gate.get("evidence_fingerprint"),

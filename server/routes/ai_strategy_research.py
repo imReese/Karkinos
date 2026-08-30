@@ -12,14 +12,22 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import (
+    CANONICAL_COST_MODEL_REFERENCE,
     formula_operator_catalog,
 )
 from server.ai_runtime.provider_call_window import (
     ProviderCallDeferred,
     provider_call_deferred_payload,
 )
+from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+)
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
+)
+from server.ai_runtime.strategy_research_privacy import (
+    NORMALIZED_RESEARCH_NOTIONAL,
 )
 from server.ai_runtime.store import IdempotencyConflict
 from server.ai_runtime.strategy_research import (
@@ -64,12 +72,34 @@ class StrategyResearchSelectionPayload(BaseModel):
         min_length=1,
         max_length=300,
         pattern=(
-            r"^karkinos\.backtest\.reviewed_account_fee_schedule\.v1:"
-            r"fee_review_[0-9a-f]{32}:[0-9a-f]{64}$"
+            r"^(?:karkinos\.backtest\.multi_asset_commission\.default\.v1|"
+            r"karkinos\.backtest\.reviewed_account_fee_schedule\.v1:"
+            r"fee_review_[0-9a-f]{32}:[0-9a-f]{64})$"
         ),
     )
-    valuation_snapshot_id: str = Field(min_length=1, max_length=200)
-    ledger_cutoff_id: int = Field(ge=0)
+    valuation_snapshot_id: str | None = Field(
+        default=None, min_length=1, max_length=200
+    )
+    ledger_cutoff_id: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_research_capital_binding(self) -> "StrategyResearchSelectionPayload":
+        if (self.valuation_snapshot_id is None) != (self.ledger_cutoff_id is None):
+            raise ValueError("account fact binding must be complete or omitted")
+        if self.valuation_snapshot_id is None:
+            if self.cost_model_reference != CANONICAL_COST_MODEL_REFERENCE:
+                raise ValueError(
+                    "strategy-only research requires the canonical estimated cost model"
+                )
+            if self.initial_cash != NORMALIZED_RESEARCH_NOTIONAL:
+                raise ValueError(
+                    "strategy-only research requires the versioned normalized notional"
+                )
+        elif self.cost_model_reference == CANONICAL_COST_MODEL_REFERENCE:
+            raise ValueError(
+                "account-bound research requires a reviewed account cost model"
+            )
+        return self
 
     def to_domain(self) -> StrategyResearchSelection:
         return StrategyResearchSelection(
@@ -175,7 +205,10 @@ class ShadowResearchPolicyPayload(BaseModel):
         le=STRATEGY_RESEARCH_MAX_CANDIDATES,
     )
     baseline_backtest_result_id: int | None = Field(default=None, gt=0)
-    require_complete_account_evidence: bool = True
+    research_capital_mode: Literal["normalized_notional", "account_bound"] = (
+        SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+    )
+    require_complete_account_evidence: bool = False
     research_question: str = Field(min_length=1, max_length=4_000)
     updated_by: str = Field(min_length=1, max_length=128)
     confirmation: str = Field(min_length=1, max_length=200)
@@ -197,6 +230,12 @@ class ShadowResearchPolicyPayload(BaseModel):
                 )
         elif self.token_budget_mode != "unbounded_daily":
             raise ValueError("token_budget_mode requires a daily_token_budget")
+        if self.require_complete_account_evidence != (
+            self.research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+        ):
+            raise ValueError(
+                "research_capital_mode conflicts with account evidence requirement"
+            )
         return self
 
 

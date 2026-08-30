@@ -3,10 +3,11 @@ export const STRATEGY_HYPOTHESIS_COPY = {
     kicker: 'AI strategy research',
     title: 'Evidence-bound hypothesis lab',
     detail:
-      'A configured provider may propose and critique formulas. Karkinos validates the DSL and the canonical engine alone calculates after-cost results.',
+      'Formula discovery does not query Account Truth or a broker provider; the configured model receives normalized research evidence only. Results are research-only, non-executable, and cannot create a Decision or order.',
     open: 'Open AI strategy research',
     close: 'Close',
     noAuthority: 'No trading authority',
+    researchOnly: 'Research only · non-executable',
     humanGated: 'Three human gates',
     savedBacktest: 'Saved backtest',
     dataset: 'Dataset snapshot',
@@ -17,7 +18,7 @@ export const STRATEGY_HYPOTHESIS_COPY = {
     notApplicable: 'Not applicable — strategy-only research',
     question: 'Research question',
     operator: 'Human operator',
-    account: 'Research account alias',
+    account: 'Research workspace alias',
     exportConfirm:
       'I authorize sending only the displayed sanitized research evidence and frozen identifiers to the configured external model.',
     generate: 'Generate hypothesis drafts',
@@ -25,10 +26,8 @@ export const STRATEGY_HYPOTHESIS_COPY = {
     missingReport: 'Run and save a backtest first.',
     missingSnapshot:
       'The saved result has no complete dataset snapshot; hypothesis export is blocked.',
-    missingReviewedCosts:
-      'The saved result is not bound to a currently reviewed real-account fee and tax schedule.',
-    missingAccount:
-      'A complete current account snapshot matching this research capital is required.',
+    missingCanonicalCosts:
+      'The saved result must use the versioned CNY 1,000,000 normalized notional and contain complete, non-account-specific canonical estimated cost evidence.',
     drafts: 'Candidate hypotheses',
     valid: 'Locally validated',
     blocked: 'Blocked by Formula DSL',
@@ -78,10 +77,11 @@ export const STRATEGY_HYPOTHESIS_COPY = {
     kicker: 'AI 策略研究',
     title: '证据绑定的策略假设实验室',
     detail:
-      '已配置模型只负责提出和批判公式；Formula DSL 由本地严格验证，成本后结果只由权威回测引擎计算。',
+      '无需读取账户事实或连接 broker provider；已配置模型只接收归一化研究证据。结果仅供研究、不可执行，不能创建 Decision 或订单。',
     open: '打开 AI 策略研究',
     close: '收起',
     noAuthority: '无交易权限',
+    researchOnly: '仅供研究 · 不可执行',
     humanGated: '三次人工门禁',
     savedBacktest: '已保存回测',
     dataset: '数据集快照',
@@ -92,7 +92,7 @@ export const STRATEGY_HYPOTHESIS_COPY = {
     notApplicable: '不适用——仅策略研究',
     question: '研究问题',
     operator: '人工操作人',
-    account: '研究账户别名',
+    account: '研究工作区别名',
     exportConfirm:
       '我授权仅将上方展示的脱敏研究证据与冻结标识发送给已配置外部模型。',
     generate: '生成策略假设草案',
@@ -100,8 +100,8 @@ export const STRATEGY_HYPOTHESIS_COPY = {
     missingReport: '请先运行并保存一条回测。',
     missingSnapshot:
       '已保存结果缺少完整 dataset snapshot，禁止外发和生成草案。',
-    missingReviewedCosts: '已保存结果未绑定当前复核通过的真实账户费税规则。',
-    missingAccount: '必须提供完整的当前账户快照，且研究本金不得超过账户权益。',
+    missingCanonicalCosts:
+      '已保存结果必须使用版本化的 100 万元归一化名义本金，并包含完整、非账户专属的 canonical 预估成本证据。',
     drafts: '候选策略假设',
     valid: '本地验证通过',
     blocked: 'Formula DSL 已阻断',

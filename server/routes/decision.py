@@ -154,16 +154,32 @@ def _build_daily_trading_plan_for_state(
     decision_payload: dict[str, Any],
     portfolio_context: dict[str, Any],
 ) -> dict[str, Any]:
+    from server.services.daily_research_operation_preview import (
+        resolve_latest_verified_research_operation_preview,
+    )
     from server.services.daily_trading_plan import build_daily_trading_plan
+    from server.services.research_operation_instruments import (
+        build_research_operation_instruments,
+    )
 
-    return build_daily_trading_plan(
+    research_operation_preview = resolve_latest_verified_research_operation_preview(
+        getattr(state, "db", None),
+        plan_date=str(decision_payload.get("decision_date") or "") or None,
+    )
+    plan = build_daily_trading_plan(
         decision_payload=decision_payload,
         config=getattr(state, "config", None),
         positions=_trading_plan_positions(
             state,
             portfolio_context=portfolio_context,
         ),
+        research_operation_preview=research_operation_preview,
     )
+    plan["research_operation_instruments"] = build_research_operation_instruments(
+        getattr(state, "db", None),
+        plan.get("research_operation_preview"),
+    )
+    return plan
 
 
 def _raise_decision_quality_http_error(exc: Exception) -> None:

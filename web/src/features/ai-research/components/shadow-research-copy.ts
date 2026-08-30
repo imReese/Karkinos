@@ -3,7 +3,7 @@ export const SHADOW_RESEARCH_COPY = {
     kicker: 'After-close DeepSeek research',
     title: 'Automated shadow strategy research',
     detail:
-      'After the persisted market close, Karkinos refreshes the baseline locally and sends DeepSeek the saved backtest plus a sanitized account risk/allocation projection. Absolute account values and valuation/ledger identifiers stay redacted. Formula validation, after-cost backtest and rolling OOS remain local before the evidence critique.',
+      'After the persisted market close, Karkinos runs Formula discovery with normalized notional capital and canonical estimated costs. It does not require or export Account Truth, valuation or ledger facts. Formula validation, after-cost backtest and rolling OOS remain local before the evidence critique; account qualification remains a separate promotion and execution gate.',
     disabled: 'Paused',
     enabled: 'Authorized',
     killSwitch: 'Kill switch',
@@ -23,16 +23,21 @@ export const SHADOW_RESEARCH_COPY = {
     offPeakSchedule:
       'Weekdays 09:00–12:00 / 14:00–18:00 blocked · batch must finish before 09:00',
     nextEligible: 'Next eligible',
-    dailyWinner: 'New candidate winner',
-    noWinner: 'No new winner · current strategy unchanged',
+    dailyWinner: 'Daily research outcome',
+    noWinner: 'No complete normalized research recommendation',
+    researchNotQualified:
+      'Best available for research · account qualification not evaluated',
     backup: 'Daily strategy backup',
-    winnerBadge: 'New-candidate winner',
+    winnerBadge: 'Account-qualified promotion winner',
+    researchWinnerBadge: 'Formula research winner · non-executable',
     iterationRound: 'Sequential round',
     backupVerified: 'Verified',
     fiveCandidateRule:
       'Five sequential rounds require ten provider calls: each round generates one revision, runs the canonical local backtest, records one critique, and binds that feedback into the next round. No new winner means no new promotion; the separate daily decision pipeline still decides trade or NO-ACTION.',
     fiveRoundPolicyBlocked:
       'Enabled research is blocked until the displayed policy authorizes exactly five sequential revisions, ten provider calls, and no Karkinos daily aggregate token limit.',
+    normalizedMigrationRequired:
+      'The persisted policy is legacy account-bound. Review the normalized-notional authorization above and save it before running.',
     notDailyWinner:
       'This candidate passed its own gate but is not the verified new-candidate winner, so public paper/shadow approval remains blocked.',
     closeTime: 'After-close time',
@@ -41,7 +46,7 @@ export const SHADOW_RESEARCH_COPY = {
     save: 'Save standing policy',
     saving: 'Saving…',
     confirmEnable:
-      'I authorize five strictly sequential research rounds and ten provider calls per market date with no Karkinos daily aggregate token limit. Provider per-request limits and usage accounting remain; this has no strategy replacement or trading authority.',
+      'I authorize five strictly sequential normalized-notional research rounds and ten provider calls per market date with no Karkinos daily aggregate token limit. Account Truth is not used for discovery; provider limits and usage accounting remain, and this grants no promotion, strategy replacement, capital, or trading authority.',
     confirmPause: 'I confirm pausing recurring AI strategy research.',
     run: 'Check and run now',
     running: 'Checking evidence…',
@@ -71,14 +76,15 @@ export const SHADOW_RESEARCH_COPY = {
     pauseNote: 'Pause / revocation reason',
     pauseConfirm:
       'I confirm pausing this exact candidate. Existing approval remains auditable, but new tickets must fail closed until a new explicit review.',
-    noAuthority: 'No production replacement · no broker order',
+    noAuthority:
+      'Normalized-notional discovery · Account Truth remains required for promotion/execution · no broker order',
     failure: 'The operation failed closed. No strategy or order was changed.',
   },
   zh: {
     kicker: 'DeepSeek 收盘后研究',
     title: '自动 shadow 策略研究池',
     detail:
-      '持久化行情收盘后，Karkinos 在本地刷新基线，只向 DeepSeek 发送保存的回测证据与脱敏账户风险/配置投影；绝对账户金额及 valuation/ledger 标识不外发。Formula 校验、权威成本后回测和 rolling OOS 均留在本地，之后再发送证据做 critique。',
+      '持久化行情收盘后，Karkinos 使用归一化名义资金与 canonical 估算成本执行 Formula discovery，不要求也不外发 Account Truth、valuation 或 ledger 事实。Formula 校验、成本后回测和 rolling OOS 均留在本地；账户资格仍是后续晋级与执行的独立门禁。',
     disabled: '已暂停',
     enabled: '已授权',
     killSwitch: 'Kill Switch',
@@ -97,16 +103,20 @@ export const SHADOW_RESEARCH_COPY = {
     offPeakSchedule:
       '工作日 09:00–12:00 / 14:00–18:00 禁止调用 · 整批须在次日 09:00 前完成',
     nextEligible: '下次可运行',
-    dailyWinner: '新候选确定性优胜者',
-    noWinner: '无新优胜者 · 当前策略不变',
+    dailyWinner: '每日研究结果',
+    noWinner: '暂无完整的归一化研究推荐',
+    researchNotQualified: '仅供继续研究 · 尚未评估账户资格',
     backup: '每日策略备份',
-    winnerBadge: '新候选优胜者',
+    winnerBadge: '已通过账户资格的晋级优胜者',
+    researchWinnerBadge: 'Formula 研究优胜者 · 不可执行',
     iterationRound: '串行迭代轮次',
     backupVerified: '校验通过',
     fiveCandidateRule:
       '5 轮串行迭代需要 10 次模型调用：每轮生成 1 个修订版、本地权威回测并 critique，再把结果绑定给下一轮；无新优胜者只表示不发生新晋级，当天交易或 NO-ACTION 仍由独立日决策链判断。',
     fiveRoundPolicyBlocked:
       '启用状态下必须明确授权 5 轮严格串行修订、10 次模型调用且 Karkinos 不设每日累计 Token 上限，否则研究运行保持阻断。',
+    normalizedMigrationRequired:
+      '当前持久化策略仍是旧版账户绑定模式；请复核上方归一化名义本金授权并保存后再运行。',
     notDailyWinner:
       '该候选虽通过自身门槛，但不是已校验的新候选优胜者，因此公开 paper/shadow 批准保持阻断。',
     closeTime: '收盘后时间',
@@ -115,7 +125,7 @@ export const SHADOW_RESEARCH_COPY = {
     save: '保存站立授权',
     saving: '保存中…',
     confirmEnable:
-      '我授权每个交易日进行 5 轮严格串行研究、最多 10 次模型调用，Karkinos 不设每日累计 Token 上限；仍记录用量并受模型单次请求和上下文窗口限制。该授权不包含策略替换权或交易权。',
+      '我授权每个交易日使用归一化名义资金进行 5 轮严格串行研究、最多 10 次模型调用，Karkinos 不设每日累计 Token 上限；Formula discovery 不读取 Account Truth，仍记录用量并受模型单次请求和上下文窗口限制。该授权不包含晋级、策略替换、资本或交易权。',
     confirmPause: '我确认暂停周期性 AI 策略研究。',
     run: '立即检查并运行',
     running: '正在检查证据…',
@@ -144,7 +154,8 @@ export const SHADOW_RESEARCH_COPY = {
     pauseNote: '暂停 / 撤销原因',
     pauseConfirm:
       '我确认暂停这一精确候选；原批准保留供审计，但重新明确复核前，新票据必须 fail closed。',
-    noAuthority: '不会替换生产策略 · 不会创建 broker 订单',
+    noAuthority:
+      '归一化名义资金研究 · Account Truth 仅用于后续晋级/执行 · 不会创建 broker 订单',
     failure: '操作已 fail closed；没有修改策略或订单。',
   },
 } as const;

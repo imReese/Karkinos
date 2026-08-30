@@ -15,6 +15,10 @@ class ShadowResearchSchemaRepositoryMixin:
                     status TEXT NOT NULL,
                     baseline_seed_result_id INTEGER NOT NULL,
                     baseline_result_id INTEGER,
+                    research_capital_mode TEXT NOT NULL DEFAULT 'legacy_unknown'
+                        CHECK(research_capital_mode IN
+                              ('legacy_unknown', 'normalized_notional', 'account_bound')),
+                    research_context_id TEXT,
                     valuation_snapshot_id TEXT NOT NULL,
                     ledger_cutoff_id INTEGER NOT NULL,
                     session_id TEXT,
@@ -251,3 +255,121 @@ class ShadowResearchSchemaRepositoryMixin:
                         market_date, consumed_at
                     );
             """)
+            self._ensure_run_context_columns(conn)
+            self._assert_run_context_rows_valid(conn)
+            conn.executescript("""
+                CREATE TRIGGER IF NOT EXISTS ai_shadow_run_context_insert_guard
+                BEFORE INSERT ON ai_shadow_research_runs
+                WHEN NEW.research_capital_mode IS NULL
+                  OR NEW.research_capital_mode NOT IN
+                         ('legacy_unknown', 'normalized_notional', 'account_bound')
+                  OR (
+                    NEW.research_capital_mode = 'legacy_unknown'
+                    AND trim(COALESCE(NEW.research_context_id, '')) <> ''
+                  )
+                  OR (
+                    NEW.research_capital_mode = 'normalized_notional'
+                    AND (
+                        trim(COALESCE(NEW.research_context_id, '')) = ''
+                        OR trim(COALESCE(NEW.valuation_snapshot_id, '')) <> ''
+                        OR NEW.ledger_cutoff_id <> 0
+                    )
+                  )
+                  OR (
+                    NEW.research_capital_mode = 'account_bound'
+                    AND (
+                        trim(COALESCE(NEW.research_context_id, '')) = ''
+                        OR trim(COALESCE(NEW.valuation_snapshot_id, '')) = ''
+                        OR NEW.ledger_cutoff_id <= 0
+                        OR NEW.research_context_id <> NEW.valuation_snapshot_id
+                    )
+                  )
+                BEGIN
+                    SELECT RAISE(ABORT, 'ai shadow research run context invalid');
+                END;
+                CREATE TRIGGER IF NOT EXISTS ai_shadow_run_context_update_guard
+                BEFORE UPDATE OF research_capital_mode, research_context_id,
+                                 valuation_snapshot_id, ledger_cutoff_id
+                ON ai_shadow_research_runs
+                WHEN NEW.research_capital_mode IS NULL
+                  OR NEW.research_capital_mode NOT IN
+                         ('legacy_unknown', 'normalized_notional', 'account_bound')
+                  OR (
+                    NEW.research_capital_mode = 'legacy_unknown'
+                    AND trim(COALESCE(NEW.research_context_id, '')) <> ''
+                  )
+                  OR (
+                    NEW.research_capital_mode = 'normalized_notional'
+                    AND (
+                        trim(COALESCE(NEW.research_context_id, '')) = ''
+                        OR trim(COALESCE(NEW.valuation_snapshot_id, '')) <> ''
+                        OR NEW.ledger_cutoff_id <> 0
+                    )
+                  )
+                  OR (
+                    NEW.research_capital_mode = 'account_bound'
+                    AND (
+                        trim(COALESCE(NEW.research_context_id, '')) = ''
+                        OR trim(COALESCE(NEW.valuation_snapshot_id, '')) = ''
+                        OR NEW.ledger_cutoff_id <= 0
+                        OR NEW.research_context_id <> NEW.valuation_snapshot_id
+                    )
+                  )
+                BEGIN
+                    SELECT RAISE(ABORT, 'ai shadow research run context invalid');
+                END;
+            """)
+
+    @staticmethod
+    def _ensure_run_context_columns(conn) -> None:
+        columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(ai_shadow_research_runs)")
+        }
+        if "research_capital_mode" not in columns:
+            conn.execute("""
+                ALTER TABLE ai_shadow_research_runs
+                ADD COLUMN research_capital_mode TEXT NOT NULL
+                    DEFAULT 'legacy_unknown'
+                    CHECK(research_capital_mode IN
+                          ('legacy_unknown', 'normalized_notional', 'account_bound'))
+                """)
+        if "research_context_id" not in columns:
+            conn.execute("""
+                ALTER TABLE ai_shadow_research_runs
+                ADD COLUMN research_context_id TEXT
+                """)
+
+    @staticmethod
+    def _assert_run_context_rows_valid(conn) -> None:
+        invalid = conn.execute("""
+            SELECT run_id
+            FROM ai_shadow_research_runs
+            WHERE research_capital_mode IS NULL
+               OR research_capital_mode NOT IN
+                      ('legacy_unknown', 'normalized_notional', 'account_bound')
+               OR (
+                    research_capital_mode = 'legacy_unknown'
+                    AND trim(COALESCE(research_context_id, '')) <> ''
+               )
+               OR (
+                    research_capital_mode = 'normalized_notional'
+                    AND (
+                        trim(COALESCE(research_context_id, '')) = ''
+                        OR trim(COALESCE(valuation_snapshot_id, '')) <> ''
+                        OR ledger_cutoff_id <> 0
+                    )
+               )
+               OR (
+                    research_capital_mode = 'account_bound'
+                    AND (
+                        trim(COALESCE(research_context_id, '')) = ''
+                        OR trim(COALESCE(valuation_snapshot_id, '')) = ''
+                        OR ledger_cutoff_id <= 0
+                        OR research_context_id <> valuation_snapshot_id
+                    )
+               )
+            LIMIT 1
+            """).fetchone()
+        if invalid is not None:
+            raise RuntimeError("ai shadow research run context migration invalid")

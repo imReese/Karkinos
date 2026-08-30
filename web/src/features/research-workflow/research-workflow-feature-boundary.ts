@@ -1,6 +1,4 @@
 /** Explicit evidence ports consumed by the research workflow feature. */
-export { useAccountStateQuery } from '../account/api';
-
 export type StrategyHypothesisBacktestEvidence = {
   id: number;
   config: {

@@ -27,6 +27,7 @@ from server.ai_runtime.capture import (
 from server.ai_runtime.contracts import AgentRole, ArtifactKind, content_fingerprint
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
+    CANONICAL_COST_MODEL_REFERENCE,
     FORMULA_AST_CONTRACT,
 )
 from server.ai_runtime.orchestrator import _failure_code as _workflow_failure_code
@@ -190,7 +191,7 @@ class FixtureCaptureSource:
                         status="complete",
                         as_of=NOW,
                         source_schema_version=(
-                            "karkinos.ai.research_evidence_capture.v2"
+                            "karkinos.ai.research_evidence_capture.v3"
                         ),
                         payload=self.research_payload,
                     )
@@ -458,8 +459,12 @@ def _service(
         start_date="2025-01-02",
         end_date="2025-01-09",
         frequency="1d",
-        initial_cash=100_000,
-        cost_model_reference=REVIEWED_COST_MODEL_REFERENCE,
+        initial_cash=(100_000 if bind_account else 1_000_000),
+        cost_model_reference=(
+            REVIEWED_COST_MODEL_REFERENCE
+            if bind_account
+            else CANONICAL_COST_MODEL_REFERENCE
+        ),
         valuation_snapshot_id=("private-valuation-id" if bind_account else None),
         ledger_cutoff_id=(88 if bind_account else None),
     )
@@ -481,8 +486,8 @@ def _service(
                     "assets": [{"symbol": "600000", "asset_class": "stock"}],
                 }
             ),
-            "initial_cash": 100_000,
-            "final_equity": 99_500,
+            "initial_cash": selection.initial_cash,
+            "final_equity": selection.initial_cash * 0.995,
             "total_return": -0.005,
             "sharpe": -0.1,
             "sortino": -0.1,
@@ -507,11 +512,10 @@ def _service(
         }
     )
     captured_payload = {
-        "schema_version": "karkinos.ai.research_evidence_capture.v2",
+        "schema_version": "karkinos.ai.research_evidence_capture.v3",
+        "notional_policy_id": "karkinos.ai.normalized_research_notional.cny_1m.v1",
         "backtest_result_id": 17,
         "performance_summary": {
-            "initial_cash": 100_000,
-            "final_equity": 99_500,
             "total_return": -0.005,
             "max_drawdown": 0.03,
             "duration_days": 8,
@@ -521,12 +525,16 @@ def _service(
             "end_date": selection.end_date,
             "assets": [{"symbol": "600000", "asset_class": "stock"}],
         },
-        "after_cost_evidence": {"total_cost": 10, "fill_count": 2},
-        "cost_summary": {"total_commission": 10, "total_trades": 2},
+        "after_cost_evidence": {"total_cost_bps": 1.0, "fill_count": 2},
+        "cost_summary": {"total_commission_bps": 1.0, "total_trades": 2},
         "research_evidence_bundle": original_evidence,
         "analysis_ready": True,
         "analysis_blocking_reasons": [],
         "persisted_backtest_facts_only": True,
+        "absolute_notional_values_redacted": True,
+        "account_facts_included": False,
+        "broker_facts_included": False,
+        "authority_effect": "research_only",
     }
     account_payload = {
         "summary": {
@@ -670,6 +678,35 @@ def _service(
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
+async def test_provider_free_research_rejects_saved_non_normalized_notional(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path, bind_account=False)
+    saved = service._db.rows[selection.saved_backtest_result_id]
+    config = json.loads(saved["config_json"])
+    config["initial_cash"] = 100_000
+    saved["config_json"] = json.dumps(config)
+
+    with pytest.raises(
+        StrategyResearchRejected, match="selected_initial_cash_mismatch"
+    ):
+        await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key="wrong-normalized-notional",
+                requested_by="human:reese",
+                account_alias="normalized-research",
+                research_question="Generate one bounded formula hypothesis.",
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            )
+        )
+
+    assert transport.calls == []
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
 async def test_strategy_hypothesis_peak_window_defers_before_transport(
     tmp_path,
 ) -> None:
@@ -697,6 +734,68 @@ async def test_strategy_hypothesis_peak_window_defers_before_transport(
 
 
 @pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_strategy_hypothesis_crossing_nine_is_blocked_at_send_edge(
+    tmp_path,
+) -> None:
+    moments = iter(
+        (
+            datetime.fromisoformat("2026-08-31T08:59:59+08:00"),
+            datetime.fromisoformat("2026-08-31T09:00:00+08:00"),
+        )
+    )
+    service, selection, transport, db_path = _service(
+        tmp_path,
+        provider_send_admission=ProviderSendAdmission(
+            policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+            now=lambda: next(moments),
+        ),
+    )
+
+    with pytest.raises(ProviderCallDeferred, match="deepseek_peak_pricing_window"):
+        await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key="send-edge-crosses-nine",
+                requested_by="human:reese",
+                account_alias="synthetic-research-only",
+                research_question="Generate one bounded formula hypothesis.",
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            )
+        )
+
+    assert transport.calls == []
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        session = conn.execute(
+            "SELECT status, failure_code, workflow_id "
+            "FROM ai_strategy_research_sessions WHERE idempotency_key=?",
+            ("send-edge-crosses-nine",),
+        ).fetchone()
+        assert session is not None
+        workflow = conn.execute(
+            "SELECT status, failure_code FROM ai_workflows WHERE workflow_id=?",
+            (session["workflow_id"],),
+        ).fetchone()
+        agent = conn.execute(
+            "SELECT status, error_code, response_json FROM ai_agent_runs "
+            "WHERE workflow_id=?",
+            (session["workflow_id"],),
+        ).fetchone()
+    assert (session["status"], session["failure_code"]) == (
+        "blocked",
+        "deepseek_peak_pricing_window",
+    )
+    assert tuple(workflow) == ("blocked", "deepseek_peak_pricing_window")
+    assert (agent["status"], agent["error_code"]) == (
+        "blocked",
+        "deepseek_peak_pricing_window",
+    )
+    assert json.loads(agent["response_json"])["provider_contact_performed"] is False
+
+
+@pytest.mark.unit
 def test_send_edge_defer_preserves_provider_free_failure_code() -> None:
     admission = ProviderSendAdmission(
         policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
@@ -720,6 +819,7 @@ def test_external_selection_redacts_account_snapshot_and_ledger_identifiers() ->
         end_date="2025-01-09",
         frequency="1d",
         initial_cash=100_000,
+        cost_model_reference=REVIEWED_COST_MODEL_REFERENCE,
         valuation_snapshot_id="private-valuation-id",
         ledger_cutoff_id=88,
     )
@@ -728,6 +828,7 @@ def test_external_selection_redacts_account_snapshot_and_ledger_identifiers() ->
 
     assert "valuation_snapshot_id" not in external
     assert "ledger_cutoff_id" not in external
+    assert "initial_cash" not in external
     assert external["account_fact_binding"] == "present_but_identifiers_redacted"
 
 
@@ -961,15 +1062,15 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v8" in role_ids
     assert "external.strategy_hypothesis_researcher.v9" in role_ids
     assert "external.strategy_hypothesis_researcher.v10" in role_ids
-    assert "external.strategy_hypothesis_researcher.v12" in role_ids
+    assert "external.strategy_hypothesis_researcher.v13" in role_ids
     current_role = next(
         item
         for item in service._ai_store.list_roles()
-        if item.role_id == "external.strategy_hypothesis_researcher.v12"
+        if item.role_id == "external.strategy_hypothesis_researcher.v13"
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v13"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v14"
     )
 
     backtest = await service.run_formula_backtest(
@@ -1124,10 +1225,16 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     critique_input = json.loads(critique_payload["messages"][1]["content"])
     assert "prior baseline, not the formula result" in critique_system_prompt
     assert critique_input["critique_input"]["canonical_backtest"]["result_id"] == 18
-    assert (
-        critique_input["critique_input"]["canonical_backtest"]["oos_validation"]
-        == backtest["canonical_backtest"]["oos_validation"]
+    external_oos = critique_input["critique_input"]["canonical_backtest"][
+        "oos_validation"
+    ]
+    assert external_oos["validation_mode"] == (
+        backtest["canonical_backtest"]["oos_validation"]["validation_mode"]
     )
+    assert external_oos["fold_count"] == len(
+        backtest["canonical_backtest"]["oos_validation"]["folds"]
+    )
+    assert "folds" not in external_oos
     assert critique_input["critique_input"]["required_binding_echo"][
         "oos_validation_fingerprint"
     ]
@@ -1140,9 +1247,26 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
         critique_contract["citation_catalog"]
     )
     assert (
-        "critique_input.canonical_backtest.total_return"
+        "critique_input.canonical_backtest.cost_summary"
         in critique_contract["citation_catalog"].values()
     )
+    external_messages = json.dumps(
+        [call["payload"]["messages"] for call in transport.calls],
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    for forbidden_key in (
+        "initial_cash",
+        "final_equity",
+        "total_cost",
+        "total_commission",
+        "total_slippage",
+        "gross_turnover",
+        "lot_size",
+        "valuation_snapshot_id",
+        "ledger_cutoff_id",
+    ):
+        assert f'"{forbidden_key}":' not in external_messages
     assert critique_contract["citation_rules"] == {
         "copy_catalog_ids_verbatim": True,
         "return_required_citation_ids_exactly_and_no_other_values": True,
@@ -1223,25 +1347,63 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_strategy_research_without_account_binding_fails_before_export(
+async def test_strategy_research_without_account_binding_completes_discovery_only(
     tmp_path,
 ) -> None:
     service, selection, transport, _ = _service(tmp_path, bind_account=False)
 
-    with pytest.raises(Exception, match="research_account_binding_required"):
-        await service.generate_hypotheses(
-            HypothesisGenerationRequest(
-                idempotency_key="strategy-only-hypothesis",
-                requested_by="human:reese",
-                account_alias="strategy-only",
-                research_question="Unbound research must fail closed.",
-                selection=selection,
-                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
-            )
+    hypotheses = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="strategy-only-hypothesis",
+            requested_by="human:reese",
+            account_alias="strategy-only",
+            research_question="Run normalized-notional Formula discovery.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
         )
+    )
+    draft = hypotheses["drafts"][0]
+    backtest = await service.run_formula_backtest(
+        FormulaBacktestRequest(
+            idempotency_key="strategy-only-backtest",
+            requested_by="human:reese",
+            session_id=hypotheses["session_id"],
+            draft_id=draft["draft_id"],
+            confirmation=BACKTEST_CONFIRMATION,
+        )
+    )
+    critique = await service.critique(
+        CritiqueRequest(
+            idempotency_key="strategy-only-critique",
+            requested_by="human:reese",
+            session_id=hypotheses["session_id"],
+            draft_id=draft["draft_id"],
+            backtest_run_id=backtest["backtest_run_id"],
+            confirmation=CRITIQUE_EXPORT_CONFIRMATION,
+        )
+    )
 
-    assert transport.calls == []
-    assert service._capture_service._source.requests == []
+    assert hypotheses["status"] == "completed"
+    assert backtest["status"] == "completed"
+    assert critique["status"] == "completed"
+    assert len(transport.calls) == 2
+    assert service._capture_service._source.requests[0].evidence_types == (
+        CaptureEvidenceType.RESEARCH_EVIDENCE,
+    )
+    external_payloads = "\n".join(
+        call["payload"]["messages"][1]["content"] for call in transport.calls
+    )
+    assert "private-valuation-id" not in external_payloads
+    assert "ledger_cutoff_id" not in external_payloads
+    saved = await service._db.get_backtest_result(
+        backtest["canonical_backtest"]["result_id"]
+    )
+    metrics = json.loads(saved["metrics_json"])
+    nominal_capital = metrics["account_capital_constraint"]
+    assert nominal_capital["status"] == "blocked"
+    assert nominal_capital["account_fact_binding_present"] is False
+    assert nominal_capital["authorizes_strategy_promotion"] is False
+    assert nominal_capital["authorizes_execution"] is False
 
 
 @pytest.mark.unit

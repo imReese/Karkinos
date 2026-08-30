@@ -45,6 +45,7 @@ export const decisionCopy = {
     tradingPlanCashShortfall: 'Cash shortfall',
     tradingPlanPortfolioBlocked: 'Portfolio constraints blocked',
     tradingPlanMarketBlocked: 'Market constraints blocked',
+    tradingPlanNoStrategyCandidate: 'No strategy signal today',
     tradingPlanNoManualAction: 'No manual action required',
     tradingPlanCounts: (
       candidates: number,
@@ -215,6 +216,7 @@ export const decisionCopy = {
     tradingPlanCashShortfall: '现金不足',
     tradingPlanPortfolioBlocked: '组合约束阻断',
     tradingPlanMarketBlocked: '市场约束阻断',
+    tradingPlanNoStrategyCandidate: '今日没有策略信号',
     tradingPlanNoManualAction: '今日无需手动操作',
     tradingPlanCounts: (
       candidates: number,

@@ -50,6 +50,9 @@ from server.ai_runtime.strategy_research_model_contract import (
     normalize_hypothesis_payload,
     strategy_research_system_prompt,
 )
+from server.ai_runtime.strategy_research_privacy import (
+    research_pack_privacy_violations,
+)
 from server.ai_runtime.strategy_research_support import (
     decode_model_json,
     safe_provider_usage,
@@ -257,6 +260,11 @@ class StrategyResearchModelProvider(ProviderAdapter):
         }
         if account_evidence is not None:
             input_payload["saved_account_evidence"] = account_evidence
+        privacy_violations = research_pack_privacy_violations(input_payload)
+        if privacy_violations:
+            raise ExternalResearchInvalidResponseError(
+                f"research_pack_privacy_violation:{privacy_violations[0]}"
+            )
         serialized = canonical_json(input_payload)
         if len(serialized.encode("utf-8")) > STRATEGY_RESEARCH_MAX_INPUT_BYTES:
             raise StrategyResearchRejected("strategy_research_input_too_large")

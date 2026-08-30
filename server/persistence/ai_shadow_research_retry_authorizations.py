@@ -76,7 +76,7 @@ class ShadowResearchRetryAuthorizationRepositoryMixin:
                 SELECT status, failure_code
                 FROM ai_shadow_research_provider_calls
                 WHERE run_id=? AND NOT (
-                    status='failed'
+                    status IN ('failed', 'deferred')
                     AND COALESCE(actual_tokens, 0)=0
                     AND failure_code IN ({placeholders})
                 )
@@ -371,7 +371,7 @@ class ShadowResearchRetryAuthorizationRepositoryMixin:
         run: Mapping[str, Any],
     ) -> bool:
         if (
-            run.get("status") != "failed"
+            run.get("status") not in {"failed", "deferred_for_provider_off_peak"}
             or str(run.get("failure_code") or "")
             not in PROVIDER_FREE_RETRYABLE_FAILURE_CODES
             or int(run.get("candidate_count") or 0) != 0
@@ -388,7 +388,7 @@ class ShadowResearchRetryAuthorizationRepositoryMixin:
             f"""
             SELECT 1 FROM ai_shadow_research_provider_calls
             WHERE run_id=? AND NOT (
-                status='failed'
+                status IN ('failed', 'deferred')
                 AND COALESCE(actual_tokens, 0)=0
                 AND failure_code IN ({placeholders})
             )

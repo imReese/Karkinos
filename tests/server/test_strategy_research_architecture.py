@@ -93,6 +93,7 @@ AI_RUNTIME_PATHS = {
     AI_RUNTIME_ROOT / "strategy_research_critique.py",
     AI_RUNTIME_ROOT / "strategy_research_generation.py",
     AI_RUNTIME_ROOT / "strategy_research_model_contract.py",
+    AI_RUNTIME_ROOT / "strategy_research_privacy.py",
     AI_RUNTIME_ROOT / "strategy_research_provider.py",
     AI_RUNTIME_ROOT / "strategy_research_sealed.py",
     AI_RUNTIME_ROOT / "strategy_research_session.py",
