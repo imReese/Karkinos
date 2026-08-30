@@ -17,6 +17,14 @@ from data.source import DataSource, normalize_provider_quote
 
 logger = logging.getLogger(__name__)
 
+
+def _clean_stock_master_text(value: object) -> str | None:
+    if value is None or pd.isna(value):
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 # 资产类别 → (日线函数名, 列名映射, 是否有成交量)
 _HIST_CONFIG: dict[AssetClass, tuple[str, dict, bool]] = {
     AssetClass.STOCK: (
@@ -243,11 +251,33 @@ class AKShareSource(OpenEndFundMixin, DataSource):
         raise NotImplementedError("AKShare tick data not supported")
 
     def list_symbols(self) -> list[Symbol]:
+        return [
+            Symbol(str(item["symbol"])) for item in self.list_symbol_metadata() or []
+        ]
+
+    def list_symbol_metadata(self) -> list[dict[str, object]]:
+        """Return codes and names from the same AKShare stock-master response."""
         import akshare as ak
 
         with _provider_network_env():
             df = ak.stock_zh_a_spot_em()
-        return [Symbol(str(code)) for code in df["代码"].tolist()]
+        rows: list[dict[str, object]] = []
+        for _, row in df.iterrows():
+            symbol = _clean_stock_master_text(row.get("代码"))
+            if not symbol:
+                continue
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "asset_class": AssetClass.STOCK.value,
+                    "display_name": _clean_stock_master_text(row.get("名称")),
+                    "provider_symbol": symbol,
+                    "provider_name": "akshare",
+                    "market": "cn",
+                    "source": "stock_master",
+                }
+            )
+        return rows
 
     @staticmethod
     def _latest_completed_index_daily_row(

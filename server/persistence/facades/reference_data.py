@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from server.contracts.market_calendar import (
@@ -125,11 +126,26 @@ class ReferenceDataDatabaseFacade(DatabaseRepositoryAccess):
             metadata=metadata,
         )
 
+    def upsert_instrument_metadata_batch_sync(
+        self,
+        items: Sequence[Mapping[str, Any]],
+    ) -> int:
+        """Atomically upsert a normalized instrument-identity batch."""
+        return self._instrument_metadata.upsert_metadata_batch(items)
+
     def get_instrument_metadata_sync(
         self, symbol: str, asset_type: str | None = None
     ) -> dict[str, Any] | None:
         """Read local instrument identity metadata."""
         return self._instrument_metadata.get_metadata(symbol, asset_type)
+
+    def get_instrument_metadata_batch_sync(
+        self,
+        symbols: Sequence[str],
+        asset_type: str = "stock",
+    ) -> list[dict[str, Any]]:
+        """Read a bounded local identity set with one indexed query."""
+        return self._instrument_metadata.get_metadata_batch(symbols, asset_type)
 
     def list_instrument_metadata_sync(self) -> list[dict[str, Any]]:
         """List local instrument identities newest first."""

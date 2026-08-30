@@ -27,6 +27,19 @@ class _Source:
         self.calls += 1
         return [f"{600000 + index:06d}" for index in range(1_000)]
 
+    def list_symbol_metadata(self):
+        self.calls += 1
+        return [
+            {
+                "symbol": symbol,
+                "display_name": f"示例股票{symbol}",
+                "provider_symbol": f"{symbol}.SH",
+                "provider_name": "unit_fixture",
+                "source": "stock_master",
+            }
+            for symbol in [f"{600000 + index:06d}" for index in range(1_000)]
+        ]
+
     def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
         self.daily_calls.append(trade_date)
         symbols = self.list_symbols()
@@ -163,11 +176,20 @@ def test_market_universe_automation_ingests_once_and_never_changes_authority(
     assert payload["full_market_history_frozen"] is True
     assert payload["remote_bar_refresh_attempt_count"] == 80
     assert payload["provider_request_interval_seconds"] == 2.0
+    assert payload["stock_master_metadata_fetched"] is True
+    assert payload["stock_master_useful_name_count"] == 1_000
+    assert payload["instrument_metadata_persisted_count"] == 1_000
     assert payload["changes_account_truth"] is False
     assert payload["changes_strategy_promotion"] is False
     assert payload["creates_order"] is False
     assert payload["changes_execution_authority"] is False
     assert payload["changes_capital_authority"] is False
+    metadata = db.get_instrument_metadata_batch_sync(["600000", "600001"])
+    assert [row["display_name"] for row in metadata] == [
+        "示例股票600000",
+        "示例股票600001",
+    ]
+    assert all(row["source"] == "market_universe_stock_master" for row in metadata)
 
 
 def test_market_universe_automation_blocks_without_verified_calendar(tmp_path) -> None:
@@ -190,6 +212,42 @@ def test_market_universe_automation_blocks_without_verified_calendar(tmp_path) -
     assert source.calls == 0
     payload = json.loads(result["payload_json"])
     assert payload["blockers"] == ["verified_closed_trading_date_unavailable"]
+
+
+def test_market_universe_does_not_freeze_snapshot_before_name_batch_persists(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+
+    def reject_metadata_batch(items):
+        raise RuntimeError("fixture metadata persistence rejected")
+
+    db.upsert_instrument_metadata_batch_sync = reject_metadata_batch
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture",
+            tushare_token="",
+            start_date="2026-04-01",
+        ),
+        data_store=store,
+        data_manager=SimpleNamespace(),
+        source=source,
+    )
+
+    result = service.run_due(
+        now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+
+    assert result["status"] == "failed"
+    assert source.calls == 1
+    assert store.get_market_universe_snapshot(trade_date="2026-08-21") is None
+    payload = json.loads(result["payload_json"])
+    assert payload["error"]["message"] == "fixture metadata persistence rejected"
 
 
 def test_market_universe_automation_resumes_without_refetching_frozen_dates(

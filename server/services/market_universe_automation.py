@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import datetime, time, timedelta
 from time import sleep as default_sleep
 from typing import Any, Callable
@@ -95,17 +96,56 @@ class MarketUniverseAutomationService:
         if existing and str(existing.get("status")) == "completed":
             return existing
 
+        stock_master_metadata_fetched = False
+        stock_master_useful_name_count = 0
+        instrument_metadata_persisted_count = 0
+        symbol_metadata: Any = None
         try:
             snapshot = self._data_store.get_market_universe_snapshot(
                 trade_date=trade_date
             )
             provider_contacted = False
             if snapshot is None:
-                symbols = self._source.list_symbols()
+                metadata_lister = getattr(self._source, "list_symbol_metadata", None)
+                if callable(metadata_lister):
+                    symbol_metadata = metadata_lister()
+                if symbol_metadata is None:
+                    symbols = self._source.list_symbols()
+                else:
+                    stock_master_metadata_fetched = True
+                    symbols = [
+                        item.get("symbol")
+                        for item in symbol_metadata
+                        if isinstance(item, Mapping)
+                    ]
                 provider_contacted = True
                 members = normalize_a_share_members(symbols)
                 if len(members) < self._policy.minimum_master_member_count:
                     raise ValueError("market_universe_provider_result_incomplete")
+                if stock_master_metadata_fetched:
+                    metadata_items = _useful_stock_master_metadata(
+                        symbol_metadata or [],
+                        members=members,
+                        provider_name=provider_name,
+                        fetched_at=current.isoformat(),
+                        trade_date=trade_date,
+                    )
+                    stock_master_useful_name_count = len(metadata_items)
+                    if metadata_items:
+                        batch_upsert = getattr(
+                            self._db, "upsert_instrument_metadata_batch_sync", None
+                        )
+                        if not callable(batch_upsert):
+                            raise RuntimeError(
+                                "instrument_metadata_batch_persistence_unavailable"
+                            )
+                        instrument_metadata_persisted_count = int(
+                            batch_upsert(metadata_items)
+                        )
+                        if instrument_metadata_persisted_count != len(metadata_items):
+                            raise RuntimeError(
+                                "instrument_metadata_batch_persistence_incomplete"
+                            )
                 snapshot = self._data_store.save_market_universe_snapshot(
                     trade_date=trade_date,
                     provider_name=provider_name,
@@ -285,6 +325,11 @@ class MarketUniverseAutomationService:
                     "bar_refresh_failure_count": failed,
                     "provider_request_interval_seconds": self._throttle_seconds,
                     "provider_contacted": provider_contacted or remote_attempted > 0,
+                    "stock_master_metadata_fetched": stock_master_metadata_fetched,
+                    "stock_master_useful_name_count": (stock_master_useful_name_count),
+                    "instrument_metadata_persisted_count": (
+                        instrument_metadata_persisted_count
+                    ),
                     "full_market_history_frozen": not missing_receipt_dates,
                     "blockers": blockers,
                     "retryable": bool(blockers),
@@ -300,6 +345,11 @@ class MarketUniverseAutomationService:
                 payload={
                     **self._base_payload(provider_name),
                     "trade_date": trade_date,
+                    "stock_master_metadata_fetched": stock_master_metadata_fetched,
+                    "stock_master_useful_name_count": (stock_master_useful_name_count),
+                    "instrument_metadata_persisted_count": (
+                        instrument_metadata_persisted_count
+                    ),
                     "error": {"type": type(exc).__name__, "message": str(exc)},
                     "retryable": True,
                 },
@@ -342,6 +392,50 @@ class MarketUniverseAutomationService:
                 "payload": payload,
             }
         )
+
+
+def _useful_stock_master_metadata(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    members: Sequence[Mapping[str, Any]],
+    provider_name: str,
+    fetched_at: str,
+    trade_date: str,
+) -> list[dict[str, Any]]:
+    member_by_symbol = {
+        str(member.get("symbol") or "").strip(): member
+        for member in members
+        if str(member.get("symbol") or "").strip()
+    }
+    normalized: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        symbol = str(row.get("symbol") or "").strip().split(".", maxsplit=1)[0]
+        display_name = str(row.get("display_name") or "").strip()
+        member = member_by_symbol.get(symbol)
+        if (
+            member is None
+            or not display_name
+            or display_name == symbol
+            or display_name == f"{symbol} A股"
+        ):
+            continue
+        normalized[symbol] = {
+            "symbol": symbol,
+            "asset_type": "stock",
+            "display_name": display_name,
+            "provider_symbol": str(row.get("provider_symbol") or symbol),
+            "exchange": member.get("exchange"),
+            "market": "cn",
+            "provider_name": provider_name,
+            "source": "market_universe_stock_master",
+            "fetched_at": fetched_at,
+            "metadata": {
+                "stock_master_trade_date": trade_date,
+                "listing_status": member.get("listing_status"),
+                "board": member.get("board"),
+            },
+        }
+    return [normalized[symbol] for symbol in sorted(normalized)]
 
 
 async def run_market_universe_automation_loop(
