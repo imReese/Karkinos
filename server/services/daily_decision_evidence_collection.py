@@ -20,9 +20,7 @@ from server.services.daily_decision_evidence_values import (
 from server.services.daily_decision_evidence_values import (
     plan_date as resolve_plan_date,
 )
-from server.services.daily_decision_evidence_values import (
-    policy_allows_paper_shadow,
-)
+from server.services.daily_decision_evidence_values import policy_allows_paper_shadow
 
 
 async def collect_daily_decision_evidence(

@@ -21,9 +21,7 @@ from account_truth.broker_order_lifecycle_contracts import (
 from account_truth.broker_order_lifecycle_contracts import (
     BROKER_ORDER_LIFECYCLE_SENSITIVE_KEY_PARTS as _SENSITIVE_KEY_PARTS,
 )
-from account_truth.broker_order_lifecycle_contracts import (
-    MAX_EXPORT_BYTES,
-)
+from account_truth.broker_order_lifecycle_contracts import MAX_EXPORT_BYTES
 
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SYMBOL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")

@@ -17,9 +17,7 @@ from server.contracts.external_research import (
 from server.contracts.external_research import (
     EXTERNAL_RESEARCH_EVIDENCE_TOOL as _RESEARCH_TOOL,
 )
-from server.contracts.external_research import (
-    ExternalBacktestReportRejected,
-)
+from server.contracts.external_research import ExternalBacktestReportRejected
 
 from .contracts import (
     ArtifactDraft,

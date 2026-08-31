@@ -7,9 +7,7 @@ from typing import Any, Callable
 from server.services.automation_alert_support import (
     ACCOUNT_TRUTH_ALERT_STATUSES as _ACCOUNT_TRUTH_ALERT_STATUSES,
 )
-from server.services.automation_alert_support import (
-    AUTOMATION_ALERT_SCHEMA_VERSION,
-)
+from server.services.automation_alert_support import AUTOMATION_ALERT_SCHEMA_VERSION
 from server.services.automation_alert_support import (
     FAILED_AUTOMATION_RUN_STATUSES as _FAILED_AUTOMATION_RUN_STATUSES,
 )

@@ -16,9 +16,7 @@ from server.contracts.automatic_trading import (
 from server.contracts.automatic_trading import (
     automatic_trading_control_fingerprint as _automatic_trading_fingerprint,
 )
-from server.contracts.automatic_trading import (
-    automatic_trading_disable_identity,
-)
+from server.contracts.automatic_trading import automatic_trading_disable_identity
 from server.contracts.automatic_trading import (
     automatic_trading_evidence as _automatic_trading_evidence,
 )
