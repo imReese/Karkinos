@@ -107,4 +107,8 @@ class AssetMetadataStatusResponse(BaseModel):
 
 class LiveStatusResponse(BaseModel):
     running: bool
+    initialized: bool
+    activation_guarded: bool
+    scheduler_activation_guarded: bool
+    completed_iterations: int = Field(ge=0)
     market_open: bool = False

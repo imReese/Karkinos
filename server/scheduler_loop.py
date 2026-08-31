@@ -134,12 +134,25 @@ class SchedulerLoop:
             try:
                 runtime = self._initialize_runtime()
             except Exception:
+                self._state.mark_scheduler_uninitialized()
                 logger.exception("Trading scheduler initialization failed; retrying")
                 self._wait_before_retry()
                 continue
 
             if runtime is None:
-                self._wait_before_retry()
+                if self._state.scheduler_activation_guarded():
+                    self._state.wait_for_scheduler_stop(
+                        timeout=min(
+                            1.0,
+                            max(
+                                0.1,
+                                float(self._dependencies.config.live_poll_interval),
+                            ),
+                        )
+                    )
+                else:
+                    self._state.mark_scheduler_iteration_completed()
+                    self._wait_before_retry()
                 continue
 
             try:
@@ -152,6 +165,7 @@ class SchedulerLoop:
                     try:
                         should_wait = self._run_iteration(runtime)
                     except Exception:
+                        self._state.mark_scheduler_uninitialized()
                         logger.exception(
                             "Trading scheduler runtime failed; reinitializing"
                         )
@@ -205,14 +219,14 @@ class SchedulerLoop:
             self._restore_quotes()
             self._restore_portfolio()
             if not state.watchlist:
-                logger.warning(
-                    "No watchlist configured; scheduler will retry initialization"
-                )
+                state.mark_scheduler_initialized()
+                logger.warning("No watchlist configured; scheduler initialized idle")
                 self._close_feed(feed)
                 return None
             strategy, strategy_events = self._wire_event_processing(
                 runtime.data_manager
             )
+            state.mark_scheduler_initialized()
         except Exception:
             self._close_feed(feed)
             raise
@@ -298,8 +312,10 @@ class SchedulerLoop:
                 for quote in persisted_quotes
             }
             self._state.replace_runtime_quotes(restored_quotes)
-        except Exception:
-            logger.warning("恢复实时行情快照失败，将忽略", exc_info=True)
+        except Exception as exc:
+            raise RuntimeError(
+                "persisted scheduler quotes could not be restored"
+            ) from exc
 
     @staticmethod
     def _restored_quote(quote: dict[str, Any]) -> dict[str, Any]:
@@ -396,6 +412,14 @@ class SchedulerLoop:
     def _run_iteration(self, runtime: SchedulerRuntime) -> bool:
         state = self._state
         dependencies = self._dependencies
+        if state.scheduler_activation_guarded():
+            state.wait_for_scheduler_stop(
+                timeout=min(
+                    1.0,
+                    max(0.1, float(dependencies.config.live_poll_interval)),
+                )
+            )
+            return False
         current = self._dependencies.now()
         dependencies.evaluate_controlled_session_pauses()
         dependencies.retry_pending_valuation_publication()
@@ -411,6 +435,7 @@ class SchedulerLoop:
                     runtime.data_manager,
                     now=current,
                 )
+            state.mark_scheduler_iteration_completed()
             state.wait_for_scheduler_stop(
                 timeout=min(
                     30,
@@ -425,6 +450,7 @@ class SchedulerLoop:
             runtime.fallback_source,
         )
         self._poll_and_process(runtime, now=current)
+        state.mark_scheduler_iteration_completed()
         return True
 
     def _poll_and_process(
