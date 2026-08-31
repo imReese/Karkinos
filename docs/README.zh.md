@@ -17,8 +17,8 @@ uv run python -m server --check-config
 ./scripts/start_server.sh
 ```
 
-开发界面入口为 `http://127.0.0.1:5173`；使用完后运行 `./scripts/stop_server.sh` 即可停止前后端服务；live scheduler 随服务自动启动。
-自动化交易使用另一个默认关闭、无需重启的运行时门禁；它不授予资本权限，当前也未实现自动向券商提交订单。生产模式和专项维护命令见 [`scripts/README.md`](../scripts/README.md)。
+开发界面入口为 `http://127.0.0.1:5173`；默认命令只启动 8001 端口的隔离源码后端与 Vite，不复用或改变默认 8000 端口（或其持久化自定义端口）的不可变生产服务。使用完后运行 `./scripts/stop_server.sh` 只停止准确受管的开发进程；停止生产服务需显式运行 `./scripts/stop_server.sh prod`。live scheduler 始终随每个后端启动且没有关闭开关。
+自动化交易使用另一个默认关闭、无需重启的运行时门禁；它不授予资本权限，当前也未实现自动向券商提交订单。原生生产模式只启动 `current` 选中的 CI 构建，不从工作区或本地 Docker 构建。candidate、稳定更新、bootstrap、rollback 与脚本归属见 [`scripts/README.md`](../scripts/README.md)。
 
 主要检查：
 

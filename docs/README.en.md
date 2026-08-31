@@ -19,9 +19,8 @@ uv run python -m server --check-config
 ./scripts/start_server.sh
 ```
 
-Open `http://127.0.0.1:5173` for the development UI. Run
-`./scripts/stop_server.sh` to stop both frontend and backend services. The live scheduler starts with the service.
-Automatic trading is a separate default-off runtime gate that changes without restart and grants no capital authority; automatic broker submission remains unimplemented. See [`scripts/README.md`](../scripts/README.md) for specialized commands.
+Open `http://127.0.0.1:5173` for the development UI. The default command runs an isolated source backend on port 8001 plus Vite; it never reuses or changes immutable production on its persisted port (8000 by default). Run `./scripts/stop_server.sh` to stop only exact tracked development processes; use `./scripts/stop_server.sh prod` explicitly for production. The live scheduler always starts with each backend and has no off switch.
+Automatic trading is a separate default-off runtime gate that changes without restart and grants no capital authority; automatic broker submission remains unimplemented. Native production starts only the CI-built release selected by `current` and never builds from the checkout or local Docker. See [`scripts/README.md`](../scripts/README.md) for candidate, stable update, bootstrap, rollback, and script ownership.
 
 Primary checks:
 

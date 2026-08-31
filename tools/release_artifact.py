@@ -13,6 +13,30 @@ from typing import Iterable
 
 MANIFEST_NAME = "release.json"
 NATIVE_ARTIFACT_SCHEMA = "karkinos.native_release.v1"
+RELEASE_CONTROL_PROTOCOL = 1
+REQUIRED_RUNTIME_FILES = (
+    "app/server/__init__.py",
+    "app/server/__main__.py",
+    "app/server/app.py",
+    "app/web/dist/index.html",
+    "runtime/bin/python3.12",
+)
+REQUIRED_RELEASE_CONTROL_FILES = (
+    "bin/karkinosctl",
+    "app/scripts/release/manage_release.py",
+    "app/scripts/release/bootstrap_legacy.py",
+    "app/scripts/release/update_workflow.py",
+    "app/scripts/service/manage_launch_agent.sh",
+    "app/tools/__init__.py",
+    "app/tools/download_candidate.py",
+    "app/tools/release_artifact.py",
+    "app/tools/release_candidate.py",
+    "app/tools/release_fetch.py",
+)
+REQUIRED_RELEASE_CONTROL_EXECUTABLES = (
+    "bin/karkinosctl",
+    "app/scripts/service/manage_launch_agent.sh",
+)
 _RELEASE_VERSION = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$"
@@ -200,6 +224,8 @@ def validate_manifest(
         raise ValueError("release_manifest_schema_unsupported")
     if manifest.get("artifact_kind") != "macos-native":
         raise ValueError("release_manifest_artifact_kind_invalid")
+    if manifest.get("release_control_protocol") != RELEASE_CONTROL_PROTOCOL:
+        raise ValueError("release_manifest_control_protocol_unsupported")
 
     commit_sha = manifest.get("commit_sha")
     if (
@@ -232,13 +258,27 @@ def validate_manifest(
         raise ValueError("release_manifest_entrypoint_invalid")
     if entrypoint_path.is_symlink() or not (entrypoint_path.stat().st_mode & 0o111):
         raise ValueError("release_manifest_entrypoint_not_executable")
-    required_files = (
-        root / "app" / "server" / "__init__.py",
-        root / "app" / "web" / "dist" / "index.html",
-        root / "runtime" / "bin" / "python3.12",
+    required_runtime_files = tuple(
+        root / relative for relative in REQUIRED_RUNTIME_FILES
     )
-    if any(not path.is_file() or path.is_symlink() for path in required_files):
+    if any(not path.is_file() or path.is_symlink() for path in required_runtime_files):
         raise ValueError("release_manifest_payload_incomplete")
+    runtime_python = root / "runtime" / "bin" / "python3.12"
+    if not (runtime_python.stat(follow_symlinks=False).st_mode & 0o111):
+        raise ValueError("release_manifest_runtime_not_executable")
+    required_control_files = tuple(
+        root / relative for relative in REQUIRED_RELEASE_CONTROL_FILES
+    )
+    if any(not path.is_file() or path.is_symlink() for path in required_control_files):
+        raise ValueError("release_manifest_control_plane_incomplete")
+    required_control_executables = tuple(
+        root / relative for relative in REQUIRED_RELEASE_CONTROL_EXECUTABLES
+    )
+    if any(
+        not (path.stat(follow_symlinks=False).st_mode & 0o111)
+        for path in required_control_executables
+    ):
+        raise ValueError("release_manifest_control_plane_not_executable")
     forbidden_names = {
         ".env",
         "config.json",
