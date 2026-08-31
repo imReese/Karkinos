@@ -62,6 +62,7 @@ CAPABILITY_METHODS = {
     "financial_facts_ledger.py": {
         "append_ledger_entry_sync",
         "confirm_ledger_trade_settlement_sync",
+        "get_all_ledger_entries_sync",
         "get_ledger_entries_sync",
         "get_ledger_entry_sync",
         "insert_ledger_entry_sync",

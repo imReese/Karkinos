@@ -13,7 +13,8 @@ _IMAGE_REFERENCE = re.compile(
     r"^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$"
 )
 _CANDIDATE_REFERENCE = re.compile(
-    r"^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+:candidate-sha-[0-9a-f]{40}$"
+    r"^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+:"
+    r"candidate-sha-[0-9a-f]{40}-run-[1-9][0-9]*-attempt-[1-9][0-9]*$"
 )
 
 

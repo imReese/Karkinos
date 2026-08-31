@@ -22,6 +22,10 @@ from server.dependencies import (
     AppStateContextMiddleware,
     bind_app_state,
 )
+from server.release_activation import (
+    ReleaseActivationGuardMiddleware,
+    is_release_activation_guarded,
+)
 from server.runtime_paths import resolve_static_dir
 from server.scheduler import TradingScheduler
 from server.services.trading_controls import TradingControlState
@@ -279,7 +283,10 @@ async def lifespan(app: FastAPI):
     shadow_research_task: asyncio.Task[None] | None = None
     if collector_config.enabled:
         broker_statement_collector_task = asyncio.create_task(
-            run_local_broker_statement_collector(broker_statement_collector),
+            run_local_broker_statement_collector(
+                broker_statement_collector,
+                activation_guarded=is_release_activation_guarded,
+            ),
             name="local-broker-statement-collector",
         )
     # This loop is inert until an owner-authorized research-only policy exists.
@@ -414,6 +421,7 @@ def create_app(
         allow_headers=["*"],
     )
     app.add_middleware(AppStateContextMiddleware, app_state=app_state)
+    app.add_middleware(ReleaseActivationGuardMiddleware)
 
     from server.composition.router_registry import install_routers
 

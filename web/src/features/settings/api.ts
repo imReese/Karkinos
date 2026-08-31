@@ -16,6 +16,8 @@ function liveStatusRefetchInterval() {
 
 export type LiveStatusResponse = {
   running: boolean;
+  initialized: boolean;
+  activation_guarded: boolean;
   market_open: boolean;
 };
 

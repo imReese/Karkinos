@@ -61,6 +61,20 @@ REPOSITORY_DIRS = (
     "strategy",
 )
 
+RELEASE_CONTROL_DIRECTORIES = ("scripts/release",)
+
+RELEASE_CONTROL_FILES = (
+    "scripts/service/manage_launch_agent.sh",
+    "tools/__init__.py",
+    "tools/download_candidate.py",
+    "tools/release_artifact.py",
+    "tools/release_candidate.py",
+    "tools/release_fetch.py",
+)
+
+MANAGED_PYTHON_VERSION = "3.12.13"
+MANAGED_PYTHON_MINOR = MANAGED_PYTHON_VERSION.rsplit(".", maxsplit=1)[0]
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -145,6 +159,14 @@ def _copy_tracked_directory(
         shutil.copy2(source, target)
 
 
+def _copy_release_control_plane(repo_root: Path, destination: Path) -> None:
+    """Copy the Git-tracked updater and service-control implementation."""
+    for directory in RELEASE_CONTROL_DIRECTORIES:
+        _copy_tracked_directory(repo_root, directory, destination)
+    for relative_file in RELEASE_CONTROL_FILES:
+        _copy_tracked_file(repo_root, relative_file, destination)
+
+
 def _git_worktree_clean(repo_root: Path) -> None:
     result = subprocess.run(
         ["git", "status", "--porcelain=v1", "--untracked-files=all"],
@@ -182,6 +204,90 @@ def _run(command: list[str], *, cwd: Path, stdout: int | None = None) -> str:
         text=True,
     )
     return result.stdout if stdout is None else ""
+
+
+def _install_managed_python(repo_root: Path, managed_runtime: Path) -> Path:
+    """Install the exact release runtime and return its immutable root."""
+    _run(
+        [
+            "uv",
+            "python",
+            "install",
+            MANAGED_PYTHON_VERSION,
+            "--install-dir",
+            str(managed_runtime),
+        ],
+        cwd=repo_root,
+        stdout=subprocess.DEVNULL,
+    )
+    runtime_candidates = sorted(
+        path.parent.parent
+        for path in managed_runtime.rglob(f"python{MANAGED_PYTHON_MINOR}")
+        if path.is_file() and path.parent.name == "bin"
+    )
+    if len(runtime_candidates) != 1:
+        raise ValueError("macos_runtime_install_invalid")
+    return runtime_candidates[0]
+
+
+def _verify_managed_python(repo_root: Path, runtime_python: Path) -> None:
+    """Fail closed if the copied interpreter does not match the pinned patch."""
+    observed_version = _run(
+        [
+            str(runtime_python),
+            "-I",
+            "-c",
+            "import platform; print(platform.python_version())",
+        ],
+        cwd=repo_root,
+    ).strip()
+    if observed_version != MANAGED_PYTHON_VERSION:
+        raise ValueError("macos_runtime_python_version_mismatch")
+
+
+def _install_locked_production_packages(
+    *,
+    repo_root: Path,
+    runtime_python: Path,
+    site_packages: Path,
+    requirements: Path,
+) -> None:
+    """Export the frozen production graph and require every artifact hash."""
+    requirements.write_text(
+        _run(
+            [
+                "uv",
+                "export",
+                "--frozen",
+                "--extra",
+                "server",
+                "--no-dev",
+                "--no-emit-project",
+                "--format",
+                "requirements.txt",
+            ],
+            cwd=repo_root,
+        ),
+        encoding="utf-8",
+    )
+    _run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(runtime_python),
+            "--target",
+            str(site_packages),
+            "--require-hashes",
+            "--requirement",
+            str(requirements),
+            "--link-mode",
+            "copy",
+        ],
+        cwd=repo_root,
+        stdout=subprocess.DEVNULL,
+    )
 
 
 def _version(repo_root: Path) -> str:
@@ -234,29 +340,97 @@ fi
 export KARKINOS_RELEASE_SHA KARKINOS_ARTIFACT_FINGERPRINT
 export KARKINOS_DATA_DIR=${KARKINOS_DATA_DIR:-"$KARKINOS_HOME/data"}
 export KARKINOS_CONFIG_PATH=${KARKINOS_CONFIG_PATH:-"$KARKINOS_HOME/config/config.json"}
-export KARKINOS_ENV_FILE=${KARKINOS_ENV_FILE:-"$KARKINOS_HOME/config/.env"}
+if [ -n "${KARKINOS_ENV_FILE:-}" ]; then
+    KARKINOS_ENV_FILE_IS_DEFAULT=0
+else
+    KARKINOS_ENV_FILE="$KARKINOS_HOME/config/.env"
+    KARKINOS_ENV_FILE_IS_DEFAULT=1
+fi
+export KARKINOS_ENV_FILE
 export KARKINOS_HOST=${KARKINOS_HOST:-127.0.0.1}
 export KARKINOS_PORT=${KARKINOS_PORT:-8000}
-export PYTHONPATH="$RELEASE_ROOT/app:$RELEASE_ROOT/lib/python3.12/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+unset PYTHONHOME
+export PYTHONPATH="$RELEASE_ROOT/app:$RELEASE_ROOT/lib/python3.12/site-packages"
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONNOUSERSITE=1
+
+PYTHON="$RELEASE_ROOT/runtime/bin/python3.12"
+if [ ! -f "$PYTHON" ] || [ ! -x "$PYTHON" ] || [ -L "$PYTHON" ]; then
+    echo "Karkinos release runtime is missing Python 3.12." >&2
+    exit 78
+fi
+if ! "$PYTHON" -B -s -P -c 'import os; from pathlib import Path; from tools.release_artifact import validate_manifest; validate_manifest(Path(os.environ["KARKINOS_RELEASE_ROOT"]), expected_commit_sha=os.environ["KARKINOS_RELEASE_SHA"])'; then
+    echo "Karkinos release payload integrity validation failed." >&2
+    exit 78
+fi
 
 mkdir -p "$KARKINOS_DATA_DIR" "$KARKINOS_HOME/config" "$KARKINOS_HOME/logs"
 if [ ! -f "$KARKINOS_CONFIG_PATH" ]; then
     printf '{}\\n' > "$KARKINOS_CONFIG_PATH"
     chmod 600 "$KARKINOS_CONFIG_PATH"
 fi
+if [ "$KARKINOS_ENV_FILE_IS_DEFAULT" -eq 1 ]; then
+    if [ -L "$KARKINOS_ENV_FILE" ] || { [ -e "$KARKINOS_ENV_FILE" ] && [ ! -f "$KARKINOS_ENV_FILE" ]; }; then
+        echo "Karkinos default environment file path is invalid." >&2
+        exit 78
+    fi
+    if [ ! -e "$KARKINOS_ENV_FILE" ]; then
+        (umask 077 && : > "$KARKINOS_ENV_FILE")
+    fi
+fi
 
-PYTHON=$(find "$RELEASE_ROOT/runtime" -type f -path '*/bin/python3.12' -perm -111 -print -quit 2>/dev/null || true)
-if [ -z "$PYTHON" ]; then
+cd "$RELEASE_ROOT/app"
+exec "$PYTHON" -B -s -P -m server "$@"
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+def _write_control_launcher(path: Path, *, commit_sha: str) -> None:
+    """Write the package-local release controller entrypoint."""
+    if re.fullmatch(r"[0-9a-f]{40}", commit_sha) is None:
+        raise ValueError("release_commit_sha_invalid")
+    path.write_text(
+        f"""#!/bin/sh
+set -eu
+
+RELEASE_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+EXPECTED_RELEASE_SHA={commit_sha}
+if [ ! -f "$RELEASE_ROOT/release.json" ]; then
+    echo "Karkinos release manifest is missing." >&2
+    exit 78
+fi
+KARKINOS_RELEASE_SHA=$(grep -Eo '"commit_sha":"[0-9a-f]+"' "$RELEASE_ROOT/release.json" | cut -d '"' -f 4 || true)
+KARKINOS_ARTIFACT_FINGERPRINT=$(grep -Eo '"payload_fingerprint":"[0-9a-f]+"' "$RELEASE_ROOT/release.json" | cut -d '"' -f 4 || true)
+if [ "$KARKINOS_RELEASE_SHA" != "$EXPECTED_RELEASE_SHA" ] ||
+    ! printf '%s' "$KARKINOS_RELEASE_SHA" | grep -Eq '^[0-9a-f]{{40}}$' ||
+    ! printf '%s' "$KARKINOS_ARTIFACT_FINGERPRINT" | grep -Eq '^[0-9a-f]{{64}}$'; then
+    echo "Karkinos release manifest identity is invalid." >&2
+    exit 78
+fi
+
+KARKINOS_HOME=${{KARKINOS_HOME:-"$HOME/Library/Application Support/Karkinos"}}
+export KARKINOS_HOME
+export KARKINOS_RELEASE_ROOT="$RELEASE_ROOT"
+export KARKINOS_RELEASE_SHA KARKINOS_ARTIFACT_FINGERPRINT
+unset PYTHONHOME
+export PYTHONPATH="$RELEASE_ROOT/app:$RELEASE_ROOT/lib/python3.12/site-packages"
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONNOUSERSITE=1
+
+PYTHON="$RELEASE_ROOT/runtime/bin/python3.12"
+if [ ! -f "$PYTHON" ] || [ ! -x "$PYTHON" ] || [ -L "$PYTHON" ]; then
     echo "Karkinos release runtime is missing Python 3.12." >&2
     exit 78
 fi
-if ! "$PYTHON" -c 'import os; from pathlib import Path; from tools.release_artifact import validate_manifest; validate_manifest(Path(os.environ["KARKINOS_RELEASE_ROOT"]), expected_commit_sha=os.environ["KARKINOS_RELEASE_SHA"])'; then
+if ! "$PYTHON" -B -s -P -c 'import os; from pathlib import Path; from tools.release_artifact import validate_manifest; validate_manifest(Path(os.environ["KARKINOS_RELEASE_ROOT"]), expected_commit_sha=os.environ["KARKINOS_RELEASE_SHA"])'; then
     echo "Karkinos release payload integrity validation failed." >&2
     exit 78
 fi
 
 cd "$RELEASE_ROOT/app"
-exec "$PYTHON" -m server "$@"
+exec "$PYTHON" -B -s -P "$RELEASE_ROOT/app/scripts/release/manage_release.py" "$@"
 """,
         encoding="utf-8",
     )
@@ -332,6 +506,7 @@ def build_candidate(
 
     from tools.release_artifact import (
         NATIVE_ARTIFACT_SCHEMA,
+        RELEASE_CONTROL_PROTOCOL,
         canonical_json,
         payload_checksums,
         payload_fingerprint,
@@ -353,8 +528,7 @@ def build_candidate(
         app = staging / "app"
         for directory in REPOSITORY_DIRS:
             _copy_tracked_directory(repo_root, directory, app)
-        _copy_tracked_file(repo_root, "tools/__init__.py", app)
-        _copy_tracked_file(repo_root, "tools/release_artifact.py", app)
+        _copy_release_control_plane(repo_root, app)
         pyproject = repo_root / "pyproject.toml"
         if pyproject.is_symlink() or not pyproject.is_file():
             raise ValueError("release_pyproject_invalid")
@@ -362,73 +536,31 @@ def build_candidate(
         _copy_tree_without_symlinks(repo_root / "web" / "dist", app / "web" / "dist")
 
         managed_runtime = Path(temporary) / "managed-python"
-        _run(
-            [
-                "uv",
-                "python",
-                "install",
-                "3.12",
-                "--install-dir",
-                str(managed_runtime),
-            ],
-            cwd=repo_root,
-            stdout=subprocess.DEVNULL,
-        )
-        runtime_candidates = sorted(
-            path.parent.parent
-            for path in managed_runtime.rglob("python3.12")
-            if path.is_file() and path.parent.name == "bin"
-        )
-        if len(runtime_candidates) != 1:
-            raise ValueError("macos_runtime_install_invalid")
-        _flatten_copy(runtime_candidates[0], staging / "runtime")
+        runtime_source = _install_managed_python(repo_root, managed_runtime)
+        _flatten_copy(runtime_source, staging / "runtime")
         runtime_python = staging / "runtime" / "bin" / "python3.12"
         if not runtime_python.is_file():
             raise ValueError("macos_runtime_python_missing")
+        _verify_managed_python(repo_root, runtime_python)
 
         site_packages = staging / "lib" / "python3.12" / "site-packages"
         site_packages.mkdir(parents=True)
         requirements = Path(temporary) / "requirements.txt"
-        requirements.write_text(
-            _run(
-                [
-                    "uv",
-                    "export",
-                    "--frozen",
-                    "--extra",
-                    "server",
-                    "--no-dev",
-                    "--no-emit-project",
-                    "--no-hashes",
-                ],
-                cwd=repo_root,
-            ),
-            encoding="utf-8",
-        )
-        _run(
-            [
-                "uv",
-                "pip",
-                "install",
-                "--python",
-                str(runtime_python),
-                "--target",
-                str(site_packages),
-                "--requirement",
-                str(requirements),
-                "--link-mode",
-                "copy",
-            ],
-            cwd=repo_root,
-            stdout=subprocess.DEVNULL,
+        _install_locked_production_packages(
+            repo_root=repo_root,
+            runtime_python=runtime_python,
+            site_packages=site_packages,
+            requirements=requirements,
         )
 
         launcher = staging / "bin" / "karkinos"
         launcher.parent.mkdir()
         _write_launcher(launcher)
+        _write_control_launcher(staging / "bin" / "karkinosctl", commit_sha=commit_sha)
         manifest = {
             "schema_version": NATIVE_ARTIFACT_SCHEMA,
             "artifact_kind": "macos-native",
+            "release_control_protocol": RELEASE_CONTROL_PROTOCOL,
             "version": version,
             "commit_sha": commit_sha,
             "architecture": architecture,

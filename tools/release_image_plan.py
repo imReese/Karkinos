@@ -79,6 +79,8 @@ class ReleaseImagePlan:
     tag: str
     version: str
     image: str
+    # Workflow-protected, write-once identities. GHCR itself does not make the
+    # tag immutable; the manifest digest remains the authoritative identity.
     immutable_image_tags: tuple[str, ...]
     image_tags: tuple[str, ...]
     is_prerelease: bool
@@ -137,7 +139,7 @@ def build_release_image_plan(
 
 
 def assert_registry_image_tag_compatible(image_tag: str, expected_digest: str) -> None:
-    """Allow a missing tag or the same immutable digest, never another digest."""
+    """Allow a missing tag or the same digest, never another digest."""
     if _DIGEST.fullmatch(expected_digest) is None:
         raise ValueError("release_image_digest_invalid")
     result = _inspect_registry(image_tag)
@@ -156,7 +158,7 @@ def assert_registry_image_tag_compatible(image_tag: str, expected_digest: str) -
 
 
 def assert_immutable_image_tags_absent(plan: ReleaseImagePlan) -> None:
-    """Reject a release when either immutable registry tag may already exist."""
+    """Reject a release when either write-once identity tag may already exist."""
 
     for image_tag in plan.immutable_image_tags:
         assert_registry_image_tag_absent(image_tag)
@@ -165,7 +167,7 @@ def assert_immutable_image_tags_absent(plan: ReleaseImagePlan) -> None:
 def assert_immutable_image_tags_compatible(
     plan: ReleaseImagePlan, expected_digest: str
 ) -> None:
-    """Preflight immutable tags for safe first publish or exact-digest retry."""
+    """Preflight identity tags for safe first publish or exact-digest retry."""
     for image_tag in plan.immutable_image_tags:
         assert_registry_image_tag_compatible(image_tag, expected_digest)
 

@@ -37,6 +37,8 @@ const defaultOverview = {
 
 const defaultLiveStatus = {
   running: true,
+  initialized: true,
+  activation_guarded: false,
   market_open: true,
 };
 

@@ -7,9 +7,7 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-28，v0.3.1 是当前不依赖券商提供方的软件基线。它在不改写迁移 provenance 的前提下修复精确已知的 v0.3.0 旧数据库升级状态，并将 SemVer 与 `sha-*` 容器标签设为不可复用，同时允许 `latest` 等发布别名向前移动。
-v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
-里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
+截至 2026-08-31，v0.3.2 是当前不依赖券商提供方的软件基线。它保留 v0.3.1 的数据库升级与发布身份修复，把 live scheduler 固化为无条件的服务生命周期不变量，并将自动交易保留为无需重启、默认关闭的独立运行时总闸。它还新增经验证的不可变 macOS artifact、外置可变状态、带 journal 的 `current`/`previous` 激活、readiness 绑定重启、自动回滚和本地双版本保留。v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot；scheduler 存活与软件发布证据均不授予资本权限或自动券商提交权限。
 
 最近完成的跨领域工作包括：
 
