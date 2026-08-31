@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderCallDeferred,
+)
 from server.ai_runtime.strategy_research import (
+    CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
 )
 from server.app import create_app
 from server.db import AppDatabase
+from server.dependencies import AppState
 from server.routes.ai_strategy_research import (
     ShadowResearchPolicyPayload,
     _strategy_research_model_timeout_seconds,
@@ -24,6 +32,7 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION,
     SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
     SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_RETRY_CONFIRMATION,
     SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION,
@@ -32,11 +41,20 @@ from tests.route_assertions import registered_app_routes
 
 
 class FixtureService:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        error: Exception | None = None,
+        run_result: dict | None = None,
+    ) -> None:
         self.requests = []
+        self.error = error
+        self.run_result = run_result
 
     async def generate_hypotheses(self, request):
         self.requests.append(request)
+        if self.error is not None:
+            raise self.error
         return {
             "schema_version": "karkinos.ai.strategy_research_api.v1",
             "session_id": "session-route-001",
@@ -50,6 +68,17 @@ class FixtureService:
             "trade_plan_created": False,
             "authority_effect": "none",
         }
+
+    async def critique(self, request):
+        self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        return {"status": "completed", "failure_code": None}
+
+    async def run_once(self):
+        if self.error is not None:
+            raise self.error
+        return self.run_result or {"run_status": "completed"}
 
 
 def _payload() -> dict:
@@ -78,10 +107,20 @@ def _payload() -> dict:
     }
 
 
+def _peak_deferred() -> ProviderCallDeferred:
+    return ProviderCallDeferred(
+        DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.evaluate(
+            datetime(2026, 8, 31, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        )
+    )
+
+
 def _client(monkeypatch, service: FixtureService, db=object()) -> TestClient:
+    state = AppState()
+    state.db = db
     monkeypatch.setattr(
         "server.dependencies.get_app_state",
-        lambda: SimpleNamespace(db=db),
+        lambda: state,
     )
     monkeypatch.setattr(
         "server.routes.ai_strategy_research._build_write_service",
@@ -118,7 +157,7 @@ def test_hypothesis_route_requires_exact_human_export_confirmation(monkeypatch):
         },
     ],
 )
-def test_hypothesis_route_requires_real_account_and_reviewed_cost_binding(
+def test_hypothesis_route_requires_consistent_account_and_cost_binding(
     monkeypatch,
     invalid_selection,
 ):
@@ -131,6 +170,31 @@ def test_hypothesis_route_requires_real_account_and_reviewed_cost_binding(
 
     assert response.status_code == 422
     assert service.requests == []
+
+
+@pytest.mark.unit
+def test_hypothesis_route_accepts_provider_free_normalized_notional_selection(
+    monkeypatch,
+):
+    service = FixtureService()
+    client = _client(monkeypatch, service)
+    payload = _payload()
+    payload["selection"].update(
+        {
+            "cost_model_reference": (
+                "karkinos.backtest.multi_asset_commission.default.v1"
+            ),
+            "initial_cash": 1_000_000,
+            "valuation_snapshot_id": None,
+            "ledger_cutoff_id": None,
+        }
+    )
+
+    response = client.post("/api/ai/strategy-research/hypotheses", json=payload)
+
+    assert response.status_code == 200
+    assert service.requests[0].selection.has_account_binding is False
+    assert "initial_cash" not in service.requests[0].selection.to_external_dict()
 
 
 @pytest.mark.unit
@@ -201,6 +265,76 @@ def test_hypothesis_route_returns_non_executable_no_authority_contract(monkeypat
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("endpoint", ["hypotheses", "critiques"])
+def test_external_strategy_routes_return_non_authorizing_provider_defer(
+    monkeypatch,
+    endpoint,
+):
+    client = _client(monkeypatch, FixtureService(error=_peak_deferred()))
+    payload = _payload()
+    if endpoint == "critiques":
+        payload = {
+            "idempotency_key": "critique-route-deferred",
+            "requested_by": "human:owner",
+            "session_id": "session-route-001",
+            "draft_id": "draft-route-001",
+            "backtest_run_id": "backtest-route-001",
+            "confirmation": CRITIQUE_EXPORT_CONFIRMATION,
+        }
+
+    response = client.post(f"/api/ai/strategy-research/{endpoint}", json=payload)
+
+    assert response.status_code == 202
+    assert response.json()["failure_code"] == "deepseek_peak_pricing_window"
+    assert response.json()["provider_call_performed"] is False
+    assert response.json()["authority_effect"] == "none"
+
+
+@pytest.mark.unit
+def test_shadow_run_route_returns_non_authorizing_provider_defer(monkeypatch):
+    service = FixtureService(error=_peak_deferred())
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: service,
+    )
+
+    response = client.post(
+        "/api/ai/strategy-research/shadow-automation/run",
+    )
+
+    assert response.status_code == 202
+    assert response.json()["next_eligible_at"] == "2026-08-31T18:00:00+08:00"
+    assert response.json()["provider_call_performed"] is False
+    assert response.json()["authority_effect"] == "none"
+
+
+@pytest.mark.unit
+def test_shadow_run_route_maps_preflight_defer_result_to_accepted(monkeypatch):
+    service = FixtureService(
+        run_result={
+            "run_status": "deferred_for_provider_off_peak",
+            "failure_code": "deepseek_peak_pricing_window",
+            "next_eligible_at": "2026-08-31T18:00:00+08:00",
+            "provider_call_performed": False,
+            "authority_effect": "none",
+        }
+    )
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: service,
+    )
+
+    response = client.post(
+        "/api/ai/strategy-research/shadow-automation/run",
+    )
+
+    assert response.status_code == 202
+    assert response.json() == service.run_result
+
+
+@pytest.mark.unit
 def test_formula_catalog_get_is_pure_and_does_not_require_database(monkeypatch):
     client = _client(monkeypatch, FixtureService(), db=None)
 
@@ -220,7 +354,7 @@ def test_session_get_does_not_create_missing_database(monkeypatch, tmp_path):
     client = _client(
         monkeypatch,
         FixtureService(),
-        db=SimpleNamespace(_path=db_path),
+        db=AppDatabase(db_path),
     )
 
     response = client.get("/api/ai/strategy-research/sessions/missing")
@@ -268,6 +402,25 @@ def test_shadow_status_get_is_provider_free_and_does_not_initialize_shadow_table
 
 
 @pytest.mark.unit
+def test_shadow_readiness_get_is_provider_free_and_bounded(monkeypatch, tmp_path):
+    db_path = tmp_path / "app.db"
+    db = AppDatabase(db_path)
+    db.init_sync()
+    client = _client(monkeypatch, FixtureService(), db=db)
+
+    response = client.get("/api/ai/strategy-research/shadow-automation/readiness")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["policy"]["enabled"] is False
+    assert body["automatic_strategy_replacement_enabled"] is False
+    assert body["production_strategy_mutation_enabled"] is False
+    assert body["broker_submission_enabled"] is False
+    assert body["human_paper_shadow_approval_required"] is True
+    assert body["authority_effect"] == "research_only"
+
+
+@pytest.mark.unit
 def test_shadow_policy_accepts_five_sequential_iterations_without_daily_budget():
     payload = {
         "enabled": True,
@@ -277,7 +430,8 @@ def test_shadow_policy_accepts_five_sequential_iterations_without_daily_budget()
         "token_budget_mode": "unbounded_daily",
         "max_candidates_per_run": 5,
         "baseline_backtest_result_id": 8,
-        "require_complete_account_evidence": True,
+        "research_capital_mode": SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+        "require_complete_account_evidence": False,
         "research_question": "Generate five sequential revisions.",
         "updated_by": "human:owner",
         "confirmation": SHADOW_RESEARCH_POLICY_CONFIRMATION,
@@ -825,9 +979,20 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
 
 @pytest.mark.unit
 def test_deepseek_strategy_research_timeout_is_ten_minutes():
-    deepseek = SimpleNamespace(provider_id="DeepSeek")
-    other_provider = SimpleNamespace(provider_id="compatible-provider")
+    deepseek = SimpleNamespace(
+        provider_id="DeepSeek",
+        endpoint_origin="https://proxy.example.test",
+    )
+    deepseek_endpoint_alias = SimpleNamespace(
+        provider_id="compatible-provider",
+        endpoint_origin="https://api.deepseek.com",
+    )
+    other_provider = SimpleNamespace(
+        provider_id="compatible-provider",
+        endpoint_origin="https://ai.example.test",
+    )
 
     assert _strategy_research_model_timeout_seconds(deepseek) == 600.0
+    assert _strategy_research_model_timeout_seconds(deepseek_endpoint_alias) == 600.0
     assert _strategy_research_model_timeout_seconds(other_provider) == 180.0
     assert _strategy_research_model_timeout_seconds(None) == 180.0

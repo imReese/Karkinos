@@ -9,8 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_VERSION: "0.11.28"
+
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -26,10 +29,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install quality dependencies
         run: uv sync --extra dev --frozen
@@ -66,10 +69,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install backend dependencies
         run: uv sync --extra server --extra dev --frozen
@@ -83,7 +86,8 @@ jobs:
       - name: Run backend test suite
         run: |
           mkdir -p reports/ci
-          uv run python -m pytest --cov --cov-report=term --cov-report=xml \
+          uv run python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
+            --cov --cov-report=term --cov-report=xml \
             --junitxml=reports/ci/backend-junit.xml
 
       - name: Upload backend test evidence
@@ -106,18 +110,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
+          node-version: "24.20.0"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
       - name: Install uv and locked audit tooling
         run: |
-          python -m pip install uv
+          python -m pip install "uv==${UV_VERSION}"
           uv sync --extra server --extra dev --frozen
 
       - name: Audit locked Python production dependencies
@@ -141,10 +145,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install backend dependencies
         run: uv sync --extra server --extra dev --frozen
@@ -173,7 +177,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
+          node-version: "24.20.0"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -214,6 +218,7 @@ jobs:
           printf 'docker-context-sentinel\n' > secret.py
           printf 'docker-context-sentinel\n' > .env
           printf 'docker-context-sentinel\n' > data/store/runtime.sqlite
+          printf 'docker-context-sentinel\n' > data/store/private_runtime.py
           printf 'docker-context-sentinel\n' > logs/runtime.log
           printf 'docker-context-sentinel\n' > reports/private-report.json
           printf 'docker-context-sentinel\n' > exports/private-export.csv
@@ -241,7 +246,8 @@ jobs:
               && test ! -e /build-context/broker_statement.csv \
               && test ! -e /build-context/secret.py \
               && test ! -e /build-context/.env \
-              && test ! -e /build-context/data/store \
+              && test ! -e /build-context/data/store/runtime.sqlite \
+              && test ! -e /build-context/data/store/private_runtime.py \
               && test ! -e /build-context/logs \
               && test ! -e /build-context/reports \
               && test ! -e /build-context/exports \
@@ -270,7 +276,7 @@ jobs:
       - name: Verify non-root fail-closed runtime
         run: |
           test "$(docker inspect --format '{{.Config.User}}' karkinos-ci)" = "karkinos"
-          python scripts/verify_docker_runtime.py --timeout-seconds 90
+          python scripts/ci/verify_docker_runtime.py --timeout-seconds 90
 
       - name: Capture runtime logs
         if: always()
@@ -293,17 +299,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
+          node-version: "24.20.0"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install backend and frontend dependencies
         run: |
@@ -329,8 +335,8 @@ jobs:
             web/test-results/
           if-no-files-found: warn
 
-  acceptance-evidence:
-    name: Acceptance evidence
+  repository-acceptance-audit:
+    name: Repository acceptance audit
     needs: [backend, frontend, trading-safety]
     runs-on: ubuntu-latest
     steps:
@@ -340,10 +346,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install acceptance dependencies
         run: uv sync --extra server --extra dev --frozen
@@ -360,9 +366,9 @@ jobs:
           name: frontend-test-evidence
           path: reports/ci
 
-      - name: Run acceptance audit report
+      - name: Run repository acceptance audit report
         run: |
-          uv run python scripts/export_acceptance_audit.py --audit all \
+          uv run python scripts/ci/export_acceptance_audit.py --audit all \
             --verify-evidence \
             --backend-junit reports/ci/backend-junit.xml \
             --frontend-junit reports/ci/frontend-junit.xml \
@@ -372,7 +378,7 @@ jobs:
       - name: Upload acceptance evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: acceptance-evidence
+          name: repository-acceptance-audit
           path: reports/ci/acceptance-audit.json
           if-no-files-found: error
 
@@ -406,8 +412,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Check public shell entrypoint syntax
+        run: |
+          bash -n \
+            scripts/start_server.sh \
+            scripts/stop_server.sh \
+            scripts/service/manage_launch_agent.sh \
+            scripts/release/bootstrap_installer.sh
+
       - name: Check documentation health
-        run: python scripts/check_docs_health.py
+        run: python scripts/ci/check_docs_health.py
 
       - name: Check tracked private artifacts
         shell: bash
@@ -424,3 +438,44 @@ jobs:
           fi
 
           echo "No tracked private artifacts found."
+
+  code-ci-gate:
+    name: Code CI gate
+    if: always()
+    needs:
+      - python-quality
+      - backend
+      - dependency-audit
+      - trading-safety
+      - frontend
+      - docker-runtime
+      - browser-safety
+      - repository-acceptance-audit
+      - secret-scan
+      - hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every code CI check to pass
+        env:
+          PYTHON_QUALITY_RESULT: ${{ needs.python-quality.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          DEPENDENCY_AUDIT_RESULT: ${{ needs.dependency-audit.result }}
+          TRADING_SAFETY_RESULT: ${{ needs.trading-safety.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          DOCKER_RUNTIME_RESULT: ${{ needs.docker-runtime.result }}
+          BROWSER_SAFETY_RESULT: ${{ needs.browser-safety.result }}
+          REPOSITORY_ACCEPTANCE_AUDIT_RESULT: ${{ needs.repository-acceptance-audit.result }}
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+          HYGIENE_RESULT: ${{ needs.hygiene.result }}
+        run: |
+          set -euo pipefail
+          test "${PYTHON_QUALITY_RESULT}" = "success"
+          test "${BACKEND_RESULT}" = "success"
+          test "${DEPENDENCY_AUDIT_RESULT}" = "success"
+          test "${TRADING_SAFETY_RESULT}" = "success"
+          test "${FRONTEND_RESULT}" = "success"
+          test "${DOCKER_RUNTIME_RESULT}" = "success"
+          test "${BROWSER_SAFETY_RESULT}" = "success"
+          test "${REPOSITORY_ACCEPTANCE_AUDIT_RESULT}" = "success"
+          test "${SECRET_SCAN_RESULT}" = "success"
+          test "${HYGIENE_RESULT}" = "success"

@@ -3,19 +3,34 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
 from domain.portfolio_accounting import (
     moving_average_cost_after_buy,
     realized_pnl_after_sell,
-    total_trade_fee,
 )
 from server.ledger.models import LedgerEntry
+from server.projections.legacy_fund_trade_duplicate_contract import (
+    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE,
+    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_PLAN_SCHEMA_VERSION,
+    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
+)
 from server.projections.models import ZERO, PortfolioProjection, ProjectedPosition
+from server.projections.portfolio_projection_values import (
+    apply_valuations as _apply_valuations,
+)
+from server.projections.portfolio_projection_values import as_decimal as _as_decimal
+from server.projections.portfolio_projection_values import (
+    require_decimal as _require_decimal,
+)
+from server.projections.portfolio_projection_values import require_text as _require_text
+from server.projections.portfolio_projection_values import trade_side as _trade_side
+from server.projections.portfolio_projection_values import (
+    trade_total_fee as _trade_total_fee,
+)
 from server.services.position_presence import is_economically_zero_quantity
-from server.valuation.service import value_position
 
 _CASH_DEPOSIT_TYPES = {"cash_deposit", "deposit"}
 _CASH_WITHDRAW_TYPES = {"cash_withdraw", "cash_withdrawal", "withdraw"}
@@ -25,11 +40,23 @@ _DIVIDEND_TYPES = {"dividend"}
 _CASH_INTEREST_TYPES = {"cash_interest", "interest_income"}
 _FEE_TYPES = {"fee"}
 _MANUAL_ADJUSTMENT_TYPES = {"manual_adjustment"}
-_CONTROLLED_CORRECTION_TYPES = {"controlled_projection_correction"}
-_CONTROLLED_CORRECTION_SOURCE = "controlled_submission_ledger_correction"
-_CONTROLLED_CORRECTION_PLAN_SCHEMA_VERSION = (
-    "karkinos.controlled_submission_ledger_correction_plan.v1"
-)
+_PROJECTION_CORRECTION_CONTRACTS = {
+    "controlled_projection_correction": (
+        "controlled_submission_ledger_correction",
+        "karkinos.controlled_submission_ledger_correction_plan.v1",
+        "Controlled ledger correction",
+    ),
+    "manual_trade_projection_correction": (
+        "manual_trade_correction",
+        "karkinos.manual_trade_correction_plan.v1",
+        "Manual trade correction",
+    ),
+    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE: (
+        LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
+        LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_PLAN_SCHEMA_VERSION,
+        "Legacy fund trade duplicate correction",
+    ),
+}
 
 
 def build_portfolio_projection(
@@ -217,7 +244,20 @@ def _equity_bucket(asset_class: str | None) -> str | None:
 
 
 def _sorted_entries(entries: Sequence[LedgerEntry]) -> list[LedgerEntry]:
-    return sorted(entries, key=lambda entry: (entry.timestamp, entry.id or 0))
+    return sorted(entries, key=_entry_sort_key)
+
+
+def _entry_sort_key(entry: LedgerEntry) -> tuple[datetime, int]:
+    text = str(entry.timestamp or "").strip().replace("Z", "+00:00")
+    if not text:
+        raise ValueError("Ledger entry timestamp is missing")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        raise ValueError("Ledger entry timestamp is invalid") from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc), entry.id or 0
 
 
 def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> None:
@@ -250,8 +290,8 @@ def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> 
         _apply_manual_adjustment(projection, entry)
         return
 
-    if entry_type in _CONTROLLED_CORRECTION_TYPES:
-        _apply_controlled_projection_correction(projection, entry)
+    if entry_type in _PROJECTION_CORRECTION_CONTRACTS:
+        _apply_projection_correction(projection, entry, entry_type=entry_type)
         return
 
     raise ValueError(f"Unsupported ledger entry_type: {entry.entry_type!r}")
@@ -434,28 +474,34 @@ def _apply_manual_adjustment(
     position.sync_available_qty()
 
 
-def _apply_controlled_projection_correction(
+def _apply_projection_correction(
     projection: PortfolioProjection,
     entry: LedgerEntry,
+    *,
+    entry_type: str,
 ) -> None:
     """Apply a protected, canonical-replay-derived compensating event."""
-    if entry.source != _CONTROLLED_CORRECTION_SOURCE:
-        raise ValueError("Controlled ledger correction source is invalid")
+
+    expected_source, expected_schema, label = _PROJECTION_CORRECTION_CONTRACTS[
+        entry_type
+    ]
+    if entry.source != expected_source:
+        raise ValueError(f"{label} source is invalid")
     payload = entry.correction_payload
     if not isinstance(payload, dict):
-        raise ValueError("Controlled ledger correction payload is missing")
-    if payload.get("schema_version") != _CONTROLLED_CORRECTION_PLAN_SCHEMA_VERSION:
-        raise ValueError("Controlled ledger correction schema is invalid")
+        raise ValueError(f"{label} payload is missing")
+    if payload.get("schema_version") != expected_schema:
+        raise ValueError(f"{label} schema is invalid")
     if payload.get("arbitrary_financial_input_used") is not False:
-        raise ValueError("Controlled ledger correction derivation is invalid")
+        raise ValueError(f"{label} derivation is invalid")
 
     symbol = _require_text(str(payload.get("symbol") or ""), "symbol")
     if (entry.symbol or "") != symbol:
-        raise ValueError("Controlled ledger correction symbol is invalid")
+        raise ValueError(f"{label} symbol is invalid")
     before = payload.get("position_before")
     after = payload.get("position_after")
     if not isinstance(before, Mapping) or not isinstance(after, Mapping):
-        raise ValueError("Controlled ledger correction position state is invalid")
+        raise ValueError(f"{label} position state is invalid")
 
     position = projection.positions.get(symbol)
     if position is None:
@@ -463,14 +509,24 @@ def _apply_controlled_projection_correction(
     if _projected_position_accounting_state(position) != _normalized_position_state(
         before
     ):
-        raise ValueError(
-            f"Controlled ledger correction position evidence drifted for {symbol}"
-        )
+        raise ValueError(f"{label} position evidence drifted for {symbol}")
 
-    projection.cash += _as_decimal(payload.get("cash_delta", "0"))
+    cash_delta = _as_decimal(payload.get("cash_delta", "0"))
+    if entry_type == LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE:
+        cash_before = _as_decimal(payload.get("cash_before"))
+        cash_after = _as_decimal(payload.get("cash_after"))
+        if payload.get("cash_allocation") != "ordered_batch_absolute_cash_state_v1":
+            raise ValueError(f"{label} cash allocation is invalid")
+        if projection.cash != cash_before:
+            raise ValueError(f"{label} cash evidence drifted")
+        if cash_after - cash_before != cash_delta:
+            raise ValueError(f"{label} cash delta is invalid")
+        projection.cash = cash_after
+    else:
+        projection.cash += cash_delta
     deposits_delta = _as_decimal(payload.get("total_deposits_delta", "0"))
     if deposits_delta != ZERO:
-        raise ValueError("Controlled ledger correction cannot change deposits")
+        raise ValueError(f"{label} cannot change deposits")
     projection.total_deposits += deposits_delta
 
     normalized_after = _normalized_position_state(after)
@@ -495,7 +551,7 @@ def _apply_controlled_projection_correction(
     elif position.quantity != ZERO and previous_quantity == ZERO:
         position.closed_at = None
     if position.available_qty != position.quantity - position.frozen_qty:
-        raise ValueError("Controlled ledger correction availability is invalid")
+        raise ValueError(f"{label} availability is invalid")
     projection.positions[symbol] = position
 
 
@@ -533,7 +589,7 @@ def _normalized_position_state(
     )
     required = {*decimal_fields, "broker_cost_basis_method", "broker_cost_basis_status"}
     if set(raw) != required:
-        raise ValueError("Controlled ledger correction position fields are invalid")
+        raise ValueError("Ledger correction position fields are invalid")
     return {
         **{field: _as_decimal(raw[field]) for field in decimal_fields},
         "broker_cost_basis_method": (
@@ -547,78 +603,3 @@ def _normalized_position_state(
             else str(raw["broker_cost_basis_status"])
         ),
     }
-
-
-def _apply_valuations(
-    projection: PortfolioProjection, latest_quotes: Mapping[str, Any]
-) -> None:
-    for symbol, position in projection.positions.items():
-        market_price = _quote_price(symbol, position.avg_cost, latest_quotes)
-        valuation = value_position(position.quantity, position.avg_cost, market_price)
-        position.market_value = valuation.market_value
-        position.unrealized_pnl = valuation.unrealized_pnl
-
-
-def _quote_price(
-    symbol: str, fallback: Decimal, latest_quotes: Mapping[str, Any]
-) -> Decimal:
-    quote = latest_quotes.get(symbol)
-    if isinstance(quote, Mapping):
-        price = quote.get("price")
-    else:
-        price = quote
-
-    if price in {None, "", 0, 0.0}:
-        return fallback
-    return _as_decimal(price)
-
-
-def _trade_side(entry: LedgerEntry) -> str:
-    direction = (entry.direction or "").strip().lower()
-    if direction in {"buy", "sell"}:
-        return direction
-
-    entry_type = (entry.entry_type or "").strip().lower()
-    if entry_type.endswith("_buy"):
-        return "buy"
-    if entry_type.endswith("_sell"):
-        return "sell"
-    if entry_type == "buy":
-        return "buy"
-    if entry_type == "sell":
-        return "sell"
-    return ""
-
-
-def _trade_total_fee(entry: LedgerEntry) -> Decimal:
-    return total_trade_fee(
-        commission=_as_decimal(entry.commission),
-        fee_breakdown=entry.fee_breakdown,
-    )
-
-
-def _breakdown_decimal(breakdown: Mapping[str, Any], *keys: str) -> Decimal | None:
-    for key in keys:
-        raw = breakdown.get(key)
-        if raw in {None, ""}:
-            continue
-        return _as_decimal(raw)
-    return None
-
-
-def _require_decimal(value: float | Decimal | None, field_name: str) -> Decimal:
-    if value is None:
-        raise ValueError(f"Missing {field_name} on ledger entry")
-    return _as_decimal(value)
-
-
-def _require_text(value: str | None, field_name: str) -> str:
-    if not value:
-        raise ValueError(f"Missing {field_name} on ledger entry")
-    return value
-
-
-def _as_decimal(value: float | Decimal | int | str) -> Decimal:
-    if isinstance(value, Decimal):
-        return value
-    return Decimal(str(value))

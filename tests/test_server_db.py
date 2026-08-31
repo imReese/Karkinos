@@ -6,9 +6,16 @@ import sqlite3
 from datetime import datetime
 from decimal import Decimal
 
+import pytest
+
 from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
+from server.contracts.order_state import (
+    ManualOrderStateCommand,
+    ManualOrderTicketCommand,
+)
 from server.db import AppDatabase
+from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
 
 
 def test_app_database_initializes_quote_fetch_runs_table(tmp_path):
@@ -711,7 +718,7 @@ def test_app_database_selects_latest_quote_by_normalized_instant(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     observations = [
-        (100.0, "2026-04-18T01:40:00Z"),
+        (100.0, "2026-04-18T01:38:00Z"),
         (101.0, "2026-04-18T09:39:00+08:00"),
         (102.0, "2026-04-18T09:40:00+08:00"),
         (103.0, "not-a-timestamp"),
@@ -739,6 +746,32 @@ def test_app_database_selects_latest_quote_by_normalized_instant(tmp_path):
     assert "quote_rank" not in latest[1]
 
 
+def test_app_database_rejects_latest_quote_conflict_at_write_boundary(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="600519",
+        asset_class="stock",
+        price=102.0,
+        volume=1000.0,
+        timestamp="2026-04-18T09:40:00+08:00",
+    )
+
+    with pytest.raises(ValueError, match="conflict at the same timestamp"):
+        db.save_quote_snapshot_sync(
+            symbol="600519",
+            asset_class="stock",
+            price=103.0,
+            volume=1000.0,
+            timestamp="2026-04-18T01:40:00Z",
+        )
+
+    recent = db.get_recent_quote_snapshots_sync("600519", limit=10)
+    latest = db.get_latest_quote_sync("600519", asset_type="stock")
+    assert len(recent) == 1
+    assert latest is not None and latest["price"] == 102.0
+
+
 def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -756,15 +789,6 @@ def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_p
             provider_status="live",
             captured_reason="test_refresh",
         )
-        db.upsert_latest_quote_sync(
-            symbol="600519",
-            asset_type="stock",
-            price=price,
-            quote_timestamp=f"2026-05-23T09:{minute}:00+08:00",
-            captured_at=f"2026-05-23T09:{minute}:01+08:00",
-            quote_source="akshare",
-            provider_name="akshare",
-        )
 
     recent = db.get_recent_quote_snapshots_sync("600519", limit=10)
     latest = db.list_latest_quotes_sync()
@@ -772,6 +796,208 @@ def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_p
     assert len(recent) == 2
     assert len(latest) == 1
     assert latest[0]["price"] == 124.0
+
+
+def test_current_quote_readers_ignore_large_superseded_history(
+    monkeypatch,
+    tmp_path,
+):
+    from server.persistence import financial_facts_quotes as quote_facts
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_latest_quote_sync(
+        symbol="600519",
+        asset_type="stock",
+        price=99.0,
+        quote_timestamp="2026-08-28T15:00:00+08:00",
+        captured_at="2026-08-28T15:00:01+08:00",
+        quote_source="materialized_test",
+    )
+    old_timestamp = "2026-06-16T15:00:00+08:00"
+    with sqlite3.connect(db.path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_instant_utc
+            ) VALUES ('600519', 'stock', ?, NULL, ?, ?, ?)
+            """,
+            (
+                (
+                    10.0 + observation_id / 1000,
+                    old_timestamp,
+                    old_timestamp,
+                    quote_instant_storage_key(old_timestamp),
+                )
+                for observation_id in range(2_000)
+            ),
+        )
+        conn.commit()
+    db.init_sync()
+
+    statements: list[str] = []
+    connect = sqlite3.connect
+
+    def traced_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(quote_facts.sqlite3, "connect", traced_connect)
+
+    current = db.get_latest_quote_sync("600519", asset_type="stock")
+    current_rows = db.list_latest_quotes_sync()
+    startup_rows = db.get_latest_quotes_sync()
+    async_current = asyncio.run(db.get_latest_quote("600519"))
+
+    assert current is not None and current["price"] == 99.0
+    assert [row["price"] for row in current_rows] == [99.0]
+    assert [row["price"] for row in startup_rows] == [99.0]
+    assert async_current is not None
+    assert async_current["price"] == 99.0
+    assert async_current["asset_class"] == "stock"
+    assert async_current["timestamp"] == "2026-08-28T15:00:00+08:00"
+    history_selects = [
+        " ".join(statement.lower().split())
+        for statement in statements
+        if "from quote_snapshots" in statement.lower()
+    ]
+    assert history_selects
+    assert set(history_selects) == {"select coalesce(max(id), 0) from quote_snapshots"}
+
+
+def test_recent_quote_history_is_limited_in_canonical_sql_order(
+    monkeypatch,
+    tmp_path,
+):
+    from server.persistence import financial_facts_quotes as quote_facts
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    rows = (
+        (10.0, "2026-08-28T07:00:00Z"),
+        (9.0, "2026-08-28T14:59:00+08:00"),
+        (10.0, "2026-08-28T15:00:00+08:00"),
+        (8.0, "2026-06-16T15:00:00+08:00"),
+    )
+    with sqlite3.connect(db.path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_instant_utc
+            ) VALUES ('600519', 'stock', ?, NULL, ?, ?, ?)
+            """,
+            (
+                (
+                    price,
+                    timestamp,
+                    timestamp,
+                    quote_instant_storage_key(timestamp),
+                )
+                for price, timestamp in rows
+            ),
+        )
+        conn.commit()
+
+    statements: list[str] = []
+    connect = sqlite3.connect
+
+    def traced_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(quote_facts.sqlite3, "connect", traced_connect)
+
+    recent = db.get_recent_quote_snapshots_sync("600519", limit=2)
+
+    assert [row["id"] for row in recent] == [3, 1]
+    assert [row["timestamp"] for row in recent] == [
+        "2026-08-28T15:00:00+08:00",
+        "2026-08-28T07:00:00Z",
+    ]
+    history_selects = [
+        " ".join(statement.lower().split())
+        for statement in statements
+        if "from quote_snapshots" in statement.lower()
+    ]
+    assert len(history_selects) == 1
+    assert "order by quote_instant_utc desc, id desc" in history_selects[0]
+    assert "limit 2" in history_selects[0]
+
+
+def test_startup_quote_reconciliation_rejects_latest_instant_conflict(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db.path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_instant_utc
+            ) VALUES ('600519', 'stock', ?, NULL, ?, ?, ?)
+            """,
+            (
+                (
+                    10.0,
+                    "2026-08-28T15:00:00+08:00",
+                    "2026-08-28T15:00:01+08:00",
+                    quote_instant_storage_key("2026-08-28T15:00:00+08:00"),
+                ),
+                (
+                    10.1,
+                    "2026-08-28T07:00:00Z",
+                    "2026-08-28T15:00:02+08:00",
+                    quote_instant_storage_key("2026-08-28T07:00:00Z"),
+                ),
+            ),
+        )
+        conn.commit()
+
+    with pytest.raises(ValueError, match="conflict at the newest timestamp"):
+        db.init_sync()
+    with pytest.raises(RuntimeError, match="checkpoint does not cover audit history"):
+        db.get_latest_quote_sync("600519", asset_type="stock")
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM latest_quotes").fetchone()[0] == 0
+
+
+def test_startup_quote_reconciliation_ignores_superseded_conflict(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db.path) as conn:
+        rows = (
+            (10.0, "2026-06-16T15:00:00+08:00"),
+            (10.1, "2026-06-16T07:00:00Z"),
+            (11.0, "2026-08-28T15:00:00+08:00"),
+        )
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_instant_utc
+            ) VALUES ('600519', 'stock', ?, NULL, ?, ?, ?)
+            """,
+            (
+                (
+                    price,
+                    timestamp,
+                    timestamp,
+                    quote_instant_storage_key(timestamp),
+                )
+                for price, timestamp in rows
+            ),
+        )
+        conn.commit()
+
+    db.init_sync()
+    restored = db.get_latest_quotes_sync()
+    materialized = db.get_latest_quote_sync("600519", asset_type="stock")
+
+    assert [row["price"] for row in restored] == [11.0]
+    assert materialized is not None and materialized["price"] == 11.0
 
 
 def test_app_database_portfolio_snapshots_append_portfolio_events(tmp_path):
@@ -1248,12 +1474,14 @@ def test_app_database_ledger_entries_append_portfolio_events(tmp_path):
     assert events[0]["source"] == "ledger_entries"
     assert events[0]["source_ref"] == str(entry_id)
     assert json.loads(events[0]["payload_json"]) == {
-        "amount": None,
+        "amount": 1234.5,
         "asset_class": "stock",
         "commission": 1.23,
         "direction": "buy",
         "entry_id": entry_id,
         "entry_type": "trade_buy",
+        "gross_amount": 1234.5,
+        "net_cash_impact": -1235.73,
         "note": "unit test trade",
         "price": 123.45,
         "quantity": 10.0,
@@ -1267,69 +1495,81 @@ def test_app_database_ledger_entries_append_portfolio_events(tmp_path):
 def test_app_database_manual_orders_append_order_events(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-
-    row_id = db.save_manual_order_sync(
-        order_id="ORD-1",
-        timestamp="2026-04-18T14:50:00",
+    db.save_signal_sync(
+        timestamp="2026-04-18T14:49:00",
+        strategy_id="fixture",
         symbol="600519",
-        side="buy",
-        order_type="market",
-        quantity=100.0,
+        direction="buy",
+        target_weight=0.1,
         price=123.45,
-        intent_id="INTENT-1",
-        risk_decision_id="RISK-1",
-        execution_mode="manual",
-        status="pending_confirm",
-        payload={"reason": "unit test"},
+        asset_class="stock",
     )
-    db.update_manual_order_status_sync(
-        order_id="ORD-1",
-        status="confirmed",
-        note="operator approved",
+    db.upsert_action_task_sync(
+        source_signal_id=1,
+        symbol="600519",
+        title="fixture action",
+        detail="manual order event fixture",
+        direction="buy",
+        urgency="normal",
+        target_weight=0.1,
+        price=123.45,
+        strategy_id="fixture",
+        timestamp="2026-04-18T14:49:00",
+        asset_class="stock",
+    )
+    action_id = int(db.get_action_tasks_sync(limit=1)[0]["id"])
+    created = db.create_manual_order_ticket_sync(
+        ManualOrderTicketCommand(
+            idempotency_key="manual-ticket:action:1",
+            action_id=action_id,
+            expected_action_status="pending",
+            order_id="ORD-1",
+            timestamp="2026-04-18T14:50:00",
+            symbol="600519",
+            side="buy",
+            order_type="market",
+            quantity=100.0,
+            price=123.45,
+            asset_class="stock",
+            intent_id="INTENT-1",
+            risk_decision_id="RISK-1",
+            source_ref=str(action_id),
+            payload={"reason": "unit test", "action_id": action_id},
+        )
+    )
+    db.transition_manual_order_sync(
+        ManualOrderStateCommand(
+            idempotency_key="manual-order:ORD-1:confirm",
+            order_id="ORD-1",
+            expected_from="pending_confirm",
+            to_status="confirmed",
+            note="operator approved",
+            action_id=action_id,
+            expected_action_status="pending_manual_confirmation",
+            action_to_status="acted",
+        )
     )
     events = db.list_events_sync(entity_type="order", entity_id="ORD-1")
 
-    assert [event["event_type"] for event in events] == [
-        "order.status_changed",
-        "order.submitted",
+    assert created["id"] > 0
+    assert [(event["event_type"], event["source"]) for event in events] == [
+        ("order.status_changed", "orders"),
+        ("order.status_changed", "manual_orders"),
+        ("order.recorded", "orders"),
+        ("order.submitted", "manual_orders"),
     ]
-    assert events[0]["source"] == "manual_orders"
-    assert events[0]["source_ref"] == "ORD-1"
-    assert json.loads(events[0]["payload_json"]) == {
-        "execution_mode": "manual",
-        "intent_id": "INTENT-1",
-        "note": "operator approved",
-        "order_id": "ORD-1",
-        "order_row_id": row_id,
-        "order_type": "market",
-        "payload": {"reason": "unit test"},
-        "price": 123.45,
-        "quantity": 100.0,
-        "risk_decision_id": "RISK-1",
-        "side": "buy",
-        "status": "confirmed",
-        "symbol": "600519",
-        "timestamp": "2026-04-18T14:50:00",
-    }
-    assert json.loads(events[1]["payload_json"]) == {
-        "execution_mode": "manual",
-        "intent_id": "INTENT-1",
-        "note": "",
-        "order_id": "ORD-1",
-        "order_row_id": row_id,
-        "order_type": "market",
-        "payload": {"reason": "unit test"},
-        "price": 123.45,
-        "quantity": 100.0,
-        "risk_decision_id": "RISK-1",
-        "side": "buy",
-        "status": "pending_confirm",
-        "symbol": "600519",
-        "timestamp": "2026-04-18T14:50:00",
-    }
+    manual_status_payload = json.loads(events[1]["payload_json"])
+    assert manual_status_payload["note"] == "operator approved"
+    assert manual_status_payload["status"] == "confirmed"
+    assert manual_status_payload["payload"]["reason"] == "unit test"
+    assert manual_status_payload["command_identity"]["command_type"] == (
+        "manual_order_ticket.transition"
+    )
+    assert db.get_order_sync("ORD-1")["status"] == "confirmed"
+    assert db.get_action_task_sync(action_id)["status"] == "acted"
 
 
-def test_app_database_records_order_and_appends_order_event(tmp_path):
+def test_app_database_exactly_replays_order_and_rejects_fact_drift(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
 
@@ -1352,39 +1592,54 @@ def test_app_database_records_order_and_appends_order_event(tmp_path):
     )
     updated_id = db.record_order_sync(
         order_id="ORD-1",
-        timestamp="2026-04-18T14:50:01",
+        timestamp="2026-04-18T14:50:00",
         symbol="600519",
         side="buy",
         order_type="market",
         quantity=100.0,
-        price=123.46,
+        price=123.45,
         asset_class="stock",
         intent_id="INTENT-1",
         risk_decision_id="RISK-1",
         execution_mode="manual",
-        status="submitted",
+        status="pending_confirm",
         source="manual_orders",
         source_ref="ORD-1",
-        payload={"reason": "resubmitted"},
+        payload={"reason": "unit test"},
     )
+    with pytest.raises(ValueError, match="fact payload changed"):
+        db.record_order_sync(
+            order_id="ORD-1",
+            timestamp="2026-04-18T14:50:01",
+            symbol="600519",
+            side="buy",
+            order_type="market",
+            quantity=100.0,
+            price=123.46,
+            asset_class="stock",
+            intent_id="INTENT-1",
+            risk_decision_id="RISK-1",
+            execution_mode="manual",
+            status="submitted",
+            source="manual_orders",
+            source_ref="ORD-1",
+            payload={"reason": "resubmitted"},
+        )
 
     order = db.get_order_sync("ORD-1")
-    orders = db.list_orders_sync(status="submitted")
+    orders = db.list_orders_sync(status="pending_confirm")
     events = db.list_events_sync(entity_type="order", entity_id="ORD-1")
 
     assert updated_id == row_id
     assert len(orders) == 1
     assert order == orders[0]
     assert order["order_id"] == "ORD-1"
-    assert order["status"] == "submitted"
-    assert order["price"] == 123.46
+    assert order["status"] == "pending_confirm"
+    assert order["price"] == 123.45
     assert order["source"] == "manual_orders"
     assert order["source_ref"] == "ORD-1"
-    assert json.loads(order["payload_json"]) == {"reason": "resubmitted"}
-    assert [event["event_type"] for event in events] == [
-        "order.recorded",
-        "order.recorded",
-    ]
+    assert json.loads(order["payload_json"]) == {"reason": "unit test"}
+    assert [event["event_type"] for event in events] == ["order.recorded"]
     assert json.loads(events[0]["payload_json"]) == {
         "asset_class": "stock",
         "execution_mode": "manual",
@@ -1392,16 +1647,16 @@ def test_app_database_records_order_and_appends_order_event(tmp_path):
         "order_id": "ORD-1",
         "order_row_id": row_id,
         "order_type": "market",
-        "payload": {"reason": "resubmitted"},
-        "price": 123.46,
+        "payload": {"reason": "unit test"},
+        "price": 123.45,
         "quantity": 100.0,
         "risk_decision_id": "RISK-1",
         "side": "buy",
         "source": "manual_orders",
         "source_ref": "ORD-1",
-        "status": "submitted",
+        "status": "pending_confirm",
         "symbol": "600519",
-        "timestamp": "2026-04-18T14:50:01",
+        "timestamp": "2026-04-18T14:50:00",
     }
 
 
@@ -1466,7 +1721,7 @@ def test_app_database_updates_order_status_and_appends_status_event(tmp_path):
     }
 
 
-def test_app_database_records_fill_and_appends_order_fill_event(tmp_path):
+def test_app_database_exactly_replays_fill_and_rejects_fact_drift(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
 
@@ -1491,21 +1746,40 @@ def test_app_database_records_fill_and_appends_order_fill_event(tmp_path):
     updated_id = db.record_fill_sync(
         fill_id="FILL-1",
         order_id="ORD-1",
-        timestamp="2026-04-18T14:50:04",
+        timestamp="2026-04-18T14:50:03",
         symbol="600519",
         side="buy",
-        fill_price=123.47,
+        fill_price=123.46,
         fill_quantity=100.0,
-        commission=5.1,
-        slippage=1.1,
+        commission=5.0,
+        slippage=1.0,
         asset_class="stock",
         execution_mode="paper",
         provider_name="simulated",
         broker_order_id="SIM-ORD-1",
         source="simulated_execution",
         source_ref="SIM-FILL-1",
-        metadata={"latency_ms": 14},
+        metadata={"latency_ms": 12},
     )
+    with pytest.raises(ValueError, match="numeric fact changed"):
+        db.record_fill_sync(
+            fill_id="FILL-1",
+            order_id="ORD-1",
+            timestamp="2026-04-18T14:50:03",
+            symbol="600519",
+            side="buy",
+            fill_price=123.47,
+            fill_quantity=100.0,
+            commission=5.0,
+            slippage=1.0,
+            asset_class="stock",
+            execution_mode="paper",
+            provider_name="simulated",
+            broker_order_id="SIM-ORD-1",
+            source="simulated_execution",
+            source_ref="SIM-FILL-1",
+            metadata={"latency_ms": 12},
+        )
 
     fill = db.get_fill_sync("FILL-1")
     fills = db.list_fills_sync(order_id="ORD-1")
@@ -1516,32 +1790,29 @@ def test_app_database_records_fill_and_appends_order_fill_event(tmp_path):
     assert fill == fills[0]
     assert fill["fill_id"] == "FILL-1"
     assert fill["order_id"] == "ORD-1"
-    assert fill["fill_price"] == 123.47
+    assert fill["fill_price"] == 123.46
     assert fill["source"] == "simulated_execution"
     assert fill["source_ref"] == "SIM-FILL-1"
-    assert json.loads(fill["metadata_json"]) == {"latency_ms": 14}
-    assert [event["event_type"] for event in events] == [
-        "order.fill.recorded",
-        "order.fill.recorded",
-    ]
+    assert json.loads(fill["metadata_json"]) == {"latency_ms": 12}
+    assert [event["event_type"] for event in events] == ["order.fill.recorded"]
     assert json.loads(events[0]["payload_json"]) == {
         "asset_class": "stock",
         "broker_order_id": "SIM-ORD-1",
-        "commission": 5.1,
+        "commission": 5.0,
         "execution_mode": "paper",
         "fill_id": "FILL-1",
-        "fill_price": 123.47,
+        "fill_price": 123.46,
         "fill_quantity": 100.0,
         "fill_row_id": row_id,
-        "metadata": {"latency_ms": 14},
+        "metadata": {"latency_ms": 12},
         "order_id": "ORD-1",
         "provider_name": "simulated",
         "side": "buy",
-        "slippage": 1.1,
+        "slippage": 1.0,
         "source": "simulated_execution",
         "source_ref": "SIM-FILL-1",
         "symbol": "600519",
-        "timestamp": "2026-04-18T14:50:04",
+        "timestamp": "2026-04-18T14:50:03",
     }
 
 

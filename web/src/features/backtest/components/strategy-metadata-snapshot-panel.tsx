@@ -1,7 +1,10 @@
 import { BadgeCheck } from 'lucide-react';
 
-import { useCopy } from '../../../app/copy';
-import { usePreferences, type Locale } from '../../../app/preferences';
+import { useCopy } from '../../../shared/i18n/context';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatPublicNote } from '../../../shared/public-labels';
 import type {

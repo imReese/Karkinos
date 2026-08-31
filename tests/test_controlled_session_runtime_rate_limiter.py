@@ -13,6 +13,12 @@ from server.services.controlled_session_runtime_rate_limiter import (
     ControlledSessionRateAdmissionRejected,
     ControlledSessionRuntimeRateLimiterService,
 )
+from server.services.trading_controls import (
+    AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    TradingControlState,
+    resolve_persisted_automatic_trading_control,
+)
 
 NOW = datetime(2026, 7, 12, 6, 0, tzinfo=timezone.utc)
 SESSION_TOKEN = "runtime-rate-token-000000000000000000000000001"
@@ -63,9 +69,19 @@ def _session(
 def _service(tmp_path, sessions: dict[str, dict], current_time=None):
     db = AppDatabase(tmp_path / "controlled-session-rate-limit.db")
     db.init_sync()
+    clock = current_time or [NOW]
+    controls = TradingControlState(db=db, clock=lambda: clock[0])
+    enabled = controls.set_automatic_trading(
+        enabled=True,
+        reason="bounded runtime admission test",
+        operator_id="test-owner",
+        expected_revision=0,
+        ttl_seconds=600,
+        acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    )
+    assert enabled["status"] == "enabled"
     for session in sessions.values():
         _persist_runtime_session(db, session)
-    clock = current_time or [NOW]
     for session in sessions.values():
         _persist_gate_snapshot(db, session, observed_at=clock[0])
     service = ControlledSessionRuntimeRateLimiterService(
@@ -79,12 +95,18 @@ def _service(tmp_path, sessions: dict[str, dict], current_time=None):
             db,
             session_id,
         ),
+        trading_controls=controls,
         clock=lambda: clock[0],
     )
     return db, service
 
 
-def _persist_runtime_session(db: AppDatabase, session: dict) -> None:
+def _persist_runtime_session(
+    db: AppDatabase,
+    session: dict,
+    *,
+    created_at: datetime = NOW,
+) -> None:
     reservation = {
         "reservation_id": session["reservation_id"],
         "attestation_id": ("1" if session["session_id"].endswith("a") else "2") * 64,
@@ -108,7 +130,7 @@ def _persist_runtime_session(db: AppDatabase, session: dict) -> None:
         "reserved_by_symbol_units": {"510300.SH": 0},
         "symbol_capacity_units": {"510300.SH": 1_000_000_000},
         "payload": {},
-        "created_at": NOW.isoformat(),
+        "created_at": created_at.isoformat(),
     }
     reserved = db.reserve_controlled_session_budget_sync(reservation=reservation)
     assert reserved["status"] == "reserved"
@@ -142,7 +164,7 @@ def _persist_runtime_session(db: AppDatabase, session: dict) -> None:
             "token_salt": "ab" * 16,
             "token_hash": "6" * 64,
             "payload": {},
-            "created_at": NOW.isoformat(),
+            "created_at": created_at.isoformat(),
         }
     )
     assert issued["status"] == "enabled"
@@ -155,6 +177,21 @@ def _persist_gate_snapshot(
     observed_at: datetime,
     status: str = "clear",
 ) -> dict:
+    automatic_trading = resolve_persisted_automatic_trading_control(
+        db.get_runtime_control_sync("automatic_trading"),
+        now_epoch_ms=int(observed_at.timestamp() * 1000),
+    )
+    gate_values = {
+        "fixture_gate_status": status,
+        "automatic_trading_status": automatic_trading["status"],
+        "automatic_trading_configured_enabled": automatic_trading["configured_enabled"],
+        "automatic_trading_enabled": automatic_trading["enabled"],
+        "automatic_trading_revision": automatic_trading["revision"],
+        "automatic_trading_control_fingerprint": automatic_trading[
+            "control_fingerprint"
+        ],
+        "automatic_trading_blockers": automatic_trading["blockers"],
+    }
     fingerprint = hashlib.sha256(
         (
             f"{session['session_id']}:{session['session_fingerprint']}:"
@@ -176,17 +213,18 @@ def _persist_gate_snapshot(
             "observed_at_epoch_ms": int(observed_at.timestamp() * 1000),
             "observed_at": observed_at.isoformat(),
             "status": status,
-            "gate_snapshot": {"fixture_gate_status": status},
+            "gate_snapshot": gate_values,
             "source_evidence": {"fixture": True},
             "blockers": [] if status == "clear" else ["fixture_gate_blocked"],
             "payload": {
-                "schema_version": "karkinos.controlled_session_live_gate_snapshot.v1",
+                "schema_version": "karkinos.controlled_session_live_gate_snapshot.v2",
                 "snapshot_id": snapshot_id,
                 "snapshot_fingerprint": fingerprint,
                 "session_id": session["session_id"],
                 "session_fingerprint": session["session_fingerprint"],
                 "observed_at": observed_at.isoformat(),
                 "status": status,
+                "gate_snapshot": gate_values,
                 "broker_submission_enabled": False,
             },
             "created_at": observed_at.isoformat(),
@@ -263,12 +301,19 @@ def test_preview_is_deterministic_sanitized_and_side_effect_free(tmp_path) -> No
     assert first["admission_id"] == second["admission_id"]
     assert first["status"] == "ready_for_atomic_admission"
     assert first["max_order_rate_per_minute"] == 2
+    assert first["automatic_trading_status"] == "enabled"
+    assert first["automatic_trading_revision"] == 1
+    assert len(first["automatic_trading_control_fingerprint"]) == 64
     assert len(first["gate_snapshot_id"]) == 64
     assert len(first["gate_snapshot_fingerprint"]) == 64
     assert first["runtime_admission_granted"] is False
     assert first["runtime_live_gates_verified"] is False
     assert "must-not-leak" not in str(first)
     assert db.list_controlled_session_rate_admissions_sync() == []
+    status = service.get_status()
+    assert status["automatic_trading_provider_configured"] is True
+    assert status["automatic_trading_gate"]["enabled"] is True
+    assert status["runtime_admission_enabled"] is True
 
 
 @pytest.mark.parametrize(
@@ -335,6 +380,15 @@ def test_missing_live_gate_provider_disables_internal_admission(tmp_path) -> Non
     session = _session("session-a")
     db = AppDatabase(tmp_path / "missing-live-gate-provider.db")
     db.init_sync()
+    controls = TradingControlState(db=db, clock=lambda: NOW)
+    controls.set_automatic_trading(
+        enabled=True,
+        reason="bind fixture session",
+        operator_id="test-owner",
+        expected_revision=0,
+        ttl_seconds=600,
+        acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    )
     _persist_runtime_session(db, session)
 
     def failed_gate_provider(_session_id: str) -> dict:
@@ -416,6 +470,105 @@ def test_newer_blocked_gate_snapshot_wins_inside_admission_transaction(
     assert db.list_oms_orders_sync() == []
     assert db.list_fills_sync() == []
     assert db.get_ledger_entries_sync() == []
+
+
+def test_preview_then_automatic_trading_disable_is_rejected_atomically(
+    tmp_path,
+) -> None:
+    sessions = {"session-a": _session("session-a")}
+    db, service = _service(tmp_path, sessions)
+    preview = service.preview(
+        session_id="session-a",
+        session_token=SESSION_TOKEN,
+        order_id="OMS-1",
+        request_id="1" * 64,
+    )
+    controls = TradingControlState(db=db, clock=lambda: NOW)
+    controls.set_automatic_trading(
+        enabled=False,
+        reason="operator stop before commit",
+        operator_id="test-owner",
+        expected_revision=1,
+        acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    )
+
+    with pytest.raises(ControlledSessionRateAdmissionRejected) as exc_info:
+        _admit(service)
+
+    assert preview["status"] == "ready_for_atomic_admission"
+    assert "automatic_trading_disabled" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
+    assert "automatic_trading_control_revision_mismatch" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
+    assert db.list_controlled_session_rate_admissions_sync() == []
+
+
+def test_quick_disable_reenable_rejects_old_session_until_new_issuance(
+    tmp_path,
+) -> None:
+    sessions = {"session-a": _session("session-a")}
+    clock = [NOW]
+    db, service = _service(tmp_path, sessions, current_time=clock)
+    preview = service.preview(
+        session_id="session-a",
+        session_token=SESSION_TOKEN,
+        order_id="OMS-1",
+        request_id="1" * 64,
+    )
+    controls = TradingControlState(db=db, clock=lambda: clock[0])
+    clock[0] = NOW + timedelta(seconds=1)
+    controls.set_automatic_trading(
+        enabled=False,
+        reason="close before a fresh bounded review",
+        operator_id="test-owner",
+        expected_revision=1,
+        acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    )
+    clock[0] = NOW + timedelta(seconds=2)
+    updated = controls.set_automatic_trading(
+        enabled=True,
+        reason="new bounded review",
+        operator_id="test-owner",
+        expected_revision=2,
+        ttl_seconds=600,
+        acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    )
+
+    with pytest.raises(ControlledSessionRateAdmissionRejected) as exc_info:
+        _admit(service)
+
+    assert preview["automatic_trading_revision"] == 1
+    assert updated["revision"] == 3
+    assert "automatic_trading_control_revision_mismatch" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
+    assert "automatic_trading_control_fingerprint_mismatch" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
+    assert "runtime_automatic_trading_session_binding_revision_mismatch" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
+    assert "runtime_automatic_trading_session_predates_last_disable" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
+    assert db.list_controlled_session_rate_admissions_sync() == []
+
+    clock[0] = NOW + timedelta(seconds=3)
+    new_session = _session("session-b")
+    sessions["session-b"] = new_session
+    _persist_runtime_session(db, new_session, created_at=clock[0])
+    _persist_gate_snapshot(db, new_session, observed_at=clock[0])
+
+    admitted = _admit(
+        service,
+        session_id="session-b",
+        order_id="OMS-1",
+        request_id="2" * 64,
+    )
+    assert admitted["status"] == "admitted"
+    assert admitted["automatic_trading_revision"] == 3
 
 
 def test_atomic_admission_is_persisted_and_exact_retry_is_idempotent(tmp_path) -> None:

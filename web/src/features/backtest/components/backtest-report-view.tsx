@@ -1,19 +1,19 @@
 import { ChevronDown } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   EvidenceState,
   FilterBar,
   MetricStrip,
   type MetricTone,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import {
   formatAmount,
   formatPercent,
   formatTimestamp,
 } from '../../../shared/format';
-import { StrategyHypothesisPanel } from '../../ai-research/components/strategy-hypothesis-panel';
+import { StrategyHypothesisPanel } from '../backtest-feature-boundary';
 import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';

@@ -1,5 +1,5 @@
-import { useCopy } from '../../../app/copy';
-import { usePreferences } from '../../../app/preferences';
+import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatDateTime, formatTimestamp } from '../../../shared/format';
 import {
   formatPublicCode,
@@ -15,7 +15,7 @@ import type { AccountOverview } from '../api';
 import {
   useRefreshMarketQuotesMutation,
   type MarketDataHealthResponse,
-} from '../../market/api';
+} from '../account-feature-boundary';
 
 export type QuoteDiagnosticItem = {
   symbol: string;

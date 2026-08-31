@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_session_automatic_pause as route_module
 from server.app import create_app
 from server.routes.controlled_session_automatic_pause import create_router
@@ -96,16 +97,19 @@ def test_route_service_wires_persisted_session_and_live_gate_providers(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.controlled_session_runtime_authority._service",
-        lambda: fake_authority,
+        controlled_services,
+        "build_controlled_session_runtime_authority_service",
+        lambda *_args, **_kwargs: fake_authority,
     )
     monkeypatch.setattr(
-        "server.routes.controlled_session_budget_reservation._service",
-        lambda: fake_budget,
+        controlled_services,
+        "build_controlled_session_budget_reservation_service",
+        lambda *_args, **_kwargs: fake_budget,
     )
     monkeypatch.setattr(
-        "server.routes.controlled_session_envelope._service",
-        lambda: fake_envelope,
+        controlled_services,
+        "build_controlled_session_envelope_service",
+        lambda _: fake_envelope,
     )
 
     service = route_module._service()

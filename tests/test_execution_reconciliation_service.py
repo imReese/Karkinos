@@ -17,6 +17,7 @@ from server.services.oms import OmsService
 from server.services.per_order_confirmation import build_order_fingerprint
 from server.services.trading_controls import TradingControlState
 from tests.broker_gateway_fixtures import clear_current_per_order_confirmation
+from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 
 def _db_and_oms(tmp_path) -> tuple[AppDatabase, OmsService]:
@@ -53,6 +54,14 @@ def _confirmed_order(
     *,
     gateway_evidence: bool = False,
 ) -> dict:
+    payload = None
+    if gateway_evidence:
+        payload = {
+            "schema_version": "karkinos.oms_order.v1",
+            "manual_confirmation_required": True,
+            "does_not_submit_broker_order": True,
+            "gateway_evidence": _required_gateway_evidence(),
+        }
     order = oms.create_order_intent(
         intent_key="daily:2026-07-02:600519:buy",
         symbol="600519",
@@ -63,19 +72,8 @@ def _confirmed_order(
         limit_price=1688.0,
         source="daily_trading_plan",
         source_ref="shadow:2026-07-02:abc",
+        payload=payload,
     )
-    if gateway_evidence:
-        order = db.upsert_oms_order_sync(
-            {
-                **order,
-                "payload": {
-                    "schema_version": "karkinos.oms_order.v1",
-                    "manual_confirmation_required": True,
-                    "does_not_submit_broker_order": True,
-                    "gateway_evidence": _required_gateway_evidence(),
-                },
-            }
-        )
     return oms.transition_order(
         order["order_id"],
         to_status="manually_confirmed",
@@ -650,8 +648,14 @@ def test_reconciliation_persists_exact_plan_paper_actual_comparison(tmp_path) ->
         "evidence_ref"
     ] = f"decision_action:{action['id']}"
     payload["gateway_evidence"]["account_truth"]["evidence_ref"] = "account_truth:1"
-    db.upsert_oms_order_sync({**current, "payload": payload})
-    db.upsert_paper_shadow_run_sync(
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            "UPDATE oms_orders SET payload_json = ? WHERE order_id = ?",
+            (json.dumps(payload, sort_keys=True), current["order_id"]),
+        )
+        conn.commit()
+    insert_paper_shadow_evidence(
+        db,
         run_id="run-001",
         plan_date="2026-07-02",
         input_fingerprint="a" * 64,

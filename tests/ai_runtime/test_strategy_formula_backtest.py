@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+from core.events import MarketEvent
 from core.types import AssetClass, BarFrequency, CommissionType, Symbol
 from data.handler import DataHandler
 from data.store import DataStore
@@ -22,6 +23,7 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchRejected,
     StrategyResearchSelection,
 )
+from server.ai_runtime.strategy_research_privacy import NORMALIZED_RESEARCH_NOTIONAL
 
 
 def _bars() -> pd.DataFrame:
@@ -36,7 +38,7 @@ def _bars() -> pd.DataFrame:
             "high": [value + 1 for value in closes],
             "low": [value - 1 for value in closes],
             "close": closes,
-            "volume": [100_000] * len(closes),
+            "volume": [1_000_000] * len(closes),
         }
     )
 
@@ -72,7 +74,7 @@ def test_strategy_selection_binds_or_compatibly_derives_account_truth_clock() ->
         start_date="2026-01-02",
         end_date="2026-08-21",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
         account_truth_freshness_as_of="2026-08-21T15:45:00+08:00",
     )
     assert bound.account_truth_freshness_datetime.isoformat() == (
@@ -90,7 +92,7 @@ def test_strategy_selection_binds_or_compatibly_derives_account_truth_clock() ->
         start_date="2026-01-02",
         end_date="2026-08-21",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
     )
     assert legacy.account_truth_freshness_datetime.isoformat() == (
         "2026-08-21T15:30:00+08:00"
@@ -109,8 +111,69 @@ def test_strategy_selection_binds_or_compatibly_derives_account_truth_clock() ->
             start_date="2026-01-02",
             end_date="2026-08-21",
             frequency="1d",
-            initial_cash=100_000,
+            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
             account_truth_freshness_as_of="2026-08-22T15:30:00+08:00",
+        )
+
+
+def test_strategy_selection_sealed_holdout_is_hidden_from_external_view() -> None:
+    sealed = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=("600000",),
+        asset_classes=("stock",),
+        dataset_snapshot_id="sha256:" + "d" * 64,
+        start_date="2026-01-02",
+        end_date="2026-08-21",
+        frequency="1d",
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+        sealed_end_date="2026-12-31",
+    )
+    assert sealed.has_sealed_holdout is True
+    assert sealed.sealed_start_date == "2026-08-22"
+    assert sealed.to_dict()["sealed_end_date"] == "2026-12-31"
+    # The external (model-visible) selection must not leak the holdout boundary.
+    assert "sealed_end_date" not in sealed.to_external_dict()
+    assert sealed.to_external_dict()["end_date"] == "2026-08-21"
+
+    plain = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=("600000",),
+        asset_classes=("stock",),
+        dataset_snapshot_id="sha256:" + "e" * 64,
+        start_date="2026-01-02",
+        end_date="2026-08-21",
+        frequency="1d",
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+    )
+    assert plain.has_sealed_holdout is False
+    assert plain.sealed_start_date is None
+    assert "sealed_end_date" not in plain.to_dict()
+
+
+def test_strategy_selection_rejects_invalid_sealed_holdout() -> None:
+    with pytest.raises(StrategyResearchRejected, match="sealed_end_date_not_future"):
+        StrategyResearchSelection(
+            saved_backtest_result_id=1,
+            universe=("600000",),
+            asset_classes=("stock",),
+            dataset_snapshot_id="sha256:" + "f" * 64,
+            start_date="2026-01-02",
+            end_date="2026-08-21",
+            frequency="1d",
+            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+            sealed_end_date="2026-08-21",
+        )
+    with pytest.raises(StrategyResearchRejected, match="sealed_end_date_invalid"):
+        StrategyResearchSelection(
+            saved_backtest_result_id=1,
+            universe=("600000",),
+            asset_classes=("stock",),
+            dataset_snapshot_id="sha256:" + "0" * 64,
+            start_date="2026-01-02",
+            end_date="2026-08-21",
+            frequency="1d",
+            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+            sealed_end_date="not-a-date",
         )
 
 
@@ -145,7 +208,7 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
         start_date="2025-01-02",
         end_date="2025-01-09",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
     )
     assumptions = (
         "Signals use completed daily bars and never use a future timestamp.",
@@ -217,7 +280,7 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
     drawdown = result["metrics_json"]["drawdown_evidence"]
     assert drawdown["status"] == "complete"
     assert drawdown["point_count"] == len(result["equity_curve"])
-    assert float(drawdown["max_drawdown_pct"]) == result["max_drawdown"]
+    assert float(drawdown["max_drawdown_pct"]) == pytest.approx(result["max_drawdown"])
     assert len(drawdown["evidence_fingerprint"]) == 64
     parameter = result["metrics_json"]["parameter_robustness"]
     assert parameter["tested_count"] == 3
@@ -301,6 +364,8 @@ def test_restricted_formula_adapter_calculates_with_exact_reviewed_fee_binding(
         frequency="1d",
         initial_cash=100_000,
         cost_model_reference=cost_model_reference,
+        valuation_snapshot_id="valuation-reviewed-fee-fixture",
+        ledger_cutoff_id=117,
     )
     assumptions = (
         "Signals use completed daily bars and never use a future timestamp.",
@@ -385,3 +450,105 @@ def test_restricted_formula_adapter_calculates_with_exact_reviewed_fee_binding(
     assert fee_evidence["account_specific"] is True
     assert fee_evidence["fee_rule_version"] == cost_model_reference
     assert fee_evidence["fee_schedule_binding"] == fee_schedule_binding
+
+
+def test_formula_signal_strategy_blocks_limit_up_and_suspension() -> None:
+    from server.ai_runtime.strategy_research_backtest import _FormulaSignalStrategy
+
+    strategy = _FormulaSignalStrategy(_formula(), universe_size=1, allocation_slots=1)
+    symbol = Symbol("600000")
+    strategy.on_init([symbol])
+    strategy._frames[symbol] = [
+        {
+            "timestamp": datetime(2025, 1, 2),
+            "open": 10.0,
+            "high": 10.0,
+            "low": 10.0,
+            "close": 10.0,
+            "volume": 100_000.0,
+        }
+    ]
+
+    limit_up = MarketEvent(
+        timestamp=datetime(2025, 1, 3),
+        symbol=symbol,
+        open=Decimal("11.0"),
+        high=Decimal("11.0"),
+        low=Decimal("11.0"),
+        close=Decimal("11.0"),
+        volume=Decimal("100000"),
+    )
+    assert strategy._is_tradeable(limit_up, target=1.0) is False
+    assert strategy._limit_blocked_count == 1
+
+    suspended = MarketEvent(
+        timestamp=datetime(2025, 1, 3),
+        symbol=symbol,
+        open=Decimal("10.0"),
+        high=Decimal("10.0"),
+        low=Decimal("10.0"),
+        close=Decimal("10.0"),
+        volume=Decimal("0"),
+    )
+    assert strategy._is_tradeable(suspended, target=1.0) is False
+    assert strategy._suspension_blocked_count == 1
+
+    normal = MarketEvent(
+        timestamp=datetime(2025, 1, 3),
+        symbol=symbol,
+        open=Decimal("10.5"),
+        high=Decimal("10.5"),
+        low=Decimal("10.5"),
+        close=Decimal("10.5"),
+        volume=Decimal("100000"),
+    )
+    assert strategy._is_tradeable(normal, target=1.0) is True
+
+
+def test_restricted_formula_adapter_run_sealed_reaches_future_window(tmp_path) -> None:
+    store = DataStore(tmp_path / "market")
+    symbol = Symbol("600000")
+    start = datetime(2025, 1, 2)
+    closes = [10, 9, 8, 12, 13, 14, 7, 6, 11, 12, 13, 14, 15, 16, 17]
+    bars = pd.DataFrame(
+        {
+            "timestamp": [
+                start + timedelta(days=index) for index in range(len(closes))
+            ],
+            "open": closes,
+            "high": [value + 1 for value in closes],
+            "low": [value - 1 for value in closes],
+            "close": closes,
+            "volume": [100_000] * len(closes),
+        }
+    )
+    store.save_bars(
+        symbol,
+        BarFrequency.DAILY,
+        bars,
+        provider_name="deterministic_fixture",
+        data_source="deterministic_fixture",
+        adjustment_mode="none",
+    )
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=("600000",),
+        asset_classes=("stock",),
+        dataset_snapshot_id="sha256:" + "a" * 64,
+        start_date="2025-01-02",
+        end_date="2025-01-09",
+        frequency="1d",
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+        sealed_end_date="2025-01-16",
+    )
+    result = RestrictedFormulaBacktestAdapter(data_store=store).run_sealed(
+        selection=selection,
+        draft={"formula_ast": _formula()},
+        sealed_end_date="2025-01-16",
+    )
+    sealed_boundary = datetime(2025, 1, 10)
+    assert result.equity_curve[-1][0].date() >= sealed_boundary.date()
+    sealed_bars = [
+        ts for ts, _ in result.equity_curve if ts.date() >= sealed_boundary.date()
+    ]
+    assert sealed_bars

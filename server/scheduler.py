@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
-import uuid
 from datetime import datetime, time, timedelta
-from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable
 
 from core.event_bus import EventBus
@@ -15,18 +13,25 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.live import LiveDataFeed
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
-from execution.connector import PaperExecutionConnector
-from execution.gateway import ManualConfirmGateway
-from notification.notifier import build_notifier, format_signal_message
-from risk.pre_trade import PreTradePolicy, PreTradeRiskManager
 from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
+from server.release_activation import (
+    is_release_activation_guarded,
+    is_scheduler_release_activation_guarded,
+)
+from server.scheduler_lifecycle import SchedulerLifecycleMixin
+from server.scheduler_loop import SchedulerLoopDependencies, run_scheduler_loop
+from server.scheduler_quote_runs import SchedulerQuoteRunMixin
+from server.scheduler_signals import handle_scheduler_signal
+from server.scheduler_values import optional_float
 from server.services.fund_nav_sync import refresh_fund_nav_quotes
-from server.services.live_context import LiveContextProvider
 from server.services.market_hours import is_cn_trading_session
 from server.services.market_indices import default_market_index_assets
+from server.services.market_quote_ingestion import (
+    build_quote_ingestion_command,
+    persist_quote_ingestion,
+)
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
-from server.services.recommendation_flow import build_recommendation_cycle
 from server.services.trading_controls import TradingControlState
 
 if TYPE_CHECKING:
@@ -41,9 +46,14 @@ _AFTERNOON_OPEN = time(13, 0)
 _AFTERNOON_CLOSE = time(15, 0)
 _POST_CLOSE_MARKET_REFRESH_TIME = time(16, 0)
 _POST_CLOSE_FUND_NAV_REFRESH_TIME = time(21, 30)
+_SCHEDULER_STOP_TIMEOUT_SECONDS = 10.0
 
 
-class TradingScheduler:
+def scheduler_now() -> datetime:
+    return datetime.now()
+
+
+class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
     """后台交易调度器。
 
     将 live.py 的 while-True 循环封装为可控后台线程，
@@ -58,6 +68,10 @@ class TradingScheduler:
         db=None,
         trading_controls: TradingControlState | None = None,
         controlled_session_pause_runner: Callable[[], dict[str, Any]] | None = None,
+        activation_guarded: Callable[[], bool] = is_release_activation_guarded,
+        scheduler_activation_guarded: Callable[
+            [], bool
+        ] = is_scheduler_release_activation_guarded,
     ) -> None:
         self._config = config
         self._bridge = bridge
@@ -66,14 +80,21 @@ class TradingScheduler:
         self._trading_controls = trading_controls or TradingControlState(db=db)
         self._controlled_session_pause_runner = controlled_session_pause_runner
         self._running = threading.Event()
+        self._initialized = threading.Event()
         self._thread: threading.Thread | None = None
+        self._lifecycle_lock = threading.Lock()
+        self._stopping = False
+        self._scheduler_clock = scheduler_now
+        self._activation_guarded = activation_guarded
+        self._scheduler_activation_guarded = scheduler_activation_guarded
+        self._completed_iterations = 0
 
         # 运行时状态（由后台线程修改，API 线程读取）
         self._event_bus: EventBus | None = None
         self._portfolio: Portfolio | None = None
         self._watchlist: list[tuple[Symbol, AssetClass]] = []
         self._instruments: dict[Symbol, Instrument] = {}
-        self._latest_quotes: dict[str, dict] = {}  # 报价缓存
+        self._latest_quotes: dict[str, dict[str, Any]] = {}  # 报价缓存
         self._last_historical_bar_backfill_key: str | None = None
         self._last_post_close_market_refresh_date: str | None = None
         self._last_post_close_fund_nav_refresh_date: str | None = None
@@ -83,28 +104,9 @@ class TradingScheduler:
         # Bug 3: 线程安全锁
         self._lock = threading.Lock()
 
-    def start(self) -> None:
-        """启动后台交易线程。"""
-        if self._running.is_set():
-            return
-        self._stop_requested.clear()
-        self._running.set()
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
-        self._thread.start()
-        logger.info("TradingScheduler started")
-
-    def stop(self) -> None:
-        """停止后台交易线程。"""
-        self._stop_requested.set()
-        self._running.clear()
-        if self._thread is not None:
-            self._thread.join(timeout=10)
-            self._thread = None
-        logger.info("TradingScheduler stopped")
-
-    @property
-    def is_running(self) -> bool:
-        return self._running.is_set()
+    @staticmethod
+    def scheduler_stop_timeout_seconds() -> float:
+        return _SCHEDULER_STOP_TIMEOUT_SECONDS
 
     @property
     def is_market_open(self) -> bool:
@@ -131,9 +133,63 @@ class TradingScheduler:
             return dict(self._instruments)
 
     @property
-    def latest_quotes(self) -> dict[str, dict]:
+    def latest_quotes(self) -> dict[str, dict[str, Any]]:
         with self._lock:
             return dict(self._latest_quotes)
+
+    def scheduler_should_continue(self) -> bool:
+        return self._running.is_set()
+
+    def scheduler_activation_guarded(self) -> bool:
+        try:
+            return bool(self._scheduler_activation_guarded())
+        except Exception:
+            logger.exception("Scheduler release activation guard check failed closed")
+            return True
+
+    @property
+    def activation_guarded(self) -> bool:
+        try:
+            return bool(self._activation_guarded())
+        except Exception:
+            logger.exception("Release activation guard check failed closed")
+            return True
+
+    def wait_for_scheduler_stop(self, timeout: float) -> bool:
+        return self._stop_requested.wait(timeout=timeout)
+
+    def runtime_event_bus(self) -> EventBus:
+        event_bus = self._event_bus
+        if event_bus is None:
+            raise RuntimeError("scheduler event bus is unavailable")
+        return event_bus
+
+    def install_runtime_event_bus(self, event_bus: EventBus) -> None:
+        with self._lock:
+            self._event_bus = event_bus
+
+    def replace_runtime_assets(
+        self,
+        watchlist: list[tuple[Symbol, AssetClass]],
+        instruments: dict[Symbol, Instrument],
+    ) -> None:
+        with self._lock:
+            self._watchlist = list(watchlist)
+            self._instruments = dict(instruments)
+
+    def replace_runtime_quotes(self, quotes: dict[str, dict[str, Any]]) -> None:
+        with self._lock:
+            self._latest_quotes = dict(quotes)
+
+    def publish_runtime_quote(self, symbol: str, quote: dict[str, Any]) -> None:
+        """Publish one already-persisted quote into the runtime cache."""
+
+        with self._lock:
+            self._latest_quotes[symbol] = dict(quote)
+
+    def install_runtime_portfolio(self, portfolio: Portfolio) -> None:
+        with self._lock:
+            self._portfolio = portfolio
 
     @staticmethod
     def _is_market_open() -> bool:
@@ -339,184 +395,6 @@ class TradingScheduler:
 
         return refreshed
 
-    def _scheduler_quote_fetch_asset_type(self) -> str | None:
-        asset_types = {asset_class.value for _, asset_class in self._watchlist}
-        if not asset_types:
-            return None
-        if len(asset_types) == 1:
-            return next(iter(asset_types))
-        return "mixed"
-
-    def _scheduler_quote_fetch_metadata(
-        self,
-        *,
-        provider_status: str,
-        success_symbols: list[str],
-        failed_symbols: list[str],
-        error_message: str | None = None,
-    ) -> dict:
-        success_count = len(success_symbols)
-        failure_count = len(failed_symbols)
-        return {
-            "trigger": "scheduler_poll",
-            "provider": self._config.data_source,
-            "provider_status": provider_status,
-            "market_open": True,
-            "poll_interval_seconds": self._config.live_poll_interval,
-            "symbols": [str(symbol) for symbol, _ in self._watchlist],
-            "asset_types": [asset_class.value for _, asset_class in self._watchlist],
-            "success_symbols": success_symbols,
-            "failed_symbols": failed_symbols,
-            "symbol_count": len(self._watchlist),
-            "success_count": success_count,
-            "failure_count": failure_count,
-            "cache_hit_count": 0,
-            "quote_status_counts": {"live": success_count} if success_count else {},
-            "stale_reason_counts": {},
-            "error_message": error_message,
-        }
-
-    def _scheduler_quote_fetch_status(
-        self, *, success_count: int, failure_count: int
-    ) -> str:
-        if success_count == len(self._watchlist) and failure_count == 0:
-            return "success"
-        if success_count > 0:
-            return "partial_success"
-        return "failed"
-
-    def _provider_status_for_scheduler_run(
-        self, *, success_count: int, failure_count: int
-    ) -> str:
-        if success_count == len(self._watchlist) and failure_count == 0:
-            return "live"
-        if success_count > 0:
-            return "partial"
-        return "failed"
-
-    def _create_scheduler_quote_fetch_run(
-        self, *, run_id: str, started_at: str
-    ) -> None:
-        if self._db is None or not hasattr(self._db, "create_quote_fetch_run"):
-            return
-        try:
-            self._db.create_quote_fetch_run(
-                run_id=run_id,
-                started_at=started_at,
-                trigger="scheduler_poll",
-                provider=self._config.data_source,
-                asset_type=self._scheduler_quote_fetch_asset_type(),
-                symbol_count=len(self._watchlist),
-                status="running",
-                metadata={
-                    "trigger": "scheduler_poll",
-                    "provider": self._config.data_source,
-                    "market_open": True,
-                    "poll_interval_seconds": self._config.live_poll_interval,
-                    "symbols": [str(symbol) for symbol, _ in self._watchlist],
-                    "asset_types": [
-                        asset_class.value for _, asset_class in self._watchlist
-                    ],
-                },
-            )
-        except Exception:
-            logger.warning("Failed to create scheduler quote fetch run", exc_info=True)
-
-    def _finish_scheduler_quote_fetch_run(
-        self,
-        *,
-        run_id: str,
-        finished_at: str,
-        status: str,
-        success_count: int,
-        failure_count: int,
-        metadata: dict,
-        error_message: str | None = None,
-    ) -> None:
-        if self._db is None or not hasattr(self._db, "finish_quote_fetch_run"):
-            return
-        try:
-            finished = self._db.finish_quote_fetch_run(
-                run_id=run_id,
-                finished_at=finished_at,
-                status=status,
-                success_count=success_count,
-                failure_count=failure_count,
-                cache_hit_count=0,
-                error_message=error_message,
-                metadata=metadata,
-            )
-            if isinstance(finished, dict) and str(
-                finished.get("error_message") or ""
-            ).startswith("valuation snapshot publication failed:"):
-                self._pending_valuation_publication_reason = f"quote_fetch_run:{run_id}"
-        except Exception:
-            logger.warning("Failed to finish scheduler quote fetch run", exc_info=True)
-
-    def _poll_watchlist_quotes(self, feed: LiveDataFeed) -> tuple[list, str]:
-        """Poll live quotes once and return the still-open ingestion run id."""
-        started_at_dt = datetime.now()
-        run_id = f"scheduler_poll:{started_at_dt.isoformat()}:{uuid.uuid4().hex}"
-        self._create_scheduler_quote_fetch_run(
-            run_id=run_id,
-            started_at=started_at_dt.isoformat(),
-        )
-        try:
-            events = feed.poll_all(self._watchlist)
-        except Exception as exc:
-            failed_symbols = [str(symbol) for symbol, _ in self._watchlist]
-            metadata = self._scheduler_quote_fetch_metadata(
-                provider_status="failed",
-                success_symbols=[],
-                failed_symbols=failed_symbols,
-                error_message=str(exc),
-            )
-            self._finish_scheduler_quote_fetch_run(
-                run_id=run_id,
-                finished_at=datetime.now().isoformat(),
-                status="failed",
-                success_count=0,
-                failure_count=len(self._watchlist),
-                metadata=metadata,
-                error_message=str(exc),
-            )
-            raise
-
-        return events, run_id
-
-    def _finish_persisted_quote_fetch_run(self, run_id: str, events: list) -> None:
-        """Complete a quote run only after its observations are persisted."""
-        success_symbols = [str(event.symbol) for event in events]
-        success_symbol_set = set(success_symbols)
-        failed_symbols = [
-            str(symbol)
-            for symbol, _ in self._watchlist
-            if str(symbol) not in success_symbol_set
-        ]
-        success_count = len(events)
-        failure_count = len(self._watchlist) - success_count
-        status = self._scheduler_quote_fetch_status(
-            success_count=success_count,
-            failure_count=failure_count,
-        )
-        provider_status = self._provider_status_for_scheduler_run(
-            success_count=success_count,
-            failure_count=failure_count,
-        )
-        metadata = self._scheduler_quote_fetch_metadata(
-            provider_status=provider_status,
-            success_symbols=success_symbols,
-            failed_symbols=failed_symbols,
-        )
-        self._finish_scheduler_quote_fetch_run(
-            run_id=run_id,
-            finished_at=datetime.now().isoformat(),
-            status=status,
-            success_count=success_count,
-            failure_count=failure_count,
-            metadata=metadata,
-        )
-
     def _sync_fund_nav_quotes(self, *, confirmation_only: bool = False) -> None:
         """Refresh fund NAV/estimate quotes independently from stock quote polling."""
         if self._db is None:
@@ -571,15 +449,6 @@ class TradingScheduler:
                 return snapshot
         return None
 
-    @staticmethod
-    def _optional_float(value) -> float | None:
-        if value in {None, ""}:
-            return None
-        try:
-            return float(str(value).replace("%", "").strip())
-        except (TypeError, ValueError):
-            return None
-
     def _sync_default_market_index_quotes(self, source, fallback_source=None) -> None:
         """Refresh broad-market index quotes without feeding them to strategies."""
         current = datetime.now()
@@ -622,7 +491,7 @@ class TradingScheduler:
             ).strip()
             cached_quote = {
                 "price": price_value,
-                "volume": self._optional_float(snapshot.get("volume")) or 0,
+                "volume": optional_float(snapshot.get("volume")) or 0,
                 "timestamp": timestamp,
                 "asset_class": AssetClass.INDEX.value,
                 "quote_source": quote_source,
@@ -632,448 +501,81 @@ class TradingScheduler:
                 "captured_reason": "scheduler_market_index_sync",
                 "display_name": display_name,
                 "name": display_name,
-                "daily_change": self._optional_float(
+                "daily_change": optional_float(
                     snapshot.get("daily_change") or snapshot.get("change")
                 ),
-                "daily_change_pct": self._optional_float(
+                "daily_change_pct": optional_float(
                     snapshot.get("daily_change_pct")
                     or snapshot.get("change_pct")
                     or snapshot.get("pct_chg")
                 ),
             }
-            with self._lock:
-                self._latest_quotes[str(symbol)] = cached_quote
-
             if self._db is None:
                 continue
-            self._db.save_quote_snapshot_sync(
+            command = build_quote_ingestion_command(
                 symbol=str(symbol),
-                asset_class=AssetClass.INDEX.value,
-                price=price_value,
-                volume=cached_quote["volume"],
-                timestamp=timestamp,
+                asset_type=AssetClass.INDEX.value,
+                snapshot={
+                    **snapshot,
+                    "price": price_value,
+                    "volume": cached_quote["volume"],
+                    "timestamp": timestamp,
+                    "change": cached_quote["daily_change"],
+                    "change_percent": cached_quote["daily_change_pct"],
+                    "display_name": display_name,
+                    "provider_symbol": str(symbol),
+                },
                 quote_source=quote_source,
                 provider_name=provider_name,
-                quote_status="live",
                 provider_status="live",
+                quote_status="live",
                 captured_reason="scheduler_market_index_sync",
+                fetch_run_id=None,
+                captured_at=current.isoformat(),
             )
-            if hasattr(self._db, "upsert_latest_quote_sync"):
-                self._db.upsert_latest_quote_sync(
-                    symbol=str(symbol),
-                    asset_type=AssetClass.INDEX.value,
-                    price=price_value,
-                    change=cached_quote["daily_change"],
-                    change_percent=cached_quote["daily_change_pct"],
-                    volume=cached_quote["volume"],
-                    quote_timestamp=timestamp,
-                    quote_source=quote_source,
-                    provider_name=provider_name,
-                    provider_status="live",
-                    quote_status="live",
-                    captured_at=current.isoformat(),
-                    captured_reason="scheduler_market_index_sync",
-                    metadata={
-                        "source": snapshot.get("source") or quote_source,
-                        "display_name": display_name,
-                        "daily_change": cached_quote["daily_change"],
-                        "daily_change_pct": cached_quote["daily_change_pct"],
-                    },
-                )
-            if hasattr(self._db, "upsert_instrument_metadata_sync"):
-                self._db.upsert_instrument_metadata_sync(
-                    symbol=str(symbol),
-                    asset_type=AssetClass.INDEX.value,
-                    display_name=display_name,
-                    provider_symbol=str(symbol),
-                    provider_name=provider_name,
-                    source="default_market_index",
-                    fetched_at=timestamp,
-                    metadata={
-                        "source": snapshot.get("source") or quote_source,
-                        "quote_source": quote_source,
-                    },
-                )
+            persist_quote_ingestion(self._db, command)
+            self.publish_runtime_quote(str(symbol), cached_quote)
 
     def _run_loop(self) -> None:
-        """后台线程主循环。"""
-        # 初始化组件
-        self._event_bus = EventBus()
-        runtime = create_runtime_context(self._config)
-        source = runtime.sources.get(
-            self._config.data_source, runtime.sources["akshare"]
-        )
-        fallback_source = None
-        if self._config.data_source != "akshare":
-            fallback_source = runtime.sources.get("akshare")
-        feed = LiveDataFeed(
-            source,
-            self._event_bus,
-            fallback_source=fallback_source,
-            prefer_fallback_asset_classes=(
-                {AssetClass.FUND} if fallback_source is not None else None
+        """Run the background loop with late-bound composition dependencies."""
+        run_scheduler_loop(
+            self,
+            SchedulerLoopDependencies(
+                event_bus_factory=EventBus,
+                runtime_context_factory=create_runtime_context,
+                live_data_feed_factory=LiveDataFeed,
+                portfolio_rebuilder=rebuild_portfolio_from_ledger,
+                strategy_factory=build_strategy,
+                now=self._scheduler_clock,
+                afternoon_close=_AFTERNOON_CLOSE,
+                config=self._config,
+                database=self._db,
+                bridge_rebinder=self._bridge.rebind,
+                warmup_strategy=self._warmup_strategy,
+                signal_handler=self._on_signal,
+                evaluate_controlled_session_pauses=(
+                    self._evaluate_controlled_session_pauses
+                ),
+                retry_pending_valuation_publication=(
+                    self._retry_pending_valuation_publication
+                ),
+                is_market_open=self._is_market_open,
+                is_post_close_refresh_window=(
+                    self._is_post_close_valuation_refresh_window
+                ),
+                refresh_post_close_valuation_data=(
+                    self._maybe_refresh_post_close_valuation_data
+                ),
+                backfill_historical_bars=self._maybe_backfill_historical_bars,
+                sync_fund_nav_quotes=self._sync_fund_nav_quotes,
+                sync_market_index_quotes=self._sync_default_market_index_quotes,
+                poll_watchlist_quotes=self._poll_watchlist_quotes,
+                finish_persisted_quote_fetch_run=(
+                    self._finish_persisted_quote_fetch_run
+                ),
+                finish_quote_fetch_run=self._finish_scheduler_quote_fetch_run,
             ),
         )
-        data_manager = runtime.data_manager
-
-        persisted_watchlist = []
-        if self._db is not None and hasattr(self._db, "list_watchlist_assets_sync"):
-            try:
-                persisted_watchlist = self._db.list_watchlist_assets_sync()
-            except Exception:
-                logger.warning("恢复数据库关注列表失败，将忽略", exc_info=True)
-
-        # 构建关注列表
-        with self._lock:
-            self._watchlist = [] if persisted_watchlist else list(runtime.watchlist)
-            self._instruments = {} if persisted_watchlist else dict(runtime.instruments)
-            self._latest_quotes = {}
-
-        if persisted_watchlist:
-            try:
-                with self._lock:
-                    watched_symbols = {symbol for symbol, _ in self._watchlist}
-                    for asset in persisted_watchlist:
-                        symbol = Symbol(str(asset.get("symbol") or "").strip())
-                        if not str(symbol) or symbol in watched_symbols:
-                            continue
-                        raw_asset_class = str(asset.get("asset_class") or "stock")
-                        asset_class = {
-                            "stock": AssetClass.STOCK,
-                            "fund": AssetClass.FUND,
-                            "etf": AssetClass.FUND,
-                            "gold": AssetClass.GOLD,
-                            "bond": AssetClass.BOND,
-                        }.get(raw_asset_class, AssetClass.STOCK)
-                        self._watchlist.append((symbol, asset_class))
-                        self._instruments.setdefault(
-                            symbol,
-                            data_manager.get_instrument(symbol, asset_class),
-                        )
-                        watched_symbols.add(symbol)
-            except Exception:
-                logger.warning("应用数据库关注列表失败，将忽略", exc_info=True)
-
-        if self._db is not None:
-            try:
-                persisted_quotes = self._db.get_latest_quotes_sync()
-                with self._lock:
-                    for quote in persisted_quotes:
-                        quote_source = (
-                            quote.get("quote_source")
-                            or quote.get("source")
-                            or quote.get("provider_name")
-                            or quote.get("provider")
-                        )
-                        self._latest_quotes[quote["symbol"]] = {
-                            "price": float(quote["price"]),
-                            "volume": (
-                                float(quote["volume"])
-                                if quote["volume"] is not None
-                                else None
-                            ),
-                            "timestamp": quote["timestamp"],
-                            "asset_class": quote["asset_class"],
-                            "quote_source": quote_source,
-                            "provider_name": quote.get("provider_name"),
-                            "quote_status": quote.get("quote_status"),
-                            "stale_reason": quote.get("stale_reason"),
-                            "provider_status": quote.get("provider_status"),
-                            "captured_reason": quote.get("captured_reason"),
-                            "nav_date": quote.get("nav_date"),
-                        }
-            except Exception:
-                logger.warning("恢复实时行情快照失败，将忽略", exc_info=True)
-
-        # 创建组合
-        with self._lock:
-            rebuilt = (
-                rebuild_portfolio_from_ledger(
-                    self._config,
-                    self._db,
-                    latest_quotes=self._latest_quotes,
-                )
-                if self._db is not None
-                else None
-            )
-            self._portfolio = (
-                rebuilt.portfolio
-                if rebuilt is not None
-                else Portfolio(
-                    self._event_bus,
-                    initial_cash=self._config.initial_cash,
-                )
-            )
-            if rebuilt is not None:
-                self._instruments.update(rebuilt.instruments)
-                watched_symbols = {symbol for symbol, _ in self._watchlist}
-                for symbol, instrument in rebuilt.instruments.items():
-                    if symbol in watched_symbols:
-                        continue
-                    raw_asset_class = getattr(
-                        instrument,
-                        "asset_class",
-                        AssetClass.STOCK,
-                    )
-                    if isinstance(raw_asset_class, AssetClass):
-                        asset_class = raw_asset_class
-                    else:
-                        raw_value = getattr(raw_asset_class, "value", raw_asset_class)
-                        try:
-                            asset_class = AssetClass(str(raw_value))
-                        except ValueError:
-                            asset_class = AssetClass.STOCK
-                    self._watchlist.append((symbol, asset_class))
-                    watched_symbols.add(symbol)
-            for inst in self._instruments.values():
-                self._portfolio.add_instrument(inst)
-
-        if not self._watchlist:
-            logger.warning("No watchlist configured, stopping scheduler")
-            self._running.clear()
-            return
-
-        # 实盘安全链路：OrderIntentEvent -> PreTradeRiskManager -> OrderEvent
-        # -> execution connector/gateway -> SQLite order/fill facts.
-        context_provider = LiveContextProvider(
-            portfolio_getter=lambda: self.portfolio,
-            controls=self._trading_controls,
-            blacklist_getter=self._configured_symbol_set(
-                "blacklist", "symbol_blacklist"
-            ),
-            st_symbols_getter=self._configured_symbol_set("st_symbols", "st_blacklist"),
-        )
-        PreTradeRiskManager(
-            self._event_bus,
-            context_provider,
-            PreTradePolicy(execution_mode="manual"),
-            db=self._db,
-        )
-        ManualConfirmGateway(self._event_bus, db=self._db)
-        PaperExecutionConnector(event_bus=self._event_bus, db=self._db)
-
-        # 创建策略（使用注册表）
-        strategy = build_strategy(self._config, self._event_bus)
-        strategy.on_init([sym for sym, _ in self._watchlist])
-
-        # Bug 6: 历史数据预热
-        self._warmup_strategy(data_manager, strategy)
-
-        # Bug 2: 重新绑定 bridge 到新 EventBus（复用同一对象）
-        self._bridge.rebind(self._event_bus)
-
-        # 订阅信号 → 通知
-        self._event_bus.subscribe(SignalEvent, self._on_signal)
-
-        logger.info(
-            "Trading loop started, watching %d symbols, interval=%ds",
-            len(self._watchlist),
-            self._config.live_poll_interval,
-        )
-
-        # 主循环
-        while self._running.is_set():
-            current = datetime.now()
-            self._evaluate_controlled_session_pauses()
-            self._retry_pending_valuation_publication()
-
-            # Bug 7: 非交易时段跳过轮询
-            if not self._is_market_open():
-                if self._is_post_close_valuation_refresh_window(current):
-                    self._maybe_refresh_post_close_valuation_data(
-                        data_manager,
-                        now=current,
-                    )
-                else:
-                    self._maybe_backfill_historical_bars(data_manager, now=current)
-                self._stop_requested.wait(timeout=30)
-                continue
-
-            self._sync_fund_nav_quotes()
-            self._sync_default_market_index_quotes(source, fallback_source)
-
-            quote_fetch_run_id = None
-            try:
-                events, quote_fetch_run_id = self._poll_watchlist_quotes(feed)
-                if events:
-                    for market_event in events:
-                        snapshot = (
-                            feed.get_last_snapshot(
-                                market_event.symbol, market_event.asset_class
-                            )
-                            or {}
-                        )
-                        snapshot_timestamp = str(
-                            snapshot.get("timestamp")
-                            or market_event.timestamp.isoformat()
-                        )
-                        # 更新报价缓存
-                        sym_str = str(market_event.symbol)
-                        with self._lock:
-                            self._latest_quotes[sym_str] = {
-                                "price": float(market_event.close),
-                                "volume": float(market_event.volume),
-                                "timestamp": snapshot_timestamp,
-                                "asset_class": market_event.asset_class.value,
-                                "previous_close": snapshot.get("previous_close"),
-                                "previous_close_date": snapshot.get(
-                                    "previous_close_date"
-                                ),
-                            }
-                        if self._db is not None:
-                            quote_source = str(
-                                snapshot.get("quote_source")
-                                or snapshot.get("source")
-                                or snapshot.get("provider")
-                                or self._config.data_source
-                            )
-                            provider_name = str(
-                                snapshot.get("provider_name")
-                                or snapshot.get("provider")
-                                or snapshot.get("source")
-                                or self._config.data_source
-                            )
-                            self._db.save_quote_snapshot_sync(
-                                symbol=sym_str,
-                                asset_class=market_event.asset_class.value,
-                                price=float(market_event.close),
-                                volume=float(market_event.volume),
-                                timestamp=snapshot_timestamp,
-                                quote_source=quote_source,
-                                provider_name=provider_name,
-                                quote_status="live",
-                                provider_status="live",
-                                captured_reason="scheduler_poll",
-                                nav_date=snapshot.get("nav_date"),
-                                fetch_run_id=quote_fetch_run_id,
-                            )
-                            previous_close = snapshot.get("previous_close")
-                            previous_close_date = snapshot.get("previous_close_date")
-                            if previous_close not in {
-                                None,
-                                "",
-                            } and previous_close_date not in {
-                                None,
-                                "",
-                            }:
-                                self._db.save_daily_close_snapshot_sync(
-                                    symbol=sym_str,
-                                    asset_class=market_event.asset_class.value,
-                                    trade_date=str(previous_close_date),
-                                    close_price=float(previous_close),
-                                    source="reported_previous_close",
-                                )
-                            elif market_event.timestamp.time() >= _AFTERNOON_CLOSE:
-                                self._db.save_daily_close_snapshot_sync(
-                                    symbol=sym_str,
-                                    asset_class=market_event.asset_class.value,
-                                    trade_date=str(snapshot_timestamp).split("T")[0],
-                                    close_price=float(market_event.close),
-                                    source="scheduler_close",
-                                )
-                            if hasattr(self._db, "upsert_latest_quote_sync"):
-                                try:
-                                    self._db.upsert_latest_quote_sync(
-                                        symbol=sym_str,
-                                        asset_type=market_event.asset_class.value,
-                                        price=float(market_event.close),
-                                        previous_close=(
-                                            None
-                                            if previous_close in {None, ""}
-                                            else float(previous_close)
-                                        ),
-                                        volume=float(market_event.volume),
-                                        quote_timestamp=snapshot_timestamp,
-                                        quote_source=quote_source,
-                                        provider_name=provider_name,
-                                        provider_status="live",
-                                        quote_status="live",
-                                        captured_at=datetime.now().isoformat(),
-                                        captured_reason="scheduler_poll",
-                                        nav_date=snapshot.get("nav_date"),
-                                        fetch_run_id=quote_fetch_run_id,
-                                        metadata={
-                                            "source": snapshot.get("source"),
-                                            "previous_close_date": previous_close_date,
-                                        },
-                                    )
-                                except Exception:
-                                    logger.warning(
-                                        "Failed to upsert latest quote for %s",
-                                        sym_str,
-                                        exc_info=True,
-                                    )
-                            display_name = str(
-                                snapshot.get("display_name")
-                                or snapshot.get("name")
-                                or snapshot.get("asset_name")
-                                or ""
-                            ).strip()
-                            if display_name and hasattr(
-                                self._db, "upsert_instrument_metadata_sync"
-                            ):
-                                try:
-                                    self._db.upsert_instrument_metadata_sync(
-                                        symbol=sym_str,
-                                        asset_type=market_event.asset_class.value,
-                                        display_name=display_name,
-                                        provider_symbol=sym_str,
-                                        exchange=snapshot.get("exchange"),
-                                        market=snapshot.get("market"),
-                                        provider_name=provider_name,
-                                        source="quote",
-                                        fetched_at=snapshot_timestamp,
-                                        metadata={
-                                            "source": snapshot.get("source"),
-                                            "quote_source": quote_source,
-                                        },
-                                    )
-                                except Exception:
-                                    logger.warning(
-                                        "Failed to upsert instrument metadata for %s",
-                                        sym_str,
-                                        exc_info=True,
-                                    )
-                        if market_event.asset_class is not AssetClass.FUND:
-                            strategy.on_data(market_event)
-                    self._event_bus.drain()
-
-                    # 盯市更新
-                    with self._lock:
-                        prices = {
-                            sym: Decimal(
-                                str(
-                                    self._latest_quotes.get(str(sym), {}).get(
-                                        "price", 0
-                                    )
-                                )
-                            )
-                            for sym, _ in self._watchlist
-                        }
-                    self._portfolio.mark_to_market(prices)
-                self._finish_persisted_quote_fetch_run(quote_fetch_run_id, events)
-            except Exception as exc:
-                if quote_fetch_run_id is not None:
-                    failed_symbols = [str(symbol) for symbol, _ in self._watchlist]
-                    metadata = self._scheduler_quote_fetch_metadata(
-                        provider_status="failed",
-                        success_symbols=[],
-                        failed_symbols=failed_symbols,
-                        error_message=str(exc),
-                    )
-                    self._finish_scheduler_quote_fetch_run(
-                        run_id=quote_fetch_run_id,
-                        finished_at=datetime.now().isoformat(),
-                        status="failed",
-                        success_count=0,
-                        failure_count=len(self._watchlist),
-                        metadata=metadata,
-                        error_message=str(exc),
-                    )
-                logger.exception("Error in trading loop iteration")
-
-            # 使用 wait 替代 sleep，允许立即停止
-            self._stop_requested.wait(timeout=self._config.live_poll_interval)
 
     def _evaluate_controlled_session_pauses(self) -> dict[str, Any] | None:
         """Run fail-closed session gate checks when live monitoring is explicit."""
@@ -1101,101 +603,11 @@ class TradingScheduler:
         return result
 
     def _on_signal(self, event: SignalEvent) -> None:
-        """信号回调：持久化候选动作并按需推送通知。"""
-        direction = "买入" if event.target_weight > 0 else "卖出"
-        action_direction = "buy" if event.target_weight > 0 else "sell"
-        ac_str = "stock"
-        for sym, ac in self._watchlist:
-            if sym == event.symbol:
-                ac_str = ac.value
-                break
-
-        if self._db is not None:
-            signal_id = self._db.save_signal_sync(
-                timestamp=str(event.timestamp),
-                strategy_id=event.strategy_id,
-                symbol=str(event.symbol),
-                direction=action_direction,
-                target_weight=float(event.target_weight),
-                price=float(event.price) if event.price else None,
-                asset_class=ac_str,
-            )
-            cycle = build_recommendation_cycle(
-                signals=[
-                    {
-                        "id": signal_id,
-                        "timestamp": str(event.timestamp),
-                        "strategy_id": event.strategy_id,
-                        "symbol": str(event.symbol),
-                        "direction": action_direction,
-                        "target_weight": float(event.target_weight),
-                        "price": float(event.price) if event.price else None,
-                        "asset_class": ac_str,
-                    }
-                ],
-                available_cash=(
-                    0.0 if self._portfolio is None else float(self._portfolio.cash)
-                ),
-                existing_positions=(
-                    {}
-                    if self._portfolio is None
-                    else {
-                        str(symbol): position
-                        for symbol, position in self._portfolio.positions.items()
-                    }
-                ),
-            )
-            for task in cycle.tasks:
-                self._db.upsert_action_task_sync(
-                    source_signal_id=task.source_signal_id,
-                    symbol=task.symbol,
-                    title=task.title,
-                    detail=task.detail,
-                    direction=task.direction,
-                    urgency=(
-                        "high"
-                        if task.direction == "buy" and task.target_weight > 0
-                        else "medium"
-                    ),
-                    target_weight=task.target_weight,
-                    price=task.price,
-                    strategy_id=task.strategy_id,
-                    timestamp=task.timestamp,
-                    asset_class=task.asset_class,
-                )
-
-        if self._notifier is None:
-            return
-
-        message = format_signal_message(
-            symbol=str(event.symbol),
-            direction=direction,
-            target_weight=float(event.target_weight),
-            price=float(event.price) if event.price else None,
-            strategy_id=event.strategy_id,
-            asset_class=ac_str,
-            timestamp=str(event.timestamp),
+        """Persist and project a signal without granting execution authority."""
+        handle_scheduler_signal(
+            event,
+            watchlist=self.watchlist,
+            database=self._db,
+            portfolio=self.portfolio,
+            notifier=self._notifier,
         )
-        self._notifier.send(title=f"Karkinos 信号: {event.symbol}", message=message)
-
-    def _configured_symbol_set(self, *attribute_names: str):
-        """Return a getter for optional symbol lists on runtime config."""
-
-        def getter() -> set[str]:
-            values: set[str] = set()
-            for name in attribute_names:
-                raw = getattr(self._config, name, None)
-                if raw is None:
-                    continue
-                if isinstance(raw, dict):
-                    raw = raw.keys()
-                if isinstance(raw, str):
-                    values.add(raw)
-                    continue
-                try:
-                    values.update(str(item) for item in raw)
-                except TypeError:
-                    values.add(str(raw))
-            return values
-
-        return getter

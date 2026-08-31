@@ -376,9 +376,14 @@ def test_reserved_ai_shadow_order_rechecks_research_run_account_binding(
 
     with sqlite3.connect(db._path) as conn:
         conn.execute(
-            "UPDATE ai_shadow_research_runs SET valuation_snapshot_id = ? "
+            "UPDATE ai_shadow_research_runs "
+            "SET research_context_id = ?, valuation_snapshot_id = ? "
             "WHERE run_id = ?",
-            ("valuation-conflicting", strategy["candidate"]["run_id"]),
+            (
+                "valuation-conflicting",
+                "valuation-conflicting",
+                strategy["candidate"]["run_id"],
+            ),
         )
 
     gate, blockers = resolve_strategy_order_generation_gate(

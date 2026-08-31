@@ -1,25 +1,93 @@
 // @ts-nocheck -- Node built-ins are used only by this deterministic source audit.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = (path: string) => readFileSync(resolve(SRC_ROOT, path), 'utf8');
+const sourceTree = (directory: string): string =>
+  readdirSync(resolve(SRC_ROOT, directory), { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() ||
+        (/\.(?:ts|tsx)$/.test(entry.name) &&
+          !/\.(?:test|spec)\.(?:ts|tsx)$/.test(entry.name)),
+    )
+    .map((entry) =>
+      entry.isDirectory()
+        ? sourceTree(`${directory}/${entry.name}`)
+        : source(`${directory}/${entry.name}`),
+    )
+    .join('\n');
 
-const ROUTER = source('app/router.tsx');
+const OVERVIEW = sourceTree('features/overview');
 const ACTIVITY = source('features/activity/pages/activity-page.tsx');
-const MARKET = source('features/market/pages/market-page.tsx');
-const BACKTEST = source('features/backtest/components/backtest-page.tsx');
-const TRADING = source('features/trading/components/trading-page.tsx');
-const SETTINGS = source('features/settings/components/settings-page.tsx');
+const MARKET = [
+  source('features/market/pages/market-page.tsx'),
+  source('features/market/pages/market-page-view.tsx'),
+  source('features/market/pages/market-page-controller.ts'),
+  source('features/market/pages/market-data-evidence-workspace.tsx'),
+  source('features/market/pages/market-page-format.ts'),
+  source('features/market/pages/market-research-notes-workspace.tsx'),
+].join('\n');
+const BACKTEST = [
+  source('features/backtest/components/backtest-page.tsx'),
+  source('features/backtest/components/use-backtest-page-controller.ts'),
+  source('features/backtest/components/backtest-page-layout.tsx'),
+  source('features/backtest/components/backtest-page-header.tsx'),
+  source('features/backtest/components/backtest-run-setup-panel.tsx'),
+  source('features/backtest/components/backtest-run-results-panel.tsx'),
+  source('features/backtest/components/backtest-page-primitives.tsx'),
+  source(
+    'features/backtest/components/single-instrument-loop-readiness-card.tsx',
+  ),
+  source('features/backtest/components/strategy-catalog-panel.tsx'),
+  source('features/backtest/components/strategy-metadata-panel.tsx'),
+].join('\n');
+const TRADING = [
+  source('features/trading/components/trading-page.tsx'),
+  source('features/trading/components/trading-workspace.tsx'),
+  source('features/trading/components/trading-review-queue.tsx'),
+  source('features/trading/components/trading-safety-rail.tsx'),
+  source('features/trading/components/trading-history.tsx'),
+  source('features/trading/components/execution-audit-panel.tsx'),
+  source('features/trading/components/broker-readiness-panel.tsx'),
+].join('\n');
+const SETTINGS = [
+  source('features/settings/components/settings-page.tsx'),
+  source('features/settings/components/settings-page-controller.ts'),
+  source('features/settings/components/settings-page-model.ts'),
+  source('features/settings/components/settings-page-view.tsx'),
+  source('features/settings/components/settings-operations-workspace.tsx'),
+  source('features/settings/components/settings-persisted-configuration.tsx'),
+  source('features/settings/components/settings-preferences-workspace.tsx'),
+  source('features/settings/components/settings-view-primitives.tsx'),
+].join('\n');
 const OPERATIONS = source('features/operations/components/operations-page.tsx');
-const ACCOUNT_TRUTH = source(
-  'features/account-truth/components/account-truth-review-page.tsx',
-);
-const ACTIVITY_FEED = source('features/activity/components/activity-feed.tsx');
-const PRICE_STRUCTURE_CHART = source(
-  'features/market/components/price-structure-chart.tsx',
-);
+const ACCOUNT_TRUTH = [
+  source(
+    'features/account-truth/components/account-truth-review-workspace.tsx',
+  ),
+  source(
+    'features/account-truth/components/account-truth-reconciliation-workspace.tsx',
+  ),
+  source(
+    'features/account-truth/components/account-truth-reconciliation-review.tsx',
+  ),
+].join('\n');
+const ACTIVITY_FEED = [
+  source('features/activity/components/activity-feed.tsx'),
+  source('features/activity/components/activity-feed-entry.tsx'),
+  source('features/activity/components/activity-feed-model.ts'),
+].join('\n');
+const PRICE_STRUCTURE_CHART = [
+  source('features/market/components/price-structure-chart.tsx'),
+  source('features/market/components/price-structure-chart-model.ts'),
+  source('features/market/components/price-structure-chart-sections.tsx'),
+  source('features/market/components/price-structure-chart-svg.tsx'),
+  source('features/market/components/price-structure-chart-view.tsx'),
+  source('features/market/components/price-structure-loading-state.tsx'),
+].join('\n');
 const MARKET_INSTRUMENT_WORKSPACE = source(
   'features/market/components/market-instrument-workspace.tsx',
 );
@@ -34,18 +102,24 @@ const ACTIVITY_FORMS = [
   source('features/activity/components/manual-adjustment-form.tsx'),
   source('features/activity/components/fund-batch-form.tsx'),
 ];
-const APP_SHELL = source('app/layout/app-shell.tsx');
+const APP_SHELL = sourceTree('app/layout');
 const RESEARCH_TASK = source(
-  'features/ai-research/components/research-task-panel.tsx',
+  'features/research-workflow/components/research-task-panel.tsx',
 );
 const AI_RESEARCH = source(
   'features/ai-research/components/ai-research-page.tsx',
 );
-const HOLDING_DETAIL = source(
-  'features/portfolio/components/holding-detail-page.tsx',
-);
+const HOLDING_DETAIL = [
+  source('features/portfolio/components/holding-detail-page.tsx'),
+  source('features/portfolio/components/holding-detail-controller.tsx'),
+  source('features/portfolio/components/holding-detail-model.ts'),
+  source('features/portfolio/components/holding-detail-model-values.ts'),
+  source('features/portfolio/components/holding-detail-view.tsx'),
+  source('features/portfolio/components/holding-detail-panels.tsx'),
+  source('features/portfolio/components/holding-detail-primitives.tsx'),
+].join('\n');
 const STRATEGY_RESEARCH = source(
-  'features/ai-research/components/strategy-hypothesis-panel.tsx',
+  'features/research-workflow/components/strategy-hypothesis-panel.tsx',
 );
 const BACKTEST_REPORT = source(
   'features/backtest/components/backtest-report-view.tsx',
@@ -82,7 +156,7 @@ describe('remaining route workbench contract', () => {
     expect(ACCOUNT_TRUTH).toContain('data-workbench-route="account-truth"');
 
     for (const page of [
-      ROUTER,
+      OVERVIEW,
       MARKET,
       ACTIVITY,
       BACKTEST,
@@ -234,7 +308,9 @@ describe('remaining route workbench contract', () => {
     expect(TRADING).not.toContain('function StatusTile');
     expect(
       SETTINGS.match(/<ControlledActionZone/g)?.length ?? 0,
-    ).toBeGreaterThanOrEqual(2);
+    ).toBeGreaterThanOrEqual(1);
+    expect(SETTINGS).not.toContain('startLive');
+    expect(SETTINGS).not.toContain('stopLive');
   });
 
   it('keeps routine route structure flat and balances the settings rail', () => {

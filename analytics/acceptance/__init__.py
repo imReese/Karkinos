@@ -1,0 +1,116 @@
+"""Static acceptance evidence manifests.
+
+The package records local evidence files and deterministic validation commands.
+It does not promote strategies, execute trades, or grant trading authority.
+"""
+
+from analytics.acceptance.account import (
+    build_account_truth_acceptance_audit,
+    build_account_truth_review_acceptance_audit,
+)
+from analytics.acceptance.approvals import (
+    build_controlled_session_signed_replacement_acceptance_audit,
+    build_signed_operator_approval_acceptance_audit,
+)
+from analytics.acceptance.baseline import (
+    build_acceptance_audit,
+    build_research_evidence_acceptance_audit,
+    build_strategy_lab_acceptance_audit,
+)
+from analytics.acceptance.broker_bridge import (
+    build_capital_authorization_stage0_acceptance_audit,
+    build_controlled_broker_bridge_foundation_acceptance_audit,
+)
+from analytics.acceptance.broker_connectors import (
+    build_broker_connector_soak_foundation_acceptance_audit,
+    build_broker_connector_soak_promotion_acceptance_audit,
+    build_per_order_confirmation_foundation_acceptance_audit,
+)
+from analytics.acceptance.capital_scaling import (
+    build_capital_scaling_evidence_resolution_acceptance_audit,
+    build_capital_scaling_evidence_window_acceptance_audit,
+    build_capital_scaling_operating_sample_acceptance_audit,
+    build_capital_scaling_review_foundation_acceptance_audit,
+)
+from analytics.acceptance.execution import (
+    build_execution_batch_reconciliation_acceptance_audit,
+    build_execution_gateway_verification_acceptance_audit,
+    build_per_order_gateway_verification_binding_acceptance_audit,
+    build_persisted_controlled_execution_operator_view_acceptance_audit,
+)
+from analytics.acceptance.fees import build_broker_fee_cost_basis_acceptance_audit
+from analytics.acceptance.models import AcceptanceAudit, AcceptanceCriterion
+from analytics.acceptance.operations import build_operations_runbook_acceptance_audit
+from analytics.acceptance.reviews import (
+    build_controlled_per_order_pilot_readiness_acceptance_audit,
+    build_signed_broker_adapter_release_review_acceptance_audit,
+    build_strategy_learning_review_acceptance_audit,
+)
+from analytics.acceptance.session_foundations import (
+    build_controlled_session_budget_reservation_acceptance_audit,
+    build_controlled_session_envelope_foundation_acceptance_audit,
+    build_controlled_session_gateway_verification_binding_acceptance_audit,
+    build_controlled_session_symbol_budget_acceptance_audit,
+    build_session_start_account_truth_binding_acceptance_audit,
+)
+from analytics.acceptance.session_runtime import (
+    build_controlled_session_automatic_pause_acceptance_audit,
+    build_controlled_session_live_gate_orchestration_acceptance_audit,
+    build_controlled_session_runtime_authority_acceptance_audit,
+    build_controlled_session_runtime_rate_limiter_acceptance_audit,
+)
+from analytics.acceptance.strategy import (
+    build_market_data_reliability_acceptance_audit,
+    build_single_instrument_strategy_loop_acceptance_audit,
+    build_strategy_assignment_acceptance_audit,
+)
+from analytics.acceptance.submission import (
+    build_controlled_broker_submission_acceptance_audit,
+    build_controlled_submission_interlock_acceptance_audit,
+    build_controlled_submission_reconciliation_clearance_acceptance_audit,
+)
+
+__all__ = [
+    "AcceptanceAudit",
+    "AcceptanceCriterion",
+    "build_acceptance_audit",
+    "build_strategy_lab_acceptance_audit",
+    "build_research_evidence_acceptance_audit",
+    "build_account_truth_acceptance_audit",
+    "build_account_truth_review_acceptance_audit",
+    "build_strategy_assignment_acceptance_audit",
+    "build_market_data_reliability_acceptance_audit",
+    "build_single_instrument_strategy_loop_acceptance_audit",
+    "build_broker_fee_cost_basis_acceptance_audit",
+    "build_operations_runbook_acceptance_audit",
+    "build_controlled_broker_bridge_foundation_acceptance_audit",
+    "build_capital_authorization_stage0_acceptance_audit",
+    "build_broker_connector_soak_foundation_acceptance_audit",
+    "build_per_order_confirmation_foundation_acceptance_audit",
+    "build_broker_connector_soak_promotion_acceptance_audit",
+    "build_controlled_session_envelope_foundation_acceptance_audit",
+    "build_controlled_session_gateway_verification_binding_acceptance_audit",
+    "build_session_start_account_truth_binding_acceptance_audit",
+    "build_controlled_session_budget_reservation_acceptance_audit",
+    "build_controlled_session_symbol_budget_acceptance_audit",
+    "build_controlled_session_runtime_rate_limiter_acceptance_audit",
+    "build_controlled_session_automatic_pause_acceptance_audit",
+    "build_controlled_session_runtime_authority_acceptance_audit",
+    "build_controlled_session_live_gate_orchestration_acceptance_audit",
+    "build_controlled_session_signed_replacement_acceptance_audit",
+    "build_signed_operator_approval_acceptance_audit",
+    "build_controlled_broker_submission_acceptance_audit",
+    "build_controlled_submission_interlock_acceptance_audit",
+    "build_controlled_submission_reconciliation_clearance_acceptance_audit",
+    "build_capital_scaling_review_foundation_acceptance_audit",
+    "build_capital_scaling_evidence_resolution_acceptance_audit",
+    "build_capital_scaling_evidence_window_acceptance_audit",
+    "build_capital_scaling_operating_sample_acceptance_audit",
+    "build_execution_batch_reconciliation_acceptance_audit",
+    "build_execution_gateway_verification_acceptance_audit",
+    "build_per_order_gateway_verification_binding_acceptance_audit",
+    "build_persisted_controlled_execution_operator_view_acceptance_audit",
+    "build_signed_broker_adapter_release_review_acceptance_audit",
+    "build_strategy_learning_review_acceptance_audit",
+    "build_controlled_per_order_pilot_readiness_acceptance_audit",
+]

@@ -2,35 +2,61 @@
 
 from __future__ import annotations
 
-from math import floor
+from collections.abc import Mapping
 from typing import Any
 
+from server.services.daily_research_operation_preview import (
+    project_daily_research_operation_preview,
+    unavailable_daily_research_operation_preview,
+)
+from server.services.daily_trading_plan_constraints import (
+    constraint_checks as _constraint_checks,
+)
+from server.services.daily_trading_plan_constraints import (
+    constraint_summary as _constraint_summary,
+)
+from server.services.daily_trading_plan_constraints import (
+    estimated_quantity as _estimated_quantity,
+)
+from server.services.daily_trading_plan_constraints import (
+    intent_blocker as _intent_blocker,
+)
+from server.services.daily_trading_plan_constraints import (
+    position_float as _position_float,
+)
+from server.services.daily_trading_plan_support import (
+    account_truth_snapshot as _account_truth_snapshot,
+)
+from server.services.daily_trading_plan_support import blocker as _blocker
+from server.services.daily_trading_plan_support import (
+    blocker_reasons as _blocker_reasons,
+)
+from server.services.daily_trading_plan_support import (
+    blocker_summary as _blocker_summary,
+)
+from server.services.daily_trading_plan_support import bounded_ratio as _bounded_ratio
+from server.services.daily_trading_plan_support import (
+    candidate_blocking_reasons as _candidate_blocking_reasons,
+)
+from server.services.daily_trading_plan_support import (
+    candidate_status as _candidate_status,
+)
+from server.services.daily_trading_plan_support import evidence_refs as _evidence_refs
+from server.services.daily_trading_plan_support import first_float as _first_float
+from server.services.daily_trading_plan_support import float_value as _float
+from server.services.daily_trading_plan_support import int_value as _int
+from server.services.daily_trading_plan_support import mapping as _dict
+from server.services.daily_trading_plan_support import side as _side
+from server.services.daily_trading_plan_support import status as _status
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
 _READY_MANUAL_CONFIRMATION_STATUS = "ready_for_manual_confirmation"
 _PAPER_SHADOW_REVIEW_STATUS = "paper_shadow_review_required"
-_ORDERABLE_ACTIONS = {"buy", "sell", "rebalance"}
-_BOARD_LOT_ASSET_CLASSES = {"stock", "etf"}
 _BLOCKING_ACCOUNT_TRUTH_STATUSES = {"blocked", "missing"}
 _BLOCKING_MARKET_STATUSES = {"blocked", "error", "missing", "unavailable"}
 _DEFAULT_MIN_CASH_BUFFER_RATIO = 0.03
 _DEFAULT_MAX_SINGLE_SYMBOL_WEIGHT = 0.35
 _DEFAULT_DRAWDOWN_REVIEW_THRESHOLD = 0.10
-_BLOCKING_SUBMISSION_REASONS = {
-    "blocked_by_cash_shortfall": ("insufficient_cash", "portfolio"),
-    "blocked_by_cash_buffer": ("cash_buffer_breached", "portfolio"),
-    "blocked_by_concentration": ("concentration_limit_breached", "portfolio"),
-    "blocked_by_t1_available_quantity": (
-        "t1_available_quantity_insufficient",
-        "risk",
-    ),
-    "blocked_by_limit_up": ("limit_up_blocked", "market"),
-    "blocked_by_limit_down": ("limit_down_blocked", "market"),
-    "blocked_by_suspension": ("security_suspended", "market"),
-    "blocked_by_special_treatment": ("special_treatment_risk", "risk"),
-    "blocked_by_drawdown": ("drawdown_limit_breached", "risk"),
-    "blocked_by_fund_nav_latency": ("fund_nav_latency", "market"),
-}
 
 
 def build_daily_trading_plan(
@@ -38,6 +64,7 @@ def build_daily_trading_plan(
     decision_payload: dict[str, Any],
     config: Any,
     positions: dict[str, Any] | None = None,
+    research_operation_preview: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a read-only daily trading plan from existing decision evidence."""
     summary = _dict(decision_payload.get("summary"))
@@ -105,6 +132,11 @@ def build_daily_trading_plan(
         paper_shadow_ready_count=paper_shadow_ready_count,
         blockers=blockers,
     )
+    research_preview = project_daily_research_operation_preview(
+        research_operation_preview
+    ) or unavailable_daily_research_operation_preview(
+        "verified_daily_research_operation_preview_not_supplied"
+    )
 
     return {
         "schema_version": "karkinos.daily_trading_plan.v1",
@@ -131,6 +163,7 @@ def build_daily_trading_plan(
         "broker_bridge_status": "disabled",
         "order_intents": order_intents,
         "blockers": blockers,
+        "research_operation_preview": research_preview,
         "limitations": [
             "Daily trading plan is read-only and does not create orders, fills, or ledger entries.",
             "Order intents are manual-confirmation previews, not broker submissions.",
@@ -322,319 +355,6 @@ def _order_intent_preview(
     }
 
 
-def _constraint_checks(
-    candidate: dict[str, Any],
-    position: Any,
-    *,
-    side: str,
-    quantity: float,
-    price: float,
-    gross_amount: float,
-    total_fee: float,
-    fee_breakdown: dict[str, Any],
-    total_equity: float,
-    available_cash_after: float,
-    portfolio: dict[str, Any],
-    controls: dict[str, float],
-) -> list[dict[str, Any]]:
-    asset_class = str(candidate.get("asset_class") or "").lower()
-    current_quantity = _position_float(position, "quantity", "shares")
-    estimated_quantity_after = (
-        max(current_quantity - quantity, 0.0)
-        if side == "sell"
-        else current_quantity + quantity
-    )
-    estimated_market_value_after = estimated_quantity_after * price
-    estimated_weight_after = (
-        estimated_market_value_after / total_equity if total_equity > 0 else 0.0
-    )
-    checks = [
-        _trading_unit_check(asset_class, side, quantity),
-        _fee_tax_check(total_fee, fee_breakdown),
-        _cash_buffer_check(
-            side,
-            available_cash_after=available_cash_after,
-            total_equity=total_equity,
-            min_cash_buffer_ratio=controls["min_cash_buffer_ratio"],
-        ),
-        _concentration_check(
-            side,
-            estimated_weight_after=estimated_weight_after,
-            max_single_symbol_weight=controls["max_single_symbol_weight"],
-        ),
-        _t1_check(candidate, position, side=side, quantity=quantity),
-        _limit_check(candidate, side=side),
-        _suspension_check(candidate),
-        _special_treatment_check(candidate),
-        _drawdown_check(
-            portfolio,
-            max_drawdown_review_threshold=controls["max_drawdown_review_threshold"],
-        ),
-        _fund_nav_latency_check(candidate, asset_class),
-    ]
-    for check in checks:
-        check["estimated_market_value_after"] = estimated_market_value_after
-        check["estimated_weight_after"] = estimated_weight_after
-        check["estimated_gross_amount"] = gross_amount
-    return checks
-
-
-def _trading_unit_check(asset_class: str, side: str, quantity: float) -> dict[str, Any]:
-    if asset_class in _BOARD_LOT_ASSET_CLASSES and side == "buy":
-        lot_size = 100.0
-        status = "pass" if quantity % lot_size == 0 else "blocked"
-        return {
-            "id": "trading_unit",
-            "status": status,
-            "target": "market",
-            "required_lot_size": lot_size,
-            "estimated_quantity": quantity,
-        }
-    return {
-        "id": "trading_unit",
-        "status": "pass",
-        "target": "market",
-        "required_lot_size": None,
-        "estimated_quantity": quantity,
-    }
-
-
-def _fee_tax_check(total_fee: float, fee_breakdown: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": "fee_tax_preview",
-        "status": "pass" if total_fee >= 0 else "blocked",
-        "target": "cost",
-        "estimated_total_fee": total_fee,
-        "fee_components": fee_breakdown,
-    }
-
-
-def _cash_buffer_check(
-    side: str,
-    *,
-    available_cash_after: float,
-    total_equity: float,
-    min_cash_buffer_ratio: float,
-) -> dict[str, Any]:
-    required_cash = total_equity * min_cash_buffer_ratio
-    shortfall = max(required_cash - available_cash_after, 0.0) if side == "buy" else 0.0
-    return {
-        "id": "cash_buffer",
-        "status": "blocked" if shortfall > 0 else "pass",
-        "target": "portfolio",
-        "required_cash": required_cash,
-        "available_cash_after": available_cash_after,
-        "cash_buffer_shortfall": shortfall,
-        "min_cash_buffer_ratio": min_cash_buffer_ratio,
-    }
-
-
-def _concentration_check(
-    side: str,
-    *,
-    estimated_weight_after: float,
-    max_single_symbol_weight: float,
-) -> dict[str, Any]:
-    blocked = side == "buy" and estimated_weight_after > max_single_symbol_weight
-    return {
-        "id": "concentration",
-        "status": "blocked" if blocked else "pass",
-        "target": "portfolio",
-        "max_single_symbol_weight": max_single_symbol_weight,
-        "estimated_weight_after": estimated_weight_after,
-    }
-
-
-def _t1_check(
-    candidate: dict[str, Any],
-    position: Any,
-    *,
-    side: str,
-    quantity: float,
-) -> dict[str, Any]:
-    available_quantity = _float(
-        candidate.get("t1_available_quantity")
-        or candidate.get("sellable_quantity")
-        or candidate.get("available_quantity"),
-        _position_float(
-            position,
-            "t1_available_quantity",
-            "sellable_quantity",
-            "available_quantity",
-            "quantity",
-            "shares",
-        ),
-    )
-    blocked = side == "sell" and available_quantity < quantity
-    return {
-        "id": "t1_available_quantity",
-        "status": "blocked" if blocked else "pass",
-        "target": "risk",
-        "available_quantity": available_quantity,
-        "estimated_quantity": quantity,
-    }
-
-
-def _limit_check(candidate: dict[str, Any], *, side: str) -> dict[str, Any]:
-    limit_status = _candidate_status(
-        candidate,
-        "limit_status",
-        "price_limit_status",
-        nested=("market_data", "data_freshness"),
-    )
-    blocked_limit = (
-        "limit_up"
-        if side == "buy" and limit_status == "limit_up"
-        else "limit_down" if side == "sell" and limit_status == "limit_down" else None
-    )
-    return {
-        "id": blocked_limit or "limit_move",
-        "status": "blocked" if blocked_limit is not None else "pass",
-        "target": "market",
-        "limit_status": limit_status,
-        "side": side,
-    }
-
-
-def _suspension_check(candidate: dict[str, Any]) -> dict[str, Any]:
-    trading_status = _candidate_status(
-        candidate,
-        "trading_status",
-        "security_status",
-        "quote_status",
-        nested=("market_data", "data_freshness"),
-    )
-    return {
-        "id": "suspension",
-        "status": "blocked" if trading_status == "suspended" else "pass",
-        "target": "market",
-        "trading_status": trading_status,
-    }
-
-
-def _special_treatment_check(candidate: dict[str, Any]) -> dict[str, Any]:
-    display_name = str(
-        candidate.get("display_name") or candidate.get("name") or ""
-    ).upper()
-    is_st = bool(candidate.get("special_treatment")) or display_name.startswith(
-        ("ST", "*ST")
-    )
-    return {
-        "id": "special_treatment",
-        "status": "blocked" if is_st else "pass",
-        "target": "risk",
-        "special_treatment": is_st,
-    }
-
-
-def _drawdown_check(
-    portfolio: dict[str, Any],
-    *,
-    max_drawdown_review_threshold: float,
-) -> dict[str, Any]:
-    current_drawdown = _float(portfolio.get("current_drawdown"), 0.0)
-    return {
-        "id": "drawdown",
-        "status": (
-            "blocked" if current_drawdown >= max_drawdown_review_threshold else "pass"
-        ),
-        "target": "risk",
-        "current_drawdown": current_drawdown,
-        "max_drawdown_review_threshold": max_drawdown_review_threshold,
-    }
-
-
-def _fund_nav_latency_check(
-    candidate: dict[str, Any], asset_class: str
-) -> dict[str, Any]:
-    data_status = _candidate_status(
-        candidate,
-        "nav_status",
-        "quote_status",
-        nested=("data_freshness", "market_data"),
-    )
-    blocked = asset_class == "fund" and data_status in {
-        "estimated",
-        "stale",
-        "missing",
-        "unavailable",
-    }
-    return {
-        "id": "fund_nav_latency",
-        "status": "blocked" if blocked else "pass",
-        "target": "market",
-        "data_status": data_status,
-    }
-
-
-def _estimated_quantity(
-    candidate: dict[str, Any],
-    *,
-    position: Any,
-    side: str | None,
-    price: float,
-    target_weight: float,
-    total_equity: float,
-) -> tuple[float, str]:
-    if price <= 0:
-        return 0.0, "price_unavailable"
-    if "allocation_quantity" in candidate:
-        return (
-            _float(candidate.get("allocation_quantity"), 0.0),
-            "portfolio_allocation_quantity",
-        )
-    if side == "sell":
-        quantity = _float(
-            candidate.get("current_quantity")
-            or candidate.get("position_quantity")
-            or candidate.get("quantity"),
-            _position_float(position, "quantity", "shares"),
-        )
-        return quantity, "current_position_quantity"
-    target_total_quantity = (total_equity * target_weight) / price
-    asset_class = str(candidate.get("asset_class") or "").lower()
-    if asset_class in _BOARD_LOT_ASSET_CLASSES:
-        target_total_quantity = float(floor(target_total_quantity / 100) * 100)
-    current_quantity = _position_float(position, "quantity", "shares")
-    delta_quantity = max(target_total_quantity - current_quantity, 0.0)
-    return delta_quantity, (
-        "target_position_delta_lot_rounded"
-        if asset_class in _BOARD_LOT_ASSET_CLASSES
-        else "target_position_delta"
-    )
-
-
-def _intent_blocker(
-    candidate: dict[str, Any],
-    intent: dict[str, Any],
-) -> dict[str, Any] | None:
-    reason_target = _BLOCKING_SUBMISSION_REASONS.get(
-        str(intent.get("submission_status") or "")
-    )
-    if reason_target is None:
-        return None
-    reason, target = reason_target
-    blocker = _blocker(candidate, reason, target)
-    blocker["submission_status"] = intent.get("submission_status")
-    return blocker
-
-
-def _constraint_summary(order_intents: list[dict[str, Any]]) -> dict[str, Any]:
-    checks = [
-        check
-        for intent in order_intents
-        for check in intent.get("constraint_checks", [])
-    ]
-    return {
-        "check_count": len(checks),
-        "passed_count": sum(1 for check in checks if check.get("status") == "pass"),
-        "blocked_count": sum(1 for check in checks if check.get("status") == "blocked"),
-        "blocked_ids": [
-            str(check.get("id")) for check in checks if check.get("status") == "blocked"
-        ],
-    }
-
-
 def _portfolio_controls(
     portfolio: dict[str, Any],
     config: Any,
@@ -714,19 +434,6 @@ def _position_effect(
     }
 
 
-def _position_float(position: Any, *names: str) -> float:
-    if position is None:
-        return 0.0
-    for name in names:
-        if isinstance(position, dict):
-            value = position.get(name)
-        else:
-            value = getattr(position, name, None)
-        if value is not None:
-            return _float(value, 0.0)
-    return 0.0
-
-
 def _conclusion(
     *,
     account_truth_status: str,
@@ -757,232 +464,3 @@ def _conclusion(
     if any(item.get("target") == "market" for item in blockers):
         return "market_blocked", "market"
     return "no_manual_action", "decision"
-
-
-def _blocker_summary(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, dict[str, Any]] = {}
-    for blocker in blockers:
-        category = _blocker_category(blocker)
-        bucket = grouped.setdefault(
-            category,
-            {
-                "category": category,
-                "target": blocker.get("target") or "decision",
-                "count": 0,
-                "reasons": [],
-                "sample_symbols": [],
-            },
-        )
-        bucket["count"] += 1
-        for reason in _blocker_reasons(blocker):
-            if reason and reason not in bucket["reasons"]:
-                bucket["reasons"].append(reason)
-        symbol = blocker.get("symbol")
-        if (
-            symbol
-            and symbol not in bucket["sample_symbols"]
-            and len(bucket["sample_symbols"]) < 5
-        ):
-            bucket["sample_symbols"].append(symbol)
-    return sorted(
-        grouped.values(),
-        key=lambda item: _BLOCKER_CATEGORY_ORDER.get(str(item["category"]), 99),
-    )
-
-
-def _account_truth_snapshot(
-    account_truth: dict[str, Any],
-    gate_status: str,
-) -> dict[str, Any]:
-    has_evidence_value = account_truth.get("has_evidence")
-    snapshot = {
-        "gate_status": gate_status,
-        "has_evidence": (
-            bool(account_truth)
-            if has_evidence_value is None
-            else bool(has_evidence_value)
-        ),
-        "blocking_reasons": [
-            str(reason) for reason in account_truth.get("blocking_reasons") or []
-        ],
-    }
-    for key in (
-        "status",
-        "source_type",
-        "score",
-        "cash_status",
-        "position_status",
-        "data_freshness_status",
-        "unresolved_mismatch_count",
-        "required_actions",
-        "limitations",
-    ):
-        if key in account_truth:
-            snapshot[key] = account_truth[key]
-    return snapshot
-
-
-_BLOCKER_CATEGORY_ORDER = {
-    "account_truth": 0,
-    "market_data": 1,
-    "portfolio": 2,
-    "risk": 3,
-    "evidence_not_ready": 4,
-    "other": 9,
-}
-
-
-def _blocker_category(blocker: dict[str, Any]) -> str:
-    target = str(blocker.get("target") or "").strip().lower()
-    reason = str(blocker.get("reason") or "").strip().lower()
-    if target == "account-truth" or reason == "account_truth_blocked":
-        return "account_truth"
-    if target == "market" or reason == "market_data_unavailable":
-        return "market_data"
-    if target == "portfolio" or reason in {
-        "insufficient_cash",
-        "cash_buffer_breached",
-        "concentration_limit_breached",
-    }:
-        return "portfolio"
-    if reason == "awaiting_risk_gate" or target == "decision":
-        return "evidence_not_ready"
-    if target == "risk":
-        return "risk"
-    return "other"
-
-
-def _side(candidate: dict[str, Any]) -> str | None:
-    action = _status(candidate.get("action") or candidate.get("direction"), "")
-    if action == "buy":
-        return "buy"
-    if action == "sell":
-        return "sell"
-    if action == "rebalance":
-        return "buy" if _float(candidate.get("target_weight"), 0.0) > 0 else "sell"
-    if action in _ORDERABLE_ACTIONS:
-        return action
-    return None
-
-
-def _blocker(candidate: dict[str, Any], reason: str, target: str) -> dict[str, Any]:
-    return {
-        "action_id": candidate.get("action_id"),
-        "symbol": candidate.get("symbol"),
-        "reason": reason,
-        "reasons": _candidate_blocking_reasons(candidate, fallback=reason),
-        "target": target,
-        "risk_gate_status": candidate.get("risk_gate_status"),
-        "manual_confirmation_status": candidate.get("manual_confirmation_status"),
-    }
-
-
-def _blocker_reasons(blocker: dict[str, Any]) -> list[str]:
-    reasons = blocker.get("reasons")
-    if isinstance(reasons, list):
-        values = [str(reason) for reason in reasons if reason]
-        if values:
-            return values
-    reason = blocker.get("reason")
-    return [str(reason)] if reason else []
-
-
-def _candidate_blocking_reasons(
-    candidate: dict[str, Any],
-    *,
-    fallback: str,
-) -> list[str]:
-    risk_reasons = candidate.get("risk_gate_reasons")
-    if fallback == "risk_gate_blocked" and isinstance(risk_reasons, list):
-        values = [str(reason) for reason in risk_reasons if reason]
-        if values:
-            return values
-    return [fallback]
-
-
-def _evidence_refs(candidate: dict[str, Any]) -> list[str]:
-    refs: list[str] = []
-    action_id = candidate.get("action_id")
-    if action_id is not None:
-        refs.append(f"decision_action:{action_id}")
-    evidence = _dict(candidate.get("evidence"))
-    signal = _dict(evidence.get("signal"))
-    signal_id = signal.get("signal_id") or signal.get("id")
-    if signal_id is not None:
-        refs.append(f"signal:{signal_id}")
-    strategy = _dict(evidence.get("strategy"))
-    strategy_id = strategy.get("strategy_id")
-    if strategy_id is not None:
-        refs.append(f"strategy:{strategy_id}")
-    order_generation_gate = _dict(strategy.get("order_generation_gate"))
-    promotion = _dict(order_generation_gate.get("promotion"))
-    advancement_fingerprint = promotion.get("strategy_advancement_gate_fingerprint")
-    if advancement_fingerprint:
-        refs.append(f"strategy_advancement:{advancement_fingerprint}")
-    fee_schedule_binding = _dict(promotion.get("fee_schedule_binding"))
-    fee_review_fingerprint = fee_schedule_binding.get("fee_schedule_review_fingerprint")
-    if fee_review_fingerprint:
-        refs.append(f"reviewed_fee_schedule:{fee_review_fingerprint}")
-    risk_gate = _dict(evidence.get("risk_gate"))
-    risk_decision_id = risk_gate.get("decision_id")
-    if risk_decision_id is not None:
-        refs.append(f"risk:{risk_decision_id}")
-    account_truth = _dict(evidence.get("account_truth"))
-    import_run_id = account_truth.get("import_run_id")
-    if import_run_id is not None:
-        refs.append(f"account_truth:{import_run_id}")
-    return refs
-
-
-def _candidate_status(
-    candidate: dict[str, Any],
-    *names: str,
-    nested: tuple[str, ...] = (),
-) -> str:
-    for name in names:
-        value = candidate.get(name)
-        if value is not None:
-            return _status(value, "unknown")
-    evidence = _dict(candidate.get("evidence"))
-    for nested_name in nested:
-        source = _dict(candidate.get(nested_name)) or _dict(evidence.get(nested_name))
-        for name in names:
-            value = source.get(name)
-            if value is not None:
-                return _status(value, "unknown")
-    return "unknown"
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _status(value: Any, default: str = "unknown") -> str:
-    text = str(value if value is not None else default).strip().lower()
-    return text or default
-
-
-def _float(value: Any, fallback: float) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _first_float(*values: Any, fallback: float) -> float:
-    for value in values:
-        if value is None:
-            continue
-        return _float(value, fallback)
-    return fallback
-
-
-def _bounded_ratio(value: float) -> float:
-    return min(max(value, 0.0), 1.0)
-
-
-def _int(value: Any, fallback: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return fallback

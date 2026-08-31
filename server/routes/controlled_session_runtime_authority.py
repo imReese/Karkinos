@@ -7,6 +7,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.composition.controlled_execution_services import (
+    build_controlled_session_runtime_authority_service,
+)
 from server.services.controlled_session_runtime_authority import (
     CONTROLLED_SESSION_ISSUANCE_ACKNOWLEDGEMENT,
     CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT,
@@ -217,20 +220,5 @@ def create_router() -> APIRouter:
 
 def _service() -> ControlledSessionRuntimeAuthorityService:
     from server.dependencies import get_app_state
-    from server.routes.controlled_session_budget_reservation import (
-        _service as controlled_session_budget_reservation_service,
-    )
-    from server.routes.controlled_session_envelope import (
-        _service as controlled_session_envelope_service,
-    )
 
-    state = get_app_state()
-    config = getattr(state, "config", None)
-    return ControlledSessionRuntimeAuthorityService(
-        db=state.db,
-        reservation_provider=controlled_session_budget_reservation_service().resolve,
-        attestation_provider=controlled_session_envelope_service().resolve_attestation,
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-    )
+    return build_controlled_session_runtime_authority_service(get_app_state())

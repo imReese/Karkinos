@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, postJson } from '../../lib/api/client';
-import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
+import { apiClient, postJson } from '../../shared/api/client';
+import { visiblePersistedProjectionRefetchInterval } from '../../shared/api/query-policy';
 
 export type LedgerEntry = {
   id: number;
@@ -59,6 +59,13 @@ export type TradePayload = {
   note: string;
 };
 
+export type TradeMutationIdentity = {
+  command_id: string;
+  operator_id: string;
+};
+
+export type TradeMutationPayload = TradePayload & TradeMutationIdentity;
+
 export type TradePreview = {
   symbol: string;
   direction: string;
@@ -76,6 +83,8 @@ export type TradePreview = {
 };
 
 export type CashFlowPayload = {
+  operator_id: string;
+  request_id: string;
   occurred_at: string;
   amount: number;
   flow_type: string;
@@ -83,6 +92,8 @@ export type CashFlowPayload = {
 };
 
 export type DividendPayload = {
+  operator_id: string;
+  request_id: string;
   occurred_at: string;
   symbol: string;
   asset_class: string;
@@ -91,6 +102,8 @@ export type DividendPayload = {
 };
 
 export type AdjustmentPayload = {
+  operator_id: string;
+  request_id: string;
   occurred_at: string;
   symbol: string | null;
   asset_class: string;
@@ -99,6 +112,25 @@ export type AdjustmentPayload = {
   price: number | null;
   note: string;
 };
+
+export type LedgerMutationIdentity = {
+  operator_id: string;
+  request_id: string;
+};
+
+export function createTradeMutationIdentity(): TradeMutationIdentity {
+  return {
+    command_id: globalThis.crypto.randomUUID(),
+    operator_id: 'local-owner',
+  };
+}
+
+export function createLedgerMutationIdentity(): LedgerMutationIdentity {
+  return {
+    operator_id: 'local-owner',
+    request_id: globalThis.crypto.randomUUID(),
+  };
+}
 
 export function useLedgerEntriesQuery(limit = 50, enabled = true) {
   return useQuery({
@@ -177,8 +209,12 @@ export function useCreateTradeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: TradePayload) =>
-      postJson('/api/portfolio/trade', buildTradeRequestBody(payload)),
+    mutationFn: (payload: TradeMutationPayload) =>
+      postJson('/api/portfolio/trade', {
+        ...buildTradeRequestBody(payload),
+        command_id: payload.command_id,
+        operator_id: payload.operator_id,
+      }),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },

@@ -51,7 +51,7 @@ provider 选择/连接、adapter 注册、submit/cancel 或资本授权控件。
 显式 CLI 仍可用于受控管理流程；它的默认 preview 只读且不创建数据库：
 
 ```bash
-uv run python scripts/review_broker_adapter_release.py \
+uv run python scripts/broker/review_broker_adapter_release.py \
   --file /path/to/adapter-release.json \
   --db data/store/karkinos.db
 ```
@@ -59,7 +59,7 @@ uv run python scripts/review_broker_adapter_release.py \
 操作者通过外部 reviewer/reason 引用记录 append-only 决策：
 
 ```bash
-uv run python scripts/review_broker_adapter_release.py \
+uv run python scripts/broker/review_broker_adapter_release.py \
   --file /path/to/adapter-release.json \
   --db data/store/karkinos.db \
   --record \

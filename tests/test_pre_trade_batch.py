@@ -201,3 +201,31 @@ def test_batch_pre_trade_risk_accepts_configured_cash_buffer(tmp_path) -> None:
     assert result["blocked_count"] == 1
     task = db.get_action_tasks_sync()[0]
     assert "cash reserve would fall below min_cash_reserve" in task["risk_gate_reasons"]
+
+
+def test_batch_pre_trade_risk_rejects_invalid_action_timestamp_without_write(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(
+        db,
+        source_signal_id=1,
+        symbol="510300",
+        target_weight=0.01,
+        price=10.0,
+    )
+    task = {**db.get_action_tasks_sync()[0], "timestamp": "not-a-timestamp"}
+
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(_context()),
+        policy=PreTradePolicy(execution_mode="manual"),
+        tasks=[task],
+    )
+
+    assert result["processed_count"] == 0
+    assert result["skipped_count"] == 1
+    assert result["results"][0]["reasons"] == ["invalid_action_timestamp"]
+    assert db.get_risk_decisions_sync() == []
+    assert db.get_action_tasks_sync()[0]["risk_gate_status"] == "not_checked"

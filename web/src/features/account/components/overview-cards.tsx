@@ -1,12 +1,12 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   EvidenceIdentityDisclosure,
   EvidenceState,
   MetricStrip,
   type EvidenceStateKind,
   type MetricStripItem,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   formatCurrency,
   formatDateTime,
@@ -19,7 +19,7 @@ import {
   normalizeMarketDataStatus,
 } from '../../../shared/market-data-status';
 import { formatPublicStatus } from '../../../shared/public-labels';
-import type { PortfolioSnapshot } from '../../portfolio/api';
+import type { PortfolioSnapshot } from '../account-feature-boundary';
 import type { AccountOverview } from '../api';
 
 type OverviewCardMetrics = AccountOverview & {

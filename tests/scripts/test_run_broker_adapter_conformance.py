@@ -6,7 +6,7 @@ from account_truth.broker_adapter_conformance import (
     BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
     BrokerAdapterConformanceRepository,
 )
-from scripts.run_broker_adapter_conformance import main
+from scripts.broker.run_broker_adapter_conformance import main
 from tests.account_truth.test_broker_adapter_release import release_manifest
 
 

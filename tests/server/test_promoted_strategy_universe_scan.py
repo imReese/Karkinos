@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -24,32 +24,44 @@ def _calendar(db: AppDatabase) -> list[str]:
         for value in pd.bdate_range(end="2026-08-21", periods=80)
     ]
     dates.append("2026-08-24")
+    trading_date_values = set(dates)
+    current = date(2026, 1, 1)
+    calendar_days = []
+    while current.year == 2026:
+        market_date = current.isoformat()
+        is_trading_day = market_date in trading_date_values
+        calendar_days.append(
+            {
+                "date": market_date,
+                "is_trading_day": is_trading_day,
+                "day_type": "trading" if is_trading_day else "closed",
+                "reason_code": (
+                    "scheduled_trading_day" if is_trading_day else "scheduled_closed"
+                ),
+            }
+        )
+        current += timedelta(days=1)
+    source_fingerprint = "c" * 64
     db.upsert_market_calendar_snapshot_sync(
         {
             "exchange": "SSE",
             "year": 2026,
             "provider": "fixture",
             "status": "available",
-            "trading_day_count": len(dates),
-            "closed_day_count": 0,
-            "source_fingerprint": "fixture-calendar",
-            "days": [
-                {
-                    "date": market_date,
-                    "is_trading_day": True,
-                    "day_type": "trading",
-                    "reason_code": "scheduled_trading_day",
-                }
-                for market_date in dates
-            ],
+            "trading_day_count": len(trading_date_values),
+            "closed_day_count": len(calendar_days) - len(trading_date_values),
+            "source_fingerprint": source_fingerprint,
+            "days": calendar_days,
             "limitations": [],
         }
     )
     db.update_market_calendar_verification_sync(
         exchange="SSE",
         year=2026,
+        source_fingerprint=source_fingerprint,
         verification_status="verified",
         official_source_url="https://example.test/calendar",
+        official_source_fingerprint="d" * 64,
         verified_by="unit-test",
     )
     return dates[:-1]

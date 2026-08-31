@@ -33,7 +33,7 @@ python -m server
 | 程序默认值 | 安全默认、开发默认 | 代码内维护 |
 | `config.json` | 本机运行参数、费用模型、脱敏 connector 配置 | 否 |
 | 环境变量 / `.env` | 密钥、容器路径、部署覆盖 | 否 |
-| CLI | 本次启动的 `--host`、`--port`、`--no-live` | 不保存 |
+| CLI | 本次启动的 `--host`、`--port` | 不保存 |
 | SQLite | 账户事实、watchlist、授权、证据、会话和订单状态 | 运行时数据 |
 
 `KARKINOS_CONFIG_PATH` 决定先读取哪个文件；`KARKINOS_DATA_DIR` 决定运行时数据目录。它们不是 `config.json` 内字段。
@@ -44,13 +44,13 @@ python -m server
 
 | 分组 | 用途 |
 | --- | --- |
-| `server` | Web 服务、CORS、调度器和通知 |
+| `server` | Web 服务、CORS、交易日历同步和通知 |
 | `data_source` | 行情提供方和轮询间隔；凭证只能来自环境变量 |
 | `account_truth` | 显式启用的本地只读账户证据采集边界 |
 | `broker_fee` | 券商费用建模 |
 | `ai` | 外部模型连接参数；密钥默认来自环境变量 |
 
-未知顶层字段、未知分组字段、同一字段同时使用新旧格式以及错误的字段类型都会阻止启动。这样可以避免拼写错误或无效值被静默忽略。配置文件只在启动时解析；路由复用同一个类型化配置对象，不会在请求期间重新读取 JSON。
+未知顶层字段、未知分组字段、同一字段同时使用新旧格式以及错误的字段类型都会阻止启动。这样可以避免拼写错误或无效值被静默忽略。已删除的旧 `live_auto_start` 字段是升级兼容例外：读取时忽略且不能关闭 scheduler。配置文件只在启动时解析；路由复用同一个类型化配置对象，不会在请求期间重新读取 JSON。
 
 ### server
 
@@ -58,8 +58,7 @@ python -m server
 | --- | --- | --- | --- |
 | `host` | string | `0.0.0.0` | API 监听地址；本机开发可使用 `127.0.0.1`。 |
 | `port` | integer | `8000` | API 监听端口。 |
-| `live_auto_start` | boolean | `false` | 只有显式启用时才随 Web 服务启动内建行情调度器。调度器可能联系已配置行情 provider 并持久化采集批次，但不会授予下单权限。 |
-| `market_calendar_auto_sync` | boolean | `true` | 实时启动开启时，自动采集当年上交所日历并与年度官方休市公告交叉核验；每年 12 月起同时采集下一年。 |
+| `market_calendar_auto_sync` | boolean | `true` | 服务启动时，自动采集当年上交所日历并与年度官方休市公告交叉核验；每年 12 月起同时采集下一年。 |
 | `cors_allowed_origins` | string[] | 本机前端地址 | 允许访问 API 的浏览器 origin。 |
 | `notification` | object | `{"type":"console"}` | 只保存通知通道类型：`console`、`telegram` 或 `wechat`；凭证和目标字段会被拒绝。 |
 
@@ -74,8 +73,8 @@ python -m server
 交互式配置脚本会保留分组结构：
 
 ```bash
-uv run python scripts/configure_data_source.py --provider akshare
-uv run python scripts/configure_data_source.py --provider tushare
+uv run python scripts/data/configure_data_source.py --provider akshare
+uv run python scripts/data/configure_data_source.py --provider tushare
 ```
 
 TuShare token 通过隐藏输入读取，不接受命令行参数。脚本会保留 `provider_config.tushare_token_env`，只把无凭证的 provider、轮询和环境变量名元数据写入已被 Git 忽略的 `config.json`，并把 Token 写入该变量名对应的、权限为 `0600` 的 `.env`（或 `--env-file` / `KARKINOS_ENV_FILE` 指定文件）。切换到 AkShare 会保留已有环境凭证；删除凭证必须是显式操作。Settings API 和 Web 页面不接收凭证，只展示是否已配置。`config.json` 中出现顶层或分组内 `tushare_token` 会阻止启动，配置脚本也会直接拒绝，不做自动凭证迁移。
@@ -193,7 +192,6 @@ AI 凭证解析顺序为：
 | `KARKINOS_ENV_FILE` | `python -m server` 使用的环境文件路径；也可用 `--env-file` |
 | `KARKINOS_HOST` | `server.host` |
 | `KARKINOS_PORT` | `server.port` |
-| `KARKINOS_LIVE_AUTO_START` | `server.live_auto_start` |
 | `KARKINOS_CORS_ALLOWED_ORIGINS` | `server.cors_allowed_origins`，逗号分隔 |
 | `KARKINOS_DATA_SOURCE` | `data_source.provider` |
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |

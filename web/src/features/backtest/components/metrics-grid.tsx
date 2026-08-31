@@ -1,13 +1,13 @@
 import {
   MetricStrip,
   type MetricStripItem,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import {
   formatAmount,
   formatCurrency,
   formatPercent,
 } from '../../../shared/format';
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import type { BacktestReport } from '../api';
 
 type MetricItem = {

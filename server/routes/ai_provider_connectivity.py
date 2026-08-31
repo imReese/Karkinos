@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -14,11 +13,11 @@ from server.ai_runtime.provider_connectivity import (
     ConnectivityCheckRequest,
     ConnectivityConfigurationError,
     ConnectivityStatus,
-    ProviderConnectivityAuditStore,
-    ProviderConnectivityService,
-    load_provider_connectivity_settings,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_provider_connectivity_service,
+)
 
 
 class HumanProviderConnectivityCheckPayload(BaseModel):
@@ -66,30 +65,9 @@ def create_router() -> APIRouter:
         status_code = {
             ConnectivityStatus.PASSED: 200,
             ConnectivityStatus.RUNNING: 202,
+            ConnectivityStatus.DEFERRED: 202,
             ConnectivityStatus.FAILED: 502,
         }[result.status]
         return JSONResponse(status_code=status_code, content=result.to_dict())
 
     return router
-
-
-def build_provider_connectivity_service(state) -> ProviderConnectivityService:
-    """Build the explicit network probe on AI-only audit tables."""
-    db_path = _database_path(state.db)
-    settings = load_provider_connectivity_settings(state.config)
-    ai_store = AiAuditStore(db_path)
-    audit_store = ProviderConnectivityAuditStore(db_path)
-    ai_store.init()
-    audit_store.init()
-    return ProviderConnectivityService(
-        settings=settings,
-        audit_store=audit_store,
-        ai_store=ai_store,
-    )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ConnectivityConfigurationError("database path is unavailable")
-    return Path(path)

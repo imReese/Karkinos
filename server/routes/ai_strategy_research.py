@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
@@ -10,35 +11,45 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from server.ai_runtime.contracts import content_fingerprint
-from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
+    CANONICAL_COST_MODEL_REFERENCE,
     formula_operator_catalog,
+)
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    provider_call_deferred_payload,
+)
+from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
 )
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
+from server.ai_runtime.strategy_research_privacy import (
+    NORMALIZED_RESEARCH_NOTIONAL,
+)
+from server.ai_runtime.store import IdempotencyConflict
 from server.ai_runtime.strategy_research import (
-    BACKTEST_CONFIRMATION,
-    CRITIQUE_EXPORT_CONFIRMATION,
-    HYPOTHESIS_EXPORT_CONFIRMATION,
-    REVIEW_CONFIRMATION,
     STRATEGY_RESEARCH_MAX_CANDIDATES,
     STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
+    SealedTestRequest,
     StrategyResearchAuditStore,
     StrategyResearchRejected,
     StrategyResearchSelection,
     StrategyResearchService,
 )
-from server.routes.ai_research import build_human_context_capture_service
-from server.services.strategy_research_factory import (
+from server.composition.ai_application_services import (
+    build_shadow_research_read_service,
+    build_shadow_research_write_service,
+    build_strategy_research_read_service,
     build_strategy_research_write_service,
 )
 from server.services.strategy_research_factory import (
-    strategy_research_model_timeout_seconds as _strategy_research_model_timeout_seconds,
+    strategy_research_model_timeout_seconds as _model_timeout_seconds,
 )
 
 
@@ -54,18 +65,41 @@ class StrategyResearchSelectionPayload(BaseModel):
     dataset_snapshot_id: str = Field(min_length=8, max_length=200)
     start_date: str = Field(min_length=10, max_length=10)
     end_date: str = Field(min_length=10, max_length=10)
+    sealed_end_date: str | None = Field(default=None, min_length=10, max_length=10)
     frequency: Literal["1d"] = "1d"
     initial_cash: float = Field(gt=0, le=1_000_000_000)
     cost_model_reference: str = Field(
         min_length=1,
         max_length=300,
         pattern=(
-            r"^karkinos\.backtest\.reviewed_account_fee_schedule\.v1:"
-            r"fee_review_[0-9a-f]{32}:[0-9a-f]{64}$"
+            r"^(?:karkinos\.backtest\.multi_asset_commission\.default\.v1|"
+            r"karkinos\.backtest\.reviewed_account_fee_schedule\.v1:"
+            r"fee_review_[0-9a-f]{32}:[0-9a-f]{64})$"
         ),
     )
-    valuation_snapshot_id: str = Field(min_length=1, max_length=200)
-    ledger_cutoff_id: int = Field(ge=0)
+    valuation_snapshot_id: str | None = Field(
+        default=None, min_length=1, max_length=200
+    )
+    ledger_cutoff_id: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_research_capital_binding(self) -> "StrategyResearchSelectionPayload":
+        if (self.valuation_snapshot_id is None) != (self.ledger_cutoff_id is None):
+            raise ValueError("account fact binding must be complete or omitted")
+        if self.valuation_snapshot_id is None:
+            if self.cost_model_reference != CANONICAL_COST_MODEL_REFERENCE:
+                raise ValueError(
+                    "strategy-only research requires the canonical estimated cost model"
+                )
+            if self.initial_cash != NORMALIZED_RESEARCH_NOTIONAL:
+                raise ValueError(
+                    "strategy-only research requires the versioned normalized notional"
+                )
+        elif self.cost_model_reference == CANONICAL_COST_MODEL_REFERENCE:
+            raise ValueError(
+                "account-bound research requires a reviewed account cost model"
+            )
+        return self
 
     def to_domain(self) -> StrategyResearchSelection:
         return StrategyResearchSelection(
@@ -77,6 +111,7 @@ class StrategyResearchSelectionPayload(BaseModel):
             end_date=self.end_date,
             frequency=self.frequency,
             initial_cash=self.initial_cash,
+            sealed_end_date=self.sealed_end_date,
             cost_model_reference=self.cost_model_reference,
             valuation_snapshot_id=self.valuation_snapshot_id,
             ledger_cutoff_id=self.ledger_cutoff_id,
@@ -123,6 +158,20 @@ class CritiquePayload(BaseModel):
     ]
 
 
+class SealedTestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    requested_by: str = Field(min_length=1, max_length=128)
+    session_id: str = Field(min_length=1, max_length=200)
+    draft_id: str = Field(min_length=1, max_length=200)
+    backtest_run_id: str = Field(min_length=1, max_length=200)
+    benchmark_return: float | None = None
+    confirmation: Literal[
+        "run_frozen_champion_sealed_holdout_evaluation_without_trade_authority"
+    ]
+
+
 class HumanReviewPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -147,14 +196,19 @@ class ShadowResearchPolicyPayload(BaseModel):
         le=STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     )
     daily_token_budget: int | None = None
-    token_budget_mode: Literal["unbounded_daily"] = "unbounded_daily"
+    token_budget_mode: Literal["unbounded_daily", "legacy_bounded_daily"] = (
+        "unbounded_daily"
+    )
     max_candidates_per_run: int = Field(
         default=STRATEGY_RESEARCH_MAX_CANDIDATES,
         ge=1,
         le=STRATEGY_RESEARCH_MAX_CANDIDATES,
     )
     baseline_backtest_result_id: int | None = Field(default=None, gt=0)
-    require_complete_account_evidence: bool = True
+    research_capital_mode: Literal["normalized_notional", "account_bound"] = (
+        SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+    )
+    require_complete_account_evidence: bool = False
     research_question: str = Field(min_length=1, max_length=4_000)
     updated_by: str = Field(min_length=1, max_length=128)
     confirmation: str = Field(min_length=1, max_length=200)
@@ -170,9 +224,17 @@ class ShadowResearchPolicyPayload(BaseModel):
                 "and one critique per sequential iteration"
             )
         if self.daily_token_budget is not None:
+            if self.token_budget_mode != "legacy_bounded_daily":
+                raise ValueError(
+                    "daily_token_budget requires legacy_bounded_daily token mode"
+                )
+        elif self.token_budget_mode != "unbounded_daily":
+            raise ValueError("token_budget_mode requires a daily_token_budget")
+        if self.require_complete_account_evidence != (
+            self.research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+        ):
             raise ValueError(
-                "daily_token_budget must be null; five sequential iterations have "
-                "no Karkinos daily aggregate token budget"
+                "research_capital_mode conflicts with account evidence requirement"
             )
         return self
 
@@ -285,6 +347,10 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=503, detail="Database is not initialized")
         return _build_shadow_read_service(state).status()
 
+    @router.get("/shadow-automation/readiness")
+    async def get_shadow_research_readiness() -> dict[str, Any]:
+        return _read_shadow_research_readiness()
+
     @router.put("/shadow-automation/policy")
     async def update_shadow_research_policy(
         payload: ShadowResearchPolicyPayload,
@@ -304,7 +370,12 @@ def create_router() -> APIRouter:
         from server.dependencies import get_app_state
 
         try:
-            return await _build_shadow_write_service(get_app_state()).run_once()
+            result = await _build_shadow_write_service(get_app_state()).run_once()
+            if result.get("run_status") == "deferred_for_provider_off_peak":
+                return JSONResponse(status_code=202, content=result)
+            return result
+        except ProviderCallDeferred as exc:
+            return _provider_call_deferred_response(exc)
         except Exception as exc:
             _raise_http(exc)
 
@@ -477,6 +548,8 @@ def create_router() -> APIRouter:
                 )
             )
             return _status_response(result)
+        except ProviderCallDeferred as exc:
+            return _provider_call_deferred_response(exc)
         except Exception as exc:
             _raise_http(exc)
 
@@ -520,8 +593,14 @@ def create_router() -> APIRouter:
                 )
             )
             return _status_response(result)
+        except ProviderCallDeferred as exc:
+            return _provider_call_deferred_response(exc)
         except Exception as exc:
             _raise_http(exc)
+
+    @router.post("/sealed-tests")
+    async def run_sealed_holdout_test(payload: SealedTestPayload) -> JSONResponse:
+        return await _run_sealed_holdout_test(payload)
 
     @router.post("/sessions/{session_id}/reviews")
     async def record_strategy_research_review(
@@ -590,53 +669,60 @@ def _build_write_service(state: Any, *, external: bool) -> StrategyResearchServi
     return build_strategy_research_write_service(
         state,
         external=external,
-        capture_service=build_human_context_capture_service(state),
     )
 
 
 def _build_read_service(state: Any) -> StrategyResearchService:
-    """Build without init, DataStore construction, config, provider, or secrets."""
-    db_path = _database_path(state.db)
-    return StrategyResearchService(
-        db=state.db,
-        db_path=db_path,
-        settings=None,
-        capture_service=None,  # type: ignore[arg-type]
-        evidence_repository=CanonicalEvidenceRepository(db_path),
-        ai_store=AiAuditStore(db_path),
-        research_store=StrategyResearchAuditStore(db_path),
-        data_store=None,  # type: ignore[arg-type]
-    )
+    return build_strategy_research_read_service(state)
 
 
 def _build_shadow_write_service(state: Any) -> Any:
-    if state.db is None:
-        raise ConnectivityConfigurationError("database is not initialized")
-    from server.services.ai_shadow_research_automation import (
-        build_ai_shadow_research_automation_service,
-    )
-
-    return build_ai_shadow_research_automation_service(
-        state,
-        research_service_builder=lambda external: _build_write_service(
-            state,
-            external=external,
-        ),
-    )
+    return build_shadow_research_write_service(state)
 
 
 def _build_shadow_read_service(state: Any) -> Any:
-    """Build a read projection without initializing tables or market storage."""
-    from server.services.ai_shadow_research_automation import (
-        AiShadowResearchAutomationService,
-        ShadowResearchStore,
-    )
+    return build_shadow_research_read_service(state)
 
-    return AiShadowResearchAutomationService(
-        state=state,
-        store=ShadowResearchStore(_database_path(state.db)),
-        data_store=None,  # type: ignore[arg-type]
-    )
+
+def _read_shadow_research_readiness() -> dict[str, Any]:
+    """Bounded provider-free policy projection for loopback readiness checks."""
+    from server.dependencies import get_app_state
+
+    state = get_app_state()
+    if state.db is None:
+        raise HTTPException(status_code=503, detail="Database is not initialized")
+    return _build_shadow_read_service(state).readiness_status()
+
+
+async def _run_sealed_holdout_test(payload: SealedTestPayload) -> JSONResponse:
+    from server.dependencies import get_app_state
+
+    state = get_app_state()
+    try:
+        service = _build_write_service(state, external=False)
+        result = await service.sealed_test(
+            SealedTestRequest(
+                idempotency_key=payload.idempotency_key,
+                requested_by=payload.requested_by,
+                session_id=payload.session_id,
+                draft_id=payload.draft_id,
+                backtest_run_id=payload.backtest_run_id,
+                confirmation=payload.confirmation,
+                benchmark_return=(
+                    Decimal(str(payload.benchmark_return))
+                    if payload.benchmark_return is not None
+                    else None
+                ),
+            )
+        )
+        return _status_response(result)
+    except Exception as exc:
+        _raise_http(exc)
+
+
+def _strategy_research_model_timeout_seconds(settings: Any | None) -> float:
+    """Compatibility export for the former route-level timeout helper."""
+    return _model_timeout_seconds(settings)
 
 
 def _database_path(db: Any) -> Path:
@@ -657,6 +743,13 @@ def _status_response(result: dict[str, Any]) -> JSONResponse:
         "failed": 502,
     }.get(status, 500)
     return JSONResponse(status_code=status_code, content=result)
+
+
+def _provider_call_deferred_response(exc: ProviderCallDeferred) -> JSONResponse:
+    return JSONResponse(
+        status_code=202,
+        content=provider_call_deferred_payload(exc.decision),
+    )
 
 
 def _raise_http(exc: Exception) -> None:

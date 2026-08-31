@@ -10,11 +10,11 @@ import {
   YAxis,
 } from 'recharts';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   EvidenceState,
   ResponsiveChartFrame,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import {
   formatCompactNumber,
   formatCurrency,
@@ -24,7 +24,7 @@ import {
   formatTimestamp,
 } from '../../../shared/format';
 import { formatPublicCode } from '../../../shared/public-labels';
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import type { BacktestEquityPoint, BacktestFill } from '../api';
 
 type ChartPoint = BacktestEquityPoint & {

@@ -7,6 +7,16 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 
+from server.contracts.content_identity import canonical_json
+from server.contracts.idempotency import IdempotencyConflict
+from server.contracts.ledger_mutations import (
+    LedgerAppendCommand,
+    LedgerEntryDraft,
+    LedgerMutationConflict,
+    LedgerMutationResult,
+    LedgerTradeSettlementCommand,
+    ledger_entry_state_fingerprint,
+)
 from server.ledger.models import LedgerEntry
 from server.ledger.repository import LedgerRepository
 from server.models import (
@@ -106,6 +116,7 @@ def _build_cash_flow_entry(body: LedgerCashFlowCreate) -> LedgerEntry:
         entry_type=entry_type,
         timestamp=body.occurred_at,
         amount=body.amount,
+        asset_class="cash",
         note=body.note,
         source=body.source,
         source_ref=body.source_ref,
@@ -222,7 +233,75 @@ def _ledger_display_name(db, entry: LedgerEntry) -> str | None:
 def _entry_response(db, entry: LedgerEntry) -> LedgerEntryResponse:
     payload = asdict(entry)
     payload["display_name"] = _ledger_display_name(db, entry)
+    payload["entry_fingerprint"] = ledger_entry_state_fingerprint(payload)
     return LedgerEntryResponse(**payload)
+
+
+def _append_command(
+    body: (
+        LedgerTradeCreate
+        | LedgerCashFlowCreate
+        | LedgerDividendCreate
+        | LedgerAdjustmentCreate
+    ),
+    entry: LedgerEntry,
+) -> LedgerAppendCommand:
+    return LedgerAppendCommand(
+        operator_id=body.operator_id.strip(),
+        request_id=body.request_id.strip(),
+        entry=LedgerEntryDraft(
+            entry_type=entry.entry_type,
+            timestamp=entry.timestamp,
+            amount=entry.amount,
+            symbol=entry.symbol,
+            direction=entry.direction,
+            quantity=entry.quantity,
+            price=entry.price,
+            commission=entry.commission,
+            gross_amount=entry.gross_amount,
+            net_cash_impact=entry.net_cash_impact,
+            fee_breakdown_json=(
+                canonical_json(entry.fee_breakdown)
+                if entry.fee_breakdown is not None
+                else None
+            ),
+            fee_rule_id=entry.fee_rule_id,
+            fee_rule_version=entry.fee_rule_version,
+            cost_basis_method=entry.cost_basis_method,
+            correction_payload_json=(
+                canonical_json(entry.correction_payload)
+                if entry.correction_payload is not None
+                else None
+            ),
+            asset_class=entry.asset_class,
+            note=entry.note,
+            source=entry.source,
+            source_ref=entry.source_ref,
+        ),
+    )
+
+
+def _append_entry(
+    repo: LedgerRepository,
+    command: LedgerAppendCommand,
+) -> LedgerEntryCreatedResponse:
+    try:
+        result = repo.append_entry(command)
+    except (IdempotencyConflict, LedgerMutationConflict) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _created_response(result)
+
+
+def _created_response(result: LedgerMutationResult) -> LedgerEntryCreatedResponse:
+    return LedgerEntryCreatedResponse(
+        id=int(result.entry["id"]),
+        entry_type=str(result.entry["entry_type"]),
+        request_id=result.request_id,
+        replayed=result.replayed,
+        entry_fingerprint=result.entry_fingerprint,
+        valuation_snapshot_id=result.valuation_snapshot_id,
+        valuation_snapshot_status=result.valuation_snapshot_status,
+    )
 
 
 def create_router() -> APIRouter:
@@ -246,8 +325,7 @@ def create_router() -> APIRouter:
         state = get_app_state()
         repo = LedgerRepository(state.db)
         entry = _build_trade_entry(body, config=getattr(state, "config", None))
-        entry_id = repo.insert_entry(entry)
-        return LedgerEntryCreatedResponse(id=entry_id, entry_type=entry.entry_type)
+        return _append_entry(repo, _append_command(body, entry))
 
     @r.post(
         "/trades/{entry_id}/settlement",
@@ -268,19 +346,25 @@ def create_router() -> APIRouter:
         fee_breakdown = _settled_fee_breakdown(body)
         _validate_trade_settlement(entry, body, fee_breakdown)
         try:
-            settled = repo.confirm_trade_settlement(
-                entry_id=entry_id,
-                commission=body.commission,
-                net_cash_impact=body.net_cash_impact,
-                fee_breakdown=fee_breakdown,
-                settled_at=body.settled_at,
-                settlement_source=body.source.strip(),
-                settlement_source_ref=body.source_ref.strip(),
-                settlement_note=body.note,
+            result = repo.settle_trade(
+                LedgerTradeSettlementCommand(
+                    operator_id=body.operator_id.strip(),
+                    request_id=body.request_id.strip(),
+                    expected_entry_fingerprint=body.expected_entry_fingerprint,
+                    entry_id=entry_id,
+                    commission=body.commission,
+                    net_cash_impact=body.net_cash_impact,
+                    fee_breakdown_json=canonical_json(fee_breakdown),
+                    settled_at=body.settled_at,
+                    settlement_source=body.source.strip(),
+                    settlement_source_ref=body.source_ref.strip(),
+                    settlement_note=body.note,
+                )
             )
-        except ValueError as exc:
+        except (IdempotencyConflict, LedgerMutationConflict) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+        settled = LedgerEntry.from_row(result.entry)
         estimated_net = settled.estimated_net_cash_impact
         return LedgerTradeSettlementResponse(
             id=entry_id,
@@ -293,6 +377,11 @@ def create_router() -> APIRouter:
                 estimated_net,
             ),
             fee_breakdown=settled.fee_breakdown or {},
+            request_id=result.request_id,
+            replayed=result.replayed,
+            entry_fingerprint=result.entry_fingerprint,
+            valuation_snapshot_id=result.valuation_snapshot_id,
+            valuation_snapshot_status=result.valuation_snapshot_status,
         )
 
     @r.post("/cash-flows", response_model=LedgerEntryCreatedResponse)
@@ -304,8 +393,7 @@ def create_router() -> APIRouter:
         state = get_app_state()
         repo = LedgerRepository(state.db)
         entry = _build_cash_flow_entry(body)
-        entry_id = repo.insert_entry(entry)
-        return LedgerEntryCreatedResponse(id=entry_id, entry_type=entry.entry_type)
+        return _append_entry(repo, _append_command(body, entry))
 
     @r.post("/dividends", response_model=LedgerEntryCreatedResponse)
     async def create_dividend_entry(
@@ -316,8 +404,7 @@ def create_router() -> APIRouter:
         state = get_app_state()
         repo = LedgerRepository(state.db)
         entry = _build_dividend_entry(body)
-        entry_id = repo.insert_entry(entry)
-        return LedgerEntryCreatedResponse(id=entry_id, entry_type=entry.entry_type)
+        return _append_entry(repo, _append_command(body, entry))
 
     @r.post("/adjustments", response_model=LedgerEntryCreatedResponse)
     async def create_adjustment_entry(
@@ -328,7 +415,6 @@ def create_router() -> APIRouter:
         state = get_app_state()
         repo = LedgerRepository(state.db)
         entry = _build_adjustment_entry(body)
-        entry_id = repo.insert_entry(entry)
-        return LedgerEntryCreatedResponse(id=entry_id, entry_type=entry.entry_type)
+        return _append_entry(repo, _append_command(body, entry))
 
     return r

@@ -130,7 +130,6 @@ _UNSAFE_EXTENSION_FIELDS = {
     "allow_live_trading",
     "auto_trade",
     "broker_submission",
-    "live_auto_start",
     "real_money_execution",
 }
 

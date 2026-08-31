@@ -11,7 +11,7 @@ from dotenv import dotenv_values
 
 
 def _load_script_module():
-    script_path = Path("scripts/configure_data_source.py")
+    script_path = Path("scripts/data/configure_data_source.py")
     spec = importlib.util.spec_from_file_location("configure_data_source", script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

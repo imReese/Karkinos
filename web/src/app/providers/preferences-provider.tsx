@@ -1,0 +1,116 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+
+import {
+  PreferencesContext,
+  type Locale,
+  type ResolvedTheme,
+  type ThemePreference,
+} from '../../shared/preferences/context';
+import { CopyContext } from '../../shared/i18n/context';
+import { copy } from '../copy';
+
+const LOCALE_KEY = 'karkinos.locale';
+const THEME_KEY = 'karkinos.theme';
+
+function readStoredLocale(): Locale {
+  if (typeof window === 'undefined') {
+    return 'en';
+  }
+  const stored = window.localStorage.getItem(LOCALE_KEY);
+  if (stored === 'zh' || stored === 'en') {
+    return stored;
+  }
+  const browserLanguages = [
+    ...(window.navigator.languages ?? []),
+    window.navigator.language,
+  ];
+  return browserLanguages.some((language) =>
+    language.toLowerCase().startsWith('zh'),
+  )
+    ? 'zh'
+    : 'en';
+}
+
+function readStoredTheme(): ThemePreference {
+  if (typeof window === 'undefined') {
+    return 'system';
+  }
+  const stored = window.localStorage.getItem(THEME_KEY);
+  return stored === 'light' || stored === 'dark' ? stored : 'system';
+}
+
+function resolveSystemTheme(): ResolvedTheme {
+  if (
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  ) {
+    return 'dark';
+  }
+  return 'light';
+}
+
+function applyThemeToDocument(nextTheme: ResolvedTheme) {
+  document.documentElement.dataset.theme = nextTheme;
+  document.documentElement.style.colorScheme = nextTheme;
+}
+
+export function PreferencesProvider({ children }: { children: ReactNode }) {
+  const [locale, setLocale] = useState<Locale>(() => readStoredLocale());
+  const [theme, setTheme] = useState<ThemePreference>(() => {
+    return readStoredTheme();
+  });
+  const [resolvedTheme, setResolvedTheme] =
+    useState<ResolvedTheme>(resolveSystemTheme());
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(LOCALE_KEY, locale);
+    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en-US';
+  }, [locale]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (theme === 'system') {
+      window.localStorage.removeItem(THEME_KEY);
+    } else {
+      window.localStorage.setItem(THEME_KEY, theme);
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const nextTheme = theme === 'system' ? resolveSystemTheme() : theme;
+      setResolvedTheme(nextTheme);
+      applyThemeToDocument(nextTheme);
+    };
+
+    applyTheme();
+    mediaQuery.addEventListener('change', applyTheme);
+
+    return () => {
+      mediaQuery.removeEventListener('change', applyTheme);
+    };
+  }, [theme]);
+
+  const value = useMemo(
+    () => ({
+      locale,
+      setLocale,
+      theme,
+      setTheme,
+      resolvedTheme,
+    }),
+    [locale, theme, resolvedTheme],
+  );
+
+  return (
+    <PreferencesContext.Provider value={value}>
+      <CopyContext.Provider value={copy[locale]}>
+        {children}
+      </CopyContext.Provider>
+    </PreferencesContext.Provider>
+  );
+}

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.composition.controlled_execution_services as controlled_services
 import server.routes.per_order_confirmation as route_module
 from server.app import create_app
 from server.routes.per_order_confirmation import create_router
@@ -316,20 +317,20 @@ def test_route_service_wires_current_stage1_promotion_evidence(monkeypatch) -> N
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        route_module, "build_broker_connectors", lambda config: [connector]
+        controlled_services, "build_broker_connectors", lambda config: [connector]
     )
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "BrokerConnectorSoakPromotionService",
         FakePromotionService,
     )
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "ExecutionGatewayVerificationService",
         FakeGatewayVerificationService,
     )
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "build_latest_account_truth_promotion_evidence",
         lambda state: {"state_matches": state is fake_state},
     )

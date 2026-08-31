@@ -9,19 +9,13 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.account_truth_gate import build_latest_account_truth_promotion_evidence
-from server.services.broker_connector_runtime import build_broker_connectors
+from server.composition.controlled_execution_services import (
+    build_controlled_session_envelope_service,
+)
 from server.services.controlled_session_envelope import (
     CONTROLLED_SESSION_ACKNOWLEDGEMENT,
     ControlledSessionAttestationRejected,
     ControlledSessionEnvelopeService,
-)
-from server.services.execution_gateway_verification import (
-    ExecutionGatewayVerificationService,
-)
-from server.services.session_start_account_truth import (
-    SESSION_START_ACCOUNT_TRUTH_MAX_AGE_SECONDS,
-    SessionStartAccountTruthService,
 )
 
 GatewayVerificationFingerprint = Annotated[
@@ -152,32 +146,4 @@ def create_router() -> APIRouter:
 def _service() -> ControlledSessionEnvelopeService:
     from server.dependencies import get_app_state
 
-    state = get_app_state()
-    config = getattr(state, "config", None)
-    return ControlledSessionEnvelopeService(
-        db=state.db,
-        connectors=build_broker_connectors(
-            getattr(config, "broker_connectors", []) or []
-        ),
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-        trading_controls=getattr(state, "trading_controls", None),
-        execution_gateway_verification_provider=(
-            ExecutionGatewayVerificationService(
-                db=state.db,
-                gateways=getattr(state, "execution_gateways", []) or [],
-            ).resolve
-        ),
-        session_start_account_truth_provider=(
-            SessionStartAccountTruthService(
-                db=state.db,
-                account_truth_provider=(
-                    lambda: build_latest_account_truth_promotion_evidence(
-                        state,
-                        max_age_seconds=(SESSION_START_ACCOUNT_TRUTH_MAX_AGE_SECONDS),
-                    )
-                ),
-            ).resolve
-        ),
-    )
+    return build_controlled_session_envelope_service(get_app_state())

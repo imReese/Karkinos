@@ -118,6 +118,7 @@ class PreTradeRiskManager:
                 intent_id=intent.intent_id,
                 risk_decision_id=decision_id,
                 execution_mode=self.policy.execution_mode,
+                asset_class=intent.asset_class,
             )
         )
 
@@ -218,7 +219,10 @@ def _pre_trade_reasons(
     if ctx.kill_switch_enabled and intent.side == OrderSide.BUY:
         reasons.append("kill switch is enabled: buy orders are blocked")
 
-    if policy.max_order_notional is not None and order_value > policy.max_order_notional:
+    if (
+        policy.max_order_notional is not None
+        and order_value > policy.max_order_notional
+    ):
         reasons.append("order notional exceeds max_order_notional")
 
     if (

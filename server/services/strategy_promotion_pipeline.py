@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
 from typing import Any
 
-from analytics.dataset_snapshot import verify_backtest_dataset_snapshot_replay
 from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
@@ -17,34 +13,53 @@ from analytics.strategy_advancement_gate import (
     strategy_advancement_backtest_view,
 )
 from server.ai_runtime.contracts import content_fingerprint
-from server.services.ai_shadow_research_daily_artifacts import (
-    DailyStrategyArtifactRejected,
-    DailyStrategyArtifactStore,
-    build_daily_strategy_promotion_binding,
+from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
 )
 from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
+from server.services.strategy_promotion_support import (
+    AI_SHADOW_STRATEGY_PREFIX,
+    STRATEGY_PROMOTION_LIFECYCLE_STAGES,
+    STRATEGY_PROMOTION_SCHEMA_VERSION,
+)
+from server.services.strategy_promotion_support import (
+    ai_shadow_dataset_replay_evidence as _ai_shadow_dataset_replay_evidence,
+)
+from server.services.strategy_promotion_support import (
+    ai_shadow_fee_schedule_binding as _ai_shadow_fee_schedule_binding,
+)
+from server.services.strategy_promotion_support import (
+    binding_backtest_source as _binding_backtest_source,
+)
+from server.services.strategy_promotion_support import (
+    dataset_replay_evidence_from_binding as _dataset_replay_evidence_from_binding,
+)
+from server.services.strategy_promotion_support import int_or_none as _int_or_none
+from server.services.strategy_promotion_support import is_promotable as _is_promotable
+from server.services.strategy_promotion_support import json_list as _json_list
+from server.services.strategy_promotion_support import json_object as _json_object
+from server.services.strategy_promotion_support import (
+    lifecycle_metadata as _lifecycle_metadata,
+)
+from server.services.strategy_promotion_support import (
+    missing_requirements as _missing_requirements,
+)
+from server.services.strategy_promotion_support import (
+    resolve_ai_shadow_daily_strategy_artifact_binding as _resolve_ai_shadow_daily_strategy_artifact_binding,
+)
+from server.services.strategy_promotion_support import (
+    strategy_advancement_gate_fingerprint as _strategy_advancement_gate_fingerprint,
+)
 
-STRATEGY_PROMOTION_SCHEMA_VERSION = "karkinos.strategy_promotion_pipeline.v1"
 STRATEGY_ORDER_GENERATION_GATE_SCHEMA_VERSION = (
     "karkinos.strategy_order_generation_gate.v1"
 )
-AI_SHADOW_STRATEGY_PREFIX = "ai_formula_shadow:"
 STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION = (
     "approve_evidence_bound_strategy_for_paper_shadow_only_without_"
     "execution_or_capital_authority"
 )
 STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION = (
     "pause_or_retire_strategy_without_execution_or_capital_authority"
-)
-
-STRATEGY_PROMOTION_LIFECYCLE_STAGES = (
-    "research",
-    "paper_shadow",
-    "shadow",
-    "manual_confirmation",
-    "controlled_bridge_pilot",
-    "paused",
-    "retired",
 )
 
 _AUDIT_ONLY_LIFECYCLE_TRANSITIONS = {
@@ -597,6 +612,18 @@ def _ai_shadow_readiness_binding_blockers(
         or binding.get("research_run_session_id") != binding.get("session_id")
     ):
         blockers.append("ai_shadow_research_run_binding_drift")
+    research_context_id = str(binding.get("research_run_context_id") or "").strip()
+    research_valuation_id = str(
+        binding.get("research_run_valuation_snapshot_id") or ""
+    ).strip()
+    if (
+        binding.get("research_run_capital_mode")
+        != SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+        or not research_context_id
+        or research_context_id != research_valuation_id
+        or int(binding.get("research_run_ledger_cutoff_id") or 0) <= 0
+    ):
+        blockers.append("ai_shadow_research_context_not_account_bound")
     candidate_capital_evidence = _json_object(
         candidate_metrics.get("account_capital_constraint")
     )
@@ -693,220 +720,3 @@ def _ai_shadow_readiness_binding_blockers(
     ):
         blockers.append("ai_shadow_readiness_authority_boundary_invalid")
     return list(dict.fromkeys(blockers))
-
-
-def _resolve_ai_shadow_daily_strategy_artifact_binding(
-    db: Any,
-    *,
-    candidate_id: str,
-    run_id: str,
-) -> dict[str, Any] | None:
-    database_path = getattr(db, "_path", None)
-    if database_path is None or not candidate_id or not run_id:
-        return None
-    path = Path(database_path)
-    artifacts = DailyStrategyArtifactStore(
-        db_path=path,
-        backup_root=path.parent / "strategy-research-backups",
-    )
-    try:
-        verified = artifacts.require_verified_winner(
-            candidate_id=candidate_id,
-            run_id=run_id,
-        )
-        return build_daily_strategy_promotion_binding(verified)
-    except (DailyStrategyArtifactRejected, OSError, ValueError):
-        return None
-
-
-def _ai_shadow_fee_schedule_binding(db: Any, candidate_id: str) -> dict[str, Any]:
-    reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
-    binding = reader(candidate_id) if callable(reader) and candidate_id else None
-    if not isinstance(binding, dict):
-        return {}
-    metrics = _json_object(binding.get("candidate_metrics_json"))
-    fee_evidence = _json_object(metrics.get("fee_component_evidence"))
-    schedule_binding = _json_object(fee_evidence.get("fee_schedule_binding"))
-    return {
-        "fee_schedule_fingerprint": fee_evidence.get("fee_schedule_fingerprint"),
-        **schedule_binding,
-    }
-
-
-def _ai_shadow_dataset_replay_evidence(
-    db: Any,
-    candidate_id: str,
-) -> dict[str, Any]:
-    reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
-    binding = reader(candidate_id) if callable(reader) and candidate_id else None
-    if not isinstance(binding, dict):
-        return _missing_dataset_replay_evidence("dataset_replay_binding_missing")
-    return _dataset_replay_evidence_from_binding(db, binding)
-
-
-def _dataset_replay_evidence_from_binding(
-    db: Any,
-    binding: dict[str, Any],
-) -> dict[str, Any]:
-    baseline_metrics = _json_object(binding.get("baseline_metrics_json"))
-    candidate_metrics = _json_object(binding.get("candidate_metrics_json"))
-    baseline_snapshot = _json_object(baseline_metrics.get("dataset_snapshot"))
-    candidate_snapshot = _json_object(candidate_metrics.get("dataset_snapshot"))
-    root = _strategy_dataset_store_root(db)
-    if root is None:
-        return _missing_dataset_replay_evidence("dataset_replay_store_root_missing")
-    replay = verify_backtest_dataset_snapshot_replay(
-        candidate_snapshot,
-        store_root=root,
-    )
-    replay_core = dict(replay)
-    replay_core.pop("evidence_fingerprint", None)
-    manifest_matches = bool(baseline_snapshot) and content_fingerprint(
-        baseline_snapshot
-    ) == content_fingerprint(candidate_snapshot)
-    blockers = list(replay_core.get("blockers") or [])
-    if not manifest_matches:
-        blockers.append("baseline_candidate_dataset_manifest_mismatch")
-    replay_core.update(
-        {
-            "status": "pass" if not blockers else "blocked",
-            "blockers": list(dict.fromkeys(blockers)),
-            "baseline_manifest_matches_candidate": manifest_matches,
-            "baseline_snapshot_id": baseline_snapshot.get("snapshot_id"),
-            "candidate_snapshot_id": candidate_snapshot.get("snapshot_id"),
-        }
-    )
-    return {
-        **replay_core,
-        "evidence_fingerprint": content_fingerprint(replay_core),
-    }
-
-
-def _strategy_dataset_store_root(db: Any) -> Path | None:
-    configured = str(os.environ.get("KARKINOS_DATA_DIR") or "").strip()
-    if configured:
-        return Path(configured)
-    database_path = getattr(db, "_path", None)
-    if database_path is None:
-        return None
-    return Path(database_path).parent
-
-
-def _missing_dataset_replay_evidence(blocker: str) -> dict[str, Any]:
-    core = {
-        "schema_version": "karkinos.dataset_snapshot_replay.v1",
-        "status": "blocked",
-        "snapshot_id": None,
-        "manifest_symbol_count": 0,
-        "verified_symbol_count": 0,
-        "blockers": [blocker],
-        "persisted_market_bars_only": True,
-        "parquet_fallback_used": False,
-        "provider_contacted": False,
-        "does_not_create_order": True,
-        "does_not_authorize_execution": True,
-        "does_not_change_capital_authority": True,
-    }
-    return {**core, "evidence_fingerprint": content_fingerprint(core)}
-
-
-def _binding_backtest_source(binding: dict[str, Any], prefix: str) -> dict[str, Any]:
-    result_id = binding.get(
-        "baseline_result_id" if prefix == "baseline" else "candidate_result_id"
-    )
-    return {
-        "id": int(result_id or 0),
-        "initial_cash": binding.get(f"{prefix}_initial_cash"),
-        "final_equity": binding.get(f"{prefix}_final_equity"),
-        "total_return": binding.get(f"{prefix}_total_return"),
-        "sharpe": binding.get(f"{prefix}_sharpe"),
-        "max_drawdown": binding.get(f"{prefix}_max_drawdown"),
-        "equity_curve": _json_list(binding.get(f"{prefix}_equity_curve_json")),
-        "metrics": _json_object(binding.get(f"{prefix}_metrics_json")),
-        "cost_summary": _json_object(binding.get(f"{prefix}_cost_summary_json")),
-    }
-
-
-def _missing_requirements(readiness: dict[str, Any]) -> list[str]:
-    value = readiness.get("missing_requirements") or []
-    missing = [str(item) for item in value]
-    strategy_id = str(readiness.get("strategy_id") or "").strip()
-    if not strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
-        if not is_valid_passed_strategy_advancement_gate(
-            _strategy_advancement_gate(readiness)
-        ):
-            missing.append("strategy_advancement_gate_not_passed")
-        missing.append("evidence_owned_candidate_approval_missing")
-    return list(dict.fromkeys(missing))
-
-
-def _strategy_advancement_gate(readiness: dict[str, Any]) -> Any:
-    return readiness.get("strategy_advancement_gate") or readiness.get("promotion_gate")
-
-
-def _strategy_advancement_gate_fingerprint(readiness: dict[str, Any]) -> str | None:
-    gate = _strategy_advancement_gate(readiness)
-    if not isinstance(gate, dict):
-        return None
-    fingerprint = str(gate.get("evidence_fingerprint") or "").strip()
-    return fingerprint or None
-
-
-def _is_promotable(readiness: dict[str, Any]) -> bool:
-    return bool(readiness.get("is_promotable")) and not _missing_requirements(readiness)
-
-
-def _lifecycle_metadata(stage: str) -> dict[str, Any]:
-    return {
-        "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
-        "stage": stage,
-        "supported_stages": list(STRATEGY_PROMOTION_LIFECYCLE_STAGES),
-        "audit_only": True,
-        "does_not_authorize_execution": True,
-        "broker_submission_enabled": False,
-        "manual_confirmation_required_for_live_like": True,
-        "disabled_stages": ["controlled_bridge_pilot", "live_like"],
-        "terminal": stage == "retired",
-        "allowed_operator_actions": _allowed_lifecycle_actions(stage),
-    }
-
-
-def _allowed_lifecycle_actions(stage: str) -> list[str]:
-    if stage == "retired":
-        return ["review_history"]
-    if stage == "paused":
-        return ["review_readiness", "retire"]
-    return ["review_readiness", "pause", "retire"]
-
-
-def _int_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _json_list(value: Any) -> list[Any]:
-    if isinstance(value, list):
-        return value
-    if value in {None, ""}:
-        return []
-    try:
-        parsed = json.loads(str(value))
-    except json.JSONDecodeError:
-        return []
-    return parsed if isinstance(parsed, list) else []
-
-
-def _json_object(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if value in {None, ""}:
-        return {}
-    try:
-        parsed = json.loads(str(value))
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}

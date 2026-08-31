@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from server.ai_runtime.capture import (
     CaptureSelectionError,
@@ -17,10 +16,13 @@ from server.ai_runtime.karkinos_source import (
     PersistedKarkinosCaptureSource,
 )
 from server.ai_runtime.store import AiAuditStore
+from server.db import AppDatabase
+from server.dependencies import AppState
+from server.persistence.database_identity import require_database_path
 
 
 def build_human_context_capture_service(
-    state: Any,
+    state: AppState,
     *,
     projection_readers: CaptureProjectionReaders,
 ) -> HumanResearchContextCaptureService:
@@ -41,11 +43,11 @@ def build_human_context_capture_service(
     )
 
 
-def database_path(db: Any) -> Path:
-    path = getattr(db, "path", None)
-    if path is None:
-        raise CaptureSelectionError("database path is unavailable")
-    return Path(path)
+def database_path(db: AppDatabase | None) -> Path:
+    return require_database_path(
+        db,
+        CaptureSelectionError("database path is unavailable"),
+    )
 
 
 def utc_now() -> str:

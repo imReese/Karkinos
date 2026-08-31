@@ -5,11 +5,17 @@ import json
 import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 
 from server.ai_runtime.contracts import ProviderRegistration
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderSendAdmission,
+)
 from server.ai_runtime.provider_connectivity import (
     CONNECTIVITY_CONFIRMATION,
     CONNECTIVITY_PROBE_TOKEN,
@@ -77,6 +83,42 @@ def _service(tmp_path, transport: FixtureTransport) -> ProviderConnectivityServi
         now=lambda: "2026-07-14T04:00:00.000+00:00",
         monotonic=lambda: next(ticks),
     )
+
+
+@pytest.mark.unit
+def test_connectivity_probe_defers_without_entering_transport_during_peak(tmp_path):
+    db_path = tmp_path / "app.db"
+    ai_store = AiAuditStore(db_path)
+    audit_store = ProviderConnectivityAuditStore(db_path)
+    ai_store.init()
+    audit_store.init()
+    transport = FixtureTransport(_successful_response())
+    current = {"value": datetime(2026, 8, 31, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))}
+    service = ProviderConnectivityService(
+        settings=_settings(),
+        audit_store=audit_store,
+        ai_store=ai_store,
+        transport=transport,
+        now=lambda: "2026-08-31T08:00:00+00:00",
+        monotonic=lambda: 10.0,
+        provider_send_admission=ProviderSendAdmission(
+            policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+            now=lambda: current["value"],
+        ),
+    )
+
+    result = service.run(_request())
+
+    assert result.status == ConnectivityStatus.DEFERRED
+    assert result.error_code == "deepseek_peak_pricing_window"
+    assert result.to_dict()["next_eligible_at"] == "2026-08-31T18:00:00+08:00"
+    assert transport.calls == []
+
+    current["value"] = datetime(2026, 8, 31, 18, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    retried = service.run(_request())
+
+    assert retried.status == ConnectivityStatus.PASSED
+    assert len(transport.calls) == 1
 
 
 def _successful_response() -> HttpJsonResponse:

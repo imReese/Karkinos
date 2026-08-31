@@ -25,13 +25,10 @@ export default defineConfig({
   },
   webServer: {
     command:
-      'cd .. && .venv/bin/python -m server --no-live --host 127.0.0.1 --port 18080',
+      'cd .. && .venv/bin/python -m server --host 127.0.0.1 --port 18080',
     url: 'http://127.0.0.1:18080/api/settings',
     reuseExistingServer: false,
     timeout: 120_000,
-    env: {
-      KARKINOS_DATA_DIR: runtimeDataDir,
-      KARKINOS_LIVE_AUTO_START: 'false',
-    },
+    env: { KARKINOS_DATA_DIR: runtimeDataDir },
   },
 });

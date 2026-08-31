@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import sqlite3
 from dataclasses import replace
 from datetime import timedelta
 
@@ -334,8 +336,6 @@ def test_current_confirmation_resolution_fails_closed_after_paper_source_drift(
         acknowledgement=PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
     )
     run = env["db"].get_paper_shadow_run_sync("run-1")
-    import json
-
     payload = json.loads(run["payload_json"])
     orders = [dict(item) for item in payload["orders"]]
     orders[0] = {
@@ -345,19 +345,12 @@ def test_current_confirmation_resolution_fails_closed_after_paper_source_drift(
             "estimated_quantity": 101.0,
         },
     }
-    env["db"].upsert_paper_shadow_run_sync(
-        run_id="run-1",
-        plan_date=run["plan_date"],
-        input_fingerprint=run["input_fingerprint"],
-        status=run["status"],
-        order_intent_count=run["order_intent_count"],
-        simulated_order_count=run["simulated_order_count"],
-        simulated_fill_count=run["simulated_fill_count"],
-        divergence_status=run["divergence_status"],
-        next_manual_review_step=run["next_manual_review_step"],
-        limitations=json.loads(run["limitations_json"]),
-        payload={**payload, "orders": orders},
-    )
+    with sqlite3.connect(env["db"]._path) as conn:
+        conn.execute(
+            "UPDATE paper_shadow_runs SET payload_json = ? WHERE run_id = ?",
+            (json.dumps({**payload, "orders": orders}, sort_keys=True), "run-1"),
+        )
+        conn.commit()
 
     resolved = service.resolve_current_confirmation(order_id)
 
