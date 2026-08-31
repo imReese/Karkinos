@@ -146,12 +146,14 @@ completed loop iteration or initialized-idle pass before committing. A failed
 post-guard iteration therefore rolls back instead of being discovered after
 the journal has already been cleared.
 
-`v0.3.2` is the bootstrap floor for this managed updater. Native manifests bind
-`release_control_protocol=1`; an installed controller accepts only that exact
-protocol. A future activation-protocol change must bump the value and ship an
-explicit target-controller handoff/bootstrap path, so an older updater fails
-closed instead of silently applying newer bytes with obsolete transaction
-semantics.
+`v0.3.2` is the activation-protocol floor for this managed updater. Native
+manifests bind `release_control_protocol=1`; an installed controller accepts
+only that exact protocol. Use `v0.3.3` or newer for the one-time legacy
+bootstrap so the controller reuses the installer's downloaded archive and
+authenticated GitHub session. A future activation-protocol change must bump the
+value and ship an explicit target-controller handoff/bootstrap path, so an
+older updater fails closed instead of silently applying newer bytes with
+obsolete transaction semantics.
 An activation failure restores the saved mutable state and old pointers before
 restarting the old release. If recovery itself is inconclusive, the durable
 journal is retained and later mutations fail closed for explicit recovery.
@@ -192,7 +194,7 @@ Then run the one-time handoff without executing release tooling from the source
 checkout:
 
 ```bash
-TAG=v0.3.2
+TAG=v0.3.3
 "$BOOTSTRAP_DOWNLOAD_DIR/bootstrap_installer.sh" \
   --tag "$TAG" \
   --legacy-workdir "/absolute/path/to/Karkinos" \
@@ -201,8 +203,8 @@ TAG=v0.3.2
 ```
 
 The standalone entry point validates the local path shape before retrieving its
-attested packaged controller. Before that controller performs the managed
-release download, bootstrap validates the exact owner-selected LaunchAgent,
+attested packaged controller. Before that controller performs the complete
+release verification, bootstrap validates the exact owner-selected LaunchAgent,
 legacy source state, managed-root layout, and the old `releases/prod` inventory.
 It verifies the stable artifact, snapshots `.env`, `config.json`, and
 `data/store`, checks them with the new runtime, moves mutable state into the

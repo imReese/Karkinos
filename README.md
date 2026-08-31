@@ -63,14 +63,17 @@ guarantee.
 
 ## Project status
 
-The current software version is `0.3.2`. v0.3.2 is a broker-provider-free
+The current software version is `0.3.3`. v0.3.3 is a broker-provider-free
 maintenance and native-distribution release. It retains the v0.3.1 research,
 financial-evidence, planning, paper/shadow, OMS/reconciliation, and controlled-
 execution foundation; makes the live scheduler unconditional while keeping
 automatic trading as a separate default-off runtime gate; and adds verified,
 immutable macOS artifacts with journaled `current`/`previous` activation and
-automatic rollback. It does not select, register, contact, or require a real
-broker adapter and does not claim real-money readiness.
+automatic rollback. Its bootstrap reuses the installer's already downloaded
+archive while independently rechecking release metadata, checksums, and both
+candidate and stable provenance with authenticated GitHub API access. It does
+not select, register, contact, or require a real broker adapter and does not
+claim real-money readiness.
 
 The exact tag commit must already have passed the complete `main` Code CI gate
 and repository acceptance audit; the tag release workflow verifies and reuses
