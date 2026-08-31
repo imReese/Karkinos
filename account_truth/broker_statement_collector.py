@@ -332,9 +332,14 @@ class LocalBrokerStatementCollector:
 
 async def run_local_broker_statement_collector(
     collector: LocalBrokerStatementCollector,
+    *,
+    activation_guarded: Callable[[], bool] | None = None,
 ) -> None:
     """Run until application shutdown; collection errors stay fail-closed."""
 
     while True:
+        if activation_guarded is not None and activation_guarded():
+            await asyncio.sleep(min(0.2, collector.poll_interval_seconds))
+            continue
         collector.collect_once()
         await asyncio.sleep(collector.poll_interval_seconds)

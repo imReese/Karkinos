@@ -34,6 +34,8 @@ const defaultSettings = {
 
 const defaultLiveStatus = {
   running: true,
+  initialized: true,
+  activation_guarded: false,
   market_open: true,
 };
 
@@ -405,7 +407,14 @@ test('does not claim live interface availability when live status fails', async 
 });
 
 test('does not infer broker readiness from a running scheduler', async () => {
-  renderSettingsPage({ liveStatus: { running: true, market_open: true } });
+  renderSettingsPage({
+    liveStatus: {
+      running: true,
+      initialized: true,
+      activation_guarded: false,
+      market_open: true,
+    },
+  });
 
   expect(await screen.findByText('Scheduler running')).toBeTruthy();
   expect((await screen.findAllByText('Status unknown')).length).toBeGreaterThan(
@@ -423,7 +432,14 @@ test('renders the scheduler as a read-only always-on invariant', async () => {
 });
 
 test('treats a stopped scheduler as unavailable', async () => {
-  renderSettingsPage({ liveStatus: { running: false, market_open: false } });
+  renderSettingsPage({
+    liveStatus: {
+      running: false,
+      initialized: false,
+      activation_guarded: false,
+      market_open: false,
+    },
+  });
 
   const schedulerRow = await screen.findByLabelText(
     'Boundary item: Scheduler Scheduler unavailable',
