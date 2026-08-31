@@ -266,6 +266,82 @@ def test_state_snapshot_recursively_syncs_files_and_directories(
     assert synced_modes.count(stat.S_IFDIR) >= 5
 
 
+def test_state_snapshot_uses_portable_copy_outside_macos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "runtime"
+    manage_release._ensure_layout(home)
+    (home / "data" / "app.db").write_bytes(b"authoritative")
+    monkeypatch.setattr(manage_release.platform, "system", lambda: "Linux")
+    original_copytree = manage_release.shutil.copytree
+    copy_symlink_modes: list[bool] = []
+
+    def reject_subprocess(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("non-Darwin snapshots must not call macOS cp")
+
+    def record_copytree(
+        source: Path, destination: Path, *, symlinks: bool = False
+    ) -> Path:
+        copy_symlink_modes.append(symlinks)
+        return original_copytree(source, destination, symlinks=symlinks)
+
+    monkeypatch.setattr(manage_release.subprocess, "run", reject_subprocess)
+    monkeypatch.setattr(manage_release.shutil, "copytree", record_copytree)
+
+    snapshot_id = "5" * 32
+    manage_release._snapshot_mutable_state(home, snapshot_id)
+
+    snapshot = manage_release._validate_state_snapshot(home, snapshot_id)
+    assert (snapshot / "data" / "app.db").read_bytes() == b"authoritative"
+    assert copy_symlink_modes == [True, True]
+
+
+def test_portable_state_snapshot_copy_failure_is_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "runtime"
+    manage_release._ensure_layout(home)
+    monkeypatch.setattr(manage_release.platform, "system", lambda: "Linux")
+
+    def fail_copy(_source: Path, _destination: Path, *, symlinks: bool = False) -> None:
+        assert symlinks is True
+        raise OSError("injected portable copy failure")
+
+    monkeypatch.setattr(manage_release.shutil, "copytree", fail_copy)
+
+    snapshot_id = "6" * 32
+    with pytest.raises(ValueError, match="release_state_snapshot_clone_failed"):
+        manage_release._snapshot_mutable_state(home, snapshot_id)
+
+    root = home / ".release-state-snapshots"
+    assert not (root / snapshot_id).exists()
+    assert not (root / f".staging-{snapshot_id}").exists()
+
+
+def test_macos_state_snapshot_clone_failure_is_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "runtime"
+    manage_release._ensure_layout(home)
+    monkeypatch.setattr(manage_release.platform, "system", lambda: "Darwin")
+
+    def fail_clone(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert command[:3] == ["/bin/cp", "-cR", "--"]
+        return subprocess.CompletedProcess(command, 1)
+
+    monkeypatch.setattr(manage_release.subprocess, "run", fail_clone)
+
+    snapshot_id = "8" * 32
+    with pytest.raises(ValueError, match="release_state_snapshot_clone_failed"):
+        manage_release._snapshot_mutable_state(home, snapshot_id)
+
+    root = home / ".release-state-snapshots"
+    assert not (root / snapshot_id).exists()
+    assert not (root / f".staging-{snapshot_id}").exists()
+
+
 def test_state_snapshot_sync_failure_never_publishes_partial_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
