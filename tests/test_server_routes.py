@@ -4105,7 +4105,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
             return {
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "10:30:00",
+                "timestamp": "2026-06-04T10:30:00+08:00",
                 "display_name": "示例能源",
             }
 
@@ -4156,7 +4156,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
             return {
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "10:30:00",
+                "timestamp": "2026-06-04T10:30:00+08:00",
                 "display_name": "示例能源",
                 "previous_close": 8.65,
                 "previous_close_date": "2026-06-03",
@@ -4263,7 +4263,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
             return {
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "10:30:00",
+                "timestamp": "2026-06-04T10:30:00+08:00",
                 "display_name": "示例能源",
                 "previous_close": 8.65,
                 "previous_close_date": "2026-06-03",
@@ -4313,7 +4313,7 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
                 "quote_source": "akshare_stock_spot",
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "10:30:00",
+                "timestamp": "2026-06-04T10:30:00+08:00",
                 "display_name": "示例能源",
                 "exchange": "SH",
                 "market": "CN",
