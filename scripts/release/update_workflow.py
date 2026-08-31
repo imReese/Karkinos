@@ -141,10 +141,11 @@ def candidate_token(
         raise ValueError("release_update_gh_auth_result_invalid") from None
 
 
-def _stable_token(environment: Mapping[str, str] | None) -> str:
-    selected_environment = os.environ if environment is None else environment
-    configured = selected_environment.get("GH_TOKEN", "")
-    return _require_token(configured) if configured else ""
+def _stable_token(
+    environment: Mapping[str, str] | None,
+    runner: GhAuthRunner = subprocess.run,
+) -> str:
+    return candidate_token(environment=environment, runner=runner)
 
 
 def _require_private_directory(path: Path) -> None:
@@ -264,6 +265,7 @@ def run_stable_update_workflow(
     health_timeout: int = DEFAULT_HEALTH_TIMEOUT,
     repository: str = DEFAULT_REPOSITORY,
     environment: Mapping[str, str] | None = None,
+    gh_auth_runner: GhAuthRunner = subprocess.run,
     temporary_parent: Path | None = None,
 ) -> WorkflowResult:
     """Fetch an exact stable tag and deploy its attested commit SHA."""
@@ -277,7 +279,7 @@ def run_stable_update_workflow(
     # Validate local update readiness only after the complete operator-facing
     # command contract, but still before auth lookup or remote retrieval.
     callbacks.preflight()
-    token = _stable_token(environment)
+    token = _stable_token(environment, gh_auth_runner)
 
     with tempfile.TemporaryDirectory(
         prefix="karkinos-stable-fetch-", dir=temporary_parent
@@ -330,6 +332,8 @@ def run_stable_bootstrap_workflow(
     health_timeout: int = DEFAULT_HEALTH_TIMEOUT,
     repository: str = DEFAULT_REPOSITORY,
     environment: Mapping[str, str] | None = None,
+    gh_auth_runner: GhAuthRunner = subprocess.run,
+    local_archive: Path | None = None,
     temporary_parent: Path | None = None,
 ) -> WorkflowResult:
     """Fetch one stable artifact and atomically replace a validated legacy service."""
@@ -344,7 +348,7 @@ def run_stable_bootstrap_workflow(
     # Validate the local, owner-selected migration topology before contacting
     # GitHub. The transactional bootstrap validates it again under the lock.
     callbacks.preflight()
-    token = _stable_token(environment)
+    token = _stable_token(environment, gh_auth_runner)
 
     with tempfile.TemporaryDirectory(
         prefix="karkinos-bootstrap-fetch-", dir=temporary_parent
@@ -359,6 +363,7 @@ def run_stable_bootstrap_workflow(
                 tag=tag,
                 output_dir=output_dir,
                 token=token,
+                local_archive=local_archive,
             )
         except Exception:
             raise ValueError("release_update_stable_fetch_failed") from None
