@@ -17,7 +17,7 @@ published, non-draft, non-prerelease stable tag:
 
 ```bash
 REPOSITORY=imReese/Karkinos
-TAG=v0.3.4
+TAG=v0.3.5
 BOOTSTRAP_DOWNLOAD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/karkinos-installer.XXXXXX")"
 
 export GH_HOST=github.com
