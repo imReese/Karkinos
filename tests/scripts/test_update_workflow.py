@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -494,6 +495,61 @@ def test_stable_bootstrap_preflights_then_uses_proven_sha(
     ]
     assert events[-1] == ("bootstrap", _SHA, f"BOOTSTRAP {_SHA}", 14)
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("workflow", ("candidate", "stable-update", "bootstrap"))
+def test_workflow_resolves_default_temp_parent_symlink(
+    workflow: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    physical_parent = tmp_path / "physical"
+    physical_parent.mkdir()
+    symlink_parent = tmp_path / "temporary-alias"
+    symlink_parent.symlink_to(physical_parent, target_is_directory=True)
+    monkeypatch.setattr(tempfile, "tempdir", str(symlink_parent))
+
+    def fetch(**kwargs: object) -> release_fetch.VerifiedNativeArchive:
+        output_dir = kwargs["output_dir"]
+        assert isinstance(output_dir, Path)
+        assert output_dir.parent.parent == physical_parent.resolve(strict=True)
+        source = "actions-candidate" if workflow == "candidate" else "github-release"
+        tag = None if workflow == "candidate" else _TAG
+        return _fetched(output_dir, source=source, tag=tag)
+
+    if workflow == "candidate":
+        monkeypatch.setattr(release_fetch, "fetch_candidate_native", fetch)
+        result = update_workflow.run_candidate_workflow(
+            _callbacks([]),
+            commit_sha=_SHA,
+            environment={"GH_TOKEN": _TOKEN},
+        )
+        assert result == "ran"
+    elif workflow == "stable-update":
+        monkeypatch.setattr(release_fetch, "fetch_stable_native", fetch)
+        result = update_workflow.run_stable_update_workflow(
+            _callbacks([]),
+            tag=_TAG,
+            confirmation=f"UPDATE {_TAG}",
+            environment={"GH_TOKEN": _TOKEN},
+        )
+        assert result == "deployed"
+    else:
+        callbacks = update_workflow.LegacyBootstrapWorkflowCallbacks(
+            preflight=lambda: None,
+            stage=lambda *_args: None,
+            bootstrap=lambda *_args: "bootstrapped",
+            discard=lambda *_args: None,
+        )
+        monkeypatch.setattr(release_fetch, "fetch_stable_native", fetch)
+        result = update_workflow.run_stable_bootstrap_workflow(
+            callbacks,
+            tag=_TAG,
+            confirmation=f"BOOTSTRAP {_TAG}",
+            environment={"GH_TOKEN": _TOKEN},
+            local_archive=tmp_path / "installer-download.tar.gz",
+        )
+        assert result == "bootstrapped"
+
+    assert list(physical_parent.iterdir()) == []
 
 
 @pytest.mark.parametrize(

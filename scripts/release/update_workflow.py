@@ -221,7 +221,7 @@ def run_candidate_workflow(
     with tempfile.TemporaryDirectory(
         prefix="karkinos-candidate-fetch-", dir=temporary_parent
     ) as temporary:
-        temporary_root = Path(temporary)
+        temporary_root = Path(temporary).resolve(strict=True)
         temporary_root.chmod(0o700)
         _require_private_directory(temporary_root)
         output_dir = temporary_root / "verified"
@@ -284,7 +284,7 @@ def run_stable_update_workflow(
     with tempfile.TemporaryDirectory(
         prefix="karkinos-stable-fetch-", dir=temporary_parent
     ) as temporary:
-        temporary_root = Path(temporary)
+        temporary_root = Path(temporary).resolve(strict=True)
         temporary_root.chmod(0o700)
         _require_private_directory(temporary_root)
         output_dir = temporary_root / "verified"
@@ -353,7 +353,7 @@ def run_stable_bootstrap_workflow(
     with tempfile.TemporaryDirectory(
         prefix="karkinos-bootstrap-fetch-", dir=temporary_parent
     ) as temporary:
-        temporary_root = Path(temporary)
+        temporary_root = Path(temporary).resolve(strict=True)
         temporary_root.chmod(0o700)
         _require_private_directory(temporary_root)
         output_dir = temporary_root / "verified"
