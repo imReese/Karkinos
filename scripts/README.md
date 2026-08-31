@@ -148,7 +148,7 @@ the journal has already been cleared.
 
 `v0.3.2` is the activation-protocol floor for this managed updater. Native
 manifests bind `release_control_protocol=1`; an installed controller accepts
-only that exact protocol. Use `v0.3.3` or newer for the one-time legacy
+only that exact protocol. Use `v0.3.4` or newer for the one-time legacy
 bootstrap so the controller reuses the installer's downloaded archive and
 authenticated GitHub session. A future activation-protocol change must bump the
 value and ship an explicit target-controller handoff/bootstrap path, so an
@@ -194,7 +194,7 @@ Then run the one-time handoff without executing release tooling from the source
 checkout:
 
 ```bash
-TAG=v0.3.3
+TAG=v0.3.4
 "$BOOTSTRAP_DOWNLOAD_DIR/bootstrap_installer.sh" \
   --tag "$TAG" \
   --legacy-workdir "/absolute/path/to/Karkinos" \
