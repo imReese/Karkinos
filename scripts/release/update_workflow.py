@@ -22,7 +22,7 @@ from tools import release_fetch
 
 DEFAULT_REPOSITORY = "imReese/Karkinos"
 DEFAULT_CANDIDATE_PORT = 18000
-DEFAULT_HEALTH_TIMEOUT = 30
+DEFAULT_HEALTH_TIMEOUT = 120
 MAX_HEALTH_TIMEOUT = 3600
 
 _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
