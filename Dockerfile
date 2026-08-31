@@ -8,7 +8,7 @@ COPY web/src/ ./src/
 RUN npm run build
 
 # ---- Stage 2: Python runtime ----
-FROM python:3.12.13-slim-trixie
+FROM python:3.14.7-slim-trixie
 
 ARG UV_VERSION=0.11.28
 ARG VERSION=0.3.2
