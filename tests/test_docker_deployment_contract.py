@@ -120,7 +120,10 @@ def test_docker_context_contract_checks_private_sentinel_files() -> None:
 def test_docker_runtime_uses_the_python_and_uv_release_baseline() -> None:
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
 
-    assert "FROM python:3.12-slim" in dockerfile
+    assert "FROM node:24.20.0-alpine3.24" in dockerfile
+    assert "FROM python:3.12.13-slim-trixie" in dockerfile
+    assert "FROM node:24-alpine" not in dockerfile
+    assert "FROM python:3.12-slim" not in dockerfile
     assert "FROM python:3.14-slim" not in dockerfile
     assert "ARG UV_VERSION=0.11.28" in dockerfile
     assert 'pip install --no-cache-dir "uv==${UV_VERSION}"' in dockerfile

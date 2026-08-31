@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -24,9 +26,11 @@ def test_ci_runs_backend_frontend_and_profit_discipline_smoke_path() -> None:
     assert "npm --prefix web run format:check" in workflow
     assert "npm --prefix web run build" in workflow
     assert "npm --prefix web run test" in workflow
+    assert "Check public shell entrypoint syntax" in workflow
+    assert "scripts/release/bootstrap_installer.sh" in workflow
 
 
-def test_ci_uses_node24_compatible_github_actions() -> None:
+def test_ci_pins_release_toolchains_and_github_actions() -> None:
     workflow = "\n".join(
         path.read_text() for path in sorted(Path(".github/workflows").glob("*.yml"))
     )
@@ -57,12 +61,14 @@ def test_ci_uses_node24_compatible_github_actions() -> None:
         "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1"
         in workflow
     )
-    assert set(re.findall(r'node-version:\s*"([^"]+)"', workflow)) == {"24"}
+    assert set(re.findall(r'python-version:\s*"([^"]+)"', workflow)) == {"3.12.13"}
+    assert set(re.findall(r'node-version:\s*"([^"]+)"', workflow)) == {"24.20.0"}
     assert dockerfile.startswith(
-        "# ---- Stage 1: Build React frontend ----\nFROM node:24-alpine"
+        "# ---- Stage 1: Build React frontend ----\n" "FROM node:24.20.0-alpine3.24"
     )
+    assert "FROM python:3.12.13-slim-trixie" in dockerfile
     assert package["engines"]["node"] == ">=24.0.0 <25.0.0"
-    assert nvmrc == "24"
+    assert nvmrc == "24.20.0"
     assert npmrc == "engine-strict=true"
 
 
@@ -122,6 +128,22 @@ def test_release_reuses_exact_successful_main_ci_before_publishing() -> None:
     assert "actions: read" in publisher_job
     assert "python tools/download_candidate.py fetch" in publisher_job
     assert "actions/download-artifact" not in publisher_job
+    assert "--json tagName,isDraft,isPrerelease" in publisher_job
+    assert "gh release create" in publisher_job and "--draft" in publisher_job
+    assert 'gh release edit "${RELEASE_TAG}" --draft=false' in publisher_job
+    assert (
+        'if [[ "${release_is_draft}" != true ]]; then\n'
+        '                echo "Published release is immutable and missing expected asset: '
+        '${name}" >&2' in publisher_job
+    )
+    assert 'cmp -s "${expected_assets_file}" "${actual_assets_file}"' in publisher_job
+    assert publisher_job.index('if [[ "${release_is_draft}" != true ]]') < (
+        publisher_job.index('gh release upload "${RELEASE_TAG}" "${asset}"')
+    )
+    assert publisher_job.index(
+        'cmp -s "${expected_assets_file}" "${actual_assets_file}"'
+    ) < publisher_job.index('gh release edit "${RELEASE_TAG}" --draft=false')
+    assert "--json tagName,draft" not in publisher_job
     assert '--commit-sha "${GITHUB_SHA}"' not in release_workflow
     assert "org.opencontainers.image.revision=${{ github.sha }}" not in release_workflow
     assert (
@@ -134,5 +156,267 @@ def test_release_reuses_exact_successful_main_ci_before_publishing() -> None:
         release_workflow.index("Log in to GitHub Container Registry")
         < release_workflow.index("Compute release image plan and verify immutable tags")
         < release_workflow.index("Reverify remote tag and main ancestry")
-        < release_workflow.index("Promote candidate image by exact manifest digest")
+        < release_workflow.index(
+            "Promote immutable image identities by exact manifest digest"
+        )
+        < release_workflow.index(
+            "Publish the same native candidate bytes to the GitHub release"
+        )
+        < release_workflow.index(
+            "Advance mutable image aliases after native publication"
+        )
     )
+
+    immutable_step = release_workflow.split(
+        "      - name: Promote immutable image identities by exact manifest digest\n",
+        1,
+    )[1].split(
+        "      - name: Publish the same native candidate bytes to the GitHub release\n",
+        1,
+    )[
+        0
+    ]
+    mutable_step = release_workflow.split(
+        "      - name: Advance mutable image aliases after native publication\n",
+        1,
+    )[1].split("      - name: Summarize immutable promotion\n", 1)[0]
+    assert '["immutable_image_tags"]' in immutable_step
+    assert '["image_tags"]' not in immutable_step
+    assert '["immutable_image_tags"]' in mutable_step
+    assert '["image_tags"]' in mutable_step
+
+
+def test_candidate_and_release_fetch_with_ephemeral_basic_auth() -> None:
+    candidate_workflow = Path(".github/workflows/candidate.yml").read_text()
+    release_workflow = Path(".github/workflows/release.yml").read_text()
+
+    for workflow in (candidate_workflow, release_workflow):
+        assert "persist-credentials: false" in workflow
+        assert "AUTHORIZATION: bearer" not in workflow
+        assert "printf 'x-access-token:%s'" in workflow
+        assert (
+            "http.https://github.com/.extraheader=AUTHORIZATION: basic "
+            "${git_auth_header}" in workflow
+        )
+
+
+def test_candidate_image_preflight_reuses_fail_closed_registry_check() -> None:
+    candidate_workflow = Path(".github/workflows/candidate.yml").read_text()
+    preflight = candidate_workflow.split(
+        "      - name: Reject a reused candidate image tag\n", 1
+    )[1].split("      - name: Build and push candidate multi-architecture image\n", 1)[
+        0
+    ]
+
+    assert "assert_registry_image_tag_absent" in preflight
+    assert "docker buildx imagetools inspect" not in preflight
+
+
+def test_candidate_reruns_bind_workflow_attempt_artifact_and_image_identity() -> None:
+    candidate_workflow = Path(".github/workflows/candidate.yml").read_text()
+    release_workflow = Path(".github/workflows/release.yml").read_text()
+
+    assert 'test "${GITHUB_REF}" = "refs/heads/main"' in candidate_workflow
+    assert 'test "${GITHUB_SHA}" = "${TARGET_COMMIT_SHA}"' in candidate_workflow
+    assert "candidate-sha-%s-run-%s-attempt-%s" in candidate_workflow
+    assert "${GITHUB_RUN_ID}" in candidate_workflow
+    assert "${GITHUB_RUN_ATTEMPT}" in candidate_workflow
+    assert (
+        "karkinos-candidate-${{ needs.source.outputs.commit_sha }}-"
+        "${{ github.run_id }}-${{ github.run_attempt }}" in candidate_workflow
+    )
+    assert "--candidate-workflow-run-id" in candidate_workflow
+    assert "--candidate-workflow-run-attempt" in candidate_workflow
+    assert "--image-workflow-run-id" in candidate_workflow
+    assert "--image-workflow-run-attempt" in candidate_workflow
+
+    assert "--metadata-output candidate-selection.json" in release_workflow
+    assert "--candidate-selection candidate-selection.json" in release_workflow
+    assert (
+        "candidate-selection.json\n            candidate/candidate-manifest.json"
+        in (release_workflow)
+    )
+    assert (
+        "assets=(candidate-selection.json candidate/candidate-manifest.json "
+        "candidate/candidate-artifacts/* scripts/release/bootstrap_installer.sh)"
+        in release_workflow
+    )
+
+
+def test_native_candidates_are_signed_with_github_provenance() -> None:
+    workflow = Path(".github/workflows/candidate.yml").read_text()
+    native_job = workflow.split("  native:\n", 1)[1].split("  image:\n", 1)[0]
+
+    assert "attestations: write" in native_job
+    assert "id-token: write" in native_job
+    assert (
+        "actions/attest-build-provenance@"
+        "4d101475d8b20a2381f78447822ac1eab6504dd8" in native_job
+    )
+    assert "subject-path: candidate/*.tar.gz" in native_job
+
+
+def test_native_candidate_uses_current_ga_architecture_runners() -> None:
+    workflow = Path(".github/workflows/candidate.yml").read_text()
+    native_job = workflow.split("  native:\n", 1)[1].split("  image:\n", 1)[0]
+
+    assert "- architecture: arm64\n            runner: macos-15\n" in native_job
+    assert "- architecture: x86_64\n            runner: macos-15-intel\n" in native_job
+    assert "runner: macos-14" not in native_job
+
+
+def test_native_candidate_smokes_packaged_controller_and_service() -> None:
+    workflow = Path(".github/workflows/candidate.yml").read_text()
+    native_job = workflow.split("  native:\n", 1)[1].split("  image:\n", 1)[0]
+    smoke = native_job.split(
+        "      - name: Smoke test packaged release controller and service\n", 1
+    )[1].split("      - name: Attest native candidate provenance\n", 1)[0]
+
+    assert (
+        native_job.index("Build self-contained native candidate")
+        < native_job.index("Smoke test packaged release controller and service")
+        < native_job.index("Attest native candidate provenance")
+    )
+    assert 'tar -xzf "${archive}" -C "${extract_root}"' in smoke
+    assert 'controller="${release_root}/bin/karkinosctl"' in smoke
+    assert 'entrypoint="${release_root}/bin/karkinos"' in smoke
+    assert '"${controller}" --help' in smoke
+    assert '"${controller}" status' in smoke
+    assert '"${entrypoint}" --host 127.0.0.1 --port "${service_port}"' in smoke
+    assert "/api/health" in smoke
+    assert "/api/settings/live/status" in smoke
+    assert 'health["release_sha"] == manifest["commit_sha"]' in smoke
+    assert 'health["artifact_fingerprint"] == manifest["payload_fingerprint"]' in smoke
+    assert 'live["running"] is True' in smoke
+    assert 'live["initialized"] is True' in smoke
+    assert 'kill -TERM "${service_pid}"' in smoke
+    assert 'wait "${service_pid}"' in smoke
+    assert 'HOME="${isolated_home}" KARKINOS_HOME="${runtime_home}"' in smoke
+    assert 'test ! -e "${runtime_home}"' in smoke
+    assert "launchctl " not in smoke
+
+
+def test_stable_release_reverifies_native_candidate_provenance() -> None:
+    workflow = Path(".github/workflows/release.yml").read_text()
+    publisher = workflow.split("  release:\n", 1)[1]
+
+    assert "attestations: write" in publisher
+    assert "id-token: write" in publisher
+    assert "name: Verify native candidate provenance" in publisher
+    assert 'gh attestation verify "${archive}"' in publisher
+    assert (
+        '--signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/candidate.yml"'
+        in publisher
+    )
+    assert '--source-digest "${RELEASE_COMMIT_SHA}"' in publisher
+    assert "--deny-self-hosted-runners" in publisher
+    assert "name: Attest stable release authorization" in publisher
+    assert (
+        "actions/attest-build-provenance@"
+        "4d101475d8b20a2381f78447822ac1eab6504dd8" in publisher
+    )
+    assert "subject-path: |" in publisher
+    assert "candidate-selection.json" in publisher
+    assert "candidate/candidate-manifest.json" in publisher
+    assert "candidate/candidate-artifacts/*.tar.gz" in publisher
+    assert (
+        publisher.index("Verify candidate manifest and artifact bytes")
+        < (publisher.index("Verify native candidate provenance"))
+        < publisher.index("Compute release image plan and verify immutable tags")
+    )
+
+
+def test_stable_release_attests_and_publishes_checkout_free_bootstrap_installer() -> (
+    None
+):
+    workflow = Path(".github/workflows/release.yml").read_text()
+    publisher = workflow.split("  release:\n", 1)[1]
+
+    installer = "scripts/release/bootstrap_installer.sh"
+    attestation = publisher.split(
+        "      - name: Attest stable release authorization\n", 1
+    )[1].split(
+        "      - name: Compute release image plan and verify immutable tags\n", 1
+    )[
+        0
+    ]
+    publication = publisher.split(
+        "      - name: Publish the same native candidate bytes to the GitHub release\n",
+        1,
+    )[1].split(
+        "      - name: Advance mutable image aliases after native publication\n", 1
+    )[
+        0
+    ]
+
+    assert installer in attestation
+    assert installer in publication
+    assert publisher.index("Attest stable release authorization") < publisher.index(
+        "Publish the same native candidate bytes to the GitHub release"
+    )
+
+
+def test_release_publication_classifies_real_tsv_states_with_bash() -> None:
+    workflow = Path(".github/workflows/release.yml").read_text()
+    publisher = workflow.split("  release:\n", 1)[1]
+    start = publisher.index("          release_is_draft=false\n")
+    end = publisher.index("\n          fi", start) + len("\n          fi")
+    block = "\n".join(
+        line.removeprefix("          ") for line in publisher[start:end].splitlines()
+    )
+    script = (
+        'set -euo pipefail\nRELEASE_TAG="$1"\nrelease_state="$2"\n'
+        f"{block}\n"
+        'printf "%s\\n" "${release_is_draft}"\n'
+    )
+
+    for state, expected in (
+        ("v1.2.3\tfalse\tfalse", "false"),
+        ("v1.2.3\ttrue\tfalse", "true"),
+    ):
+        result = subprocess.run(
+            ["bash", "-c", script, "release-state-test", "v1.2.3", state],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == expected
+
+
+def test_release_image_tag_extractors_emit_one_real_line_per_tag(
+    tmp_path: Path,
+) -> None:
+    workflow = Path(".github/workflows/release.yml").read_text()
+    commands = [
+        command
+        for command in re.findall(r"python -c '([^']+)'", workflow)
+        if 'json.load(open("release-plan.json"))' in command
+    ]
+    immutable_tags = [
+        "ghcr.io/imreese/karkinos:v0.3.1",
+        "ghcr.io/imreese/karkinos:sha-" + "a" * 40,
+    ]
+    image_tags = [*immutable_tags, "ghcr.io/imreese/karkinos:v0.3", "latest"]
+    (tmp_path / "release-plan.json").write_text(
+        json.dumps(
+            {
+                "immutable_image_tags": immutable_tags,
+                "image_tags": image_tags,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert len(commands) == 3
+    for command in commands:
+        result = subprocess.run(
+            [sys.executable, "-c", command],
+            cwd=tmp_path,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        expected = immutable_tags if '"immutable_image_tags"' in command else image_tags
+        assert result.stdout.splitlines() == expected

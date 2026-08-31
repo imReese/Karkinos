@@ -1,5 +1,5 @@
 # ---- Stage 1: Build React frontend ----
-FROM node:24-alpine AS frontend-build
+FROM node:24.20.0-alpine3.24 AS frontend-build
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -8,10 +8,10 @@ COPY web/src/ ./src/
 RUN npm run build
 
 # ---- Stage 2: Python runtime ----
-FROM python:3.12-slim
+FROM python:3.12.13-slim-trixie
 
 ARG UV_VERSION=0.11.28
-ARG VERSION=0.3.1
+ARG VERSION=0.3.2
 
 LABEL org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.source="https://github.com/imReese/Karkinos" \

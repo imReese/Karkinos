@@ -32,7 +32,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
 
       - name: Verify tag source and main ancestry
         id: source
@@ -45,8 +45,12 @@ jobs:
           tag_object_sha="$(git rev-parse "${GITHUB_REF}")"
           commit_sha="$(git rev-parse "${GITHUB_REF}^{commit}")"
           test "${commit_sha}" = "${GITHUB_SHA}"
-          git -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" fetch \
+          git_auth_header="$(
+            printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 | tr -d '\n'
+          )"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${git_auth_header}" fetch \
             --force --no-tags origin "refs/heads/main:refs/remotes/origin/main"
+          unset git_auth_header
           git merge-base --is-ancestor "${commit_sha}" "origin/main"
           echo "commit_sha=${commit_sha}" >> "${GITHUB_OUTPUT}"
           echo "tag_object_sha=${tag_object_sha}" >> "${GITHUB_OUTPUT}"
@@ -102,7 +106,9 @@ jobs:
       cancel-in-progress: false
     permissions:
       actions: read
+      attestations: write
       contents: write
+      id-token: write
       packages: write
     steps:
       - name: Checkout verified release commit
@@ -115,7 +121,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
 
       - name: Set up Docker Buildx for registry inspection
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -136,7 +142,8 @@ jobs:
           python tools/download_candidate.py fetch \
             --repository "${GITHUB_REPOSITORY}" \
             --commit-sha "${RELEASE_COMMIT_SHA}" \
-            --output candidate-actions.zip
+            --output candidate-actions.zip \
+            --metadata-output candidate-selection.json
 
       - name: Extract exact candidate bundle
         run: |
@@ -164,6 +171,8 @@ jobs:
             --version "${RELEASE_VERSION}" \
             --source-ci-run-id "${SOURCE_CI_RUN_ID}" \
             --source-ci-run-attempt "${SOURCE_CI_RUN_ATTEMPT}" \
+            --candidate-selection candidate-selection.json \
+            --repository "${GITHUB_REPOSITORY}" \
             --image-reference "${EXPECTED_IMAGE_REFERENCE,,}"
           python - <<'PY'
           import json
@@ -175,6 +184,30 @@ jobs:
               output.write(f"candidate_reference={image['candidate_reference']}\n")
               output.write(f"candidate_digest={image['digest']}\n")
           PY
+
+      - name: Verify native candidate provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          for archive in candidate/candidate-artifacts/*.tar.gz; do
+            [[ -f "${archive}" && ! -L "${archive}" ]]
+            gh attestation verify "${archive}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/candidate.yml" \
+              --source-digest "${RELEASE_COMMIT_SHA}" \
+              --deny-self-hosted-runners
+          done
+
+      - name: Attest stable release authorization
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            candidate-selection.json
+            candidate/candidate-manifest.json
+            candidate/candidate-artifacts/*.tar.gz
+            scripts/release/bootstrap_installer.sh
 
       - name: Compute release image plan and verify immutable tags
         id: plan
@@ -199,12 +232,16 @@ jobs:
         run: |
           set -euo pipefail
           git check-ref-format "refs/tags/${GITHUB_REF_NAME}"
-          git -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" fetch \
+          git_auth_header="$(
+            printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 | tr -d '\n'
+          )"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${git_auth_header}" fetch \
             --force --no-tags origin \
             "refs/tags/${GITHUB_REF_NAME}:refs/karkinos/release-tag"
-          git -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" fetch \
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${git_auth_header}" fetch \
             --force --no-tags origin \
             "refs/heads/main:refs/remotes/origin/main"
+          unset git_auth_header
           remote_tag_object_sha="$(git rev-parse "refs/karkinos/release-tag")"
           remote_tag_commit_sha="$(git rev-parse "refs/karkinos/release-tag^{commit}")"
           test "${remote_tag_object_sha}" = "${VERIFIED_TAG_OBJECT_SHA}"
@@ -216,21 +253,20 @@ jobs:
       # Build and push multi-architecture image is intentionally replaced by digest promotion.
       # --verify-immutable-image-tags-absent remains a candidate-only preflight name; stable uses digest compatibility for safe retries.
       # docker/setup-buildx-action and platforms: linux/amd64,linux/arm64 remain candidate-only.
-      - name: Promote candidate image by exact manifest digest
+      # GHCR tags are not registry-enforced immutable. This workflow treats the
+      # SemVer and sha tags as write-once; consumers must trust the manifest digest.
+      - name: Promote immutable image identities by exact manifest digest
         env:
           VERIFIED_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
           CANDIDATE_REFERENCE: ${{ steps.candidate.outputs.candidate_reference }}
           CANDIDATE_DIGEST: ${{ steps.candidate.outputs.candidate_digest }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          mapfile -t tags < <(python -c 'import json; print("\\n".join(json.load(open("release-plan.json"))["image_tags"]))')
+          mapfile -t tags < <(python -c 'import json; print("\n".join(json.load(open("release-plan.json"))["immutable_image_tags"]))')
           args=()
           for tag in "${tags[@]}"; do
             args+=(--target "${tag}")
-            if [[ "${tag}" == *":${RELEASE_TAG}" || "${tag}" == *":sha-${VERIFIED_COMMIT_SHA}" ]]; then
-              args+=(--immutable-target "${tag}")
-            fi
+            args+=(--immutable-target "${tag}")
           done
           python tools/promote_candidate_image.py \
             --candidate-reference "${CANDIDATE_REFERENCE}" \
@@ -245,26 +281,36 @@ jobs:
         run: |
           set -euo pipefail
           release_state="$(gh release view "${RELEASE_TAG}" \
-            --json tagName,draft --jq '[.tagName, (.draft | tostring)] | @tsv' 2>&1)" || true
-          if [[ "${release_state}" == "${RELEASE_TAG}"$'\\tfalse' ]]; then
+            --json tagName,isDraft,isPrerelease \
+            --jq '[.tagName, (.isDraft | tostring), (.isPrerelease | tostring)] | @tsv' 2>&1)" || true
+          release_is_draft=false
+          if [[ "${release_state}" == "${RELEASE_TAG}"$'\tfalse\tfalse' ]]; then
             :
+          elif [[ "${release_state}" == "${RELEASE_TAG}"$'\ttrue\tfalse' ]]; then
+            release_is_draft=true
           elif [[ "${release_state}" == *"HTTP 404"* || "${release_state}" == *"release not found"* ]]; then
             gh release create "${RELEASE_TAG}" \
               --verify-tag \
+              --draft \
               --title "Karkinos ${RELEASE_TAG}" \
               --notes "Stable release promoted from candidate commit ${RELEASE_COMMIT_SHA}."
+            release_is_draft=true
           else
             echo "Unable to establish GitHub release state: ${release_state}" >&2
             exit 1
           fi
 
-          assets=(candidate/candidate-manifest.json candidate/candidate-artifacts/*)
+          assets=(candidate-selection.json candidate/candidate-manifest.json candidate/candidate-artifacts/* scripts/release/bootstrap_installer.sh)
           verify_dir="${RUNNER_TEMP}/karkinos-release-assets"
+          expected_assets_file="${verify_dir}.expected"
+          actual_assets_file="${verify_dir}.actual"
           rm -rf "${verify_dir}"
           mkdir -p "${verify_dir}"
+          : > "${expected_assets_file}"
           for asset in "${assets[@]}"; do
             [[ -f "${asset}" && ! -L "${asset}" ]]
             name="$(basename "${asset}")"
+            printf '%s\n' "${name}" >> "${expected_assets_file}"
             if gh release view "${RELEASE_TAG}" --json assets \
               --jq '.assets[].name' | grep -Fqx -- "${name}"; then
               gh release download "${RELEASE_TAG}" \
@@ -273,9 +319,55 @@ jobs:
                 "$(sha256sum "${verify_dir}/${name}" | awk '{print $1}')"
               rm -f "${verify_dir}/${name}"
             else
+              if [[ "${release_is_draft}" != true ]]; then
+                echo "Published release is immutable and missing expected asset: ${name}" >&2
+                exit 1
+              fi
               gh release upload "${RELEASE_TAG}" "${asset}"
             fi
           done
+          gh release view "${RELEASE_TAG}" --json assets \
+            --jq '.assets[].name' > "${actual_assets_file}"
+          LC_ALL=C sort -u "${expected_assets_file}" -o "${expected_assets_file}"
+          LC_ALL=C sort -u "${actual_assets_file}" -o "${actual_assets_file}"
+          if ! cmp -s "${expected_assets_file}" "${actual_assets_file}"; then
+            echo "Release asset set does not exactly match the verified candidate bundle." >&2
+            diff -u "${expected_assets_file}" "${actual_assets_file}" || true
+            exit 1
+          fi
+          if [[ "${release_is_draft}" == true ]]; then
+            gh release edit "${RELEASE_TAG}" --draft=false
+          fi
+
+      # Mutable aliases are deliberately last. A native release must be published
+      # before latest/major/minor can direct users to this candidate digest.
+      - name: Advance mutable image aliases after native publication
+        env:
+          CANDIDATE_REFERENCE: ${{ steps.candidate.outputs.candidate_reference }}
+          CANDIDATE_DIGEST: ${{ steps.candidate.outputs.candidate_digest }}
+        run: |
+          set -euo pipefail
+          mapfile -t immutable_tags < <(python -c 'import json; print("\n".join(json.load(open("release-plan.json"))["immutable_image_tags"]))')
+          mapfile -t all_tags < <(python -c 'import json; print("\n".join(json.load(open("release-plan.json"))["image_tags"]))')
+          args=()
+          for tag in "${all_tags[@]}"; do
+            mutable=true
+            for immutable_tag in "${immutable_tags[@]}"; do
+              if [[ "${tag}" == "${immutable_tag}" ]]; then
+                mutable=false
+                break
+              fi
+            done
+            if [[ "${mutable}" == true ]]; then
+              args+=(--target "${tag}")
+            fi
+          done
+          if (( ${#args[@]} > 0 )); then
+            python tools/promote_candidate_image.py \
+              --candidate-reference "${CANDIDATE_REFERENCE}" \
+              --digest "${CANDIDATE_DIGEST}" \
+              "${args[@]}"
+          fi
 
       - name: Summarize immutable promotion
         env:
