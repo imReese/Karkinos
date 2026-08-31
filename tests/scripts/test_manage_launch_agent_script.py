@@ -205,7 +205,7 @@ def test_launch_agent_is_native_only_and_checks_exact_runtime_identity():
     script = SCRIPT.read_text(encoding="utf-8")
 
     assert (
-        'HEALTH_TIMEOUT_SECONDS="${KARKINOS_LAUNCH_AGENT_HEALTH_TIMEOUT_SECONDS:-30}"'
+        'HEALTH_TIMEOUT_SECONDS="${KARKINOS_LAUNCH_AGENT_HEALTH_TIMEOUT_SECONDS:-120}"'
         in script
     )
     assert 'NATIVE_ENTRYPOINT="${KARKINOS_HOME_PATH}/current/bin/karkinos"' in script

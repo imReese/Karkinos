@@ -310,6 +310,10 @@ def test_health_timeout_contract_accepts_inclusive_integer_boundaries(
     assert update_workflow._require_health_timeout(health_timeout) == health_timeout
 
 
+def test_stable_workflows_default_to_launchd_cold_start_budget() -> None:
+    assert update_workflow.DEFAULT_HEALTH_TIMEOUT == 120
+
+
 def test_stable_preflight_failure_stops_before_auth_and_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

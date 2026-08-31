@@ -1729,7 +1729,7 @@ def test_public_workflow_parsers_expose_candidate_update_and_bootstrap() -> None
     assert (update_args.command, update_args.tag, update_args.health_timeout) == (
         "update",
         "v0.3.2",
-        30,
+        120,
     )
     assert update_args.service_port is None
     assert update_args.service_manager == expected_service_manager
