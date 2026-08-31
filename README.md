@@ -63,14 +63,14 @@ guarantee.
 
 ## Project status
 
-The current software version is `0.3.5`. v0.3.5 is a broker-provider-free
-maintenance and native-distribution release. It retains the v0.3.4 managed
-release flow and the existing research, financial-evidence, planning,
-paper/shadow, OMS/reconciliation, and controlled-execution foundation. It
-atomically reconciles complete, receipt-bound post-close stock bars into the
-canonical quote and valuation facts; retries incomplete close and confirmed
-fund-NAV publication across restarts, midnight, and non-trading days; and keeps
-generic fund bars from overriding canonical NAV evidence. The live scheduler
+The current software version is `0.3.6`. v0.3.6 is a broker-provider-free
+maintenance and native-distribution release. It retains v0.3.5's canonical
+post-close stock and confirmed fund-NAV reconciliation, together with the
+existing research, financial-evidence, planning, paper/shadow,
+OMS/reconciliation, and controlled-execution foundation. Native release
+activation now budgets 120 seconds for verified artifact cold start and real
+state initialization without weakening exact identity, launchd ownership,
+scheduler, activation-guard, or first-iteration checks. The live scheduler
 remains unconditional while automatic trading remains a separate default-off
 runtime gate. The release continues to use verified immutable macOS artifacts,
 journaled `current`/`previous` activation, and automatic rollback. It does not
