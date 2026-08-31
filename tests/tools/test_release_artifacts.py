@@ -796,6 +796,72 @@ def test_candidate_manifest_round_trip_binds_artifact_bytes(
         )
 
 
+def test_candidate_manifest_cli_imports_package_from_direct_script_path(
+    tmp_path: Path,
+) -> None:
+    artifact_dir = tmp_path / "candidate-artifacts"
+    artifact_dir.mkdir()
+    for architecture in ("arm64", "x86_64"):
+        filename = f"karkinos-{_VERSION}-macos-{architecture}.tar.gz"
+        archive = _archive(
+            artifact_dir / filename,
+            _native_tree(
+                tmp_path / f"native-{architecture}", architecture=architecture
+            ),
+        )
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        (artifact_dir / f"{filename}.sha256").write_text(
+            f"{digest}  {filename}\n", encoding="utf-8"
+        )
+
+    output = tmp_path / "candidate-manifest.json"
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path("tools/release_candidate.py").resolve()),
+            "build",
+            "--repo-root",
+            str(Path.cwd()),
+            "--artifact-dir",
+            str(artifact_dir),
+            "--commit-sha",
+            _SHA,
+            "--version",
+            _VERSION,
+            "--source-ci-run-id",
+            "123",
+            "--source-ci-run-attempt",
+            "1",
+            "--candidate-workflow-run-id",
+            "456",
+            "--candidate-workflow-run-attempt",
+            "1",
+            "--candidate-workflow-event",
+            "push",
+            "--image-workflow-run-id",
+            "456",
+            "--image-workflow-run-attempt",
+            "1",
+            "--image-reference",
+            "ghcr.io/imreese/karkinos",
+            "--image-digest",
+            "sha256:" + "b" * 64,
+            "--output",
+            str(output),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(output.read_text(encoding="utf-8"))["commit_sha"] == _SHA
+
+
 def _candidate_image_metadata(reference: str, digest: str) -> dict[str, object]:
     images: dict[str, object] = {}
     for architecture in ("amd64", "arm64"):
