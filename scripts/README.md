@@ -194,7 +194,7 @@ Then run the one-time handoff without executing release tooling from the source
 checkout:
 
 ```bash
-TAG=v0.3.4
+TAG=v0.3.5
 "$BOOTSTRAP_DOWNLOAD_DIR/bootstrap_installer.sh" \
   --tag "$TAG" \
   --legacy-workdir "/absolute/path/to/Karkinos" \
