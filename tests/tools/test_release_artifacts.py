@@ -28,7 +28,11 @@ from tools.build_macos_candidate import (
     _write_control_launcher,
     _write_launcher,
 )
-from tools.release_candidate import build_candidate_manifest, verify_candidate_manifest
+from tools.release_candidate import (
+    build_candidate_manifest,
+    verify_candidate_image_metadata,
+    verify_candidate_manifest,
+)
 
 _SHA = "a" * 40
 _VERSION = "0.3.2"
@@ -789,6 +793,168 @@ def test_candidate_manifest_round_trip_binds_artifact_bytes(
             expected_commit_sha=_SHA,
             expected_candidate_workflow_run_id=456,
             expected_candidate_workflow_run_attempt=4,
+        )
+
+
+def test_candidate_manifest_cli_imports_package_from_direct_script_path(
+    tmp_path: Path,
+) -> None:
+    artifact_dir = tmp_path / "candidate-artifacts"
+    artifact_dir.mkdir()
+    for architecture in ("arm64", "x86_64"):
+        filename = f"karkinos-{_VERSION}-macos-{architecture}.tar.gz"
+        archive = _archive(
+            artifact_dir / filename,
+            _native_tree(
+                tmp_path / f"native-{architecture}", architecture=architecture
+            ),
+        )
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        (artifact_dir / f"{filename}.sha256").write_text(
+            f"{digest}  {filename}\n", encoding="utf-8"
+        )
+
+    output = tmp_path / "candidate-manifest.json"
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path("tools/release_candidate.py").resolve()),
+            "build",
+            "--repo-root",
+            str(Path.cwd()),
+            "--artifact-dir",
+            str(artifact_dir),
+            "--commit-sha",
+            _SHA,
+            "--version",
+            _VERSION,
+            "--source-ci-run-id",
+            "123",
+            "--source-ci-run-attempt",
+            "1",
+            "--candidate-workflow-run-id",
+            "456",
+            "--candidate-workflow-run-attempt",
+            "1",
+            "--candidate-workflow-event",
+            "push",
+            "--image-workflow-run-id",
+            "456",
+            "--image-workflow-run-attempt",
+            "1",
+            "--image-reference",
+            "ghcr.io/imreese/karkinos",
+            "--image-digest",
+            "sha256:" + "b" * 64,
+            "--output",
+            str(output),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(output.read_text(encoding="utf-8"))["commit_sha"] == _SHA
+
+
+def _candidate_image_metadata(reference: str, digest: str) -> dict[str, object]:
+    images: dict[str, object] = {}
+    for architecture in ("amd64", "arm64"):
+        images[f"linux/{architecture}"] = {
+            "architecture": architecture,
+            "os": "linux",
+            "config": {
+                "Labels": {
+                    "org.opencontainers.image.version": _VERSION,
+                    "org.opencontainers.image.revision": _SHA,
+                }
+            },
+        }
+    return {
+        "name": reference,
+        "manifest": {"digest": digest},
+        "image": images,
+    }
+
+
+def test_candidate_image_metadata_binds_both_runtime_platforms(
+    tmp_path: Path,
+) -> None:
+    digest = "sha256:" + "b" * 64
+    reference = f"ghcr.io/imreese/karkinos:candidate-sha-{_SHA}-run-456-attempt-2"
+    metadata_path = tmp_path / "candidate-image-metadata.json"
+    metadata_path.write_text(
+        json.dumps(_candidate_image_metadata(reference, digest)), encoding="utf-8"
+    )
+
+    verified = verify_candidate_image_metadata(
+        metadata_path,
+        image_reference=reference,
+        image_digest=digest,
+        commit_sha=_SHA,
+        version=_VERSION,
+    )
+
+    assert verified["platforms"] == ["linux/amd64", "linux/arm64"]
+    assert verified["digest"] == digest
+
+
+def test_candidate_image_metadata_fails_closed_on_remote_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    digest = "sha256:" + "b" * 64
+    reference = f"ghcr.io/imreese/karkinos:candidate-sha-{_SHA}-run-456-attempt-2"
+    metadata = _candidate_image_metadata(reference, digest)
+    metadata_path = tmp_path / "candidate-image-metadata.json"
+
+    metadata["manifest"] = {"digest": "sha256:" + "c" * 64}
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match="candidate_image_digest_mismatch"):
+        verify_candidate_image_metadata(
+            metadata_path,
+            image_reference=reference,
+            image_digest=digest,
+            commit_sha=_SHA,
+            version=_VERSION,
+        )
+
+    metadata = _candidate_image_metadata(reference, digest)
+    images = metadata["image"]
+    assert isinstance(images, dict)
+    images.pop("linux/arm64")
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match="candidate_image_platforms_invalid"):
+        verify_candidate_image_metadata(
+            metadata_path,
+            image_reference=reference,
+            image_digest=digest,
+            commit_sha=_SHA,
+            version=_VERSION,
+        )
+
+    metadata = _candidate_image_metadata(reference, digest)
+    images = metadata["image"]
+    assert isinstance(images, dict)
+    arm64 = images["linux/arm64"]
+    assert isinstance(arm64, dict)
+    config = arm64["config"]
+    assert isinstance(config, dict)
+    labels = config["Labels"]
+    assert isinstance(labels, dict)
+    labels["org.opencontainers.image.revision"] = "d" * 40
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match="candidate_image_labels_mismatch"):
+        verify_candidate_image_metadata(
+            metadata_path,
+            image_reference=reference,
+            image_digest=digest,
+            commit_sha=_SHA,
+            version=_VERSION,
         )
 
 
