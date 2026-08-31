@@ -30,9 +30,7 @@ from account_truth.citic_source_intake_uow import CiticSourceIntakeUnitOfWorkMix
 from account_truth.citic_source_intake_values import (
     citic_preview_is_recordable_for_follow_up as _preview_recordable,
 )
-from account_truth.citic_source_intake_values import (
-    citic_source_intake_json,
-)
+from account_truth.citic_source_intake_values import citic_source_intake_json
 from account_truth.citic_source_intake_values import (
     citic_source_preview_fingerprint as _preview_fingerprint,
 )

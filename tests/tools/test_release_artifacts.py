@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from server import __version__
 from tools import (
     build_macos_candidate,
     download_candidate,
@@ -35,7 +36,7 @@ from tools.release_candidate import (
 )
 
 _SHA = "a" * 40
-_VERSION = "0.3.2"
+_VERSION = __version__
 
 
 def _native_tree(
@@ -48,7 +49,7 @@ def _native_tree(
     launcher.chmod(0o755)
     (root / "app" / "server").mkdir(parents=True)
     (root / "app" / "server" / "__init__.py").write_text(
-        '__version__ = "0.3.2"\n', encoding="utf-8"
+        f'__version__ = "{_VERSION}"\n', encoding="utf-8"
     )
     (root / "app" / "server" / "__main__.py").write_text(
         "raise SystemExit(0)\n", encoding="utf-8"
@@ -369,7 +370,7 @@ def test_candidate_production_install_propagates_hash_verification_failure(
 
 
 def test_native_manifest_and_archive_are_bound_to_identity(tmp_path: Path) -> None:
-    root = _native_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    root = _native_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     assert (
         release_artifact.validate_manifest(
             root,
@@ -395,7 +396,7 @@ def test_native_manifest_and_archive_are_bound_to_identity(tmp_path: Path) -> No
 def test_native_manifest_rejects_a_newer_release_control_protocol(
     tmp_path: Path,
 ) -> None:
-    root = _native_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    root = _native_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     manifest_path = root / "release.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["release_control_protocol"] = release_artifact.RELEASE_CONTROL_PROTOCOL + 1
@@ -411,7 +412,7 @@ def test_native_manifest_rejects_a_newer_release_control_protocol(
 def test_native_manifest_rejects_missing_required_runtime_file(
     tmp_path: Path, relative_name: str
 ) -> None:
-    root = _native_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    root = _native_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     (root / relative_name).unlink()
 
     with pytest.raises(ValueError, match="release_manifest_payload_incomplete"):
@@ -424,7 +425,7 @@ def test_native_manifest_rejects_missing_required_runtime_file(
 def test_native_manifest_rejects_missing_release_control_file(
     tmp_path: Path, relative_name: str
 ) -> None:
-    root = _native_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    root = _native_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     (root / relative_name).unlink()
 
     with pytest.raises(ValueError, match="release_manifest_control_plane_incomplete"):
@@ -437,7 +438,7 @@ def test_native_manifest_rejects_missing_release_control_file(
 def test_native_manifest_rejects_non_executable_release_control(
     tmp_path: Path, relative_name: str
 ) -> None:
-    root = _native_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    root = _native_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     (root / relative_name).chmod(0o644)
 
     with pytest.raises(
@@ -449,7 +450,7 @@ def test_native_manifest_rejects_non_executable_release_control(
 def test_native_manifest_rejects_non_executable_managed_runtime(
     tmp_path: Path,
 ) -> None:
-    root = _native_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    root = _native_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     (root / "runtime" / "bin" / "python3.12").chmod(0o644)
 
     with pytest.raises(ValueError, match="release_manifest_runtime_not_executable"):
@@ -459,7 +460,7 @@ def test_native_manifest_rejects_non_executable_managed_runtime(
 def test_generated_launcher_runs_without_mutating_release_payload(
     tmp_path: Path,
 ) -> None:
-    release = _generated_launcher_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    release = _generated_launcher_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     manifest = json.loads((release / "release.json").read_text(encoding="utf-8"))
     capture = tmp_path / "launcher-capture.json"
     environment = _launcher_environment(tmp_path, capture)
@@ -504,7 +505,7 @@ def test_generated_launcher_runs_without_mutating_release_payload(
 def test_generated_launcher_validates_payload_before_creating_mutable_state(
     tmp_path: Path,
 ) -> None:
-    release = _generated_launcher_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    release = _generated_launcher_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     (release / "app" / "server" / "__init__.py").write_text(
         '__version__ = "tampered"\n', encoding="utf-8"
     )
@@ -528,7 +529,7 @@ def test_generated_launcher_validates_payload_before_creating_mutable_state(
 def test_generated_launcher_does_not_create_an_explicit_missing_env_file(
     tmp_path: Path,
 ) -> None:
-    release = _generated_launcher_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    release = _generated_launcher_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     capture = tmp_path / "explicit-env-capture.json"
     environment = _launcher_environment(tmp_path, capture)
     explicit_env = tmp_path / "operator-selected" / ".env"
@@ -553,7 +554,7 @@ def test_generated_launcher_does_not_create_an_explicit_missing_env_file(
 def test_generated_control_launcher_uses_only_the_immutable_package(
     tmp_path: Path,
 ) -> None:
-    release = _generated_launcher_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    release = _generated_launcher_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     environment = _launcher_environment(tmp_path, tmp_path / "unused.json")
     source_fallback = tmp_path / "source-fallback"
     (source_fallback / "tools").mkdir(parents=True)
@@ -597,7 +598,7 @@ def test_generated_control_launcher_uses_only_the_immutable_package(
 def test_generated_control_launcher_fails_closed_on_manifest_tampering(
     tmp_path: Path, tamper: str
 ) -> None:
-    release = _generated_launcher_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    release = _generated_launcher_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     manifest_path = release / "release.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if tamper == "commit":
@@ -627,7 +628,7 @@ def test_generated_control_launcher_fails_closed_on_manifest_tampering(
 def test_generated_control_launcher_fails_closed_when_manifest_is_missing(
     tmp_path: Path,
 ) -> None:
-    release = _generated_launcher_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    release = _generated_launcher_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     (release / "release.json").unlink()
     environment = _launcher_environment(tmp_path, tmp_path / "unused.json")
 
@@ -651,7 +652,7 @@ def test_generated_control_launcher_fails_closed_when_manifest_is_missing(
 def test_generated_release_inventory_contains_control_plane_without_private_state(
     tmp_path: Path,
 ) -> None:
-    release = _generated_launcher_tree(tmp_path / "Karkinos-0.3.2-macos-arm64")
+    release = _generated_launcher_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
     manifest = release_artifact.validate_manifest(release, expected_commit_sha=_SHA)
     inventory = set(manifest["file_checksums"])
 
@@ -670,7 +671,7 @@ def test_generated_release_inventory_contains_control_plane_without_private_stat
 
 @pytest.mark.parametrize(
     "member_name",
-    ("Karkinos-0.3.2-macos-arm64/../escape", "/absolute"),
+    (f"Karkinos-{_VERSION}-macos-arm64/../escape", "/absolute"),
 )
 def test_native_archive_rejects_unsafe_paths(tmp_path: Path, member_name: str) -> None:
     info = tarfile.TarInfo(member_name)
@@ -687,7 +688,7 @@ def test_native_archive_rejects_unsafe_paths(tmp_path: Path, member_name: str) -
 def test_native_archive_rejects_symlink_and_extraction_bomb(
     tmp_path: Path, monkeypatch
 ) -> None:
-    link = tarfile.TarInfo("Karkinos-0.3.2-macos-arm64/bin/link")
+    link = tarfile.TarInfo(f"Karkinos-{_VERSION}-macos-arm64/bin/link")
     link.type = tarfile.SYMTYPE
     link.linkname = "/tmp/private"
     symlink_archive = _archive(
@@ -699,7 +700,7 @@ def test_native_archive_rejects_symlink_and_extraction_bomb(
         release_artifact.validate_archive(symlink_archive)
 
     monkeypatch.setattr(release_artifact, "_MAX_EXTRACTED_BYTES", 1)
-    bomb = tarfile.TarInfo("Karkinos-0.3.2-macos-arm64/payload")
+    bomb = tarfile.TarInfo(f"Karkinos-{_VERSION}-macos-arm64/payload")
     bomb.size = 2
     bomb_archive = _archive(
         tmp_path / "bomb.tar.gz",

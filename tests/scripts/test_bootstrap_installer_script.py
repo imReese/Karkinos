@@ -88,6 +88,7 @@ def _fixture(
         "  *) exit 2 ;;\n"
         "esac\n",
     )
+    _write_executable(fake_bin / "sleep", "#!/usr/bin/env bash\nexit 0\n")
     _write_executable(
         fake_bin / "gh",
         "#!/usr/bin/env bash\n"
@@ -248,7 +249,8 @@ def test_installer_verifies_stable_assets_then_delegates_to_packaged_controller(
     home = arguments[arguments.index("--home") + 1]
     workdir = arguments[arguments.index("--legacy-workdir") + 1]
     plist = arguments[arguments.index("--legacy-plist") + 1]
-    assert controller_calls.read_text(encoding="utf-8").splitlines() == [
+    controller_lines = controller_calls.read_text(encoding="utf-8").splitlines()
+    assert controller_lines[:-2] == [
         f"home-env={home}",
         "arg=--home",
         f"arg={home}",
@@ -266,11 +268,8 @@ def test_installer_verifies_stable_assets_then_delegates_to_packaged_controller(
     attestations = [
         line.split("\t") for line in calls if line.startswith("attestation\t")
     ]
-    assert len(attestations) == 2
-    assert any(
-        f"karkinos-{VERSION}-macos-arm64.tar.gz" in command[2]
-        for command in attestations
-    )
+    assert len(attestations) == 1
+    assert f"karkinos-{VERSION}-macos-arm64.tar.gz" in attestations[0][2]
     for command in attestations:
         assert command[:2] == ["attestation", "verify"]
         assert command[command.index("--repo") + 1] == "imReese/Karkinos"
@@ -280,6 +279,13 @@ def test_installer_verifies_stable_assets_then_delegates_to_packaged_controller(
         assert command[command.index("--source-ref") + 1] == f"refs/tags/{TAG}"
         assert command[command.index("--source-digest") + 1] == COMMIT_SHA
         assert "--deny-self-hosted-runners" in command
+    assert controller_lines[-2] == "arg=--release-archive"
+    assert Path(controller_lines[-1].removeprefix("arg=")).name == (
+        f"karkinos-{VERSION}-macos-arm64.tar.gz"
+    )
+    downloads = [line for line in calls if line.startswith("release\tdownload\t")]
+    assert len(downloads) == 2
+    assert all("candidate-manifest.json" not in line for line in downloads)
     assert list(temp_parent.iterdir()) == []
 
 
