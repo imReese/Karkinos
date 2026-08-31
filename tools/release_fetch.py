@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -45,11 +46,14 @@ _MAX_NATIVE_ARCHIVE_BYTES = 512 * 1024 * 1024
 _MAX_RELEASE_ASSETS = 1000
 _MAX_ATTESTATION_OUTPUT_BYTES = 8 * 1024 * 1024
 _ATTESTATION_TIMEOUT_SECONDS = 120
+_ATTESTATION_ATTEMPTS = 3
+_ATTESTATION_RETRY_SECONDS = 2
 _CANDIDATE_SIGNER_WORKFLOW = ".github/workflows/candidate.yml"
 _STABLE_SIGNER_WORKFLOW = ".github/workflows/release.yml"
 _BOOTSTRAP_INSTALLER_ASSET = "bootstrap_installer.sh"
 
 AttestationRunner = Callable[..., subprocess.CompletedProcess[str]]
+AttestationSleeper = Callable[[float], None]
 
 
 class _ReadableResponse(Protocol):
@@ -94,6 +98,7 @@ def verify_github_attestation(
     source_ref: str | None = None,
     token: str = "",
     runner: AttestationRunner = subprocess.run,
+    sleeper: AttestationSleeper = time.sleep,
 ) -> list[dict[str, Any]]:
     """Require GitHub's signed candidate-workflow provenance for an archive."""
     _validate_repository(repository)
@@ -128,21 +133,32 @@ def verify_github_attestation(
     environment = os.environ.copy()
     if token:
         environment["GH_TOKEN"] = token
-    try:
-        result = runner(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=_ATTESTATION_TIMEOUT_SECONDS,
-            env=environment,
-        )
-    except FileNotFoundError as exc:
-        raise ValueError("release_attestation_verifier_unavailable") from exc
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ValueError("release_attestation_verification_inconclusive") from exc
-    if result.returncode != 0:
-        raise ValueError("release_attestation_verification_failed")
+    result: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(_ATTESTATION_ATTEMPTS):
+        try:
+            result = runner(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=_ATTESTATION_TIMEOUT_SECONDS,
+                env=environment,
+            )
+        except FileNotFoundError as exc:
+            raise ValueError("release_attestation_verifier_unavailable") from exc
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            if attempt + 1 == _ATTESTATION_ATTEMPTS:
+                raise ValueError(
+                    "release_attestation_verification_inconclusive"
+                ) from exc
+        else:
+            if result.returncode == 0:
+                break
+            if attempt + 1 == _ATTESTATION_ATTEMPTS:
+                raise ValueError("release_attestation_verification_failed")
+        sleeper(_ATTESTATION_RETRY_SECONDS * (2**attempt))
+    if result is None or result.returncode != 0:
+        raise ValueError("release_attestation_verification_inconclusive")
     output = result.stdout
     if not isinstance(output, str) or len(output.encode("utf-8")) > (
         _MAX_ATTESTATION_OUTPUT_BYTES
@@ -566,9 +582,10 @@ def fetch_stable_native(
     token: str = "",
     api_url: str = "https://api.github.com",
     architecture: str | None = None,
+    local_archive: Path | None = None,
     attestation_runner: AttestationRunner = subprocess.run,
 ) -> VerifiedNativeArchive:
-    """Fetch one published stable Release and prove tag, bytes, and provenance."""
+    """Acquire one published stable Release and prove tag, bytes, and provenance."""
     _validate_repository(repository)
     match = _SEMVER_TAG.fullmatch(tag)
     if match is None:
@@ -691,15 +708,31 @@ def fetch_stable_native(
             raise ValueError("release_fetch_native_asset_missing")
         archive_path = work / selected["filename"]
         checksum_path = work / f"{selected['filename']}.sha256"
-        archive_path.write_bytes(
-            _download_release_asset(
-                archive_asset,
-                repository=repository,
-                token=token,
-                api_url=api_url,
-                maximum=_MAX_NATIVE_ARCHIVE_BYTES,
+        if local_archive is None:
+            archive_path.write_bytes(
+                _download_release_asset(
+                    archive_asset,
+                    repository=repository,
+                    token=token,
+                    api_url=api_url,
+                    maximum=_MAX_NATIVE_ARCHIVE_BYTES,
+                )
             )
-        )
+        else:
+            if (
+                not local_archive.is_absolute()
+                or ".." in local_archive.parts
+                or local_archive.name != selected["filename"]
+            ):
+                raise ValueError("release_fetch_local_archive_invalid")
+            download_candidate._reject_symlink_ancestors(local_archive)
+            if local_archive.is_symlink() or not local_archive.is_file():
+                raise ValueError("release_fetch_local_archive_invalid")
+            local_stat = local_archive.stat(follow_symlinks=False)
+            if local_stat.st_size != archive_asset["size"]:
+                raise ValueError("release_fetch_local_archive_size_mismatch")
+            shutil.copyfile(local_archive, archive_path)
+            archive_path.chmod(0o600)
         checksum_path.write_bytes(checksum_payloads[checksum_path.name])
         if sha256(archive_path) != selected["sha256"]:
             raise ValueError("release_fetch_candidate_checksum_mismatch")

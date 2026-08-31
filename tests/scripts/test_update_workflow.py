@@ -341,12 +341,18 @@ def test_stable_fetches_exact_tag_then_stages_and_deploys_proven_sha(
 ) -> None:
     events: list[tuple[object, ...]] = []
 
+    def auth_runner(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert command == ["gh", "auth", "token"]
+        return subprocess.CompletedProcess(command, 0, stdout=f"{_TOKEN}\n", stderr="")
+
     def fetch(**kwargs: object) -> release_fetch.VerifiedNativeArchive:
         assert kwargs == {
             "repository": update_workflow.DEFAULT_REPOSITORY,
             "tag": _TAG,
             "output_dir": kwargs["output_dir"],
-            "token": "",
+            "token": _TOKEN,
         }
         events.append(("fetch", _TAG))
         output_dir = kwargs["output_dir"]
@@ -360,6 +366,7 @@ def test_stable_fetches_exact_tag_then_stages_and_deploys_proven_sha(
         confirmation=f"UPDATE {_TAG}",
         health_timeout=12,
         environment={},
+        gh_auth_runner=auth_runner,
         temporary_parent=tmp_path,
     )
 
@@ -439,7 +446,7 @@ def test_stable_cleanup_failure_does_not_mask_activation_failure(
             callbacks,
             tag=_TAG,
             confirmation=f"UPDATE {_TAG}",
-            environment={},
+            environment={"GH_TOKEN": _TOKEN},
             temporary_parent=tmp_path,
         )
 
@@ -448,9 +455,11 @@ def test_stable_bootstrap_preflights_then_uses_proven_sha(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     events: list[tuple[object, ...]] = []
+    local_archive = tmp_path / "installer-download.tar.gz"
 
     def fetch(**kwargs: object) -> release_fetch.VerifiedNativeArchive:
         events.append(("fetch", kwargs["tag"]))
+        assert kwargs["local_archive"] == local_archive
         output_dir = kwargs["output_dir"]
         assert isinstance(output_dir, Path)
         return _fetched(output_dir, source="github-release", tag=_TAG)
@@ -471,7 +480,8 @@ def test_stable_bootstrap_preflights_then_uses_proven_sha(
         tag=_TAG,
         confirmation=f"BOOTSTRAP {_TAG}",
         health_timeout=14,
-        environment={},
+        environment={"GH_TOKEN": _TOKEN},
+        local_archive=local_archive,
         temporary_parent=tmp_path,
     )
 
@@ -544,7 +554,7 @@ def test_stable_bootstrap_failure_discards_only_after_stage(
             callbacks,
             tag=_TAG,
             confirmation=f"BOOTSTRAP {_TAG}",
-            environment={},
+            environment={"GH_TOKEN": _TOKEN},
             temporary_parent=tmp_path,
         )
 
@@ -577,7 +587,7 @@ def test_stable_bootstrap_cleanup_failure_does_not_mask_bootstrap_failure(
             callbacks,
             tag=_TAG,
             confirmation=f"BOOTSTRAP {_TAG}",
-            environment={},
+            environment={"GH_TOKEN": _TOKEN},
             temporary_parent=tmp_path,
         )
 
@@ -605,7 +615,7 @@ def test_fetch_identity_mismatch_fails_before_stage_or_deploy(
             _callbacks(events),
             tag=_TAG,
             confirmation=f"UPDATE {_TAG}",
-            environment={},
+            environment={"GH_TOKEN": _TOKEN},
             temporary_parent=tmp_path,
         )
 

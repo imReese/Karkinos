@@ -334,6 +334,89 @@ def test_fetch_stable_binds_release_tag_asset_digests_and_native_manifest(
     assert installer_id not in requested_assets
 
 
+def test_fetch_stable_reuses_installer_archive_without_downloading_it_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release, downloads = _release_fixture(tmp_path / "source")
+    archive_name = f"karkinos-{__version__}-macos-arm64.tar.gz"
+    archive_asset = next(
+        item for item in release["assets"] if item["name"] == archive_name
+    )
+    archive_id = int(archive_asset["id"])
+    local_archive = tmp_path / archive_name
+    local_archive.write_bytes(downloads[archive_id])
+    local_archive.chmod(0o600)
+    requested_assets: list[int] = []
+
+    def fake_json(path: str, **_kwargs: object) -> dict[str, object]:
+        if "/releases/tags/" in path:
+            return release
+        if "/git/ref/tags/" in path:
+            return {
+                "ref": f"refs/tags/v{__version__}",
+                "object": {"type": "commit", "sha": _SHA},
+            }
+        raise AssertionError(path)
+
+    def fake_https(url: str, **_kwargs: object) -> bytes:
+        asset_id = int(url.rsplit("/", 1)[1])
+        requested_assets.append(asset_id)
+        return downloads[asset_id]
+
+    monkeypatch.setattr(release_fetch, "_github_json", fake_json)
+    monkeypatch.setattr(release_fetch, "_https_get", fake_https)
+
+    result = release_fetch.fetch_stable_native(
+        repository=_REPOSITORY,
+        tag=f"v{__version__}",
+        output_dir=tmp_path / "verified",
+        token="sensitive-token",
+        architecture="arm64",
+        local_archive=local_archive,
+        attestation_runner=_attestation_result,
+    )
+
+    assert result.archive.read_bytes() == local_archive.read_bytes()
+    assert archive_id not in requested_assets
+
+
+def test_fetch_stable_rejects_local_archive_size_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release, downloads = _release_fixture(tmp_path / "source")
+    archive_name = f"karkinos-{__version__}-macos-arm64.tar.gz"
+    local_archive = tmp_path / archive_name
+    local_archive.write_bytes(b"truncated")
+
+    def fake_json(path: str, **_kwargs: object) -> dict[str, object]:
+        if "/releases/tags/" in path:
+            return release
+        return {
+            "ref": f"refs/tags/v{__version__}",
+            "object": {"type": "commit", "sha": _SHA},
+        }
+
+    monkeypatch.setattr(release_fetch, "_github_json", fake_json)
+    monkeypatch.setattr(
+        release_fetch,
+        "_https_get",
+        lambda url, **_kwargs: downloads[int(url.rsplit("/", 1)[1])],
+    )
+
+    with pytest.raises(ValueError, match="release_fetch_local_archive_size_mismatch"):
+        release_fetch.fetch_stable_native(
+            repository=_REPOSITORY,
+            tag=f"v{__version__}",
+            output_dir=tmp_path / "verified",
+            token="sensitive-token",
+            architecture="arm64",
+            local_archive=local_archive,
+            attestation_runner=_attestation_result,
+        )
+
+    assert not (tmp_path / "verified").exists()
+
+
 def test_fetch_stable_rechecks_tag_and_release_after_verification(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -552,9 +635,41 @@ def test_attestation_verification_fails_closed_without_exposing_output(
             commit_sha=_SHA,
             token="sensitive-token",
             runner=lambda *_args, **_kwargs: result,
+            sleeper=lambda _seconds: None,
         )
     assert "private" not in str(captured.value)
     assert "sensitive-token" not in str(captured.value)
+
+
+def test_attestation_verification_retries_transient_command_failure(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "native.tar.gz"
+    archive.write_bytes(b"archive")
+    attempts = 0
+    delays: list[float] = []
+
+    def runner(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="private")
+        return _attestation_result(command, **kwargs)
+
+    result = release_fetch.verify_github_attestation(
+        archive,
+        repository=_REPOSITORY,
+        commit_sha=_SHA,
+        token="sensitive-token",
+        runner=runner,
+        sleeper=delays.append,
+    )
+
+    assert result
+    assert attempts == 2
+    assert delays == [2]
 
 
 def test_attestation_verification_requires_gh(tmp_path: Path) -> None:

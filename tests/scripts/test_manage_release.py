@@ -2051,8 +2051,9 @@ def test_public_bootstrap_preflights_before_stage_and_wires_exact_paths(
         tag: str,
         confirmation: str,
         health_timeout: float,
+        local_archive: Path | None,
     ) -> object:
-        events.append(("workflow", tag, confirmation, health_timeout))
+        events.append(("workflow", tag, confirmation, health_timeout, local_archive))
         callbacks.preflight()
         callbacks.stage(archive, _SHA_D)
         return callbacks.bootstrap(_SHA_D, f"BOOTSTRAP {_SHA_D}", health_timeout)
@@ -2075,13 +2076,15 @@ def test_public_bootstrap_preflights_before_stage_and_wires_exact_paths(
             "/service-manager",
             "--service-port",
             "8124",
+            "--release-archive",
+            str(archive),
         ]
     )
 
     manage_release.bootstrap(home, args)
 
     assert events == [
-        ("workflow", "v0.3.2", "BOOTSTRAP v0.3.2", 19),
+        ("workflow", "v0.3.2", "BOOTSTRAP v0.3.2", 19, archive),
         ("preflight", home, legacy_workdir, legacy_plist),
         ("stage", home, archive, _SHA_D),
         (
