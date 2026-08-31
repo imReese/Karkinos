@@ -21,6 +21,11 @@ _TOOLCHAIN = {
 _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _IMAGE_REFERENCE = re.compile(r"^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$")
+_CANDIDATE_IMAGE_REFERENCE = re.compile(
+    r"^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+:"
+    r"candidate-sha-(?P<commit_sha>[0-9a-f]{40})-"
+    r"run-[1-9][0-9]*-attempt-[1-9][0-9]*$"
+)
 _VERSION = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$"
@@ -79,6 +84,65 @@ def _positive_run_identity(run_id: object, run_attempt: object) -> bool:
 
 def _candidate_image_tag(commit_sha: str, run_id: int, run_attempt: int) -> str:
     return f"candidate-sha-{commit_sha}-run-{run_id}-attempt-{run_attempt}"
+
+
+def verify_candidate_image_metadata(
+    metadata_path: Path,
+    *,
+    image_reference: str,
+    image_digest: str,
+    commit_sha: str,
+    version: str,
+) -> dict[str, Any]:
+    """Verify both runtime platforms from a remote Buildx inspection."""
+    _require_identity(commit_sha, image_digest)
+    reference_match = _CANDIDATE_IMAGE_REFERENCE.fullmatch(image_reference)
+    if reference_match is None or reference_match.group("commit_sha") != commit_sha:
+        raise ValueError("candidate_image_reference_invalid")
+    if _VERSION.fullmatch(version) is None:
+        raise ValueError("candidate_image_version_invalid")
+    _regular_file(metadata_path, "candidate_image_metadata_invalid")
+    try:
+        if metadata_path.stat().st_size > 4 * 1024 * 1024:
+            raise ValueError("candidate_image_metadata_too_large")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("candidate_image_metadata_invalid") from exc
+    if not isinstance(metadata, dict) or metadata.get("name") != image_reference:
+        raise ValueError("candidate_image_metadata_invalid")
+    manifest = metadata.get("manifest")
+    if not isinstance(manifest, dict) or manifest.get("digest") != image_digest:
+        raise ValueError("candidate_image_digest_mismatch")
+    images = metadata.get("image")
+    expected_platforms = {
+        "linux/amd64": "amd64",
+        "linux/arm64": "arm64",
+    }
+    if not isinstance(images, dict) or set(images) != set(expected_platforms):
+        raise ValueError("candidate_image_platforms_invalid")
+    for platform_name, architecture in expected_platforms.items():
+        image = images.get(platform_name)
+        if (
+            not isinstance(image, dict)
+            or image.get("os") != "linux"
+            or image.get("architecture") != architecture
+        ):
+            raise ValueError("candidate_image_platforms_invalid")
+        config = image.get("config")
+        labels = config.get("Labels") if isinstance(config, dict) else None
+        if (
+            not isinstance(labels, dict)
+            or labels.get("org.opencontainers.image.version") != version
+            or labels.get("org.opencontainers.image.revision") != commit_sha
+        ):
+            raise ValueError("candidate_image_labels_mismatch")
+    return {
+        "commit_sha": commit_sha,
+        "digest": image_digest,
+        "image_reference": image_reference,
+        "platforms": sorted(expected_platforms),
+        "version": version,
+    }
 
 
 def build_candidate_manifest(
@@ -516,6 +580,12 @@ def main() -> int:
     verify.add_argument("--repository")
     verify.add_argument("--image-reference")
     verify.add_argument("--repo-root", type=Path)
+    verify_image = subparsers.add_parser("verify-image-metadata")
+    verify_image.add_argument("--metadata", type=Path, required=True)
+    verify_image.add_argument("--image-reference", required=True)
+    verify_image.add_argument("--image-digest", required=True)
+    verify_image.add_argument("--commit-sha", required=True)
+    verify_image.add_argument("--version", required=True)
     args = parser.parse_args()
     try:
         if args.command == "build":
@@ -546,6 +616,14 @@ def main() -> int:
             output.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
+            )
+        elif args.command == "verify-image-metadata":
+            payload = verify_candidate_image_metadata(
+                args.metadata.expanduser().absolute(),
+                image_reference=args.image_reference,
+                image_digest=args.image_digest,
+                commit_sha=args.commit_sha,
+                version=args.version,
             )
         else:
             expected_candidate_run_id: int | None = None

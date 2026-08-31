@@ -61,7 +61,15 @@ def test_ci_pins_release_toolchains_and_github_actions() -> None:
         "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1"
         in workflow
     )
-    assert set(re.findall(r'python-version:\s*"([^"]+)"', workflow)) == {"3.12.13"}
+    python_versions = re.findall(r'python-version:\s*"([^"]+)"', workflow)
+    assert set(python_versions) == {"3.12.10", "3.12.13"}
+    assert python_versions.count("3.12.10") == 1
+    candidate_workflow = Path(".github/workflows/candidate.yml").read_text()
+    native_job = candidate_workflow.split("  native:\n", 1)[1].split(
+        "  container:\n", 1
+    )[0]
+    assert 'python-version: "3.12.10"' in native_job
+    assert 'python-version: "3.12.13"' not in native_job
     assert set(re.findall(r'node-version:\s*"([^"]+)"', workflow)) == {"24.20.0"}
     assert dockerfile.startswith(
         "# ---- Stage 1: Build React frontend ----\n" "FROM node:24.20.0-alpine3.24"
@@ -212,6 +220,20 @@ def test_candidate_image_preflight_reuses_fail_closed_registry_check() -> None:
     assert "docker buildx imagetools inspect" not in preflight
 
 
+def test_candidate_image_metadata_verifies_the_remote_multi_platform_index() -> None:
+    candidate_workflow = Path(".github/workflows/candidate.yml").read_text()
+    verification = candidate_workflow.split(
+        "      - name: Verify candidate image metadata\n", 1
+    )[1].split("\n  manifest:\n", 1)[0]
+
+    assert "docker pull" not in verification
+    assert "docker image inspect" not in verification
+    assert "docker buildx imagetools inspect --format '{{json .}}'" in verification
+    assert "tools/release_candidate.py verify-image-metadata" in verification
+    assert '--image-digest "${EXPECTED_DIGEST}"' in verification
+    assert '--commit-sha "${EXPECTED_REVISION}"' in verification
+
+
 def test_candidate_reruns_bind_workflow_attempt_artifact_and_image_identity() -> None:
     candidate_workflow = Path(".github/workflows/candidate.yml").read_text()
     release_workflow = Path(".github/workflows/release.yml").read_text()
@@ -289,8 +311,11 @@ def test_native_candidate_smokes_packaged_controller_and_service() -> None:
     assert 'health["artifact_fingerprint"] == manifest["payload_fingerprint"]' in smoke
     assert 'live["running"] is True' in smoke
     assert 'live["initialized"] is True' in smoke
+    assert smoke.count("\"${packaged_python}\" -B - <<'PY'") == 2
+    assert "\"${packaged_python}\" - <<'PY'" not in smoke
     assert 'kill -TERM "${service_pid}"' in smoke
     assert 'wait "${service_pid}"' in smoke
+    assert '"${service_status}" -ne 0 && "${service_status}" -ne 143' in smoke
     assert 'HOME="${isolated_home}" KARKINOS_HOME="${runtime_home}"' in smoke
     assert 'test ! -e "${runtime_home}"' in smoke
     assert "launchctl " not in smoke
