@@ -13200,9 +13200,13 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
                 {
                     "symbol": "012999",
                     "asset_class": "fund",
-                    "price": 0.8827,
-                    "timestamp": "2026-06-17 15:00",
-                    "quote_source": "eastmoney_fund_estimate",
+                    "price": 0.8847,
+                    "timestamp": "2026-06-17T20:00:00+08:00",
+                    "quote_source": "eastmoney_fund_page",
+                    "provider_name": "akshare",
+                    "provider_status": "live",
+                    "quote_status": "confirmed",
+                    "nav_date": "2026-06-17",
                 }
             ]
 
@@ -13231,7 +13235,7 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
             assert trade_date == "2026-06-17"
             return {
                 "trade_date": "2026-06-17",
-                "close": 0.8847,
+                "close": 0.8811,
                 "source": "market_bars",
             }
 
@@ -13259,9 +13263,13 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
                 "012999": {
                     "symbol": "012999",
                     "asset_class": "fund",
-                    "price": 0.8827,
-                    "timestamp": "2026-06-17 15:00",
-                    "quote_source": "eastmoney_fund_estimate",
+                    "price": 0.8847,
+                    "timestamp": "2026-06-17T20:00:00+08:00",
+                    "quote_source": "eastmoney_fund_page",
+                    "provider_name": "akshare",
+                    "provider_status": "live",
+                    "quote_status": "confirmed",
+                    "nav_date": "2026-06-17",
                 }
             },
         ),

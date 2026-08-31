@@ -83,7 +83,6 @@ def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_pat
             "tushare": object(),
         },
     )
-
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         db,
@@ -155,6 +154,108 @@ def test_refresh_fund_nav_quotes_skips_fresh_cached_fund(monkeypatch, tmp_path):
     assert result.failed == {}
     assert source.calls == []
     assert db.get_latest_quote_sync("019999", asset_type="fund") is None
+
+
+def test_confirmation_only_skips_same_day_confirmed_nav_even_after_ttl(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_latest_quote_sync(
+        symbol="019999",
+        asset_type="fund",
+        price=2.5,
+        quote_timestamp="2026-06-12T20:00:00+08:00",
+        quote_source="tushare_fund_nav",
+        provider_name="tushare",
+        provider_status="live",
+        quote_status="confirmed",
+        nav_date="2026-06-12",
+    )
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda **kwargs: pytest.fail("confirmed same-day NAV must not be refetched"),
+    )
+
+    result = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="tushare", tushare_token=""),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={
+            "019999": {
+                "price": 2.4,
+                "timestamp": "2026-06-12T15:00:00+08:00",
+                "quote_source": "eastmoney_fund_estimate",
+            }
+        },
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=900,
+        confirmation_only=True,
+    )
+
+    assert result.refreshed == []
+    assert result.skipped == ["019999"]
+    assert result.failed == {}
+
+
+def test_confirmation_only_refetches_target_date_nonconfirmed_nav_after_midnight(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_latest_quote_sync(
+        symbol="019999",
+        asset_type="fund",
+        price=2.4,
+        quote_timestamp="2026-06-12T14:00:00+08:00",
+        quote_source="tushare_fund_nav",
+        provider_name="tushare",
+        provider_status="error",
+        quote_status="stale",
+        stale_reason="provider_error",
+        nav_date="2026-06-12",
+    )
+    source = ConfirmedFundSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"tushare": source},
+    )
+
+    result = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={
+            "019999": {
+                "price": 2.4,
+                "quote_source": "tushare_fund_nav",
+                "provider_status": "live",
+                "quote_status": "confirmed",
+                "nav_date": "2026-06-12",
+            }
+        },
+        now=datetime(2026, 6, 13, 0, 5),
+        ttl_seconds=900,
+        confirmation_only=True,
+        target_date="2026-06-12",
+    )
+
+    latest = db.get_latest_quote_sync("019999", asset_type="fund")
+    assert source.calls == [(Symbol("019999"), AssetClass.FUND)]
+    assert result.refreshed == ["019999"]
+    assert result.skipped == []
+    assert latest is not None
+    assert latest["price"] == 2.5
+    assert latest["provider_status"] == "live"
+    assert latest["quote_status"] == "confirmed"
 
 
 def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
@@ -232,6 +333,7 @@ def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
             "tushare": confirmed_source,
         },
     )
+    request_id = "confirmed-nav-publication-failure-0001"
 
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
@@ -248,12 +350,26 @@ def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
         now=datetime(2026, 6, 12, 21, 30),
         ttl_seconds=900,
         confirmation_only=True,
+        request_id=request_id,
+    )
+    replay = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=900,
+        confirmation_only=True,
+        request_id=request_id,
     )
 
     latest = db.get_latest_quote_sync("019999", asset_type="fund")
     restored = {row["symbol"]: row for row in db.get_latest_quotes_sync()}["019999"]
     assert result.refreshed == []
     assert result.failed["__publication__"] == "quote_batch_publication_failed"
+    assert replay.idempotent_replay is True
+    assert replay.refreshed == []
+    assert replay.failed["__publication__"] == "quote_batch_publication_failed"
     assert confirmed_source.calls == [(Symbol("019999"), AssetClass.FUND)]
     assert estimate_source.calls == []
     assert latest is not None
@@ -370,6 +486,13 @@ def test_confirmation_only_request_replays_persisted_run_after_restart(
         latest_quotes={},
         **kwargs,
     )
+    persisted = db.get_latest_quote_sync("019999", asset_type="fund")
+    assert persisted is not None
+    assert persisted["quote_status"] == "confirmed"
+    assert fund_nav_sync.is_confirmed_fund_nav_quote(
+        persisted,
+        target_date="2026-06-12",
+    )
     restarted_db = AppDatabase(db_path)
     restarted_db.init_sync()
     replay = fund_nav_sync.refresh_fund_nav_quotes(
@@ -413,6 +536,7 @@ def test_confirmation_only_request_replays_running_run_without_provider_contact(
             "request_scope_symbols": ["019999"],
             "requested_symbols": ["019999"],
             "confirmation_only": True,
+            "target_date": "2026-06-12",
         },
     )
     monkeypatch.setattr(
@@ -477,6 +601,51 @@ def test_confirmation_only_request_rejects_idempotency_payload_drift(
             now=datetime(2026, 6, 12, 21, 30),
             ttl_seconds=0,
             confirmation_only=True,
+            request_id=request_id,
+        )
+
+    assert source.calls == [(Symbol("019999"), AssetClass.FUND)]
+    assert len(db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
+
+
+def test_confirmation_only_request_rejects_target_date_drift(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    source = ConfirmedFundSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"tushare": source},
+    )
+    request_id = "confirmed-nav-target-drift-0001"
+    config = SimpleNamespace(data_source="tushare", tushare_token="unit-token")
+    fund_nav_sync.refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=0,
+        confirmation_only=True,
+        target_date="2026-06-12",
+        request_id=request_id,
+    )
+
+    with pytest.raises(fund_nav_sync.FundNavSyncIdempotencyConflict):
+        fund_nav_sync.refresh_fund_nav_quotes(
+            config,
+            db,
+            watchlist=[(Symbol("019999"), AssetClass.FUND)],
+            latest_quotes={},
+            now=datetime(2026, 6, 13, 0, 5),
+            ttl_seconds=0,
+            confirmation_only=True,
+            target_date="2026-06-11",
             request_id=request_id,
         )
 

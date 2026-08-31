@@ -17,6 +17,9 @@ from data.manager import DataManager, build_sources
 from data.store import DataStore
 from server.bootstrap import resolve_data_dir
 from server.release_activation import wait_for_release_activation
+from server.services.market_calendar_dates import (
+    latest_verified_closed_trading_date,
+)
 from server.services.market_hours import get_shanghai_now
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
@@ -29,7 +32,6 @@ logger = logging.getLogger(__name__)
 MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v2"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
-_POST_CLOSE_INGESTION_TIME = time(16, 0)
 
 
 class MarketUniverseAutomationService:
@@ -76,7 +78,7 @@ class MarketUniverseAutomationService:
 
     def run_due(self, *, now: datetime | None = None) -> dict[str, Any]:
         current = get_shanghai_now(now)
-        trade_date = _latest_verified_closed_trading_date(self._db, current)
+        trade_date = latest_verified_closed_trading_date(self._db, current)
         run_date = current.date().isoformat()
         provider_name = str(getattr(self._config, "data_source", "akshare"))
         if trade_date is None:
@@ -461,30 +463,6 @@ async def run_market_universe_automation_loop(
 def _provider_request_interval_seconds(provider_name: str) -> float:
     """Leave capacity below TuShare's base 50 requests/minute ceiling."""
     return 2.0 if provider_name.strip().lower() == "tushare" else 0.0
-
-
-def _latest_verified_closed_trading_date(db: Any, now: datetime) -> str | None:
-    cutoff_date = now.date()
-    if now.time() < _POST_CLOSE_INGESTION_TIME:
-        cutoff_date -= timedelta(days=1)
-    for year in (cutoff_date.year, cutoff_date.year - 1):
-        row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
-        if not row or row.get("official_verification_status") != "verified":
-            continue
-        try:
-            days = json.loads(str(row.get("days_json") or "[]"))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            continue
-        candidates = sorted(
-            str(day.get("date"))
-            for day in days
-            if isinstance(day, dict)
-            and day.get("is_trading_day") is True
-            and str(day.get("date") or "") <= cutoff_date.isoformat()
-        )
-        if candidates:
-            return candidates[-1]
-    return None
 
 
 def _history_start(config: Any, trade_date: str):

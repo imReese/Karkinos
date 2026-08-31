@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from core.types import AssetClass, Symbol
 from data.manager import build_sources
+from server.services.market_hours import get_shanghai_now
 from server.services.market_quote_ingestion import (
     build_quote_ingestion_command,
     persist_quote_ingestion,
@@ -76,6 +78,7 @@ def _replay_fund_nav_result(
     request_id: str,
     expected_symbols: list[str],
     confirmation_only: bool,
+    expected_target_date: str | None,
     manual_explicit_trigger: bool,
 ) -> FundNavSyncResult:
     metadata = _run_metadata(row)
@@ -85,6 +88,7 @@ def _replay_fund_nav_result(
     if (
         persisted_symbols != expected_symbols
         or bool(metadata.get("confirmation_only")) is not confirmation_only
+        or str(metadata.get("target_date") or "") != str(expected_target_date or "")
         or bool(metadata.get("manual_explicit_trigger")) is not manual_explicit_trigger
     ):
         raise FundNavSyncIdempotencyConflict(
@@ -100,8 +104,16 @@ def _replay_fund_nav_result(
             for symbol in _string_list(metadata.get("failed_symbols"))
         }
     )
+    refreshed = _string_list(metadata.get("refreshed_symbols"))
+    publication_ready = bool(
+        str(row.get("status") or "") in {"success", "partial", "partial_success"}
+        and str(metadata.get("valuation_snapshot_id") or "").strip()
+    )
+    if refreshed and not publication_ready:
+        refreshed = []
+        failed.setdefault("__publication__", "quote_batch_publication_failed")
     return FundNavSyncResult(
-        refreshed=_string_list(metadata.get("refreshed_symbols")),
+        refreshed=refreshed,
         skipped=_string_list(metadata.get("skipped_symbols")),
         failed=failed,
         run_id=str(row["run_id"]),
@@ -136,24 +148,17 @@ def _fund_quote_due(
     now: datetime,
     ttl_seconds: int,
     confirmation_only: bool = False,
+    target_date: str | None = None,
 ) -> bool:
     if ttl_seconds <= 0:
         return True
     if not quote:
         return True
     if confirmation_only:
-        quote_source = (
-            str(quote.get("quote_source") or quote.get("source") or "").strip().lower()
+        return not is_confirmed_fund_nav_quote(
+            quote,
+            target_date=target_date or get_shanghai_now(now).date().isoformat(),
         )
-        if quote_source not in _CONFIRMED_FUND_NAV_SOURCES:
-            return True
-        nav_timestamp = _parse_timestamp(
-            quote.get("nav_date")
-            or quote.get("timestamp")
-            or quote.get("quote_timestamp")
-        )
-        if nav_timestamp is None or nav_timestamp.date() != now.date():
-            return True
     timestamp = _parse_timestamp(
         quote.get("timestamp")
         or quote.get("quote_timestamp")
@@ -164,6 +169,36 @@ def _fund_quote_due(
     if timestamp.tzinfo is not None and now.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=None)
     return (now - timestamp).total_seconds() >= ttl_seconds
+
+
+def is_confirmed_fund_nav_quote(
+    quote: dict[str, Any] | None,
+    *,
+    target_date: str,
+) -> bool:
+    """Return whether one persisted fund fact is a usable confirmed NAV."""
+
+    if not isinstance(quote, dict):
+        return False
+    quote_source = (
+        str(quote.get("quote_source") or quote.get("source") or "").strip().lower()
+    )
+    if quote_source not in _CONFIRMED_FUND_NAV_SOURCES:
+        return False
+    if str(quote.get("nav_date") or "").strip() != target_date:
+        return False
+    try:
+        price = float(quote.get("price"))
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        math.isfinite(price)
+        and price > 0
+        and str(quote.get("provider_status") or "").strip().lower() == "live"
+        and str(quote.get("quote_status") or "").strip().lower()
+        in {"confirmed", "live"}
+        and quote.get("stale_reason") in {None, ""}
+    )
 
 
 def _source_chain(
@@ -227,7 +262,11 @@ def _normalize_snapshot(
         "quote_source": quote_source,
         "provider_name": provider_name,
         "provider_status": "live",
-        "quote_status": "live",
+        "quote_status": (
+            "confirmed"
+            if quote_source.strip().lower() in _CONFIRMED_FUND_NAV_SOURCES
+            else "live"
+        ),
         "captured_reason": "fund_nav_sync",
         "nav_date": nav_date,
         "display_name": snapshot.get("display_name")
@@ -270,11 +309,22 @@ def refresh_fund_nav_quotes(
     now: datetime | None = None,
     ttl_seconds: int = FUND_NAV_SYNC_TTL_SECONDS,
     confirmation_only: bool = False,
+    target_date: str | None = None,
     request_id: str | None = None,
     manual_explicit_trigger: bool = False,
 ) -> FundNavSyncResult:
     """Refresh open-end fund NAV/estimate quotes and materialize latest prices."""
     current = now or datetime.now()
+    confirmation_target_date = (
+        str(target_date).strip()
+        if target_date is not None
+        else get_shanghai_now(current).date().isoformat()
+    )
+    if confirmation_only:
+        try:
+            date.fromisoformat(confirmation_target_date)
+        except ValueError as exc:
+            raise ValueError("invalid confirmed fund NAV target date") from exc
     normalized_request_id, request_run_id = _request_run_id(request_id)
     result = FundNavSyncResult(request_id=normalized_request_id)
     fund_symbols = [
@@ -296,16 +346,31 @@ def refresh_fund_nav_quotes(
                 request_id=normalized_request_id or "",
                 expected_symbols=fund_symbols,
                 confirmation_only=confirmation_only,
+                expected_target_date=(
+                    confirmation_target_date if confirmation_only else None
+                ),
                 manual_explicit_trigger=manual_explicit_trigger,
             )
 
     due_symbols = []
     for symbol in fund_symbols:
+        current_quote = latest_quotes.get(symbol)
+        if confirmation_only:
+            persisted_reader = getattr(db, "get_latest_quote_sync", None)
+            try:
+                current_quote = (
+                    persisted_reader(symbol, asset_type="fund")
+                    if callable(persisted_reader)
+                    else None
+                )
+            except Exception:
+                current_quote = None
         if _fund_quote_due(
-            latest_quotes.get(symbol),
+            current_quote,
             now=current,
             ttl_seconds=ttl_seconds,
             confirmation_only=confirmation_only,
+            target_date=confirmation_target_date,
         ):
             due_symbols.append(symbol)
         else:
@@ -334,6 +399,9 @@ def refresh_fund_nav_quotes(
                     "request_scope_symbols": fund_symbols,
                     "requested_symbols": due_symbols,
                     "confirmation_only": confirmation_only,
+                    "target_date": (
+                        confirmation_target_date if confirmation_only else None
+                    ),
                     "manual_explicit_trigger": manual_explicit_trigger,
                 },
             )
@@ -345,6 +413,9 @@ def refresh_fund_nav_quotes(
                     request_id=normalized_request_id,
                     expected_symbols=fund_symbols,
                     confirmation_only=confirmation_only,
+                    expected_target_date=(
+                        confirmation_target_date if confirmation_only else None
+                    ),
                     manual_explicit_trigger=manual_explicit_trigger,
                 )
             raise
@@ -369,6 +440,9 @@ def refresh_fund_nav_quotes(
                     "failed_symbols": sorted(result.failed),
                     "failed_details": result.failed,
                     "confirmation_only": confirmation_only,
+                    "target_date": (
+                        confirmation_target_date if confirmation_only else None
+                    ),
                     "manual_explicit_trigger": manual_explicit_trigger,
                 },
             )
@@ -403,7 +477,8 @@ def refresh_fund_nav_quotes(
                     )
                     if (
                         confirmed_timestamp is None
-                        or confirmed_timestamp.date() != current.date()
+                        or confirmed_timestamp.date().isoformat()
+                        != confirmation_target_date
                     ):
                         raise ValueError(
                             "confirmed fund NAV is not published for the target date"
@@ -482,6 +557,9 @@ def refresh_fund_nav_quotes(
                     ),
                     "failed_details": result.failed,
                     "confirmation_only": confirmation_only,
+                    "target_date": (
+                        confirmation_target_date if confirmation_only else None
+                    ),
                     "manual_explicit_trigger": manual_explicit_trigger,
                 },
             )
@@ -513,3 +591,12 @@ def refresh_fund_nav_quotes(
         latest_quotes[symbol] = cached_quote
         result.quotes[symbol] = cached_quote
     return result
+
+
+__all__ = [
+    "FUND_NAV_SYNC_TTL_SECONDS",
+    "FundNavSyncIdempotencyConflict",
+    "FundNavSyncResult",
+    "is_confirmed_fund_nav_quote",
+    "refresh_fund_nav_quotes",
+]
