@@ -527,27 +527,19 @@ def test_canonical_replay_derives_exact_sell_posting_reversal() -> None:
     assert corrected.positions["600519"].commission_paid == Decimal("2")
 
 
-def test_existing_database_adds_explicit_correction_schema(tmp_path) -> None:
+def test_deleted_migration_ledger_with_newer_artifacts_fails_closed(tmp_path) -> None:
     db = AppDatabase(tmp_path / "existing-before-correction.db")
     db.init_sync()
     with sqlite3.connect(db.path) as conn:
-        # Model a pre-v0.3.0 database: legacy bootstrap remains compatible only
-        # before the migration ledger claims the frozen v1 schema contract.
+        # A migrated database with a deleted ledger is not a true legacy v1
+        # database and must not replay already-applied ALTER statements.
         conn.execute("DROP TABLE schema_migrations")
         conn.execute("DROP TABLE controlled_submission_ledger_corrections")
         conn.execute("ALTER TABLE ledger_entries DROP COLUMN correction_payload_json")
         conn.commit()
 
-    AppDatabase(db.path).init_sync()
-    with sqlite3.connect(db.path) as conn:
-        ledger_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(ledger_entries)")
-        }
-        correction_table = conn.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type = 'table'
-              AND name = 'controlled_submission_ledger_corrections'
-            """).fetchone()
-
-    assert "correction_payload_json" in ledger_columns
-    assert correction_table[0] == "controlled_submission_ledger_corrections"
+    with pytest.raises(
+        RuntimeError,
+        match="schema_migrations is missing while versioned schema artifacts exist",
+    ):
+        AppDatabase(db.path).init_sync()

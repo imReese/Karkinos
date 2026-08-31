@@ -18,7 +18,7 @@ from server.services.execution_gateway_verification import (
     EXECUTION_GATEWAY_VERIFICATION_EVENT_TYPE,
     EXECUTION_GATEWAY_VERIFICATION_MAX_AGE_SECONDS,
 )
-from server.services.per_order_confirmation import build_order_fingerprint
+from server.services.execution_identity import build_order_fingerprint
 
 CURRENT_PER_ORDER_DOSSIER_SCHEMA_VERSION = (
     "karkinos.current_per_order_confirmation_dossier.v1"

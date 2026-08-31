@@ -9,11 +9,11 @@ import {
 } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import type {
   ControlledOrderJourney,
   DailyStrategyOperatingConstraints,
-} from '../../operations/api';
+} from '../decision-feature-boundary';
 import type { DecisionQualityView, DecisionResponse } from '../api';
 import { DecisionCockpitPage } from './decision-cockpit-page';
 

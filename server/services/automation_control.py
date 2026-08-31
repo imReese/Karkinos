@@ -65,9 +65,9 @@ class AutomationControlService:
             "broker_submission_enabled": policy["broker_submission_enabled"],
             "allowed_execution_modes": policy["allowed_execution_modes"],
             "kill_switch_enabled": kill_switch_enabled,
-            "kill_switch_reason": getattr(kill_switch, "reason", "")
-            if kill_switch is not None
-            else "",
+            "kill_switch_reason": (
+                getattr(kill_switch, "reason", "") if kill_switch is not None else ""
+            ),
             "automation_ready": automation_ready,
             "next_action": next_action,
             "latest_runs": latest_runs,
@@ -82,9 +82,7 @@ class AutomationControlService:
     ) -> dict[str, Any]:
         finished_at = datetime.now().isoformat()
         effective_run_date = (
-            run_date
-            or paper_shadow_run.get("plan_date")
-            or date.today().isoformat()
+            run_date or paper_shadow_run.get("plan_date") or date.today().isoformat()
         )
         return self._db.upsert_automation_run_sync(
             {

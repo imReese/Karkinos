@@ -180,7 +180,7 @@ def test_automation_cockpit_route_projects_current_financial_preflight(
         return projected
 
     monkeypatch.setattr(
-        "server.routes.operations._current_decision_and_trading_plan",
+        "server.services.operations_projection._current_decision_and_trading_plan",
         read_current_plan,
     )
     monkeypatch.setattr(

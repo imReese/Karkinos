@@ -123,9 +123,11 @@ def create_router() -> APIRouter:
             ),
         ).summary()
         try:
-            from server.routes.operations import _current_decision_and_trading_plan
+            from server.services.operations_projection import (
+                current_decision_and_trading_plan,
+            )
 
-            decision_payload, trading_plan = await _current_decision_and_trading_plan(
+            decision_payload, trading_plan = await current_decision_and_trading_plan(
                 state
             )
             run_date = str(
@@ -176,13 +178,15 @@ def create_router() -> APIRouter:
         request: DailyPaperShadowRunRequest,
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.routes.operations import _current_decision_and_trading_plan
+        from server.services.operations_projection import (
+            current_decision_and_trading_plan,
+        )
         from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
         state = get_app_state()
         trading_plan = request.trading_plan
         if trading_plan is None:
-            _, trading_plan = await _current_decision_and_trading_plan(state)
+            _, trading_plan = await current_decision_and_trading_plan(state)
         generated_at = request.generated_at or trading_plan.get("generated_at")
         shadow_run = run_paper_shadow_from_trading_plan(
             db=state.db,
@@ -208,20 +212,24 @@ def create_router() -> APIRouter:
         """Run the canonical current-facts chain; caller supplies no trade facts."""
 
         from server.dependencies import get_app_state
-        from server.routes.decision import run_batch_pre_trade_risk_for_state
-        from server.routes.market import _refresh_one_quote
-        from server.routes.operations import _current_decision_and_trading_plan
         from server.services.daily_decision_evidence_automation import (
             build_daily_decision_evidence_automation_service,
+        )
+        from server.services.decision_application import (
+            run_batch_pre_trade_risk_for_state,
+        )
+        from server.services.market_refresh import refresh_one_quote
+        from server.services.operations_projection import (
+            current_decision_and_trading_plan,
         )
 
         del request
         state = get_app_state()
         return await build_daily_decision_evidence_automation_service(
             state,
-            plan_reader=_current_decision_and_trading_plan,
+            plan_reader=current_decision_and_trading_plan,
             risk_runner=run_batch_pre_trade_risk_for_state,
-            quote_refresher=_refresh_one_quote,
+            quote_refresher=refresh_one_quote,
         ).run_once()
 
     @r.get("/daily-candidate/trial")
@@ -260,15 +268,17 @@ def create_router() -> APIRouter:
         request: MarketSessionRunRequest,
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.routes.operations import _current_decision_and_trading_plan
         from server.services.market_session_automation import (
             MarketSessionAutomationService,
+        )
+        from server.services.operations_projection import (
+            current_decision_and_trading_plan,
         )
 
         state = get_app_state()
         trading_plan = request.trading_plan
         if trading_plan is None:
-            _, trading_plan = await _current_decision_and_trading_plan(state)
+            _, trading_plan = await current_decision_and_trading_plan(state)
         now = datetime.fromisoformat(request.now) if request.now else None
         return MarketSessionAutomationService(
             db=state.db,

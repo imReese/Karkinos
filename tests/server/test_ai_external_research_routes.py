@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
@@ -9,6 +11,10 @@ from fastapi.testclient import TestClient
 from server.ai_runtime.external_research import (
     EXTERNAL_BACKTEST_REPORT_CONFIRMATION,
     ExternalBacktestReportRejected,
+)
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderCallDeferred,
 )
 from server.ai_runtime.store import IdempotencyConflict
 from server.app import create_app
@@ -105,6 +111,28 @@ def test_external_report_route_returns_non_authoritative_boundary(monkeypatch):
     assert body["trade_plan_created"] is False
     assert body["authority_effect"] == "none"
     assert len(service.requests) == 1
+
+
+@pytest.mark.unit
+def test_external_report_route_returns_non_authorizing_provider_defer(monkeypatch):
+    decision = DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.evaluate(
+        datetime(2026, 8, 31, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    client = _client(
+        monkeypatch,
+        FixtureService(error=ProviderCallDeferred(decision)),
+    )
+
+    response = client.post(
+        "/api/ai/external-research/backtest-reports",
+        json=_payload(),
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "deferred"
+    assert response.json()["next_eligible_at"] == "2026-08-31T18:00:00+08:00"
+    assert response.json()["provider_call_performed"] is False
+    assert response.json()["authority_effect"] == "none"
 
 
 @pytest.mark.unit

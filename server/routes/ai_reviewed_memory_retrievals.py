@@ -2,30 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.ai_runtime.analysis_reviews import (
-    AnalysisReviewStore,
-    HumanAnalysisReviewService,
-)
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
-)
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.memory_retrieval import (
     HumanReviewedMemoryRetrievalRequest,
     HumanReviewedMemoryRetrievalService,
     ReviewedMemoryRetrievalRejected,
-    ReviewedMemoryRetrievalStore,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_research_task_analyses import (
-    build_human_fixture_analysis_service,
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_human_reviewed_memory_retrieval_service,
 )
 
 
@@ -101,37 +91,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_reviewed_memory_retrieval_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanReviewedMemoryRetrievalService:
-    """Build the explicit boundary without registering a provider or AI tool."""
-    db_path = _database_path(state.db)
-    analysis_service = build_human_fixture_analysis_service(
-        state,
-        initialize=initialize,
-    )
-    review_store = AnalysisReviewStore(db_path)
-    retrieval_store = ReviewedMemoryRetrievalStore(db_path)
-    if initialize:
-        review_store.init()
-        retrieval_store.init()
-    review_service = HumanAnalysisReviewService(
-        analysis_service=analysis_service,
-        review_store=review_store,
-        now=_utc_now,
-    )
-    return HumanReviewedMemoryRetrievalService(
-        review_service=review_service,
-        analysis_service=analysis_service,
-        ai_store=AiAuditStore(db_path),
-        evidence_repository=CanonicalEvidenceRepository(db_path),
-        retrieval_store=retrieval_store,
-        now=_utc_now,
-    )
-
-
 def _service(*, initialize: bool) -> HumanReviewedMemoryRetrievalService:
     from server.dependencies import get_app_state
 
@@ -142,17 +101,6 @@ def _service(*, initialize: bool) -> HumanReviewedMemoryRetrievalService:
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ReviewedMemoryRetrievalRejected("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

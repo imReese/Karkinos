@@ -43,11 +43,11 @@ authority, bypass risk, or call a broker directly.
 | AI-native Phase 1-1.18 + shadow research/outcome/quality bridge | Implemented | Provider-neutral, evidence-bound research, memory, Formula DSL/backtest/rolling-OOS/critique, owner-authorized after-close candidate automation with atomic capped call claims, recorded but daily-unbounded token usage, and human-only paper/shadow promotion, canonical contribution and post-decision review, a persisted-only human strategy-learning queue, and captured Decision Quality without production-strategy or trading authority; supervised daily candidates add a same-date Account Truth and prior-execution-closure bound candidate/`no_action` run, a verified-calendar 09:35-09:45 once-per-day background window, and a complete-history frozen strategy-and-fee epoch 20-day / 50-order human GO/NO-GO trial with no broker or capital authority |
 | v0.2.4 Daily Data Flywheel | Implemented | Materially continuous Account Truth history automatically carries reviewed account scope across daily state refresh and chronological append-only activity; matching new stock trades automatically revalidate reviewed fees without expanding the reviewed notional envelope. Current reconciliation/valuation/ledger gates remain mandatory, and strategy promotion, orders, and capital changes remain human-only |
 
-Account Truth and reconciliation remain mandatory safety gates, while v1.8 is the active product milestone after the explicitly authorized Phase 1.18 formula
-vertical. The read-only outcome, human strategy-learning, and Decision Quality
-bridges do not activate Phase 1.19; further AI and memory expansion remain
-deferred until controlled execution closes. Learning handoffs are copy-only,
-and Decision Quality measures process evidence, not returns or authority.
+SemVer `v0.3.2` is a broker-provider-free software release gated by successful
+Code CI and repository acceptance on the exact tag commit; it does not require
+real-adapter evidence. v1.8 remains separate, and its gates remain mandatory
+before any real-provider readiness claim. Read-only learning stays non-authorizing
+and does not activate Phase 1.19; further AI and memory expansion remains deferred.
 
 ## Active Milestone: v1.8 — Broker-Connected Controlled Pilot
 

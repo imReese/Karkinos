@@ -70,11 +70,11 @@ scoped hash。订单状态、累计成交/撤单数量、fill 合计、加权均
 preview 与显式记录：
 
 ```bash
-python scripts/import_broker_order_lifecycle.py \
+python scripts/broker/import_broker_order_lifecycle.py \
   --file /path/to/lifecycle.json \
   --db data/store/karkinos.db
 
-python scripts/import_broker_order_lifecycle.py \
+python scripts/broker/import_broker_order_lifecycle.py \
   --file /path/to/lifecycle.json \
   --db data/store/karkinos.db \
   --record \
@@ -110,11 +110,11 @@ mode 与 authorization 匹配一份已持久化的人工 acceptance，契约见
 本地显式运行：
 
 ```bash
-python scripts/ingest_broker_order_lifecycle_collector_batch.py \
+python scripts/broker/ingest_broker_order_lifecycle_collector_batch.py \
   --file /path/to/collector-batch.json \
   --db data/store/karkinos.db
 
-python scripts/ingest_broker_order_lifecycle_collector_batch.py \
+python scripts/broker/ingest_broker_order_lifecycle_collector_batch.py \
   --file /path/to/collector-batch.json \
   --db data/store/karkinos.db \
   --record \

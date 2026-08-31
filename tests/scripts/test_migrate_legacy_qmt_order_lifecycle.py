@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
-from scripts.migrate_legacy_qmt_order_lifecycle import main as migrate_main
+from scripts.broker.migrate_legacy_qmt_order_lifecycle import main as migrate_main
 
 
 def _legacy_payload() -> dict:

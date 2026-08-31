@@ -76,6 +76,20 @@ def _publish_complete_valuation(
             quote_source="deterministic_fixture",
             quote_status="confirmed",
         )
+        db.save_daily_close_snapshot_sync(
+            symbol="159915",
+            asset_class="stock",
+            trade_date="2026-07-01",
+            close_price=1.0,
+            source="deterministic_fixture",
+        )
+    db.save_daily_close_snapshot_sync(
+        symbol="510300",
+        asset_class="stock",
+        trade_date="2026-07-01",
+        close_price=10.0,
+        source="deterministic_fixture",
+    )
     db.upsert_latest_quote_sync(
         symbol="510300",
         asset_type="stock",
@@ -201,8 +215,7 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        decision_routes,
-        "_account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: {
             "gate_status": "pass",
             "data_freshness_status": "fresh",
@@ -211,8 +224,7 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
         },
     )
     monkeypatch.setattr(
-        decision_routes,
-        "resolve_strategy_order_generation_gate",
+        "server.services.decision_application.resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {
                 "status": "pass",

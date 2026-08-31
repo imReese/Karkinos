@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_session_budget_reservation as route_module
 from server.app import create_app
 from server.routes.controlled_session_budget_reservation import create_router
@@ -147,8 +148,9 @@ def test_route_service_wires_current_controlled_session_resolver(monkeypatch) ->
     envelope_service = SimpleNamespace(resolve_attestation=lambda value: {"id": value})
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.controlled_session_envelope._service",
-        lambda: envelope_service,
+        controlled_services,
+        "build_controlled_session_envelope_service",
+        lambda _: envelope_service,
     )
 
     service = route_module._service()

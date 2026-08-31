@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+import sqlite3
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -16,7 +17,11 @@ from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
 from server.db import AppDatabase
 from server.routes import trading as trading_routes
-from server.services.trading_controls import TradingControlState
+from server.services.trading_controls import (
+    AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    TradingControlState,
+)
 
 
 def _endpoint(path: str, method: str = "GET"):
@@ -133,6 +138,37 @@ def _seed_live_quote(
     )
 
 
+def _insert_legacy_manual_order(
+    db: AppDatabase,
+    *,
+    order_id: str,
+    timestamp: str,
+    intent_id: str,
+    risk_decision_id: str,
+) -> None:
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            """
+            INSERT INTO manual_orders (
+                order_id, timestamp, symbol, side, order_type, quantity, price,
+                intent_id, risk_decision_id, execution_mode, status, payload_json,
+                note, created_at, updated_at
+            ) VALUES (?, ?, '600519', 'buy', 'market', 100, 123.45,
+                      ?, ?, 'manual', 'pending_confirm', ?, '', ?, ?)
+            """,
+            (
+                order_id,
+                timestamp,
+                intent_id,
+                risk_decision_id,
+                json.dumps({"order_id": order_id}),
+                timestamp,
+                timestamp,
+            ),
+        )
+        conn.commit()
+
+
 def test_kill_switch_routes_read_and_update_state(monkeypatch) -> None:
     controls = TradingControlState()
     hub = SimpleNamespace(broadcast=lambda data: None)
@@ -158,6 +194,198 @@ def test_kill_switch_routes_read_and_update_state(monkeypatch) -> None:
     assert updated.reason == "operator stop"
 
 
+def test_automatic_trading_routes_toggle_without_restart_and_broadcast(
+    monkeypatch,
+) -> None:
+    controls = TradingControlState(
+        clock=lambda: datetime(2026, 8, 28, 9, 0, tzinfo=timezone.utc)
+    )
+    broadcasts: list[dict] = []
+    hub = SimpleNamespace(broadcast=broadcasts.append)
+    fake_state = SimpleNamespace(trading_controls=controls, hub=hub)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    get_endpoint = _endpoint("/api/trading/automatic-trading")
+    put_endpoint = _endpoint(
+        "/api/trading/automatic-trading",
+        method="PUT",
+    )
+
+    initial = asyncio.run(get_endpoint())
+    assert initial["status"] == "disabled"
+    assert initial["enabled"] is False
+    enabled = asyncio.run(
+        put_endpoint(
+            trading_routes.AutomaticTradingRequest(
+                enabled=True,
+                reason="operator-supervised window",
+                operator_id="operator-1",
+                expected_revision=0,
+                ttl_seconds=300,
+                acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+            )
+        )
+    )
+    assert enabled["enabled"] is True
+    assert enabled["revision"] == 1
+    assert asyncio.run(get_endpoint())["enabled"] is True
+
+    disabled = asyncio.run(
+        put_endpoint(
+            trading_routes.AutomaticTradingRequest(
+                enabled=False,
+                reason="operator stop",
+                operator_id="operator-1",
+                expected_revision=1,
+                acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+            )
+        )
+    )
+    assert disabled["enabled"] is False
+    assert disabled["revision"] == 2
+    assert [item["control"] for item in broadcasts] == [
+        "automatic_trading",
+        "automatic_trading",
+    ]
+    assert all(item["event_type"] == "TradingControlEvent" for item in broadcasts)
+
+
+def test_automatic_trading_route_rejects_bad_ttl_ack_and_stale_revision(
+    monkeypatch,
+) -> None:
+    controls = TradingControlState(
+        clock=lambda: datetime(2026, 8, 28, 9, 0, tzinfo=timezone.utc)
+    )
+    fake_state = SimpleNamespace(trading_controls=controls, hub=None)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    put_endpoint = _endpoint(
+        "/api/trading/automatic-trading",
+        method="PUT",
+    )
+
+    with pytest.raises(HTTPException) as bad_ttl:
+        asyncio.run(
+            put_endpoint(
+                trading_routes.AutomaticTradingRequest(
+                    enabled=True,
+                    reason="too short",
+                    operator_id="operator-1",
+                    expected_revision=0,
+                    ttl_seconds=59,
+                    acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+                )
+            )
+        )
+    assert bad_ttl.value.status_code == 400
+
+    with pytest.raises(HTTPException) as bad_ack:
+        asyncio.run(
+            put_endpoint(
+                trading_routes.AutomaticTradingRequest(
+                    enabled=False,
+                    reason="operator stop",
+                    operator_id="operator-1",
+                    expected_revision=0,
+                    acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+                )
+            )
+        )
+    assert bad_ack.value.status_code == 400
+
+    asyncio.run(
+        put_endpoint(
+            trading_routes.AutomaticTradingRequest(
+                enabled=True,
+                reason="bounded window",
+                operator_id="operator-1",
+                expected_revision=0,
+                ttl_seconds=60,
+                acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+            )
+        )
+    )
+    with pytest.raises(HTTPException) as stale:
+        asyncio.run(
+            put_endpoint(
+                trading_routes.AutomaticTradingRequest(
+                    enabled=False,
+                    reason="stale stop",
+                    operator_id="operator-2",
+                    expected_revision=0,
+                    acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+                )
+            )
+        )
+    assert stale.value.status_code == 409
+    assert stale.value.detail["current_revision"] == 1
+
+
+@pytest.mark.parametrize(
+    "raw_value",
+    [
+        "{malformed-json",
+        "[]",
+        '{"revision":"invalid"}',
+    ],
+    ids=["malformed-json", "non-object", "invalid-revision"],
+)
+def test_automatic_trading_route_cannot_overwrite_present_invalid_control(
+    monkeypatch,
+    tmp_path,
+    raw_value: str,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            """
+            INSERT INTO runtime_controls (key, value_json, updated_at)
+            VALUES ('automatic_trading', ?, '2026-08-28T09:00:00+00:00')
+            """,
+            (raw_value,),
+        )
+        conn.commit()
+
+    broadcasts: list[dict] = []
+    controls = TradingControlState(
+        db=db,
+        clock=lambda: datetime(2026, 8, 28, 9, 1, tzinfo=timezone.utc),
+    )
+    fake_state = SimpleNamespace(
+        trading_controls=controls,
+        hub=SimpleNamespace(broadcast=broadcasts.append),
+    )
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    get_endpoint = _endpoint("/api/trading/automatic-trading")
+    put_endpoint = _endpoint("/api/trading/automatic-trading", method="PUT")
+
+    assert asyncio.run(get_endpoint())["status"] == "unavailable"
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(
+            put_endpoint(
+                trading_routes.AutomaticTradingRequest(
+                    enabled=True,
+                    reason="must not replace damaged evidence",
+                    operator_id="operator-1",
+                    expected_revision=0,
+                    ttl_seconds=300,
+                    acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+                )
+            )
+        )
+    assert rejected.value.status_code == 503
+
+    with sqlite3.connect(db.path) as conn:
+        stored = conn.execute(
+            "SELECT value_json FROM runtime_controls WHERE key = 'automatic_trading'"
+        ).fetchone()[0]
+        event_count = conn.execute(
+            "SELECT COUNT(*) FROM event_log WHERE source = 'trading_controls'"
+        ).fetchone()[0]
+    assert stored == raw_value
+    assert event_count == 0
+    assert broadcasts == []
+
+
 def test_manual_order_confirmation_blocks_unlinked_legacy_order_but_rejects_safely(
     monkeypatch,
     tmp_path,
@@ -180,19 +408,12 @@ def test_manual_order_confirmation_blocks_unlinked_legacy_order_but_rejects_safe
         source_ref="ORD-CONFIRM",
         payload={"order_id": "ORD-CONFIRM"},
     )
-    db.save_manual_order_sync(
+    _insert_legacy_manual_order(
+        db,
         order_id="ORD-CONFIRM",
         timestamp="2026-04-18T14:50:00",
-        symbol="600519",
-        side="buy",
-        order_type="market",
-        quantity=100.0,
-        price=123.45,
         intent_id="INTENT-1",
         risk_decision_id="RISK-1",
-        execution_mode="manual",
-        status="pending_confirm",
-        payload={"order_id": "ORD-CONFIRM"},
     )
     db.record_order_sync(
         order_id="ORD-REJECT",
@@ -210,19 +431,12 @@ def test_manual_order_confirmation_blocks_unlinked_legacy_order_but_rejects_safe
         source_ref="ORD-REJECT",
         payload={"order_id": "ORD-REJECT"},
     )
-    db.save_manual_order_sync(
+    _insert_legacy_manual_order(
+        db,
         order_id="ORD-REJECT",
         timestamp="2026-04-18T14:51:00",
-        symbol="600519",
-        side="buy",
-        order_type="market",
-        quantity=100.0,
-        price=123.45,
         intent_id="INTENT-2",
         risk_decision_id="RISK-2",
-        execution_mode="manual",
-        status="pending_confirm",
-        payload={"order_id": "ORD-REJECT"},
     )
     fake_state = SimpleNamespace(
         db=db,
@@ -343,6 +557,26 @@ def test_create_manual_order_writes_only_after_current_gate_passes(
     assert action["id"] == action_id
     assert broadcasts[-1]["event_type"] == "ManualOrderPrepared"
 
+    replayed = asyncio.run(
+        endpoint(
+            action_id,
+            trading_routes.ActionManualOrderRequest(quantity=1000),
+        )
+    )
+    assert replayed["order_id"] == created["order_id"]
+    assert len(db.list_manual_orders_sync()) == 1
+    assert len(db.list_orders_sync()) == 1
+
+    with pytest.raises(HTTPException) as conflict:
+        asyncio.run(
+            endpoint(
+                action_id,
+                trading_routes.ActionManualOrderRequest(quantity=2000),
+            )
+        )
+    assert conflict.value.status_code == 409
+    assert "payload fingerprint changed" in conflict.value.detail
+
 
 @pytest.mark.parametrize(
     ("market_status", "kill_switch_enabled", "expected_blocker"),
@@ -369,18 +603,18 @@ def test_current_manual_ticket_gate_rechecks_market_data_and_kill_switch(
         "manual_confirmation_status": "ready_for_manual_confirmation",
     }
     monkeypatch.setattr(
-        "server.routes.decision._account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
-        "server.routes.decision._data_freshness_evidence",
+        "server.services.decision_application._data_freshness_evidence",
         lambda action, db, *, quotes, allow_direct_quote_fallback: {
             **_current_market_fixture(status=market_status),
             "reason": "fixture_market_status",
         },
     )
     monkeypatch.setattr(
-        "server.routes.decision._paper_shadow_evidence",
+        "server.services.decision_application._paper_shadow_evidence",
         lambda action, manual_status, *, db: {
             "status": "pass",
             "has_evidence": True,
@@ -416,17 +650,17 @@ def test_current_manual_ticket_gate_requires_trading_control_state(monkeypatch) 
         "manual_confirmation_status": "ready_for_manual_confirmation",
     }
     monkeypatch.setattr(
-        "server.routes.decision._account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
-        "server.routes.decision._data_freshness_evidence",
+        "server.services.decision_application._data_freshness_evidence",
         lambda action, db, *, quotes, allow_direct_quote_fallback: (
             _current_market_fixture()
         ),
     )
     monkeypatch.setattr(
-        "server.routes.decision._paper_shadow_evidence",
+        "server.services.decision_application._paper_shadow_evidence",
         lambda action, manual_status, *, db: {
             "status": "pass",
             "has_evidence": True,
@@ -466,17 +700,17 @@ def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
     }
     state = SimpleNamespace(db=object(), trading_controls=TradingControlState())
     monkeypatch.setattr(
-        "server.routes.decision._account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
-        "server.routes.decision._data_freshness_evidence",
+        "server.services.decision_application._data_freshness_evidence",
         lambda action, db, *, quotes, allow_direct_quote_fallback: (
             _current_market_fixture()
         ),
     )
     monkeypatch.setattr(
-        "server.routes.decision._paper_shadow_evidence",
+        "server.services.decision_application._paper_shadow_evidence",
         lambda action, manual_status, *, db: {
             "status": "pass",
             "has_evidence": True,
@@ -748,15 +982,15 @@ def test_daily_shadow_route_delegates_to_canonical_decision_plan_and_service(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.decision._decision_portfolio_context",
+        "server.services.decision_application._decision_portfolio_context",
         lambda state: {"source": "persisted_account_truth"},
     )
     monkeypatch.setattr(
-        "server.routes.decision._today_decision_payload",
+        "server.services.decision_application._today_decision_payload",
         fake_today_decision,
     )
     monkeypatch.setattr(
-        "server.routes.decision._trading_plan_positions",
+        "server.services.decision_application._trading_plan_positions",
         lambda state, *, portfolio_context: {"600519": {"quantity": 100}},
     )
     monkeypatch.setattr(

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../app/preferences';
+import { PreferencesProvider } from '../../app/providers/preferences-provider';
 import { AllocationGroupsCard } from './components/allocation-groups-card';
 import { WorkspaceToolbar } from './components/workspace-toolbar';
 

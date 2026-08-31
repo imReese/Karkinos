@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 _DEFAULT_REALTIME_TIMEOUT_SECONDS = 2.0
 
 
+def _clean_stock_master_text(value: object) -> str | None:
+    if value is None or pd.isna(value):
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 class TushareSource(DataSource):
     """Tushare 数据源适配器。
 
@@ -130,9 +137,40 @@ class TushareSource(DataSource):
         return None
 
     def list_symbols(self) -> list[Symbol]:
+        return [
+            Symbol(str(item["symbol"])) for item in self.list_symbol_metadata() or []
+        ]
+
+    def list_symbol_metadata(self) -> list[dict[str, object]]:
+        """Return codes and names from the same TuShare stock-master response."""
         pro = self._get_pro()
         df = pro.stock_basic(exchange="", list_status="L")
-        return [Symbol(str(code)) for code in df["ts_code"].str[:6].tolist()]
+        rows: list[dict[str, object]] = []
+        for _, row in df.iterrows():
+            provider_symbol = _clean_stock_master_text(row.get("ts_code"))
+            if not provider_symbol:
+                continue
+            symbol = provider_symbol.split(".", maxsplit=1)[0]
+            exchange = _clean_stock_master_text(row.get("exchange"))
+            if not exchange and "." in provider_symbol:
+                exchange = {
+                    "SH": "SSE",
+                    "SZ": "SZSE",
+                    "BJ": "BSE",
+                }.get(provider_symbol.rsplit(".", maxsplit=1)[-1].upper())
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "asset_class": AssetClass.STOCK.value,
+                    "display_name": _clean_stock_master_text(row.get("name")),
+                    "provider_symbol": provider_symbol,
+                    "exchange": exchange,
+                    "provider_name": "tushare",
+                    "market": "cn",
+                    "source": "stock_master",
+                }
+            )
+        return rows
 
     def _fetch_realtime_quote_with_timeout(self, ts_code: str) -> dict | None:
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tushare-rtq")

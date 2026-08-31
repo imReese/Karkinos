@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -30,6 +30,7 @@ from server.services.daily_decision_evidence_automation import (
 )
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
+from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 STRATEGY_ADVANCEMENT_REF = "strategy_advancement:" + "a" * 64
 REVIEWED_FEE_SCHEDULE_REF = "reviewed_fee_schedule:" + "b" * 64
@@ -198,6 +199,22 @@ def _trading_days(count: int = 20) -> list[str]:
 
 
 def _seed_verified_calendar(db: AppDatabase, days: list[str]) -> None:
+    trading_dates = set(days)
+    current = date(2026, 1, 1)
+    calendar_days = []
+    while current.year == 2026:
+        market_date = current.isoformat()
+        is_trading_day = market_date in trading_dates
+        calendar_days.append(
+            {
+                "date": market_date,
+                "is_trading_day": is_trading_day,
+                "day_type": "trading_day" if is_trading_day else "closed",
+                "reason_code": "trading_day" if is_trading_day else "closed",
+            }
+        )
+        current += timedelta(days=1)
+    source_fingerprint = "a" * 64
     db.upsert_market_calendar_snapshot_sync(
         {
             "exchange": "SSE",
@@ -205,20 +222,20 @@ def _seed_verified_calendar(db: AppDatabase, days: list[str]) -> None:
             "provider": "fixture",
             "schema_version": "karkinos.market_calendar.v1",
             "status": "available",
-            "trading_day_count": len(days),
-            "closed_day_count": 365 - len(days),
-            "source_fingerprint": "calendar-fingerprint",
-            "official_verification_status": "verified",
-            "days": [
-                {
-                    "date": day,
-                    "is_trading_day": True,
-                    "day_type": "trading_day",
-                    "reason_code": "trading_day",
-                }
-                for day in days
-            ],
+            "trading_day_count": len(trading_dates),
+            "closed_day_count": len(calendar_days) - len(trading_dates),
+            "source_fingerprint": source_fingerprint,
+            "days": calendar_days,
         }
+    )
+    db.update_market_calendar_verification_sync(
+        exchange="SSE",
+        year=2026,
+        source_fingerprint=source_fingerprint,
+        verification_status="verified",
+        official_source_url="https://example.test/calendar",
+        official_source_fingerprint="b" * 64,
+        verified_by="fixture",
     )
 
 
@@ -244,7 +261,8 @@ def _seed_qualifying_day(
     }
     paper_fingerprint = f"paper-{day}-{suffix}"
     paper_run_id = f"shadow:{day}:{suffix}"
-    db.upsert_paper_shadow_run_sync(
+    insert_paper_shadow_evidence(
+        db,
         run_id=paper_run_id,
         plan_date=day,
         input_fingerprint=paper_fingerprint,

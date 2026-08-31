@@ -60,27 +60,24 @@ def build_strategy_signal_preview(
         strategy.on_data(bar)
         event_bus.drain()
 
-    outputs = (
-        [
-            _signal_to_audit_record(
-                signal=signal,
-                run_id=preview_run_id,
-                sequence=index,
-                bar_count=len(bar_events),
-                dataset_snapshot=snapshot,
-            )
-            for index, signal in enumerate(signals, start=1)
-        ]
-        or [
-            _no_action_record(
-                strategy_id=strategy_id,
-                symbol=symbol,
-                run_id=preview_run_id,
-                bars=bar_events,
-                dataset_snapshot=snapshot,
-            )
-        ]
-    )
+    outputs = [
+        _signal_to_audit_record(
+            signal=signal,
+            run_id=preview_run_id,
+            sequence=index,
+            bar_count=len(bar_events),
+            dataset_snapshot=snapshot,
+        )
+        for index, signal in enumerate(signals, start=1)
+    ] or [
+        _no_action_record(
+            strategy_id=strategy_id,
+            symbol=symbol,
+            run_id=preview_run_id,
+            bars=bar_events,
+            dataset_snapshot=snapshot,
+        )
+    ]
 
     return {
         "schema_version": _SCHEMA_VERSION,
@@ -250,8 +247,7 @@ def _candidate_review_gates(dataset_snapshot: dict[str, Any]) -> list[dict[str, 
             "status": "waiting",
             "severity": "warning",
             "summary": (
-                "Paper/shadow preview waits for data, account-truth, and risk "
-                "gates."
+                "Paper/shadow preview waits for data, account-truth, and risk " "gates."
             ),
             "required_action": "run_paper_shadow_preview_after_gates",
             "evidence_ref": None,

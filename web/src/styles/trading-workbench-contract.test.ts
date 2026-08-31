@@ -4,21 +4,43 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const TRADING = readFileSync(
-  resolve(SRC_ROOT, 'features/trading/components/trading-page.tsx'),
-  'utf8',
+const source = (path: string) => readFileSync(resolve(SRC_ROOT, path), 'utf8');
+const TRADING_WORKSPACE = source(
+  'features/trading/components/trading-workspace.tsx',
+);
+const TRADING_REVIEW_QUEUE = source(
+  'features/trading/components/trading-review-queue.tsx',
+);
+const TRADING_HISTORY = source(
+  'features/trading/components/trading-history.tsx',
+);
+const TRADING_SAFETY_RAIL = source(
+  'features/trading/components/trading-safety-rail.tsx',
+);
+const EXECUTION_AUDIT = source(
+  'features/trading/components/execution-audit-panel.tsx',
+);
+const ORDER_QUEUE = source('features/trading/components/order-queue.tsx');
+const BROKER_READINESS = source(
+  'features/trading/components/broker-readiness-panel.tsx',
 );
 const KILL_SWITCH = readFileSync(
   resolve(SRC_ROOT, 'features/trading/components/kill-switch-panel.tsx'),
   'utf8',
 );
+const AUTOMATIC_TRADING = readFileSync(
+  resolve(SRC_ROOT, 'features/trading/components/automatic-trading-panel.tsx'),
+  'utf8',
+);
 
 describe('trading workbench contract', () => {
   it('keeps the default review path flat and mobile filters task-first', () => {
-    const tradingPage = TRADING.slice(
-      TRADING.indexOf('export function TradingPage'),
-      TRADING.indexOf('function BrokerAdapterReadinessPanel'),
-    );
+    const tradingPage = [
+      TRADING_WORKSPACE,
+      TRADING_REVIEW_QUEUE,
+      TRADING_SAFETY_RAIL,
+      TRADING_HISTORY,
+    ].join('\n');
 
     expect(tradingPage).toContain('data-testid="trading-secondary-filters"');
     expect(tradingPage).toContain('data-testid="trading-review-posture"');
@@ -42,11 +64,8 @@ describe('trading workbench contract', () => {
   });
 
   it('isolates manual-order and paper-shadow mutations in controlled zones', () => {
-    const executionAudit = TRADING.slice(
-      TRADING.indexOf('function ExecutionAuditPanel'),
-      TRADING.indexOf('function manualTicketFormFromResult'),
-    );
-    const orderQueue = TRADING.slice(TRADING.indexOf('function OrderQueue'));
+    const executionAudit = EXECUTION_AUDIT;
+    const orderQueue = ORDER_QUEUE;
 
     expect(executionAudit).toContain('<ControlledActionZone');
     expect(executionAudit).toContain(
@@ -89,14 +108,29 @@ describe('trading workbench contract', () => {
     expect(KILL_SWITCH).not.toContain('var(--app-success-text)');
   });
 
-  it('presents broker adapter and soak readiness as flat, read-only evidence', () => {
-    const brokerReadiness = TRADING.slice(
-      TRADING.indexOf('function BrokerAdapterReadinessPanel'),
-      TRADING.indexOf('function selectSoakPromotionConnector'),
+  it('keeps the bounded automatic gate distinct from and beside the kill switch', () => {
+    expect(TRADING_SAFETY_RAIL).toContain('<AutomaticTradingPanel />');
+    expect(TRADING_SAFETY_RAIL).toContain('<KillSwitchPanel />');
+    expect(AUTOMATIC_TRADING).toContain(
+      'data-testid="automatic-trading-panel"',
     );
-    const readinessMetric = TRADING.slice(
-      TRADING.indexOf('function BrokerReadinessMetric'),
-      TRADING.indexOf('function brokerAdapterReadinessCopy'),
+    expect(AUTOMATIC_TRADING).toContain('<ControlledActionZone');
+    expect(AUTOMATIC_TRADING).toContain('labels.noRestart');
+    expect(AUTOMATIC_TRADING).toContain(
+      'enable_bounded_automatic_trading_gate_without_capital_authority',
+    );
+    expect(AUTOMATIC_TRADING).not.toContain('KillSwitch');
+    expect(AUTOMATIC_TRADING).not.toMatch(/rounded-(?:2xl|3xl)/);
+  });
+
+  it('presents broker adapter and soak readiness as flat, read-only evidence', () => {
+    const brokerReadiness = BROKER_READINESS.slice(
+      BROKER_READINESS.indexOf('export function BrokerAdapterReadinessPanel'),
+      BROKER_READINESS.indexOf('function selectSoakPromotionConnector'),
+    );
+    const readinessMetric = BROKER_READINESS.slice(
+      BROKER_READINESS.indexOf('function BrokerReadinessMetric'),
+      BROKER_READINESS.indexOf('function brokerAdapterReadinessCopy'),
     );
 
     expect(brokerReadiness).toContain('app-workbench-section');

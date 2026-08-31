@@ -1,11 +1,11 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   EvidenceState,
   MetricStrip,
   type MetricStripItem,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import { formatPercent } from '../../../shared/format';
-import type { PortfolioSnapshot } from '../../portfolio/api';
+import type { PortfolioSnapshot } from '../account-feature-boundary';
 
 function groupWeight(snapshot: PortfolioSnapshot, assetClass: string) {
   return (

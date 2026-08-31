@@ -1,4 +1,13 @@
+// @ts-nocheck -- Node built-ins are used only by this deterministic source audit.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { appFeatureChunk } from './chunk-config';
+
+const viteConfigSource = readFileSync(
+  resolve(process.cwd(), 'vite.config.ts'),
+  'utf8',
+);
 
 describe('appFeatureChunk', () => {
   it('splits growing workspace features by domain-sized chunks', () => {
@@ -43,10 +52,28 @@ describe('appFeatureChunk', () => {
     ).toBe('feature-trading');
   });
 
+  it('keeps application-wide feature copy out of lazy workspace chunks', () => {
+    expect(appFeatureChunk('/repo/web/src/features/activity/copy.ts')).toBe(
+      undefined,
+    );
+    expect(appFeatureChunk('/repo/web/src/features/portfolio/copy.zh.ts')).toBe(
+      undefined,
+    );
+    expect(
+      appFeatureChunk('/repo/web/src/features/backtest/copy-details.ts'),
+    ).toBe(undefined);
+  });
+
   it('leaves vendor and shared app modules to the remaining chunk rules', () => {
     expect(appFeatureChunk('/repo/web/node_modules/react/index.js')).toBe(
       undefined,
     );
     expect(appFeatureChunk('/repo/web/src/app/router.tsx')).toBe(undefined);
+  });
+
+  it('does not recursively pull workspace dependencies into the public entry', () => {
+    expect(viteConfigSource).toContain('codeSplitting');
+    expect(viteConfigSource).toContain('includeDependenciesRecursively: false');
+    expect(viteConfigSource).not.toContain('manualChunks');
   });
 });

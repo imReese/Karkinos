@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -15,11 +13,10 @@ from server.ai_runtime.external_reviewed_memory import (
     ExternalReviewedMemoryPromotionRequest,
     ExternalReviewedMemoryPromotionService,
     ExternalReviewedMemoryRevocationRequest,
-    ExternalReviewedMemoryStore,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_external_analysis_reviews import (
-    build_human_external_analysis_review_service,
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_external_reviewed_memory_promotion_service,
 )
 
 
@@ -49,14 +46,6 @@ class ExternalReviewedMemoryRevocationPayload(BaseModel):
 
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
-
-    # Keep the versioned Phase 1.13 retrieval contract at the reviewed-memory
-    # boundary without changing the legacy retrieval v1 service or app wiring.
-    from server.routes.ai_external_reviewed_memory_retrievals import (
-        create_router as create_external_reviewed_memory_retrieval_router,
-    )
-
-    router.include_router(create_external_reviewed_memory_retrieval_router())
 
     @router.post("/api/ai/external-analysis-reviews/{review_id}/memory-promotions")
     def promote_external_reviewed_memory(
@@ -142,28 +131,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_external_reviewed_memory_promotion_service(
-    state,
-    *,
-    initialize: bool,
-) -> ExternalReviewedMemoryPromotionService:
-    """Build the local-only promotion edge without loading model credentials."""
-    db_path = _database_path(state.db)
-    review_service = build_human_external_analysis_review_service(
-        state,
-        initialize=initialize,
-    )
-    promotion_store = ExternalReviewedMemoryStore(db_path)
-    if initialize:
-        promotion_store.init()
-    return ExternalReviewedMemoryPromotionService(
-        review_service=review_service,
-        ai_store=AiAuditStore(db_path),
-        promotion_store=promotion_store,
-        now=_utc_now,
-    )
-
-
 def _service(*, initialize: bool) -> ExternalReviewedMemoryPromotionService:
     from server.dependencies import get_app_state
 
@@ -174,17 +141,6 @@ def _service(*, initialize: bool) -> ExternalReviewedMemoryPromotionService:
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ExternalReviewedMemoryPromotionRejected("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

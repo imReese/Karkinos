@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-from datetime import datetime, timedelta
 from typing import Any
 
 from server.services.ai_shadow_research_automation import (
@@ -13,13 +10,72 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
 )
+from server.services.daily_candidate_production_readiness_evidence import (
+    CANONICAL_EVIDENCE_AUTHORITY as _CANONICAL_EVIDENCE_AUTHORITY,
+)
+from server.services.daily_candidate_production_readiness_evidence import (
+    OPERATOR_EVIDENCE_CONTRACT_VERSION as _OPERATOR_EVIDENCE_CONTRACT_VERSION,
+)
+from server.services.daily_candidate_production_readiness_evidence import (
+    execution_evidence_contract_blockers as _execution_evidence_contract_blockers,
+)
+from server.services.daily_candidate_production_readiness_evidence import (
+    operator_checklist_contract_blockers as _operator_checklist_contract_blockers,
+)
+from server.services.daily_candidate_production_readiness_evidence import (
+    project_execution_evidence as _project_execution_evidence,
+)
+from server.services.daily_candidate_production_readiness_evidence import (
+    project_next_reviewed_window as _project_next_reviewed_window,
+)
+from server.services.daily_candidate_production_readiness_evidence import (
+    project_operator_checklist as _project_operator_checklist,
+)
+from server.services.daily_candidate_production_readiness_evidence import (
+    summarize_operator_blockers as _summarize_operator_blockers,
+)
+from server.services.daily_candidate_production_readiness_evidence import (
+    unavailable_next_reviewed_window_projection as _unavailable_next_reviewed_window_projection,
+)
+from server.services.daily_candidate_readiness_support import (
+    fingerprint as _fingerprint,
+)
+from server.services.daily_candidate_readiness_support import (
+    is_nonnegative_int as _is_nonnegative_int,
+)
+from server.services.daily_candidate_readiness_support import (
+    is_safe_code as _is_safe_code,
+)
+from server.services.daily_candidate_readiness_support import (
+    is_safe_code_list as _is_safe_code_list,
+)
+from server.services.daily_candidate_readiness_support import is_sha256 as _is_sha256
+from server.services.daily_candidate_readiness_support import mapping as _mapping
+from server.services.daily_candidate_readiness_support import (
+    matches_fingerprint as _matches_fingerprint,
+)
+from server.services.daily_candidate_readiness_support import (
+    non_authority_boundary_blockers as _non_authority_boundary_blockers,
+)
+from server.services.daily_candidate_readiness_support import (
+    nonnegative_int as _nonnegative_int,
+)
+from server.services.daily_candidate_readiness_support import (
+    research_policy_blockers as _research_policy_blockers,
+)
+from server.services.daily_candidate_readiness_support import safe_code as _safe_code
+from server.services.daily_candidate_readiness_support import (
+    safe_fingerprint as _safe_fingerprint,
+)
+from server.services.daily_candidate_readiness_support import (
+    schema_blockers as _schema_blockers,
+)
+from server.services.daily_candidate_readiness_support import strings as _strings
+from server.services.daily_candidate_readiness_support import unique as _unique
 
 DAILY_CANDIDATE_PRODUCTION_READINESS_SCHEMA_VERSION = (
     "karkinos.daily_candidate_production_readiness.v2"
 )
-
-_OPERATOR_EVIDENCE_CONTRACT_VERSION = "karkinos.daily_candidate_operator_evidence.v1"
-_CANONICAL_EVIDENCE_AUTHORITY = "canonical_persisted_evidence_only"
 
 _EXPECTED_SCHEMAS = {
     "cockpit": "karkinos.automation_cockpit.v4",
@@ -27,7 +83,7 @@ _EXPECTED_SCHEMAS = {
     "runtime": "karkinos.daily_candidate_runtime_status.v1",
     "trial": "karkinos.daily_candidate_trial.v2",
     "research": "karkinos.ai.shadow_research_automation.v1",
-    "research_policy": "karkinos.ai.shadow_research_policy.v2",
+    "research_policy": "karkinos.ai.shadow_research_policy.v4",
 }
 _NON_FATAL_SCHEDULE_REASONS = {
     "daily_candidate_attempt_already_recorded",
@@ -51,6 +107,7 @@ def project_daily_candidate_production_readiness(
     policy = _mapping(research_status.get("policy"))
 
     source_contract_blockers = _schema_blockers(
+        _EXPECTED_SCHEMAS,
         cockpit=cockpit,
         preflight=preflight,
         runtime=runtime,
@@ -123,7 +180,13 @@ def project_daily_candidate_production_readiness(
     else:
         daily_operation_status = "standing_by_for_reviewed_window"
 
-    research_blockers = _research_policy_blockers(policy)
+    research_blockers = _research_policy_blockers(
+        policy,
+        max_candidates=SHADOW_RESEARCH_MAX_CANDIDATES,
+        max_provider_calls=SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
+        unbounded_token_budget_mode=SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
+        policy_confirmation=SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    )
     research_cycle_status = (
         "ready_for_five_sequential_iterations"
         if not research_blockers and not source_contract_blockers
@@ -404,521 +467,3 @@ def unavailable_daily_candidate_production_readiness(
         ],
     }
     return {**core, "readiness_fingerprint": _fingerprint(core)}
-
-
-def _schema_blockers(**payloads: dict[str, Any]) -> list[str]:
-    blockers = []
-    for name, expected in _EXPECTED_SCHEMAS.items():
-        if payloads[name].get("schema_version") != expected:
-            blockers.append(f"{name}_contract_invalid")
-    return blockers
-
-
-def _execution_evidence_contract_blockers(value: dict[str, Any]) -> list[str]:
-    expected_schema = "karkinos.daily_candidate_execution_evidence_summary.v1"
-    core = dict(value)
-    evidence_fingerprint = core.pop("evidence_fingerprint", None)
-    expected_core_fields = {
-        "schema_version",
-        "status",
-        "current_execution_closure_fingerprint",
-        "population_scope",
-        "production_order_count",
-        "clear_order_count",
-        "reconciled_actual_order_count",
-        "reconciled_no_fill_order_count",
-        "comparison_coverage_complete",
-        "blockers",
-        "actual_orders_attributed_to_trial",
-        "actual_orders_count_toward_simulated_trial_threshold",
-        "persisted_evidence_only",
-        "provider_contact_performed",
-        "manual_review_required",
-        "authorizes_execution",
-        "does_not_submit_broker_order",
-        "does_not_mutate_oms",
-        "does_not_mutate_production_ledger",
-        "does_not_change_capital_authority",
-    }
-    integer_fields = (
-        "production_order_count",
-        "clear_order_count",
-        "reconciled_actual_order_count",
-        "reconciled_no_fill_order_count",
-    )
-    if (
-        set(core) != expected_core_fields
-        or core.get("schema_version") != expected_schema
-        or core.get("status") not in {"blocked", "not_required", "pass"}
-        or not _matches_fingerprint(core, evidence_fingerprint)
-        or core.get("population_scope") != "all_current_non_paper_shadow_oms_orders"
-        or any(not _is_nonnegative_int(core.get(field)) for field in integer_fields)
-        or not isinstance(core.get("comparison_coverage_complete"), bool)
-        or not isinstance(core.get("blockers"), list)
-        or not all(isinstance(item, str) and item for item in core.get("blockers", []))
-        or core.get("actual_orders_attributed_to_trial") is not False
-        or core.get("actual_orders_count_toward_simulated_trial_threshold") is not False
-        or core.get("persisted_evidence_only") is not True
-        or core.get("provider_contact_performed") is not False
-        or not isinstance(core.get("manual_review_required"), bool)
-        or core.get("authorizes_execution") is not False
-        or core.get("does_not_submit_broker_order") is not True
-        or core.get("does_not_mutate_oms") is not True
-        or core.get("does_not_mutate_production_ledger") is not True
-        or core.get("does_not_change_capital_authority") is not True
-    ):
-        return ["trial_current_execution_evidence_contract_invalid"]
-    production_count = core["production_order_count"]
-    clear_count = core["clear_order_count"]
-    accounted_count = (
-        core["reconciled_actual_order_count"] + core["reconciled_no_fill_order_count"]
-    )
-    if clear_count > production_count or accounted_count > clear_count:
-        return ["trial_current_execution_evidence_contract_invalid"]
-    if core["comparison_coverage_complete"] is True and (
-        core["status"] not in {"not_required", "pass"}
-        or core["blockers"]
-        or not _is_sha256(core.get("current_execution_closure_fingerprint"))
-        or production_count != clear_count
-        or clear_count != accounted_count
-        or core["manual_review_required"] is not False
-    ):
-        return ["trial_current_execution_evidence_contract_invalid"]
-    if core["comparison_coverage_complete"] is False and (
-        core["status"] != "blocked"
-        or core["manual_review_required"] is not True
-        or not core["blockers"]
-    ):
-        return ["trial_current_execution_evidence_contract_invalid"]
-    if core["status"] == "not_required" and production_count != 0:
-        return ["trial_current_execution_evidence_contract_invalid"]
-    if core["status"] == "pass" and production_count == 0:
-        return ["trial_current_execution_evidence_contract_invalid"]
-    return []
-
-
-def _project_execution_evidence(value: dict[str, Any]) -> dict[str, Any]:
-    if _execution_evidence_contract_blockers(value):
-        return {
-            "schema_version": (
-                "karkinos.daily_candidate_execution_evidence_summary.v1"
-            ),
-            "status": "blocked",
-            "current_execution_closure_fingerprint": None,
-            "population_scope": "all_current_non_paper_shadow_oms_orders",
-            "production_order_count": 0,
-            "clear_order_count": 0,
-            "reconciled_actual_order_count": 0,
-            "reconciled_no_fill_order_count": 0,
-            "comparison_coverage_complete": False,
-            "blockers": ["trial_current_execution_evidence_contract_invalid"],
-            "actual_orders_attributed_to_trial": False,
-            "actual_orders_count_toward_simulated_trial_threshold": False,
-            "persisted_evidence_only": True,
-            "provider_contact_performed": False,
-            "manual_review_required": True,
-            "authorizes_execution": False,
-            "does_not_submit_broker_order": True,
-            "does_not_mutate_oms": True,
-            "does_not_mutate_production_ledger": True,
-            "does_not_change_capital_authority": True,
-            "evidence_fingerprint": None,
-        }
-    return {
-        key: value.get(key)
-        for key in (
-            "schema_version",
-            "status",
-            "current_execution_closure_fingerprint",
-            "population_scope",
-            "production_order_count",
-            "clear_order_count",
-            "reconciled_actual_order_count",
-            "reconciled_no_fill_order_count",
-            "comparison_coverage_complete",
-            "blockers",
-            "actual_orders_attributed_to_trial",
-            "actual_orders_count_toward_simulated_trial_threshold",
-            "persisted_evidence_only",
-            "provider_contact_performed",
-            "manual_review_required",
-            "authorizes_execution",
-            "does_not_submit_broker_order",
-            "does_not_mutate_oms",
-            "does_not_mutate_production_ledger",
-            "does_not_change_capital_authority",
-            "evidence_fingerprint",
-        )
-    }
-
-
-def _operator_checklist_contract_blockers(
-    preflight: dict[str, Any],
-) -> list[str]:
-    checklist = preflight.get("operator_checklist")
-    if not isinstance(checklist, list) or not checklist:
-        return ["preflight_operator_checklist_contract_invalid"]
-    for expected_step, raw_item in enumerate(checklist, start=1):
-        item = _mapping(raw_item)
-        if (
-            item.get("step") != expected_step
-            or not _is_safe_code(item.get("gate"))
-            or not _is_safe_code(item.get("action"))
-            or not _is_safe_code(item.get("completion_mode"))
-            or item.get("evidence_contract_version")
-            != _OPERATOR_EVIDENCE_CONTRACT_VERSION
-            or item.get("accepted_evidence_authority") != _CANONICAL_EVIDENCE_AUTHORITY
-            or item.get("owner_attestation_is_financial_fact") is not False
-            or item.get("private_xls_rows_required") is not False
-            or item.get("private_account_identifiers_required") is not False
-            or item.get("automatic_action_performed") is not False
-            or item.get("authorizes_execution") is not False
-            or item.get("changes_capital_authority") is not False
-            or not _is_safe_code_list(item.get("blockers"), allow_empty=True)
-            or not _is_safe_code_list(item.get("required_evidence"))
-            or not _is_safe_code_list(item.get("completion_criteria"))
-        ):
-            return ["preflight_operator_checklist_contract_invalid"]
-    return []
-
-
-def _project_operator_checklist(preflight: dict[str, Any]) -> list[dict[str, Any]]:
-    if _operator_checklist_contract_blockers(preflight):
-        return []
-    projected = []
-    for raw_item in preflight["operator_checklist"]:
-        item = _mapping(raw_item)
-        blockers = list(item["blockers"])
-        blocker_summary = _summarize_operator_blockers(blockers)
-        projected.append(
-            {
-                "step": item["step"],
-                "gate": item["gate"],
-                "action": item["action"],
-                "completion_mode": item["completion_mode"],
-                "blocker_count": len(blockers),
-                "unique_blocker_count": len(blocker_summary),
-                "blocker_summary": blocker_summary,
-                "evidence_contract_version": item["evidence_contract_version"],
-                "required_evidence": list(item["required_evidence"]),
-                "completion_criteria": list(item["completion_criteria"]),
-                "accepted_evidence_authority": item["accepted_evidence_authority"],
-                "owner_attestation_is_financial_fact": False,
-                "private_xls_rows_required": False,
-                "private_account_identifiers_required": False,
-                "automatic_action_performed": False,
-                "authorizes_execution": False,
-                "changes_capital_authority": False,
-            }
-        )
-    return projected
-
-
-def _summarize_operator_blockers(blockers: list[str]) -> list[dict[str, Any]]:
-    counts: dict[str, int] = {}
-    candidates: dict[str, set[str]] = {}
-    for blocker in blockers:
-        prefix, separator, remainder = blocker.partition(":")
-        candidate_scoped = bool(
-            separator
-            and prefix.startswith("candidate_")
-            and prefix.removeprefix("candidate_").isdigit()
-            and remainder
-        )
-        code = remainder if candidate_scoped else blocker
-        counts[code] = counts.get(code, 0) + 1
-        if candidate_scoped:
-            candidates.setdefault(code, set()).add(prefix)
-    return [
-        {
-            "code": code,
-            "occurrence_count": count,
-            "affected_candidate_count": len(candidates.get(code, set())),
-        }
-        for code, count in counts.items()
-    ]
-
-
-def _project_next_reviewed_window(trial: dict[str, Any]) -> dict[str, Any]:
-    schedule = _mapping(trial.get("background_schedule"))
-    window = _mapping(schedule.get("next_reviewed_window"))
-    if (
-        schedule.get("schema_version")
-        != "karkinos.daily_candidate_background_schedule.v3"
-        or window.get("schema_version")
-        != "karkinos.daily_candidate_next_reviewed_window.v1"
-    ):
-        return _unavailable_next_reviewed_window_projection(
-            "next_reviewed_window_not_exposed_by_running_service"
-        )
-
-    boundaries_clear = all(
-        window.get(field) is False
-        for field in (
-            "provider_contact_performed",
-            "database_writes_performed",
-            "permits_retry_or_backfill",
-            "changes_attempt_eligibility",
-            "broker_submission_enabled",
-            "authorizes_execution",
-            "changes_capital_authority",
-        )
-    )
-    if not boundaries_clear:
-        return _unavailable_next_reviewed_window_projection(
-            "next_reviewed_window_contract_invalid"
-        )
-
-    status = window.get("status")
-    blockers = _strings(window.get("blockers"))
-    if any(not _is_safe_code(blocker) for blocker in blockers):
-        return _unavailable_next_reviewed_window_projection(
-            "next_reviewed_window_contract_invalid"
-        )
-    if status == "unavailable":
-        if (
-            not blockers
-            or window.get("market_date") is not None
-            or window.get("window_start") is not None
-            or window.get("window_end") is not None
-            or window.get("is_current_market_date") is not False
-            or window.get("official_calendar_verified") is not False
-        ):
-            return _unavailable_next_reviewed_window_projection(
-                "next_reviewed_window_contract_invalid"
-            )
-        return {
-            **_unavailable_next_reviewed_window_projection(blockers[0]),
-            "blockers": blockers,
-        }
-
-    market_date = str(window.get("market_date") or "")
-    run_date = str(schedule.get("run_date") or "")
-    try:
-        parsed_date = datetime.strptime(market_date, "%Y-%m-%d").date()
-        parsed_run_date = datetime.strptime(run_date, "%Y-%m-%d").date()
-        window_start = datetime.fromisoformat(str(window.get("window_start") or ""))
-        window_end = datetime.fromisoformat(str(window.get("window_end") or ""))
-    except ValueError:
-        return _unavailable_next_reviewed_window_projection(
-            "next_reviewed_window_contract_invalid"
-        )
-    if (
-        status != "available"
-        or parsed_date.isoformat() != market_date
-        or parsed_run_date.isoformat() != run_date
-        or parsed_date < parsed_run_date
-        or window_start.tzinfo is None
-        or window_end.tzinfo is None
-        or window_start.utcoffset() != timedelta(hours=8)
-        or window_end.utcoffset() != timedelta(hours=8)
-        or window_start.date() != parsed_date
-        or window_end.date() != parsed_date
-        or (window_start.hour, window_start.minute, window_start.second) != (9, 35, 0)
-        or (window_end.hour, window_end.minute, window_end.second) != (9, 45, 0)
-        or window_start.microsecond != 0
-        or window_end.microsecond != 0
-        or window_start.isoformat() != str(window.get("window_start") or "")
-        or window_end.isoformat() != str(window.get("window_end") or "")
-        or window.get("official_calendar_verified") is not True
-        or blockers
-        or not isinstance(window.get("is_current_market_date"), bool)
-        or window.get("is_current_market_date") is not (market_date == run_date)
-    ):
-        return _unavailable_next_reviewed_window_projection(
-            "next_reviewed_window_contract_invalid"
-        )
-    return {
-        "schema_version": "karkinos.daily_candidate_next_reviewed_window.v1",
-        "status": "available",
-        "market_date": market_date,
-        "window_start": window_start.isoformat(),
-        "window_end": window_end.isoformat(),
-        "is_current_market_date": window["is_current_market_date"],
-        "official_calendar_verified": True,
-        "blockers": [],
-        "provider_contact_performed": False,
-        "database_writes_performed": False,
-        "permits_retry_or_backfill": False,
-        "changes_attempt_eligibility": False,
-        "broker_submission_enabled": False,
-        "authorizes_execution": False,
-        "changes_capital_authority": False,
-    }
-
-
-def _unavailable_next_reviewed_window_projection(blocker: str) -> dict[str, Any]:
-    return {
-        "schema_version": "karkinos.daily_candidate_next_reviewed_window.v1",
-        "status": "unavailable",
-        "market_date": None,
-        "window_start": None,
-        "window_end": None,
-        "is_current_market_date": False,
-        "official_calendar_verified": False,
-        "blockers": [_safe_code(blocker)],
-        "provider_contact_performed": False,
-        "database_writes_performed": False,
-        "permits_retry_or_backfill": False,
-        "changes_attempt_eligibility": False,
-        "broker_submission_enabled": False,
-        "authorizes_execution": False,
-        "changes_capital_authority": False,
-    }
-
-
-def _non_authority_boundary_blockers(
-    *,
-    cockpit: dict[str, Any],
-    preflight: dict[str, Any],
-    runtime: dict[str, Any],
-    trial: dict[str, Any],
-    research: dict[str, Any],
-) -> list[str]:
-    checks = {
-        "cockpit_broker_submission_enabled": cockpit.get("broker_submission_enabled"),
-        "preflight_provider_contact_performed": preflight.get(
-            "provider_contact_performed"
-        ),
-        "preflight_database_writes_performed": preflight.get(
-            "database_writes_performed"
-        ),
-        "preflight_broker_submission_enabled": preflight.get(
-            "broker_submission_enabled"
-        ),
-        "preflight_authorizes_execution": preflight.get("authorizes_execution"),
-        "preflight_changes_capital_authority": preflight.get(
-            "changes_capital_authority"
-        ),
-        "runtime_provider_contact_performed": runtime.get("provider_contact_performed"),
-        "runtime_database_writes_performed": runtime.get("database_writes_performed"),
-        "runtime_broker_submission_enabled": runtime.get("broker_submission_enabled"),
-        "runtime_authorizes_execution": runtime.get("authorizes_execution"),
-        "runtime_changes_capital_authority": runtime.get("changes_capital_authority"),
-        "trial_broker_submission_enabled": trial.get("broker_submission_enabled"),
-        "trial_authorizes_execution": trial.get("authorizes_execution"),
-        "trial_changes_capital_authority": trial.get("changes_capital_authority"),
-        "research_broker_submission_enabled": research.get("broker_submission_enabled"),
-        "research_production_strategy_mutation_enabled": research.get(
-            "production_strategy_mutation_enabled"
-        ),
-        "research_automatic_strategy_replacement_enabled": research.get(
-            "automatic_strategy_replacement_enabled"
-        ),
-    }
-    return [
-        f"{name}_boundary_invalid"
-        for name, value in checks.items()
-        if value is not False
-    ]
-
-
-def _research_policy_blockers(policy: dict[str, Any]) -> list[str]:
-    blockers = []
-    if policy.get("enabled") is not True:
-        blockers.append("five_sequential_iteration_policy_disabled")
-    if policy.get("max_candidates_per_run") != SHADOW_RESEARCH_MAX_CANDIDATES:
-        blockers.append("five_sequential_iteration_count_not_authorized")
-    if (
-        policy.get("max_provider_calls_per_market_date")
-        != SHADOW_RESEARCH_MAX_PROVIDER_CALLS
-    ):
-        blockers.append("ten_provider_call_limit_not_authorized")
-    if (
-        policy.get("daily_token_budget") is not None
-        or policy.get("token_budget_mode")
-        != SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED
-    ):
-        blockers.append("unbounded_daily_token_policy_not_authorized")
-    if policy.get("authorization") != SHADOW_RESEARCH_POLICY_CONFIRMATION:
-        blockers.append("five_sequential_iteration_authorization_missing")
-    if policy.get("require_complete_account_evidence") is not True:
-        blockers.append("complete_account_evidence_requirement_disabled")
-    return blockers
-
-
-def _mapping(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _strings(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return _unique([str(item) for item in value if str(item)])
-
-
-def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
-
-
-def _nonnegative_int(value: Any) -> int:
-    if isinstance(value, bool):
-        return 0
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return 0
-    return max(parsed, 0)
-
-
-def _is_nonnegative_int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
-def _is_sha256(value: Any) -> bool:
-    normalized = str(value or "")
-    return len(normalized) == 64 and all(
-        character in "0123456789abcdef" for character in normalized
-    )
-
-
-def _matches_fingerprint(value: dict[str, Any], expected: Any) -> bool:
-    if not _is_sha256(expected):
-        return False
-    try:
-        return expected == _fingerprint(value)
-    except (TypeError, ValueError):
-        return False
-
-
-def _safe_fingerprint(value: Any) -> str | None:
-    normalized = str(value or "")
-    if len(normalized) == 64 and all(
-        character in "0123456789abcdef" for character in normalized
-    ):
-        return normalized
-    return None
-
-
-def _safe_code(value: Any) -> str:
-    normalized = str(value or "").strip().lower().replace(" ", "_")
-    if not normalized or len(normalized) > 120:
-        return "daily_candidate_production_readiness_unavailable"
-    if any(
-        character not in "abcdefghijklmnopqrstuvwxyz0123456789_:-."
-        for character in normalized
-    ):
-        return "daily_candidate_production_readiness_unavailable"
-    return normalized
-
-
-def _is_safe_code(value: Any) -> bool:
-    return isinstance(value, str) and value == _safe_code(value)
-
-
-def _is_safe_code_list(value: Any, *, allow_empty: bool = False) -> bool:
-    return bool(
-        isinstance(value, list)
-        and (value or allow_empty)
-        and all(_is_safe_code(item) for item in value)
-    )
-
-
-def _fingerprint(value: dict[str, Any]) -> str:
-    canonical = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()

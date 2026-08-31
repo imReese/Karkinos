@@ -7,19 +7,20 @@ from pathlib import Path
 import pytest
 
 PYTHON_HELP_ENTRYPOINTS = (
-    "configure_data_source.py",
-    "export_acceptance_audit.py",
-    "import_broker_order_lifecycle.py",
-    "ingest_broker_order_lifecycle_collector_batch.py",
-    "migrate_legacy_qmt_order_lifecycle.py",
-    "operator_signer.py",
-    "preview_citic_history_xls.py",
-    "review_broker_adapter_release.py",
-    "run_broker_adapter_conformance.py",
-    "run_broker_execution_edge_conformance.py",
-    "sync_market_bars_to_db.py",
-    "verify_docker_runtime.py",
-    "verify_market_bars.py",
+    "broker/import_broker_order_lifecycle.py",
+    "broker/ingest_broker_order_lifecycle_collector_batch.py",
+    "broker/migrate_legacy_qmt_order_lifecycle.py",
+    "broker/operator_signer.py",
+    "broker/preview_citic_history_xls.py",
+    "broker/review_broker_adapter_release.py",
+    "broker/run_broker_adapter_conformance.py",
+    "broker/run_broker_execution_edge_conformance.py",
+    "ci/export_acceptance_audit.py",
+    "ci/verify_docker_runtime.py",
+    "data/configure_data_source.py",
+    "data/sync_market_bars_to_db.py",
+    "data/verify_market_bars.py",
+    "service/audit_daily_candidate_production.py",
 )
 
 
@@ -27,8 +28,8 @@ def test_scripts_readme_lists_every_supported_entrypoint() -> None:
     scripts_root = Path("scripts")
     readme = (scripts_root / "README.md").read_text(encoding="utf-8")
     entrypoints = sorted(
-        path.name
-        for path in scripts_root.iterdir()
+        path.relative_to(scripts_root).as_posix()
+        for path in scripts_root.rglob("*")
         if path.is_file()
         and path.suffix in {".py", ".sh"}
         and not path.name.startswith("_")
@@ -37,7 +38,28 @@ def test_scripts_readme_lists_every_supported_entrypoint() -> None:
     missing = [name for name in entrypoints if name not in readme]
 
     assert missing == []
-    assert "import_qmt_order_lifecycle.py" not in entrypoints
+    assert "broker/import_qmt_order_lifecycle.py" not in entrypoints
+
+
+def test_scripts_top_level_contains_only_daily_user_entrypoints() -> None:
+    scripts_root = Path("scripts")
+    visible_files = sorted(
+        path.name
+        for path in scripts_root.iterdir()
+        if path.is_file() and not path.name.startswith(".")
+    )
+
+    assert visible_files == ["README.md", "start_server.sh", "stop_server.sh"]
+
+
+def test_production_runbooks_use_explicit_prod_stop() -> None:
+    for path in (
+        Path("docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md"),
+        Path("docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md"),
+    ):
+        runbook = path.read_text(encoding="utf-8")
+
+        assert "`./scripts/stop_server.sh prod`" in runbook
 
 
 @pytest.mark.parametrize("script_name", PYTHON_HELP_ENTRYPOINTS)

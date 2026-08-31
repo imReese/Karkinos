@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -26,6 +26,19 @@ class _Source:
     def list_symbols(self):
         self.calls += 1
         return [f"{600000 + index:06d}" for index in range(1_000)]
+
+    def list_symbol_metadata(self):
+        self.calls += 1
+        return [
+            {
+                "symbol": symbol,
+                "display_name": f"示例股票{symbol}",
+                "provider_symbol": f"{symbol}.SH",
+                "provider_name": "unit_fixture",
+                "source": "stock_master",
+            }
+            for symbol in [f"{600000 + index:06d}" for index in range(1_000)]
+        ]
 
     def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
         self.daily_calls.append(trade_date)
@@ -77,32 +90,46 @@ class _PersistingManager:
 
 def _verified_calendar(db: AppDatabase) -> None:
     trading_dates = pd.bdate_range(end="2026-08-21", periods=80)
+    trading_date_values = {
+        market_date.date().isoformat() for market_date in trading_dates
+    }
+    current = date(2026, 1, 1)
+    calendar_days = []
+    while current.year == 2026:
+        market_date = current.isoformat()
+        is_trading_day = market_date in trading_date_values
+        calendar_days.append(
+            {
+                "date": market_date,
+                "is_trading_day": is_trading_day,
+                "day_type": "trading" if is_trading_day else "closed",
+                "reason_code": (
+                    "scheduled_trading_day" if is_trading_day else "scheduled_closed"
+                ),
+            }
+        )
+        current += timedelta(days=1)
+    source_fingerprint = "c" * 64
     db.upsert_market_calendar_snapshot_sync(
         {
             "exchange": "SSE",
             "year": 2026,
             "provider": "unit_fixture",
             "status": "available",
-            "trading_day_count": len(trading_dates),
-            "closed_day_count": 0,
-            "source_fingerprint": "calendar-fixture",
-            "days": [
-                {
-                    "date": market_date.date().isoformat(),
-                    "is_trading_day": True,
-                    "day_type": "trading",
-                    "reason_code": "scheduled_trading_day",
-                }
-                for market_date in trading_dates
-            ],
+            "trading_day_count": len(trading_date_values),
+            "closed_day_count": len(calendar_days) - len(trading_date_values),
+            "source_fingerprint": source_fingerprint,
+            "days": calendar_days,
             "limitations": [],
         }
     )
     db.update_market_calendar_verification_sync(
         exchange="SSE",
         year=2026,
+        source_fingerprint=source_fingerprint,
         verification_status="verified",
         official_source_url="https://example.test/calendar",
+        official_source_fingerprint="d" * 64,
         verified_by="unit-test",
     )
 
@@ -149,11 +176,20 @@ def test_market_universe_automation_ingests_once_and_never_changes_authority(
     assert payload["full_market_history_frozen"] is True
     assert payload["remote_bar_refresh_attempt_count"] == 80
     assert payload["provider_request_interval_seconds"] == 2.0
+    assert payload["stock_master_metadata_fetched"] is True
+    assert payload["stock_master_useful_name_count"] == 1_000
+    assert payload["instrument_metadata_persisted_count"] == 1_000
     assert payload["changes_account_truth"] is False
     assert payload["changes_strategy_promotion"] is False
     assert payload["creates_order"] is False
     assert payload["changes_execution_authority"] is False
     assert payload["changes_capital_authority"] is False
+    metadata = db.get_instrument_metadata_batch_sync(["600000", "600001"])
+    assert [row["display_name"] for row in metadata] == [
+        "示例股票600000",
+        "示例股票600001",
+    ]
+    assert all(row["source"] == "market_universe_stock_master" for row in metadata)
 
 
 def test_market_universe_automation_blocks_without_verified_calendar(tmp_path) -> None:
@@ -176,6 +212,42 @@ def test_market_universe_automation_blocks_without_verified_calendar(tmp_path) -
     assert source.calls == 0
     payload = json.loads(result["payload_json"])
     assert payload["blockers"] == ["verified_closed_trading_date_unavailable"]
+
+
+def test_market_universe_does_not_freeze_snapshot_before_name_batch_persists(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+
+    def reject_metadata_batch(items):
+        raise RuntimeError("fixture metadata persistence rejected")
+
+    db.upsert_instrument_metadata_batch_sync = reject_metadata_batch
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture",
+            tushare_token="",
+            start_date="2026-04-01",
+        ),
+        data_store=store,
+        data_manager=SimpleNamespace(),
+        source=source,
+    )
+
+    result = service.run_due(
+        now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+
+    assert result["status"] == "failed"
+    assert source.calls == 1
+    assert store.get_market_universe_snapshot(trade_date="2026-08-21") is None
+    payload = json.loads(result["payload_json"])
+    assert payload["error"]["message"] == "fixture metadata persistence rejected"
 
 
 def test_market_universe_automation_resumes_without_refetching_frozen_dates(

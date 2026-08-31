@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { APP_MOTION } from '../app/motion';
+import { APP_MOTION } from '../shared/motion';
 
 const SRC_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const GLOBALS_PATH = join(SRC_ROOT, 'styles', 'globals.css');
@@ -90,12 +90,12 @@ describe('Karkinos brand motion contract', () => {
       });
 
     expect([...new Set(uses.map(({ file }) => file))].sort()).toEqual([
-      'app/components/workbench/workspace.tsx',
-      'app/layout/app-shell.tsx',
+      'app/layout/app-shell-status.tsx',
       'features/activity/components/activity-feed.tsx',
       'features/activity/pages/activity-page.tsx',
       'features/market/components/market-instrument-workspace.tsx',
       'features/market/components/market-refresh-button.tsx',
+      'shared/ui/workbench/workspace.tsx',
     ]);
     for (const use of uses.filter(({ token }) => token.endsWith('pulse'))) {
       expect(use.token, use.file).toBe('motion-safe:animate-pulse');
@@ -167,12 +167,11 @@ describe('Karkinos brand motion contract', () => {
   });
 
   it('keeps overlays mounted through a semantic, non-interactive exit', () => {
-    const shell = readFileSync(
-      join(SRC_ROOT, 'app', 'layout', 'app-shell.tsx'),
-      'utf8',
-    );
+    const shell = sourceFiles(join(SRC_ROOT, 'app', 'layout'))
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n');
     const drawer = readFileSync(
-      join(SRC_ROOT, 'app', 'components', 'workbench', 'evidence-drawer.tsx'),
+      join(SRC_ROOT, 'shared', 'ui', 'workbench', 'evidence-drawer.tsx'),
       'utf8',
     );
 

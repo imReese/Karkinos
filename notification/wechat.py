@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from urllib.request import Request, urlopen
 
-from notification.notifier import Notifier
+from notification.base import Notifier
 
 logger = logging.getLogger(__name__)
 

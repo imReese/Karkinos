@@ -1,7 +1,7 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { formatPercent } from '../../../shared/format';
 import type { AccountOverview } from '../api';
-import type { PortfolioSnapshot } from '../../portfolio/api';
+import type { PortfolioSnapshot } from '../account-feature-boundary';
 
 export function RiskSummaryCard({
   overview,

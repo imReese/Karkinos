@@ -1,4 +1,4 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { formatCurrency } from '../../../shared/format';
 import type { LiveHoldingGroup } from '../api';
 
