@@ -12,6 +12,10 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
+
 CANDIDATE_SCHEMA = "karkinos.release_candidate.v2"
 _TOOLCHAIN = {
     "python": "3.12.13",
