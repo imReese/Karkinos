@@ -17,7 +17,7 @@ published, non-draft, non-prerelease stable tag:
 
 ```bash
 REPOSITORY=imReese/Karkinos
-TAG=v0.3.2
+TAG=v0.3.3
 BOOTSTRAP_DOWNLOAD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/karkinos-installer.XXXXXX")"
 
 export GH_HOST=github.com
@@ -66,20 +66,23 @@ to the packaged bootstrap controller. It then:
 
 1. proves the selected GitHub Release is published and stable;
 2. resolves its tag to an exact commit;
-3. downloads the matching native archive, checksum, and candidate manifest;
-4. validates the checksum and verifies stable-workflow attestations for the
-   manifest and archive against both the exact tag ref and commit;
+3. downloads the matching native archive and checksum once;
+4. validates the checksum and verifies the archive's stable-workflow
+   attestation against both the exact tag ref and commit before executing it;
 5. rechecks the remote release and tag identities;
 6. rejects unsafe archive entries, extracts into a private temporary directory,
-   and invokes only the archive's `bin/karkinosctl bootstrap`;
+   and invokes only the archive's `bin/karkinosctl bootstrap`, handing it the
+   same downloaded archive rather than downloading the large payload again;
 7. removes the temporary download and extraction directory on success or
    failure.
 
-The packaged controller validates its own release manifest and complete payload
-before running the migration. It then performs the real journaled service
-handoff, health checks, and rollback behavior. Therefore the command is an
-explicit production mutation after `--confirm`; the installer's automated tests
-replace the controller with a recorder and never touch a real service.
+The packaged controller uses authenticated GitHub API access to recheck the
+published Release and tag, validates its own release manifest and complete
+payload, and still requires the candidate and stable provenance policies before
+running the migration. It then performs the real journaled service handoff,
+health checks, and rollback behavior. Therefore the command is an explicit
+production mutation after `--confirm`; the installer's automated tests replace
+the controller with a recorder and never touch a real service.
 
 Remove the small installer download directory after the command returns:
 

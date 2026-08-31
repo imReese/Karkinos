@@ -34,13 +34,9 @@ from analytics.strategy_advancement_evidence import integer as _integer
 from analytics.strategy_advancement_evidence import json_list as _json_list
 from analytics.strategy_advancement_evidence import json_object as _json_object
 from analytics.strategy_advancement_evidence import mapping as _mapping
-from analytics.strategy_advancement_evidence import (
-    market_regime_robustness_check,
-)
+from analytics.strategy_advancement_evidence import market_regime_robustness_check
 from analytics.strategy_advancement_evidence import number as _number
-from analytics.strategy_advancement_evidence import (
-    parameter_robustness_check,
-)
+from analytics.strategy_advancement_evidence import parameter_robustness_check
 from analytics.strategy_advancement_evidence import (
     payload_fingerprint as _payload_fingerprint,
 )
