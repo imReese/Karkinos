@@ -15,6 +15,10 @@ from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
+from server.release_activation import (
+    is_release_activation_guarded,
+    is_scheduler_release_activation_guarded,
+)
 from server.scheduler_lifecycle import SchedulerLifecycleMixin
 from server.scheduler_loop import SchedulerLoopDependencies, run_scheduler_loop
 from server.scheduler_quote_runs import SchedulerQuoteRunMixin
@@ -64,6 +68,10 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
         db=None,
         trading_controls: TradingControlState | None = None,
         controlled_session_pause_runner: Callable[[], dict[str, Any]] | None = None,
+        activation_guarded: Callable[[], bool] = is_release_activation_guarded,
+        scheduler_activation_guarded: Callable[
+            [], bool
+        ] = is_scheduler_release_activation_guarded,
     ) -> None:
         self._config = config
         self._bridge = bridge
@@ -72,10 +80,14 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
         self._trading_controls = trading_controls or TradingControlState(db=db)
         self._controlled_session_pause_runner = controlled_session_pause_runner
         self._running = threading.Event()
+        self._initialized = threading.Event()
         self._thread: threading.Thread | None = None
         self._lifecycle_lock = threading.Lock()
         self._stopping = False
         self._scheduler_clock = scheduler_now
+        self._activation_guarded = activation_guarded
+        self._scheduler_activation_guarded = scheduler_activation_guarded
+        self._completed_iterations = 0
 
         # 运行时状态（由后台线程修改，API 线程读取）
         self._event_bus: EventBus | None = None
@@ -127,6 +139,21 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
 
     def scheduler_should_continue(self) -> bool:
         return self._running.is_set()
+
+    def scheduler_activation_guarded(self) -> bool:
+        try:
+            return bool(self._scheduler_activation_guarded())
+        except Exception:
+            logger.exception("Scheduler release activation guard check failed closed")
+            return True
+
+    @property
+    def activation_guarded(self) -> bool:
+        try:
+            return bool(self._activation_guarded())
+        except Exception:
+            logger.exception("Release activation guard check failed closed")
+            return True
 
     def wait_for_scheduler_stop(self, timeout: float) -> bool:
         return self._stop_requested.wait(timeout=timeout)

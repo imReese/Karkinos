@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
 from fastapi import APIRouter
+from fastapi.routing import APIRoute
 from pydantic import ValidationError
 
 from server.config import ServerConfig
@@ -38,3 +40,36 @@ def test_settings_schema_has_no_live_scheduler_switch() -> None:
     response = settings_routes._settings_response(state)
 
     assert "live_auto_start" not in response.model_dump()
+
+
+def test_live_status_distinguishes_liveness_readiness_and_activation_guard(
+    monkeypatch,
+) -> None:
+    router = create_router()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/settings/live/status"
+    )
+    state = SimpleNamespace(
+        scheduler=SimpleNamespace(
+            is_running=True,
+            is_initialized=False,
+            activation_guarded=True,
+            scheduler_activation_guarded=lambda: False,
+            completed_iterations=3,
+            is_market_open=False,
+        )
+    )
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.model_dump() == {
+        "running": True,
+        "initialized": False,
+        "activation_guarded": True,
+        "scheduler_activation_guarded": False,
+        "completed_iterations": 3,
+        "market_open": False,
+    }

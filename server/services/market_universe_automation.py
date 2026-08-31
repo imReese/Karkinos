@@ -16,6 +16,7 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.manager import DataManager, build_sources
 from data.store import DataStore
 from server.bootstrap import resolve_data_dir
+from server.release_activation import wait_for_release_activation
 from server.services.market_hours import get_shanghai_now
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
@@ -447,6 +448,7 @@ async def run_market_universe_automation_loop(
     """Run the idempotent universe ingestion immediately and once per hour."""
     service = MarketUniverseAutomationService(db=db, config=config)
     while True:
+        await wait_for_release_activation()
         try:
             await asyncio.to_thread(service.run_due)
         except asyncio.CancelledError:

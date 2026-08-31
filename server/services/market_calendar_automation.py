@@ -18,6 +18,7 @@ from server.contracts.market_calendar import (
     MarketCalendarAutomationPublication,
     MarketCalendarVerificationCommand,
 )
+from server.release_activation import wait_for_release_activation
 from server.services.market_hours import get_shanghai_now
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,7 @@ async def run_market_calendar_automation_loop(
     """Run the idempotent ingestion check now and periodically thereafter."""
     service = MarketCalendarAutomationService(db=db, config=config)
     while True:
+        await wait_for_release_activation()
         try:
             await asyncio.to_thread(service.run_due)
         except asyncio.CancelledError:

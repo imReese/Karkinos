@@ -376,7 +376,12 @@ def create_router() -> APIRouter:
         state = get_app_state()
         scheduler = state.scheduler
         return LiveStatusResponse(
-            running=scheduler.is_running, market_open=scheduler.is_market_open
+            running=scheduler.is_running,
+            initialized=scheduler.is_initialized,
+            activation_guarded=scheduler.activation_guarded,
+            scheduler_activation_guarded=scheduler.scheduler_activation_guarded(),
+            completed_iterations=scheduler.completed_iterations,
+            market_open=scheduler.is_market_open,
         )
 
     @r.post("/notification/test")

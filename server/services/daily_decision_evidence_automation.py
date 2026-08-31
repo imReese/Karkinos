@@ -336,6 +336,8 @@ async def run_daily_decision_evidence_automation_loop(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
     """Run at most once in the verified trading day's decision window."""
+    from server.release_activation import wait_for_release_activation
+
     adapters = (plan_reader, risk_runner, quote_refresher)
     if any(adapter is not None for adapter in adapters) and not all(
         adapter is not None for adapter in adapters
@@ -345,6 +347,7 @@ async def run_daily_decision_evidence_automation_loop(
     interval = max(float(interval_seconds), 1.0)
     current_time = clock or (lambda: datetime.now(timezone.utc))
     while True:
+        await wait_for_release_activation(sleep=sleep)
         try:
             schedule = project_daily_candidate_background_schedule(
                 db=state.db,

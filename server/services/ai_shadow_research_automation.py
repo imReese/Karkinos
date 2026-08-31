@@ -21,8 +21,8 @@ from server.contracts.ai_shadow_research_automation import (
     LOCAL_PROVIDER_FREE_PARTIAL_FAILURE_CODES,
     OUTPUT_TRUNCATION_RETRYABLE_FAILURE_CODES,
     PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
-    SHADOW_RESEARCH_API_SCHEMA,
     SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
+    SHADOW_RESEARCH_API_SCHEMA,
     SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
     SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
@@ -58,6 +58,7 @@ from server.contracts.ai_shadow_research_automation import (
 )
 from server.dependencies import AppState
 from server.persistence.ai_shadow_research import ShadowResearchStore
+from server.release_activation import wait_for_release_activation
 from server.services.ai_shadow_research_baseline import AiShadowResearchBaselineMixin
 from server.services.ai_shadow_research_candidate_workflow import (
     AiShadowResearchCandidateWorkflowMixin,
@@ -191,6 +192,7 @@ async def run_ai_shadow_research_automation_loop(
     """Poll a read-mostly standing policy and run once per new evidence identity."""
     service: AiShadowResearchAutomationService | None = None
     while True:
+        await wait_for_release_activation()
         try:
             if service is None:
                 service = build_ai_shadow_research_automation_service(
