@@ -258,6 +258,10 @@ import/promotion identity，当前资产范围、对账、估值和 ledger cutof
 ## Canonical CSV 列
 
 CSV 必须包含以下列。未涉及的字段保留为空字符串，不要删除列。
+可直接复制项目根目录的
+[`broker_statement.template.csv`](../broker_statement.template.csv) 开始填写；模板只保留
+机器可读表头，不要在表头下添加说明行。解析器按列名而不是列序取值，但建议沿用模板顺序
+便于人工核对。真实券商数据保存在本地 `broker_statement.csv`，该文件已被 Git 忽略，不要提交。
 
 | 列名                | 说明                                                       |
 | ------------------- | ---------------------------------------------------------- |
