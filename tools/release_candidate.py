@@ -12,10 +12,10 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
-CANDIDATE_SCHEMA = "karkinos.release_candidate.v1"
+CANDIDATE_SCHEMA = "karkinos.release_candidate.v2"
 _TOOLCHAIN = {
-    "python": "3.12",
-    "node": "24",
+    "python": "3.12.13",
+    "node": "24.20.0",
     "uv": "0.11.28",
 }
 _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -68,6 +68,19 @@ def _require_identity(commit_sha: str, image_digest: str) -> None:
         raise ValueError("candidate_image_digest_invalid")
 
 
+def _positive_run_identity(run_id: object, run_attempt: object) -> bool:
+    return (
+        type(run_id) is int
+        and run_id > 0
+        and type(run_attempt) is int
+        and run_attempt > 0
+    )
+
+
+def _candidate_image_tag(commit_sha: str, run_id: int, run_attempt: int) -> str:
+    return f"candidate-sha-{commit_sha}-run-{run_id}-attempt-{run_attempt}"
+
+
 def build_candidate_manifest(
     *,
     repo_root: Path,
@@ -76,6 +89,11 @@ def build_candidate_manifest(
     version: str,
     source_ci_run_id: int,
     source_ci_run_attempt: int,
+    candidate_workflow_run_id: int,
+    candidate_workflow_run_attempt: int,
+    candidate_workflow_event: str,
+    image_workflow_run_id: int,
+    image_workflow_run_attempt: int,
     image_reference: str,
     image_digest: str,
 ) -> dict[str, Any]:
@@ -84,15 +102,23 @@ def build_candidate_manifest(
     _regular_directory(repo_root, "candidate_source_root_invalid")
     if version != _version(repo_root):
         raise ValueError("candidate_version_source_mismatch")
-    if (
-        type(source_ci_run_id) is not int
-        or source_ci_run_id <= 0
-        or type(source_ci_run_attempt) is not int
-        or source_ci_run_attempt <= 0
-    ):
+    if not _positive_run_identity(source_ci_run_id, source_ci_run_attempt):
         raise ValueError("candidate_source_ci_identity_invalid")
+    if not _positive_run_identity(
+        candidate_workflow_run_id, candidate_workflow_run_attempt
+    ) or candidate_workflow_event not in {"push", "workflow_dispatch"}:
+        raise ValueError("candidate_workflow_identity_invalid")
+    if (
+        not _positive_run_identity(image_workflow_run_id, image_workflow_run_attempt)
+        or image_workflow_run_id != candidate_workflow_run_id
+        or image_workflow_run_attempt > candidate_workflow_run_attempt
+    ):
+        raise ValueError("candidate_image_workflow_identity_invalid")
     if _IMAGE_REFERENCE.fullmatch(image_reference) is None:
         raise ValueError("candidate_image_reference_invalid")
+    candidate_image_tag = _candidate_image_tag(
+        commit_sha, image_workflow_run_id, image_workflow_run_attempt
+    )
 
     from tools.release_artifact import validate_archive
 
@@ -156,11 +182,21 @@ def build_candidate_manifest(
             "run_id": source_ci_run_id,
             "run_attempt": source_ci_run_attempt,
         },
+        "candidate_workflow": {
+            "workflow": "Release Candidate",
+            "workflow_path": ".github/workflows/candidate.yml",
+            "event": candidate_workflow_event,
+            "branch": "main",
+            "run_id": candidate_workflow_run_id,
+            "run_attempt": candidate_workflow_run_attempt,
+        },
         "image": {
             "reference": image_reference,
             "digest": image_digest,
-            "candidate_tag": f"candidate-sha-{commit_sha}",
-            "candidate_reference": (f"{image_reference}:candidate-sha-{commit_sha}"),
+            "workflow_run_id": image_workflow_run_id,
+            "workflow_run_attempt": image_workflow_run_attempt,
+            "candidate_tag": candidate_image_tag,
+            "candidate_reference": f"{image_reference}:{candidate_image_tag}",
         },
         "native_artifacts": artifacts,
         "source_fingerprints": {
@@ -201,12 +237,96 @@ def verify_candidate_manifest(
     expected_version: str | None = None,
     expected_source_ci_run_id: int | None = None,
     expected_source_ci_run_attempt: int | None = None,
+    expected_candidate_workflow_run_id: int | None = None,
+    expected_candidate_workflow_run_attempt: int | None = None,
+    expected_candidate_workflow_event: str | None = None,
     expected_image_reference: str | None = None,
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     _regular_directory(artifact_dir, "candidate_manifest_native_artifacts_invalid")
     if repo_root is not None:
         _regular_directory(repo_root, "candidate_source_root_invalid")
+    manifest = verify_candidate_manifest_metadata(
+        manifest_path,
+        expected_commit_sha=expected_commit_sha,
+        expected_version=expected_version,
+        expected_source_ci_run_id=expected_source_ci_run_id,
+        expected_source_ci_run_attempt=expected_source_ci_run_attempt,
+        expected_candidate_workflow_run_id=expected_candidate_workflow_run_id,
+        expected_candidate_workflow_run_attempt=expected_candidate_workflow_run_attempt,
+        expected_candidate_workflow_event=expected_candidate_workflow_event,
+        expected_image_reference=expected_image_reference,
+    )
+    version = manifest["version"]
+    artifacts = manifest["native_artifacts"]
+
+    from tools.release_artifact import validate_archive
+
+    for item in artifacts:
+        filename = item["filename"]
+        digest = item["sha256"]
+        architecture = item["architecture"]
+        archive = _regular_file(
+            artifact_dir / filename, "candidate_manifest_native_artifact_invalid"
+        )
+        if sha256(archive) != digest:
+            raise ValueError("candidate_manifest_native_artifact_checksum_mismatch")
+        checksum_path = artifact_dir / (filename + ".sha256")
+        if checksum_path.is_symlink() or not checksum_path.is_file():
+            raise ValueError("candidate_manifest_native_artifact_checksum_file_invalid")
+        checksum_fields = checksum_path.read_text(encoding="utf-8").strip().split()
+        if checksum_fields != [digest, filename]:
+            raise ValueError("candidate_manifest_native_artifact_checksum_file_invalid")
+        validate_archive(
+            archive,
+            expected_commit_sha=expected_commit_sha,
+            expected_architecture=architecture,
+            expected_version=version,
+        )
+    expected_files = {str(item["filename"]) for item in artifacts} | {
+        f"{item['filename']}.sha256" for item in artifacts
+    }
+    entries = list(artifact_dir.iterdir())
+    if any(path.is_symlink() or not path.is_file() for path in entries):
+        raise ValueError("candidate_manifest_native_artifact_set_invalid")
+    actual_files = {path.name for path in entries}
+    if actual_files != expected_files:
+        raise ValueError("candidate_manifest_native_artifact_set_invalid")
+    if repo_root is not None:
+        fingerprint_files = (
+            ("pyproject", "pyproject.toml"),
+            ("uv_lock", "uv.lock"),
+            ("web_package", "web/package.json"),
+            ("web_lock", "web/package-lock.json"),
+            ("candidate_workflow", ".github/workflows/candidate.yml"),
+            ("dockerfile", "Dockerfile"),
+        )
+        fingerprints = manifest["source_fingerprints"]
+        for field, filename in fingerprint_files:
+            expected = fingerprints[field]
+            source = repo_root / filename
+            if (
+                source.is_symlink()
+                or not source.is_file()
+                or sha256(source) != expected
+            ):
+                raise ValueError("candidate_manifest_source_fingerprint_mismatch")
+    return manifest
+
+
+def verify_candidate_manifest_metadata(
+    manifest_path: Path,
+    *,
+    expected_commit_sha: str,
+    expected_version: str | None = None,
+    expected_source_ci_run_id: int | None = None,
+    expected_source_ci_run_attempt: int | None = None,
+    expected_candidate_workflow_run_id: int | None = None,
+    expected_candidate_workflow_run_attempt: int | None = None,
+    expected_candidate_workflow_event: str | None = None,
+    expected_image_reference: str | None = None,
+) -> dict[str, Any]:
+    """Validate candidate identity and inventory without reading artifact bytes."""
     manifest = _read_json(manifest_path)
     if manifest.get("schema_version") != CANDIDATE_SCHEMA:
         raise ValueError("candidate_manifest_schema_unsupported")
@@ -245,6 +365,33 @@ def verify_candidate_manifest(
         and source_ci["run_attempt"] != expected_source_ci_run_attempt
     ):
         raise ValueError("candidate_manifest_source_ci_attempt_mismatch")
+    candidate_workflow = manifest.get("candidate_workflow")
+    if (
+        not isinstance(candidate_workflow, dict)
+        or candidate_workflow.get("workflow") != "Release Candidate"
+        or candidate_workflow.get("workflow_path") != ".github/workflows/candidate.yml"
+        or candidate_workflow.get("event") not in {"push", "workflow_dispatch"}
+        or candidate_workflow.get("branch") != "main"
+        or not _positive_run_identity(
+            candidate_workflow.get("run_id"), candidate_workflow.get("run_attempt")
+        )
+    ):
+        raise ValueError("candidate_manifest_workflow_invalid")
+    if (
+        expected_candidate_workflow_run_id is not None
+        and candidate_workflow["run_id"] != expected_candidate_workflow_run_id
+    ):
+        raise ValueError("candidate_manifest_workflow_run_mismatch")
+    if (
+        expected_candidate_workflow_run_attempt is not None
+        and candidate_workflow["run_attempt"] != expected_candidate_workflow_run_attempt
+    ):
+        raise ValueError("candidate_manifest_workflow_attempt_mismatch")
+    if (
+        expected_candidate_workflow_event is not None
+        and candidate_workflow["event"] != expected_candidate_workflow_event
+    ):
+        raise ValueError("candidate_manifest_workflow_event_mismatch")
     image = manifest.get("image")
     if (
         not isinstance(image, dict)
@@ -260,13 +407,24 @@ def verify_candidate_manifest(
     ):
         raise ValueError("candidate_manifest_image_reference_mismatch")
     if (
-        image.get("candidate_tag") != f"candidate-sha-{expected_commit_sha}"
+        not _positive_run_identity(
+            image.get("workflow_run_id"), image.get("workflow_run_attempt")
+        )
+        or image["workflow_run_id"] != candidate_workflow["run_id"]
+        or image["workflow_run_attempt"] > candidate_workflow["run_attempt"]
+    ):
+        raise ValueError("candidate_manifest_image_workflow_invalid")
+    expected_candidate_tag = _candidate_image_tag(
+        expected_commit_sha,
+        image["workflow_run_id"],
+        image["workflow_run_attempt"],
+    )
+    if (
+        image.get("candidate_tag") != expected_candidate_tag
         or image.get("candidate_reference")
-        != f"{image['reference']}:candidate-sha-{expected_commit_sha}"
+        != f"{image['reference']}:{expected_candidate_tag}"
     ):
         raise ValueError("candidate_manifest_image_tag_invalid")
-
-    from tools.release_artifact import validate_archive
 
     artifacts = manifest.get("native_artifacts")
     if not isinstance(artifacts, list) or not artifacts:
@@ -294,37 +452,11 @@ def verify_candidate_manifest(
             or not re.fullmatch(r"[0-9a-f]{64}", digest)
         ):
             raise ValueError("candidate_manifest_native_artifacts_invalid")
-        archive = _regular_file(
-            artifact_dir / filename, "candidate_manifest_native_artifact_invalid"
-        )
-        if sha256(archive) != digest:
-            raise ValueError("candidate_manifest_native_artifact_checksum_mismatch")
-        checksum_path = artifact_dir / (filename + ".sha256")
-        if checksum_path.is_symlink() or not checksum_path.is_file():
-            raise ValueError("candidate_manifest_native_artifact_checksum_file_invalid")
-        checksum_fields = checksum_path.read_text(encoding="utf-8").strip().split()
-        if checksum_fields != [digest, filename]:
-            raise ValueError("candidate_manifest_native_artifact_checksum_file_invalid")
-        validate_archive(
-            archive,
-            expected_commit_sha=expected_commit_sha,
-            expected_architecture=architecture,
-            expected_version=version,
-        )
         if architecture in architectures:
             raise ValueError("candidate_manifest_duplicate_architecture")
         architectures.add(architecture)
     if architectures != {"arm64", "x86_64"}:
         raise ValueError("candidate_manifest_architectures_incomplete")
-    expected_files = {str(item["filename"]) for item in artifacts} | {
-        f"{item['filename']}.sha256" for item in artifacts
-    }
-    entries = list(artifact_dir.iterdir())
-    if any(path.is_symlink() or not path.is_file() for path in entries):
-        raise ValueError("candidate_manifest_native_artifact_set_invalid")
-    actual_files = {path.name for path in entries}
-    if actual_files != expected_files:
-        raise ValueError("candidate_manifest_native_artifact_set_invalid")
     fingerprints = manifest.get("source_fingerprints")
     if not isinstance(fingerprints, dict):
         raise ValueError("candidate_manifest_source_fingerprints_invalid")
@@ -342,17 +474,6 @@ def verify_candidate_manifest(
             raise ValueError("candidate_manifest_source_fingerprints_invalid")
     if manifest.get("toolchain") != _TOOLCHAIN:
         raise ValueError("candidate_manifest_toolchain_mismatch")
-    if repo_root is not None:
-        for field, filename in fingerprint_files:
-            expected = fingerprints[field]
-            source = repo_root / filename
-            if (
-                source.is_symlink()
-                or not source.is_file()
-                or sha256(source) != expected
-            ):
-                raise ValueError("candidate_manifest_source_fingerprint_mismatch")
-
     if manifest.get("promotion") != {
         "method": "digest_and_bytes_only",
         "rebuild_forbidden": True,
@@ -372,6 +493,15 @@ def main() -> int:
     build.add_argument("--version", required=True)
     build.add_argument("--source-ci-run-id", type=int, required=True)
     build.add_argument("--source-ci-run-attempt", type=int, required=True)
+    build.add_argument("--candidate-workflow-run-id", type=int, required=True)
+    build.add_argument("--candidate-workflow-run-attempt", type=int, required=True)
+    build.add_argument(
+        "--candidate-workflow-event",
+        choices=("push", "workflow_dispatch"),
+        required=True,
+    )
+    build.add_argument("--image-workflow-run-id", type=int, required=True)
+    build.add_argument("--image-workflow-run-attempt", type=int, required=True)
     build.add_argument("--image-reference", required=True)
     build.add_argument("--image-digest", required=True)
     build.add_argument("--output", type=Path, required=True)
@@ -382,6 +512,8 @@ def main() -> int:
     verify.add_argument("--version")
     verify.add_argument("--source-ci-run-id", type=int)
     verify.add_argument("--source-ci-run-attempt", type=int)
+    verify.add_argument("--candidate-selection", type=Path)
+    verify.add_argument("--repository")
     verify.add_argument("--image-reference")
     verify.add_argument("--repo-root", type=Path)
     args = parser.parse_args()
@@ -394,6 +526,11 @@ def main() -> int:
                 version=args.version,
                 source_ci_run_id=args.source_ci_run_id,
                 source_ci_run_attempt=args.source_ci_run_attempt,
+                candidate_workflow_run_id=args.candidate_workflow_run_id,
+                candidate_workflow_run_attempt=args.candidate_workflow_run_attempt,
+                candidate_workflow_event=args.candidate_workflow_event,
+                image_workflow_run_id=args.image_workflow_run_id,
+                image_workflow_run_attempt=args.image_workflow_run_attempt,
                 image_reference=args.image_reference,
                 image_digest=args.image_digest,
             )
@@ -411,6 +548,24 @@ def main() -> int:
                 encoding="utf-8",
             )
         else:
+            expected_candidate_run_id: int | None = None
+            expected_candidate_run_attempt: int | None = None
+            expected_candidate_event: str | None = None
+            if args.candidate_selection is not None:
+                if not args.repository:
+                    raise ValueError("candidate_selection_repository_missing")
+                from tools.download_candidate import read_candidate_selection
+
+                selection = read_candidate_selection(
+                    args.candidate_selection.expanduser().absolute(),
+                    expected_repository=args.repository,
+                    expected_commit_sha=args.commit_sha,
+                )
+                workflow = selection["workflow"]
+                assert isinstance(workflow, dict)
+                expected_candidate_run_id = workflow["run_id"]
+                expected_candidate_run_attempt = workflow["run_attempt"]
+                expected_candidate_event = workflow["event"]
             payload = verify_candidate_manifest(
                 args.manifest.expanduser().absolute(),
                 artifact_dir=args.artifact_dir.expanduser().absolute(),
@@ -418,6 +573,11 @@ def main() -> int:
                 expected_version=args.version,
                 expected_source_ci_run_id=args.source_ci_run_id,
                 expected_source_ci_run_attempt=args.source_ci_run_attempt,
+                expected_candidate_workflow_run_id=expected_candidate_run_id,
+                expected_candidate_workflow_run_attempt=(
+                    expected_candidate_run_attempt
+                ),
+                expected_candidate_workflow_event=expected_candidate_event,
                 expected_image_reference=args.image_reference,
                 repo_root=(
                     args.repo_root.expanduser().absolute() if args.repo_root else None
