@@ -3004,6 +3004,9 @@ def bootstrap(home: Path, args: argparse.Namespace) -> None:
         tag=args.tag,
         confirmation=args.confirm,
         health_timeout=args.health_timeout,
+        local_archive=(
+            Path(args.release_archive) if args.release_archive is not None else None
+        ),
     )
     if not isinstance(result, dict):
         raise ValueError("legacy_bootstrap_result_invalid")
@@ -3303,6 +3306,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     bootstrap_parser.add_argument("--service-manager", default=default_service_manager)
     bootstrap_parser.add_argument("--service-port", type=int)
+    bootstrap_parser.add_argument("--release-archive", help=argparse.SUPPRESS)
 
     rollback_parser = sub.add_parser(
         "rollback", help="health-check and atomically swap current/previous"

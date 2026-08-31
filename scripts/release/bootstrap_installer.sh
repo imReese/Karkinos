@@ -42,9 +42,10 @@ Usage:
 	    [--home "/absolute/runtime/path"]
 
 This installer downloads one published stable macOS release, verifies its
-checksum and GitHub stable-release attestations, extracts it in a disposable
-private directory, and delegates the one-time handoff to the packaged
-bin/karkinosctl. It does not build or execute code from a source checkout.
+checksum and GitHub stable-release attestation, extracts it in a disposable
+private directory, and delegates the one-time handoff plus complete release
+verification to the packaged bin/karkinosctl. It does not build or execute code
+from a source checkout.
 EOF
 }
 
@@ -238,6 +239,7 @@ fi
 command -v gh >/dev/null 2>&1 || die "gh is required."
 command -v tar >/dev/null 2>&1 || die "tar is required."
 command -v shasum >/dev/null 2>&1 || die "shasum is required."
+command -v sleep >/dev/null 2>&1 || die "sleep is required."
 export GH_HOST=github.com
 gh auth status --hostname github.com >/dev/null 2>&1 ||
 	die "gh must be authenticated to github.com."
@@ -277,13 +279,10 @@ CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"
 ARCHIVE_ROOT="Karkinos-${VERSION}-macos-${ARCHITECTURE}"
 ARCHIVE_DECLARED_SIZE="$(release_asset_size "${ARCHIVE_NAME}")"
 CHECKSUM_DECLARED_SIZE="$(release_asset_size "${CHECKSUM_NAME}")"
-MANIFEST_DECLARED_SIZE="$(release_asset_size "candidate-manifest.json")"
 ((ARCHIVE_DECLARED_SIZE > 0 && ARCHIVE_DECLARED_SIZE <= 536870912)) ||
 	die "native archive metadata size is invalid."
 ((CHECKSUM_DECLARED_SIZE > 0 && CHECKSUM_DECLARED_SIZE <= 4096)) ||
 	die "checksum metadata size is invalid."
-((MANIFEST_DECLARED_SIZE > 0 && MANIFEST_DECLARED_SIZE <= 8388608)) ||
-	die "candidate manifest metadata size is invalid."
 
 TEMP_PARENT_INPUT="${TMPDIR:-/tmp}"
 while [[ "${TEMP_PARENT_INPUT}" != "/" && "${TEMP_PARENT_INPUT}" == */ ]]; do
@@ -308,7 +307,7 @@ DOWNLOAD_DIR="${TEMP_ROOT}/download"
 EXTRACT_DIR="${TEMP_ROOT}/extract"
 mkdir -m 700 "${DOWNLOAD_DIR}" "${EXTRACT_DIR}"
 
-for asset in "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" "candidate-manifest.json"; do
+for asset in "${ARCHIVE_NAME}" "${CHECKSUM_NAME}"; do
 	gh release download "${TAG}" --repo "${REPOSITORY}" \
 		--dir "${DOWNLOAD_DIR}" --pattern "${asset}" ||
 		die "failed to download stable release asset: ${asset}"
@@ -316,22 +315,18 @@ done
 
 ARCHIVE_PATH="${DOWNLOAD_DIR}/${ARCHIVE_NAME}"
 CHECKSUM_PATH="${DOWNLOAD_DIR}/${CHECKSUM_NAME}"
-MANIFEST_PATH="${DOWNLOAD_DIR}/candidate-manifest.json"
-for asset_path in "${ARCHIVE_PATH}" "${CHECKSUM_PATH}" "${MANIFEST_PATH}"; do
+for asset_path in "${ARCHIVE_PATH}" "${CHECKSUM_PATH}"; do
 	[[ -f "${asset_path}" && ! -L "${asset_path}" ]] ||
 		die "downloaded release asset is missing or unsafe."
 done
-[[ "$(find "${DOWNLOAD_DIR}" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" == "3" ]] ||
+[[ "$(find "${DOWNLOAD_DIR}" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" == "2" ]] ||
 	die "downloaded release asset set is unexpected."
 [[ "$(wc -c <"${CHECKSUM_PATH}" | tr -d '[:space:]')" -le 4096 ]] ||
 	die "checksum file is too large."
-[[ "$(wc -c <"${MANIFEST_PATH}" | tr -d '[:space:]')" -le 8388608 ]] ||
-	die "candidate manifest is too large."
 [[ "$(wc -c <"${ARCHIVE_PATH}" | tr -d '[:space:]')" -le 536870912 ]] ||
 	die "native archive is too large."
 [[ "$(wc -c <"${ARCHIVE_PATH}" | tr -d '[:space:]')" == "${ARCHIVE_DECLARED_SIZE}" &&
-"$(wc -c <"${CHECKSUM_PATH}" | tr -d '[:space:]')" == "${CHECKSUM_DECLARED_SIZE}" &&
-"$(wc -c <"${MANIFEST_PATH}" | tr -d '[:space:]')" == "${MANIFEST_DECLARED_SIZE}" ]] ||
+"$(wc -c <"${CHECKSUM_PATH}" | tr -d '[:space:]')" == "${CHECKSUM_DECLARED_SIZE}" ]] ||
 	die "downloaded release asset size does not match its metadata."
 
 CHECKSUM_LINES="$(awk 'END { print NR }' "${CHECKSUM_PATH}")"
@@ -344,15 +339,24 @@ ACTUAL_CHECKSUM="$(shasum -a 256 -- "${ARCHIVE_PATH}" | awk '{print $1}')"
 [[ "${ACTUAL_CHECKSUM}" == "${EXPECTED_CHECKSUM}" ]] ||
 	die "native archive checksum mismatch."
 
-for attested_path in "${MANIFEST_PATH}" "${ARCHIVE_PATH}"; do
-	gh attestation verify "${attested_path}" \
-		--repo "${REPOSITORY}" \
-		--signer-workflow "${REPOSITORY}/.github/workflows/release.yml" \
-		--source-ref "refs/tags/${TAG}" \
-		--source-digest "${TAG_COMMIT}" \
-		--deny-self-hosted-runners >/dev/null ||
-		die "stable release attestation verification failed."
-done
+verify_archive_attestation() {
+	local attempt
+	for attempt in 1 2 3; do
+		if gh attestation verify "${ARCHIVE_PATH}" \
+			--repo "${REPOSITORY}" \
+			--signer-workflow "${REPOSITORY}/.github/workflows/release.yml" \
+			--source-ref "refs/tags/${TAG}" \
+			--source-digest "${TAG_COMMIT}" \
+			--deny-self-hosted-runners >/dev/null; then
+			return 0
+		fi
+		((attempt < 3)) || return 1
+		sleep "$((2 ** attempt))"
+	done
+	return 1
+}
+
+verify_archive_attestation || die "stable release attestation verification failed."
 
 CONFIRMED_STATE="$(gh release view "${TAG}" --repo "${REPOSITORY}" \
 	--json tagName,isDraft,isPrerelease \
@@ -403,6 +407,7 @@ CONTROLLER_ARGUMENTS=(
 	--legacy-workdir "${LEGACY_WORKDIR}"
 	--legacy-plist "${LEGACY_PLIST}"
 	--confirm "${CONFIRMATION}"
+	--release-archive "${ARCHIVE_PATH}"
 )
 if ((SERVICE_PORT_SET == 1)); then
 	CONTROLLER_ARGUMENTS+=(--service-port "${SERVICE_PORT}")
