@@ -49,7 +49,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 
 在仓库根目录运行 `uv run python scripts/service/audit_daily_candidate_production.py --pretty`，可检查“当前机器”而不只是静态代码清单。命令只接受显式 loopback HTTP 地址，只读访问正在运行的 Automation Cockpit 与 shadow research 状态，生成脱敏且带指纹的 `karkinos.daily_candidate_production_readiness.v2`：同时汇总当前财务预检、准确 monitor task 存活、5 轮顺序且每日 Token 不设累计上限的研究策略，以及 20 日 / 50 单前瞻试运行进度。报告还保留 canonical 依赖顺序的 operator checklist：按阻断代码合并重复候选项并给出出现次数、受影响候选数、首个门禁、安全动作、所需持久化证据及完成标准；清单缺失、非法、包含授权动作或不是 canonical evidence 时会直接 fail-closed，不能充当操作指引。退出码 `0` 只表示当前服务可以继续有界 paper/shadow 证据收集，不表示已达到 20 日 / 50 单，也不表示 GO；退出码 `2` 表示 fail-closed 非就绪，服务未运行同样如此。仓库测试或静态 acceptance manifest 不能替代这份实时报告。输出不包含 XLS 行、账户标识、券商动作、数据库写入、执行/资本权限或盈利声明。
 
-在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。准备下一个决策窗口前，先运行 `./scripts/service/manage_launch_agent.sh print-plist` 检查本地用户级定义，再显式执行 `./scripts/service/manage_launch_agent.sh install`；随后必须由 `./scripts/service/manage_launch_agent.sh status` 同时确认 LaunchAgent 已加载、进程存活且 live scheduler 正在运行。该服务只监听 `127.0.0.1`，只要仍处于加载状态，进程任何退出都会由 launchd 重新拉起，并可通过 `uninstall` 完整撤销。live scheduler 会随服务启动并可能联系已配置行情 provider，但不会修改 `config.json` 或 `.env`，也不证明财务就绪或授予券商权限。若后端端口已有 listener，安装会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
+在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。生产环境必须先有经验证的不可变 `current`；准备下一个决策窗口前，只通过 `./scripts/start_server.sh prod` 启动或修复受管服务。命令成功表示运行中的 version、commit SHA、artifact fingerprint、进程健康和 live scheduler 都与 `current` 精确一致；随后再运行 `uv run python scripts/service/audit_daily_candidate_production.py --pretty` 检查应用级生产门禁。使用 `./scripts/stop_server.sh prod` 停止准确受管服务。`scripts/service/manage_launch_agent.sh` 是持锁的内部实现，不得直接用它安装、重启或移除服务。服务只监听 `127.0.0.1`，加载期间进程退出会由 launchd 重新拉起；scheduler 始终随服务启动并可能联系已配置行情 provider，但这不证明财务就绪或授予券商权限。若 8000 端口已有 listener，启动会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
 
 ## 前瞻运营试运行
 
@@ -106,7 +106,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 | 后台告警或通知失败 | 候选结论保持不变且不得重试 | 在下个窗口前检查 attempt 中脱敏的 `operator_alert` / `notification` 状态 |
 | 盘前准备记录阻断、契约无效、中断或缺失 | 正式尝试不受影响，且不获得重试或回填资格 | 在后续干净窗口前复核脱敏第一门禁；不得把盘前准备当作交易结果 |
 | 后台监控缺失、已结束、被取消或失败 | 不执行自动尝试，runtime 状态 fail closed | 重启服务并排查 task 故障，在下个窗口前确认 `background_monitor_running=true` |
-| macOS LaunchAgent 未加载或服务就绪状态不可用 | 不形成持久自动 monitor 结论 | 显式检查或重装该准确用户级服务；不得从 launchd 状态推断财务就绪 |
+| macOS LaunchAgent 未加载或服务就绪状态不可用 | 不形成持久自动 monitor 结论 | 运行 `./scripts/start_server.sh prod` 后再执行生产审计；不得直接调用内部 LaunchAgent 管理器或从 launchd 状态推断财务就绪 |
 | 后台窗口结束仍无当日记录 | `missed_decision_window`，不回填 | 在下一个已验证交易日窗口前准备好当前证据 |
 | 策略、已复核费用或策略运行约束 fingerprint 变化 | 开始新试运行周期 | 旧样本保留为已归档证据，不并入新周期 |
 | Kill Switch 不可用或已开启 | `no_action` | 恢复并复核交易控制证据 |

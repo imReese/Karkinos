@@ -63,13 +63,14 @@ guarantee.
 
 ## Project status
 
-The current software version is `0.3.1`. v0.3.1 is a broker-provider-free
-hotfix release: it packages research/backtesting, persisted financial
-evidence, daily planning, paper/shadow, OMS/reconciliation, and the provider-
-neutral controlled-execution foundation, repairs the exact known legacy v0.3.0
-database upgrade state, and prevents immutable release-image tags from being
-reused. It does not select, register, contact, or require a real broker adapter
-and does not claim real-money readiness.
+The current software version is `0.3.2`. v0.3.2 is a broker-provider-free
+maintenance and native-distribution release. It retains the v0.3.1 research,
+financial-evidence, planning, paper/shadow, OMS/reconciliation, and controlled-
+execution foundation; makes the live scheduler unconditional while keeping
+automatic trading as a separate default-off runtime gate; and adds verified,
+immutable macOS artifacts with journaled `current`/`previous` activation and
+automatic rollback. It does not select, register, contact, or require a real
+broker adapter and does not claim real-money readiness.
 
 The exact tag commit must already have passed the complete `main` Code CI gate
 and repository acceptance audit; the tag release workflow verifies and reuses
@@ -78,7 +79,10 @@ release evidence only. Real-adapter
 selection/deployment, the 20-trading-day soak, recovery drills, and the
 `manual_each_order` pilot remain unchanged v1.8 product-milestone gates.
 Each official SemVer tag publishes a multi-architecture image at
-`ghcr.io/imreese/karkinos:<tag>` plus its immutable `sha-<commit>` tag.
+`ghcr.io/imreese/karkinos:<tag>` plus its workflow-protected `sha-<commit>`
+identity tag. The OCI manifest digest remains the immutable image identity;
+repository code cannot enforce GHCR-wide tag immutability against another
+credential with package write access.
 Only the newest stable tag advances the mutable `latest`, `v<major>`, and
 `v<major>.<minor>` aliases, so queued out-of-order releases cannot roll them
 backward.
@@ -108,12 +112,60 @@ backend services with:
 ./scripts/stop_server.sh
 ```
 
-The live scheduler is part of the service lifecycle and starts automatically.
+With no mode argument, `start_server.sh` runs only the source development stack:
+a reloadable backend on `127.0.0.1:8001` and Vite on `127.0.0.1:5173`.
+It does not reuse, replace, or stop the stable production service on its
+persisted port (8000 by default).
+The live scheduler is part of every backend lifecycle and has no off switch.
 Automatic trading is a separate, default-off runtime gate on the Trading page;
 it can be changed without restarting the service and never grants capital
 authority by itself. Automatic broker submission is not implemented yet.
-See [scripts/README.md](scripts/README.md) for production mode and specialized
-maintenance commands.
+
+## Native macOS production releases
+
+Native production runs only from a verified, immutable CI artifact selected by
+`~/Library/Application Support/Karkinos/current`. It is never built from the
+local checkout or a local Docker image. `./scripts/start_server.sh prod` starts
+that selected release; it never copies the checkout into production and never
+changes `current`.
+
+The managed runtime keeps mutable state outside release directories:
+
+```text
+~/Library/Application Support/Karkinos/
+  current  -> releases/sha-<40-hex-commit>
+  previous -> releases/sha-<40-hex-commit>
+  releases/
+  data/
+  config/
+  logs/
+  .service-config.json
+```
+
+After bootstrap, source-checkout-free lifecycle commands are available at
+`current/bin/karkinosctl status`, `service-start`, and `service-stop`. The
+repository wrappers remain convenience adapters; production stop is explicit:
+`./scripts/stop_server.sh prod`.
+
+An exact 40-hex commit can be tested without a tag. The candidate command
+downloads the CI artifact, verifies its checksum, identity, architecture, and
+GitHub build-provenance attestation, runs it against disposable state on an
+isolated port, and always discards it without changing `current` or `previous`.
+A stable update instead requires a published `v<major>.<minor>.<patch>` Release
+and its verified immutable artifact. Activation is locked and journaled: it
+stops the service, snapshots mutable state, checks the new runtime against that
+snapshot, switches the pointers atomically, and requires the exact release SHA,
+artifact fingerprint, version, health, and scheduler identity after restart.
+Before the journal is committed, unsafe HTTP and other background work remain
+blocked while the scheduler alone enters an explicit readiness phase and
+completes at least one loop iteration or initialized-idle pass.
+A conclusive activation failure restores the prior state and pointers; an
+inconclusive recovery retains its journal and blocks later mutations. Successful
+activation retains only `current` and `previous`; older history stays on GitHub.
+
+See [scripts/README.md](scripts/README.md) for candidate, stable update,
+rollback, and one-time legacy-bootstrap commands. Direct LaunchAgent management
+and low-level release subcommands are internal implementation details.
 
 Use fake or sanitized development data. Keep `config.json`, `.env`, runtime
 databases, and private account evidence local.
@@ -127,15 +179,16 @@ npm --prefix web run test
 npm --prefix web run build
 ```
 
-Docker runtime:
+Optional Docker development/runtime verification:
 
 ```bash
 docker compose up --build
 ```
 
-Docker Compose also starts the live market-data scheduler. Provider failures
-remain fail-closed, and scheduler liveness grants no broker, execution, or
-capital authority.
+Docker Compose also starts the live market-data scheduler. It is independent of
+the native production update path: native production does not require a local
+Docker service or build. Provider failures remain fail-closed, and scheduler
+liveness grants no broker, execution, or capital authority.
 
 ## Documentation map
 

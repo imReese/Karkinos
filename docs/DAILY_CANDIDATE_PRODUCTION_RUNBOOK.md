@@ -219,17 +219,21 @@ account identifiers, broker action, database write, execution grant, capital
 change, or profitability claim.
 
 On an owner-operated Mac, a terminal background process is not durable service
-evidence. Before relying on the next decision window, first inspect the local
-user-level definition with `./scripts/service/manage_launch_agent.sh print-plist`, then
-explicitly install it with `./scripts/service/manage_launch_agent.sh install`. Verify
-`./scripts/service/manage_launch_agent.sh status` reports a loaded LaunchAgent,
-process liveness, and a running live scheduler. The service binds only `127.0.0.1`, restarts after any
-process exit while loaded, and is fully reversible with `uninstall`. The live
-scheduler starts with the service and may contact the configured market-data
-provider; this does not establish financial readiness or broker authority. If another listener owns the backend port,
-installation fails without stopping it. The operator must resolve that exact
-process explicitly; never run two daily-candidate services against one local
-runtime database.
+evidence. Production must already have a verified immutable `current` release;
+start or repair its supervised service only with
+`./scripts/start_server.sh prod`. A successful command verifies the running
+version, commit SHA, artifact fingerprint, process health, and live scheduler
+against `current`. Then run
+`uv run python scripts/service/audit_daily_candidate_production.py --pretty` to
+check the application-level production gates. Stop the exact supervised service
+with `./scripts/stop_server.sh prod`. `scripts/service/manage_launch_agent.sh` is an
+internal locked backend and must not be invoked directly for installation,
+restart, or removal. The service binds only `127.0.0.1`, restarts after process
+exit while loaded, and always starts the scheduler, which may contact the
+configured market-data provider; none of this establishes financial readiness
+or broker authority. If another listener owns port 8000, startup fails without
+stopping it. Resolve that exact process explicitly; never run two daily-
+candidate services against one local runtime database.
 
 ## Forward operating trial
 
@@ -335,7 +339,7 @@ and requires a new review.
 | Background alert or notification fails | Candidate result remains unchanged and no retry occurs | Inspect the attempt's sanitized `operator_alert` / `notification` status before the next window |
 | Pre-window preparation record is blocked, invalid, interrupted, or missing | Formal attempt remains untouched; no retry or backfill is granted | Review the sanitized first gate before a later clean window; never treat preparation as a trading result |
 | Background monitor is missing, completed, cancelled, or failed | No automatic attempt; runtime status fails closed | Restart the service, investigate the task failure, and verify `background_monitor_running=true` before the next window |
-| macOS LaunchAgent is unloaded or service readiness is unavailable | No durable automatic-monitor claim | Explicitly inspect or reinstall the exact user-level service; do not infer financial readiness from launchd state |
+| macOS LaunchAgent is unloaded or service readiness is unavailable | No durable automatic-monitor claim | Run `./scripts/start_server.sh prod`, then the production-readiness audit; do not invoke the internal LaunchAgent manager or infer financial readiness from launchd state |
 | Background window passes without a record | `missed_decision_window`; no backfill | Prepare current evidence before the next verified trading-day window |
 | Strategy, reviewed-fee, or strategy-operating-constraint fingerprint changes | New trial epoch starts | Keep old samples as superseded evidence; do not merge them |
 | Kill Switch unavailable or active | `no_action` | Restore or explicitly review trading controls |
