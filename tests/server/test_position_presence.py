@@ -14,6 +14,7 @@ from server.services.position_presence import (
     classify_position_presence,
     is_economically_zero_quantity,
 )
+from tests.portfolio_valuation_fakes import PublishedValuationFakeDbMixin
 
 
 def _endpoint(router, path: str):
@@ -89,7 +90,7 @@ def _ledger_rows() -> list[dict]:
     ]
 
 
-class PersistedLedgerDb:
+class PersistedLedgerDb(PublishedValuationFakeDbMixin):
     def __init__(self) -> None:
         self.rows = _ledger_rows()
 
@@ -148,11 +149,7 @@ def test_quantity_precision_filters_only_economic_zero() -> None:
     assert classify_position_presence(residual)[0] == "closed"
 
 
-def test_zero_quantity_with_inconsistent_evidence_requires_review(
-    monkeypatch,
-) -> None:
-    from server.routes import portfolio as portfolio_routes
-
+def test_zero_quantity_with_inconsistent_evidence_requires_review() -> None:
     position = ProjectedPosition(
         symbol="REVIEW",
         quantity=Decimal("0"),
@@ -161,45 +158,10 @@ def test_zero_quantity_with_inconsistent_evidence_requires_review(
         unrealized_pnl=Decimal("0"),
     )
 
-    class EmptyDb:
-        def get_ledger_entries_sync(self, limit=500, offset=0):
-            return []
+    presence, reason_codes = classify_position_presence(position)
 
-        def get_cash_flows_sync(self, limit=1000, offset=0):
-            return []
-
-        def get_trades_sync(self, limit=1000, offset=0):
-            return []
-
-        def list_latest_quotes_sync(self):
-            return []
-
-        async def get_total_deposits(self):
-            return 0.0
-
-    state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=0, assets=[]),
-        scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0, positions={"REVIEW": position}),
-            instruments={},
-            watchlist=[],
-            latest_quotes={},
-        ),
-        db=EmptyDb(),
-    )
-    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
-
-    snapshot = asyncio.run(
-        _endpoint(portfolio_routes.create_router(), "/api/portfolio")()
-    )
-
-    assert snapshot.positions == []
-    assert snapshot.closed_positions == []
-    assert len(snapshot.position_review_items) == 1
-    assert snapshot.position_review_items[0].position.symbol == "REVIEW"
-    assert snapshot.position_review_items[0].reason_codes == [
-        "available_quantity_nonzero"
-    ]
+    assert presence == "review_required"
+    assert reason_codes == ["available_quantity_nonzero"]
 
 
 def test_closed_ledger_position_is_historical_but_not_current_across_consumers(

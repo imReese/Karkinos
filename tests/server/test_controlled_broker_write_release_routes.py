@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_broker_submission as submission_route_module
 import server.routes.controlled_broker_write_release as route_module
 from server.app import create_app
@@ -201,14 +202,14 @@ def test_submission_factories_only_consume_a_current_persisted_release_provider(
     inactive = PersistedProvider(0)
     state = type("State", (), {"controlled_broker_release_evidence_provider": None})()
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "build_controlled_broker_write_release_service",
         lambda _: active,
     )
     assert submission_route_module._release_evidence_provider(state) is active
 
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "build_controlled_broker_write_release_service",
         lambda _: inactive,
     )

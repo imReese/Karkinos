@@ -16,7 +16,7 @@ authority.
 Choose a private-key path outside the repository:
 
 ```bash
-uv run python scripts/operator_signer.py init \
+uv run python scripts/broker/operator_signer.py init \
   --private-key ~/.config/karkinos/operator-owner.pem \
   --operator-id local-owner \
   --key-id owner-key-1
@@ -51,7 +51,7 @@ the canonical next step is `preview_terminal_clearance`:
 4. Run the local signer and end stdin after pasting only the payload:
 
    ```bash
-   uv run python scripts/operator_signer.py sign \
+   uv run python scripts/broker/operator_signer.py sign \
      --private-key ~/.config/karkinos/operator-owner.pem \
      --operator-id local-owner \
      --key-id owner-key-1 \
@@ -86,7 +86,7 @@ the canonical next step is `preview_reconciled_ledger_posting`:
    (`Ctrl-D` on macOS/Linux):
 
    ```bash
-   uv run python scripts/operator_signer.py sign \
+   uv run python scripts/broker/operator_signer.py sign \
      --private-key ~/.config/karkinos/operator-owner.pem \
      --operator-id local-owner \
      --key-id owner-key-1 \

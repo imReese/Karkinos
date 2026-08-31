@@ -4,6 +4,8 @@ import asyncio
 import json
 import sqlite3
 import threading
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -27,9 +29,17 @@ from server.ai_runtime.external_research import (
     _edge_request_options,
 )
 from server.ai_runtime.karkinos_source import _research_evidence_projection
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderCallDeferred,
+    ProviderSendAdmission,
+)
 from server.ai_runtime.provider_connectivity import (
     HttpJsonResponse,
     ProviderConnectivitySettings,
+)
+from server.ai_runtime.strategy_research_privacy import (
+    NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
 )
 from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
 
@@ -81,12 +91,11 @@ class FixtureCaptureSource:
 def _payload(*, analysis_ready: bool = True) -> dict:
     blockers = [] if analysis_ready else ["after_cost_evidence_missing"]
     return {
-        "schema_version": "karkinos.ai.research_evidence_capture.v2",
+        "schema_version": "karkinos.ai.research_evidence_capture.v3",
         "backtest_result_id": 17,
         "backtest_created_at": NOW,
+        "notional_policy_id": NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
         "performance_summary": {
-            "initial_cash": 100_000.0,
-            "final_equity": 100_888.28507,
             "total_return": 0.0088828507,
             "sharpe": 0.000012939959750936647,
             "sortino": 0.00001764646208314975,
@@ -101,17 +110,19 @@ def _payload(*, analysis_ready: bool = True) -> dict:
             "benchmark_return": None,
         },
         "after_cost_evidence": {
-            "net_pnl": 888.28507,
-            "total_cost": 1020.71493,
-            "gross_pnl_before_costs": 1909.0,
-            "net_return": 0.0088828507,
+            "net_return_after_costs": 0.0088828507,
             "gross_return_before_costs": 0.01909,
+            "total_cost_bps": 102.071493,
+            "fill_count": None,
+            "gross_turnover_ratio": 18.21853,
+            "limitations": [],
         },
         "cost_summary": {
-            "total_commission": 1020.71493,
-            "total_slippage": 0.0,
+            "total_commission_bps": 102.071493,
+            "total_slippage_bps": 0.0,
+            "total_cost_bps": 102.071493,
             "total_trades": 20,
-            "gross_turnover": 1821853.0,
+            "gross_turnover_ratio": 18.21853,
         },
         "research_evidence_bundle": {
             "schema_version": "karkinos.research_evidence.v1",
@@ -128,6 +139,10 @@ def _payload(*, analysis_ready: bool = True) -> dict:
         "analysis_ready": analysis_ready,
         "analysis_blocking_reasons": blockers,
         "persisted_backtest_facts_only": True,
+        "absolute_notional_values_redacted": True,
+        "account_facts_included": False,
+        "broker_facts_included": False,
+        "authority_effect": "research_only",
     }
 
 
@@ -141,7 +156,7 @@ def _batch(*, status: str = "complete", analysis_ready: bool = True):
                 tool_name=CAPTURE_TOOL_BY_TYPE[CaptureEvidenceType.RESEARCH_EVIDENCE],
                 status=status,
                 as_of=NOW,
-                source_schema_version=("karkinos.ai.research_evidence_capture.v2"),
+                source_schema_version=("karkinos.ai.research_evidence_capture.v3"),
                 payload=_payload(analysis_ready=analysis_ready),
             ),
         ),
@@ -221,6 +236,7 @@ def _service(
     *,
     status: str = "complete",
     analysis_ready: bool = True,
+    provider_send_admission: ProviderSendAdmission | None = None,
 ):
     evidence = CanonicalEvidenceRepository(db_path)
     ai_store = AiAuditStore(db_path)
@@ -255,8 +271,32 @@ def _service(
         transport=transport,
         now=lambda: NOW,
         monotonic=lambda: next(ticks),
+        provider_send_admission=provider_send_admission,
     )
     return service, source
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_external_report_peak_window_defers_before_capture_and_transport(
+    tmp_path,
+) -> None:
+    transport = FixtureTransport(_successful_response())
+    service, source = _service(
+        tmp_path / "app.db",
+        transport,
+        provider_send_admission=ProviderSendAdmission(
+            policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+            now=lambda: datetime(2026, 8, 31, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        ),
+    )
+
+    with pytest.raises(ProviderCallDeferred, match="deepseek_peak_pricing_window"):
+        await service.run(_request())
+
+    assert source.calls == 0
+    assert transport.calls == []
 
 
 @pytest.mark.unit
@@ -504,7 +544,7 @@ async def test_reasoning_metadata_is_audited_without_persisting_reasoning_conten
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_capture_v2_projects_persisted_performance_without_recalculation():
+async def test_capture_v3_projects_normalized_persisted_performance_without_recalculation():
     class FixtureDb:
         async def get_backtest_result(self, result_id):
             assert result_id == 17
@@ -551,13 +591,20 @@ async def test_capture_v2_projects_persisted_performance_without_recalculation()
 
     assert projection.status == "complete"
     assert projection.source_schema_version == (
-        "karkinos.ai.research_evidence_capture.v2"
+        "karkinos.ai.research_evidence_capture.v3"
+    )
+    assert (
+        projection.payload["notional_policy_id"]
+        == NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
     )
     assert projection.payload["performance_summary"]["total_return"] == (0.0088828507)
     assert projection.payload["performance_summary"]["max_drawdown"] == (
         0.1571207859506828
     )
-    assert projection.payload["after_cost_evidence"]["total_cost"] == 1020.71493
+    assert projection.payload["after_cost_evidence"]["total_cost_bps"] == 102.071493
+    assert projection.payload["absolute_notional_values_redacted"] is True
+    assert "initial_cash" not in projection.payload["performance_summary"]
+    assert "final_equity" not in projection.payload["performance_summary"]
     assert projection.payload["analysis_ready"] is True
     assert projection.payload["persisted_backtest_facts_only"] is True
 

@@ -11,6 +11,7 @@ import {
   useOperatorApprovalStatusQuery,
   useOperatorApprovalVerificationMutation,
   type ControlledExecutionOperatorSession,
+  type ControlledSessionRevocationPreview,
   type ControlledSessionRevocationReason,
 } from './api';
 
@@ -64,6 +65,206 @@ function reasonLabel(
     },
   };
   return labels[reason][locale];
+}
+
+function RevocationPreviewEvidence({
+  locale,
+  preview,
+}: {
+  locale: Locale;
+  preview: ControlledSessionRevocationPreview;
+}) {
+  return (
+    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-[var(--app-text)]">
+          {locale === 'zh'
+            ? '确定性撤销证据'
+            : 'Deterministic revocation evidence'}
+        </div>
+        <span className="app-chip">
+          {formatPublicStatus(preview.status, locale)}
+        </span>
+      </div>
+      <div className="app-type-micro mt-2 grid min-w-0 gap-2 font-mono sm:grid-cols-2">
+        <div className="min-w-0 truncate" title={preview.revocation_id}>
+          revocation: {shortenedIdentity(preview.revocation_id)}
+        </div>
+        <div
+          className="min-w-0 truncate"
+          title={preview.revocation_fingerprint}
+        >
+          fingerprint: {shortenedIdentity(preview.revocation_fingerprint)}
+        </div>
+      </div>
+      {!preview.ready || preview.blockers.length ? (
+        <div
+          role="alert"
+          className="mt-2 break-words text-xs text-[var(--app-danger-text)]"
+        >
+          {locale === 'zh' ? '阻断项：' : 'Blockers: '}
+          {preview.blockers
+            .map((item) => formatPublicCode(item, locale))
+            .join(' · ') ||
+            (locale === 'zh'
+              ? '预览未达到可签名状态'
+              : 'Preview is not ready for signature')}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RevocationPanelHeader({
+  close,
+  locale,
+}: {
+  close: () => void;
+  locale: Locale;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-[var(--app-text)]">
+          {locale === 'zh'
+            ? '永久撤销精确会话授权'
+            : 'Permanently revoke exact session authority'}
+        </div>
+        <div className="app-muted mt-1 break-words text-xs leading-5">
+          {locale === 'zh'
+            ? '撤销后该会话不能自动恢复、续期或继续通过运行时准入。本步骤不会提交或撤销券商订单，也不会替代未结订单的生命周期处置。'
+            : 'After revocation this session cannot auto-resume, renew, or pass runtime admission. This step cannot submit or cancel a broker order and does not replace lifecycle handling for an open order.'}
+        </div>
+      </div>
+      <button
+        type="button"
+        className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs"
+        onClick={close}
+      >
+        {locale === 'zh' ? '关闭' : 'Close'}
+      </button>
+    </div>
+  );
+}
+
+function RevocationScopeAndReason({
+  locale,
+  onReasonChange,
+  reason,
+  session,
+}: {
+  locale: Locale;
+  onReasonChange: (reason: ControlledSessionRevocationReason) => void;
+  reason: ControlledSessionRevocationReason;
+  session: ControlledExecutionOperatorSession;
+}) {
+  return (
+    <>
+      <div className="mt-3 grid min-w-0 gap-2 text-xs sm:grid-cols-2">
+        <div className="min-w-0 truncate" title={session.session_id}>
+          session: {shortenedIdentity(session.session_id)}
+        </div>
+        <div className="min-w-0 break-words">
+          {locale === 'zh' ? '账户 / 策略' : 'Account / strategy'}:{' '}
+          {session.account_alias || '—'} / {session.strategy_id || '—'}
+        </div>
+        <div className="min-w-0 truncate" title={session.authorization_id}>
+          authorization: {shortenedIdentity(session.authorization_id)}
+        </div>
+        <div className="min-w-0 break-words">
+          {locale === 'zh' ? '到期时间' : 'Expiry'}: {session.expires_at || '—'}
+        </div>
+      </div>
+      <label className="mt-3 block text-xs text-[var(--app-text)]">
+        <span className="app-muted block pb-1">
+          {locale === 'zh' ? '撤销原因' : 'Revocation reason'}
+        </span>
+        <select
+          aria-label={locale === 'zh' ? '撤销原因' : 'Revocation reason'}
+          className="app-input min-h-10 w-full"
+          value={reason}
+          onChange={(event) =>
+            onReasonChange(
+              event.target.value as ControlledSessionRevocationReason,
+            )
+          }
+        >
+          {REVOCATION_REASONS.map((value) => (
+            <option key={value} value={value}>
+              {reasonLabel(value, locale)}
+            </option>
+          ))}
+        </select>
+      </label>
+    </>
+  );
+}
+
+function RevocationFinalConfirmation({
+  acknowledged,
+  applyRevocation,
+  locale,
+  onAcknowledgedChange,
+  revoke,
+}: {
+  acknowledged: boolean;
+  applyRevocation: () => void;
+  locale: Locale;
+  onAcknowledgedChange: (acknowledged: boolean) => void;
+  revoke: ReturnType<typeof useControlledSessionRevocationMutation>;
+}) {
+  return (
+    <div className="mt-3 min-w-0 rounded-2xl border border-[var(--app-danger-border)] p-3">
+      <div className="text-sm font-semibold text-[var(--app-text)]">
+        {locale === 'zh' ? '最终撤销确认' : 'Final revocation confirmation'}
+      </div>
+      <label className="mt-3 flex min-w-0 items-start gap-2 text-xs leading-5 text-[var(--app-text)]">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={acknowledged}
+          onChange={(event) => onAcknowledgedChange(event.target.checked)}
+        />
+        <span>
+          {locale === 'zh'
+            ? '我确认永久撤销这一精确会话；它不会自动恢复、续期或扩大。本步骤不会撤销任何未结券商订单。'
+            : 'I confirm permanently revoking this exact session. It will not auto-resume, renew, or widen. This step does not cancel any open broker order.'}
+        </span>
+      </label>
+      <button
+        type="button"
+        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+        disabled={!acknowledged || revoke.isPending}
+        onClick={applyRevocation}
+      >
+        {revoke.isPending
+          ? locale === 'zh'
+            ? '撤销中'
+            : 'Revoking'
+          : locale === 'zh'
+            ? '永久撤销该会话一次'
+            : 'Permanently revoke this session once'}
+      </button>
+      {revoke.isError ? (
+        <div
+          role="alert"
+          className="mt-2 break-words text-xs text-[var(--app-danger-text)]"
+        >
+          {mutationError(revoke.error)}
+        </div>
+      ) : null}
+      {revoke.data ? (
+        <div
+          role="status"
+          className="mt-2 break-words text-xs text-[var(--app-success-text)]"
+        >
+          {locale === 'zh'
+            ? `会话已撤销（${reasonLabel(revoke.data.reason_code, locale)}）；运行时准入已永久关闭。`
+            : `Session revoked (${reasonLabel(revoke.data.reason_code, locale)}); runtime admission is permanently closed.`}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function ControlledSessionRevocationOperatorPanel({
@@ -127,6 +328,12 @@ export function ControlledSessionRevocationOperatorPanel({
     preview.reset();
     resetSignatureSteps();
     preview.mutate({ sessionId: session.session_id, reason_code: reason });
+  };
+
+  const changeReason = (value: ControlledSessionRevocationReason) => {
+    setReason(value);
+    preview.reset();
+    resetSignatureSteps();
   };
 
   const createChallenge = () => {
@@ -193,68 +400,13 @@ export function ControlledSessionRevocationOperatorPanel({
           }
           className="min-w-0 rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] p-3"
         >
-          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-[var(--app-text)]">
-                {locale === 'zh'
-                  ? '永久撤销精确会话授权'
-                  : 'Permanently revoke exact session authority'}
-              </div>
-              <div className="app-muted mt-1 break-words text-xs leading-5">
-                {locale === 'zh'
-                  ? '撤销后该会话不能自动恢复、续期或继续通过运行时准入。本步骤不会提交或撤销券商订单，也不会替代未结订单的生命周期处置。'
-                  : 'After revocation this session cannot auto-resume, renew, or pass runtime admission. This step cannot submit or cancel a broker order and does not replace lifecycle handling for an open order.'}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs"
-              onClick={close}
-            >
-              {locale === 'zh' ? '关闭' : 'Close'}
-            </button>
-          </div>
-
-          <div className="mt-3 grid min-w-0 gap-2 text-xs sm:grid-cols-2">
-            <div className="min-w-0 truncate" title={session.session_id}>
-              session: {shortenedIdentity(session.session_id)}
-            </div>
-            <div className="min-w-0 break-words">
-              {locale === 'zh' ? '账户 / 策略' : 'Account / strategy'}:{' '}
-              {session.account_alias || '—'} / {session.strategy_id || '—'}
-            </div>
-            <div className="min-w-0 truncate" title={session.authorization_id}>
-              authorization: {shortenedIdentity(session.authorization_id)}
-            </div>
-            <div className="min-w-0 break-words">
-              {locale === 'zh' ? '到期时间' : 'Expiry'}:{' '}
-              {session.expires_at || '—'}
-            </div>
-          </div>
-
-          <label className="mt-3 block text-xs text-[var(--app-text)]">
-            <span className="app-muted block pb-1">
-              {locale === 'zh' ? '撤销原因' : 'Revocation reason'}
-            </span>
-            <select
-              aria-label={locale === 'zh' ? '撤销原因' : 'Revocation reason'}
-              className="app-input min-h-10 w-full"
-              value={reason}
-              onChange={(event) => {
-                setReason(
-                  event.target.value as ControlledSessionRevocationReason,
-                );
-                preview.reset();
-                resetSignatureSteps();
-              }}
-            >
-              {REVOCATION_REASONS.map((value) => (
-                <option key={value} value={value}>
-                  {reasonLabel(value, locale)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <RevocationPanelHeader close={close} locale={locale} />
+          <RevocationScopeAndReason
+            locale={locale}
+            onReasonChange={changeReason}
+            reason={reason}
+            session={session}
+          />
 
           <button
             type="button"
@@ -281,47 +433,7 @@ export function ControlledSessionRevocationOperatorPanel({
           ) : null}
 
           {preview.data ? (
-            <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-[var(--app-text)]">
-                  {locale === 'zh'
-                    ? '确定性撤销证据'
-                    : 'Deterministic revocation evidence'}
-                </div>
-                <span className="app-chip">
-                  {formatPublicStatus(preview.data.status, locale)}
-                </span>
-              </div>
-              <div className="app-type-micro mt-2 grid min-w-0 gap-2 font-mono sm:grid-cols-2">
-                <div
-                  className="min-w-0 truncate"
-                  title={preview.data.revocation_id}
-                >
-                  revocation: {shortenedIdentity(preview.data.revocation_id)}
-                </div>
-                <div
-                  className="min-w-0 truncate"
-                  title={preview.data.revocation_fingerprint}
-                >
-                  fingerprint:{' '}
-                  {shortenedIdentity(preview.data.revocation_fingerprint)}
-                </div>
-              </div>
-              {!preview.data.ready || preview.data.blockers.length ? (
-                <div
-                  role="alert"
-                  className="mt-2 break-words text-xs text-[var(--app-danger-text)]"
-                >
-                  {locale === 'zh' ? '阻断项：' : 'Blockers: '}
-                  {preview.data.blockers
-                    .map((item) => formatPublicCode(item, locale))
-                    .join(' · ') ||
-                    (locale === 'zh'
-                      ? '预览未达到可签名状态'
-                      : 'Preview is not ready for signature')}
-                </div>
-              ) : null}
-            </div>
+            <RevocationPreviewEvidence locale={locale} preview={preview.data} />
           ) : null}
 
           {preview.data?.ready ? (
@@ -420,8 +532,8 @@ export function ControlledSessionRevocationOperatorPanel({
                     {challenge.data.expires_at}
                     <br />
                     {locale === 'zh'
-                      ? '使用 scripts/operator_signer.py，expected action 为 revoke_controlled_session，artifact type 为 controlled_session_revocation。只粘贴 payload，私钥不得进入 Karkinos。'
-                      : 'Use scripts/operator_signer.py with expected action revoke_controlled_session and artifact type controlled_session_revocation. Paste only the payload; the private key must never enter Karkinos.'}
+                      ? '使用 scripts/broker/operator_signer.py，expected action 为 revoke_controlled_session，artifact type 为 controlled_session_revocation。只粘贴 payload，私钥不得进入 Karkinos。'
+                      : 'Use scripts/broker/operator_signer.py with expected action revoke_controlled_session and artifact type controlled_session_revocation. Paste only the payload; the private key must never enter Karkinos.'}
                   </div>
                   <label className="block min-w-0 text-xs text-[var(--app-text)]">
                     <span className="app-muted block pb-1">
@@ -473,58 +585,13 @@ export function ControlledSessionRevocationOperatorPanel({
           ) : null}
 
           {verification.data ? (
-            <div className="mt-3 min-w-0 rounded-2xl border border-[var(--app-danger-border)] p-3">
-              <div className="text-sm font-semibold text-[var(--app-text)]">
-                {locale === 'zh'
-                  ? '最终撤销确认'
-                  : 'Final revocation confirmation'}
-              </div>
-              <label className="mt-3 flex min-w-0 items-start gap-2 text-xs leading-5 text-[var(--app-text)]">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={acknowledged}
-                  onChange={(event) => setAcknowledged(event.target.checked)}
-                />
-                <span>
-                  {locale === 'zh'
-                    ? '我确认永久撤销这一精确会话；它不会自动恢复、续期或扩大。本步骤不会撤销任何未结券商订单。'
-                    : 'I confirm permanently revoking this exact session. It will not auto-resume, renew, or widen. This step does not cancel any open broker order.'}
-                </span>
-              </label>
-              <button
-                type="button"
-                className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
-                disabled={!acknowledged || revoke.isPending}
-                onClick={applyRevocation}
-              >
-                {revoke.isPending
-                  ? locale === 'zh'
-                    ? '撤销中'
-                    : 'Revoking'
-                  : locale === 'zh'
-                    ? '永久撤销该会话一次'
-                    : 'Permanently revoke this session once'}
-              </button>
-              {revoke.isError ? (
-                <div
-                  role="alert"
-                  className="mt-2 break-words text-xs text-[var(--app-danger-text)]"
-                >
-                  {mutationError(revoke.error)}
-                </div>
-              ) : null}
-              {revoke.data ? (
-                <div
-                  role="status"
-                  className="mt-2 break-words text-xs text-[var(--app-success-text)]"
-                >
-                  {locale === 'zh'
-                    ? `会话已撤销（${reasonLabel(revoke.data.reason_code, locale)}）；运行时准入已永久关闭。`
-                    : `Session revoked (${reasonLabel(revoke.data.reason_code, locale)}); runtime admission is permanently closed.`}
-                </div>
-              ) : null}
-            </div>
+            <RevocationFinalConfirmation
+              acknowledged={acknowledged}
+              applyRevocation={applyRevocation}
+              locale={locale}
+              onAcknowledgedChange={setAcknowledged}
+              revoke={revoke}
+            />
           ) : null}
         </section>
       )}

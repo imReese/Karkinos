@@ -13,7 +13,7 @@ kill switch、AI、strategy 或 capital authority。
 选择仓库之外的私钥路径：
 
 ```bash
-uv run python scripts/operator_signer.py init \
+uv run python scripts/broker/operator_signer.py init \
   --private-key ~/.config/karkinos/operator-owner.pem \
   --operator-id local-owner \
   --key-id owner-key-1
@@ -43,7 +43,7 @@ uv run python -m server --check-config
 4. 只把该 payload 粘贴给本地签名器，然后结束 stdin：
 
    ```bash
-   uv run python scripts/operator_signer.py sign \
+   uv run python scripts/broker/operator_signer.py sign \
      --private-key ~/.config/karkinos/operator-owner.pem \
      --operator-id local-owner \
      --key-id owner-key-1 \
@@ -73,7 +73,7 @@ partial batch 或冲突的 lifecycle/statement evidence 都继续阻断。应先
 5. 运行签名器，只把该 payload 粘贴到 stdin，然后结束 stdin（macOS/Linux 使用 `Ctrl-D`）：
 
    ```bash
-   uv run python scripts/operator_signer.py sign \
+   uv run python scripts/broker/operator_signer.py sign \
      --private-key ~/.config/karkinos/operator-owner.pem \
      --operator-id local-owner \
      --key-id owner-key-1 \

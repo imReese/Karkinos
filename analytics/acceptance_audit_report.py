@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from analytics.acceptance_audit import (
+from analytics.acceptance import (
     AcceptanceAudit,
     build_acceptance_audit,
     build_account_truth_acceptance_audit,

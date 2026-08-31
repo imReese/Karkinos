@@ -18,6 +18,8 @@ from analytics.research_account_capital_evidence import (
     build_research_account_capital_evidence,
 )
 from analytics.strategy_advancement_gate import (
+    STRATEGY_ADVANCEMENT_OPTIONAL_CHECK_NAMES,
+    STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
     strategy_advancement_backtest_view,
@@ -322,6 +324,45 @@ def test_strategy_advancement_gate_passes_only_complete_deterministic_evidence()
     drifted = deepcopy(payload)
     drifted["checks"][0]["evidence"]["candidate_snapshot_id"] = "sha256:" + "f" * 64
     assert is_valid_passed_strategy_advancement_gate(drifted) is False
+
+
+def test_strategy_advancement_gate_blocks_when_dsr_not_significant():
+    candidate = deepcopy(_view(candidate=True))
+    candidate["sharpe"] = 0.5
+    gate = build_strategy_advancement_gate(
+        baseline=_view(candidate=False),
+        candidate=candidate,
+        critique_evidence={
+            "status": "completed",
+            "critique_id": "critique-reviewed",
+            "artifact_fingerprint": "e" * 64,
+        },
+        num_trials=100,
+    )
+    names = [check["name"] for check in gate.checks]
+    assert tuple(names) == (
+        STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES
+        + STRATEGY_ADVANCEMENT_OPTIONAL_CHECK_NAMES
+    )
+    assert "multiple_testing_correction_not_significant" in gate.blockers
+    assert gate.passed is False
+
+
+def test_strategy_advancement_gate_passes_dsr_with_strong_sharpe_and_one_trial():
+    candidate = deepcopy(_view(candidate=True))
+    candidate["sharpe"] = 10.0
+    gate = build_strategy_advancement_gate(
+        baseline=_view(candidate=False),
+        candidate=candidate,
+        critique_evidence={
+            "status": "completed",
+            "critique_id": "critique-reviewed",
+            "artifact_fingerprint": "e" * 64,
+        },
+        num_trials=1,
+    )
+    assert "multiple_testing_correction" not in gate.blockers
+    assert gate.passed is True
 
 
 def test_strategy_advancement_gate_fails_closed_for_every_named_evidence_gap():

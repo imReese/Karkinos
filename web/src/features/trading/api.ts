@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, requestJson } from '../../lib/api/client';
+import { apiClient, requestJson } from '../../shared/api/client';
 
 const CONTROL_REFETCH_MS = 5_000;
 
@@ -19,6 +19,45 @@ export type KillSwitchSnapshot = {
   reason: string;
   updated_at: string | null;
 };
+
+export type AutomaticTradingStatus =
+  'enabled' | 'disabled' | 'expired' | 'unavailable';
+
+export type AutomaticTradingSnapshot = {
+  enabled: boolean;
+  configured_enabled: boolean;
+  status: AutomaticTradingStatus;
+  revision: number;
+  control_fingerprint: string;
+  reason: string;
+  operator_id: string;
+  effective_at: string | null;
+  expires_at: string | null;
+  updated_at: string | null;
+  blockers: string[];
+  grants_capital_authority: false;
+  automatic_broker_submission_implemented: false;
+};
+
+type AutomaticTradingControlRequest = {
+  reason: string;
+  operator_id: string;
+  expected_revision: number;
+};
+
+export type SetAutomaticTradingRequest = AutomaticTradingControlRequest &
+  (
+    | {
+        enabled: true;
+        acknowledgement: 'enable_bounded_automatic_trading_gate_without_capital_authority';
+        ttl_seconds: number;
+      }
+    | {
+        enabled: false;
+        acknowledgement: 'disable_automatic_trading_gate_immediately';
+        ttl_seconds?: never;
+      }
+  );
 
 export type ManualOrder = {
   id: number;
@@ -311,6 +350,34 @@ export function useSetKillSwitchMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['trading-kill-switch'],
+      });
+    },
+  });
+}
+
+export function useAutomaticTradingQuery() {
+  return useQuery({
+    queryKey: ['trading-automatic-trading'],
+    queryFn: () =>
+      apiClient<AutomaticTradingSnapshot>('/api/trading/automatic-trading'),
+    staleTime: 2_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useSetAutomaticTradingMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: SetAutomaticTradingRequest) =>
+      requestJson<AutomaticTradingSnapshot>('/api/trading/automatic-trading', {
+        method: 'PUT',
+        body: payload,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['trading-automatic-trading'],
       });
     },
   });

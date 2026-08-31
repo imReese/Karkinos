@@ -8,8 +8,13 @@ import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
+from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
-from server.services.valuation_snapshot import build_current_valuation_snapshot
+from server.projections.valuation_snapshot import load_persisted_quote_rows
+from server.services.valuation_snapshot import (
+    VALUATION_POLICY_VERSION,
+    build_current_valuation_snapshot,
+)
 
 
 def test_valuation_snapshot_is_content_addressed_and_replayable(tmp_path):
@@ -29,12 +34,15 @@ def test_valuation_snapshot_is_content_addressed_and_replayable(tmp_path):
     )
 
     first = build_current_valuation_snapshot(db)
-    second = build_current_valuation_snapshot(db)
+    assert db.get_valuation_snapshot_sync(first["snapshot_id"]) is None
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") is None
+    second = build_current_valuation_snapshot(db, persist=True)
     stored = db.get_valuation_snapshot_sync(first["snapshot_id"])
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
 
     assert first == second
     assert first["snapshot_id"].startswith("valuation-")
-    assert first["status"] == "complete"
+    assert first["status"] == "degraded"
     assert first["metadata"] == {
         "quote_count": 1,
         "ledger_entry_count": 0,
@@ -44,7 +52,48 @@ def test_valuation_snapshot_is_content_addressed_and_replayable(tmp_path):
         "ingestion_run_ids": [],
     }
     assert stored is not None
+    assert publication is not None
+    assert publication["status"] == "ready"
+    assert publication["snapshot_id"] == first["snapshot_id"]
     assert json.loads(stored["quotes_json"])[0]["symbol"] == "603659"
+
+
+def test_valuation_snapshot_publish_preserves_explicit_policy(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        price=24.6,
+        volume=1000.0,
+        timestamp="2026-07-10T14:57:03+08:00",
+    )
+
+    projected = build_current_valuation_snapshot(
+        db,
+        valuation_policy="custom-policy.v1",
+    )
+    published = build_current_valuation_snapshot(
+        db,
+        valuation_policy="custom-policy.v1",
+        persist=True,
+    )
+    stored = db.get_valuation_snapshot_sync(published["snapshot_id"])
+
+    assert projected == published
+    assert published["valuation_policy"] == "custom-policy.v1"
+    assert stored is not None
+    assert stored["valuation_policy"] == "custom-policy.v1"
+
+
+def test_default_valuation_policy_preserves_no_argument_publisher_compatibility():
+    class LegacyPublisher:
+        def publish_current_valuation_snapshot_sync(self):
+            return {"status": "complete", "valuation_policy": VALUATION_POLICY_VERSION}
+
+    published = build_current_valuation_snapshot(LegacyPublisher(), persist=True)
+
+    assert published["valuation_policy"] == VALUATION_POLICY_VERSION
 
 
 def test_valuation_snapshot_changes_when_persisted_quote_changes(tmp_path):
@@ -57,7 +106,7 @@ def test_valuation_snapshot_changes_when_persisted_quote_changes(tmp_path):
         volume=1000.0,
         timestamp="2026-07-10T14:57:03+08:00",
     )
-    first = build_current_valuation_snapshot(db)
+    first = build_current_valuation_snapshot(db, persist=True)
 
     db.save_quote_snapshot_sync(
         symbol="603659",
@@ -66,7 +115,7 @@ def test_valuation_snapshot_changes_when_persisted_quote_changes(tmp_path):
         volume=1200.0,
         timestamp="2026-07-10T14:58:03+08:00",
     )
-    second = build_current_valuation_snapshot(db)
+    second = build_current_valuation_snapshot(db, persist=True)
 
     assert second["snapshot_id"] != first["snapshot_id"]
     assert second["quote_set_fingerprint"] != first["quote_set_fingerprint"]
@@ -90,7 +139,7 @@ def test_valuation_snapshot_freezes_previous_close_evidence(tmp_path):
         timestamp="2026-07-10T14:57:03+08:00",
     )
 
-    first = build_current_valuation_snapshot(db)
+    first = build_current_valuation_snapshot(db, persist=True)
     stored_first = db.get_valuation_snapshot_sync(first["snapshot_id"])
     assert first["quotes"][0]["previous_close"] == 25.46
     assert first["quotes"][0]["previous_close_date"] == "2026-07-09"
@@ -103,7 +152,7 @@ def test_valuation_snapshot_freezes_previous_close_evidence(tmp_path):
         close_price=25.40,
         source="corrected_close",
     )
-    second = build_current_valuation_snapshot(db)
+    second = build_current_valuation_snapshot(db, persist=True)
 
     assert second["snapshot_id"] != first["snapshot_id"]
     assert second["quote_set_fingerprint"] != first["quote_set_fingerprint"]
@@ -127,7 +176,7 @@ def test_valuation_trade_date_comes_from_quotes_not_later_ledger_event(tmp_path)
         amount=1000.0,
     )
 
-    snapshot = build_current_valuation_snapshot(db)
+    snapshot = build_current_valuation_snapshot(db, persist=True)
 
     assert snapshot["as_of"] == "2026-07-12T10:00:00+08:00"
     assert snapshot["trade_date"] == "2026-07-10"
@@ -176,6 +225,22 @@ def test_valuation_snapshot_freezes_confirmed_same_day_close():
     assert first["quotes"][0]["valuation_price_source"] == "market_bar_close"
     assert first["as_of"] == "2026-07-10T15:00:00+08:00"
     assert first["snapshot_id"] != second["snapshot_id"]
+
+
+def test_valuation_loader_prefers_bounded_quote_selection_candidates() -> None:
+    class CandidateDb:
+        def list_quote_selection_candidates_sync(self):
+            return [{"symbol": "603659", "price": 24.6}]
+
+        def list_latest_quotes_sync(self):
+            raise AssertionError("materialized quotes must not be loaded separately")
+
+        def list_quote_snapshots_sync(self):
+            raise AssertionError("the append-only quote history must not be scanned")
+
+    assert load_persisted_quote_rows(CandidateDb()) == [
+        {"symbol": "603659", "price": 24.6}
+    ]
 
 
 def test_valuation_snapshot_keeps_unconfirmed_fund_estimate_non_authoritative(
@@ -288,7 +353,7 @@ def test_valuation_snapshot_orders_mixed_timezone_timestamps_by_instant(tmp_path
         fetch_run_id="run-later",
     )
 
-    snapshot = build_current_valuation_snapshot(db)
+    snapshot = build_current_valuation_snapshot(db, persist=True)
 
     assert snapshot["quotes"][0]["price"] == 24.7
     assert snapshot["as_of"] == "2026-07-10T16:00:00+08:00"
@@ -299,11 +364,57 @@ def test_valuation_snapshot_fails_closed_without_persisted_quotes(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
 
-    snapshot = build_current_valuation_snapshot(db)
+    snapshot = build_current_valuation_snapshot(db, persist=True)
 
     assert snapshot["status"] == "missing"
     assert snapshot["quotes"] == []
     assert snapshot["metadata"]["runtime_cache_used"] is False
+
+
+def test_legacy_valuation_publisher_name_uses_atomic_publication(tmp_path):
+    from server.persistence.financial_facts_valuation_composition import (
+        build_and_persist_current_valuation_snapshot,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        price=24.6,
+        volume=1000.0,
+        timestamp="2026-07-10T14:57:03+08:00",
+    )
+
+    snapshot = build_and_persist_current_valuation_snapshot(db)
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+
+    assert publication is not None
+    assert publication["status"] == "ready"
+    assert publication["snapshot_id"] == snapshot["snapshot_id"]
+
+
+def test_valuation_snapshot_fails_closed_for_legacy_invalid_quote_timestamp(
+    tmp_path,
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_latest_quote_sync(
+        symbol="603659",
+        asset_type="stock",
+        price=24.6,
+        previous_close=24.0,
+        quote_timestamp="not-a-date",
+    )
+
+    snapshot = db.publish_current_valuation_snapshot_sync()
+
+    assert snapshot["status"] == "missing"
+    assert snapshot["as_of"] == "1970-01-01T08:00:00+08:00"
+    assert snapshot["trade_date"] == "1970-01-01"
+    assert snapshot["quotes"][0]["quote_status"] == "error"
+    assert snapshot["quotes"][0]["stale_reason"] == "invalid_quote_timestamp"
+    assert snapshot["quotes"][0]["valuation_evidence_status"] == "invalid_timestamp"
 
 
 def test_valuation_snapshot_routes_separate_create_and_read(monkeypatch, tmp_path):
@@ -358,13 +469,15 @@ def test_successful_quote_run_publishes_replayable_snapshot(tmp_path):
         symbol_count=1,
         status="running",
     )
-    db.save_quote_snapshot_sync(
-        symbol="603659",
-        asset_class="stock",
-        price=24.6,
-        volume=1000.0,
-        timestamp="2026-07-10T14:57:03+08:00",
-        fetch_run_id=run_id,
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="603659",
+            asset_type="stock",
+            price=24.6,
+            volume=1000.0,
+            quote_timestamp="2026-07-10T14:57:03+08:00",
+            fetch_run_id=run_id,
+        )
     )
 
     finished = db.finish_quote_fetch_run(
@@ -386,7 +499,7 @@ def test_successful_quote_run_publishes_replayable_snapshot(tmp_path):
     assert json.loads(stored["quotes_json"])[0]["fetch_run_id"] == run_id
 
 
-def test_quote_run_fails_closed_when_snapshot_publication_fails(monkeypatch, tmp_path):
+def test_quote_run_fails_closed_when_success_has_no_staged_evidence(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     run_id = "run-publication-failure"
@@ -399,12 +512,6 @@ def test_quote_run_fails_closed_when_snapshot_publication_fails(monkeypatch, tmp
         symbol_count=1,
         status="running",
     )
-    monkeypatch.setattr(
-        db,
-        "publish_current_valuation_snapshot_sync",
-        lambda: (_ for _ in ()).throw(RuntimeError("disk unavailable")),
-    )
-
     finished = db.finish_quote_fetch_run(
         run_id=run_id,
         finished_at="2026-07-10T14:58:00+08:00",
@@ -506,3 +613,25 @@ def test_market_context_index_does_not_invalidate_account_valuation(tmp_path):
     assert current["snapshot_id"] == published["snapshot_id"]
     assert current["valuation_policy"] == "karkinos.persisted_valuation.v4"
     assert [quote["symbol"] for quote in current["quotes"]] == ["603659"]
+
+
+@pytest.mark.parametrize("publication", [None, {"status": "failed"}])
+def test_financial_read_fails_closed_without_ready_publication(tmp_path, publication):
+    from server.routes.portfolio import _current_valuation_snapshot
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        price=24.6,
+        volume=1000.0,
+        timestamp="2026-07-10T14:57:03+08:00",
+    )
+    if publication is not None:
+        db.set_runtime_control_sync("valuation_snapshot_publication", publication)
+
+    with pytest.raises(HTTPException) as exc_info:
+        _current_valuation_snapshot(SimpleNamespace(db=db))
+
+    assert exc_info.value.status_code == 503

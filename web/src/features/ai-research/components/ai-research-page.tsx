@@ -1,13 +1,10 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
+import { MetricStrip, WorkspaceHeader } from '../../../shared/ui/workbench';
 import {
-  MetricStrip,
-  WorkspaceHeader,
-} from '../../../app/components/workbench';
-import {
+  ResearchTaskPanel,
   useAccountStrategyAssignmentQuery,
   useBacktestResultsQuery,
-} from '../../backtest/api';
-import { ResearchTaskPanel } from './research-task-panel';
+} from '../ai-research-feature-boundary';
 import { ShadowResearchPanel } from './shadow-research-panel';
 
 export function AiResearchPage() {

@@ -20,6 +20,8 @@ from server.services.execution_batch_reconciliation import (
 from server.services.execution_reconciliation import (
     build_current_plan_paper_actual_comparison,
 )
+from tests.order_state_fixtures import insert_historical_oms_order
+from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 NOW = datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc)
 RUN_ID = "execution-reconciliation:2026-07-10"
@@ -76,23 +78,34 @@ def _seed_order(
             payload["gateway_evidence"]["paper_shadow"] = {
                 "evidence_ref": f"paper_shadow:{paper_run_id}"
             }
-    db.upsert_oms_order_sync(
-        {
-            "order_id": order_id,
-            "intent_key": f"intent-{order_id}",
-            "symbol": "510300",
-            "side": "buy",
-            "asset_class": "etf",
-            "quantity": 100.0,
-            "order_type": "limit",
-            "limit_price": 6.0,
-            "status": status,
-            "broker_submission_enabled": False,
-            "source": "deterministic_batch_test",
-            "source_ref": "prior-controlled-batch",
-            "payload": payload,
-        }
-    )
+    existing = db.get_oms_order_sync(order_id)
+    if existing is None:
+        insert_historical_oms_order(
+            db,
+            order_id=order_id,
+            intent_key=f"intent-{order_id}",
+            symbol="510300",
+            side="buy",
+            asset_class="etf",
+            quantity=100.0,
+            order_type="limit",
+            limit_price=6.0,
+            status=status,
+            source="deterministic_batch_test",
+            source_ref="prior-controlled-batch",
+            payload=payload,
+        )
+    else:
+        with sqlite3.connect(db.path) as conn:
+            conn.execute(
+                """
+                UPDATE oms_orders
+                SET status = ?, payload_json = ?
+                WHERE order_id = ?
+                """,
+                (status, json.dumps(payload, sort_keys=True), order_id),
+            )
+            conn.commit()
     return action_id
 
 
@@ -178,7 +191,54 @@ def _seed_paper_run(
     fill_price: str = "6.00",
     strategy_advancement_fingerprint: str = "c" * 64,
 ) -> None:
-    db.upsert_paper_shadow_run_sync(
+    payload = {
+        "schema_version": "karkinos.paper_shadow_run.v1",
+        "run_id": "paper-run-prior-order-1",
+        "input_fingerprint": "a" * 64,
+        "orders": [
+            {
+                "order_id": "paper-order-prior-order-1",
+                "status": "filled",
+                "divergence_status": "within_expectations",
+                "order_intent": {
+                    "action_ref": f"action:{action_id}",
+                    "symbol": "510300",
+                    "side": "buy",
+                    "estimated_quantity": "100",
+                    "estimated_price": "6.00",
+                    "strategy_refs": [f"strategy:{strategy_id}"],
+                    "strategy_advancement_refs": [
+                        "strategy_advancement:" f"{strategy_advancement_fingerprint}"
+                    ],
+                    "risk_refs": ["risk:batch-risk-1"],
+                    "account_truth_refs": ["account_truth:batch-fixture"],
+                },
+            }
+        ],
+        "fills": [
+            {
+                "fill_id": "paper-fill-prior-order-1",
+                "order_id": "paper-order-prior-order-1",
+                "fill_quantity": "100",
+                "fill_price": fill_price,
+                "commission": "0.20",
+                "slippage": "0.00",
+            }
+        ],
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+    existing = db.get_paper_shadow_run_sync("paper-run-prior-order-1")
+    if existing is not None:
+        with sqlite3.connect(db._path) as conn:
+            conn.execute(
+                "UPDATE paper_shadow_runs SET payload_json = ? WHERE run_id = ?",
+                (json.dumps(payload, sort_keys=True), "paper-run-prior-order-1"),
+            )
+            conn.commit()
+        return
+    insert_paper_shadow_evidence(
+        db,
         run_id="paper-run-prior-order-1",
         plan_date="2026-07-10",
         input_fingerprint="a" * 64,
@@ -189,44 +249,7 @@ def _seed_paper_run(
         divergence_status="within_expectations",
         next_manual_review_step="review_manual_confirmation",
         limitations=[],
-        payload={
-            "schema_version": "karkinos.paper_shadow_run.v1",
-            "run_id": "paper-run-prior-order-1",
-            "input_fingerprint": "a" * 64,
-            "orders": [
-                {
-                    "order_id": "paper-order-prior-order-1",
-                    "status": "filled",
-                    "divergence_status": "within_expectations",
-                    "order_intent": {
-                        "action_ref": f"action:{action_id}",
-                        "symbol": "510300",
-                        "side": "buy",
-                        "estimated_quantity": "100",
-                        "estimated_price": "6.00",
-                        "strategy_refs": [f"strategy:{strategy_id}"],
-                        "strategy_advancement_refs": [
-                            "strategy_advancement:"
-                            f"{strategy_advancement_fingerprint}"
-                        ],
-                        "risk_refs": ["risk:batch-risk-1"],
-                        "account_truth_refs": ["account_truth:batch-fixture"],
-                    },
-                }
-            ],
-            "fills": [
-                {
-                    "fill_id": "paper-fill-prior-order-1",
-                    "order_id": "paper-order-prior-order-1",
-                    "fill_quantity": "100",
-                    "fill_price": fill_price,
-                    "commission": "0.20",
-                    "slippage": "0.00",
-                }
-            ],
-            "does_not_submit_broker_order": True,
-            "does_not_mutate_production_ledger": True,
-        },
+        payload=payload,
     )
 
 
@@ -573,20 +596,12 @@ def test_filled_batch_requires_real_fill_account_truth_and_same_run_linkage(
         order_ids=["prior-order-1"],
         reconciliation_run_id=RUN_ID,
     )
-    db.record_fill_sync(
-        fill_id="real-fill-1",
-        order_id="prior-order-1",
-        timestamp=NOW.isoformat(),
-        symbol="510300",
-        side="buy",
-        fill_price=6.0,
-        fill_quantity=100.0,
-        execution_mode="manual",
-        provider_name="reviewed-local-broker",
-        broker_order_id="broker-order-1",
-        source="reconciled_real_fill",
-        metadata={},
-    )
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE fills SET metadata_json = '{}' WHERE fill_id = ?",
+            ("real-fill-1",),
+        )
+        conn.commit()
     blocked = service.preview(
         batch_id="prior-batch-1",
         order_ids=["prior-order-1"],
@@ -628,10 +643,12 @@ def test_recorded_batch_fails_resolution_after_bound_source_changes(tmp_path) ->
     _seed_order(db)
     _seed_reconciliation(db)
     recorded = _record_clear_batch(db)
-    db.update_oms_order_status_sync(
-        order_id="prior-order-1",
-        status="reconciled",
-    )
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            "UPDATE oms_orders SET status = 'reconciled' WHERE order_id = ?",
+            ("prior-order-1",),
+        )
+        conn.commit()
     service = ExecutionBatchReconciliationService(db=db, clock=lambda: NOW)
 
     resolved = service.resolve_recorded(recorded["batch_reconciliation_fingerprint"])

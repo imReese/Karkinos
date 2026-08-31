@@ -145,14 +145,16 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
         return {
             "schema_version": "karkinos.ai.shadow_research_automation.v1",
             "policy": {
-                "schema_version": "karkinos.ai.shadow_research_policy.v2",
+                "schema_version": "karkinos.ai.shadow_research_policy.v4",
                 "enabled": False,
                 "max_candidates_per_run": 1,
                 "max_provider_calls_per_market_date": 2,
                 "daily_token_budget": 451000,
                 "token_budget_mode": "legacy_bounded_daily",
                 "authorization": "",
+                "research_capital_mode": "account_bound",
                 "require_complete_account_evidence": True,
+                "promotion_requires_complete_account_evidence": True,
             },
             "automatic_strategy_replacement_enabled": False,
             "production_strategy_mutation_enabled": False,
@@ -169,10 +171,10 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
 
     assert exit_code == 2
     assert urls == [
-        ("http://localhost:8000/api/automation/cockpit", 10.0),
+        ("http://localhost:8000/api/automation/cockpit", 30.0),
         (
-            "http://localhost:8000/api/ai/strategy-research/shadow-automation",
-            10.0,
+            "http://localhost:8000/api/ai/strategy-research/shadow-automation/readiness",
+            30.0,
         ),
     ]
     assert payload["status"] == "no_action_not_production_ready"

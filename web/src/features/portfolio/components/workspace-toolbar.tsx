@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
-import { useCopy } from '../../../app/copy';
-import { FilterBar } from '../../../app/components/workbench';
+import { useCopy } from '../../../shared/i18n/context';
+import { FilterBar } from '../../../shared/ui/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 
 type PnlFilter = 'all' | 'winners' | 'losers';

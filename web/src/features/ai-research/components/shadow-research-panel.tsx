@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 
-import { usePreferences } from '../../../app/preferences';
-import { formatCurrency, formatPercent } from '../../../shared/format';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   useApproveShadowResearchCandidateMutation,
   usePauseShadowResearchCandidateMutation,
@@ -9,149 +8,17 @@ import {
   useShadowResearchAutomationQuery,
   useStrategyPromotionStatesQuery,
   useUpdateShadowResearchPolicyMutation,
+  type ShadowResearchAutomationStatus,
   type ShadowResearchCandidate,
-  type ShadowResearchMetricView,
   type ShadowResearchPolicyInput,
 } from '../api';
-
-const COPY = {
-  en: {
-    kicker: 'After-close DeepSeek research',
-    title: 'Automated shadow strategy research',
-    detail:
-      'After the persisted market close, Karkinos refreshes the baseline locally and sends DeepSeek the saved backtest plus a sanitized account risk/allocation projection. Absolute account values and valuation/ledger identifiers stay redacted. Formula validation, after-cost backtest and rolling OOS remain local before the evidence critique.',
-    disabled: 'Paused',
-    enabled: 'Authorized',
-    killSwitch: 'Kill switch',
-    clear: 'Clear',
-    calls: 'Provider calls',
-    tokens: 'Token usage',
-    tokenPolicy: 'Daily token policy',
-    unboundedDailyTokens: 'No Karkinos daily aggregate limit',
-    legacyBoundedDailyTokens:
-      'Legacy bounded policy · blocked until reauthorized',
-    providerLimitsRemain: 'Per-request provider and context limits still apply',
-    tokenAccountingEstimate: 'accounting estimate',
-    candidates: 'Sequential revisions',
-    dailyWinner: 'New candidate winner',
-    noWinner: 'No new winner · current strategy unchanged',
-    backup: 'Daily strategy backup',
-    winnerBadge: 'New-candidate winner',
-    iterationRound: 'Sequential round',
-    backupVerified: 'Verified',
-    fiveCandidateRule:
-      'Five sequential rounds require ten provider calls: each round generates one revision, runs the canonical local backtest, records one critique, and binds that feedback into the next round. No new winner means no new promotion; the separate daily decision pipeline still decides trade or NO-ACTION.',
-    fiveRoundPolicyBlocked:
-      'Enabled research is blocked until the displayed policy authorizes exactly five sequential revisions, ten provider calls, and no Karkinos daily aggregate token limit.',
-    notDailyWinner:
-      'This candidate passed its own gate but is not the verified new-candidate winner, so public paper/shadow approval remains blocked.',
-    closeTime: 'After-close time',
-    question: 'Standing research question',
-    operator: 'Owner identity',
-    save: 'Save standing policy',
-    saving: 'Saving…',
-    confirmEnable:
-      'I authorize five strictly sequential research rounds and ten provider calls per market date with no Karkinos daily aggregate token limit. Provider per-request limits and usage accounting remain; this has no strategy replacement or trading authority.',
-    confirmPause: 'I confirm pausing recurring AI strategy research.',
-    run: 'Check and run now',
-    running: 'Checking evidence…',
-    noCandidates:
-      'No completed automated candidate is in the research pool yet.',
-    baseline: 'Current baseline',
-    candidate: 'New candidate',
-    return: 'Total return',
-    sharpe: 'Sharpe',
-    drawdown: 'Max drawdown',
-    costs: 'Total cost',
-    oos: 'Mean / worst OOS',
-    trades: 'Trades',
-    risk: 'Risk impact',
-    blockers: 'Promotion blockers',
-    critique: 'DeepSeek evidence critique',
-    approve: 'Approve for paper/shadow only',
-    reapprove: 'Re-review for paper/shadow',
-    approving: 'Recording approval…',
-    approvalNote: 'Human review note',
-    approvalConfirm:
-      'I reviewed the baseline comparison, costs, rolling OOS, risks and critique. Approve this candidate for paper/shadow research only.',
-    approved: 'Paper/shadow approved',
-    paused: 'Paper/shadow paused / revoked',
-    pause: 'Pause / revoke paper-shadow',
-    pausing: 'Recording pause…',
-    pauseNote: 'Pause / revocation reason',
-    pauseConfirm:
-      'I confirm pausing this exact candidate. Existing approval remains auditable, but new tickets must fail closed until a new explicit review.',
-    noAuthority: 'No production replacement · no broker order',
-    failure: 'The operation failed closed. No strategy or order was changed.',
-  },
-  zh: {
-    kicker: 'DeepSeek 收盘后研究',
-    title: '自动 shadow 策略研究池',
-    detail:
-      '持久化行情收盘后，Karkinos 在本地刷新基线，只向 DeepSeek 发送保存的回测证据与脱敏账户风险/配置投影；绝对账户金额及 valuation/ledger 标识不外发。Formula 校验、权威成本后回测和 rolling OOS 均留在本地，之后再发送证据做 critique。',
-    disabled: '已暂停',
-    enabled: '已授权',
-    killSwitch: 'Kill Switch',
-    clear: '未触发',
-    calls: '模型调用',
-    tokens: 'Token 用量',
-    tokenPolicy: '每日 Token 策略',
-    unboundedDailyTokens: 'Karkinos 不设每日累计上限',
-    legacyBoundedDailyTokens: '旧版有界策略 · 重新授权前保持阻断',
-    providerLimitsRemain: '仍受模型单次请求与上下文窗口的技术限制',
-    tokenAccountingEstimate: '用量核算估计',
-    candidates: '串行修订轮数',
-    dailyWinner: '新候选确定性优胜者',
-    noWinner: '无新优胜者 · 当前策略不变',
-    backup: '每日策略备份',
-    winnerBadge: '新候选优胜者',
-    iterationRound: '串行迭代轮次',
-    backupVerified: '校验通过',
-    fiveCandidateRule:
-      '5 轮串行迭代需要 10 次模型调用：每轮生成 1 个修订版、本地权威回测并 critique，再把结果绑定给下一轮；无新优胜者只表示不发生新晋级，当天交易或 NO-ACTION 仍由独立日决策链判断。',
-    fiveRoundPolicyBlocked:
-      '启用状态下必须明确授权 5 轮严格串行修订、10 次模型调用且 Karkinos 不设每日累计 Token 上限，否则研究运行保持阻断。',
-    notDailyWinner:
-      '该候选虽通过自身门槛，但不是已校验的新候选优胜者，因此公开 paper/shadow 批准保持阻断。',
-    closeTime: '收盘后时间',
-    question: '长期研究问题',
-    operator: '所有者身份',
-    save: '保存站立授权',
-    saving: '保存中…',
-    confirmEnable:
-      '我授权每个交易日进行 5 轮严格串行研究、最多 10 次模型调用，Karkinos 不设每日累计 Token 上限；仍记录用量并受模型单次请求和上下文窗口限制。该授权不包含策略替换权或交易权。',
-    confirmPause: '我确认暂停周期性 AI 策略研究。',
-    run: '立即检查并运行',
-    running: '正在检查证据…',
-    noCandidates: '研究池里还没有完成的自动候选。',
-    baseline: '当前基线',
-    candidate: '新候选',
-    return: '总收益',
-    sharpe: '夏普',
-    drawdown: '最大回撤',
-    costs: '总成本',
-    oos: 'OOS 均值 / 最差',
-    trades: '成交数',
-    risk: '风险影响',
-    blockers: '晋级阻断项',
-    critique: 'DeepSeek 证据批判',
-    approve: '仅批准进入 paper/shadow',
-    reapprove: '重新复核进入 paper/shadow',
-    approving: '正在记录批准…',
-    approvalNote: '人工复核备注',
-    approvalConfirm:
-      '我已复核基线对比、成本、rolling OOS、风险与 critique；仅批准该候选进入 paper/shadow 研究。',
-    approved: '已批准 paper/shadow',
-    paused: 'paper/shadow 已暂停 / 撤销',
-    pause: '暂停 / 撤销 paper-shadow',
-    pausing: '正在记录暂停…',
-    pauseNote: '暂停 / 撤销原因',
-    pauseConfirm:
-      '我确认暂停这一精确候选；原批准保留供审计，但重新明确复核前，新票据必须 fail closed。',
-    noAuthority: '不会替换生产策略 · 不会创建 broker 订单',
-    failure: '操作已 fail closed；没有修改策略或订单。',
-  },
-} as const;
+import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
+import {
+  CandidateCard,
+  Field,
+  NumberField,
+  StatusMetric,
+} from './shadow-research-view';
 
 const MAX_PROVIDER_CALLS = 10;
 const MAX_CANDIDATES = 5;
@@ -161,12 +28,16 @@ function isFiveRoundPolicy(policy: {
   daily_token_budget: number | null;
   token_budget_mode: 'unbounded_daily' | 'legacy_bounded_daily';
   max_candidates_per_run: number;
+  research_capital_mode: 'normalized_notional' | 'account_bound';
+  require_complete_account_evidence: boolean;
 }) {
   return (
     policy.max_provider_calls_per_market_date === MAX_PROVIDER_CALLS &&
     policy.daily_token_budget === null &&
     policy.token_budget_mode === 'unbounded_daily' &&
-    policy.max_candidates_per_run === MAX_CANDIDATES
+    policy.max_candidates_per_run === MAX_CANDIDATES &&
+    policy.research_capital_mode === 'normalized_notional' &&
+    policy.require_complete_account_evidence === false
   );
 }
 
@@ -178,14 +49,77 @@ const EMPTY_POLICY: ShadowResearchPolicyInput = {
   token_budget_mode: 'unbounded_daily',
   max_candidates_per_run: MAX_CANDIDATES,
   baseline_backtest_result_id: null,
-  require_complete_account_evidence: true,
+  research_capital_mode: 'normalized_notional',
+  require_complete_account_evidence: false,
   research_question: '',
   updated_by: 'human:owner',
 };
 
+function dailyResearchOutcome(
+  status: ShadowResearchAutomationStatus | undefined,
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY],
+) {
+  const selection = status?.daily_selections?.[0];
+  const researchWinner = status?.daily_research_winner_candidate_id ?? null;
+  const promotionWinner = status?.daily_winner_candidate_id ?? null;
+  if (researchWinner) {
+    return { value: researchWinner, detail: copy.researchNotQualified };
+  }
+  if (promotionWinner) {
+    return { value: promotionWinner, detail: copy.winnerBadge };
+  }
+  return {
+    value: copy.noWinner,
+    detail: selection
+      ? `${selection.market_date} · ${selection.observed_candidate_count}/${selection.expected_candidate_count}`
+      : '—',
+  };
+}
+
+function verifiedDailyCandidateIds(
+  status: ShadowResearchAutomationStatus | undefined,
+) {
+  const selections = status?.daily_selections ?? [];
+  const backups = status?.daily_backups ?? [];
+  const hasVerifiedBackup = (runId: string) =>
+    backups.some(
+      (backup) =>
+        backup.run_id === runId && backup.verification_status === 'verified',
+    );
+  return {
+    promotion: new Set(
+      selections
+        .filter(
+          (selection) =>
+            selection.status === 'winner_selected' &&
+            selection.integrity_status === 'verified' &&
+            hasVerifiedBackup(selection.run_id),
+        )
+        .map((selection) => selection.winner_candidate_id)
+        .filter((candidateId): candidateId is string => Boolean(candidateId)),
+    ),
+    research: new Set(
+      selections
+        .filter(
+          (selection) =>
+            selection.integrity_status === 'verified' &&
+            selection.research_recommendation?.status ===
+              'best_available_for_further_research' &&
+            selection.research_recommendation.account_qualified === false &&
+            hasVerifiedBackup(selection.run_id),
+        )
+        .map(
+          (selection) =>
+            selection.research_recommendation?.research_winner_candidate_id,
+        )
+        .filter((candidateId): candidateId is string => Boolean(candidateId)),
+    ),
+  };
+}
+
 export function ShadowResearchPanel() {
   const { locale } = usePreferences();
-  const copy = COPY[locale];
+  const copy = SHADOW_RESEARCH_COPY[locale];
   const query = useShadowResearchAutomationQuery();
   const promotionStates = useStrategyPromotionStatesQuery();
   const updatePolicy = useUpdateShadowResearchPolicyMutation();
@@ -214,8 +148,8 @@ export function ShadowResearchPanel() {
         token_budget_mode: 'unbounded_daily',
         max_candidates_per_run: current.max_candidates_per_run,
         baseline_backtest_result_id: current.baseline_backtest_result_id,
-        require_complete_account_evidence:
-          current.require_complete_account_evidence,
+        research_capital_mode: 'normalized_notional',
+        require_complete_account_evidence: false,
         research_question: current.research_question,
         updated_by: current.updated_by,
       });
@@ -284,23 +218,12 @@ export function ShadowResearchPanel() {
     ? isFiveRoundPolicy(status.policy)
     : false;
   const latestRun = status?.runs[0];
-  const latestSelection = status?.daily_selections?.[0];
+  const providerWindow = status?.provider_call_window;
+  const providerWindowEligible =
+    providerWindow?.status !== 'deferred_for_provider_off_peak';
   const latestBackup = status?.daily_backups?.[0];
-  const verifiedWinnerCandidateIds = new Set(
-    (status?.daily_selections ?? [])
-      .filter(
-        (selection) =>
-          selection.status === 'winner_selected' &&
-          selection.integrity_status === 'verified' &&
-          (status?.daily_backups ?? []).some(
-            (backup) =>
-              backup.run_id === selection.run_id &&
-              backup.verification_status === 'verified',
-          ),
-      )
-      .map((selection) => selection.winner_candidate_id)
-      .filter((candidateId): candidateId is string => Boolean(candidateId)),
-  );
+  const dailyOutcome = dailyResearchOutcome(status, copy);
+  const verifiedCandidateIds = verifiedDailyCandidateIds(status);
 
   return (
     <section
@@ -309,43 +232,13 @@ export function ShadowResearchPanel() {
       data-evidence-kind="persisted-ai-shadow-research"
       data-testid="shadow-research-panel"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 max-w-4xl">
-          <div className="app-kicker">{copy.kicker}</div>
-          <h2
-            className="mt-2 text-lg font-semibold text-[var(--app-text)]"
-            id="shadow-research-title"
-          >
-            {copy.title}
-          </h2>
-          <p className="app-muted mt-2 text-sm leading-6">{copy.detail}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs font-semibold">
-          <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1">
-            {status?.policy.enabled ? copy.enabled : copy.disabled}
-          </span>
-          <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1">
-            {copy.killSwitch}:{' '}
-            {status?.kill_switch.enabled
-              ? status.kill_switch.reason || 'ON'
-              : copy.clear}
-          </span>
-        </div>
-      </div>
+      <ShadowResearchHeader copy={copy} status={status} />
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <StatusMetric
           label={copy.dailyWinner}
-          value={
-            status?.daily_new_candidate_winner_id
-              ? status.daily_new_candidate_winner_id
-              : copy.noWinner
-          }
-          detail={
-            latestSelection
-              ? `${latestSelection.market_date} · ${latestSelection.observed_candidate_count}/${latestSelection.expected_candidate_count}`
-              : '—'
-          }
+          value={dailyOutcome.value}
+          detail={dailyOutcome.detail}
         />
         <StatusMetric
           label={copy.backup}
@@ -358,12 +251,13 @@ export function ShadowResearchPanel() {
         />
       </div>
 
-      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatusMetric
           label={copy.calls}
           value={`${status?.usage.provider_calls ?? 0} / ${status?.policy.max_provider_calls_per_market_date ?? policy.max_provider_calls_per_market_date}`}
           detail={status?.usage.market_date ?? '—'}
         />
+        <ProviderCallWindowMetric copy={copy} providerWindow={providerWindow} />
         <StatusMetric
           label={copy.tokens}
           value={String(status?.usage.actual_tokens ?? 0)}
@@ -499,7 +393,10 @@ export function ShadowResearchPanel() {
         <button
           className="app-button-secondary min-h-11 px-4 py-2 text-sm font-semibold"
           disabled={
-            run.isPending || !status?.policy.enabled || !persistedPolicyReady
+            run.isPending ||
+            !status?.policy.enabled ||
+            !persistedPolicyReady ||
+            !providerWindowEligible
           }
           onClick={() => run.mutate()}
           type="button"
@@ -513,6 +410,11 @@ export function ShadowResearchPanel() {
           {copy.fiveRoundPolicyBlocked}
         </p>
       )}
+      {status?.policy.enabled && !persistedPolicyReady && draftPolicyReady && (
+        <p className="mt-3 text-sm text-[var(--app-danger-text)]">
+          {copy.normalizedMigrationRequired}
+        </p>
+      )}
       {(query.isError ||
         updatePolicy.isError ||
         run.isError ||
@@ -524,409 +426,187 @@ export function ShadowResearchPanel() {
         </p>
       )}
 
-      <div className="mt-6 grid gap-4">
-        {status?.candidates.length ? (
-          status.candidates.map((candidate) => (
-            <CandidateCard
-              approvals={approvals}
-              candidate={candidate}
-              copy={copy}
-              isDailyWinner={verifiedWinnerCandidateIds.has(
-                candidate.candidate_id,
-              )}
-              key={candidate.candidate_id}
-              notes={notes}
-              onPause={() => void pauseCandidate(candidate)}
-              onPauseConfirmationChange={(checked) =>
-                setPauseConfirmations((current) => ({
-                  ...current,
-                  [candidate.candidate_id]: checked,
-                }))
-              }
-              onPauseNoteChange={(value) =>
-                setPauseNotes((current) => ({
-                  ...current,
-                  [candidate.candidate_id]: value,
-                }))
-              }
-              onApprovalChange={(checked) =>
-                setApprovals((current) => ({
-                  ...current,
-                  [candidate.candidate_id]: checked,
-                }))
-              }
-              onApprove={() => void approveCandidate(candidate)}
-              onNoteChange={(value) =>
-                setNotes((current) => ({
-                  ...current,
-                  [candidate.candidate_id]: value,
-                }))
-              }
-              pauseConfirmations={pauseConfirmations}
-              pauseNotes={pauseNotes}
-              pending={approve.isPending || pause.isPending}
-              promotionStage={
-                promotionStates.data?.find(
-                  (state) =>
-                    state.strategy_id ===
-                    `ai_formula_shadow:${candidate.candidate_id}`,
-                )?.stage
-              }
-              promotionStateLoaded={promotionStates.isSuccess}
-            />
-          ))
-        ) : (
-          <div className="rounded-[var(--app-radius-surface)] border border-dashed border-[var(--app-divider)] p-5 text-sm text-[var(--app-muted)]">
-            {query.isLoading ? copy.running : copy.noCandidates}
-          </div>
-        )}
-      </div>
+      <ShadowCandidateList
+        approvals={approvals}
+        candidates={status?.candidates ?? []}
+        copy={copy}
+        loading={query.isLoading}
+        notes={notes}
+        onApprovalChange={setApprovals}
+        onApprove={approveCandidate}
+        onNoteChange={setNotes}
+        onPause={pauseCandidate}
+        onPauseConfirmationChange={setPauseConfirmations}
+        onPauseNoteChange={setPauseNotes}
+        pauseConfirmations={pauseConfirmations}
+        pauseNotes={pauseNotes}
+        pending={approve.isPending || pause.isPending}
+        promotionStates={promotionStates}
+        verifiedResearchWinnerCandidateIds={verifiedCandidateIds.research}
+        verifiedWinnerCandidateIds={verifiedCandidateIds.promotion}
+      />
     </section>
   );
 }
 
-function CandidateCard({
-  candidate,
+function ProviderCallWindowMetric({
   copy,
-  notes,
+  providerWindow,
+}: {
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  providerWindow: ShadowResearchAutomationStatus['provider_call_window'];
+}) {
+  return (
+    <StatusMetric
+      label={copy.providerWindow}
+      value={
+        providerWindow?.status === 'eligible_off_peak'
+          ? copy.offPeakEligible
+          : providerWindow
+            ? copy.offPeakDeferred
+            : '—'
+      }
+      detail={
+        providerWindow?.next_eligible_at
+          ? `${copy.nextEligible}: ${providerWindow.next_eligible_at}`
+          : copy.offPeakSchedule
+      }
+    />
+  );
+}
+
+function ShadowResearchHeader({
+  copy,
+  status,
+}: {
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  status: ReturnType<typeof useShadowResearchAutomationQuery>['data'];
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 max-w-4xl">
+        <div className="app-kicker">{copy.kicker}</div>
+        <h2
+          className="mt-2 text-lg font-semibold text-[var(--app-text)]"
+          id="shadow-research-title"
+        >
+          {copy.title}
+        </h2>
+        <p className="app-muted mt-2 text-sm leading-6">{copy.detail}</p>
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+        <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1">
+          {status?.policy.enabled ? copy.enabled : copy.disabled}
+        </span>
+        <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1">
+          {copy.killSwitch}:{' '}
+          {status?.kill_switch.enabled
+            ? status.kill_switch.reason || 'ON'
+            : copy.clear}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ShadowCandidateList({
   approvals,
-  onNoteChange,
+  candidates,
+  copy,
+  loading,
+  notes,
   onApprovalChange,
   onApprove,
-  pauseNotes,
-  pauseConfirmations,
-  onPauseNoteChange,
-  onPauseConfirmationChange,
+  onNoteChange,
   onPause,
-  promotionStage,
-  promotionStateLoaded,
-  isDailyWinner,
+  onPauseConfirmationChange,
+  onPauseNoteChange,
+  pauseConfirmations,
+  pauseNotes,
   pending,
+  promotionStates,
+  verifiedResearchWinnerCandidateIds,
+  verifiedWinnerCandidateIds,
 }: {
-  candidate: ShadowResearchCandidate;
-  copy: (typeof COPY)[keyof typeof COPY];
-  notes: Record<string, string>;
   approvals: Record<string, boolean>;
-  onNoteChange: (value: string) => void;
-  onApprovalChange: (value: boolean) => void;
-  onApprove: () => void;
-  pauseNotes: Record<string, string>;
+  candidates: ShadowResearchCandidate[];
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  loading: boolean;
+  notes: Record<string, string>;
+  onApprovalChange: Dispatch<SetStateAction<Record<string, boolean>>>;
+  onApprove: (candidate: ShadowResearchCandidate) => Promise<void>;
+  onNoteChange: Dispatch<SetStateAction<Record<string, string>>>;
+  onPause: (candidate: ShadowResearchCandidate) => Promise<void>;
+  onPauseConfirmationChange: Dispatch<SetStateAction<Record<string, boolean>>>;
+  onPauseNoteChange: Dispatch<SetStateAction<Record<string, string>>>;
   pauseConfirmations: Record<string, boolean>;
-  onPauseNoteChange: (value: string) => void;
-  onPauseConfirmationChange: (value: boolean) => void;
-  onPause: () => void;
-  promotionStage: string | undefined;
-  promotionStateLoaded: boolean;
-  isDailyWinner: boolean;
+  pauseNotes: Record<string, string>;
   pending: boolean;
+  promotionStates: ReturnType<typeof useStrategyPromotionStatesQuery>;
+  verifiedResearchWinnerCandidateIds: Set<string>;
+  verifiedWinnerCandidateIds: Set<string>;
 }) {
-  const comparison = candidate.comparison;
-  const eligible =
-    candidate.status === 'awaiting_human_approval' &&
-    candidate.recommendation === 'paper_shadow_review' &&
-    comparison.promotion_gate.status === 'pass' &&
-    isDailyWinner &&
-    (candidate.promotion_status !== 'paper_shadow_approved' ||
-      promotionStage === 'paused');
-  const revocable =
-    candidate.promotion_status === 'paper_shadow_approved' &&
-    promotionStage === 'paper_shadow';
-  const critique = comparison.deepseek_critique;
-  return (
-    <article
-      className="rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] p-4"
-      data-testid="shadow-research-candidate"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="app-type-overline text-[var(--app-muted)]">
-            {candidate.recommendation.replace(/_/g, ' ')}
-          </div>
-          <h3 className="mt-2 text-base font-semibold text-[var(--app-text)]">
-            {comparison.economic_hypothesis || candidate.draft_id}
-          </h3>
+  if (candidates.length === 0) {
+    return (
+      <div className="mt-6 grid gap-4">
+        <div className="rounded-[var(--app-radius-surface)] border border-dashed border-[var(--app-divider)] p-5 text-sm text-[var(--app-muted)]">
+          {loading ? copy.running : copy.noCandidates}
         </div>
-        <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1 text-xs font-semibold">
-          {candidate.promotion_status === 'paper_shadow_approved'
-            ? promotionStage === 'paper_shadow'
-              ? copy.approved
-              : promotionStateLoaded
-                ? copy.paused
-                : candidate.status.replace(/_/g, ' ')
-            : candidate.status.replace(/_/g, ' ')}
-        </span>
-        {isDailyWinner ? (
-          <span className="rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--app-success-text)]">
-            {copy.winnerBadge}
-          </span>
-        ) : null}
-        {candidate.comparison.iteration_lineage ? (
-          <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1 text-xs font-semibold">
-            {copy.iterationRound}{' '}
-            {candidate.comparison.iteration_lineage.iteration_number}/
-            {candidate.comparison.iteration_lineage.total_iterations}
-          </span>
-        ) : null}
       </div>
-
-      {comparison.baseline && comparison.candidate ? (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          <MetricComparison
-            label={copy.baseline}
-            metrics={comparison.baseline}
-          />
-          <MetricComparison
-            label={copy.candidate}
-            metrics={comparison.candidate}
-          />
-        </div>
-      ) : null}
-
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <EvidenceList
-          items={
-            comparison.promotion_gate.blockers.length
-              ? comparison.promotion_gate.blockers
-              : comparison.failure_conditions || []
+    );
+  }
+  return (
+    <div className="mt-6 grid gap-4">
+      {candidates.map((candidate) => (
+        <CandidateCard
+          approvals={approvals}
+          candidate={candidate}
+          copy={copy}
+          isDailyWinner={verifiedWinnerCandidateIds.has(candidate.candidate_id)}
+          isResearchWinner={verifiedResearchWinnerCandidateIds.has(
+            candidate.candidate_id,
+          )}
+          key={candidate.candidate_id}
+          notes={notes}
+          onPause={() => void onPause(candidate)}
+          onPauseConfirmationChange={(checked) =>
+            onPauseConfirmationChange((current) => ({
+              ...current,
+              [candidate.candidate_id]: checked,
+            }))
           }
-          title={copy.blockers}
+          onPauseNoteChange={(value) =>
+            onPauseNoteChange((current) => ({
+              ...current,
+              [candidate.candidate_id]: value,
+            }))
+          }
+          onApprovalChange={(checked) =>
+            onApprovalChange((current) => ({
+              ...current,
+              [candidate.candidate_id]: checked,
+            }))
+          }
+          onApprove={() => void onApprove(candidate)}
+          onNoteChange={(value) =>
+            onNoteChange((current) => ({
+              ...current,
+              [candidate.candidate_id]: value,
+            }))
+          }
+          pauseConfirmations={pauseConfirmations}
+          pauseNotes={pauseNotes}
+          pending={pending}
+          promotionStage={
+            promotionStates.data?.find(
+              (state) =>
+                state.strategy_id ===
+                `ai_formula_shadow:${candidate.candidate_id}`,
+            )?.stage
+          }
+          promotionStateLoaded={promotionStates.isSuccess}
         />
-        <EvidenceList
-          items={[
-            ...(critique?.evidence_gaps || []),
-            ...(critique?.contradicted_claims || []),
-          ]}
-          title={copy.critique}
-        />
-      </div>
-      {comparison.risk_impact ? (
-        <p className="app-muted mt-4 text-sm leading-6">
-          <span className="font-semibold text-[var(--app-text)]">
-            {copy.risk}:{' '}
-          </span>
-          {comparison.risk_impact}
-        </p>
-      ) : null}
-
-      {candidate.status === 'awaiting_human_approval' &&
-      candidate.recommendation === 'paper_shadow_review' &&
-      comparison.promotion_gate.status === 'pass' &&
-      !isDailyWinner ? (
-        <p className="app-muted mt-4 text-xs leading-5">
-          {copy.notDailyWinner}
-        </p>
-      ) : null}
-
-      {eligible ? (
-        <div className="mt-5 border-t border-[var(--app-divider)] pt-4">
-          <label className="text-xs font-semibold text-[var(--app-text)]">
-            {copy.approvalNote}
-            <textarea
-              className="app-input mt-2 min-h-20 w-full resize-y"
-              onChange={(event) => onNoteChange(event.target.value)}
-              value={notes[candidate.candidate_id] ?? ''}
-            />
-          </label>
-          <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-[var(--app-muted)]">
-            <input
-              checked={approvals[candidate.candidate_id] ?? false}
-              className="mt-1"
-              onChange={(event) => onApprovalChange(event.target.checked)}
-              type="checkbox"
-            />
-            <span>{copy.approvalConfirm}</span>
-          </label>
-          <button
-            className="app-button-primary mt-3 min-h-11 px-4 py-2 text-sm font-semibold"
-            disabled={
-              pending ||
-              !approvals[candidate.candidate_id] ||
-              !notes[candidate.candidate_id]?.trim()
-            }
-            onClick={onApprove}
-            type="button"
-          >
-            {pending
-              ? copy.approving
-              : promotionStage === 'paused'
-                ? copy.reapprove
-                : copy.approve}
-          </button>
-        </div>
-      ) : null}
-      {revocable ? (
-        <div className="mt-5 border-t border-[var(--app-divider)] pt-4">
-          <label className="text-xs font-semibold text-[var(--app-text)]">
-            {copy.pauseNote}
-            <textarea
-              className="app-input mt-2 min-h-20 w-full resize-y"
-              onChange={(event) => onPauseNoteChange(event.target.value)}
-              value={pauseNotes[candidate.candidate_id] ?? ''}
-            />
-          </label>
-          <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-[var(--app-muted)]">
-            <input
-              checked={pauseConfirmations[candidate.candidate_id] ?? false}
-              className="mt-1"
-              onChange={(event) =>
-                onPauseConfirmationChange(event.target.checked)
-              }
-              type="checkbox"
-            />
-            <span>{copy.pauseConfirm}</span>
-          </label>
-          <button
-            className="app-button-secondary mt-3 min-h-11 px-4 py-2 text-sm font-semibold"
-            disabled={
-              pending ||
-              !pauseConfirmations[candidate.candidate_id] ||
-              !pauseNotes[candidate.candidate_id]?.trim()
-            }
-            onClick={onPause}
-            type="button"
-          >
-            {pending ? copy.pausing : copy.pause}
-          </button>
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function MetricComparison({
-  label,
-  metrics,
-}: {
-  label: string;
-  metrics: ShadowResearchMetricView;
-}) {
-  const { locale } = usePreferences();
-  const copy = COPY[locale];
-  return (
-    <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-3">
-      <div className="text-xs font-semibold text-[var(--app-muted)]">
-        {label}
-      </div>
-      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:grid-cols-3">
-        <Metric
-          label={copy.return}
-          value={formatPercent(metrics.total_return)}
-        />
-        <Metric label={copy.sharpe} value={metrics.sharpe.toFixed(2)} />
-        <Metric
-          label={copy.drawdown}
-          value={formatPercent(-Math.abs(metrics.max_drawdown))}
-        />
-        <Metric label={copy.costs} value={formatCurrency(metrics.total_cost)} />
-        <Metric
-          label={copy.oos}
-          value={`${formatPercent(metrics.mean_oos_return)} / ${formatPercent(metrics.worst_oos_return)}`}
-        />
-        <Metric label={copy.trades} value={String(metrics.total_trades)} />
-      </dl>
+      ))}
     </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-[var(--app-muted)]">{label}</dt>
-      <dd className="mt-1 font-semibold text-[var(--app-text)]">{value}</dd>
-    </div>
-  );
-}
-
-function EvidenceList({ items, title }: { items: string[]; title: string }) {
-  return (
-    <div>
-      <h4 className="text-xs font-semibold text-[var(--app-text)]">{title}</h4>
-      {items.length ? (
-        <ul className="app-muted mt-2 list-disc space-y-1 pl-4 text-xs leading-5">
-          {items.slice(0, 5).map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="app-muted mt-2 text-xs">—</p>
-      )}
-    </div>
-  );
-}
-
-function StatusMetric({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] p-3">
-      <div className="text-xs font-semibold text-[var(--app-muted)]">
-        {label}
-      </div>
-      <div className="mt-1 text-lg font-semibold text-[var(--app-text)]">
-        {value}
-      </div>
-      <div className="app-muted mt-1 truncate text-xs">{detail}</div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  type = 'text',
-  onChange,
-}: {
-  label: string;
-  value: string;
-  type?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="text-xs font-semibold text-[var(--app-text)]">
-      {label}
-      <input
-        className="app-input mt-2 min-h-11 w-full"
-        onChange={(event) => onChange(event.target.value)}
-        type={type}
-        value={value}
-      />
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="text-xs font-semibold text-[var(--app-text)]">
-      {label}
-      <input
-        className="app-input mt-2 min-h-11 w-full"
-        max={max}
-        min={min}
-        onChange={(event) => onChange(Number(event.target.value))}
-        step={step}
-        type="number"
-        value={value}
-      />
-    </label>
   );
 }

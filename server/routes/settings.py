@@ -103,7 +103,6 @@ def _settings_response(state) -> SettingsResponse:
     return SettingsResponse(
         host=config.host,
         port=config.port,
-        live_auto_start=config.live_auto_start,
         initial_cash=float(config.initial_cash),
         start_date=config.start_date,
         end_date=config.end_date,
@@ -315,7 +314,6 @@ def create_router() -> APIRouter:
         # 更新 config 对象
         config.host = settings.host
         config.port = settings.port
-        config.live_auto_start = settings.live_auto_start
         config.initial_cash = __import__("decimal").Decimal(str(settings.initial_cash))
         config.start_date = settings.start_date
         config.end_date = settings.end_date
@@ -370,32 +368,6 @@ def create_router() -> APIRouter:
 
         return _settings_response(state)
 
-    @r.post("/live/start", response_model=LiveStatusResponse)
-    async def start_live() -> LiveStatusResponse:
-        """启动实时监控。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
-        scheduler = state.scheduler
-        if not scheduler.is_running:
-            scheduler.start()
-        return LiveStatusResponse(
-            running=scheduler.is_running, market_open=scheduler.is_market_open
-        )
-
-    @r.post("/live/stop", response_model=LiveStatusResponse)
-    async def stop_live() -> LiveStatusResponse:
-        """停止实时监控。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
-        scheduler = state.scheduler
-        if scheduler.is_running:
-            scheduler.stop()
-        return LiveStatusResponse(
-            running=scheduler.is_running, market_open=scheduler.is_market_open
-        )
-
     @r.get("/live/status", response_model=LiveStatusResponse)
     async def live_status() -> LiveStatusResponse:
         """查询实时监控状态。"""
@@ -404,7 +376,12 @@ def create_router() -> APIRouter:
         state = get_app_state()
         scheduler = state.scheduler
         return LiveStatusResponse(
-            running=scheduler.is_running, market_open=scheduler.is_market_open
+            running=scheduler.is_running,
+            initialized=scheduler.is_initialized,
+            activation_guarded=scheduler.activation_guarded,
+            scheduler_activation_guarded=scheduler.scheduler_activation_guarded(),
+            completed_iterations=scheduler.completed_iterations,
+            market_open=scheduler.is_market_open,
         )
 
     @r.post("/notification/test")

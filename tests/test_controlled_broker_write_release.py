@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
@@ -306,6 +307,37 @@ def test_status_and_resolution_do_not_create_authority_schema(tmp_path) -> None:
     assert "controlled_broker_write_release_revocations" not in tables
 
 
+def test_incomplete_read_schema_fails_closed_without_repair(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "incomplete-read-schema.db")
+    db.init_sync()
+    with sqlite3.connect(db._path) as connection:
+        connection.execute(
+            "CREATE TABLE controlled_broker_write_releases (id INTEGER PRIMARY KEY)"
+        )
+        connection.commit()
+    service = ControlledBrokerWriteReleaseService(db=db, clock=lambda: NOW)
+
+    status = service.get_status()
+    resolved = service.resolve_release_evidence("9" * 64)
+    with sqlite3.connect(db._path) as connection:
+        release_columns = [
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(controlled_broker_write_releases)"
+            ).fetchall()
+        ]
+        revocation_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            ("controlled_broker_write_release_revocations",),
+        ).fetchone()
+
+    assert status["active_release_count"] == 0
+    assert resolved["status"] == "blocked"
+    assert "controlled_broker_write_release_store_unavailable" in resolved["blockers"]
+    assert release_columns == ["id"]
+    assert revocation_table is None
+
+
 def test_exact_issue_retry_is_idempotent_but_second_live_scope_is_blocked(
     tmp_path,
 ) -> None:
@@ -354,6 +386,74 @@ def test_exact_issue_retry_is_idempotent_but_second_live_scope_is_blocked(
         "controlled_broker_write_release_conformance_not_clear"
         in exc.value.evidence["blockers"]
     )
+
+
+def test_second_fully_valid_release_for_active_scope_is_rejected_atomically(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    first = _issue(env)
+    changed = _dossier_request()
+    changed["expires_at"] = (NOW + timedelta(hours=7)).isoformat()
+    preview = env["service"].preview_dossier(**changed)
+    assert preview["review_ready"] is True
+    approval, signature = _approval(
+        env,
+        action="issue_controlled_broker_write_release",
+        artifact_type="controlled_broker_write_release_dossier",
+        fingerprint=preview["dossier_fingerprint"],
+    )
+
+    with pytest.raises(ControlledBrokerWriteReleaseRejected) as exc:
+        env["service"].record_release(
+            **changed,
+            dossier_fingerprint=preview["dossier_fingerprint"],
+            operator_label="local-owner",
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=signature,
+            acknowledgement=CONTROLLED_BROKER_WRITE_RELEASE_ACKNOWLEDGEMENT,
+        )
+
+    assert exc.value.evidence["blockers"] == [
+        "controlled_broker_write_release_active_scope_conflict"
+    ]
+    releases = env["service"].list_releases()
+    assert [item["release_evidence_id"] for item in releases] == [
+        first["release_evidence_id"]
+    ]
+
+
+def test_concurrent_exact_issue_replay_persists_one_release(tmp_path) -> None:
+    env = _environment(tmp_path)
+    request = _dossier_request()
+    preview = env["service"].preview_dossier(**request)
+    approval, signature = _approval(
+        env,
+        action="issue_controlled_broker_write_release",
+        artifact_type="controlled_broker_write_release_dossier",
+        fingerprint=preview["dossier_fingerprint"],
+    )
+
+    def issue() -> dict:
+        return env["service"].record_release(
+            **request,
+            dossier_fingerprint=preview["dossier_fingerprint"],
+            operator_label="local-owner",
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=signature,
+            acknowledgement=CONTROLLED_BROKER_WRITE_RELEASE_ACKNOWLEDGEMENT,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: issue(), range(2)))
+
+    assert len({item["release_evidence_id"] for item in results}) == 1
+    assert sorted(item["reused"] for item in results) == [False, True]
+    with sqlite3.connect(env["db"]._path) as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM controlled_broker_write_releases"
+        ).fetchone()[0]
+    assert count == 1
 
 
 def test_source_drift_expiry_and_key_rotation_fail_closed(tmp_path) -> None:
@@ -502,6 +602,45 @@ def test_signed_revocation_is_one_way_idempotent_and_source_drift_cannot_block_i
     assert resolved["status"] == "blocked"
     assert "controlled_broker_write_release_revoked" in resolved["blockers"]
     assert env["service"].get_status()["active_release_count"] == 0
+
+
+def test_concurrent_exact_revocation_replay_persists_one_revocation(tmp_path) -> None:
+    env = _environment(tmp_path)
+    recorded = _issue(env)
+    preview = env["service"].preview_revocation(
+        release_evidence_id=recorded["release_evidence_id"],
+        reason_code="owner_disabled",
+    )
+    approval, signature = _approval(
+        env,
+        action="revoke_controlled_broker_write_release",
+        artifact_type="controlled_broker_write_release_revocation",
+        fingerprint=preview["revocation_fingerprint"],
+    )
+
+    def revoke() -> dict:
+        return env["service"].revoke_release(
+            release_evidence_id=recorded["release_evidence_id"],
+            reason_code="owner_disabled",
+            revocation_fingerprint=preview["revocation_fingerprint"],
+            operator_label="local-owner",
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=signature,
+            acknowledgement=(
+                CONTROLLED_BROKER_WRITE_RELEASE_REVOCATION_ACKNOWLEDGEMENT
+            ),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: revoke(), range(2)))
+
+    assert len({item["revocation_id"] for item in results}) == 1
+    assert sorted(item["reused"] for item in results) == [False, True]
+    with sqlite3.connect(env["db"]._path) as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM controlled_broker_write_release_revocations"
+        ).fetchone()[0]
+    assert count == 1
 
 
 def test_spoofed_scope_and_provider_failure_are_sanitized_and_write_nothing(

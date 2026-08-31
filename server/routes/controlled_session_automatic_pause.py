@@ -7,6 +7,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.composition.controlled_execution_services import (
+    build_controlled_session_automatic_pause_orchestrator_service,
+    build_controlled_session_automatic_pause_service,
+    build_controlled_session_live_gate_service,
+)
 from server.services.controlled_session_automatic_pause import (
     ControlledSessionAutomaticPauseService,
 )
@@ -82,51 +87,20 @@ def create_router() -> APIRouter:
 
 
 def _service() -> ControlledSessionAutomaticPauseService:
-    authority, live_gates, state = _dependencies()
-    return ControlledSessionAutomaticPauseService(
-        db=state.db,
-        session_provider=authority.resolve_for_monitoring,
-        gate_provider=live_gates.resolve_gate_snapshot,
-    )
+    from server.dependencies import get_app_state
+
+    return build_controlled_session_automatic_pause_service(get_app_state())
 
 
 def _live_gate_service() -> ControlledSessionLiveGateSnapshotService:
-    _, live_gates, _ = _dependencies()
-    return live_gates
+    from server.dependencies import get_app_state
+
+    return build_controlled_session_live_gate_service(get_app_state())
 
 
 def _orchestrator_service() -> ControlledSessionAutomaticPauseOrchestratorService:
-    authority, live_gates, state = _dependencies()
-    return ControlledSessionAutomaticPauseOrchestratorService(
-        runtime_authority=authority,
-        live_gates=live_gates,
-        automatic_pause=ControlledSessionAutomaticPauseService(
-            db=state.db,
-            session_provider=authority.resolve_for_monitoring,
-            gate_provider=live_gates.resolve_gate_snapshot,
-        ),
-    )
-
-
-def _dependencies() -> tuple[Any, ControlledSessionLiveGateSnapshotService, Any]:
     from server.dependencies import get_app_state
-    from server.routes.controlled_session_budget_reservation import (
-        _service as controlled_session_budget_reservation_service,
-    )
-    from server.routes.controlled_session_envelope import (
-        _service as controlled_session_envelope_service,
-    )
-    from server.routes.controlled_session_runtime_authority import (
-        _service as controlled_session_runtime_authority_service,
-    )
 
-    state = get_app_state()
-    authority = controlled_session_runtime_authority_service()
-    live_gates = ControlledSessionLiveGateSnapshotService(
-        db=state.db,
-        session_monitor_provider=authority.resolve_for_monitoring,
-        reservation_provider=controlled_session_budget_reservation_service().resolve,
-        attestation_provider=controlled_session_envelope_service().resolve_attestation,
-        trading_controls=getattr(state, "trading_controls", None),
+    return build_controlled_session_automatic_pause_orchestrator_service(
+        get_app_state()
     )
-    return authority, live_gates, state

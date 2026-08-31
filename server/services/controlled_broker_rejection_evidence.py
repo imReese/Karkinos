@@ -5,12 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sqlite3
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, NoReturn
 
-from server.services.per_order_confirmation import build_order_fingerprint
+from server.persistence.controlled_broker_rejection_reviews import (
+    ControlledBrokerRejectionReviewAlreadyRecorded,
+    ControlledBrokerRejectionReviewRepository,
+)
+from server.services.execution_identity import build_order_fingerprint
 
 CONTROLLED_BROKER_REJECTION_EVIDENCE_SCHEMA_VERSION = (
     "karkinos.controlled_broker_rejection_evidence.v1"
@@ -326,33 +329,8 @@ class ControlledBrokerRejectionEvidenceService:
             _raise_review_rejected(blockers=blockers)
 
         now = _aware_utc(self._clock())
-        with sqlite3.connect(db_path, timeout=2) as conn:
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA busy_timeout=2000")
-            conn.execute("PRAGMA foreign_keys=ON")
-            conn.execute("BEGIN IMMEDIATE")
-            existing = conn.execute(
-                """
-                SELECT * FROM controlled_broker_rejection_reviews
-                WHERE submit_intent_id = ?
-                LIMIT 1
-                """,
-                (normalized_intent_id,),
-            ).fetchone()
-            if existing is not None:
-                row = dict(existing)
-                if (
-                    str(row.get("review_fingerprint") or "")
-                    == normalized_review_fingerprint
-                    and str(row.get("reviewer_id") or "") == normalized_reviewer_id
-                    and str(row.get("disposition") or "") == normalized_disposition
-                ):
-                    return _rejection_review_response(row, reused=True)
-                _raise_review_rejected(
-                    blockers=["controlled_broker_rejection_review_already_recorded"],
-                    existing_review=row,
-                )
 
+        def build_record() -> dict[str, Any]:
             preview = self.preview(submit_intent_id=normalized_intent_id)
             current_blockers = [str(item) for item in preview.get("blockers") or []]
             if normalized_review_fingerprint != str(
@@ -380,7 +358,7 @@ class ControlledBrokerRejectionEvidenceService:
             result_fingerprint = str(
                 preview["rejection_evidence"]["result_fingerprint"]
             )
-            review_payload = {
+            payload = {
                 "schema_version": CONTROLLED_BROKER_REJECTION_REVIEW_SCHEMA_VERSION,
                 "review_id": review_id,
                 "review_fingerprint": normalized_review_fingerprint,
@@ -400,56 +378,38 @@ class ControlledBrokerRejectionEvidenceService:
                 "operator_acknowledgement": acknowledgement,
                 "retry_policy": dict(preview["retry_policy"]),
             }
-            conn.execute(
-                """
-                INSERT INTO controlled_broker_rejection_reviews (
-                    review_id, review_fingerprint, submit_intent_id,
-                    submit_fingerprint, order_id, order_fingerprint,
-                    result_fingerprint, gateway_id, account_alias,
-                    client_order_id, submission_operator_id, reviewer_id,
-                    disposition, rejection_classification, evidence_as_of,
-                    recorded_at_epoch_ms, recorded_at, payload_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    review_id,
-                    normalized_review_fingerprint,
-                    normalized_intent_id,
-                    str(preview["submit_fingerprint"]),
-                    str(preview["order_id"]),
-                    str(preview["order_fingerprint"]),
-                    result_fingerprint,
-                    str(preview["identity"]["gateway_id"]),
-                    str(preview["identity"]["account_alias"]),
-                    str(preview["identity"]["client_order_id"]),
-                    str(preview["identity"]["operator_id"]),
-                    normalized_reviewer_id,
-                    normalized_disposition,
-                    str(preview["rejection_evidence"]["classification"]),
-                    str(preview["rejection_evidence"]["evidence_as_of"]),
-                    int(now.timestamp() * 1000),
-                    recorded_at,
-                    json.dumps(
-                        review_payload,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
-                    recorded_at,
-                ),
+            return {
+                "review_id": review_id,
+                "submit_fingerprint": payload["submit_fingerprint"],
+                "order_id": payload["order_id"],
+                "order_fingerprint": payload["order_fingerprint"],
+                "result_fingerprint": result_fingerprint,
+                "gateway_id": str(preview["identity"]["gateway_id"]),
+                "account_alias": str(preview["identity"]["account_alias"]),
+                "client_order_id": str(preview["identity"]["client_order_id"]),
+                "submission_operator_id": str(preview["identity"]["operator_id"]),
+                "rejection_classification": payload["rejection_classification"],
+                "evidence_as_of": payload["evidence_as_of"],
+                "recorded_at_epoch_ms": int(now.timestamp() * 1000),
+                "recorded_at": recorded_at,
+                "payload": payload,
+            }
+
+        repository = ControlledBrokerRejectionReviewRepository(db_path)
+        try:
+            recorded, reused = repository.record_review(
+                submit_intent_id=normalized_intent_id,
+                review_fingerprint=normalized_review_fingerprint,
+                reviewer_id=normalized_reviewer_id,
+                disposition=normalized_disposition,
+                build_record=build_record,
             )
-            recorded = conn.execute(
-                """
-                SELECT * FROM controlled_broker_rejection_reviews
-                WHERE review_id = ?
-                LIMIT 1
-                """,
-                (review_id,),
-            ).fetchone()
-            conn.commit()
-        if recorded is None:
-            raise RuntimeError("controlled broker rejection review insert disappeared")
-        return _rejection_review_response(dict(recorded), reused=False)
+        except ControlledBrokerRejectionReviewAlreadyRecorded as exc:
+            _raise_review_rejected(
+                blockers=["controlled_broker_rejection_review_already_recorded"],
+                existing_review=exc.existing_review,
+            )
+        return _rejection_review_response(recorded, reused=reused)
 
 
 def list_controlled_broker_rejection_reviews(
@@ -462,19 +422,7 @@ def list_controlled_broker_rejection_reviews(
     db_path = getattr(db, "_path", None)
     if db_path is None:
         return []
-    bounded_limit = max(1, min(int(limit), 500))
-    with sqlite3.connect(db_path, timeout=2) as conn:
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=2000")
-        rows = conn.execute(
-            """
-            SELECT * FROM controlled_broker_rejection_reviews
-            ORDER BY recorded_at_epoch_ms DESC, id DESC
-            LIMIT ?
-            """,
-            (bounded_limit,),
-        ).fetchall()
-    return [dict(row) for row in rows]
+    return ControlledBrokerRejectionReviewRepository(db_path).list_reviews(limit=limit)
 
 
 def controlled_broker_rejection_review_binding_blockers(

@@ -15,6 +15,32 @@ function collectStaticText(value: unknown): string[] {
   return [];
 }
 
+function collectCopyShape(value: unknown, path = 'copy'): string[] {
+  if (Array.isArray(value)) {
+    return [
+      `${path}:array`,
+      ...value.flatMap((entry, index) =>
+        collectCopyShape(entry, `${path}[${index}]`),
+      ),
+    ];
+  }
+  if (value && typeof value === 'object') {
+    return [
+      `${path}:object`,
+      ...Object.entries(value).flatMap(([key, entry]) =>
+        collectCopyShape(entry, `${path}.${key}`),
+      ),
+    ];
+  }
+  return [`${path}:${typeof value}`];
+}
+
+test('keeps the complete English and Chinese copy API in lockstep', () => {
+  expect(collectCopyShape(copy.en).sort()).toEqual(
+    collectCopyShape(copy.zh).sort(),
+  );
+});
+
 test('keeps generic submit errors user-readable in both locales', () => {
   expect(copy.en.common.genericSubmitError).toBe(
     'Request failed. Check the form values and service status.',

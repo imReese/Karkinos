@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { PortfolioConstructionRecommendationsCard } from './portfolio-construction-recommendations-card';
 import type { PortfolioConstructionRecommendation } from '../api';
 

@@ -40,14 +40,18 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          const appChunk = appFeatureChunk(id);
-
-          if (appChunk) {
-            return appChunk;
-          }
-
-          return vendorChunk(id);
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            {
+              name: (id) => appFeatureChunk(id) ?? null,
+              priority: 2,
+            },
+            {
+              name: (id) => vendorChunk(id) ?? null,
+              priority: 1,
+            },
+          ],
         },
       },
     },
@@ -55,11 +59,13 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: process.env.KARKINOS_DEV_BACKEND_URL ?? 'http://127.0.0.1:8001',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://127.0.0.1:8000',
+        target: (
+          process.env.KARKINOS_DEV_BACKEND_URL ?? 'http://127.0.0.1:8001'
+        ).replace(/^http/, 'ws'),
         ws: true,
         changeOrigin: true,
       },

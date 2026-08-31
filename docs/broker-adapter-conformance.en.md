@@ -39,7 +39,7 @@ fields and unknown top-level fields are rejected.
 Preview runs the suite but does not create the target evidence database:
 
 ```bash
-uv run python scripts/run_broker_adapter_conformance.py \
+uv run python scripts/broker/run_broker_adapter_conformance.py \
   --file /path/to/adapter-release.json \
   --db data/store/karkinos.db \
   --run-id conformance-2026-001
@@ -48,7 +48,7 @@ uv run python scripts/run_broker_adapter_conformance.py \
 Recording is a separate explicit action:
 
 ```bash
-uv run python scripts/run_broker_adapter_conformance.py \
+uv run python scripts/broker/run_broker_adapter_conformance.py \
   --file /path/to/adapter-release.json \
   --db data/store/karkinos.db \
   --run-id conformance-2026-001 \

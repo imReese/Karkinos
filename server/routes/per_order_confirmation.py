@@ -7,17 +7,12 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.account_truth_gate import build_latest_account_truth_promotion_evidence
-from server.services.broker_connector_runtime import build_broker_connectors
-from server.services.broker_connector_soak_promotion import (
-    BrokerConnectorSoakPromotionService,
+from server.composition.controlled_execution_services import (
+    build_per_order_confirmation_service,
 )
 from server.services.current_per_order_dossier import CurrentPerOrderDossierService
 from server.services.current_per_order_dossier_factory import (
     build_current_per_order_dossier_service,
-)
-from server.services.execution_gateway_verification import (
-    ExecutionGatewayVerificationService,
 )
 from server.services.per_order_confirmation import (
     PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
@@ -198,41 +193,7 @@ def create_router() -> APIRouter:
 def _service() -> PerOrderConfirmationService:
     from server.dependencies import get_app_state
 
-    state = get_app_state()
-    config = getattr(state, "config", None)
-    connectors = build_broker_connectors(getattr(config, "broker_connectors", []) or [])
-    trusted_operator_identities = (
-        getattr(config, "trusted_operator_identities", []) or []
-    )
-    return PerOrderConfirmationService(
-        db=state.db,
-        connectors=connectors,
-        trusted_operator_identities=trusted_operator_identities,
-        trading_controls=getattr(state, "trading_controls", None),
-        broker_soak_promotion_evidence_provider=(
-            lambda connector_id: BrokerConnectorSoakPromotionService(
-                db=state.db,
-                connectors=connectors,
-                trusted_operator_identities=trusted_operator_identities,
-                account_truth_evidence_provider=(
-                    lambda: build_latest_account_truth_promotion_evidence(state)
-                ),
-            ).preview_dossier(connector_id)
-        ),
-        execution_gateway_verification_provider=(
-            ExecutionGatewayVerificationService(
-                db=state.db,
-                gateways=getattr(state, "execution_gateways", []) or [],
-            ).resolve
-        ),
-        account_truth_evidence_provider=(
-            lambda: {
-                **build_latest_account_truth_promotion_evidence(state),
-                "persisted_facts_only": True,
-                "provider_contact_performed": False,
-            }
-        ),
-    )
+    return build_per_order_confirmation_service(get_app_state())
 
 
 def _current_dossier_service() -> CurrentPerOrderDossierService:

@@ -14,9 +14,18 @@ test('public home presents the brand contract before entering the workbench', as
   page,
 }) => {
   const apiRequests: string[] = [];
+  const workspaceAssetRequests: string[] = [];
   page.on('request', (request) => {
-    if (new URL(request.url()).pathname.startsWith('/api/')) {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith('/api/')) {
       apiRequests.push(request.url());
+    }
+    if (
+      pathname.includes('/assets/app-shell-') ||
+      pathname.includes('/assets/feature-') ||
+      pathname.includes('/assets/charts-')
+    ) {
+      workspaceAssetRequests.push(pathname);
     }
   });
 
@@ -35,6 +44,7 @@ test('public home presents the brand contract before entering the workbench', as
   await expect(page.locator('.app-shell-frame')).toHaveCount(0);
   await expect(page.getByRole('contentinfo')).toBeVisible();
   expect(apiRequests).toEqual([]);
+  expect(workspaceAssetRequests).toEqual([]);
 
   const composition = await page.evaluate(() => {
     const evidenceTop = Math.round(
@@ -172,6 +182,7 @@ test('public home preserves its composition across the seven visual acceptance v
   for (const viewport of publicHomeViewports) {
     await page.setViewportSize(viewport);
     await page.goto('/');
+    await expect(page.locator('.app-public-hero')).toBeVisible();
 
     const latteGeometry = await page.evaluate(() => ({
       documentOverflow:
@@ -265,6 +276,7 @@ test('public home completes the evidence path inside the tablet first viewport',
 }) => {
   await page.setViewportSize({ width: 834, height: 1112 });
   await page.goto('/');
+  await expect(page.locator('.app-public-hero')).toBeVisible();
 
   const geometry = await page.evaluate(() => {
     const hero = document.querySelector('.app-public-hero');

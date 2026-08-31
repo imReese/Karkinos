@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -10,22 +9,20 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.ai_runtime.capture import CaptureSelectionError
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
-)
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.external_research import (
-    ExternalBacktestReportAuditStore,
     ExternalBacktestReportRejected,
     HumanExternalBacktestReportRequest,
-    HumanExternalBacktestReportService,
 )
-from server.ai_runtime.provider_connectivity import (
-    ConnectivityConfigurationError,
-    load_provider_connectivity_settings,
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    provider_call_deferred_payload,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_research import build_human_context_capture_service
+from server.ai_runtime.provider_connectivity import ConnectivityConfigurationError
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_external_backtest_report_service,
+)
 
 
 class HumanExternalBacktestReportPayload(BaseModel):
@@ -45,7 +42,6 @@ class HumanExternalBacktestReportPayload(BaseModel):
 
 
 def create_router() -> APIRouter:
-    router = APIRouter()
     external_router = APIRouter(
         prefix="/api/ai/external-research", tags=["ai-research"]
     )
@@ -71,6 +67,11 @@ def create_router() -> APIRouter:
                     confirmation=payload.confirmation,
                 )
             )
+        except ProviderCallDeferred as exc:
+            return JSONResponse(
+                status_code=202,
+                content=provider_call_deferred_payload(exc.decision),
+            )
         except (IdempotencyConflict, EvidenceIdentityMismatch) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ExternalBacktestReportRejected as exc:
@@ -95,37 +96,4 @@ def create_router() -> APIRouter:
         }[result.workflow.status.value]
         return JSONResponse(status_code=status_code, content=result.to_dict())
 
-    from server.routes.ai_strategy_research import (
-        create_router as create_strategy_router,
-    )
-
-    router.include_router(external_router)
-    router.include_router(create_strategy_router())
-    return router
-
-
-def build_external_backtest_report_service(
-    state,
-) -> HumanExternalBacktestReportService:
-    """Build the explicit external boundary on AI-only audit storage."""
-    db_path = _database_path(state.db)
-    evidence_repository = CanonicalEvidenceRepository(db_path)
-    ai_store = AiAuditStore(db_path)
-    report_store = ExternalBacktestReportAuditStore(db_path)
-    evidence_repository.init()
-    ai_store.init()
-    report_store.init()
-    return HumanExternalBacktestReportService(
-        settings=load_provider_connectivity_settings(state.config),
-        capture_service=build_human_context_capture_service(state),
-        evidence_repository=evidence_repository,
-        ai_store=ai_store,
-        report_store=report_store,
-    )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ConnectivityConfigurationError("database path is unavailable")
-    return Path(path)
+    return external_router

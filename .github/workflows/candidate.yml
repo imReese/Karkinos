@@ -1,0 +1,441 @@
+name: Release Candidate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full 40-character main commit SHA to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.11.28"
+
+concurrency:
+  group: release-candidate-${{ github.repository }}-${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: Verify candidate source
+    if: ${{ github.event.repository.fork == false }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      commit_sha: ${{ steps.identity.outputs.commit_sha }}
+      version: ${{ steps.version.outputs.version }}
+      source_ci_run_id: ${{ steps.source_ci.outputs.source_ci_run_id }}
+      source_ci_run_attempt: ${{ steps.source_ci.outputs.source_ci_run_attempt }}
+    steps:
+      - name: Checkout candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify full commit identity
+        id: identity
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_COMMIT_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "${TARGET_COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          # GitHub attestations bind github.sha, not a later detached checkout.
+          # A manual candidate therefore has to dispatch from the exact target SHA.
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "${GITHUB_SHA}" = "${TARGET_COMMIT_SHA}"
+          git_auth_header="$(
+            printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 | tr -d '\n'
+          )"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${git_auth_header}" fetch \
+            --force --no-tags origin refs/heads/main:refs/remotes/origin/main
+          unset git_auth_header
+          git checkout --detach "${TARGET_COMMIT_SHA}"
+          commit_sha="$(git rev-parse HEAD)"
+          [[ "${commit_sha}" =~ ^[0-9a-f]{40}$ ]]
+          test "${commit_sha}" = "${TARGET_COMMIT_SHA}"
+          git merge-base --is-ancestor "${commit_sha}" refs/remotes/origin/main
+          echo "commit_sha=${commit_sha}" >> "${GITHUB_OUTPUT}"
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Verify exact main Code CI evidence
+        id: source_ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_COMMIT_SHA: ${{ steps.identity.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          verify_args=(
+            --repository "${GITHUB_REPOSITORY}"
+            --commit-sha "${TARGET_COMMIT_SHA}"
+            --required-job "Code CI gate"
+            --required-job "Repository acceptance audit"
+            --timeout-seconds 1200
+            --poll-interval-seconds 15
+          )
+          python tools/verify_release_source_ci.py "${verify_args[@]}" \
+            --github-output "${GITHUB_OUTPUT}"
+      - name: Read package version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(python -c 'import re; print(re.search(r"__version__\s*=\s*\"([^\"]+)", open("server/__init__.py").read()).group(1))')"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+  native:
+    name: Build macOS candidate (${{ matrix.architecture }})
+    if: ${{ github.event.repository.fork == false }}
+    needs: source
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - architecture: arm64
+            runner: macos-15
+          - architecture: x86_64
+            runner: macos-15-intel
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout verified candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source.outputs.commit_sha }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # Builder host only; the packaged runtime remains pinned in build_macos_candidate.py.
+          python-version: "3.12.10"
+      - name: Install locked build tools
+        run: |
+          python -m pip install "uv==${UV_VERSION}"
+          npm ci --prefix web
+      - name: Build frontend bundle
+        run: npm --prefix web run build
+      - name: Build self-contained native candidate
+        env:
+          CANDIDATE_COMMIT_SHA: ${{ needs.source.outputs.commit_sha }}
+          CANDIDATE_VERSION: ${{ needs.source.outputs.version }}
+          CANDIDATE_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          mkdir -p candidate
+          python tools/build_macos_candidate.py \
+            --commit-sha "${CANDIDATE_COMMIT_SHA}" \
+            --version "${CANDIDATE_VERSION}" \
+            --architecture "${CANDIDATE_ARCHITECTURE}" \
+            --output "candidate/karkinos-${CANDIDATE_VERSION}-macos-${CANDIDATE_ARCHITECTURE}.tar.gz"
+      - name: Smoke test packaged release controller and service
+        env:
+          CANDIDATE_VERSION: ${{ needs.source.outputs.version }}
+          CANDIDATE_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          smoke_root="$(mktemp -d "${RUNNER_TEMP}/karkinos-controller-smoke.XXXXXX")"
+          service_pid=""
+          cleanup() {
+            local pid="${service_pid:-}"
+            if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+              kill -TERM "${pid}" 2>/dev/null || true
+              for _ in {1..50}; do
+                kill -0 "${pid}" 2>/dev/null || break
+                sleep 0.2
+              done
+              if kill -0 "${pid}" 2>/dev/null; then
+                kill -KILL "${pid}" 2>/dev/null || true
+              fi
+              wait "${pid}" 2>/dev/null || true
+            fi
+            rm -rf -- "${smoke_root}"
+          }
+          trap cleanup EXIT
+          extract_root="${smoke_root}/extract"
+          isolated_home="${smoke_root}/home"
+          runtime_home="${smoke_root}/runtime"
+          mkdir -p "${extract_root}" "${isolated_home}"
+          chmod 700 "${smoke_root}" "${extract_root}" "${isolated_home}"
+          archive="candidate/karkinos-${CANDIDATE_VERSION}-macos-${CANDIDATE_ARCHITECTURE}.tar.gz"
+          tar -xzf "${archive}" -C "${extract_root}"
+          release_root="${extract_root}/Karkinos-${CANDIDATE_VERSION}-macos-${CANDIDATE_ARCHITECTURE}"
+          controller="${release_root}/bin/karkinosctl"
+          entrypoint="${release_root}/bin/karkinos"
+          packaged_python="${release_root}/runtime/bin/python3.12"
+          test -x "${controller}"
+          test -x "${entrypoint}"
+          test -x "${packaged_python}"
+          HOME="${isolated_home}" KARKINOS_HOME="${runtime_home}" \
+            "${controller}" --help >"${smoke_root}/help.txt"
+          test ! -e "${runtime_home}"
+          HOME="${isolated_home}" KARKINOS_HOME="${runtime_home}" \
+            "${controller}" status >"${smoke_root}/status.json"
+          test ! -e "${isolated_home}/Library/Application Support/Karkinos"
+          test ! -e "${isolated_home}/Library/LaunchAgents/com.karkinos.daily-candidate.plist"
+          EXPECTED_HOME="${runtime_home}" STATUS_PATH="${smoke_root}/status.json" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          status = json.loads(Path(os.environ["STATUS_PATH"]).read_text())
+          assert status["home"] == os.environ["EXPECTED_HOME"]
+          assert status["current"] is None
+          assert status["previous"] is None
+          assert status["candidates"] == []
+          PY
+          service_port="$("${packaged_python}" -B - <<'PY'
+          import socket
+
+          with socket.socket() as listener:
+              listener.bind(("127.0.0.1", 0))
+              print(listener.getsockname()[1])
+          PY
+          )"
+          mkdir -p "${runtime_home}/config" "${runtime_home}/data" "${runtime_home}/logs"
+          printf '%s\n' '{"market_calendar_auto_sync":false,"live_poll_interval":3600}' \
+            >"${runtime_home}/config/config.json"
+          : >"${runtime_home}/config/.env"
+          chmod 600 "${runtime_home}/config/config.json" "${runtime_home}/config/.env"
+          HOME="${isolated_home}" \
+            KARKINOS_HOME="${runtime_home}" \
+            KARKINOS_DATA_DIR="${runtime_home}/data" \
+            KARKINOS_CONFIG_PATH="${runtime_home}/config/config.json" \
+            KARKINOS_ENV_FILE="${runtime_home}/config/.env" \
+            "${entrypoint}" --host 127.0.0.1 --port "${service_port}" \
+            >"${smoke_root}/service.log" 2>&1 &
+          service_pid=$!
+          service_ready=false
+          for _ in {1..120}; do
+            if ! kill -0 "${service_pid}" 2>/dev/null; then
+              echo "Packaged Karkinos service exited before readiness." >&2
+              cat "${smoke_root}/service.log" >&2
+              exit 1
+            fi
+            if SMOKE_BASE_URL="http://127.0.0.1:${service_port}" \
+              EXPECTED_MANIFEST="${release_root}/release.json" \
+              "${packaged_python}" -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import ProxyHandler, build_opener
+
+          try:
+              manifest = json.loads(
+                  Path(os.environ["EXPECTED_MANIFEST"]).read_text(encoding="utf-8")
+              )
+              opener = build_opener(ProxyHandler({}))
+              base_url = os.environ["SMOKE_BASE_URL"]
+              with opener.open(f"{base_url}/api/health", timeout=0.5) as response:
+                  health = json.load(response)
+              with opener.open(
+                  f"{base_url}/api/settings/live/status", timeout=0.5
+              ) as response:
+                  live = json.load(response)
+              assert health["schema_version"] == "karkinos.service_health.v1"
+              assert health["service"] == "karkinos"
+              assert health["status"] == "alive"
+              assert health["version"] == manifest["version"]
+              assert health["release_sha"] == manifest["commit_sha"]
+              assert (
+                  health["artifact_fingerprint"] == manifest["payload_fingerprint"]
+              )
+              assert health["financial_readiness_claimed"] is False
+              assert live["running"] is True
+              assert live["initialized"] is True
+              assert live["activation_guarded"] is False
+              assert live["scheduler_activation_guarded"] is False
+          except (AssertionError, KeyError, OSError, ValueError):
+              raise SystemExit(1)
+          PY
+            then
+              service_ready=true
+              break
+            fi
+            sleep 0.5
+          done
+          if [[ "${service_ready}" != true ]]; then
+            echo "Packaged Karkinos service did not become ready." >&2
+            cat "${smoke_root}/service.log" >&2
+            exit 1
+          fi
+          kill -TERM "${service_pid}"
+          service_status=0
+          wait "${service_pid}" || service_status=$?
+          service_pid=""
+          # Uvicorn re-raises a captured SIGTERM after graceful shutdown.
+          if [[ "${service_status}" -ne 0 && "${service_status}" -ne 143 ]]; then
+            echo "Packaged Karkinos service did not stop cleanly." >&2
+            cat "${smoke_root}/service.log" >&2
+            exit 1
+          fi
+      - name: Attest native candidate provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: candidate/*.tar.gz
+      - name: Upload native candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-${{ matrix.architecture }}-${{ needs.source.outputs.commit_sha }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 30
+
+  image:
+    name: Build candidate container image
+    if: ${{ github.event.repository.fork == false }}
+    needs: source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      reference: ${{ steps.reference.outputs.reference }}
+      workflow_run_id: ${{ steps.reference.outputs.workflow_run_id }}
+      workflow_run_attempt: ${{ steps.reference.outputs.workflow_run_attempt }}
+    steps:
+      - name: Checkout verified candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source.outputs.commit_sha }}
+          persist-credentials: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute candidate image reference
+        id: reference
+        env:
+          CANDIDATE_COMMIT_SHA: ${{ needs.source.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          printf 'reference=ghcr.io/%s:candidate-sha-%s-run-%s-attempt-%s\n' \
+            "${GITHUB_REPOSITORY,,}" "${CANDIDATE_COMMIT_SHA}" \
+            "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" >> "${GITHUB_OUTPUT}"
+          printf 'workflow_run_id=%s\n' "${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
+          printf 'workflow_run_attempt=%s\n' "${GITHUB_RUN_ATTEMPT}" >> "${GITHUB_OUTPUT}"
+      - name: Reject a reused candidate image tag
+        env:
+          CANDIDATE_IMAGE_REFERENCE: ${{ steps.reference.outputs.reference }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+
+          from tools.release_image_plan import assert_registry_image_tag_absent
+
+          assert_registry_image_tag_absent(os.environ["CANDIDATE_IMAGE_REFERENCE"])
+          PY
+      # This candidate build is intentionally the only source build. Stable promotion uses its digest.
+      - name: Build and push candidate multi-architecture image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.reference.outputs.reference }}
+          build-args: VERSION=${{ needs.source.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.source.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.source.outputs.commit_sha }}
+      - name: Verify candidate image metadata
+        env:
+          EXPECTED_VERSION: ${{ needs.source.outputs.version }}
+          EXPECTED_REVISION: ${{ needs.source.outputs.commit_sha }}
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_REFERENCE: ${{ steps.reference.outputs.reference }}
+        run: |
+          set -euo pipefail
+          metadata_path="${RUNNER_TEMP}/candidate-image-metadata.json"
+          docker buildx imagetools inspect --format '{{json .}}' \
+            "${IMAGE_REFERENCE}" > "${metadata_path}"
+          python tools/release_candidate.py verify-image-metadata \
+            --metadata "${metadata_path}" \
+            --image-reference "${IMAGE_REFERENCE}" \
+            --image-digest "${EXPECTED_DIGEST}" \
+            --commit-sha "${EXPECTED_REVISION}" \
+            --version "${EXPECTED_VERSION}"
+
+  manifest:
+    name: Persist candidate manifest
+    if: ${{ github.event.repository.fork == false }}
+    needs: [source, native, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout verified candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source.outputs.commit_sha }}
+          persist-credentials: false
+      - name: Download native candidate artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: native-*-*
+          path: candidate-artifacts
+          merge-multiple: true
+      - name: Build candidate manifest
+        env:
+          CANDIDATE_COMMIT_SHA: ${{ needs.source.outputs.commit_sha }}
+          CANDIDATE_VERSION: ${{ needs.source.outputs.version }}
+          SOURCE_CI_RUN_ID: ${{ needs.source.outputs.source_ci_run_id }}
+          SOURCE_CI_RUN_ATTEMPT: ${{ needs.source.outputs.source_ci_run_attempt }}
+          CANDIDATE_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          CANDIDATE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CANDIDATE_WORKFLOW_EVENT: ${{ github.event_name }}
+          IMAGE_WORKFLOW_RUN_ID: ${{ needs.image.outputs.workflow_run_id }}
+          IMAGE_WORKFLOW_RUN_ATTEMPT: ${{ needs.image.outputs.workflow_run_attempt }}
+          CANDIDATE_IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          python tools/release_candidate.py build \
+            --repo-root . \
+            --artifact-dir candidate-artifacts \
+            --commit-sha "${CANDIDATE_COMMIT_SHA}" \
+            --version "${CANDIDATE_VERSION}" \
+            --source-ci-run-id "${SOURCE_CI_RUN_ID}" \
+            --source-ci-run-attempt "${SOURCE_CI_RUN_ATTEMPT}" \
+            --candidate-workflow-run-id "${CANDIDATE_WORKFLOW_RUN_ID}" \
+            --candidate-workflow-run-attempt "${CANDIDATE_WORKFLOW_RUN_ATTEMPT}" \
+            --candidate-workflow-event "${CANDIDATE_WORKFLOW_EVENT}" \
+            --image-workflow-run-id "${IMAGE_WORKFLOW_RUN_ID}" \
+            --image-workflow-run-attempt "${IMAGE_WORKFLOW_RUN_ATTEMPT}" \
+            --image-reference "ghcr.io/${GITHUB_REPOSITORY,,}" \
+            --image-digest "${CANDIDATE_IMAGE_DIGEST}" \
+            --output candidate-manifest.json
+      - name: Upload immutable candidate bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: karkinos-candidate-${{ needs.source.outputs.commit_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            candidate-manifest.json
+            candidate-artifacts/
+          if-no-files-found: error
+          retention-days: 30

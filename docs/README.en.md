@@ -13,11 +13,14 @@ Requirements: Python 3.12+, Node.js 24.x, `uv`, and optionally Docker.
 ```bash
 uv sync --extra server --extra dev --frozen
 npm ci --prefix web
-npm --prefix web run build
-uv run python -m server --no-live
+cp config.example.json config.json
+cp .env.example .env
+uv run python -m server --check-config
+./scripts/start_server.sh
 ```
 
-The default product entry point is `http://127.0.0.1:8000`.
+Open `http://127.0.0.1:5173` for the development UI. The default command runs an isolated source backend on port 8001 plus Vite; it never reuses or changes immutable production on its persisted port (8000 by default). Run `./scripts/stop_server.sh` to stop only exact tracked development processes; use `./scripts/stop_server.sh prod` explicitly for production. The live scheduler always starts with each backend and has no off switch.
+Automatic trading is a separate default-off runtime gate that changes without restart and grants no capital authority; automatic broker submission remains unimplemented. Native production starts only the CI-built release selected by `current` and never builds from the checkout or local Docker. See [`scripts/README.md`](../scripts/README.md) for candidate, stable update, bootstrap, rollback, and script ownership.
 
 Primary checks:
 
@@ -78,9 +81,10 @@ settings: [中文](config-reference.zh.md) / [English](config-reference.en.md).
 
 ### Research and backtesting
 
-Strategy Lab runs registered strategies against frozen data inputs whose IDs hash the exact ordered timestamp/OHLCV rows. Saved experiments bind parameters, cost assumptions, OOS evidence, risk, limitations, and data-quality status. The deterministic advancement gate additionally requires aligned rolling OOS, bounded parameter and market-state robustness, drawdown, turnover, capacity, account-specific broker-reconciled fee/tax evidence, after-tax excess, critique, and a redacted proof that account-bound research capital does not exceed current reconciled account equity; the built-in fee estimate is explicitly ineligible. Reserved AI-shadow tickets re-resolve the exact persisted sources, and the next batch requires a fingerprint-valid plan/paper/actual comparison. Missing or drifted evidence is no-action; no research record grants execution or capital authority.
+Strategy Lab runs registered strategies against frozen data inputs whose IDs hash the exact ordered timestamp/OHLCV rows. Saved experiments bind parameters, cost assumptions, OOS evidence, risk, limitations, and data-quality status. DeepSeek Formula discovery uses a fixed CNY 1,000,000 normalized research notional bound by versioned policy `karkinos.ai.normalized_research_notional.cny_1m.v1` and the canonical estimated-cost model; it does not read a broker provider and does not require Account Truth, a valuation snapshot, or a ledger cutoff. The resulting candidates remain research-only. Existing advancement, promotion, paper/shadow, Decision, and execution gates still require account-specific broker-reconciled fee/tax, valuation/ledger, and capacity evidence and therefore fail closed for normalized candidates. There is currently no independent qualification/replay service that attaches Account Truth to an existing normalized candidate, recalculates it with account-specific costs, and produces promotion-eligible evidence. Reserved AI-shadow tickets re-resolve the exact persisted sources, and the next batch requires a fingerprint-valid plan/paper/actual comparison. No research record grants execution or capital authority.
 The daily research workflow no longer treats current holdings as the candidate pool. After the verified close it persists an immutable full A-share stock snapshot, excludes funds and ETFs, freezes receipt-bound full-market history, hard-filters every active stock, then deterministically selects exactly 40 complete-history, one-lot-feasible stocks. DeepSeek proposes signal logic only: model-provided weights are ignored, and local code owns four-slot sizing, capital feasibility, costs, lots, risk, and authority. This neither promotes a strategy nor creates/submits an order or expands capital authority.
-The account-specific model is created only by a revocable, fingerprint-bound Account Truth fee review. Its persisted safe terms drive the actual baseline and candidate calculators; source drift, revocation, or an uncovered backtest/ticket date blocks without provider or broker contact. The next-batch reconciliation must also resolve every prior order to the current strategy; missing, mixed, or unrelated strategy lineage is no-action.
+All DeepSeek outbound calls use one versioned provider call-window policy. Sends are prohibited on Beijing-time weekdays during `[09:00,12:00)` and `[14:00,18:00)`; routes and manual APIs cannot bypass the send-edge check. A complete after-close iteration starts only with enough continuous off-peak runway to finish before 09:00 on the next working day. Insufficient runway defers the batch without claiming a run/call or consuming provider quota.
+The account-specific model is created only by a revocable, fingerprint-bound Account Truth fee review and remains required by the existing account-bound promotion and execution evidence gates. The built-in canonical estimate is valid for normalized-notional discovery but is explicitly ineligible for promotion. Because no normalized-candidate qualification/replay service exists yet, an existing normalized candidate cannot be retrofitted or account-recalculated into promotion eligibility. Source drift, revocation, or an uncovered backtest/ticket date blocks account-bound downstream gates without provider or broker contact. The next-batch reconciliation must also resolve every prior order to the current strategy; missing, mixed, or unrelated strategy lineage is no-action.
 
 ### Daily decision
 

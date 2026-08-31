@@ -7,12 +7,11 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-23，v0.2.3 是最新带 tag 的稳定基线。v0.2.4 至 v0.3.0 因属于增量开发快照而非功能完整发布，相关 tags 已撤回。`main` 当前承载未打 tag 的 v0.3.0 candidate；只有生产验收证据完整后才会成为正式发布。
-v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
-里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
+截至 2026-08-31，v0.3.2 是当前不依赖券商提供方的软件基线。它保留 v0.3.1 的数据库升级与发布身份修复，把 live scheduler 固化为无条件的服务生命周期不变量，并将自动交易保留为无需重启、默认关闭的独立运行时总闸。它还新增经验证的不可变 macOS artifact、外置可变状态、带 journal 的 `current`/`previous` 激活、readiness 绑定重启、自动回滚和本地双版本保留。v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot；scheduler 存活与软件发布证据均不授予资本权限或自动券商提交权限。
 
 最近完成的跨领域工作包括：
 
+- 当前未打 tag 的 candidate 将 live scheduler 固化为无条件的服务生命周期不变量：配置、CLI、API 与 Settings 均不再提供关闭入口，启动健康检查要求 scheduler 已运行。独立的自动交易运行时总闸默认关闭，可在不重启服务的情况下最多开启 12 小时或立即关闭；每次 compare-and-set 状态迁移与审计事件在同一个 SQLite 事务内持久化。会话签发、替换与逐单准入绑定并重查精确闸门 revision、fingerprint 和关闭谱系，因此关闭后再开启也不能复活旧签名会话。Kill Switch 与 `manual_each_order` 保持独立，且当前仍未实现自动提交券商订单的路径。本条取代旧记录中将 scheduler 或每日候选监控描述为 owner 启动配置的说法；
 - 当前未打 tag 的 candidate 修复第 2 轮本地 citation 目录溢出，同时不放宽引用绑定：hypothesis 现在只解析并校验实际外发的 4 至 5 个锚点，不再枚举无关的整棵嵌套证据树；workflow 会保留精确、安全的本地失败码。针对已经持久化的 corrected-panel run，新增 append-only provider-free 局部续跑记录，将失败的 provider-call claim 精确绑定到 session、workflow、agent response、第 1 轮完整 candidate lineage、旧/新 runtime input 和 checkpoint；只有证据证明本地工具读取已完成但 provider transport 尚未开始时，才把该条记录从外部调用 ceiling 中排除，并从第 2 轮继续，绝不重做第 1 轮。准入还要求 baseline/账户身份不变，且既有授权容量恰好足够剩余轮次。验证通过 2,543 项 Python 测试；当前数据库副本迁移/claim 已保持原 run，恢复 1 个已完成 candidate，在继续前把 25 条记录中的 17 条认定为真实调用，并保持既有 ceiling 25。该路径不能晋级策略、创建或提交订单、修改账户/账本证据或扩大资本授权；同时，当前未打 tag 的 candidate 为 critique 增加与 hypothesis 相同的确定性短 citation ID contract，并为 corrected-panel 第 1 轮 critique 的精确失败增加一次证据绑定的本地断点续跑。owner extension 只追加、只消费一次，要求已持久化的 16 次调用/ceiling-24 lineage，以及未变化的 corrected-panel、baseline、valuation、ledger、session、draft、backtest、失败 critique、provider call 与 candidate 证据，只把 ceiling 提高到 25。续跑复用第 1 轮已经完成的 hypothesis 与本地回测，仅以绑定授权的新 idempotency key 重做 critique，再完成第 2 至 5 轮，不重跑既有工作；任一证据漂移继续 fail closed。验证通过 2,540 项 Python 测试、定向 citation/route/resume 测试、格式与 diff 检查，并在当前数据库副本上完成迁移与 claim，`PRAGMA quick_check=ok`；旧 runtime 也能安全打开迁移后的副本。该路径不能晋级策略、创建或提交订单、修改账户/账本证据或扩大资本授权；
 - 未打 tag 的 v0.3.0 candidate 以 `karkinos.market_universe_truth.v2` 替代“仅从当前持仓研究”：每个 provider/交易日保存一个完整、不可变、内容寻址的 A 股股票范围快照，以不可变 receipt 绑定完整市场日线，对全目录执行硬过滤后再冻结恰好 40 只可复现研究面板。人工晋级公式扫描完整合格股票池，当前股票持仓保留独立卖出通道。两阶段决策窗口先用前收盘预选，仅刷新入选的新买入股票，再重建 Account Truth，并要求信号选择指纹完全不变后才持久化推荐任务。DeepSeek 仅负责信号逻辑；本地代码拥有固定四槽仓位、费用、手数、风控和权限。人工票据可在页面刷新后重载，完整扫描无信号与阻断运行分开表达。验证通过 2,532 项 Python 测试、698 项 Web 测试、Web 格式与生产构建、文档健康、策略—券商边界、目标文件格式/导入检查和低风险变更分析。任何路径都不会自动晋级策略、创建或提交券商订单、修改账户账本或扩大资本授权；
 - v0.2.11 仅对 Strategy Research 的 hypothesis/critique 请求显式关闭 DeepSeek thinking，把完整
@@ -73,14 +72,14 @@ v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础�
 - 下一批对账会把每张前序订单解析到当前精确策略；策略 lineage 缺失、混合或无关时，即使批次 clear 也会阻断，且记录不授权下一批；
 - 可撤销的 Account Truth 费用表复核及 Web 人工流程把运行配置的安全条款与精确持久化买卖成交的佣金、税、过户费逐分项比对，只保存汇总结果与 fingerprint，并生成基准/候选共用的版本化计算器 reference；接受操作必须绑定重算后的精确预览、复核人和完整确认短语，读取面在当前证据漂移时会把已接受记录降级为 blocked；交易所覆盖和分项金额舍入真正进入计算，critique、晋级和票据重查当前复核及日期覆盖，缺失/撤销/漂移/篡改证据在不联系 provider 的前提下 no-action，且无订单或资本权限；
 - 策略到票据改为两阶段交接：当前晋级与有效费用复核最多生成 `paper_shadow_required`；票据还必须取得同日、action 绑定、fingerprint 完整且 `within_expectations` 的模拟。Decision、Plan、旧 Trading 与 daily-shadow 共用 canonical 链，写边重查 Account Truth、行情、风控、Kill Switch、晋级、费用与 shadow，拒绝调用方权益或缺失旧晋级，且无券商/资本权限；
-- Automation Cockpit v3 新增 `karkinos.daily_candidate_runtime_status.v1`，把 owner 启动配置与当前进程内准确的每日候选监控 task 绑定。task 被禁用、缺失、已结束、被取消或失败时，会独立于人工决策窗口阻断自动尝试；该投影只读、不联系 provider、不授予权限，也明确不声明财务就绪；
+- Automation Cockpit v3 新增 `karkinos.daily_candidate_runtime_status.v1`，把无条件的服务生命周期与当前进程内准确的每日候选监控 task 绑定。task 缺失、已结束、被取消或失败时，会独立于人工决策窗口阻断自动尝试；该投影只读、不联系 provider、不授予权限，也明确不声明财务就绪；
 - Automation Cockpit v4 新增 `karkinos.daily_candidate_financial_preflight.v1`，以零写入、不联系 provider 的只读投影，把当前 Decision/计划身份、同日 Account Truth 与持久化行情、冻结策略重放、覆盖行动日期的费用复核、安全自动化策略、前序执行闭环、runtime task 和决策窗口汇总为具名模拟尝试就绪或 `NO-ACTION`。通过只会打开现有风控与 paper/shadow 尝试；投影本身不执行两者、不创建票据、不修改 OMS/账本、不接触券商、不改变资本授权，也不声明盈利，模拟后的生产门禁仍是票据候选的唯一判定者；
 - fail-fast 分组运行配置、仅限环境变量的 TuShare/AI/通知凭证、已校验的
   Settings 写入契约，以及 Server 与旧 CLI 共用的 dotenv 选择路径；
-- 确定性的“仅进程存活”健康端点与健康感知启动预检：在前端构建或启动新进程前区分已响应的
-  Karkinos 实例和无响应/非 Karkinos 端口监听者，只报告 listener 而不终止它，也不声明财务
+- 确定性的“仅进程存活”健康端点与 scheduler-aware 启动预检：在前端构建或启动新进程前区分完整就绪的
+  Karkinos 实例和无响应、非 Karkinos 或 scheduler 故障的端口监听者，只报告 listener 而不终止它，也不声明财务
   就绪度、不联系 provider、不写数据库、不执行券商动作、不修改账本、执行或资本权限；
-- 显式 macOS 用户级 LaunchAgent 运维入口会先渲染本地定义，再由 owner 安装；它使用直接参数在 `127.0.0.1` 运行生产后端，只要 job 仍处于加载状态，任何进程退出都会由 launchd 重新拉起；它验证仅进程存活，拒绝替换已有 listener，并支持准确可撤销卸载。它不修改运行配置、不自行开启实时监控、不联系 provider 或券商，也不形成财务、执行或资本就绪结论；
+- 显式 macOS 用户级 LaunchAgent 运维入口会先渲染本地定义，再由 owner 安装；它使用直接参数在 `127.0.0.1` 运行生产后端，只要 job 仍处于加载状态，任何进程退出都会由 launchd 重新拉起；它同时验证进程存活和始终运行的 live scheduler，拒绝替换已有 listener，并支持准确可撤销卸载。它不修改运行配置，也不形成财务、执行、券商或资本就绪结论；scheduler 可能联系已配置行情 provider；
 - 显式启用的本地 broker-statement collector：等待 CSV 完整稳定后再读取，按文件 fingerprint
   在重复轮询和重启间幂等暂存 Account Truth 证据，文件消失时保留既有证据，并只读展示状态；
   它不联系 provider，也不修改 ledger、portfolio、OMS、risk、kill switch 或资本权限；
@@ -377,7 +376,7 @@ submission UI、更广的端到端/provider fault injection 与真实证据验�
 
 ## 验证归属
 
-- 当前自动化证据：CI artifact 与 `scripts/export_acceptance_audit.py`。
+- 当前自动化证据：CI artifact 与 `scripts/ci/export_acceptance_audit.py`。
 - 机器可读的完成状态来源：`analytics/` 下的 acceptance-audit registry。
 - 详细变更历史：Git commit 与 pull request。
 - 当前优先级和发布门禁：`ROADMAP.zh.md`。

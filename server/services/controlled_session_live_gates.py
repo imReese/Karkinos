@@ -2,28 +2,55 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import re
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Callable
 
 from server.services.controlled_session_automatic_pause import (
     ControlledSessionAutomaticPauseService,
 )
+from server.services.controlled_session_automatic_trading_gate import (
+    automatic_trading_gate_blockers,
+    automatic_trading_gate_evidence,
+    automatic_trading_gate_values,
+)
 from server.services.controlled_session_gate_contract import (
     CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
+)
+from server.services.controlled_session_live_gate_values import aware_utc as _aware_utc
+from server.services.controlled_session_live_gate_values import (
+    decimal_value as _decimal,
+)
+from server.services.controlled_session_live_gate_values import (
+    fingerprint as _fingerprint,
+)
+from server.services.controlled_session_live_gate_values import (
+    is_fingerprint as _is_fingerprint,
+)
+from server.services.controlled_session_live_gate_values import json_list as _json_list
+from server.services.controlled_session_live_gate_values import (
+    json_object as _json_object,
+)
+from server.services.controlled_session_live_gate_values import mapping as _mapping
+from server.services.controlled_session_live_gate_values import (
+    parse_timestamp as _parse_timestamp,
+)
+from server.services.controlled_session_live_gate_values import (
+    positive_int as _positive_int,
+)
+from server.services.controlled_session_live_gate_values import (
+    safety_flags as _safety_flags,
 )
 from server.services.controlled_session_runtime_rate_limiter import (
     CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE,
 )
+from server.services.trading_controls import resolve_automatic_trading_evidence
 
 CONTROLLED_SESSION_LIVE_GATE_SCHEMA_VERSION = (
-    "karkinos.controlled_session_live_gate_snapshot.v1"
+    "karkinos.controlled_session_live_gate_snapshot.v2"
 )
 CONTROLLED_SESSION_LIVE_GATE_STATUS_SCHEMA_VERSION = (
-    "karkinos.controlled_session_live_gate_status.v1"
+    "karkinos.controlled_session_live_gate_status.v2"
 )
 CONTROLLED_SESSION_LIVE_GATE_REJECTION_EVENT_TYPE = (
     "controlled_session.live_gate_snapshot_rejected"
@@ -33,8 +60,6 @@ CONTROLLED_SESSION_LIVE_GATE_EVENT_SOURCE = "controlled_session_live_gates"
 CONTROLLED_SESSION_MARKET_DATA_MAX_AGE_SECONDS = 120
 CONTROLLED_SESSION_REJECTION_WINDOW_SECONDS = 60
 CONTROLLED_SESSION_REJECTION_SPIKE_THRESHOLD = 3
-
-_FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 class ControlledSessionLiveGateRejected(ValueError):
@@ -70,6 +95,10 @@ class ControlledSessionLiveGateSnapshotService:
         self._market_data_max_age_seconds = max(1, int(market_data_max_age_seconds))
 
     def get_status(self) -> dict[str, Any]:
+        automatic_trading = resolve_automatic_trading_evidence(
+            self._trading_controls,
+            now=_aware_utc(self._clock()),
+        )
         providers_configured = all(
             callable(provider)
             for provider in (
@@ -81,9 +110,14 @@ class ControlledSessionLiveGateSnapshotService:
         return {
             "schema_version": CONTROLLED_SESSION_LIVE_GATE_STATUS_SCHEMA_VERSION,
             "contract_status": (
-                "persisted_live_gate_snapshot_ready"
-                if providers_configured and self._trading_controls is not None
-                else "disabled_waiting_for_live_gate_sources"
+                "disabled_waiting_for_live_gate_sources"
+                if not providers_configured or self._trading_controls is None
+                else (
+                    "persisted_live_gate_snapshot_ready"
+                    if automatic_trading.get("status") == "enabled"
+                    and automatic_trading.get("enabled") is True
+                    else "blocked_by_automatic_trading_control"
+                )
             ),
             "session_monitor_provider_configured": callable(
                 self._session_monitor_provider
@@ -91,6 +125,15 @@ class ControlledSessionLiveGateSnapshotService:
             "reservation_provider_configured": callable(self._reservation_provider),
             "attestation_provider_configured": callable(self._attestation_provider),
             "kill_switch_provider_configured": self._trading_controls is not None,
+            "automatic_trading_provider_configured": callable(
+                getattr(self._trading_controls, "automatic_trading_snapshot", None)
+            ),
+            "automatic_trading_gate": automatic_trading_gate_evidence(
+                automatic_trading
+            ),
+            "automatic_trading_effective_enabled": (
+                automatic_trading.get("enabled") is True
+            ),
             "snapshot_max_age_seconds": CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
             "market_data_max_age_seconds": self._market_data_max_age_seconds,
             "rejection_window_seconds": CONTROLLED_SESSION_REJECTION_WINDOW_SECONDS,
@@ -108,7 +151,7 @@ class ControlledSessionLiveGateSnapshotService:
             normalized,
         )
         if (
-            not _FINGERPRINT_PATTERN.fullmatch(normalized)
+            not _is_fingerprint(normalized)
             or session.get("status") != "monitorable_bounded_session"
             or not session.get("monitoring_identity_verified")
         ):
@@ -124,7 +167,7 @@ class ControlledSessionLiveGateSnapshotService:
         reservation_id = str(session.get("reservation_id") or "")
         attestation_id = str(session.get("attestation_id") or "")
         if not all(
-            _FINGERPRINT_PATTERN.fullmatch(value)
+            _is_fingerprint(value)
             for value in (session_fingerprint, reservation_id, attestation_id)
         ):
             evidence = self._record_rejection(
@@ -199,6 +242,13 @@ class ControlledSessionLiveGateSnapshotService:
         kill_switch = self._kill_switch_evidence()
         if kill_switch["enabled"] is None:
             provider_blockers.append("live_gate_kill_switch_unavailable")
+        automatic_trading = resolve_automatic_trading_evidence(
+            self._trading_controls,
+            now=now,
+        )
+        provider_blockers.extend(
+            str(item) for item in automatic_trading.get("blockers") or []
+        )
 
         daily_loss_remaining = _decimal(remaining_budget.get("daily_loss"))
         drawdown_remaining = _decimal(remaining_budget.get("drawdown_pct"))
@@ -222,6 +272,7 @@ class ControlledSessionLiveGateSnapshotService:
             ),
             "rate_limit_status": metrics["rate_limit_status"],
             "kill_switch_enabled": kill_switch["enabled"],
+            **automatic_trading_gate_values(automatic_trading),
             "budget_exhausted": metrics["budget_exhausted"],
             "daily_loss_limit_reached": (
                 None
@@ -261,6 +312,7 @@ class ControlledSessionLiveGateSnapshotService:
             "market_data": market_data,
             "runtime_metrics": metrics,
             "kill_switch": kill_switch,
+            "automatic_trading": automatic_trading_gate_evidence(automatic_trading),
             "provider_blockers": list(dict.fromkeys(provider_blockers)),
         }
         source_fingerprint = _fingerprint(source_evidence)
@@ -280,7 +332,7 @@ class ControlledSessionLiveGateSnapshotService:
         snapshot_fingerprint = _fingerprint(snapshot_core)
         snapshot_id = _fingerprint(
             {
-                "domain": "karkinos.controlled_session.live_gate_snapshot.v1",
+                "domain": "karkinos.controlled_session.live_gate_snapshot.v2",
                 "snapshot_fingerprint": snapshot_fingerprint,
                 "observed_at_epoch_ms": int(now.timestamp() * 1000),
             }
@@ -680,6 +732,7 @@ def _gate_blockers(gates: dict[str, Any]) -> list[str]:
             blockers.append(f"live_gate_not_clear:{field}")
     if gates.get("kill_switch_enabled") is not False:
         blockers.append("live_gate_kill_switch_not_clear")
+    blockers.extend(automatic_trading_gate_blockers(gates))
     for field in (
         "budget_exhausted",
         "daily_loss_limit_reached",
@@ -714,6 +767,12 @@ def _missing_gate_values() -> dict[str, Any]:
         "budget_status": "missing",
         "rate_limit_status": "missing",
         "kill_switch_enabled": None,
+        "automatic_trading_status": "unavailable",
+        "automatic_trading_configured_enabled": None,
+        "automatic_trading_enabled": False,
+        "automatic_trading_revision": None,
+        "automatic_trading_control_fingerprint": "",
+        "automatic_trading_blockers": ["automatic_trading_control_missing"],
         "budget_exhausted": None,
         "daily_loss_limit_reached": None,
         "drawdown_limit_reached": None,
@@ -736,92 +795,4 @@ def _missing_snapshot(session_id: str, blockers: list[str]) -> dict[str, Any]:
         "persisted": False,
         "broker_submission_enabled": False,
         "safety": _safety_flags(),
-    }
-
-
-def _mapping(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _json_object(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str) or not value:
-        return {}
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _json_list(value: Any) -> list[str]:
-    if isinstance(value, (list, tuple)):
-        return [str(item) for item in value]
-    if not isinstance(value, str) or not value:
-        return []
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return []
-    return [str(item) for item in parsed] if isinstance(parsed, list) else []
-
-
-def _decimal(value: Any) -> Decimal | None:
-    if value in {None, ""}:
-        return None
-    try:
-        parsed = Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError):
-        return None
-    return parsed if parsed.is_finite() else None
-
-
-def _positive_int(value: Any) -> int | None:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
-def _parse_timestamp(value: Any) -> datetime | None:
-    normalized = str(value or "").strip()
-    if not normalized:
-        return None
-    if normalized.endswith("Z"):
-        normalized = f"{normalized[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.astimezone(timezone.utc)
-
-
-def _aware_utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _fingerprint(value: Any) -> str:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _safety_flags() -> dict[str, bool]:
-    return {
-        "does_not_contact_broker": True,
-        "does_not_submit_or_cancel_broker_order": True,
-        "does_not_mutate_oms": True,
-        "does_not_mutate_production_ledger": True,
-        "does_not_issue_resume_renew_or_expand_session": True,
-        "does_not_grant_or_scale_capital_authority": True,
     }
