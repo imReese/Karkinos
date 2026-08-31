@@ -52,6 +52,16 @@ def test_scripts_top_level_contains_only_daily_user_entrypoints() -> None:
     assert visible_files == ["README.md", "start_server.sh", "stop_server.sh"]
 
 
+def test_production_runbooks_use_explicit_prod_stop() -> None:
+    for path in (
+        Path("docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md"),
+        Path("docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md"),
+    ):
+        runbook = path.read_text(encoding="utf-8")
+
+        assert "`./scripts/stop_server.sh prod`" in runbook
+
+
 @pytest.mark.parametrize("script_name", PYTHON_HELP_ENTRYPOINTS)
 def test_python_entrypoint_help_runs_from_repository_root(script_name: str) -> None:
     repo_root = Path(__file__).resolve().parents[2]

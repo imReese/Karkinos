@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 LABEL="com.karkinos.daily-candidate"
 USER_ID="$(id -u)"
 DOMAIN="gui/${USER_ID}"
@@ -17,21 +16,11 @@ if [[ "${KARKINOS_HOME_PATH}" != /* ]]; then
 	exit 1
 fi
 NATIVE_ENTRYPOINT="${KARKINOS_HOME_PATH}/current/bin/karkinos"
-USE_NATIVE_RELEASE=false
-if [[ -L "${KARKINOS_HOME_PATH}/current" || -e "${KARKINOS_HOME_PATH}/current" ]]; then
-	USE_NATIVE_RELEASE=true
-fi
-if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
-	LOG_DIR="${KARKINOS_HOME_PATH}/logs"
-	LOG_FILE="${LOG_DIR}/launch-agent-server.log"
-else
-	LOG_DIR="${REPO_ROOT}/logs"
-	LOG_FILE="${LOG_DIR}/launch-agent-server.log"
-fi
-UV_CACHE_PATH="${REPO_ROOT}/.uv-cache"
+LOG_DIR="${KARKINOS_HOME_PATH}/logs"
+LOG_FILE="${LOG_DIR}/launch-agent-server.log"
 BACKEND_HOST="127.0.0.1"
 BACKEND_PORT="${KARKINOS_BACKEND_PORT:-8000}"
-HEALTH_TIMEOUT_SECONDS="${KARKINOS_LAUNCH_AGENT_HEALTH_TIMEOUT_SECONDS:-60}"
+HEALTH_TIMEOUT_SECONDS="${KARKINOS_LAUNCH_AGENT_HEALTH_TIMEOUT_SECONDS:-30}"
 UNLOAD_TIMEOUT_SECONDS="${KARKINOS_LAUNCH_AGENT_UNLOAD_TIMEOUT_SECONDS:-10}"
 
 usage() {
@@ -39,23 +28,49 @@ usage() {
 Usage:
   ./scripts/service/manage_launch_agent.sh print-plist
   ./scripts/service/manage_launch_agent.sh install
+  ./scripts/service/manage_launch_agent.sh restart
   ./scripts/service/manage_launch_agent.sh status
   ./scripts/service/manage_launch_agent.sh uninstall
 
 Commands:
   print-plist  Render the local LaunchAgent definition to stdout without writing.
   install      Install and start the current user's supervised Karkinos service.
+  restart      Replace the loaded service with the exact current native release.
   status       Report launchd state and service readiness.
   uninstall    Stop and remove only this exact user-level LaunchAgent.
 
 Safety boundary:
   - This script does not edit config.json or .env.
-  - When ~/Library/Application Support/Karkinos/current exists, it runs only that immutable SHA release.
+  - Production always runs the immutable SHA release selected by current; source fallback is forbidden.
   - Native release data, config, and logs remain under ~/Library/Application Support/Karkinos.
   - The live scheduler is part of the Karkinos service lifecycle and starts automatically.
   - Scheduler readiness does not establish financial readiness.
   - No command submits broker orders or changes capital authority.
+  - Mutating commands are internal to the locked release controller. Use
+    ./scripts/start_server.sh prod and ./scripts/stop_server.sh prod as the public entrypoints.
 EOF
+}
+
+require_release_controller() {
+	local owner_pid="${KARKINOS_RELEASE_LOCK_OWNER_PID:-}"
+	local nonce="${KARKINOS_RELEASE_LOCK_NONCE:-}"
+	local recorded_pid recorded_nonce extra
+	if [[ ! "${owner_pid}" =~ ^[1-9][0-9]*$ ||
+		! "${nonce}" =~ ^[0-9a-f]{32}$ ||
+		"${PPID}" != "${owner_pid}" ||
+		-L "${KARKINOS_HOME_PATH}/.release.lock" ||
+		! -f "${KARKINOS_HOME_PATH}/.release.lock" ]]; then
+		echo "Error: service mutation must run through the locked Karkinos release controller." >&2
+		echo "Use ./scripts/start_server.sh prod or ./scripts/stop_server.sh prod." >&2
+		exit 1
+	fi
+	IFS=' ' read -r recorded_pid recorded_nonce extra <"${KARKINOS_HOME_PATH}/.release.lock" || true
+	if [[ "${recorded_pid}" != "${owner_pid}" ||
+		"${recorded_nonce}" != "${nonce}" || -n "${extra:-}" ]]; then
+		echo "Error: service mutation must run through the locked Karkinos release controller." >&2
+		echo "Use ./scripts/start_server.sh prod or ./scripts/stop_server.sh prod." >&2
+		exit 1
+	fi
 }
 
 require_positive_integer() {
@@ -79,16 +94,6 @@ require_darwin() {
 	fi
 }
 
-resolve_uv() {
-	local uv_bin
-	uv_bin="$(command -v uv || true)"
-	if [[ -z "${uv_bin}" || "${uv_bin}" != /* || ! -x "${uv_bin}" ]]; then
-		echo "Error: an executable absolute uv path is required." >&2
-		exit 1
-	fi
-	printf '%s' "${uv_bin}"
-}
-
 xml_escape() {
 	sed \
 		-e 's/&/\&amp;/g' \
@@ -98,61 +103,34 @@ xml_escape() {
 }
 
 render_plist() {
-	local uv_bin="${1:-}"
-	local escaped_workdir escaped_log escaped_cache escaped_home escaped_data escaped_config escaped_env escaped_entrypoint escaped_static
-	local program_entrypoint program_arguments environment_entries
-	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
-		program_entrypoint="${NATIVE_ENTRYPOINT}"
-		escaped_entrypoint="$(printf '%s' "${program_entrypoint}" | xml_escape)"
-		escaped_workdir="$(printf '%s' "${KARKINOS_HOME_PATH}/current/app" | xml_escape)"
-		program_arguments=$(
-			cat <<EOF
+	local escaped_workdir escaped_log escaped_home escaped_data escaped_config escaped_entrypoint escaped_static
+	local environment_entries
+	escaped_entrypoint="$(printf '%s' "${NATIVE_ENTRYPOINT}" | xml_escape)"
+	escaped_workdir="$(printf '%s' "${KARKINOS_HOME_PATH}/current/app" | xml_escape)"
+	local program_arguments
+	program_arguments=$(
+		cat <<EOF
     <string>${escaped_entrypoint}</string>
     <string>--host</string>
     <string>${BACKEND_HOST}</string>
     <string>--port</string>
     <string>${BACKEND_PORT}</string>
 EOF
-		)
-	else
-		program_entrypoint="${uv_bin}"
-		escaped_entrypoint="$(printf '%s' "${program_entrypoint}" | xml_escape)"
-		escaped_workdir="$(printf '%s' "${REPO_ROOT}" | xml_escape)"
-		program_arguments=$(
-			cat <<EOF
-    <string>${escaped_entrypoint}</string>
-    <string>run</string>
-    <string>--frozen</string>
-    <string>python</string>
-    <string>-m</string>
-    <string>server</string>
-    <string>--host</string>
-    <string>${BACKEND_HOST}</string>
-    <string>--port</string>
-    <string>${BACKEND_PORT}</string>
-EOF
-		)
-	fi
+	)
 	escaped_log="$(printf '%s' "${LOG_FILE}" | xml_escape)"
-	escaped_cache="$(printf '%s' "${UV_CACHE_PATH}" | xml_escape)"
 	escaped_home="$(printf '%s' "${KARKINOS_HOME_PATH}" | xml_escape)"
 	escaped_static="$(printf '%s' "${KARKINOS_HOME_PATH}/current/app/web/dist" | xml_escape)"
 	escaped_data="$(printf '%s' "${KARKINOS_HOME_PATH}/data" | xml_escape)"
 	escaped_config="$(printf '%s' "${KARKINOS_HOME_PATH}/config/config.json" | xml_escape)"
-	escaped_env="$(printf '%s' "${KARKINOS_HOME_PATH}/config/.env" | xml_escape)"
-	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
-		environment_entries=$(
-			cat <<EOF
+	environment_entries=$(
+		cat <<EOF
     <key>KARKINOS_HOME</key><string>${escaped_home}</string>
     <key>KARKINOS_DATA_DIR</key><string>${escaped_data}</string>
     <key>KARKINOS_CONFIG_PATH</key><string>${escaped_config}</string>
-    <key>KARKINOS_ENV_FILE</key><string>${escaped_env}</string>
     <key>KARKINOS_STATIC_DIR</key><string>${escaped_static}</string>
+    <key>PYTHONDONTWRITEBYTECODE</key><string>1</string>
 EOF
-		)
-	else
-		environment_entries="    <key>UV_CACHE_DIR</key><string>${escaped_cache}</string>"
-	fi
+	)
 	cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -201,7 +179,43 @@ service_is_loaded() {
 	launchctl print "${SERVICE_TARGET}" >/dev/null 2>&1
 }
 
-karkinos_service_is_ready() {
+launchd_service_pid() {
+	local output pid
+	output="$(launchctl print "${SERVICE_TARGET}" 2>/dev/null)" || return 1
+	pid="$(printf '%s\n' "${output}" | awk '$1 == "pid" && $2 == "=" && $3 ~ /^[0-9]+$/ { print $3 }')"
+	[[ "${pid}" =~ ^[1-9][0-9]*$ ]] || return 1
+	printf '%s\n' "${pid}"
+}
+
+require_current_release() {
+	if [[ ! -L "${KARKINOS_HOME_PATH}/current" || ! -x "${NATIVE_ENTRYPOINT}" ]]; then
+		echo "Error: production requires an executable immutable current release." >&2
+		echo "Stage and promote a CI-built candidate before starting production." >&2
+		exit 1
+	fi
+	local release_dir release_name manifest
+	release_dir="$(CDPATH='' cd -- "${KARKINOS_HOME_PATH}/current" && pwd -P)"
+	release_name="${release_dir##*/}"
+	manifest="${release_dir}/release.json"
+	if [[ "${release_dir}" != "${KARKINOS_HOME_PATH}/releases/${release_name}" ||
+		! "${release_name}" =~ ^sha-[0-9a-f]{40}$ ||
+		! -f "${manifest}" || -L "${manifest}" ]]; then
+		echo "Error: current native release pointer is invalid." >&2
+		exit 1
+	fi
+	EXPECTED_RELEASE_SHA="$(grep -Eo '"commit_sha":"[0-9a-f]{40}"' "${manifest}" | cut -d '"' -f 4)"
+	EXPECTED_ARTIFACT_FINGERPRINT="$(grep -Eo '"payload_fingerprint":"[0-9a-f]{64}"' "${manifest}" | cut -d '"' -f 4)"
+	EXPECTED_RELEASE_VERSION="$(grep -Eo '"version":"[0-9A-Za-z.-]+"' "${manifest}" | cut -d '"' -f 4)"
+	if [[ ! "${EXPECTED_RELEASE_SHA}" =~ ^[0-9a-f]{40}$ ||
+		! "${EXPECTED_ARTIFACT_FINGERPRINT}" =~ ^[0-9a-f]{64}$ ||
+		-z "${EXPECTED_RELEASE_VERSION}" ||
+		"${release_name}" != "sha-${EXPECTED_RELEASE_SHA}" ]]; then
+		echo "Error: current native release identity is invalid." >&2
+		exit 1
+	fi
+}
+
+karkinos_http_identity_is_ready() {
 	if ! command -v curl >/dev/null 2>&1; then
 		return 1
 	fi
@@ -211,26 +225,70 @@ karkinos_service_is_ready() {
 			"http://${BACKEND_HOST}:${BACKEND_PORT}/api/health" 2>/dev/null
 	)" || return 1
 	[[ "${response}" == *'"schema_version":"karkinos.service_health.v1"'* &&
+		"${response}" == *'"service":"karkinos"'* &&
 		"${response}" == *'"status":"alive"'* &&
+		"${response}" == *'"version":"'"${EXPECTED_RELEASE_VERSION}"'"'* &&
+		"${response}" == *'"release_sha":"'"${EXPECTED_RELEASE_SHA}"'"'* &&
+		"${response}" == *'"artifact_fingerprint":"'"${EXPECTED_ARTIFACT_FINGERPRINT}"'"'* &&
 		"${response}" == *'"financial_readiness_claimed":false'* &&
 		"${response}" == *'"broker_submission_enabled":false'* &&
+		"${response}" == *'"production_ledger_mutated":false'* &&
+		"${response}" == *'"authorizes_execution":false'* &&
 		"${response}" == *'"capital_authority_changed":false'* ]] || return 1
 	local live_response
 	live_response="$(
 		curl --noproxy '*' --fail --silent --show-error --max-time 2 \
 			"http://${BACKEND_HOST}:${BACKEND_PORT}/api/settings/live/status" 2>/dev/null
 	)" || return 1
-	[[ "${live_response}" == *'"running":true'* ]]
+	local expected_guard=false
+	if [[ -e "${KARKINOS_HOME_PATH}/.release-transaction.json" ||
+		-L "${KARKINOS_HOME_PATH}/.release-transaction.json" ||
+		-e "${KARKINOS_HOME_PATH}/.legacy-bootstrap-transaction.json" ||
+		-L "${KARKINOS_HOME_PATH}/.legacy-bootstrap-transaction.json" ]]; then
+		expected_guard=true
+	fi
+	[[ "${live_response}" == *'"running":true'* &&
+		"${live_response}" == *'"initialized":true'* &&
+		"${live_response}" == *'"activation_guarded":'"${expected_guard}"* ]]
+}
+
+karkinos_service_is_ready() {
+	karkinos_http_identity_is_ready || return 1
+	if ! command -v lsof >/dev/null 2>&1; then
+		return 1
+	fi
+	local launchd_pid pids
+	launchd_pid="$(launchd_service_pid)" || return 1
+	pids="$(listener_pids)" || return 1
+	[[ "${pids}" == "${launchd_pid}" ]]
 }
 
 listener_pids() {
 	if ! command -v lsof >/dev/null 2>&1; then
-		return
+		return 1
 	fi
-	lsof -tiTCP:"${BACKEND_PORT}" -sTCP:LISTEN 2>/dev/null | sort -u || true
+	local output status pid
+	if output="$(lsof -tiTCP:"${BACKEND_PORT}" -sTCP:LISTEN 2>/dev/null)"; then
+		status=0
+	else
+		status=$?
+	fi
+	# lsof uses 1 for a successful query with no matching listener. Any other
+	# failure means absence was not proven and must remain fail closed.
+	if ((status != 0 && status != 1)) || { ((status == 1)) && [[ -n "${output}" ]]; }; then
+		return 1
+	fi
+	while IFS= read -r pid; do
+		[[ -z "${pid}" ]] && continue
+		[[ "${pid}" =~ ^[1-9][0-9]*$ ]] || return 1
+	done <<<"${output}"
+	if [[ -n "${output}" ]]; then
+		printf '%s\n' "${output}" | sort -u
+	fi
 }
 
 print_compact_status() {
+	require_current_release
 	if ! service_is_loaded; then
 		echo "LaunchAgent: not installed or not loaded (${SERVICE_TARGET})"
 		return 1
@@ -239,7 +297,7 @@ print_compact_status() {
 	launchctl print "${SERVICE_TARGET}" | awk \
 		'/state =|runs =|pid =|last exit code|last terminating signal/'
 	if karkinos_service_is_ready; then
-		echo "Service readiness: process alive, live scheduler running at http://${BACKEND_HOST}:${BACKEND_PORT}"
+		echo "Service readiness: exact current release ${EXPECTED_RELEASE_SHA}, launchd owns the listener, live scheduler initialized at http://${BACKEND_HOST}:${BACKEND_PORT}"
 		echo "Financial readiness: not claimed"
 		echo "Broker submission: disabled"
 		return 0
@@ -250,49 +308,21 @@ print_compact_status() {
 }
 
 preflight_install() {
-	local uv_bin="${1:-}"
 	require_positive_integer "${BACKEND_PORT}" "KARKINOS_BACKEND_PORT" 65535
 	require_positive_integer \
 		"${HEALTH_TIMEOUT_SECONDS}" \
 		"KARKINOS_LAUNCH_AGENT_HEALTH_TIMEOUT_SECONDS" \
-		300
-	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
-		if [[ ! -L "${KARKINOS_HOME_PATH}/current" || ! -x "${NATIVE_ENTRYPOINT}" ]]; then
-			echo "Error: current native release must be an executable release symlink." >&2
-			exit 1
-		fi
-		local release_dir release_name
-		release_dir="$(CDPATH='' cd -- "${KARKINOS_HOME_PATH}/current" && pwd -P)"
-		release_name="${release_dir##*/}"
-		if [[ "${release_dir}" != "${KARKINOS_HOME_PATH}/releases/${release_name}" ||
-			! "${release_name}" =~ ^sha-[0-9a-f]{40}$ ||
-			! -f "${release_dir}/release.json" ]]; then
-			echo "Error: current native release pointer is invalid." >&2
-			exit 1
-		fi
-		return
-	fi
-	if [[ ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
-		echo "Error: pyproject.toml was not found under ${REPO_ROOT}." >&2
+		3600
+	if ! command -v lsof >/dev/null 2>&1; then
+		echo "Error: lsof is required to bind service readiness to the launchd process." >&2
 		exit 1
 	fi
-	if [[ ! -f "${REPO_ROOT}/web/dist/index.html" ]]; then
-		echo "Error: web/dist/index.html is missing; build the product frontend first." >&2
-		exit 1
-	fi
-	if ! UV_CACHE_DIR="${UV_CACHE_PATH}" "${uv_bin}" run --frozen python -m server --check-config >/dev/null; then
-		echo "Error: Karkinos configuration validation failed." >&2
-		exit 1
-	fi
+	require_current_release
 }
 
 install_agent() {
 	require_darwin
-	local uv_bin=""
-	if [[ "${USE_NATIVE_RELEASE}" != "true" ]]; then
-		uv_bin="$(resolve_uv)"
-	fi
-	preflight_install "${uv_bin}"
+	preflight_install
 	if service_is_loaded; then
 		if [[ -f "${PLIST_PATH}" ]]; then
 			echo "Karkinos LaunchAgent is already loaded; no process was replaced."
@@ -307,7 +337,7 @@ install_agent() {
 	local pids
 	pids="$(listener_pids)"
 	if [[ -n "${pids}" ]]; then
-		if karkinos_service_is_ready; then
+		if karkinos_http_identity_is_ready; then
 			echo "Error: another Karkinos process already owns port ${BACKEND_PORT}." >&2
 		else
 			echo "Error: port ${BACKEND_PORT} is occupied by a non-responsive listener." >&2
@@ -321,7 +351,7 @@ install_agent() {
 	local temporary_plist
 	temporary_plist="$(mktemp "${TMPDIR:-/tmp}/karkinos-launch-agent.XXXXXX")"
 	trap 'rm -f -- "${temporary_plist}"' EXIT
-	render_plist "${uv_bin}" >"${temporary_plist}"
+	render_plist >"${temporary_plist}"
 	if ! plutil -lint "${temporary_plist}" >/dev/null; then
 		echo "Error: generated LaunchAgent plist is invalid." >&2
 		exit 1
@@ -357,43 +387,104 @@ install_agent() {
 	exit 1
 }
 
+restart_agent() {
+	require_darwin
+	require_current_release
+	uninstall_agent
+	install_agent
+}
+
 uninstall_agent() {
 	require_darwin
+	require_positive_integer "${BACKEND_PORT}" "KARKINOS_BACKEND_PORT" 65535
 	require_positive_integer \
 		"${UNLOAD_TIMEOUT_SECONDS}" \
 		"KARKINOS_LAUNCH_AGENT_UNLOAD_TIMEOUT_SECONDS" \
 		60
-	if service_is_loaded; then
-		launchctl bootout "${SERVICE_TARGET}"
-		local deadline=$((SECONDS + UNLOAD_TIMEOUT_SECONDS))
-		while service_is_loaded && ((SECONDS < deadline)); do
-			sleep 1
-		done
-		if service_is_loaded; then
-			echo "Error: ${SERVICE_TARGET} remained loaded after ${UNLOAD_TIMEOUT_SECONDS}s." >&2
-			echo "The plist was preserved; inspect the exact job before retrying." >&2
-			exit 1
+	if ! command -v lsof >/dev/null 2>&1; then
+		echo "Error: lsof is required to confirm that port ${BACKEND_PORT} has no listener." >&2
+		echo "The plist was preserved; no process was signaled." >&2
+		return 1
+	fi
+
+	local pids
+	if ! pids="$(listener_pids)"; then
+		echo "Error: could not determine whether port ${BACKEND_PORT} has a listener." >&2
+		echo "The plist was preserved; no process was signaled." >&2
+		return 1
+	fi
+	if ! service_is_loaded; then
+		if [[ -n "${pids}" ]]; then
+			echo "Error: ${SERVICE_TARGET} is not loaded, but port ${BACKEND_PORT} still has a listener." >&2
+			echo "Listener PID(s): ${pids//$'\n'/ }" >&2
+			echo "The plist was preserved; no process was signaled." >&2
+			return 1
 		fi
+		if [[ -f "${PLIST_PATH}" ]]; then
+			rm -f "${PLIST_PATH}"
+		fi
+		echo "Uninstalled ${SERVICE_TARGET}."
+		echo "Runtime data and logs were not deleted."
+		return 0
 	fi
-	if [[ -f "${PLIST_PATH}" ]]; then
-		rm -f "${PLIST_PATH}"
+
+	if ! launchctl bootout "${SERVICE_TARGET}"; then
+		echo "Error: launchctl could not unload ${SERVICE_TARGET}." >&2
+		echo "The plist was preserved; no process was signaled." >&2
+		return 1
 	fi
-	echo "Uninstalled ${SERVICE_TARGET}."
-	echo "Runtime data and logs were not deleted."
+
+	local deadline=$((SECONDS + UNLOAD_TIMEOUT_SECONDS))
+	local loaded
+	while :; do
+		loaded=false
+		if service_is_loaded; then
+			loaded=true
+		fi
+		if ! pids="$(listener_pids)"; then
+			echo "Error: could not determine whether port ${BACKEND_PORT} has a listener after bootout." >&2
+			echo "The plist was preserved; no process was signaled." >&2
+			return 1
+		fi
+		if [[ "${loaded}" == "false" && -z "${pids}" ]]; then
+			if [[ -f "${PLIST_PATH}" ]]; then
+				rm -f "${PLIST_PATH}"
+			fi
+			echo "Uninstalled ${SERVICE_TARGET}."
+			echo "Runtime data and logs were not deleted."
+			return 0
+		fi
+		if ((SECONDS >= deadline)); then
+			break
+		fi
+		sleep 1
+	done
+
+	echo "Error: ${SERVICE_TARGET} did not fully stop within ${UNLOAD_TIMEOUT_SECONDS}s." >&2
+	if [[ "${loaded}" == "true" ]]; then
+		echo "The launchd label remains loaded." >&2
+	fi
+	if [[ -n "${pids}" ]]; then
+		echo "Port ${BACKEND_PORT} listener PID(s): ${pids//$'\n'/ }" >&2
+	fi
+	echo "The plist was preserved; no process was signaled." >&2
+	return 1
 }
 
 command="${1:-}"
 case "${command}" in
 print-plist)
 	require_positive_integer "${BACKEND_PORT}" "KARKINOS_BACKEND_PORT" 65535
-	if [[ "${USE_NATIVE_RELEASE}" == "true" ]]; then
-		render_plist
-	else
-		render_plist "$(resolve_uv)"
-	fi
+	require_current_release
+	render_plist
 	;;
 install)
+	require_release_controller
 	install_agent
+	;;
+restart)
+	require_release_controller
+	restart_agent
 	;;
 status)
 	require_darwin
@@ -401,6 +492,7 @@ status)
 	print_compact_status
 	;;
 uninstall)
+	require_release_controller
 	uninstall_agent
 	;;
 -h | --help | help)
