@@ -27,10 +27,16 @@ def main() -> None:
         default=None,
         help="环境变量文件（默认读取 KARKINOS_ENV_FILE 或 ./.env）",
     )
-    parser.add_argument(
+    validation_mode = parser.add_mutually_exclusive_group()
+    validation_mode.add_argument(
         "--check-config",
         action="store_true",
         help="校验有效配置后退出，不启动服务或连接外部系统",
+    )
+    validation_mode.add_argument(
+        "--check-state",
+        action="store_true",
+        help="校验配置并预检本地持久状态后退出",
     )
     args = parser.parse_args()
 
@@ -53,6 +59,12 @@ def main() -> None:
     config = load_runtime_config(ServerConfig, **config_overrides)
     if args.check_config:
         print(f"Karkinos configuration valid: {resolve_config_path()}")
+        return
+    if args.check_state:
+        from server.state_preflight import preflight_persistent_state
+
+        preflight_persistent_state()
+        print("Karkinos persisted state compatible")
         return
     host = config.host
     port = config.port
