@@ -465,17 +465,20 @@ def _copy_mutable_tree(source: Path, destination: Path) -> None:
     if os.path.lexists(destination):
         raise ValueError("release_state_snapshot_destination_exists")
     try:
-        result = subprocess.run(
-            ["/bin/cp", "-cR", "--", str(source), str(destination)],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
+        if platform.system() == "Darwin":
+            result = subprocess.run(
+                ["/bin/cp", "-cR", "--", str(source), str(destination)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise ValueError("release_state_snapshot_clone_failed")
+        else:
+            shutil.copytree(source, destination, symlinks=True)
     except OSError as exc:
         raise ValueError("release_state_snapshot_clone_failed") from exc
-    if result.returncode != 0:
-        raise ValueError("release_state_snapshot_clone_failed")
     _validate_mutable_tree(destination)
     _secure_private_tree(destination)
     _fsync_private_tree(destination)
