@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = REPO_ROOT / "scripts" / "export_acceptance_audit.py"
+SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "export_acceptance_audit.py"
 
 
 def _run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -16,6 +16,47 @@ def _run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess
         check=False,
         text=True,
         capture_output=True,
+    )
+
+
+def test_acceptance_audit_cli_verify_evidence_requires_test_reports() -> None:
+    result = _run_cli("--verify-evidence")
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["overall_is_complete"] is False
+    assert payload["verification"]["required_report_kinds"] == [
+        "backend",
+        "frontend",
+    ]
+
+
+def test_acceptance_audit_cli_verify_evidence_rejects_backend_only(
+    tmp_path: Path,
+) -> None:
+    backend = tmp_path / "backend.xml"
+    backend.write_text(
+        (
+            '<testsuite tests="1" failures="0" errors="0" skipped="0">'
+            '<testcase classname="tests.test_ci_workflow" '
+            'name="test_ci_runs_required_checks" />'
+            "</testsuite>"
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_cli(
+        "--verify-evidence",
+        "--backend-junit",
+        str(backend),
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["overall_is_complete"] is False
+    assert payload["verification"]["test_reports"]["backend"]["verified"] is True
+    assert payload["verification"]["test_reports"]["frontend"]["status"] == (
+        "not_supplied"
     )
 
 

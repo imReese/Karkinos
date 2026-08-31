@@ -25,7 +25,6 @@ from server.services.decision_outcome_review import (
     DecisionOutcomeReviewStore,
     DecisionOutcomeReviewTargetDrift,
 )
-from server.services.recommendation_flow import build_recommendation_cycle
 
 logger = logging.getLogger(__name__)
 
@@ -99,48 +98,11 @@ def create_router() -> APIRouter:
 
     @r.get("/actions", response_model=list[ActionCard])
     async def get_action_cards(limit: int = 6) -> list[ActionCard]:
-        """同步信号到待执行任务，并返回首页动作卡。"""
+        """Read persisted action tasks without creating financial workflow state."""
         from server.dependencies import get_app_state
 
         state = get_app_state()
         db = state.db
-        rows = await db.get_latest_signals(limit=limit)
-        scheduler = getattr(state, "scheduler", None)
-        portfolio = scheduler.portfolio if scheduler else None
-        existing_positions = (
-            {}
-            if portfolio is None
-            else {
-                str(symbol): position
-                for symbol, position in portfolio.positions.items()
-            }
-        )
-        available_cash = 0.0 if portfolio is None else float(portfolio.cash)
-        cycle = build_recommendation_cycle(
-            signals=rows,
-            available_cash=available_cash,
-            existing_positions=existing_positions,
-        )
-
-        for task in cycle.tasks:
-            db.upsert_action_task_sync(
-                source_signal_id=task.source_signal_id,
-                symbol=task.symbol,
-                title=task.title,
-                detail=task.detail,
-                direction=task.direction,
-                urgency=(
-                    "high"
-                    if task.direction == "buy" and task.target_weight > 0
-                    else "medium"
-                ),
-                target_weight=task.target_weight,
-                price=task.price,
-                strategy_id=task.strategy_id,
-                timestamp=task.timestamp,
-                asset_class=task.asset_class,
-            )
-
         tasks = await db.get_action_tasks(statuses=["pending", "deferred"], limit=limit)
         return [ActionCard(**task) for task in tasks]
 

@@ -1,18 +1,18 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   EvidenceIdentityDisclosure,
   ExceptionList,
   MetricStrip,
   StatusBadge,
   type ExceptionItem,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatQuantity, formatTimestamp } from '../../../shared/format';
 import {
   formatPublicCode,
   formatPublicStatus,
 } from '../../../shared/public-labels';
-import type { CurrentHoldingMarketEvidenceReview } from '../../portfolio/api';
+import type { CurrentHoldingMarketEvidenceReview } from '../market-feature-boundary';
 import { ConfirmedFundNavRefreshButton } from './confirmed-fund-nav-refresh-button';
 import { MarketRefreshButton } from './market-refresh-button';
 

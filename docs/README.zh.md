@@ -11,14 +11,14 @@ Karkinos 是面向中国市场的个人量化投研与交易平台。本页是�
 ```bash
 uv sync --extra server --extra dev --frozen
 npm ci --prefix web
-npm --prefix web run build
 cp config.example.json config.json
 cp .env.example .env
 uv run python -m server --check-config
-uv run python -m server --no-live
+./scripts/start_server.sh
 ```
 
-默认产品入口为 `http://127.0.0.1:8000`。
+开发界面入口为 `http://127.0.0.1:5173`；默认命令只启动 8001 端口的隔离源码后端与 Vite，不复用或改变默认 8000 端口（或其持久化自定义端口）的不可变生产服务。使用完后运行 `./scripts/stop_server.sh` 只停止准确受管的开发进程；停止生产服务需显式运行 `./scripts/stop_server.sh prod`。live scheduler 始终随每个后端启动且没有关闭开关。
+自动化交易使用另一个默认关闭、无需重启的运行时门禁；它不授予资本权限，当前也未实现自动向券商提交订单。原生生产模式只启动 `current` 选中的 CI 构建，不从工作区或本地 Docker 构建。candidate、稳定更新、bootstrap、rollback 与脚本归属见 [`scripts/README.md`](../scripts/README.md)。
 
 主要检查：
 
@@ -37,7 +37,7 @@ npm --prefix web run test
 
 - [产品目标](KARKINOS_GOAL.zh.md) — 产品北极星、长期承诺和不可跨越的边界。
 - [路线图](ROADMAP.zh.md) — 当前优先级、里程碑、验收标准和开发顺序。
-- [架构](ARCHITECTURE.zh.md) — 系统分层、核心流程、权限边界和失败语义。
+- [架构](ARCHITECTURE.zh.md) — 系统分层与权限边界；[AI 策略研究详细设计](AI_STRATEGY_RESEARCH_DESIGN.zh.md)承载拟议的完整协议。
 
 ### 操作指南
 
@@ -65,13 +65,13 @@ npm --prefix web run test
 参数、成本、OOS、风险、限制和证据状态。参数 sweep 和策略 comparison 必须复用冻结的数据
 输入，结果只能作为研究证据。
 
-`main` 上未打 tag 的 v0.3.0 candidate 收盘后策略研究不再把当前持仓当作候选池。系统在正式收盘后自动保存完整 A 股股票范围的不可变快照（基金/ETF 不进入策略范围），按已验证交易日冻结完整市场日线截面及不可变 receipt，对全部有效股票执行历史、交易状态、100 股整手和资金可行性硬过滤，再确定性选出恰好 40 只研究面板。DeepSeek 只提出信号公式；它返回的仓位权重会被丢弃，四槽等权、资金可行性、费用、手数、风控和权限均由本地确定性代码控制。该流程不会自动晋级策略、创建或提交订单，也不会扩大资本授权。
+从 v0.3.0 起，收盘后策略研究不再把当前持仓当作候选池。系统在正式收盘后自动保存完整 A 股股票范围的不可变快照（基金/ETF 不进入策略范围），按已验证交易日冻结完整市场日线截面及不可变 receipt，对全部有效股票执行历史、交易状态、100 股整手和资金可行性硬过滤，再确定性选出恰好 40 只研究面板。DeepSeek 只提出信号公式；它返回的仓位权重会被丢弃，四槽等权、资金可行性、费用、手数、风控和权限均由本地确定性代码控制。该流程不会自动晋级策略、创建或提交订单，也不会扩大资本授权。
 
 ### 每日决策
 
 Decision 与 Daily Trading Plan 汇总组合、行情、策略、信号、风险、Account Truth 和 paper/shadow 证据，输出 buy、sell、hold、rebalance、no-action 或 review-required。晋级后先生成 `paper_shadow_required` 计划意图；只有同日持久化 run 精确绑定 action、输入 fingerprint、模拟订单且无偏差才进入人工确认。出票写边重查 Account Truth、行情、风控、Kill Switch、晋级、费用及 shadow；任一异常均 no-action。
 
-生产每日候选运行不接受调用方提供的账户或交易事实：它按“当前 Decision/计划 → 批量风控 → 精确 paper/shadow → 当前计划重放”只输出 `manual_order_ticket_candidate` 或 `no_action`。v3 记录绑定估值快照、ledger cutoff、同市场日 Account Truth 晋级源、同日可信报价、账户专属费用、风险决策、策略晋级、模拟身份和前序真实执行闭环，并生成带指纹的只读人工票据候选。Owner 启用的后台运行只在已复核上交所交易日的上海时间 09:35–09:45 窗口内触发，并在读取计划前原子认领当日唯一 fail-closed 尝试；计划陈旧、失败、中断或重启都不会打开自动重试。Automation Cockpit v4 除了准确展示 owner 配置和后台 task 存活状态，还提供 `karkinos.daily_candidate_financial_preflight.v1`：它以只读、零写入、不联系 provider 的方式汇总当前 Decision/计划、同日 Account Truth 与持久化行情、冻结策略重放、有效费用复核、安全自动化策略及前序执行闭环。预检通过也只允许进入 canonical 风控与 paper/shadow 尝试，绝不创建人工票据、提交订单、修改 OMS/账本、扩大资本授权或证明盈利；最终票据仍只能由模拟后的生产门禁判定。前瞻试运行读取完整持久化历史，只累计最新一轮冻结策略与费用周期中已复核交易日历、单一输入 fingerprint 且模拟无偏差的日期；旧周期保留为已归档证据，绝不并入后来周期。达到 20 个合格交易日和 50 笔模拟订单后，也只允许人工记录 GO/继续/NO-GO，不会创建订单、授予权限、扩大资本或证明未来盈利。详见[每日候选交易生产运行手册](DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md)。最终 Decision 与计划生成时间也必须处于该窗口，每个汇总及逐意图行情在决策时不得超过 300 秒；页面会在窗口外禁用人工运行，直接调用也只能形成不计入前瞻样本的可审计 `no_action`。系统还会逐意图重验最终 Decision 的 canonical 订单生成门禁，并让 snapshot 与带指纹票据共享同一组策略晋级、已复核费用、比较、人工批准、冻结基准/候选数据集和 persisted-only 重放身份；只要最新一次运行被排除，即使旧计数达到门槛也不能开放 GO 复核。
+生产每日候选运行不接受调用方提供的账户或交易事实：它按“当前 Decision/计划 → 批量风控 → 精确 paper/shadow → 当前计划重放”只输出 `manual_order_ticket_candidate` 或 `no_action`。v3 记录绑定估值快照、ledger cutoff、同市场日 Account Truth 晋级源、同日可信报价、账户专属费用、风险决策、策略晋级、模拟身份和前序真实执行闭环，并生成带指纹的只读人工票据候选。随服务始终运行的后台调度器只在已复核上交所交易日的上海时间 09:35–09:45 窗口内触发，并在读取计划前原子认领当日唯一 fail-closed 尝试；计划陈旧、失败、中断或重启都不会打开自动重试。Automation Cockpit v4 除了准确展示后台 task 存活状态，还提供 `karkinos.daily_candidate_financial_preflight.v1`：它以只读、零写入、不联系 provider 的方式汇总当前 Decision/计划、同日 Account Truth 与持久化行情、冻结策略重放、有效费用复核、安全自动化策略及前序执行闭环。预检通过也只允许进入 canonical 风控与 paper/shadow 尝试，绝不创建人工票据、提交订单、修改 OMS/账本、扩大资本授权或证明盈利；最终票据仍只能由模拟后的生产门禁判定。前瞻试运行读取完整持久化历史，只累计最新一轮冻结策略与费用周期中已复核交易日历、单一输入 fingerprint 且模拟无偏差的日期；旧周期保留为已归档证据，绝不并入后来周期。达到 20 个合格交易日和 50 笔模拟订单后，也只允许人工记录 GO/继续/NO-GO，不会创建订单、授予权限、扩大资本或证明未来盈利。详见[每日候选交易生产运行手册](DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md)。最终 Decision 与计划生成时间也必须处于该窗口，每个汇总及逐意图行情在决策时不得超过 300 秒；页面会在窗口外禁用人工运行，直接调用也只能形成不计入前瞻样本的可审计 `no_action`。系统还会逐意图重验最终 Decision 的 canonical 订单生成门禁，并让 snapshot 与带指纹票据共享同一组策略晋级、已复核费用、比较、人工批准、冻结基准/候选数据集和 persisted-only 重放身份；只要最新一次运行被排除，即使旧计数达到门槛也不能开放 GO 复核。
 
 Account Truth 绑定额外只保存导入事件、人工复核、不可变估值和 cutoff 内历史账本的脱敏内容 fingerprint；trial 按原 cutoff 重算，允许之后追加账本行，但任一历史来源、复核、估值或账本漂移都会排除该日。
 
@@ -79,7 +79,7 @@ Account Truth 绑定额外只保存导入事件、人工复核、不可变估值
 
 在 Strategy Lab 中，人工可把精确 strategy id 与 canonical contribution report 冻结进 AI 上下文；策略或 valuation/ledger identity 漂移会被拒绝，不完整证据保持 blocked，捕获不重算收益也不调用模型。
 
-Owner 授权的收盘后 shadow 研究每个持久化市场日期只运行一次：本地刷新基线并绑定完整账户证据，数据集 identity 哈希实际送入引擎的有序 timestamp/OHLCV，原子 claim 最多 10 次 DeepSeek 调用、记录 Token 用量但 Karkinos 不设每日累计 Token 上限，外发保存回测和严格 allowlist 风险/配置投影（删除绝对金额、持仓数量/成本及 valuation/ledger 标识），在本地校验 Formula DSL、运行 canonical 成本后 rolling OOS，再发送规范化结果做 critique。每次启用的站立运行必须执行完整 5 轮严格串行修订：每轮只生成 1 个版本，完成本地权威回测、确定性晋级门与 critique 后，把上一轮公式、指标、阻断项和 critique 的脱敏指纹包绑定进下一轮；因此 5 轮需要 10 次模型调用。若原始调用和已授权完整重试各有 1 次真实调用因 citation contract 失败，只有在“上限恰好 +1 后仍正好剩余 10 次”时，owner 才能追加一条绑定该零候选失败的不可变授权；它只能消费一次，不能成为通用提额，也不增加策略、订单、券商或资本权限。若随后第三次真实调用因 DeepSeek 思考内容耗尽输出预算而得到 `provider_output_truncated`，策略研究会改为显式关闭思考、把 12,288 token 全部保留给最终 JSON；只有在既有 citation extension 已消费、调用数恰好为 3、上限恰好从 12 增至 13 后仍正好剩余 10 次时，owner 才能追加另一条一次性不可变授权。若同一 run 已完整持久化前四轮、仅第 5 轮 hypothesis 因 `provider_timeout` 失败，则 owner 还能追加一条只把 ceiling 从 13 提到 14 的一次性断点续跑授权；系统会重验并绑定四轮 session、draft、回测、critique、candidate、父链和 8 次成功调用，只从第 5 轮继续，绝不重跑前四轮。旧超时记录保持不可变，任何证据或输入漂移都会 fail-closed。已有未用 slot 与新增 1 个 slot 只够第 5 轮 hypothesis 和 critique 两次调用；DeepSeek 策略研究单次超时为 600 秒，其他 provider 超时不变。每次 hypothesis 只从精确外发 JSON 中解析并校验稳定的 `cite_01` 至 `cite_05` 必需证据锚点，不再枚举与引用无关的整棵嵌套证据树；每个草稿必须按原顺序返回完整短 ID 列表，少报、多报、改写、直接返回路径或未知 ID 都会在本地 fail-closed。单次请求输出和上下文窗口仍受 provider 技术限制，但不是 Karkinos 的每日 Token 预算。旧的有界 Token 或较小启用策略仅保留供审计，在 owner 明确保存完整策略之前，会在准备证据或调用模型前以 `blocked_by_policy` 阻断。轮次、父 candidate、父 draft 或公式指纹任一缺失/错配都会 fail-closed，不能产生新优胜者。DeepSeek 不负责选优。只有完整通过确定性晋级门的候选才进入预声明字典序排序，依次比较税费后超额、OOS 平均/最差超额、回撤、换手和稳定 candidate identity；候选集合不完整、任一评估未完成或无人通过时只表示没有新候选胜出、不会发生新晋级，当前已人工批准策略保持不变，并不直接推出当天 `NO-ACTION`。当天是否产生票据候选，仍由独立 Decision 链以当前 Account Truth、行情、费用、策略、风险、paper/shadow 与对账证据确定。完成的每日候选集合会生成只含可复现 Formula DSL 与串行 lineage 的脱敏、内容寻址备份及不可变数据库回执；备份缺失或指纹漂移会阻断公开 paper/shadow 批准。晋级 readiness 只持久化 run/date/winner 与 selection/backup 指纹，不保存私有路径；之后每次 paper/shadow、Decision 和出票门禁都会只读重开并重哈希该备份，旧晋级记录缺少绑定、文件删除或批准后漂移都立即阻断。确定性晋级门还要求有界参数扰动、冻结行情状态、回撤、换手、容量、已与券商账单对账的账户专属税费证据，以及“研究本金不超过同一估值/账本身份下当前已对账账户权益”的脱敏指纹证据；未绑定或超额选择会在模型外发前阻断。内置费率只是估算，当前明确不能满足晋级。`ai_formula_shadow:*` 票据会重新解析候选、基准/候选回测、critique、人工批准和 paper 状态，下一批还必须绑定指纹有效的 plan/paper/actual 对比。任一事实缺失、过期、冲突、漂移或不可复现均 `research_blocked`/no-action；这些记录不能替换生产策略、创建/提交订单或扩大资本权限。账户专属模型只能由可撤销、绑定 fingerprint 的 Account Truth 费用复核生成；持久化的安全费用条款会真正进入基准与候选计算。来源漂移、撤销或回测/票据日期超出有效区间时，会在不联系 provider/券商的前提下立即阻断。下一批对账还必须把前序订单全部解析为当前同一策略；策略 lineage 缺失、混合或无关均 no-action。
+Owner 授权的收盘后 shadow 研究每个持久化市场日期只运行一次。Formula discovery 固定使用 1,000,000 CNY 归一化研究名义资金，并绑定版本化策略 `karkinos.ai.normalized_research_notional.cny_1m.v1`；成本使用 canonical 预估模型。该流程不读取 broker provider，也不要求 Account Truth、valuation snapshot 或 ledger cutoff 才能运行；数据集 identity 哈希实际送入引擎的有序 timestamp/OHLCV。系统原子 claim 最多 10 次 DeepSeek 调用、记录 Token 用量但 Karkinos 不设每日累计 Token 上限，外发只保存回测、归一化研究上下文和严格 allowlist 风险/配置投影，不外发账户绝对金额、持仓数量/成本或 valuation/ledger 标识；本地校验 Formula DSL、运行 canonical 成本后 rolling OOS，再发送规范化结果做 critique。每次启用的站立运行必须执行完整 5 轮严格串行修订：每轮只生成 1 个版本，完成本地权威回测、确定性晋级门与 critique 后，把上一轮公式、指标、阻断项和 critique 的脱敏指纹包绑定进下一轮；因此 5 轮需要 10 次模型调用。所有 DeepSeek 出站调用统一遵守版本化调用时窗：北京时间工作日 `[09:00,12:00)` 和 `[14:00,18:00)` 禁止发送，业务 route 与手工 API 不得绕过；收盘后完整批次只在连续低谷窗口启动，并必须在下一工作日 09:00 前完成，余量不足则延期，不 claim run/call 或消耗调用额度。若原始调用和已授权完整重试各有 1 次真实调用因 citation contract 失败，只有在“上限恰好 +1 后仍正好剩余 10 次”时，owner 才能追加一条绑定该零候选失败的不可变授权；它只能消费一次，不能成为通用提额，也不增加策略、订单、券商或资本权限。若随后第三次真实调用因 DeepSeek 思考内容耗尽输出预算而得到 `provider_output_truncated`，策略研究会改为显式关闭思考、把 12,288 token 全部保留给最终 JSON；只有在既有 citation extension 已消费、调用数恰好为 3、上限恰好从 12 增至 13 后仍正好剩余 10 次时，owner 才能追加另一条一次性不可变授权。若同一 run 已完整持久化前四轮、仅第 5 轮 hypothesis 因 `provider_timeout` 失败，则 owner 还能追加一条只把 ceiling 从 13 提到 14 的一次性断点续跑授权；系统会重验并绑定四轮 session、draft、回测、critique、candidate、父链和 8 次成功调用，只从第 5 轮继续，绝不重跑前四轮。旧超时记录保持不可变，任何证据或输入漂移都会 fail-closed。已有未用 slot 与新增 1 个 slot 只够第 5 轮 hypothesis 和 critique 两次调用；DeepSeek 策略研究单次超时为 600 秒，其他 provider 超时不变。每次 hypothesis 只从精确外发 JSON 中解析并校验稳定的 `cite_01` 至 `cite_05` 必需证据锚点，不再枚举与引用无关的整棵嵌套证据树；每个草稿必须按原顺序返回完整短 ID 列表，少报、多报、改写、直接返回路径或未知 ID 都会在本地 fail-closed。单次请求输出和上下文窗口仍受 provider 技术限制，但不是 Karkinos 的每日 Token 预算。旧的有界 Token 或较小启用策略仅保留供审计，在 owner 明确保存完整策略之前，会在准备证据或调用模型前以 `blocked_by_policy` 阻断。轮次、父 candidate、父 draft 或公式指纹任一缺失/错配都会 fail-closed，不能产生新优胜者。DeepSeek 不负责选优。只有完整通过确定性晋级门的候选才进入预声明字典序排序，依次比较税费后超额、OOS 平均/最差超额、回撤、换手和稳定 candidate identity；候选集合不完整、任一评估未完成或无人通过时只表示没有新候选胜出、不会发生新晋级，当前已人工批准策略保持不变，并不直接推出当天 `NO-ACTION`。当天是否产生票据候选，仍由独立 Decision 链以当前 Account Truth、行情、费用、策略、风险、paper/shadow 与对账证据确定。完成的每日候选集合会生成只含可复现 Formula DSL 与串行 lineage 的脱敏、内容寻址备份及不可变数据库回执；备份缺失或指纹漂移会阻断公开 paper/shadow 批准。晋级 readiness 只持久化 run/date/winner 与 selection/backup 指纹，不保存私有路径；之后每次 paper/shadow、Decision 和出票门禁都会只读重开并重哈希该备份，旧晋级记录缺少绑定、文件删除或批准后漂移都立即阻断。确定性晋级门还要求有界参数扰动、冻结行情状态、回撤、换手、容量、已与券商账单对账的账户专属税费证据，以及“研究本金不超过同一估值/账本身份下当前已对账账户权益”的脱敏指纹证据。normalized candidate 因不包含这些账户证据而保持 research-only，现有 promotion、paper/shadow、Decision 和 execution 门禁继续 fail closed，但不阻断 Formula discovery 或 DeepSeek 调用。内置费率是 discovery 的 canonical 研究估算，但明确不能满足晋级。当前尚未实现对既有 normalized candidate 独立补录 Account Truth、以账户专属成本重算并产生可晋级证据的 qualification/replay service。`ai_formula_shadow:*` 票据会重新解析候选、基准/候选回测、critique、人工批准和 paper 状态，下一批还必须绑定指纹有效的 plan/paper/actual 对比。任一事实缺失、过期、冲突、漂移或不可复现均 `research_blocked`/no-action；这些记录不能替换生产策略、创建/提交订单或扩大资本权限。账户专属模型只能由可撤销、绑定 fingerprint 的 Account Truth 费用复核生成，并仍是现有 account-bound promotion/execution 证据门禁的必要条件；它当前不能被独立补到 normalized candidate 上。来源漂移、撤销或回测/票据日期超出有效区间时，会在不联系 provider/券商的前提下立即阻断账户绑定的晋级与执行，不影响 normalized-notional discovery。下一批对账还必须把前序订单全部解析为当前同一策略；策略 lineage 缺失、混合或无关均 no-action。
 
 Decision 的信号审计日志现在支持显式“决策后复盘”。系统先只读预览持久化的 signal/action/risk/order/fill 链和同一 canonical contribution report，再把人工结论绑定到该精确
 fingerprint。只有具备成交、估值快照与 ledger cutoff 的完整绑定证据，已执行信号才能记录

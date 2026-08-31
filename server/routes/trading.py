@@ -11,9 +11,18 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
-from server.services.trading_controls import TradingControlSnapshot
+from server.contracts.order_state import (
+    ManualOrderStateCommand,
+    ManualOrderTicketCommand,
+)
+from server.services.manual_order_tickets import ManualOrderTicketService
+from server.services.trading_controls import (
+    AutomaticTradingControlRevisionConflict,
+    TradingControlSnapshot,
+    resolve_automatic_trading_evidence,
+)
 
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -21,6 +30,17 @@ _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 class KillSwitchRequest(BaseModel):
     enabled: bool
     reason: str = ""
+
+
+class AutomaticTradingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool
+    reason: str = Field(min_length=1, max_length=500)
+    operator_id: str = Field(min_length=1, max_length=128)
+    expected_revision: StrictInt = Field(ge=0)
+    ttl_seconds: StrictInt | None = None
+    acknowledgement: str = Field(min_length=1, max_length=256)
 
 
 class OrderRejectRequest(BaseModel):
@@ -46,8 +66,59 @@ class ShadowDivergenceReviewRequest(BaseModel):
     reviewer: str | None = None
 
 
+def _register_automatic_trading_routes(router: APIRouter) -> None:
+    @router.get("/automatic-trading")
+    async def get_automatic_trading() -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        return resolve_automatic_trading_evidence(get_app_state().trading_controls)
+
+    @router.put("/automatic-trading")
+    async def set_automatic_trading(
+        payload: AutomaticTradingRequest,
+    ) -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        try:
+            snapshot = state.trading_controls.set_automatic_trading(
+                enabled=payload.enabled,
+                reason=payload.reason,
+                operator_id=payload.operator_id,
+                expected_revision=payload.expected_revision,
+                ttl_seconds=payload.ttl_seconds,
+                acknowledgement=payload.acknowledgement,
+            )
+        except AutomaticTradingControlRevisionConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "automatic_trading_revision_conflict",
+                    "expected_revision": exc.expected_revision,
+                    "current_revision": exc.current_revision,
+                    "current_state": exc.current_state,
+                },
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if state.hub is not None:
+            result = state.hub.broadcast(
+                {
+                    "event_type": "TradingControlEvent",
+                    "control": "automatic_trading",
+                    "payload": snapshot,
+                }
+            )
+            if isawaitable(result):
+                await result
+        return snapshot
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/trading", tags=["trading"])
+    _register_automatic_trading_routes(r)
 
     @r.get("/kill-switch", response_model=TradingControlSnapshot)
     async def get_kill_switch() -> TradingControlSnapshot:
@@ -96,14 +167,6 @@ def create_router() -> APIRouter:
         action = state.db.get_action_task_sync(action_id)
         if action is None:
             raise HTTPException(status_code=404, detail="action task not found")
-        manual_status = action.get("manual_confirmation_status")
-        if manual_status != "ready_for_manual_confirmation":
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "action is not ready for manual confirmation: " f"{manual_status}"
-                ),
-            )
         side = _manual_order_side(action["direction"])
         if side is None:
             raise HTTPException(
@@ -115,67 +178,77 @@ def create_router() -> APIRouter:
         timestamp = datetime.now().isoformat()
         order_type = payload.order_type or "market"
         price = payload.price if payload.price is not None else action.get("price")
+        existing = state.db.get_manual_order_sync(order_id)
+        if existing is not None:
+            try:
+                command = _manual_ticket_replay_command(
+                    state.db,
+                    action_id=action_id,
+                    existing=existing,
+                    quantity=payload.quantity,
+                    order_type=order_type,
+                    requested_price=payload.price,
+                    note=payload.note,
+                )
+            except (RuntimeError, ValueError) as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+        else:
+            manual_status = action.get("manual_confirmation_status")
+            if manual_status != "ready_for_manual_confirmation":
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"action is not ready for manual confirmation: {manual_status}"
+                    ),
+                )
+            try:
+                current_gate = _current_action_manual_ticket_gate(
+                    state,
+                    action,
+                    proposed_order={
+                        "symbol": action.get("symbol"),
+                        "side": side,
+                        "quantity": payload.quantity,
+                        "price": price,
+                    },
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            try:
+                command = ManualOrderTicketCommand(
+                    idempotency_key=f"manual-ticket:action:{action_id}",
+                    action_id=action_id,
+                    expected_action_status="pending",
+                    order_id=order_id,
+                    timestamp=timestamp,
+                    symbol=action["symbol"],
+                    side=side,
+                    order_type=order_type,
+                    quantity=payload.quantity,
+                    price=price,
+                    asset_class=action.get("asset_class", "stock"),
+                    intent_id=f"ACTION-{action_id}",
+                    risk_decision_id=action.get("risk_decision_id"),
+                    source_ref=str(action_id),
+                    payload={
+                        "action_id": action_id,
+                        "source_signal_id": action.get("source_signal_id"),
+                        "strategy_id": action.get("strategy_id"),
+                        "target_weight": action.get("target_weight"),
+                        "risk_gate_status": action.get("risk_gate_status"),
+                        "manual_confirmation_status": manual_status,
+                        "current_action_manual_ticket_gate": current_gate,
+                        "note": payload.note,
+                    },
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
         try:
-            current_gate = _current_action_manual_ticket_gate(
-                state,
-                action,
-                proposed_order={
-                    "symbol": action.get("symbol"),
-                    "side": side,
-                    "quantity": payload.quantity,
-                    "price": price,
-                },
-            )
-        except ValueError as exc:
+            created = ManualOrderTicketService(persistence=state.db).create(command)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        order_payload = {
-            "action_id": action_id,
-            "source_signal_id": action.get("source_signal_id"),
-            "strategy_id": action.get("strategy_id"),
-            "target_weight": action.get("target_weight"),
-            "risk_gate_status": action.get("risk_gate_status"),
-            "manual_confirmation_status": manual_status,
-            "current_action_manual_ticket_gate": current_gate,
-            "note": payload.note,
-        }
-        state.db.save_manual_order_sync(
-            order_id=order_id,
-            timestamp=timestamp,
-            symbol=action["symbol"],
-            side=side,
-            order_type=order_type,
-            quantity=payload.quantity,
-            price=price,
-            intent_id=f"ACTION-{action_id}",
-            risk_decision_id=action.get("risk_decision_id"),
-            execution_mode="manual",
-            status="pending_confirm",
-            payload=order_payload,
-        )
-        state.db.record_order_sync(
-            order_id=order_id,
-            timestamp=timestamp,
-            symbol=action["symbol"],
-            side=side,
-            order_type=order_type,
-            quantity=payload.quantity,
-            price=price,
-            asset_class=action.get("asset_class", "stock"),
-            intent_id=f"ACTION-{action_id}",
-            risk_decision_id=action.get("risk_decision_id"),
-            execution_mode="manual",
-            status="pending_confirm",
-            source="manual_action",
-            source_ref=str(action_id),
-            payload=order_payload,
-        )
-        state.db.update_action_task_status_sync(
-            action_id,
-            "pending_manual_confirmation",
-        )
-        created = state.db.get_manual_order_sync(order_id)
-        if created is None:
-            raise HTTPException(status_code=500, detail="manual order was not saved")
         await _broadcast_if_possible(state, "ManualOrderPrepared", created)
         return created
 
@@ -184,12 +257,12 @@ def create_router() -> APIRouter:
         payload: ShadowRunRequest | None = None,
     ) -> dict:
         from server.dependencies import get_app_state
-        from server.routes.decision import (
-            _decision_portfolio_context,
-            _today_decision_payload,
-            _trading_plan_positions,
-        )
         from server.services.daily_trading_plan import build_daily_trading_plan
+        from server.services.decision_application import (
+            decision_portfolio_context,
+            today_decision_payload,
+            trading_plan_positions,
+        )
         from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
         state = get_app_state()
@@ -204,15 +277,15 @@ def create_router() -> APIRouter:
                     "canonical persisted Account Truth must own sizing"
                 ),
             )
-        portfolio_context = _decision_portfolio_context(state)
-        decision_payload = await _today_decision_payload(
+        portfolio_context = decision_portfolio_context(state)
+        decision_payload = await today_decision_payload(
             state,
             portfolio_context=portfolio_context,
         )
         trading_plan = build_daily_trading_plan(
             decision_payload=decision_payload,
             config=getattr(state, "config", None),
-            positions=_trading_plan_positions(
+            positions=trading_plan_positions(
                 state,
                 portfolio_context=portfolio_context,
             ),
@@ -331,24 +404,24 @@ def create_router() -> APIRouter:
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        updated = state.db.update_manual_order_status_sync(
-            order_id=order_id,
-            status="confirmed",
-            note="confirmed by operator; downstream execution simulated",
-        )
-        if updated is None:
-            raise HTTPException(status_code=404, detail="manual order not found")
-        if hasattr(state.db, "update_order_status_sync"):
-            state.db.update_order_status_sync(
-                order_id=order_id,
-                status="confirmed",
-                note="confirmed by operator; downstream execution simulated",
+        note = "confirmed by operator; downstream execution simulated"
+        try:
+            updated = ManualOrderTicketService(persistence=state.db).transition(
+                ManualOrderStateCommand(
+                    idempotency_key=f"manual-order:{order_id}:confirm",
+                    order_id=order_id,
+                    expected_from="pending_confirm",
+                    to_status="confirmed",
+                    note=note,
+                    action_id=action_id,
+                    expected_action_status="pending_manual_confirmation",
+                    action_to_status="acted",
+                )
             )
-        action_id = _manual_order_action_id(updated)
-        if action_id is not None and hasattr(
-            state.db, "update_action_task_status_sync"
-        ):
-            state.db.update_action_task_status_sync(action_id, "acted")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         await _broadcast_if_possible(state, "ManualOrderConfirmed", updated)
         return updated
 
@@ -357,24 +430,32 @@ def create_router() -> APIRouter:
         from server.dependencies import get_app_state
 
         state = get_app_state()
-        updated = state.db.update_manual_order_status_sync(
-            order_id=order_id,
-            status="rejected",
-            note=payload.reason,
-        )
-        if updated is None:
+        current = state.db.get_manual_order_sync(order_id)
+        if current is None:
             raise HTTPException(status_code=404, detail="manual order not found")
-        if hasattr(state.db, "update_order_status_sync"):
-            state.db.update_order_status_sync(
-                order_id=order_id,
-                status="rejected",
-                note=payload.reason,
+        action_id = _manual_order_action_id(current)
+        command_fields: dict[str, Any] = {}
+        if action_id is not None:
+            command_fields = {
+                "action_id": action_id,
+                "expected_action_status": "pending_manual_confirmation",
+                "action_to_status": "ignored",
+            }
+        try:
+            updated = ManualOrderTicketService(persistence=state.db).transition(
+                ManualOrderStateCommand(
+                    idempotency_key=f"manual-order:{order_id}:reject",
+                    order_id=order_id,
+                    expected_from="pending_confirm",
+                    to_status="rejected",
+                    note=payload.reason,
+                    **command_fields,
+                )
             )
-        action_id = _manual_order_action_id(updated)
-        if action_id is not None and hasattr(
-            state.db, "update_action_task_status_sync"
-        ):
-            state.db.update_action_task_status_sync(action_id, "ignored")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         await _broadcast_if_possible(state, "ManualOrderRejected", updated)
         return updated
 
@@ -389,20 +470,20 @@ def _current_action_manual_ticket_gate(
 ) -> dict[str, Any]:
     """Re-resolve current persisted gates immediately before ticket writes."""
 
-    from server.routes.decision import (
-        _account_truth_gate_evidence,
-        _action_trade_date,
-        _data_freshness_evidence,
-        _paper_shadow_allows_manual_ticket,
-        _paper_shadow_evidence,
+    from server.services.decision_application import (
+        account_truth_gate_evidence,
+        action_trade_date,
+        data_freshness_evidence,
+        paper_shadow_allows_manual_ticket,
+        paper_shadow_evidence,
     )
     from server.services.strategy_promotion_pipeline import (
         resolve_strategy_order_generation_gate,
     )
 
     db = getattr(state, "db", None)
-    account_truth = _account_truth_gate_evidence(state)
-    market_data = _data_freshness_evidence(
+    account_truth = account_truth_gate_evidence(state)
+    market_data = data_freshness_evidence(
         action,
         db,
         quotes={},
@@ -411,9 +492,9 @@ def _current_action_manual_ticket_gate(
     strategy_gate, strategy_blockers = resolve_strategy_order_generation_gate(
         db,
         str(action.get("strategy_id") or ""),
-        as_of_date=_action_trade_date(action),
+        as_of_date=action_trade_date(action),
     )
-    paper_shadow = _paper_shadow_evidence(
+    paper_shadow = paper_shadow_evidence(
         action,
         str(action.get("manual_confirmation_status") or ""),
         db=db,
@@ -447,7 +528,7 @@ def _current_action_manual_ticket_gate(
         blockers.append("current_account_truth_not_fresh")
     if not _is_sha256(account_truth.get("source_fingerprint")):
         blockers.append("current_account_truth_source_fingerprint_invalid")
-    if _shanghai_date(account_truth.get("captured_at")) != _action_trade_date(action):
+    if _shanghai_date(account_truth.get("captured_at")) != action_trade_date(action):
         blockers.append("current_account_truth_not_bound_to_action_date")
     ledger_coverage = account_truth.get("ledger_coverage")
     ledger_coverage = ledger_coverage if isinstance(ledger_coverage, dict) else {}
@@ -466,14 +547,14 @@ def _current_action_manual_ticket_gate(
         proposed_order.get("price"), current_quote_price
     ):
         blockers.append("proposed_order_price_not_bound_to_current_quote")
-    if _shanghai_date(market_data.get("quote_timestamp")) != _action_trade_date(action):
+    if _shanghai_date(market_data.get("quote_timestamp")) != action_trade_date(action):
         blockers.append("current_market_quote_not_bound_to_action_date")
     if not str(market_data.get("quote_source") or "").strip():
         blockers.append("current_market_quote_source_missing")
     if strategy_gate.get("status") != "pass":
         blockers.append("current_strategy_order_generation_not_passing")
     blockers.extend(f"strategy_advancement:{reason}" for reason in strategy_blockers)
-    if not _paper_shadow_allows_manual_ticket(paper_shadow):
+    if not paper_shadow_allows_manual_ticket(paper_shadow):
         blockers.append("current_paper_shadow_not_clear")
         blockers.extend(
             f"paper_shadow:{reason}"
@@ -640,6 +721,49 @@ def _manual_order_action_id(order: dict) -> int | None:
     if action_id is None:
         return None
     return int(action_id)
+
+
+def _manual_ticket_replay_command(
+    database: Any,
+    *,
+    action_id: int,
+    existing: dict[str, Any],
+    quantity: float,
+    order_type: str,
+    requested_price: float | None,
+    note: str,
+) -> ManualOrderTicketCommand:
+    """Rebuild a retry from persisted server evidence and caller-owned terms."""
+
+    shared = database.get_order_sync(str(existing["order_id"]))
+    if not isinstance(shared, dict):
+        raise RuntimeError("manual order replay is missing its shared projection")
+    try:
+        stored_payload = json.loads(str(existing.get("payload_json") or ""))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("manual order replay payload is invalid") from exc
+    if not isinstance(stored_payload, dict):
+        raise RuntimeError("manual order replay payload is invalid")
+    stored_payload.pop("command_identity", None)
+    stored_payload["note"] = note
+    return ManualOrderTicketCommand(
+        idempotency_key=f"manual-ticket:action:{action_id}",
+        action_id=action_id,
+        expected_action_status="pending",
+        order_id=str(existing["order_id"]),
+        timestamp=str(existing["timestamp"]),
+        symbol=str(existing["symbol"]),
+        side=str(existing["side"]),
+        order_type=order_type,
+        quantity=quantity,
+        price=existing.get("price") if requested_price is None else requested_price,
+        asset_class=str(shared["asset_class"]),
+        intent_id=str(existing["intent_id"]),
+        risk_decision_id=existing.get("risk_decision_id"),
+        source=str(shared["source"]),
+        source_ref=str(action_id),
+        payload=stored_payload,
+    )
 
 
 async def _broadcast_if_possible(state, event_type: str, payload: dict) -> None:

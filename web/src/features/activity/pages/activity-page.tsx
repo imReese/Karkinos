@@ -1,11 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { createLazyRoute } from '@tanstack/react-router';
 
-import { useCopy, type AppCopy } from '../../../app/copy';
-import {
-  ToastStack,
-  type ToastItem,
-} from '../../../app/components/toast-stack';
+import { useCopy, type AppCopy } from '../../../shared/i18n/context';
+import { ToastStack, type ToastItem } from '../../../shared/ui/toast-stack';
 import {
   ControlledActionZone,
   EvidenceDrawer,
@@ -13,9 +10,11 @@ import {
   MetricStrip,
   StatusBadge,
   WorkspaceHeader,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
+  createLedgerMutationIdentity,
+  createTradeMutationIdentity,
   useCreateAdjustmentMutation,
   useCreateCashFlowMutation,
   useCreateDividendMutation,
@@ -23,6 +22,11 @@ import {
   useLedgerEntriesQuery,
   usePendingFundOrdersQuery,
   useTradePreviewMutation,
+  type AdjustmentPayload,
+  type CashFlowPayload,
+  type DividendPayload,
+  type TradeMutationPayload,
+  type TradePayload,
 } from '../api';
 import { ActivityFeed, ActivityFeedLoading } from '../components/activity-feed';
 import {
@@ -43,11 +47,128 @@ import {
   type ManualAdjustmentFormValues,
 } from '../components/manual-adjustment-form';
 import { TradeForm, type TradeFormValues } from '../components/trade-form';
-import { usePositionsQuery } from '../../portfolio/api';
-import { useSettingsQuery } from '../../settings/api';
+import { usePositionsQuery } from '../activity-feature-boundary';
+import { useSettingsQuery } from '../activity-feature-boundary';
 import { getErrorMessage } from '../../../shared/error-message';
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import { formatPublicStatus } from '../../../shared/public-labels';
+
+type RetainedSubmission<TPayload> = {
+  inputKey: string;
+  payload: TPayload;
+};
+
+type RetainedFundBatchSubmissions = {
+  completedInputKeyByOrderKey: Map<string, string>;
+  pendingByOrderKey: Map<string, RetainedSubmission<TradeMutationPayload>>;
+};
+
+function stableKey(input: unknown) {
+  return JSON.stringify(input);
+}
+
+function prepareRetainedSubmission<TInput, TPayload>(
+  current: RetainedSubmission<TPayload> | null,
+  input: TInput,
+  identify: (input: TInput) => TPayload,
+) {
+  const inputKey = stableKey(input);
+  return current?.inputKey === inputKey
+    ? current
+    : { inputKey, payload: identify(input) };
+}
+
+async function submitRetainedFundBatch(
+  inputs: TradePayload[],
+  submissions: RetainedFundBatchSubmissions,
+  submit: (payload: TradeMutationPayload) => Promise<unknown>,
+) {
+  const keyedInputs = inputs.map((input) => ({
+    input,
+    inputKey: stableKey(input),
+    orderKey: stableKey([input.asset_class, input.direction, input.symbol]),
+  }));
+  for (const { input, inputKey, orderKey } of keyedInputs) {
+    const completedInputKey =
+      submissions.completedInputKeyByOrderKey.get(orderKey);
+    if (completedInputKey !== undefined && completedInputKey !== inputKey) {
+      throw new Error(`Saved fund order changed: ${input.symbol}`);
+    }
+  }
+  for (const { input, inputKey, orderKey } of keyedInputs) {
+    if (submissions.completedInputKeyByOrderKey.get(orderKey) === inputKey) {
+      continue;
+    }
+    const submission = prepareRetainedSubmission(
+      submissions.pendingByOrderKey.get(orderKey) ?? null,
+      input,
+      (payload) => ({ ...payload, ...createTradeMutationIdentity() }),
+    );
+    submissions.pendingByOrderKey.set(orderKey, submission);
+    await submit(submission.payload);
+    if (submissions.pendingByOrderKey.get(orderKey) === submission) {
+      submissions.pendingByOrderKey.delete(orderKey);
+      submissions.completedInputKeyByOrderKey.set(orderKey, inputKey);
+    }
+  }
+}
+
+function normalizeOptionalNumber(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function tradeSubmissionInput(values: TradeFormValues): TradePayload {
+  return {
+    ...values,
+    occurred_at: new Date(values.occurred_at).toISOString(),
+    quantity: normalizeOptionalNumber(values.quantity),
+    unit_price: normalizeOptionalNumber(values.unit_price),
+    amount: normalizeOptionalNumber(values.amount),
+    fee: normalizeOptionalNumber(values.fee),
+    asset_class: values.asset_class.trim().toLowerCase(),
+    symbol: values.symbol.trim(),
+  };
+}
+
+function fundBatchSubmissionInputs(
+  values: FundBatchFormValues,
+  batchTitle: string,
+): TradePayload[] {
+  const occurredAt = new Date(values.occurred_at).toISOString();
+  return values.orders.map((order) => ({
+    occurred_at: occurredAt,
+    symbol: order.symbol,
+    asset_class: 'fund',
+    direction: 'buy',
+    quantity: null,
+    unit_price: null,
+    amount: order.amount,
+    fee: 0,
+    note: [values.note.trim(), order.display_name, batchTitle]
+      .filter(Boolean)
+      .join(' | '),
+  }));
+}
+
+function ledgerSubmissionInput<TValues extends { occurred_at: string }>(
+  values: TValues,
+) {
+  return {
+    ...values,
+    occurred_at: new Date(values.occurred_at).toISOString(),
+  };
+}
+
+function adjustmentSubmissionInput(values: ManualAdjustmentFormValues) {
+  return {
+    ...values,
+    symbol: values.symbol || null,
+    amount: normalizeOptionalNumber(values.amount),
+    quantity: normalizeOptionalNumber(values.quantity),
+    price: normalizeOptionalNumber(values.price),
+    occurred_at: new Date(values.occurred_at).toISOString(),
+  };
+}
 
 export function ActivityPage() {
   const copy = useCopy();
@@ -60,12 +181,24 @@ export function ActivityPage() {
   const positions = usePositionsQuery(entryDrawerOpen);
   const settings = useSettingsQuery();
   const createTrade = useCreateTradeMutation();
+  const submitTrade = createTrade.mutateAsync;
   const tradePreview = useTradePreviewMutation();
   const previewTrade = tradePreview.mutate;
   const resetTradePreview = tradePreview.reset;
   const createCashFlow = useCreateCashFlowMutation();
   const createDividend = useCreateDividendMutation();
   const createAdjustment = useCreateAdjustmentMutation();
+  const tradeSubmissionRef =
+    useRef<RetainedSubmission<TradeMutationPayload> | null>(null);
+  const fundBatchSubmissionRef = useRef<RetainedFundBatchSubmissions | null>(
+    null,
+  );
+  const cashFlowSubmissionRef =
+    useRef<RetainedSubmission<CashFlowPayload> | null>(null);
+  const dividendSubmissionRef =
+    useRef<RetainedSubmission<DividendPayload> | null>(null);
+  const adjustmentSubmissionRef =
+    useRef<RetainedSubmission<AdjustmentPayload> | null>(null);
   const ledgerRows = entries.data ?? [];
   const latestEntry = ledgerRows[0] ?? null;
   const fundBatchCandidates = useMemo<FundBatchCandidate[]>(
@@ -93,19 +226,18 @@ export function ActivityPage() {
   };
 
   const handleTradeSubmit = async (values: TradeFormValues) => {
-    const normalizeNumber = (value: number | null | undefined) =>
-      typeof value === 'number' && Number.isFinite(value) ? value : null;
+    const input = tradeSubmissionInput(values);
+    const submission = prepareRetainedSubmission(
+      tradeSubmissionRef.current,
+      input,
+      (payload) => ({ ...payload, ...createTradeMutationIdentity() }),
+    );
+    tradeSubmissionRef.current = submission;
     try {
-      await createTrade.mutateAsync({
-        ...values,
-        occurred_at: new Date(values.occurred_at).toISOString(),
-        quantity: normalizeNumber(values.quantity),
-        unit_price: normalizeNumber(values.unit_price),
-        amount: normalizeNumber(values.amount),
-        fee: normalizeNumber(values.fee),
-        asset_class: values.asset_class.trim().toLowerCase(),
-        symbol: values.symbol.trim(),
-      });
+      await createTrade.mutateAsync(submission.payload);
+      if (tradeSubmissionRef.current === submission) {
+        tradeSubmissionRef.current = null;
+      }
       pushToast(
         'success',
         copy.activity.tradeSaved,
@@ -119,13 +251,11 @@ export function ActivityPage() {
 
   const handleTradePreviewChange = useCallback(
     (values: TradeFormValues) => {
-      const normalizeNumber = (value: number | null | undefined) =>
-        typeof value === 'number' && Number.isFinite(value) ? value : null;
       const assetClass = values.asset_class.trim().toLowerCase();
       const symbol = values.symbol.trim();
-      const quantity = normalizeNumber(values.quantity);
-      const unitPrice = normalizeNumber(values.unit_price);
-      const fee = normalizeNumber(values.fee);
+      const quantity = normalizeOptionalNumber(values.quantity);
+      const unitPrice = normalizeOptionalNumber(values.unit_price);
+      const fee = normalizeOptionalNumber(values.fee);
       const occurredAt = new Date(values.occurred_at);
       const isPriceBasedTrade =
         symbol &&
@@ -146,7 +276,7 @@ export function ActivityPage() {
         occurred_at: occurredAt.toISOString(),
         quantity,
         unit_price: unitPrice,
-        amount: normalizeNumber(values.amount),
+        amount: normalizeOptionalNumber(values.amount),
         fee,
         asset_class: assetClass,
         symbol,
@@ -156,25 +286,20 @@ export function ActivityPage() {
   );
 
   const handleFundBatchSubmit = async (values: FundBatchFormValues) => {
+    const inputs = fundBatchSubmissionInputs(
+      values,
+      copy.activity.forms.fundBatch.title,
+    );
+    const submissions: RetainedFundBatchSubmissions =
+      fundBatchSubmissionRef.current ?? {
+        completedInputKeyByOrderKey: new Map(),
+        pendingByOrderKey: new Map(),
+      };
+    fundBatchSubmissionRef.current = submissions;
     try {
-      for (const order of values.orders) {
-        await createTrade.mutateAsync({
-          occurred_at: new Date(values.occurred_at).toISOString(),
-          symbol: order.symbol,
-          asset_class: 'fund',
-          direction: 'buy',
-          quantity: null,
-          unit_price: null,
-          amount: order.amount,
-          fee: 0,
-          note: [
-            values.note.trim(),
-            order.display_name,
-            copy.activity.forms.fundBatch.title,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        });
+      await submitRetainedFundBatch(inputs, submissions, submitTrade);
+      if (fundBatchSubmissionRef.current === submissions) {
+        fundBatchSubmissionRef.current = null;
       }
       pushToast(
         'success',
@@ -188,11 +313,18 @@ export function ActivityPage() {
   };
 
   const handleCashFlowSubmit = async (values: CashFlowFormValues) => {
+    const input = ledgerSubmissionInput(values);
+    const submission = prepareRetainedSubmission(
+      cashFlowSubmissionRef.current,
+      input,
+      (payload) => ({ ...payload, ...createLedgerMutationIdentity() }),
+    );
+    cashFlowSubmissionRef.current = submission;
     try {
-      await createCashFlow.mutateAsync({
-        ...values,
-        occurred_at: new Date(values.occurred_at).toISOString(),
-      });
+      await createCashFlow.mutateAsync(submission.payload);
+      if (cashFlowSubmissionRef.current === submission) {
+        cashFlowSubmissionRef.current = null;
+      }
       pushToast(
         'success',
         copy.activity.cashFlowSaved,
@@ -205,11 +337,18 @@ export function ActivityPage() {
   };
 
   const handleDividendSubmit = async (values: DividendFormValues) => {
+    const input = ledgerSubmissionInput(values);
+    const submission = prepareRetainedSubmission(
+      dividendSubmissionRef.current,
+      input,
+      (payload) => ({ ...payload, ...createLedgerMutationIdentity() }),
+    );
+    dividendSubmissionRef.current = submission;
     try {
-      await createDividend.mutateAsync({
-        ...values,
-        occurred_at: new Date(values.occurred_at).toISOString(),
-      });
+      await createDividend.mutateAsync(submission.payload);
+      if (dividendSubmissionRef.current === submission) {
+        dividendSubmissionRef.current = null;
+      }
       pushToast(
         'success',
         copy.activity.dividendSaved,
@@ -222,24 +361,18 @@ export function ActivityPage() {
   };
 
   const handleAdjustmentSubmit = async (values: ManualAdjustmentFormValues) => {
+    const input = adjustmentSubmissionInput(values);
+    const submission = prepareRetainedSubmission(
+      adjustmentSubmissionRef.current,
+      input,
+      (payload) => ({ ...payload, ...createLedgerMutationIdentity() }),
+    );
+    adjustmentSubmissionRef.current = submission;
     try {
-      await createAdjustment.mutateAsync({
-        ...values,
-        symbol: values.symbol || null,
-        amount:
-          values.amount === null || Number.isNaN(values.amount)
-            ? null
-            : values.amount,
-        quantity:
-          values.quantity === null || Number.isNaN(values.quantity)
-            ? null
-            : values.quantity,
-        price:
-          values.price === null || Number.isNaN(values.price)
-            ? null
-            : values.price,
-        occurred_at: new Date(values.occurred_at).toISOString(),
-      });
+      await createAdjustment.mutateAsync(submission.payload);
+      if (adjustmentSubmissionRef.current === submission) {
+        adjustmentSubmissionRef.current = null;
+      }
       pushToast(
         'success',
         copy.activity.adjustmentSaved,

@@ -30,6 +30,8 @@ Before changing code, read `docs/KARKINOS_GOAL.md` and the relevant sections of
   Canonical Financial Identity, and Failure Semantics.
 - Product UI, information hierarchy, or interaction behavior: `design.md`.
 - Milestones and sequencing: `docs/ROADMAP.md`.
+- AI-assisted strategy research protocol, validation, provider isolation, and
+  acceptance: `docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md`.
 - Controlled execution: `docs/CONTROLLED_EXECUTION_PLAN.md`.
 - Chinese documentation or localization: `docs/README.zh.md` and the linked
   translated page.

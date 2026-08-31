@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import inspect
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +20,9 @@ from .capture import (
     CaptureSourceBatch,
     HumanContextCaptureRequest,
 )
+from .contracts import content_fingerprint
 from .evidence import EvidenceIdentityMismatch
+from .strategy_research_privacy import build_normalized_research_pack
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,29 @@ class PersistedKarkinosCaptureSource:
         db = getattr(self._state, "db", None)
         if db is None:
             raise CaptureSelectionError("database is not initialized")
+
+        if request.evidence_types == (CaptureEvidenceType.RESEARCH_EVIDENCE,):
+            projection = await _research_evidence_projection(
+                db,
+                tool_name=CAPTURE_TOOL_BY_TYPE[CaptureEvidenceType.RESEARCH_EVIDENCE],
+                result_id=int(request.backtest_result_id or 0),
+            )
+            nominal_identity = content_fingerprint(
+                {
+                    "schema_version": "karkinos.ai.research_only_capture_identity.v1",
+                    "tool_name": projection.tool_name,
+                    "source_schema_version": projection.source_schema_version,
+                    "as_of": projection.as_of,
+                    "payload": projection.payload,
+                }
+            )
+            return CaptureSourceBatch(
+                valuation_snapshot_id=f"research-only:{nominal_identity}",
+                ledger_cutoff_id=0,
+                ledger_fingerprint=f"research-only:{nominal_identity}",
+                projections=(projection,),
+            )
+
         readers = self._projection_readers
         if not isinstance(readers, CaptureProjectionReaders):
             raise CaptureSelectionError(
@@ -387,7 +412,7 @@ async def _research_evidence_projection(
     complete = metrics_valid and bool(bundle_payload)
     if not complete:
         status = "missing"
-    performance_summary = {
+    performance = {
         key: row.get(key) if row.get(key) is not None else metrics.get(key)
         for key in (
             "initial_cash",
@@ -415,7 +440,7 @@ async def _research_evidence_projection(
             f"research_evidence_gate_not_pass:{bundle_gate}"
         )
     missing_performance = [
-        key for key in required_performance_fields if performance_summary[key] is None
+        key for key in required_performance_fields if performance[key] is None
     ]
     if missing_performance:
         analysis_blocking_reasons.append(
@@ -423,11 +448,23 @@ async def _research_evidence_projection(
         )
     if not after_cost_payload:
         analysis_blocking_reasons.append("after_cost_evidence_missing")
+    normalized_pack = build_normalized_research_pack(
+        performance=performance,
+        after_cost_evidence=after_cost_payload,
+        cost_summary=cost_summary if cost_summary_valid else {},
+        research_evidence_bundle=bundle_payload,
+        oos_validation=(
+            metrics.get("oos_validation")
+            if isinstance(metrics.get("oos_validation"), Mapping)
+            else {}
+        ),
+    )
     payload = {
-        "schema_version": "karkinos.ai.research_evidence_capture.v2",
+        "schema_version": "karkinos.ai.research_evidence_capture.v3",
         "backtest_result_id": result_id,
         "backtest_created_at": row.get("created_at"),
-        "performance_summary": performance_summary,
+        "notional_policy_id": normalized_pack["notional_policy_id"],
+        "performance_summary": normalized_pack["performance_summary"],
         "test_window": {
             "start_date": config.get("start_date") if config_valid else None,
             "end_date": config.get("end_date") if config_valid else None,
@@ -436,20 +473,25 @@ async def _research_evidence_projection(
                 config.get("benchmark_return") if config_valid else None
             ),
         },
-        "after_cost_evidence": after_cost_payload,
-        "cost_summary": cost_summary if cost_summary_valid else {},
-        "research_evidence_bundle": bundle_payload,
+        "after_cost_evidence": normalized_pack["after_cost_summary"],
+        "cost_summary": normalized_pack["cost_summary"],
+        "research_evidence_bundle": normalized_pack["research_evidence_bundle"],
+        "oos_validation": normalized_pack["oos_validation"],
         "bundle_status": "available" if complete else "missing",
         "blocking_reasons": [] if complete else ["research_evidence_bundle_missing"],
         "analysis_ready": not analysis_blocking_reasons,
         "analysis_blocking_reasons": analysis_blocking_reasons,
         "persisted_backtest_facts_only": True,
+        "absolute_notional_values_redacted": True,
+        "account_facts_included": False,
+        "broker_facts_included": False,
+        "authority_effect": "research_only",
     }
     return CapturedProjection(
         tool_name=tool_name,
         status=status,
         as_of=str(row.get("created_at") or "1970-01-01T00:00:00+00:00"),
-        source_schema_version="karkinos.ai.research_evidence_capture.v2",
+        source_schema_version="karkinos.ai.research_evidence_capture.v3",
         payload=payload,
     )
 

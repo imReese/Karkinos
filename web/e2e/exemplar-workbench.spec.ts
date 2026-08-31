@@ -295,6 +295,9 @@ test('all workbench routes keep mobile interaction targets at least 44px', async
     await page.goto(path);
     const route = page.locator('.app-shell-content');
     await expect(route, path).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('h1').first(), path).toBeVisible({
+      timeout: 15_000,
+    });
 
     const undersizedTargets = await route.evaluate((element) => {
       const selector = [
@@ -2492,17 +2495,21 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
 
   for (const path of ['/decision', '/trading', '/settings', '/backtest']) {
     await page.goto(path);
-    const geometry = await page.evaluate(() => {
-      const content = document.querySelector(
-        '.app-shell-content',
-      ) as HTMLElement;
-      return {
-        contentOverflow: content.scrollWidth - content.clientWidth,
-        documentOverflow:
+    const content = page.locator('.app-shell-content');
+    await expect(content, path).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('h1').first(), path).toBeVisible({
+      timeout: 15_000,
+    });
+    const geometry = {
+      contentOverflow: await content.evaluate(
+        (element) => element.scrollWidth - element.clientWidth,
+      ),
+      documentOverflow: await page.evaluate(
+        () =>
           document.documentElement.scrollWidth -
           document.documentElement.clientWidth,
-      };
-    });
+      ),
+    };
     expect(geometry.documentOverflow, path).toBeLessThanOrEqual(0);
     expect(geometry.contentOverflow, path).toBeLessThanOrEqual(0);
   }

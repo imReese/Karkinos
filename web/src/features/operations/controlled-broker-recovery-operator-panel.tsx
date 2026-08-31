@@ -10,6 +10,7 @@ import {
   useControlledBrokerRecoveryPreviewMutation,
   useOperatorApprovalStatusQuery,
   useOperatorApprovalVerificationMutation,
+  type ControlledBrokerRecoveryPreview,
   type ControlledOrderJourney,
 } from './api';
 
@@ -26,6 +27,146 @@ function shortenedIdentity(value: string) {
     return value || '—';
   }
   return `${value.slice(0, 10)}…${value.slice(-8)}`;
+}
+
+function RecoveryPreviewEvidence({
+  locale,
+  preview,
+}: {
+  locale: Locale;
+  preview: ControlledBrokerRecoveryPreview;
+}) {
+  return (
+    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-[var(--app-text)]">
+          {locale === 'zh' ? '绑定证据' : 'Bound evidence'}
+        </div>
+        <span className="app-chip">
+          {formatPublicStatus(preview.review_status, locale)}
+        </span>
+      </div>
+      <div className="mt-3 grid min-w-0 gap-2 text-xs sm:grid-cols-2 xl:grid-cols-3">
+        <div>
+          {locale === 'zh' ? '来源状态' : 'Source status'}:{' '}
+          {formatPublicStatus(preview.source_status, locale)}
+        </div>
+        <div className="min-w-0 truncate" title={preview.order_id}>
+          {locale === 'zh' ? '订单' : 'Order'}: {preview.order_id || '—'}
+        </div>
+        <div
+          className="min-w-0 truncate font-mono"
+          title={preview.client_order_id}
+        >
+          client order: {shortenedIdentity(preview.client_order_id)}
+        </div>
+        <div
+          className="min-w-0 truncate font-mono"
+          title={preview.source_result_fingerprint}
+        >
+          source: {shortenedIdentity(preview.source_result_fingerprint)}
+        </div>
+        <div
+          className="min-w-0 truncate font-mono"
+          title={preview.recovery_fingerprint}
+        >
+          recovery: {shortenedIdentity(preview.recovery_fingerprint)}
+        </div>
+        <div>
+          {locale === 'zh' ? '查询能力' : 'Query capability'}:{' '}
+          {preview.gateway_query_capability
+            ? locale === 'zh'
+              ? '已声明'
+              : 'declared'
+            : locale === 'zh'
+              ? '不可用'
+              : 'unavailable'}
+        </div>
+      </div>
+      <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+        {[
+          locale === 'zh' ? '只读精确查询' : 'Exact read-only query',
+          locale === 'zh' ? '禁止重提' : 'No resubmit',
+          locale === 'zh' ? '禁止撤单' : 'No cancel',
+          locale === 'zh' ? '不写账本' : 'No ledger write',
+          locale === 'zh' ? '不改权限' : 'No authority change',
+        ].map((label) => (
+          <span className="app-chip" key={label}>
+            {label}
+          </span>
+        ))}
+      </div>
+      {!preview.review_ready || preview.blockers.length ? (
+        <div
+          role="alert"
+          className="mt-3 break-words text-xs text-[var(--app-danger)]"
+        >
+          {locale === 'zh' ? '阻断项：' : 'Blockers: '}
+          {preview.blockers
+            .map((item) => formatPublicCode(item, locale))
+            .join(' · ') ||
+            (locale === 'zh'
+              ? '预览未达到可签名状态'
+              : 'Preview is not ready for signature')}
+          {preview.recovery_wait_remaining_seconds > 0
+            ? ` · ${preview.recovery_wait_remaining_seconds}s`
+            : ''}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RecoveryPanelHeader({
+  close,
+  locale,
+}: {
+  close: () => void;
+  locale: Locale;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-[var(--app-text)]">
+          {locale === 'zh'
+            ? '未知提交结果 → 精确只读查询'
+            : 'Unknown submission → exact read-only query'}
+        </div>
+        <div className="app-muted mt-1 break-words text-xs leading-5">
+          {locale === 'zh'
+            ? '只按已持久化的 client order id 查询一次。不会创建或重提订单、撤单、写账本或改变任何资本/执行权限；仅在获得确定证据后收敛既有 OMS 订单状态。'
+            : 'Query exactly once by the persisted client order id. This cannot create or resubmit an order, cancel, post the ledger, or change capital/execution authority; definitive evidence may only resolve the existing OMS order status.'}
+        </div>
+      </div>
+      <button
+        type="button"
+        className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs"
+        onClick={close}
+      >
+        {locale === 'zh' ? '关闭' : 'Close'}
+      </button>
+    </div>
+  );
+}
+
+function RecoveryOpenButton({
+  locale,
+  open,
+}: {
+  locale: Locale;
+  open: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold"
+      onClick={open}
+    >
+      {locale === 'zh'
+        ? '签名查询未知订单结果'
+        : 'Sign and query unknown order outcome'}
+    </button>
+  );
 }
 
 export function ControlledBrokerRecoveryOperatorPanel({
@@ -136,15 +277,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
   return (
     <div className="mt-3 min-w-0 border-t border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] pt-3">
       {!open ? (
-        <button
-          type="button"
-          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold"
-          onClick={() => setOpen(true)}
-        >
-          {locale === 'zh'
-            ? '签名查询未知订单结果'
-            : 'Sign and query unknown order outcome'}
-        </button>
+        <RecoveryOpenButton locale={locale} open={() => setOpen(true)} />
       ) : (
         <section
           aria-label={
@@ -154,27 +287,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
           }
           className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_38%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] p-3"
         >
-          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-[var(--app-text)]">
-                {locale === 'zh'
-                  ? '未知提交结果 → 精确只读查询'
-                  : 'Unknown submission → exact read-only query'}
-              </div>
-              <div className="app-muted mt-1 break-words text-xs leading-5">
-                {locale === 'zh'
-                  ? '只按已持久化的 client order id 查询一次。不会创建或重提订单、撤单、写账本或改变任何资本/执行权限；仅在获得确定证据后收敛既有 OMS 订单状态。'
-                  : 'Query exactly once by the persisted client order id. This cannot create or resubmit an order, cancel, post the ledger, or change capital/execution authority; definitive evidence may only resolve the existing OMS order status.'}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs"
-              onClick={close}
-            >
-              {locale === 'zh' ? '关闭' : 'Close'}
-            </button>
-          </div>
+          <RecoveryPanelHeader close={close} locale={locale} />
 
           <button
             type="button"
@@ -201,87 +314,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
           ) : null}
 
           {preview.data ? (
-            <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-[var(--app-text)]">
-                  {locale === 'zh' ? '绑定证据' : 'Bound evidence'}
-                </div>
-                <span className="app-chip">
-                  {formatPublicStatus(preview.data.review_status, locale)}
-                </span>
-              </div>
-              <div className="mt-3 grid min-w-0 gap-2 text-xs sm:grid-cols-2 xl:grid-cols-3">
-                <div>
-                  {locale === 'zh' ? '来源状态' : 'Source status'}:{' '}
-                  {formatPublicStatus(preview.data.source_status, locale)}
-                </div>
-                <div className="min-w-0 truncate" title={preview.data.order_id}>
-                  {locale === 'zh' ? '订单' : 'Order'}:{' '}
-                  {preview.data.order_id || '—'}
-                </div>
-                <div
-                  className="min-w-0 truncate font-mono"
-                  title={preview.data.client_order_id}
-                >
-                  client order:{' '}
-                  {shortenedIdentity(preview.data.client_order_id)}
-                </div>
-                <div
-                  className="min-w-0 truncate font-mono"
-                  title={preview.data.source_result_fingerprint}
-                >
-                  source:{' '}
-                  {shortenedIdentity(preview.data.source_result_fingerprint)}
-                </div>
-                <div
-                  className="min-w-0 truncate font-mono"
-                  title={preview.data.recovery_fingerprint}
-                >
-                  recovery:{' '}
-                  {shortenedIdentity(preview.data.recovery_fingerprint)}
-                </div>
-                <div>
-                  {locale === 'zh' ? '查询能力' : 'Query capability'}:{' '}
-                  {preview.data.gateway_query_capability
-                    ? locale === 'zh'
-                      ? '已声明'
-                      : 'declared'
-                    : locale === 'zh'
-                      ? '不可用'
-                      : 'unavailable'}
-                </div>
-              </div>
-              <div className="mt-3 flex min-w-0 flex-wrap gap-2">
-                {[
-                  locale === 'zh' ? '只读精确查询' : 'Exact read-only query',
-                  locale === 'zh' ? '禁止重提' : 'No resubmit',
-                  locale === 'zh' ? '禁止撤单' : 'No cancel',
-                  locale === 'zh' ? '不写账本' : 'No ledger write',
-                  locale === 'zh' ? '不改权限' : 'No authority change',
-                ].map((label) => (
-                  <span className="app-chip" key={label}>
-                    {label}
-                  </span>
-                ))}
-              </div>
-              {!preview.data.review_ready || preview.data.blockers.length ? (
-                <div
-                  role="alert"
-                  className="mt-3 break-words text-xs text-[var(--app-danger)]"
-                >
-                  {locale === 'zh' ? '阻断项：' : 'Blockers: '}
-                  {preview.data.blockers
-                    .map((item) => formatPublicCode(item, locale))
-                    .join(' · ') ||
-                    (locale === 'zh'
-                      ? '预览未达到可签名状态'
-                      : 'Preview is not ready for signature')}
-                  {preview.data.recovery_wait_remaining_seconds > 0
-                    ? ` · ${preview.data.recovery_wait_remaining_seconds}s`
-                    : ''}
-                </div>
-              ) : null}
-            </div>
+            <RecoveryPreviewEvidence locale={locale} preview={preview.data} />
           ) : null}
 
           {preview.data?.review_ready &&
@@ -376,8 +409,8 @@ export function ControlledBrokerRecoveryOperatorPanel({
                   </label>
                   <div className="app-muted break-words text-xs leading-5">
                     {locale === 'zh'
-                      ? '使用 scripts/operator_signer.py；expected action 为 query_unknown_controlled_broker_submission，artifact type 为 controlled_broker_submission_recovery。只粘贴 payload，不要把私钥放进浏览器。'
-                      : 'Use scripts/operator_signer.py with expected action query_unknown_controlled_broker_submission and artifact type controlled_broker_submission_recovery. Paste only the payload; never put the private key in the browser.'}
+                      ? '使用 scripts/broker/operator_signer.py；expected action 为 query_unknown_controlled_broker_submission，artifact type 为 controlled_broker_submission_recovery。只粘贴 payload，不要把私钥放进浏览器。'
+                      : 'Use scripts/broker/operator_signer.py with expected action query_unknown_controlled_broker_submission and artifact type controlled_broker_submission_recovery. Paste only the payload; never put the private key in the browser.'}
                   </div>
                   <label className="block min-w-0 text-xs text-[var(--app-text)]">
                     <span className="app-muted block pb-1">

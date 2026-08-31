@@ -69,9 +69,11 @@ const CSS_NUMERIC_TYPOGRAPHY_EXCEPTIONS = new Set([
 ]);
 
 const CERTIFIED_CORE_SURFACES = [
-  'app/components/workbench/workspace.tsx',
-  'app/layout/app-shell.tsx',
-  'features/account-truth/components/account-truth-review-page.tsx',
+  'shared/ui/workbench/workspace.tsx',
+  ...productionSourceFiles(join(SRC_ROOT, 'app', 'layout')).map((path) =>
+    relative(SRC_ROOT, path),
+  ),
+  'features/account-truth/components/account-truth-review-workspace.tsx',
   'features/account/components/overview-cards.tsx',
   'features/backtest/components/backtest-page.tsx',
   'features/decision/components/decision-cockpit-page.tsx',

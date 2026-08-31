@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 
-import { useCopy } from '../../../app/copy';
-import { usePreferences } from '../../../app/preferences';
+import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   formatPrice,
   formatQuantity,
@@ -10,7 +10,7 @@ import {
 import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import { formatPublicOperationalNote } from '../../../shared/public-labels';
 import { formatLedgerOrderSideLabel } from '../../../shared/ledger-format';
-import { usePositionsQuery } from '../../portfolio/api';
+import { usePositionsQuery } from '../portfolio-boundary';
 import {
   useConfirmManualOrderMutation,
   usePendingManualOrdersQuery,

@@ -12,7 +12,7 @@ import csv
 import hashlib
 import os
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
@@ -42,6 +42,10 @@ _KNOWN_COLUMNS = tuple(
 )
 
 RollForwardStatus = Literal["disabled", "unchanged", "rolled_forward", "blocked"]
+LedgerRevisionGuardrailResolver = Callable[
+    [Sequence[dict[str, Any]]],
+    tuple[frozenset[int], str | None],
+]
 
 
 @dataclass(frozen=True)
@@ -71,6 +75,7 @@ def roll_forward_daily_broker_statement_for_state(
     *,
     state: Any,
     run_date: str,
+    ledger_revision_guardrail_resolver: LedgerRevisionGuardrailResolver | None = None,
 ) -> DailySnapshotRollForwardResult:
     """Apply the owner-enabled roll-forward using persisted ledger guardrails."""
 
@@ -100,11 +105,19 @@ def roll_forward_daily_broker_statement_for_state(
             run_date=run_date,
             blocker="daily_snapshot_roll_forward_ledger_scope_unbounded",
         )
+    ignored_revision_entry_ids: frozenset[int] = frozenset()
+    ledger_integrity_blocker: str | None = None
+    if ledger_revision_guardrail_resolver is not None:
+        ignored_revision_entry_ids, ledger_integrity_blocker = (
+            ledger_revision_guardrail_resolver(ledger_entries)
+        )
     return roll_forward_daily_broker_statement(
         path=getattr(config, "path", ""),
         run_date=run_date,
         max_file_bytes=int(getattr(config, "max_file_bytes", 0)),
         ledger_entries=ledger_entries,
+        ignored_revision_entry_ids=ignored_revision_entry_ids,
+        ledger_integrity_blocker=ledger_integrity_blocker,
     )
 
 
@@ -114,6 +127,8 @@ def roll_forward_daily_broker_statement(
     run_date: str,
     max_file_bytes: int,
     ledger_entries: Sequence[dict[str, Any]] = (),
+    ignored_revision_entry_ids: frozenset[int] = frozenset(),
+    ledger_integrity_blocker: str | None = None,
 ) -> DailySnapshotRollForwardResult:
     """Atomically replace prior derived rows with one deterministic daily set."""
 
@@ -164,10 +179,21 @@ def roll_forward_daily_broker_statement(
         return prepared
     output, source_fingerprint, base_events, cash_count, position_count = prepared
 
+    if ledger_integrity_blocker is not None:
+        return _result(
+            status="blocked",
+            run_date=run_date,
+            effective_at=effective_at,
+            source_fact_fingerprint=source_fingerprint,
+            base_event_count=len(base_events),
+            blocker=ledger_integrity_blocker,
+        )
+
     ledger_blocker = _ledger_guardrail_blocker(
         ledger_entries=ledger_entries,
         latest_source_event_at=max(_event_timestamp(event) for event in base_events),
         source_modified_at=datetime.fromtimestamp(before.st_mtime, tz=UTC),
+        ignored_revision_entry_ids=ignored_revision_entry_ids,
     )
     if ledger_blocker is not None:
         return _result(
@@ -472,12 +498,17 @@ def _ledger_guardrail_blocker(
     ledger_entries: Sequence[dict[str, Any]],
     latest_source_event_at: datetime,
     source_modified_at: datetime,
+    ignored_revision_entry_ids: frozenset[int] = frozenset(),
 ) -> str | None:
     latest_event_at: datetime | None = None
     latest_created_at: datetime | None = None
     for row in ledger_entries:
-        if not isinstance(row, dict):
+        try:
+            entry_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
             return "daily_snapshot_roll_forward_ledger_record_invalid"
+        if entry_id in ignored_revision_entry_ids:
+            continue
         try:
             event_at = _ledger_timestamp(row.get("timestamp"))
             created_at = _ledger_timestamp(row.get("created_at"))

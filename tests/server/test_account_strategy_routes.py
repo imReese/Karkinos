@@ -7,6 +7,7 @@ from fastapi.routing import APIRoute
 
 from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
+from server.contracts.portfolio_cash_flows import CashFlowWrite
 from server.db import AppDatabase
 
 
@@ -793,7 +794,7 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
         commission=5,
         gross_amount=457,
         net_cash_impact=-462,
-        fee_breakdown_json='{"commission":"5","stamp_tax":"0"}',
+        fee_breakdown_json=('{"commission":"5","stamp_tax":"0","total_fee":"5"}'),
         asset_class="fund",
         note="posted strategy fill fixture",
         source="controlled_submission_ledger_posting",
@@ -929,7 +930,7 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
         side="buy",
         fill_price=4.57,
         fill_quantity=100,
-        commission=5.4,
+        commission=5,
         slippage=1.5,
         asset_class="fund",
         execution_mode="manual",
@@ -969,10 +970,13 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
         direction="buy",
         quantity=100,
         price=4.57,
-        commission=5.4,
+        commission=5,
         gross_amount=457,
         net_cash_impact=-464.4,
-        fee_breakdown_json=('{"commission":"5","transfer_fee":"0.4","stamp_tax":"2"}'),
+        fee_breakdown_json=(
+            '{"commission":"5","transfer_fee":"0.4",'
+            '"stamp_tax":"2","total_fee":"7.4"}'
+        ),
         asset_class="fund",
         note="posted strategy fill fixture",
         source="controlled_submission_ledger_posting",
@@ -993,17 +997,25 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
         note="manual fixture",
         source="manual",
     )
-    await db.add_cash_flow(
-        timestamp="2026-06-18T08:00:00",
-        amount=1000,
-        flow_type="deposit",
-        note="fixture deposit",
+    db.record_cash_flow_sync(
+        CashFlowWrite(
+            command_id="account-strategy-components-deposit",
+            operator_id="account-strategy-route-test",
+            timestamp="2026-06-18T08:00:00",
+            amount=1000,
+            flow_type="deposit",
+            note="fixture deposit",
+        )
     )
-    await db.add_cash_flow(
-        timestamp="2026-06-18T08:30:00",
-        amount=200,
-        flow_type="withdraw",
-        note="fixture withdraw",
+    db.record_cash_flow_sync(
+        CashFlowWrite(
+            command_id="account-strategy-components-withdrawal",
+            operator_id="account-strategy-route-test",
+            timestamp="2026-06-18T08:30:00",
+            amount=200,
+            flow_type="withdraw",
+            note="fixture withdraw",
+        )
     )
     db.upsert_latest_quote_sync(
         symbol="510300",

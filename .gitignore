@@ -147,6 +147,7 @@ secret.py
 broker_statement.csv
 
 # Local AI tool state
+.pi/
 .claude/
 .codex
 .codex/
@@ -164,6 +165,8 @@ docs/*
 !docs/README.en.md
 !docs/README.zh.md
 !docs/ARCHITECTURE.md
+!docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md
+!docs/CODEBASE.md
 !docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md
 !docs/CONTROLLED_EXECUTION_PLAN.md
 !docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md
@@ -192,7 +195,8 @@ node_modules/
 web/dist/
 *.tsbuildinfo
 
-# Local build / tool caches
+# Local build / release artifacts and tool caches
+candidate/
 .uv-cache/
 .playwright-mcp/
 .run/

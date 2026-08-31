@@ -40,7 +40,7 @@ repos:
         require_serial: true
       - id: documentation-health
         name: documentation health
-        entry: python scripts/check_docs_health.py
+        entry: python scripts/ci/check_docs_health.py
         language: system
         pass_filenames: false
         files: ^(README\.md|docs/.*\.md|AGENTS\.md|CLAUDE\.md)$

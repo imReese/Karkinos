@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_session_envelope as route_module
 from server.app import create_app
 from server.routes.controlled_session_envelope import create_router
@@ -317,22 +318,22 @@ def test_controlled_session_route_service_wires_current_runtime_sources(
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "build_broker_connectors",
         lambda config: [connector],
     )
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "ExecutionGatewayVerificationService",
         FakeGatewayVerificationService,
     )
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "SessionStartAccountTruthService",
         FakeSessionStartAccountTruthService,
     )
     monkeypatch.setattr(
-        route_module,
+        controlled_services,
         "build_latest_account_truth_promotion_evidence",
         fake_account_truth_source,
     )

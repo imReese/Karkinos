@@ -25,6 +25,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.8.0",
     "pip-audit==2.10.1",
     "pre-commit>=4.6.2",
     "isort>=8.0.1",
@@ -83,6 +84,26 @@ target-version = "py312"
 # Start with correctness rules that are clean across the existing repository.
 # Broader style cleanup remains incremental through Black and isort.
 select = ["E9", "F63", "F7", "F82"]
+
+[tool.pyright]
+include = [
+    "account_truth",
+    "analytics",
+    "backtest",
+    "core",
+    "data",
+    "domain",
+    "execution",
+    "notification",
+    "risk",
+    "server",
+    "strategy",
+    "tools",
+]
+exclude = [".venv", "web/node_modules", "**/__pycache__"]
+venvPath = "."
+venv = ".venv"
+executionEnvironments = [{ root = ".", extraPaths = ["."] }]
 
 [tool.mypy]
 python_version = "3.12"

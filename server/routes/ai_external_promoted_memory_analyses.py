@@ -3,35 +3,29 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
-)
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.external_memory_informed_analysis import (
     ExternalMemoryAnalysisRejected,
     HumanExternalMemoryAnalysisRequest,
-    HumanExternalMemoryAnalysisService,
 )
 from server.ai_runtime.external_promoted_memory_analysis import (
     EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REQUEST_VERSION,
-    ExternalPromotedMemoryAnalysisStore,
     HumanExternalPromotedMemoryAnalysisService,
 )
-from server.ai_runtime.provider_connectivity import (
-    ConnectivityConfigurationError,
-    load_provider_connectivity_settings,
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    provider_call_deferred_payload,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_external_reviewed_memory_retrievals import (
-    build_human_external_reviewed_memory_retrieval_service,
+from server.ai_runtime.provider_connectivity import ConnectivityConfigurationError
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_human_external_promoted_memory_analysis_service,
 )
 
 
@@ -49,15 +43,6 @@ class HumanExternalPromotedMemoryAnalysisPayload(BaseModel):
 
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
-
-    # Phase 1.15 records a separate human disposition of the exact Phase 1.14
-    # result. Import locally so read-only analysis routes remain usable without
-    # initializing the review schema or loading provider credentials.
-    from server.routes.ai_external_promoted_memory_analysis_reviews import (
-        create_router as create_external_promoted_memory_analysis_review_router,
-    )
-
-    router.include_router(create_external_promoted_memory_analysis_review_router())
 
     @router.post(
         "/api/ai/external-reviewed-memory-retrievals/{retrieval_id}/"
@@ -78,6 +63,11 @@ def create_router() -> APIRouter:
                     confirmation=payload.confirmation,
                     schema_version=(EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REQUEST_VERSION),
                 ),
+            )
+        except ProviderCallDeferred as exc:
+            return JSONResponse(
+                status_code=202,
+                content=provider_call_deferred_payload(exc.decision),
             )
         except Exception as exc:
             _raise_domain_http_error(exc)
@@ -130,34 +120,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_external_promoted_memory_analysis_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanExternalPromotedMemoryAnalysisService:
-    """Build a lazy external edge over the versioned promoted-memory source."""
-    db_path = _database_path(state.db)
-    retrieval_service = build_human_external_reviewed_memory_retrieval_service(
-        state,
-        initialize=initialize,
-    )
-    store = ExternalPromotedMemoryAnalysisStore(db_path)
-    if initialize:
-        store.init()
-    analysis_service = HumanExternalMemoryAnalysisService(
-        settings_loader=lambda: load_provider_connectivity_settings(state.config),
-        retrieval_service=retrieval_service,
-        ai_store=AiAuditStore(db_path),
-        evidence_repository=CanonicalEvidenceRepository(db_path),
-        analysis_store=store,
-        now=_utc_now,
-    )
-    return HumanExternalPromotedMemoryAnalysisService(
-        analysis_service=analysis_service,
-        retrieval_service=retrieval_service,
-    )
-
-
 def _service(*, initialize: bool) -> HumanExternalPromotedMemoryAnalysisService:
     from server.dependencies import get_app_state
 
@@ -168,17 +130,6 @@ def _service(*, initialize: bool) -> HumanExternalPromotedMemoryAnalysisService:
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ConnectivityConfigurationError("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

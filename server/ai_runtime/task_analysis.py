@@ -7,44 +7,41 @@ has no OMS, ledger, risk, capital, kill-switch, or broker authority.
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Callable
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Any
+
+from server.persistence.task_analysis import ResearchTaskAnalysisPersistenceMixin
 
 from .contracts import (
-    AgentRole,
     ArtifactKind,
-    Claim,
-    Debate,
     EvidenceBoundContextSnapshot,
     JsonObject,
-    MemoryArtifact,
-    ModelRegistration,
-    ProviderRegistration,
-    Report,
     ResearchWorkflow,
-    StageDefinition,
     StoredArtifact,
-    ToolRequest,
-    WorkflowDefinition,
     WorkflowStatus,
-    canonical_json,
     content_fingerprint,
 )
 from .evidence import (
-    CANONICAL_EVIDENCE_KINDS,
     CanonicalEvidenceRepository,
     CanonicalEvidenceToolExecutors,
     EvidenceIdentityMismatch,
 )
 from .orchestrator import DeterministicWorkflowOrchestrator
 from .permissions import default_tool_permission_registry
-from .provider import DeterministicFixtureProvider, ProviderResponse
+from .provider import DeterministicFixtureProvider
 from .registry import AiRuntimeRegistry
 from .store import AiAuditStore, AuditReplayResult, IdempotencyConflict
+from .task_analysis_fixture import (
+    FIXTURE_DEFINITION_ID,
+    FIXTURE_MODEL_ID,
+    FIXTURE_PROVIDER_ID,
+)
+from .task_analysis_fixture import MEMORY_STAGE_INDEX as _MEMORY_STAGE_INDEX
+from .task_analysis_fixture import fixture_definition as _fixture_definition
+from .task_analysis_fixture import fixture_responses as _fixture_responses
+from .task_analysis_fixture import register_fixture_runtime as _register_fixture_runtime
 from .tasks import (
     HumanResearchTaskService,
     ResearchTask,
@@ -56,16 +53,7 @@ from .tasks import (
 FIXTURE_ANALYSIS_CONFIRMATION = (
     "run_deterministic_fixture_analysis_without_external_model"
 )
-FIXTURE_PROVIDER_ID = "karkinos.fixture.offline.v1"
-FIXTURE_MODEL_ID = "karkinos.fixture.research.v1"
-FIXTURE_DEFINITION_ID = "karkinos.fixture.task_analysis.v1"
 FIXTURE_CONTRACT_VERSION = "karkinos.ai.task_fixture_analysis.v1"
-
-_CLAIM_ROLE_ID = "fixture.evidence_analyst.v1"
-_DEBATE_ROLE_ID = "fixture.evidence_critic.v1"
-_REPORT_ROLE_ID = "fixture.research_reporter.v1"
-_MEMORY_ROLE_ID = "fixture.memory_curator.v1"
-_MEMORY_STAGE_INDEX = 3
 
 
 class ResearchTaskAnalysisRejected(ValueError):
@@ -211,149 +199,18 @@ class ResearchTaskAnalysisResult:
         }
 
 
-_ANALYSIS_SCHEMA = """
-CREATE TABLE IF NOT EXISTS ai_research_task_analyses (
-    analysis_id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL UNIQUE,
-    request_json TEXT NOT NULL,
-    request_fingerprint TEXT NOT NULL,
-    requested_by TEXT NOT NULL,
-    workflow_id TEXT NOT NULL UNIQUE,
-    context_snapshot_id TEXT NOT NULL,
-    context_fingerprint TEXT NOT NULL,
-    fixture_contract_version TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(task_id) REFERENCES ai_research_tasks(task_id),
-    FOREIGN KEY(workflow_id) REFERENCES ai_workflows(workflow_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_research_task_analyses_task
-ON ai_research_task_analyses(task_id, created_at DESC);
-"""
-
-
-class ResearchTaskAnalysisStore:
+class ResearchTaskAnalysisStore(ResearchTaskAnalysisPersistenceMixin):
     """Task-to-workflow mappings for explicitly started local fixture runs."""
+
+    _fixture_contract_version = FIXTURE_CONTRACT_VERSION
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-    @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=2000")
-        try:
-            with conn:
-                yield conn
-        finally:
-            conn.close()
-
-    def init(self) -> None:
-        with self._connection() as conn:
-            conn.executescript(_ANALYSIS_SCHEMA)
-
-    def create_or_get(
-        self,
-        request: HumanFixtureAnalysisRequest,
-        *,
-        workflow_id: str,
-        context_snapshot_id: str,
-        context_fingerprint: str,
-        created_at: str,
-    ) -> tuple[ResearchTaskAnalysisRecord, bool]:
-        analysis_identity = {
-            "request_fingerprint": request.fingerprint,
-            "workflow_id": workflow_id,
-            "context_fingerprint": context_fingerprint,
-        }
-        analysis_id = f"ai-task-analysis-{content_fingerprint(analysis_identity)[:24]}"
-        with self._connection() as conn:
-            existing = conn.execute(
-                "SELECT * FROM ai_research_task_analyses WHERE idempotency_key = ?",
-                (request.idempotency_key,),
-            ).fetchone()
-            if existing is not None:
-                if (
-                    str(existing["request_fingerprint"]) != request.fingerprint
-                    or str(existing["workflow_id"]) != workflow_id
-                ):
-                    raise IdempotencyConflict(
-                        "fixture analysis idempotency key was reused with different input"
-                    )
-                return _analysis_from_row(existing), True
-            conn.execute(
-                """
-                INSERT INTO ai_research_task_analyses (
-                    analysis_id, task_id, idempotency_key, request_json,
-                    request_fingerprint, requested_by, workflow_id,
-                    context_snapshot_id, context_fingerprint,
-                    fixture_contract_version, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    analysis_id,
-                    request.task_id,
-                    request.idempotency_key,
-                    canonical_json(request.to_dict()),
-                    request.fingerprint,
-                    request.requested_by,
-                    workflow_id,
-                    context_snapshot_id,
-                    context_fingerprint,
-                    FIXTURE_CONTRACT_VERSION,
-                    created_at,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM ai_research_task_analyses WHERE analysis_id = ?",
-                (analysis_id,),
-            ).fetchone()
-        if row is None:
-            raise RuntimeError("fixture analysis mapping persistence failed")
-        return _analysis_from_row(row), False
-
-    def get(self, analysis_id: str) -> ResearchTaskAnalysisRecord:
-        try:
-            with self._connection() as conn:
-                row = conn.execute(
-                    "SELECT * FROM ai_research_task_analyses WHERE analysis_id = ?",
-                    (analysis_id,),
-                ).fetchone()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            row = None
-        if row is None:
-            raise LookupError(f"fixture analysis not found: {analysis_id}")
+    @staticmethod
+    def _analysis_from_row(row: Any) -> ResearchTaskAnalysisRecord:
         return _analysis_from_row(row)
-
-    def list(
-        self,
-        *,
-        task_id: str | None = None,
-        limit: int = 50,
-    ) -> tuple[ResearchTaskAnalysisRecord, ...]:
-        if limit <= 0 or limit > 200:
-            raise ValueError("analysis list limit must be between 1 and 200")
-        sql = "SELECT * FROM ai_research_task_analyses"
-        params: list[object] = []
-        if task_id is not None:
-            sql += " WHERE task_id = ?"
-            params.append(task_id)
-        sql += " ORDER BY created_at DESC, analysis_id DESC LIMIT ?"
-        params.append(limit)
-        try:
-            with self._connection() as conn:
-                rows = conn.execute(sql, params).fetchall()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            rows = []
-        return tuple(_analysis_from_row(row) for row in rows)
 
 
 class HumanResearchTaskFixtureAnalysisService:
@@ -569,244 +426,6 @@ _TERMINAL_ANALYSIS_STATUSES = {
 }
 
 
-def _fixture_definition() -> WorkflowDefinition:
-    return WorkflowDefinition(
-        definition_id=FIXTURE_DEFINITION_ID,
-        name="Explicit offline fixture analysis for an accepted research task",
-        stages=(
-            StageDefinition(
-                stage_id="claim",
-                role_id=_CLAIM_ROLE_ID,
-                model_id=FIXTURE_MODEL_ID,
-                output_kind=ArtifactKind.CLAIM,
-            ),
-            StageDefinition(
-                stage_id="debate",
-                role_id=_DEBATE_ROLE_ID,
-                model_id=FIXTURE_MODEL_ID,
-                output_kind=ArtifactKind.DEBATE,
-            ),
-            StageDefinition(
-                stage_id="report",
-                role_id=_REPORT_ROLE_ID,
-                model_id=FIXTURE_MODEL_ID,
-                output_kind=ArtifactKind.REPORT,
-            ),
-            StageDefinition(
-                stage_id="memory",
-                role_id=_MEMORY_ROLE_ID,
-                model_id=FIXTURE_MODEL_ID,
-                output_kind=ArtifactKind.MEMORY,
-            ),
-        ),
-    )
-
-
-def _register_fixture_runtime(registry: AiRuntimeRegistry) -> None:
-    registry.register_provider(
-        ProviderRegistration(
-            provider_id=FIXTURE_PROVIDER_ID,
-            display_name="Karkinos deterministic offline fixture",
-            adapter_kind="deterministic_fixture",
-            enabled=True,
-            capabilities=("offline_research_fixture", "no_network"),
-        )
-    )
-    registry.register_model(
-        ModelRegistration(
-            model_id=FIXTURE_MODEL_ID,
-            provider_id=FIXTURE_PROVIDER_ID,
-            model_name="deterministic-research-fixture-v1",
-            enabled=True,
-            purposes=("test_research_workflow",),
-        )
-    )
-    role_specs = (
-        (
-            _CLAIM_ROLE_ID,
-            "Fixture evidence analyst",
-            "Read exact persisted evidence and state only its bounded scope.",
-            tuple(CANONICAL_EVIDENCE_KINDS),
-            (ArtifactKind.CLAIM,),
-        ),
-        (
-            _DEBATE_ROLE_ID,
-            "Fixture evidence critic",
-            "Record deterministic competing interpretations and limitations.",
-            (),
-            (ArtifactKind.DEBATE,),
-        ),
-        (
-            _REPORT_ROLE_ID,
-            "Fixture research reporter",
-            "Summarize fixture artifacts without investment or execution claims.",
-            (),
-            (ArtifactKind.REPORT,),
-        ),
-        (
-            _MEMORY_ROLE_ID,
-            "Fixture memory curator",
-            "Create context-bound memory that remains subject to human review.",
-            (),
-            (ArtifactKind.MEMORY,),
-        ),
-    )
-    for role_id, display_name, purpose, allowed_tools, artifact_kinds in role_specs:
-        registry.register_role(
-            AgentRole(
-                role_id=role_id,
-                display_name=display_name,
-                purpose=purpose,
-                allowed_tools=allowed_tools,
-                allowed_artifact_kinds=artifact_kinds,
-            )
-        )
-
-
-def _fixture_responses(
-    task: ResearchTask,
-    *,
-    memory_source_artifact_ids: tuple[str, ...],
-) -> dict[str, tuple[ProviderResponse, ...]]:
-    evidence_reference_ids = tuple(item.reference_id for item in task.evidence)
-    evidence_inventory = [
-        {
-            "tool_name": item.tool_name,
-            "status": item.status,
-            "authoritative": item.authoritative,
-            "as_of": item.as_of,
-            "evidence_reference_id": item.reference_id,
-        }
-        for item in task.evidence
-    ]
-    tool_requests = tuple(
-        ToolRequest(
-            request_id=f"fixture-read-{index + 1}",
-            tool_name=item.tool_name,
-            arguments={"evidence_reference_id": item.reference_id},
-        )
-        for index, item in enumerate(task.evidence)
-    )
-    claim = Claim(
-        statement=(
-            f"The accepted task binds {len(task.evidence)} complete persisted "
-            "evidence records to one exact valuation and ledger identity."
-        ),
-        confidence="fixture_only_not_an_investment_conclusion",
-        assumptions=(
-            "The immutable evidence rows and context fingerprint remain unchanged.",
-            "This local fixture does not infer facts beyond the cited records.",
-        ),
-        limitations=(
-            "The output is deterministic workflow evidence, not model intelligence.",
-            "A frozen snapshot does not establish future performance or trade intent.",
-        ),
-        evidence_reference_ids=evidence_reference_ids,
-    ).to_draft()
-    debate = Debate(
-        topic=task.research_question,
-        participant_role_ids=(_CLAIM_ROLE_ID, _DEBATE_ROLE_ID),
-        positions=(
-            {
-                "role_id": _CLAIM_ROLE_ID,
-                "position": (
-                    "The exact persisted evidence is suitable for a bounded human "
-                    "research review."
-                ),
-            },
-            {
-                "role_id": _DEBATE_ROLE_ID,
-                "position": (
-                    "The same evidence cannot justify execution, future returns, "
-                    "or facts outside its snapshot and ledger cutoff."
-                ),
-            },
-        ),
-        unresolved_questions=(
-            "What additional evidence would change the human conclusion?",
-            "Has the valuation or ledger identity changed since capture?",
-        ),
-        evidence_reference_ids=evidence_reference_ids,
-    ).to_draft()
-    report = Report(
-        title=f"Fixture review: {task.title}",
-        summary=(
-            "A deterministic local fixture exercised the evidence-bound research "
-            "workflow. No external model ran and no investment action was inferred."
-        ),
-        sections=(
-            {
-                "heading": "Research question",
-                "content": task.research_question,
-            },
-            {
-                "heading": "Evidence inventory",
-                "items": evidence_inventory,
-            },
-            {
-                "heading": "Human next step",
-                "content": (
-                    "Review the cited evidence and limitations; do not treat this "
-                    "fixture report as account truth, risk approval, or trade intent."
-                ),
-            },
-        ),
-        limitations=(
-            "Fixture output is static and deterministic.",
-            "No external provider, live market refresh, or broker connection was used.",
-            "Any evidence drift invalidates this report and its memory artifact.",
-        ),
-        evidence_reference_ids=evidence_reference_ids,
-    ).to_draft()
-    memory = MemoryArtifact(
-        scope=f"research-task/{task.task_id}",
-        content={
-            "task_title": task.title,
-            "research_question": task.research_question,
-            "context_snapshot_id": task.context_snapshot_id,
-            "context_fingerprint": task.context_fingerprint,
-            "lesson": (
-                "Reuse only after a human confirms the exact context still matches."
-            ),
-            "human_review_required": True,
-            "valid_only_for_exact_context": True,
-        },
-        source_artifact_ids=memory_source_artifact_ids,
-        validity_status="human_review_required_and_invalid_on_evidence_drift",
-        evidence_reference_ids=evidence_reference_ids,
-    ).to_draft()
-    return {
-        "claim": (
-            ProviderResponse(
-                tool_requests=tool_requests,
-                message="Read every exact evidence reference before fixture output.",
-            ),
-            ProviderResponse(
-                artifacts=(claim,),
-                message="Deterministic evidence-bound claim fixture.",
-            ),
-        ),
-        "debate": (
-            ProviderResponse(
-                artifacts=(debate,),
-                message="Deterministic bounded debate fixture.",
-            ),
-        ),
-        "report": (
-            ProviderResponse(
-                artifacts=(report,),
-                message="Deterministic non-authoritative report fixture.",
-            ),
-        ),
-        "memory": (
-            ProviderResponse(
-                artifacts=(memory,),
-                message="Context-bound memory draft requiring human review.",
-            ),
-        ),
-    }
-
-
 def _artifact_payload(artifact: StoredArtifact) -> JsonObject:
     return {
         "artifact_id": artifact.artifact_id,
@@ -821,7 +440,7 @@ def _artifact_payload(artifact: StoredArtifact) -> JsonObject:
     }
 
 
-def _analysis_from_row(row: sqlite3.Row) -> ResearchTaskAnalysisRecord:
+def _analysis_from_row(row: Any) -> ResearchTaskAnalysisRecord:
     return ResearchTaskAnalysisRecord(
         analysis_id=str(row["analysis_id"]),
         task_id=str(row["task_id"]),

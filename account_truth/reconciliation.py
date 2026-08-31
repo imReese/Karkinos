@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Literal
 
@@ -29,6 +29,7 @@ ReconciliationStatus = Literal["pass", "warning", "mismatch", "blocked"]
 class KarkinosLedgerFact:
     event_type: str
     symbol: str = ""
+    asset_class: str = ""
     quantity: Decimal = Decimal("0")
     price: Decimal = Decimal("0")
     gross_amount: Decimal = Decimal("0")
@@ -56,6 +57,7 @@ class ReconciliationItem:
     difference: str
     suggested_review_action: str
     symbol: str = ""
+    asset_class: str = ""
     detail_code: str = ""
     detail: str = ""
     detail_context: dict[str, str] = field(default_factory=dict)
@@ -72,6 +74,7 @@ class ReconciliationReport:
     unresolved_count: int
     suggested_review_actions: list[str]
     items: list[ReconciliationItem]
+    asset_reconciliation: dict[str, dict[str, object]] = field(default_factory=dict)
 
 
 def build_reconciliation_report(
@@ -92,6 +95,7 @@ def build_reconciliation_report(
             karkinos_value="0",
             difference="0",
             suggested_review_action="import_broker_evidence",
+            asset_class="account",
             detail_code="account_truth.no_broker_evidence",
             detail="No broker evidence events are available for reconciliation.",
         )
@@ -105,6 +109,12 @@ def build_reconciliation_report(
             unresolved_count=1,
             suggested_review_actions=[item.suggested_review_action],
             items=[item],
+            asset_reconciliation={
+                "stock": _lane_reconciliation([]),
+                "fund": _lane_reconciliation([]),
+                "cash": _lane_reconciliation([]),
+                "account": _lane_reconciliation([item]),
+            },
         )
 
     broker_cash = _latest_decimal(
@@ -158,12 +168,13 @@ def build_reconciliation_report(
         )
         if uncovered_asset_classes:
             covered_asset_classes = _position_snapshot_asset_classes(broker_events)
-            items.append(
+            items.extend(
                 _warning_item(
                     category="position",
                     broker_value=None,
                     karkinos_value=None,
                     suggested_review_action="provide_position_snapshot",
+                    asset_class=asset_class,
                     detail_code="account_truth.position_snapshot_scope_incomplete",
                     detail=(
                         "Broker position snapshots cover only selected asset "
@@ -173,11 +184,10 @@ def build_reconciliation_report(
                         "covered_asset_classes": ",".join(
                             sorted(covered_asset_classes)
                         ),
-                        "uncovered_asset_classes": ",".join(
-                            sorted(uncovered_asset_classes)
-                        ),
+                        "uncovered_asset_classes": asset_class,
                     },
                 )
+                for asset_class in sorted(uncovered_asset_classes)
             )
     else:
         items.append(
@@ -219,6 +229,12 @@ def build_reconciliation_report(
     if has_position_snapshot:
         items.extend(_cost_basis_items(broker_events, positions))
 
+    items = _classify_reconciliation_items(
+        items,
+        broker_events=broker_events,
+        ledger_facts=ledger_facts,
+        positions=positions,
+    )
     unresolved_items = [item for item in items if item.status != "pass"]
     mismatches = [item for item in unresolved_items if item.status == "mismatch"]
     warnings = [item for item in unresolved_items if item.status == "warning"]
@@ -232,6 +248,7 @@ def build_reconciliation_report(
         unresolved_count=len(unresolved_items),
         suggested_review_actions=_unique_actions(unresolved_items),
         items=items,
+        asset_reconciliation=_asset_reconciliation(items),
     )
 
 
@@ -493,6 +510,78 @@ def _position_snapshot_asset_classes(
     }
 
 
+def _classify_reconciliation_items(
+    items: list[ReconciliationItem],
+    *,
+    broker_events: list[StoredBrokerEvidenceEvent],
+    ledger_facts: list[KarkinosLedgerFact],
+    positions: list[KarkinosPositionFact],
+) -> list[ReconciliationItem]:
+    asset_classes_by_symbol: dict[str, set[str]] = {}
+
+    def remember(symbol: str, asset_class: str) -> None:
+        normalized_symbol = str(symbol or "").strip()
+        normalized_asset_class = _normalized_asset_class(asset_class)
+        if normalized_symbol and normalized_asset_class:
+            asset_classes_by_symbol.setdefault(normalized_symbol, set()).add(
+                normalized_asset_class
+            )
+
+    for event in broker_events:
+        remember(event.symbol, event.asset_class)
+    for fact in ledger_facts:
+        remember(fact.symbol, fact.asset_class)
+    for position in positions:
+        remember(position.symbol, position.asset_class)
+
+    classified: list[ReconciliationItem] = []
+    for item in items:
+        if _normalized_asset_class(item.asset_class):
+            asset_class = _normalized_asset_class(item.asset_class)
+        elif item.category == "cash":
+            asset_class = "cash"
+        elif not item.symbol:
+            asset_class = "account"
+        else:
+            candidates = asset_classes_by_symbol.get(item.symbol, set())
+            asset_class = next(iter(candidates)) if len(candidates) == 1 else "unknown"
+        classified.append(replace(item, asset_class=asset_class))
+    return classified
+
+
+def _asset_reconciliation(
+    items: list[ReconciliationItem],
+) -> dict[str, dict[str, object]]:
+    lanes: dict[str, dict[str, object]] = {}
+    for lane in ("stock", "fund", "cash"):
+        lane_items = [item for item in items if item.asset_class == lane]
+        lanes[lane] = _lane_reconciliation(lane_items)
+    lanes["account"] = _lane_reconciliation(items)
+    return lanes
+
+
+def _lane_reconciliation(
+    items: list[ReconciliationItem],
+) -> dict[str, object]:
+    unresolved = [item for item in items if item.status != "pass"]
+    blocked = [item for item in unresolved if item.status == "blocked"]
+    mismatches = [item for item in unresolved if item.status == "mismatch"]
+    warnings = [item for item in unresolved if item.status == "warning"]
+    return {
+        "status": (
+            "blocked"
+            if blocked
+            else (
+                _report_status(mismatches=mismatches, warnings=warnings)
+                if items
+                else "not_evaluated"
+            )
+        ),
+        "item_count": len(items),
+        "unresolved_count": len(unresolved),
+    }
+
+
 def _normalized_asset_class(value: str) -> str:
     return str(value or "").strip().lower()
 
@@ -593,6 +682,7 @@ def _item(
     difference: Decimal,
     suggested_review_action: str,
     symbol: str = "",
+    asset_class: str = "",
     detail_code: str = "",
     detail: str = "",
     detail_context: dict[str, str] | None = None,
@@ -609,6 +699,7 @@ def _item(
         difference=_decimal_to_text(normalized_difference),
         suggested_review_action="" if status == "pass" else suggested_review_action,
         symbol=symbol,
+        asset_class=asset_class,
         detail_code=detail_code,
         detail=detail,
         detail_context=detail_context or {},
@@ -622,6 +713,7 @@ def _warning_item(
     karkinos_value: Decimal | None,
     suggested_review_action: str,
     symbol: str = "",
+    asset_class: str = "",
     detail_code: str = "",
     detail: str = "",
     detail_context: dict[str, str] | None = None,
@@ -634,6 +726,7 @@ def _warning_item(
         difference="0",
         suggested_review_action=suggested_review_action,
         symbol=symbol,
+        asset_class=asset_class,
         detail_code=detail_code,
         detail=detail,
         detail_context=detail_context or {},

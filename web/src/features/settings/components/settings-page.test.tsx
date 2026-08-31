@@ -3,8 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
-import type { MarketDataHealthResponse } from '../../market/api';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
+import type { MarketDataHealthResponse } from '../settings-feature-boundary';
 import type {
   AssetMetadataStatusResponse,
   DataSourceStatusResponse,
@@ -14,7 +14,6 @@ import { SettingsPage } from './settings-page';
 const defaultSettings = {
   host: '0.0.0.0',
   port: 8000,
-  live_auto_start: true,
   initial_cash: 100000,
   start_date: '2025-01-02',
   end_date: '2026-05-16',
@@ -35,6 +34,8 @@ const defaultSettings = {
 
 const defaultLiveStatus = {
   running: true,
+  initialized: true,
+  activation_guarded: false,
   market_open: true,
 };
 
@@ -175,12 +176,6 @@ function installFetchMock({
     }
     if (url.includes('/api/settings/asset-metadata')) {
       return jsonResponse(assetMetadataStatus);
-    }
-    if (url.includes('/api/settings/live/start')) {
-      return jsonResponse({ running: true, market_open: true });
-    }
-    if (url.includes('/api/settings/live/stop')) {
-      return jsonResponse({ running: false, market_open: false });
     }
     if (url.includes('/api/settings/notification/test')) {
       return jsonResponse({ status: 'ok', message: 'sent' });
@@ -405,8 +400,53 @@ test('does not claim live interface availability when live status fails', async 
   expect(
     await screen.findByText('Failed to load settings state.'),
   ).toBeTruthy();
-  expect(await screen.findByText('Interface not running')).toBeTruthy();
+  expect((await screen.findAllByText('Status unknown')).length).toBeGreaterThan(
+    0,
+  );
   expect(screen.queryByText('Interface status available')).toBeNull();
+});
+
+test('does not infer broker readiness from a running scheduler', async () => {
+  renderSettingsPage({
+    liveStatus: {
+      running: true,
+      initialized: true,
+      activation_guarded: false,
+      market_open: true,
+    },
+  });
+
+  expect(await screen.findByText('Scheduler running')).toBeTruthy();
+  expect((await screen.findAllByText('Status unknown')).length).toBeGreaterThan(
+    0,
+  );
+  expect(screen.queryByText('Interface status available')).toBeNull();
+});
+
+test('renders the scheduler as a read-only always-on invariant', async () => {
+  renderSettingsPage();
+
+  expect(await screen.findByText('Scheduler running')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Start scheduler' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Stop scheduler' })).toBeNull();
+});
+
+test('treats a stopped scheduler as unavailable', async () => {
+  renderSettingsPage({
+    liveStatus: {
+      running: false,
+      initialized: false,
+      activation_guarded: false,
+      market_open: false,
+    },
+  });
+
+  const schedulerRow = await screen.findByLabelText(
+    'Boundary item: Scheduler Scheduler unavailable',
+  );
+  expect(
+    schedulerRow.querySelector('[aria-hidden="true"]')?.className,
+  ).toContain('var(--app-danger-border)');
 });
 
 test('updates local theme and language preferences', async () => {

@@ -28,4 +28,3 @@ def value_position(
         market_value=market_value,
         unrealized_pnl=unrealized_pnl,
     )
-

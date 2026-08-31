@@ -52,7 +52,7 @@ checked through a privacy-minimized local preview:
 - The command-line equivalent is:
 
 ```bash
-uv run python scripts/preview_citic_history_xls.py \
+uv run python scripts/broker/preview_citic_history_xls.py \
   --path /absolute/private/directory
 ```
 

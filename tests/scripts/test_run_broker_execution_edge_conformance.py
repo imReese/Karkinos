@@ -6,7 +6,7 @@ from account_truth.broker_execution_edge_conformance import (
     BROKER_EXECUTION_EDGE_CONFORMANCE_ACKNOWLEDGEMENT,
     BrokerExecutionEdgeConformanceRepository,
 )
-from scripts.run_broker_execution_edge_conformance import main
+from scripts.broker.run_broker_execution_edge_conformance import main
 from tests.account_truth.test_broker_execution_edge_conformance import (
     execution_edge_manifest,
 )

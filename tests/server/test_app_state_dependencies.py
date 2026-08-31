@@ -39,7 +39,7 @@ def test_request_context_keeps_application_states_isolated() -> None:
 def test_create_app_owns_a_fresh_state_instance() -> None:
     from server.app import create_app
 
-    runtime_config = ServerConfig(live_auto_start=False)
+    runtime_config = ServerConfig()
     first_app = create_app(runtime_config=runtime_config)
     second_app = create_app(runtime_config=runtime_config)
 
@@ -65,8 +65,13 @@ def test_scheduler_callback_binds_only_its_owning_application_state(
             return {"evaluated": True}
 
     monkeypatch.setattr(
-        "server.routes.controlled_session_automatic_pause._orchestrator_service",
-        lambda: Orchestrator(),
+        "server.composition.controlled_execution_services."
+        "build_controlled_session_automatic_pause_orchestrator_service",
+        lambda bound_state: (
+            Orchestrator()
+            if bound_state is state
+            else pytest.fail("scheduler bound an unrelated application state")
+        ),
     )
 
     assert _evaluate_controlled_session_pauses(state) == {"evaluated": True}

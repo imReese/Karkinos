@@ -1,10 +1,10 @@
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   EvidenceState,
   MetricStrip,
   StatusBadge,
   type StatusTone,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatPercent } from '../../../shared/format';
 import {

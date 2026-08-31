@@ -143,27 +143,7 @@ export function ControlledBrokerRejectionEvidencePanel({
       data-testid="controlled-broker-rejection-evidence-panel"
       className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_6%,transparent)] p-3"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-[var(--app-text)]">
-            {locale === 'zh'
-              ? '受控提交拒绝证据'
-              : 'Controlled submission rejection evidence'}
-          </div>
-          <p className="app-muted mt-1 text-xs leading-5">
-            {locale === 'zh'
-              ? '只读取已净化并持久化的拒绝结果；不会联系券商，也不会重试原订单。'
-              : 'Reads only sanitized persisted rejection facts; it never contacts a broker or retries the order.'}
-          </p>
-        </div>
-        <button
-          className="app-button-secondary"
-          type="button"
-          onClick={loadPreview}
-        >
-          {locale === 'zh' ? '复核拒绝证据' : 'Review rejection evidence'}
-        </button>
-      </div>
+      <RejectionPanelHeader locale={locale} onReview={loadPreview} />
 
       {open ? (
         <div className="mt-3 border-t border-[var(--app-border)] pt-3">
@@ -416,6 +396,34 @@ export function ControlledBrokerRejectionEvidencePanel({
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function RejectionPanelHeader({
+  locale,
+  onReview,
+}: {
+  locale: Locale;
+  onReview: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-[var(--app-text)]">
+          {locale === 'zh'
+            ? '受控提交拒绝证据'
+            : 'Controlled submission rejection evidence'}
+        </div>
+        <p className="app-muted mt-1 text-xs leading-5">
+          {locale === 'zh'
+            ? '只读取已净化并持久化的拒绝结果；不会联系券商，也不会重试原订单。'
+            : 'Reads only sanitized persisted rejection facts; it never contacts a broker or retries the order.'}
+        </p>
+      </div>
+      <button className="app-button-secondary" type="button" onClick={onReview}>
+        {locale === 'zh' ? '复核拒绝证据' : 'Review rejection evidence'}
+      </button>
     </div>
   );
 }

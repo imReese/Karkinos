@@ -962,6 +962,8 @@ def test_account_truth_reconciliation_reports_list_and_detail(
     assert reports[0]["row_count"] == 3
     assert reports[0]["validation_status"] == "pass"
     assert reports[0]["source_name"] == "synthetic-duplicate.csv"
+    assert reports[0]["asset_reconciliation"]["stock"]["status"] == "mismatch"
+    assert reports[0]["asset_reconciliation"]["fund"]["status"] == "not_evaluated"
 
     assert detail["schema_version"] == "karkinos.account_truth.reconciliation.v1"
     assert detail["import_run_id"] == duplicate_run.import_run_id
@@ -973,6 +975,7 @@ def test_account_truth_reconciliation_reports_list_and_detail(
         if item["category"] == "position" and item["symbol"] == "SYN001"
     )
     assert position_item["item_key"] == "position:SYN001"
+    assert position_item["asset_class"] == "stock"
     assert position_item["display_name"] == "合成样例股票A"
     assert position_item["broker_value"] == "100"
     assert position_item["karkinos_value"] == "0"

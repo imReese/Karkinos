@@ -31,6 +31,7 @@ from server.services.capital_scaling_review_audit import (
     CAPITAL_SCALING_REVIEW_ACKNOWLEDGEMENT,
     CapitalScalingReviewAuditService,
 )
+from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
 SOAK_ID = "a" * 64
@@ -107,7 +108,8 @@ def _db_with_resolvable_sources(tmp_path) -> AppDatabase:
         payload={"schema_version": "karkinos.execution_reconciliation.v1"},
         items=[],
     )
-    db.upsert_paper_shadow_run_sync(
+    insert_paper_shadow_evidence(
+        db,
         run_id=PAPER_SHADOW_ID,
         plan_date="2026-07-02",
         input_fingerprint="c" * 64,

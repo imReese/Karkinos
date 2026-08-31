@@ -11,13 +11,14 @@ from server.ai_runtime.capture import (
     CaptureEvidenceType,
     CaptureSelectionError,
     HumanContextCaptureRequest,
-    HumanResearchContextCaptureService,
 )
 from server.ai_runtime.evidence import EvidenceIdentityMismatch
-from server.ai_runtime.karkinos_source import CaptureProjectionReaders
 from server.ai_runtime.store import IdempotencyConflict
-from server.services.ai_context_capture_factory import (
-    build_human_context_capture_service as build_capture_service,
+from server.composition.ai_application_services import (
+    build_capture_projection_readers as _build_capture_projection_readers,
+)
+from server.composition.ai_application_services import (
+    build_human_context_capture_service,
 )
 
 
@@ -77,30 +78,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_context_capture_service(
-    state,
-) -> HumanResearchContextCaptureService:
-    """Build audit-only capture services on the application's SQLite database."""
-    return build_capture_service(
-        state,
-        projection_readers=build_capture_projection_readers(),
-    )
-
-
-def build_capture_projection_readers() -> CaptureProjectionReaders:
-    """Bind canonical application projections at the HTTP composition edge."""
-    from server.routes.account_strategy import _build_contribution_report
-    from server.routes.operations import build_today_operations_payload
-    from server.routes.portfolio import (
-        _current_valuation_snapshot,
-        build_account_state_response,
-        build_portfolio_snapshot,
-    )
-
-    return CaptureProjectionReaders(
-        portfolio_snapshot=build_portfolio_snapshot,
-        account_state=build_account_state_response,
-        operations_today=build_today_operations_payload,
-        current_valuation_snapshot=_current_valuation_snapshot,
-        strategy_contribution_report=_build_contribution_report,
-    )
+def build_capture_projection_readers():
+    """Compatibility export for callers of the former route-owned factory."""
+    return _build_capture_projection_readers()

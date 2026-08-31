@@ -8,7 +8,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { EquityCurveCard, EquityCurveSkeleton } from './equity-curve-card';
 import type { EquitySeriesPoint } from '../api';
 
@@ -916,7 +916,11 @@ test('renders a terminal empty state for periods without chart data', async () =
 });
 
 test('renders a compact evidence-first chart loading state without a fake curve', () => {
-  render(<EquityCurveSkeleton />);
+  render(
+    <PreferencesProvider>
+      <EquityCurveSkeleton />
+    </PreferencesProvider>,
+  );
 
   const skeleton = screen.getByTestId('equity-curve-skeleton');
   const frame = screen.getByTestId('equity-curve-loading-frame');

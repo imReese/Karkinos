@@ -13,6 +13,11 @@ export function appFeatureChunk(id: string): ChunkName {
   ) {
     return undefined;
   }
+  if (
+    /\/src\/features\/[^/]+\/copy(?:[.-][^/]*)?\.(?:ts|tsx)$/.test(normalizedId)
+  ) {
+    return undefined;
+  }
 
   if (
     normalizedId.includes('/src/features/account/') ||

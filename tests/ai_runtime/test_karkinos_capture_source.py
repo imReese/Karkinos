@@ -12,7 +12,10 @@ from server.ai_runtime.capture import (
     HumanContextCaptureRequest,
 )
 from server.ai_runtime.evidence import EvidenceIdentityMismatch
-from server.ai_runtime.karkinos_source import PersistedKarkinosCaptureSource
+from server.ai_runtime.karkinos_source import (
+    CaptureProjectionReaders,
+    PersistedKarkinosCaptureSource,
+)
 from server.routes.ai_research import build_capture_projection_readers
 
 NOW = "2026-07-13T12:30:00+00:00"
@@ -125,6 +128,38 @@ def _source(state) -> PersistedKarkinosCaptureSource:
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
+async def test_research_only_capture_never_reads_portfolio_or_account_identity() -> (
+    None
+):
+    source = PersistedKarkinosCaptureSource(
+        SimpleNamespace(db=FixtureDatabase()),
+        None,
+    )
+    request = HumanContextCaptureRequest(
+        idempotency_key="source-research-only-001",
+        requested_by="human:reese",
+        research_question="Run normalized-notional discovery.",
+        account_alias="strategy-only",
+        evidence_types=(CaptureEvidenceType.RESEARCH_EVIDENCE,),
+        confirmation=CAPTURE_CONFIRMATION,
+        backtest_result_id=17,
+    )
+
+    batch = await source.load(request)
+
+    assert batch.valuation_snapshot_id.startswith("research-only:")
+    assert batch.ledger_cutoff_id == 0
+    assert batch.ledger_fingerprint.startswith("research-only:")
+    assert [item.tool_name for item in batch.projections] == ["research_evidence.read"]
+    payload = batch.projections[0].payload
+    assert payload["absolute_notional_values_redacted"] is True
+    assert "initial_cash" not in payload["performance_summary"]
+    assert "final_equity" not in payload["performance_summary"]
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
 async def test_production_source_reuses_canonical_builders_and_exact_persisted_rows(
     monkeypatch,
 ):
@@ -202,13 +237,15 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         )
 
     monkeypatch.setattr(
-        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+        "server.projections.portfolio_application.build_portfolio_snapshot",
+        build_portfolio,
     )
     monkeypatch.setattr(
-        "server.routes.portfolio.build_account_state_response", build_account_state
+        "server.projections.portfolio_application.build_account_state_response",
+        build_account_state,
     )
     monkeypatch.setattr(
-        "server.routes.portfolio._current_valuation_snapshot",
+        "server.projections.portfolio_application.current_valuation_snapshot",
         lambda state: {
             "snapshot_id": VALUATION_ID,
             "ledger_cutoff_id": LEDGER_CUTOFF_ID,
@@ -216,10 +253,11 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         },
     )
     monkeypatch.setattr(
-        "server.routes.operations.build_today_operations_payload", build_operations
+        "server.services.operations_projection.build_today_operations_payload",
+        build_operations,
     )
     monkeypatch.setattr(
-        "server.routes.account_strategy._build_contribution_report",
+        "server.services.account_strategy_projections.build_contribution_report",
         build_contribution,
     )
     monkeypatch.setattr(
@@ -288,10 +326,11 @@ async def test_production_source_blocks_valuation_or_ledger_drift(monkeypatch):
         return _portfolio()
 
     monkeypatch.setattr(
-        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+        "server.projections.portfolio_application.build_portfolio_snapshot",
+        build_portfolio,
     )
     monkeypatch.setattr(
-        "server.routes.portfolio._current_valuation_snapshot",
+        "server.projections.portfolio_application.current_valuation_snapshot",
         lambda state: {
             "snapshot_id": "valuation-drifted",
             "ledger_cutoff_id": LEDGER_CUTOFF_ID + 1,
@@ -318,7 +357,8 @@ async def test_production_source_requires_replayable_persisted_valuation(monkeyp
         return _portfolio()
 
     monkeypatch.setattr(
-        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+        "server.projections.portfolio_application.build_portfolio_snapshot",
+        build_portfolio,
     )
     request = HumanContextCaptureRequest(
         idempotency_key="source-unpublished-001",
@@ -342,7 +382,8 @@ async def test_strategy_contribution_capture_rejects_assignment_drift(monkeypatc
         return _portfolio()
 
     monkeypatch.setattr(
-        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+        "server.projections.portfolio_application.build_portfolio_snapshot",
+        build_portfolio,
     )
     request = HumanContextCaptureRequest(
         idempotency_key="source-strategy-drift-001",
@@ -372,10 +413,11 @@ async def test_strategy_contribution_capture_rejects_financial_identity_drift(
         return _portfolio()
 
     monkeypatch.setattr(
-        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+        "server.projections.portfolio_application.build_portfolio_snapshot",
+        build_portfolio,
     )
     monkeypatch.setattr(
-        "server.routes.account_strategy._build_contribution_report",
+        "server.services.account_strategy_projections.build_contribution_report",
         lambda db, assignment: FixtureModel(
             {
                 "strategy_id": assignment.strategy_id,
@@ -417,10 +459,11 @@ async def test_incomplete_strategy_contribution_remains_blocked_evidence(monkeyp
         return _portfolio()
 
     monkeypatch.setattr(
-        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+        "server.projections.portfolio_application.build_portfolio_snapshot",
+        build_portfolio,
     )
     monkeypatch.setattr(
-        "server.routes.portfolio._current_valuation_snapshot",
+        "server.projections.portfolio_application.current_valuation_snapshot",
         lambda state: {
             "snapshot_id": VALUATION_ID,
             "ledger_cutoff_id": LEDGER_CUTOFF_ID,
@@ -428,7 +471,7 @@ async def test_incomplete_strategy_contribution_remains_blocked_evidence(monkeyp
         },
     )
     monkeypatch.setattr(
-        "server.routes.account_strategy._build_contribution_report",
+        "server.services.account_strategy_projections.build_contribution_report",
         lambda db, assignment: FixtureModel(
             {
                 "strategy_id": assignment.strategy_id,

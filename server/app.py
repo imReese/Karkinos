@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,12 +15,18 @@ from starlette.staticfiles import StaticFiles
 
 from server import __version__
 from server.bridge import EventBusBridge
+from server.config import ServerConfig
 from server.db import AppDatabase
 from server.dependencies import (
     AppState,
     AppStateContextMiddleware,
     bind_app_state,
 )
+from server.release_activation import (
+    ReleaseActivationGuardMiddleware,
+    is_release_activation_guarded,
+)
+from server.runtime_paths import resolve_static_dir
 from server.scheduler import TradingScheduler
 from server.services.trading_controls import TradingControlState
 from server.ws.hub import ConnectionHub
@@ -79,31 +84,19 @@ async def _forward_events(bridge: EventBusBridge, hub: ConnectionHub) -> None:
             await asyncio.sleep(1)
 
 
-def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
-    """Confirm published fund subscriptions without blocking API startup."""
-    try:
-        from server.routes.portfolio import confirm_pending_fund_orders
-
-        confirmed_count = confirm_pending_fund_orders(state)
-        if confirmed_count:
-            logger.info("Confirmed %d pending fund orders", confirmed_count)
-    except Exception:
-        logger.warning(
-            "Failed to confirm pending fund orders during startup", exc_info=True
-        )
-
-
 def _evaluate_controlled_session_pauses(state: AppState) -> dict[str, Any]:
     """Build fresh persisted gates and pause enabled sessions if required."""
-    from server.routes.controlled_session_automatic_pause import (
-        _orchestrator_service,
+    from server.composition.controlled_execution_services import (
+        build_controlled_session_automatic_pause_orchestrator_service,
     )
 
     # The scheduler invokes this outside an HTTP request. Bind only the state
     # explicitly owned by its application while legacy route factories finish
     # migrating to constructor injection.
     with bind_app_state(state):
-        return _orchestrator_service().evaluate_all()
+        return build_controlled_session_automatic_pause_orchestrator_service(
+            state
+        ).evaluate_all()
 
 
 def _is_spa_fallback_path(path: str) -> bool:
@@ -121,7 +114,9 @@ class SPAStaticFiles(StaticFiles):
         try:
             response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
-            if exc.status_code != 404 or not _is_spa_fallback_path(path):
+            if exc.status_code != 404:
+                raise
+            if not _is_spa_fallback_path(path):
                 raise
             return await super().get_response("index.html", scope)
 
@@ -148,11 +143,10 @@ async def lifespan(app: FastAPI):
     from core.event_bus import EventBus
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
+    from server.composition.ai_application_services import (
+        build_strategy_research_write_service,
+    )
     from server.config import BrokerStatementCollectorConfig, ServerConfig
-    from server.routes.ai_strategy_research import _build_write_service
-    from server.routes.decision import run_batch_pre_trade_risk_for_state
-    from server.routes.market import _refresh_one_quote
-    from server.routes.operations import _current_decision_and_trading_plan
     from server.services.ai_shadow_research_automation import (
         run_ai_shadow_research_automation_loop,
     )
@@ -160,19 +154,30 @@ async def lifespan(app: FastAPI):
         DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
         run_daily_decision_evidence_automation_loop,
     )
+    from server.services.decision_application import (
+        run_batch_pre_trade_risk_for_state,
+    )
     from server.services.market_calendar_automation import (
         run_market_calendar_automation_loop,
     )
+    from server.services.market_refresh import refresh_one_quote
     from server.services.market_universe_automation import (
         run_market_universe_automation_loop,
+    )
+    from server.services.operations_projection import (
+        current_decision_and_trading_plan,
     )
 
     # create_app() loads the runtime config once and lifespan reuses the same
     # object so config.json remains a startup-only input.
     config_overrides = getattr(app.state, "config_overrides", {})
-    config = getattr(app.state, "runtime_config", None)
+    config: ServerConfig | None = cast(
+        ServerConfig | None, getattr(app.state, "runtime_config", None)
+    )
     if config is None:
-        config = load_runtime_config(ServerConfig, **config_overrides)
+        config = cast(
+            ServerConfig, load_runtime_config(ServerConfig, **config_overrides)
+        )
         app.state.runtime_config = config
     state.config = config
 
@@ -250,14 +255,19 @@ async def lifespan(app: FastAPI):
         "broker_statement_collector",
         BrokerStatementCollectorConfig(),
     )
+    try:
+        collector_poll_interval = float(collector_config.poll_interval_seconds)
+        collector_stability_delay = float(collector_config.stability_delay_seconds)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("broker_statement_collector_timing_invalid") from exc
     broker_statement_collector = LocalBrokerStatementCollector(
         repository=(
             BrokerEvidenceRepository(db.path) if collector_config.enabled else None
         ),
         path=collector_config.path,
         enabled=collector_config.enabled,
-        poll_interval_seconds=float(collector_config.poll_interval_seconds),
-        stability_delay_seconds=float(collector_config.stability_delay_seconds),
+        poll_interval_seconds=collector_poll_interval,
+        stability_delay_seconds=collector_stability_delay,
         max_file_bytes=collector_config.max_file_bytes,
     )
     state.broker_statement_collector = broker_statement_collector
@@ -273,54 +283,51 @@ async def lifespan(app: FastAPI):
     shadow_research_task: asyncio.Task[None] | None = None
     if collector_config.enabled:
         broker_statement_collector_task = asyncio.create_task(
-            run_local_broker_statement_collector(broker_statement_collector),
+            run_local_broker_statement_collector(
+                broker_statement_collector,
+                activation_guarded=is_release_activation_guarded,
+            ),
             name="local-broker-statement-collector",
         )
-    pending_confirm_thread = threading.Thread(
-        target=_confirm_pending_fund_orders_on_startup,
-        args=(state,),
-        daemon=True,
-        name="pending-fund-confirm",
-    )
-    pending_confirm_thread.start()
-
     # This loop is inert until an owner-authorized research-only policy exists.
     # It remains independent of live monitoring because it reads persisted
     # after-close evidence and has no execution authority.
     shadow_research_task = asyncio.create_task(
         run_ai_shadow_research_automation_loop(
             state=state,
-            research_service_builder=lambda external: _build_write_service(
-                state,
-                external=external,
+            research_service_builder=lambda external: (
+                build_strategy_research_write_service(
+                    state,
+                    external=external,
+                )
             ),
         ),
         name="ai-shadow-research-automation",
     )
 
-    # 自动启动实时监控
-    if config.live_auto_start:
-        scheduler.start()
-        market_universe_task = asyncio.create_task(
-            run_market_universe_automation_loop(db=db, config=config),
-            name="market-universe-automation",
+    # Live monitoring is a core server invariant. Financial and execution
+    # authority remain bounded by their independent fail-closed gates.
+    scheduler.start()
+    market_universe_task = asyncio.create_task(
+        run_market_universe_automation_loop(db=db, config=config),
+        name="market-universe-automation",
+    )
+    decision_evidence_task = asyncio.create_task(
+        run_daily_decision_evidence_automation_loop(
+            state=state,
+            interval_seconds=config.live_poll_interval,
+            plan_reader=current_decision_and_trading_plan,
+            risk_runner=run_batch_pre_trade_risk_for_state,
+            quote_refresher=refresh_one_quote,
+        ),
+        name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
+    )
+    state.daily_decision_evidence_task = decision_evidence_task
+    if config.market_calendar_auto_sync:
+        market_calendar_task = asyncio.create_task(
+            run_market_calendar_automation_loop(db=db, config=config),
+            name="market-calendar-automation",
         )
-        decision_evidence_task = asyncio.create_task(
-            run_daily_decision_evidence_automation_loop(
-                state=state,
-                interval_seconds=config.live_poll_interval,
-                plan_reader=_current_decision_and_trading_plan,
-                risk_runner=run_batch_pre_trade_risk_for_state,
-                quote_refresher=_refresh_one_quote,
-            ),
-            name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
-        )
-        state.daily_decision_evidence_task = decision_evidence_task
-        if config.market_calendar_auto_sync:
-            market_calendar_task = asyncio.create_task(
-                run_market_calendar_automation_loop(db=db, config=config),
-                name="market-calendar-automation",
-            )
 
     logger.info("Karkinos Server started")
 
@@ -377,6 +384,9 @@ def create_app(
 ) -> FastAPI:
     """创建 FastAPI 应用实例。"""
     effective_overrides = dict(config_overrides or {})
+    # Older callers used this test/deployment override to disable monitoring.
+    # Keep upgrades non-breaking while enforcing the always-on invariant.
+    effective_overrides.pop("live_auto_start", None)
     if runtime_config is None:
         from server.bootstrap import load_runtime_config
         from server.config import ServerConfig
@@ -411,150 +421,14 @@ def create_app(
         allow_headers=["*"],
     )
     app.add_middleware(AppStateContextMiddleware, app_state=app_state)
+    app.add_middleware(ReleaseActivationGuardMiddleware)
 
-    # 注册路由
-    from server.routes.acceptance_audit import create_router as acceptance_audit_router
-    from server.routes.account_strategy import create_router as account_strategy_router
-    from server.routes.account_truth import create_router as account_truth_router
-    from server.routes.ai_external_research import (
-        create_router as ai_external_research_router,
-    )
-    from server.routes.ai_memory_informed_analyses import (
-        create_router as ai_memory_informed_analyses_router,
-    )
-    from server.routes.ai_provider_connectivity import (
-        create_router as ai_provider_connectivity_router,
-    )
-    from server.routes.ai_research import create_router as ai_research_router
-    from server.routes.ai_research_task_analyses import (
-        create_router as ai_research_task_analyses_router,
-    )
-    from server.routes.ai_research_task_analysis_reviews import (
-        create_router as ai_research_task_analysis_reviews_router,
-    )
-    from server.routes.ai_research_tasks import (
-        create_router as ai_research_tasks_router,
-    )
-    from server.routes.ai_reviewed_memory_retrievals import (
-        create_router as ai_reviewed_memory_retrievals_router,
-    )
-    from server.routes.automation import create_router as automation_router
-    from server.routes.backtest import create_router as backtest_router
-    from server.routes.broker_connector_soak import (
-        create_router as broker_connector_soak_router,
-    )
-    from server.routes.broker_gateway import create_router as broker_gateway_router
-    from server.routes.capital_authorization import (
-        create_router as capital_authorization_router,
-    )
-    from server.routes.capital_scaling_review import (
-        create_router as capital_scaling_review_router,
-    )
-    from server.routes.controlled_broker_submission import (
-        create_router as controlled_broker_submission_router,
-    )
-    from server.routes.controlled_broker_write_release import (
-        create_router as controlled_broker_write_release_router,
-    )
-    from server.routes.controlled_session_automatic_pause import (
-        create_router as controlled_session_automatic_pause_router,
-    )
-    from server.routes.controlled_session_budget_reservation import (
-        create_router as controlled_session_budget_reservation_router,
-    )
-    from server.routes.controlled_session_envelope import (
-        create_router as controlled_session_envelope_router,
-    )
-    from server.routes.controlled_session_runtime_authority import (
-        create_router as controlled_session_runtime_authority_router,
-    )
-    from server.routes.controlled_session_runtime_rate_limiter import (
-        create_router as controlled_session_runtime_rate_limiter_router,
-    )
-    from server.routes.controlled_submission_ledger_correction import (
-        create_router as controlled_submission_ledger_correction_router,
-    )
-    from server.routes.controlled_submission_ledger_posting import (
-        create_router as controlled_submission_ledger_posting_router,
-    )
-    from server.routes.decision import create_router as decision_router
-    from server.routes.execution_gateway_verification import (
-        create_router as execution_gateway_verification_router,
-    )
-    from server.routes.execution_reconciliation import (
-        create_router as execution_reconciliation_router,
-    )
-    from server.routes.ledger import create_router as ledger_router
-    from server.routes.market import create_router as market_router
-    from server.routes.operations import create_router as operations_router
-    from server.routes.per_order_confirmation import (
-        create_router as per_order_confirmation_router,
-    )
-    from server.routes.portfolio import create_router as portfolio_router
-    from server.routes.service_health import create_router as service_health_router
-    from server.routes.session_start_account_truth import (
-        create_router as session_start_account_truth_router,
-    )
-    from server.routes.settings import create_router as settings_router
-    from server.routes.signals import create_router as signals_router
-    from server.routes.signed_broker_adapter_release_review import (
-        create_router as signed_broker_adapter_release_review_router,
-    )
-    from server.routes.strategy_learning import (
-        create_router as strategy_learning_router,
-    )
-    from server.routes.strategy_promotion import (
-        create_router as strategy_promotion_router,
-    )
-    from server.routes.trading import create_router as trading_router
-    from server.ws.handlers import router as ws_router
+    from server.composition.router_registry import install_routers
 
-    app.include_router(service_health_router())
-    app.include_router(market_router())
-    app.include_router(acceptance_audit_router())
-    app.include_router(account_strategy_router())
-    app.include_router(account_truth_router())
-    app.include_router(ai_external_research_router())
-    app.include_router(ai_memory_informed_analyses_router())
-    app.include_router(ai_provider_connectivity_router())
-    app.include_router(ai_research_router())
-    app.include_router(ai_reviewed_memory_retrievals_router())
-    app.include_router(ai_research_task_analysis_reviews_router())
-    app.include_router(ai_research_task_analyses_router())
-    app.include_router(ai_research_tasks_router())
-    app.include_router(automation_router())
-    app.include_router(broker_gateway_router())
-    app.include_router(broker_connector_soak_router())
-    app.include_router(signed_broker_adapter_release_review_router())
-    app.include_router(capital_authorization_router())
-    app.include_router(capital_scaling_review_router())
-    app.include_router(controlled_broker_submission_router())
-    app.include_router(controlled_broker_write_release_router())
-    app.include_router(controlled_submission_ledger_posting_router())
-    app.include_router(controlled_submission_ledger_correction_router())
-    app.include_router(controlled_session_envelope_router())
-    app.include_router(controlled_session_budget_reservation_router())
-    app.include_router(controlled_session_runtime_authority_router())
-    app.include_router(controlled_session_runtime_rate_limiter_router())
-    app.include_router(controlled_session_automatic_pause_router())
-    app.include_router(execution_reconciliation_router())
-    app.include_router(execution_gateway_verification_router())
-    app.include_router(ledger_router())
-    app.include_router(operations_router())
-    app.include_router(per_order_confirmation_router())
-    app.include_router(session_start_account_truth_router())
-    app.include_router(portfolio_router())
-    app.include_router(signals_router())
-    app.include_router(decision_router())
-    app.include_router(strategy_learning_router())
-    app.include_router(strategy_promotion_router())
-    app.include_router(backtest_router())
-    app.include_router(settings_router())
-    app.include_router(trading_router())
-    app.include_router(ws_router)
+    install_routers(app)
 
     # 挂载前端静态文件（生产构建）
-    dist_dir = Path("web/dist")
+    dist_dir = resolve_static_dir()
     if dist_dir.exists():
         app.mount(
             "/", SPAStaticFiles(directory=str(dist_dir), html=True), name="static"

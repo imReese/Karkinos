@@ -16,7 +16,7 @@ from server.config_contract import (
     MIN_LIVE_POLL_INTERVAL_SECONDS,
     SUPPORTED_DATA_SOURCES,
 )
-from server.runtime_paths import resolve_data_dir
+from server.runtime_paths import resolve_data_dir, resolve_runtime_home
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -40,15 +40,15 @@ _NON_STRATEGY_FIELDS = {
     "strategy",
     "host",
     "port",
-    "live_auto_start",
     "cors_allowed_origins",
     "ai",
 }
 
+_IGNORED_LEGACY_RUNTIME_FIELDS = frozenset({"live_auto_start"})
+
 _RUNTIME_ENV_FIELDS = {
     "KARKINOS_HOST": "host",
     "KARKINOS_PORT": "port",
-    "KARKINOS_LIVE_AUTO_START": "live_auto_start",
     "KARKINOS_CORS_ALLOWED_ORIGINS": "cors_allowed_origins",
     "KARKINOS_DATA_SOURCE": "data_source",
     "KARKINOS_LIVE_POLL_INTERVAL": "live_poll_interval",
@@ -82,8 +82,12 @@ class RuntimeContext:
 
 
 def resolve_config_path() -> Path:
-    """Return the runtime config path, defaulting to ./config.json."""
-    return Path(os.environ.get("KARKINOS_CONFIG_PATH") or "config.json")
+    """Return the runtime config path without coupling native releases to cwd."""
+    configured = os.environ.get("KARKINOS_CONFIG_PATH")
+    if configured:
+        return Path(configured)
+    home = resolve_runtime_home()
+    return home / "config" / "config.json" if home is not None else Path("config.json")
 
 
 def load_runtime_environment_file(
@@ -93,7 +97,7 @@ def load_runtime_environment_file(
     required: bool = False,
 ) -> bool:
     """Load one dotenv file without overriding the existing process environment."""
-    from dotenv import dotenv_values
+    from dotenv import dotenv_values  # pyright: ignore[reportMissingImports]
 
     dotenv_path = Path(path)
     if not dotenv_path.exists():
@@ -136,6 +140,11 @@ def load_runtime_config(
     config_cls: type[BacktestConfig] = BacktestConfig, **overrides: Any
 ) -> BacktestConfig:
     """Resolve defaults, config.json, environment, then explicit overrides."""
+    overrides = {
+        key: value
+        for key, value in overrides.items()
+        if key not in _IGNORED_LEGACY_RUNTIME_FIELDS
+    }
     config_path = resolve_config_path()
     if config_path.exists():
         config = config_cls.from_json(config_path)
@@ -177,7 +186,7 @@ def _runtime_environment_overrides(config: BacktestConfig) -> dict[str, Any]:
 
 def _parse_runtime_environment_value(env_name: str, raw_value: str) -> Any:
     value = raw_value.strip()
-    if env_name in {"KARKINOS_LIVE_AUTO_START", "KARKINOS_AI_ENABLED"}:
+    if env_name == "KARKINOS_AI_ENABLED":
         normalized = value.lower()
         if normalized in {"1", "true", "yes", "on"}:
             return True

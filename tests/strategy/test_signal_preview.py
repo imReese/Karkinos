@@ -23,9 +23,7 @@ def _bar(day: int, close: str) -> MarketEvent:
     )
 
 
-def test_strategy_signal_preview_converts_legacy_signal_into_candidate_action() -> (
-    None
-):
+def test_strategy_signal_preview_converts_legacy_signal_into_candidate_action() -> None:
     from analytics.strategy_signal_preview import build_strategy_signal_preview
 
     preview = build_strategy_signal_preview(
@@ -104,8 +102,7 @@ def test_strategy_signal_preview_converts_legacy_signal_into_candidate_action() 
             "status": "waiting",
             "severity": "warning",
             "summary": (
-                "Paper/shadow preview waits for data, account-truth, and risk "
-                "gates."
+                "Paper/shadow preview waits for data, account-truth, and risk " "gates."
             ),
             "required_action": "run_paper_shadow_preview_after_gates",
             "evidence_ref": None,
