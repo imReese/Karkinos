@@ -203,6 +203,9 @@ liveness grants no broker, execution, or capital authority.
 - [AI 策略研究详细设计](docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md) — DeepSeek
   研究协议、锁定式验证与生产隔离。
 - [Codebase guide](docs/CODEBASE.md) — source layout and dependency rules.
+- [Account Truth broker-statement import](docs/account-truth-import.zh.md) —
+  start from the tracked [CSV template](broker_statement.template.csv); keep
+  real broker exports in the ignored local `broker_statement.csv`.
 - [English documentation](docs/README.en.md) / [中文文档](docs/README.zh.md) —
   setup, workflows, configuration, and operator guides.
 - [AI collaboration policy](AI_COLLABORATION.md) — integrity, authority, and
