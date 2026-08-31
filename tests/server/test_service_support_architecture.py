@@ -46,6 +46,7 @@ SERVICE_MODULES = (
     "server/services/capital_scaling_evidence_window.py",
     "server/account_truth_gate.py",
     "server/account_truth_gate_support.py",
+    "server/account_truth_gate_values.py",
     "server/services/automation_alerts.py",
     "server/services/automation_alert_support.py",
     "server/services/controlled_session_live_gates.py",
@@ -66,6 +67,7 @@ SERVICE_MODULES = (
 PURE_MODULES = (
     "server/services/account_truth_evidence_readiness_support.py",
     "server/account_truth_gate_support.py",
+    "server/account_truth_gate_values.py",
     "server/services/automation_alert_support.py",
     "server/services/controlled_session_live_gate_values.py",
     "server/services/controlled_submission_ledger_posting_support.py",
