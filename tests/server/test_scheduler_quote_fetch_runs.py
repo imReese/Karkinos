@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import threading
 import time
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -68,6 +70,75 @@ def _scheduler_config(**overrides):
     return SimpleNamespace(**values)
 
 
+def _install_verified_calendar(
+    db,
+    *,
+    year: int = 2026,
+    closed_dates: set[str] | None = None,
+) -> None:
+    closed = closed_dates or set()
+    current = date(year, 1, 1)
+    end = date(year + 1, 1, 1)
+    days = []
+    while current < end:
+        value = current.isoformat()
+        is_trading_day = current.weekday() < 5 and value not in closed
+        days.append({"date": value, "is_trading_day": is_trading_day})
+        current += timedelta(days=1)
+    source_fingerprint = "c" * 64
+    trading_day_count = sum(1 for day in days if day["is_trading_day"])
+    db.upsert_market_calendar_snapshot_sync(
+        {
+            "exchange": "SSE",
+            "year": year,
+            "provider": "unit_fixture",
+            "status": "available",
+            "trading_day_count": trading_day_count,
+            "closed_day_count": len(days) - trading_day_count,
+            "source_fingerprint": source_fingerprint,
+            "days": days,
+            "limitations": [],
+        }
+    )
+    db.update_market_calendar_verification_sync(
+        exchange="SSE",
+        year=year,
+        source_fingerprint=source_fingerprint,
+        verification_status="verified",
+        official_source_url="https://example.test/sse-calendar",
+        official_source_fingerprint="d" * 64,
+        verified_by="unit-test",
+    )
+
+
+def _ingest_daily_receipt(
+    store: DataStore,
+    *,
+    trade_date: str,
+    provider_name: str,
+    closes: dict[str, float],
+) -> dict[str, object]:
+    return store.ingest_market_daily_batch(
+        trade_date=trade_date,
+        provider_name=provider_name,
+        bars=pd.DataFrame(
+            [
+                {
+                    "symbol": symbol,
+                    "timestamp": f"{trade_date}T00:00:00",
+                    "open": close,
+                    "high": close,
+                    "low": close,
+                    "close": close,
+                    "volume": 1000.0,
+                    "amount": 10000.0,
+                }
+                for symbol, close in sorted(closes.items())
+            ]
+        ),
+    )
+
+
 def _scheduler_runtime(
     *,
     data_source: str = "akshare",
@@ -114,6 +185,8 @@ def _stub_scheduler_dependencies(
     warmup_strategy=None,
     now: datetime | None = None,
 ):
+    from server import scheduler_post_close as scheduler_post_close_module
+
     monkeypatch.setattr(
         scheduler_module,
         "create_runtime_context",
@@ -145,7 +218,7 @@ def _stub_scheduler_dependencies(
             rebuild_portfolio,
         )
     monkeypatch.setattr(
-        scheduler_module,
+        scheduler_post_close_module,
         "refresh_fund_nav_quotes",
         fund_nav_sync or _empty_fund_nav_sync,
     )
@@ -1007,60 +1080,377 @@ def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
     assert calls[1][1]["end"].date().isoformat() == "2026-05-30"
 
 
-def test_scheduler_backfill_publishes_the_changed_valuation_identity(tmp_path):
+def test_scheduler_backfill_never_refreshes_a_frozen_daily_batch_remotely():
+    from server.scheduler import TradingScheduler
+
+    calls = []
+
+    class FrozenStore:
+        def get_market_daily_ingestion_receipt(self, **kwargs):
+            assert kwargs == {
+                "trade_date": "2026-05-29",
+                "provider_name": "akshare",
+                "verify": True,
+            }
+            return {"receipt_fingerprint": "sha256:fixture"}
+
+    class FakeManager:
+        store = FrozenStore()
+
+        def get_bars(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            return SimpleNamespace(total_bars=1)
+
+    scheduler = TradingScheduler(_scheduler_config(), FakeBridge())
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+    scheduler._maybe_backfill_historical_bars(
+        FakeManager(),
+        now=datetime(2026, 5, 29, 16, 0),
+    )
+
+    assert len(calls) == 1
+    assert calls[0][1]["allow_remote_refresh"] is False
+
+
+def test_scheduler_post_close_promotes_new_stock_bar_into_current_quote(tmp_path):
     from server.scheduler import TradingScheduler
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _install_verified_calendar(db)
     db.upsert_latest_quote_sync(
-        symbol="019999",
-        asset_type="fund",
-        price=1.126,
-        quote_timestamp="2026-05-29T10:30:00+08:00",
-        quote_source="eastmoney_fund_estimate",
+        symbol="600001",
+        asset_type="stock",
+        price=10.0,
+        quote_timestamp="2026-05-28T15:00:00+08:00",
+        quote_source="tushare_realtime_quote",
         provider_name="akshare",
-        quote_status="live",
+        quote_status="confirmed",
     )
     published_before = db.publish_current_valuation_snapshot_sync()
     store = DataStore(tmp_path)
-
-    class PersistingManager:
-        def get_bars(self, symbol, *args, **kwargs):
-            frame = pd.DataFrame(
-                [
-                    {
-                        "timestamp": "2026-05-29T00:00:00",
-                        "open": 1.12,
-                        "high": 1.13,
-                        "low": 1.11,
-                        "close": 1.126,
-                        "volume": 1000,
-                    }
-                ]
-            )
-            store.save_bars(
-                symbol,
-                BarFrequency.DAILY,
-                frame,
-                provider_name="akshare",
-                data_source="akshare",
-            )
-            return SimpleNamespace(total_bars=1)
+    store.save_bars(
+        Symbol("600001"),
+        BarFrequency.DAILY,
+        pd.DataFrame(
+            [
+                {
+                    "timestamp": "2026-05-28T00:00:00",
+                    "open": 10.0,
+                    "high": 10.1,
+                    "low": 9.9,
+                    "close": 10.0,
+                    "volume": 900,
+                }
+            ]
+        ),
+        provider_name="akshare",
+        data_source="akshare",
+    )
+    receipt = _ingest_daily_receipt(
+        store,
+        trade_date="2026-05-29",
+        provider_name="akshare",
+        closes={"600001": 11.0},
+    )
 
     scheduler = TradingScheduler(_scheduler_config(), FakeBridge(), db=db)
-    scheduler._watchlist = [(Symbol("019999"), AssetClass.FUND)]
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
 
-    scheduler._maybe_backfill_historical_bars(
-        PersistingManager(),
-        now=datetime(2026, 5, 29, 16, 0),
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        SimpleNamespace(store=store), now=datetime(2026, 5, 29, 16, 0)
     )
 
     publication = db.get_runtime_control_sync("valuation_snapshot_publication")
     current = build_current_valuation_snapshot(db, persist=False)
+    latest = db.get_latest_quote_sync("600001", asset_type="stock")
+    runs = db.list_quote_fetch_runs(trigger="post_close_market_bar")
     assert publication is not None
     assert publication["snapshot_id"] == current["snapshot_id"]
     assert publication["snapshot_id"] != published_before["snapshot_id"]
+    assert latest is not None
+    assert latest["price"] == 11.0
+    assert latest["quote_timestamp"] == "2026-05-29T15:00:00+08:00"
+    assert latest["quote_source"] == "market_bar_close"
+    assert latest["quote_status"] == "confirmed"
+    assert latest["fetch_run_id"] == runs[0]["run_id"]
     assert current["quotes"][0]["quote_source"] == "market_bar_close"
+    assert current["quotes"][0]["valuation_price_date"] == "2026-05-29"
+    assert scheduler.latest_quotes["600001"]["timestamp"] == (
+        "2026-05-29T15:00:00+08:00"
+    )
+    assert len(runs) == 1
+    assert runs[0]["status"] == "success"
+    metadata = json.loads(runs[0]["metadata_json"])
+    assert metadata["receipt_fingerprint"] == receipt["receipt_fingerprint"]
+    assert metadata["market_dataset_fingerprint"] == receipt["dataset_fingerprint"]
+    assert metadata["calendar_evidence_refs"]
+
+
+def test_scheduler_post_close_does_not_publish_partial_stock_bar_scope(tmp_path):
+    from server.scheduler import TradingScheduler
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    for symbol, price in (("600001", 10.0), ("600002", 20.0)):
+        db.upsert_latest_quote_sync(
+            symbol=symbol,
+            asset_type="stock",
+            price=price,
+            quote_timestamp="2026-05-28T15:00:00+08:00",
+            quote_source="tushare_realtime_quote",
+            provider_name="tushare",
+            quote_status="confirmed",
+        )
+    published_before = db.publish_current_valuation_snapshot_sync()
+    store = DataStore(tmp_path)
+
+    scheduler = TradingScheduler(
+        _scheduler_config(data_source="tushare"), FakeBridge(), db=db
+    )
+    scheduler._watchlist = [
+        (Symbol("600001"), AssetClass.STOCK),
+        (Symbol("600002"), AssetClass.STOCK),
+    ]
+
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            SimpleNamespace(store=store), now=datetime(2026, 5, 29, 16, 0)
+        )
+        is False
+    )
+    assert db.get_latest_quote_sync("600001", "stock")["price"] == 10.0
+    assert db.get_latest_quote_sync("600002", "stock")["price"] == 20.0
+    assert db.list_quote_fetch_runs(trigger="post_close_market_bar") == []
+    assert (
+        db.get_runtime_control_sync("valuation_snapshot_publication")["snapshot_id"]
+        == published_before["snapshot_id"]
+    )
+
+    _ingest_daily_receipt(
+        store,
+        trade_date="2026-05-29",
+        provider_name="tushare",
+        closes={"600001": 11.0, "600002": 21.0},
+    )
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        SimpleNamespace(store=store), now=datetime(2026, 5, 29, 16, 5)
+    )
+    runs = db.list_quote_fetch_runs(trigger="post_close_market_bar")
+    assert len(runs) == 1
+    assert runs[0]["status"] == "success"
+    assert db.get_latest_quote_sync("600001", "stock")["price"] == 11.0
+    assert db.get_latest_quote_sync("600002", "stock")["price"] == 21.0
+
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            SimpleNamespace(store=store), now=datetime(2026, 5, 29, 16, 10)
+        )
+        is False
+    )
+    assert len(db.list_quote_fetch_runs(trigger="post_close_market_bar")) == 1
+
+    snapshots_before_restart = db.list_quote_snapshots_sync()
+    restarted = TradingScheduler(
+        _scheduler_config(data_source="tushare"), FakeBridge(), db=db
+    )
+    restarted._watchlist = list(scheduler._watchlist)
+    assert restarted._maybe_refresh_post_close_valuation_data(
+        SimpleNamespace(store=store), now=datetime(2026, 5, 29, 16, 15)
+    )
+    assert len(db.list_quote_fetch_runs(trigger="post_close_market_bar")) == 1
+    assert db.list_quote_snapshots_sync() == snapshots_before_restart
+
+
+def test_scheduler_post_close_rejects_drifted_market_daily_receipt(tmp_path):
+    from server.scheduler import TradingScheduler
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    db.upsert_latest_quote_sync(
+        symbol="600001",
+        asset_type="stock",
+        price=10.0,
+        quote_timestamp="2026-05-28T15:00:00+08:00",
+        quote_source="tushare_realtime_quote",
+        provider_name="akshare",
+        quote_status="confirmed",
+    )
+    store = DataStore(tmp_path)
+    _ingest_daily_receipt(
+        store,
+        trade_date="2026-05-29",
+        provider_name="akshare",
+        closes={"600001": 11.0},
+    )
+    with sqlite3.connect(store._meta_path) as conn:
+        conn.execute("""
+            UPDATE market_bars SET close = 99
+            WHERE symbol = '600001' AND frequency = '1d'
+              AND substr(timestamp, 1, 10) = '2026-05-29'
+            """)
+        conn.commit()
+
+    scheduler = TradingScheduler(_scheduler_config(), FakeBridge(), db=db)
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            SimpleNamespace(store=store),
+            now=datetime(2026, 5, 29, 16, 0),
+        )
+        is False
+    )
+    assert db.get_latest_quote_sync("600001", "stock")["price"] == 10.0
+    assert db.list_quote_fetch_runs(trigger="post_close_market_bar") == []
+
+
+def test_scheduler_post_close_reconciles_new_stock_scope_on_same_trade_date(
+    tmp_path,
+):
+    from server.scheduler import TradingScheduler
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    store = DataStore(tmp_path)
+    _ingest_daily_receipt(
+        store,
+        trade_date="2026-05-29",
+        provider_name="akshare",
+        closes={"600001": 11.0, "600002": 21.0},
+    )
+    scheduler = TradingScheduler(_scheduler_config(), FakeBridge(), db=db)
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        SimpleNamespace(store=store),
+        now=datetime(2026, 5, 29, 16, 0),
+    )
+    first_key = scheduler._last_post_close_market_refresh_key
+    assert db.get_latest_quote_sync("600001", "stock")["price"] == 11.0
+    assert db.get_latest_quote_sync("600002", "stock") is None
+
+    scheduler._watchlist.append((Symbol("600002"), AssetClass.STOCK))
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        SimpleNamespace(store=store),
+        now=datetime(2026, 5, 29, 16, 5),
+    )
+
+    assert scheduler._last_post_close_market_refresh_key != first_key
+    assert db.get_latest_quote_sync("600002", "stock")["price"] == 21.0
+    runs = db.list_quote_fetch_runs(trigger="post_close_market_bar")
+    assert len(runs) == 2
+    assert all(run["status"] == "success" for run in runs)
+
+
+def test_scheduler_post_close_catches_up_latest_verified_close_on_weekend(tmp_path):
+    from server.scheduler import TradingScheduler
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    db.upsert_latest_quote_sync(
+        symbol="600001",
+        asset_type="stock",
+        price=10.0,
+        quote_timestamp="2026-05-28T15:00:00+08:00",
+        quote_source="tushare_realtime_quote",
+        provider_name="akshare",
+        quote_status="confirmed",
+    )
+    store = DataStore(tmp_path)
+    _ingest_daily_receipt(
+        store,
+        trade_date="2026-05-29",
+        provider_name="akshare",
+        closes={"600001": 11.0},
+    )
+    scheduler = TradingScheduler(_scheduler_config(), FakeBridge(), db=db)
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        SimpleNamespace(store=store),
+        now=datetime(2026, 5, 30, 10, 0),
+    )
+    latest = db.get_latest_quote_sync("600001", "stock")
+    assert latest["price"] == 11.0
+    assert latest["quote_timestamp"] == "2026-05-29T15:00:00+08:00"
+
+
+def test_scheduler_post_close_blocks_same_timestamp_authority_conflict(tmp_path):
+    from server.scheduler import TradingScheduler
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    db.upsert_latest_quote_sync(
+        symbol="600001",
+        asset_type="stock",
+        price=11.0,
+        quote_timestamp="2026-05-29T15:00:00+08:00",
+        quote_source="manual_cache",
+        provider_name="manual",
+        quote_status="confirmed",
+    )
+    store = DataStore(tmp_path)
+    _ingest_daily_receipt(
+        store,
+        trade_date="2026-05-29",
+        provider_name="akshare",
+        closes={"600001": 11.0},
+    )
+    scheduler = TradingScheduler(_scheduler_config(), FakeBridge(), db=db)
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            SimpleNamespace(store=store),
+            now=datetime(2026, 5, 29, 16, 0),
+        )
+        is False
+    )
+    assert db.list_quote_fetch_runs(trigger="post_close_market_bar") == []
+
+
+def test_scheduler_post_close_never_regresses_a_newer_trusted_quote(tmp_path):
+    from server.scheduler import TradingScheduler
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    db.upsert_latest_quote_sync(
+        symbol="600001",
+        asset_type="stock",
+        price=12.0,
+        quote_timestamp="2026-06-01T10:00:00+08:00",
+        quote_source="tushare_realtime_quote",
+        provider_name="tushare",
+        provider_status="live",
+        quote_status="live",
+    )
+    store = DataStore(tmp_path)
+    _ingest_daily_receipt(
+        store,
+        trade_date="2026-05-29",
+        provider_name="tushare",
+        closes={"600001": 11.0},
+    )
+    scheduler = TradingScheduler(
+        _scheduler_config(data_source="tushare"), FakeBridge(), db=db
+    )
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        SimpleNamespace(store=store),
+        now=datetime(2026, 6, 1, 15, 30),
+    )
+    latest = db.get_latest_quote_sync("600001", "stock")
+    assert latest["price"] == 12.0
+    assert latest["quote_timestamp"] == "2026-06-01T10:00:00+08:00"
+    assert db.list_quote_fetch_runs(trigger="post_close_market_bar") == []
 
 
 def test_scheduler_retries_snapshot_publication_without_refetching_bars():
@@ -1113,58 +1503,60 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
     config = _scheduler_config(live_poll_interval=120)
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _install_verified_calendar(db)
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
     scheduler._watchlist = [
         (Symbol("600001"), AssetClass.STOCK),
         (Symbol("019999"), AssetClass.FUND),
     ]
     fund_sync_calls = []
-    bar_calls = []
+    market_sync_calls = []
 
-    def fake_refresh_fund_nav_quotes(
-        config,
-        db,
-        watchlist,
-        latest_quotes,
+    def fake_publish(
+        self,
+        *,
+        data_store,
+        trade_date,
+        calendar_evidence_refs,
+        captured_at,
+    ):
+        market_sync_calls.append((trade_date.isoformat(), captured_at))
+        return "fixture-receipt"
+
+    def fake_fund_sync(
+        self,
         *,
         confirmation_only=False,
+        captured_at=None,
+        target_date=None,
     ):
-        fund_sync_calls.append(
-            (list(watchlist), dict(latest_quotes), confirmation_only)
-        )
-        return SimpleNamespace(
-            refreshed=["019999"],
-            skipped=[],
-            failed={},
-            quotes={
-                "019999": {
-                    "price": 2.2527,
-                    "timestamp": "2026-06-17 15:30",
-                    "asset_class": "fund",
-                }
-            },
-        )
-
-    class FakeManager:
-        def get_bars(self, *args, **kwargs):
-            bar_calls.append((args, kwargs))
-            return SimpleNamespace(total_bars=1)
+        fund_sync_calls.append((confirmation_only, captured_at, target_date))
+        return True
 
     monkeypatch.setattr(
-        scheduler_module,
-        "refresh_fund_nav_quotes",
-        fake_refresh_fund_nav_quotes,
+        scheduler_module.TradingScheduler,
+        "_publish_post_close_stock_quotes",
+        fake_publish,
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_sync_fund_nav_quotes",
+        fake_fund_sync,
     )
 
-    manager = FakeManager()
+    manager = SimpleNamespace(store=object())
     before_cutoff = datetime(2026, 6, 17, 15, 30)
     stock_cutoff = datetime(2026, 6, 17, 16, 0)
     fund_cutoff = datetime(2026, 6, 17, 21, 30)
 
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        manager,
+        now=before_cutoff,
+    )
     assert (
         scheduler._maybe_refresh_post_close_valuation_data(
             manager,
-            now=before_cutoff,
+            now=datetime(2026, 6, 17, 15, 35),
         )
         is False
     )
@@ -1190,17 +1582,179 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
         is True
     )
 
-    assert len(fund_sync_calls) == 1
-    assert fund_sync_calls[0][2] is True
-    assert len(bar_calls) == 2
-    assert {call[0][0] for call in bar_calls} == {
-        Symbol("600001"),
-        Symbol("019999"),
-    }
-    assert {call[1]["end"].date().isoformat() for call in bar_calls} == {"2026-06-17"}
+    assert fund_sync_calls == [
+        (
+            True,
+            before_cutoff.replace(tzinfo=ZoneInfo("Asia/Shanghai")),
+            "2026-06-16",
+        ),
+        (
+            True,
+            fund_cutoff.replace(tzinfo=ZoneInfo("Asia/Shanghai")),
+            "2026-06-17",
+        ),
+    ]
+    assert [call[0] for call in market_sync_calls] == [
+        "2026-06-16",
+        "2026-06-17",
+    ]
 
 
-def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_path):
+def test_scheduler_retries_fund_confirmation_until_all_targets_persisted(
+    monkeypatch,
+    tmp_path,
+):
+    from server import scheduler as scheduler_module
+    from server import scheduler_post_close as scheduler_post_close_module
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    scheduler = scheduler_module.TradingScheduler(
+        _scheduler_config(), FakeBridge(), db=db
+    )
+    scheduler._watchlist = [
+        (Symbol("019998"), AssetClass.FUND),
+        (Symbol("019999"), AssetClass.FUND),
+    ]
+    from server.services.market_calendar_dates import (
+        resolve_latest_verified_closed_trading_date,
+    )
+
+    resolved = resolve_latest_verified_closed_trading_date(
+        db,
+        datetime(2026, 6, 17, 21, 30),
+    )
+    assert resolved is not None
+    refresh_identity = scheduler._post_close_market_refresh_identity(
+        calendar_evidence_refs=resolved.calendar_evidence_refs,
+    )
+    scheduler._last_post_close_market_refresh_key = (
+        f"akshare:2026-06-17:{refresh_identity}:no_stock_scope"
+    )
+    calls = []
+
+    def persist_confirmed(symbol: str) -> None:
+        db.upsert_latest_quote_sync(
+            symbol=symbol,
+            asset_type="fund",
+            price=2.5,
+            quote_timestamp="2026-06-17T20:00:00+08:00",
+            quote_source="eastmoney_fund_page",
+            provider_name="akshare",
+            provider_status="live",
+            quote_status="confirmed",
+            nav_date="2026-06-17",
+        )
+
+    def fake_refresh(
+        config,
+        database,
+        watchlist,
+        latest_quotes,
+        *,
+        confirmation_only=False,
+        now=None,
+        target_date=None,
+    ):
+        calls.append((now, target_date))
+        persist_confirmed("019998" if len(calls) == 1 else "019999")
+        return SimpleNamespace(refreshed=[], skipped=[], failed={}, quotes={})
+
+    monkeypatch.setattr(
+        scheduler_post_close_module,
+        "refresh_fund_nav_quotes",
+        fake_refresh,
+    )
+    manager = SimpleNamespace(store=DataStore(tmp_path))
+
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            manager,
+            now=datetime(2026, 6, 17, 21, 30),
+        )
+        is False
+    )
+    assert scheduler._last_post_close_fund_nav_refresh_date is None
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            manager,
+            now=datetime(2026, 6, 17, 21, 35),
+        )
+        is False
+    )
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        manager,
+        now=datetime(2026, 6, 17, 21, 45),
+    )
+    assert scheduler._last_post_close_fund_nav_refresh_date == "2026-06-17"
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            manager,
+            now=datetime(2026, 6, 17, 22, 0),
+        )
+        is False
+    )
+    assert calls == [
+        (
+            datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+            "2026-06-17",
+        ),
+        (
+            datetime(2026, 6, 17, 21, 45, tzinfo=ZoneInfo("Asia/Shanghai")),
+            "2026-06-17",
+        ),
+    ]
+
+
+def test_scheduler_catches_up_previous_trade_date_fund_nav_after_midnight(
+    monkeypatch,
+    tmp_path,
+):
+    from server import scheduler as scheduler_module
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    scheduler = scheduler_module.TradingScheduler(
+        _scheduler_config(), FakeBridge(), db=db
+    )
+    scheduler._watchlist = [(Symbol("019999"), AssetClass.FUND)]
+    calls = []
+
+    def fake_fund_sync(
+        self,
+        *,
+        confirmation_only=False,
+        captured_at=None,
+        target_date=None,
+    ):
+        calls.append((confirmation_only, captured_at, target_date))
+        return True
+
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_sync_fund_nav_quotes",
+        fake_fund_sync,
+    )
+
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        SimpleNamespace(store=object()),
+        now=datetime(2026, 6, 18, 0, 5, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    assert calls == [
+        (
+            True,
+            datetime(2026, 6, 18, 0, 5, tzinfo=ZoneInfo("Asia/Shanghai")),
+            "2026-06-17",
+        )
+    ]
+    assert scheduler._last_post_close_fund_nav_refresh_date == "2026-06-17"
+
+
+def test_scheduler_reconciles_persisted_close_during_closed_window(
+    monkeypatch, tmp_path
+):
     from server import scheduler as scheduler_module
 
     db = AppDatabase(tmp_path / "app.db")
@@ -1250,7 +1804,7 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
     )
     monkeypatch.setattr(
         scheduler_module.TradingScheduler,
-        "_maybe_backfill_historical_bars",
+        "_maybe_refresh_post_close_valuation_data",
         lambda self, data_manager, now=None: market_refresh_calls.append(now),
     )
     monkeypatch.setattr(
@@ -1277,7 +1831,10 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
     scheduler._run_loop()
 
     assert stop_waits == [30, 30]
-    assert market_refresh_calls == [datetime(2026, 6, 17, 16, 0)]
+    assert market_refresh_calls == [
+        datetime(2026, 6, 17, 15, 30),
+        datetime(2026, 6, 17, 16, 0),
+    ]
 
 
 def test_scheduler_strategy_warmup_does_not_fetch_remote_bars(monkeypatch):

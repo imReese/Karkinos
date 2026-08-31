@@ -64,7 +64,7 @@ class SchedulerLoopDependencies:
     is_post_close_refresh_window: Callable[[datetime], bool]
     refresh_post_close_valuation_data: Callable[..., bool]
     backfill_historical_bars: Callable[..., None]
-    sync_fund_nav_quotes: Callable[[], None]
+    sync_fund_nav_quotes: Callable[[], bool]
     sync_market_index_quotes: Callable[[object, object | None], None]
     poll_watchlist_quotes: Callable[[SchedulerFeed], tuple[list[MarketEvent], str]]
     finish_persisted_quote_fetch_run: Callable[
@@ -116,6 +116,30 @@ class BufferedStrategyEventPublisher:
         self._events.clear()
         for event in pending:
             event_bus.publish(event)
+
+
+def runtime_quote_from_persisted(quote: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one persisted latest-quote row for scheduler runtime use."""
+
+    quote_source = (
+        quote.get("quote_source")
+        or quote.get("source")
+        or quote.get("provider_name")
+        or quote.get("provider")
+    )
+    return {
+        "price": float(quote["price"]),
+        "volume": float(quote["volume"]) if quote["volume"] is not None else None,
+        "timestamp": quote["timestamp"],
+        "asset_class": quote["asset_class"],
+        "quote_source": quote_source,
+        "provider_name": quote.get("provider_name"),
+        "quote_status": quote.get("quote_status"),
+        "stale_reason": quote.get("stale_reason"),
+        "provider_status": quote.get("provider_status"),
+        "captured_reason": quote.get("captured_reason"),
+        "nav_date": quote.get("nav_date"),
+    }
 
 
 class SchedulerLoop:
@@ -308,7 +332,7 @@ class SchedulerLoop:
         try:
             persisted_quotes = database.get_latest_quotes_sync()
             restored_quotes = {
-                quote["symbol"]: self._restored_quote(quote)
+                quote["symbol"]: runtime_quote_from_persisted(quote)
                 for quote in persisted_quotes
             }
             self._state.replace_runtime_quotes(restored_quotes)
@@ -316,28 +340,6 @@ class SchedulerLoop:
             raise RuntimeError(
                 "persisted scheduler quotes could not be restored"
             ) from exc
-
-    @staticmethod
-    def _restored_quote(quote: dict[str, Any]) -> dict[str, Any]:
-        quote_source = (
-            quote.get("quote_source")
-            or quote.get("source")
-            or quote.get("provider_name")
-            or quote.get("provider")
-        )
-        return {
-            "price": float(quote["price"]),
-            "volume": (float(quote["volume"]) if quote["volume"] is not None else None),
-            "timestamp": quote["timestamp"],
-            "asset_class": quote["asset_class"],
-            "quote_source": quote_source,
-            "provider_name": quote.get("provider_name"),
-            "quote_status": quote.get("quote_status"),
-            "stale_reason": quote.get("stale_reason"),
-            "provider_status": quote.get("provider_status"),
-            "captured_reason": quote.get("captured_reason"),
-            "nav_date": quote.get("nav_date"),
-        }
 
     def _restore_portfolio(self) -> None:
         dependencies = self._dependencies

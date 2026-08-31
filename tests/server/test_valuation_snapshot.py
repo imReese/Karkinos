@@ -293,7 +293,49 @@ def test_valuation_snapshot_keeps_sina_fund_estimate_non_authoritative(tmp_path)
     assert quote["valuation_evidence_status"] == "unconfirmed_estimate"
 
 
-def test_valuation_snapshot_promotes_same_day_confirmed_fund_nav():
+def test_valuation_snapshot_does_not_override_confirmed_fund_nav_with_market_bar():
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "id": 1,
+                    "symbol": "019999",
+                    "asset_type": "fund",
+                    "price": 2.2411,
+                    "quote_timestamp": "2026-07-10T20:30:00+08:00",
+                    "quote_source": "eastmoney_fund_page",
+                    "provider_status": "live",
+                    "quote_status": "confirmed",
+                    "nav_date": "2026-07-10",
+                }
+            ]
+
+        def list_quote_snapshots_sync(self):
+            return []
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return []
+
+        def get_market_bar_on_date_sync(self, symbol, trade_date):
+            assert symbol == "019999"
+            assert trade_date == "2026-07-10"
+            return {"close": 9.9999, "source": "market_bars"}
+
+        def get_latest_market_bar_before_date_sync(self, symbol, trade_date):
+            return {"close": 2.22, "trade_date": "2026-07-09"}
+
+    snapshot = build_current_valuation_snapshot(FakeDb(), persist=False)
+    quote = snapshot["quotes"][0]
+
+    assert snapshot["status"] == "complete"
+    assert quote["price"] == 2.2411
+    assert quote["quote_source"] == "eastmoney_fund_page"
+    assert quote["quote_status"] == "confirmed"
+    assert "stale_reason" not in quote
+    assert "valuation_evidence_status" not in quote
+
+
+def test_valuation_snapshot_does_not_promote_fund_estimate_from_market_bar():
     class FakeDb:
         def list_latest_quotes_sync(self):
             return [
@@ -308,16 +350,11 @@ def test_valuation_snapshot_promotes_same_day_confirmed_fund_nav():
                 }
             ]
 
-        def list_quote_snapshots_sync(self):
-            return []
-
         def get_ledger_entries_sync(self, limit=500, offset=0):
             return []
 
         def get_market_bar_on_date_sync(self, symbol, trade_date):
-            assert symbol == "019999"
-            assert trade_date == "2026-07-10"
-            return {"close": 2.2411, "source": "confirmed_fund_nav"}
+            return {"close": 2.2411, "source": "market_bars"}
 
         def get_latest_market_bar_before_date_sync(self, symbol, trade_date):
             return {"close": 2.22, "trade_date": "2026-07-09"}
@@ -325,12 +362,11 @@ def test_valuation_snapshot_promotes_same_day_confirmed_fund_nav():
     snapshot = build_current_valuation_snapshot(FakeDb(), persist=False)
     quote = snapshot["quotes"][0]
 
-    assert snapshot["status"] == "complete"
-    assert quote["price"] == 2.2411
-    assert quote["quote_source"] == "market_bar_close"
-    assert quote["quote_status"] == "confirmed"
-    assert "stale_reason" not in quote
-    assert "valuation_evidence_status" not in quote
+    assert snapshot["status"] == "degraded"
+    assert quote["price"] == 2.2527
+    assert quote["quote_source"] == "eastmoney_fund_estimate"
+    assert quote["quote_status"] == "confirmed_nav_missing"
+    assert quote["valuation_evidence_status"] == "unconfirmed_estimate"
 
 
 def test_valuation_snapshot_orders_mixed_timezone_timestamps_by_instant(tmp_path):

@@ -20,11 +20,14 @@ from server.release_activation import (
     is_scheduler_release_activation_guarded,
 )
 from server.scheduler_lifecycle import SchedulerLifecycleMixin
-from server.scheduler_loop import SchedulerLoopDependencies, run_scheduler_loop
+from server.scheduler_loop import (
+    SchedulerLoopDependencies,
+    run_scheduler_loop,
+)
+from server.scheduler_post_close import SchedulerPostCloseMixin
 from server.scheduler_quote_runs import SchedulerQuoteRunMixin
 from server.scheduler_signals import handle_scheduler_signal
 from server.scheduler_values import optional_float
-from server.services.fund_nav_sync import refresh_fund_nav_quotes
 from server.services.market_hours import is_cn_trading_session
 from server.services.market_indices import default_market_index_assets
 from server.services.market_quote_ingestion import (
@@ -40,12 +43,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # A 股交易时段（上午 9:30-11:30，下午 13:00-15:00）
-_MORNING_OPEN = time(9, 30)
-_MORNING_CLOSE = time(11, 30)
-_AFTERNOON_OPEN = time(13, 0)
 _AFTERNOON_CLOSE = time(15, 0)
-_POST_CLOSE_MARKET_REFRESH_TIME = time(16, 0)
-_POST_CLOSE_FUND_NAV_REFRESH_TIME = time(21, 30)
 _SCHEDULER_STOP_TIMEOUT_SECONDS = 10.0
 
 
@@ -53,7 +51,11 @@ def scheduler_now() -> datetime:
     return datetime.now()
 
 
-class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
+class TradingScheduler(
+    SchedulerLifecycleMixin,
+    SchedulerQuoteRunMixin,
+    SchedulerPostCloseMixin,
+):
     """后台交易调度器。
 
     将 live.py 的 while-True 循环封装为可控后台线程，
@@ -96,8 +98,10 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
         self._instruments: dict[Symbol, Instrument] = {}
         self._latest_quotes: dict[str, dict[str, Any]] = {}  # 报价缓存
         self._last_historical_bar_backfill_key: str | None = None
-        self._last_post_close_market_refresh_date: str | None = None
+        self._last_post_close_market_refresh_key: str | None = None
+        self._last_post_close_market_refresh_attempt_at: datetime | None = None
         self._last_post_close_fund_nav_refresh_date: str | None = None
+        self._last_post_close_fund_nav_refresh_attempt_at: datetime | None = None
         self._pending_valuation_publication_reason: str | None = None
         self._stop_requested = threading.Event()
 
@@ -271,6 +275,12 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
             targets = list(self._watchlist)
         if not targets:
             return
+        allow_remote_refresh = self._historical_backfill_remote_refresh_policy(
+            data_manager,
+            trade_date=end_date.date().isoformat(),
+        )
+        if allow_remote_refresh is None:
+            return
 
         updated = 0
         failed = 0
@@ -282,7 +292,7 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
                     end=end_date,
                     frequency=BarFrequency.DAILY,
                     asset_class=asset_class,
-                    allow_remote_refresh=True,
+                    allow_remote_refresh=allow_remote_refresh,
                     refresh_ttl_seconds=0,
                     degrade_to_cache=True,
                 )
@@ -340,89 +350,6 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
         if reason is None:
             return True
         return self._publish_current_valuation_snapshot(reason=reason)
-
-    @staticmethod
-    def _is_post_close_valuation_refresh_window(now: datetime) -> bool:
-        """Return whether same-day close data should wait for fixed refresh."""
-        return now.weekday() < 5 and now.time() >= _AFTERNOON_CLOSE
-
-    def _should_refresh_post_close_market_data(self, now: datetime) -> bool:
-        if now.weekday() >= 5:
-            return False
-        if now.time() < _POST_CLOSE_MARKET_REFRESH_TIME:
-            return False
-        run_date = now.date().isoformat()
-        return self._last_post_close_market_refresh_date != run_date
-
-    def _should_refresh_post_close_fund_nav_data(self, now: datetime) -> bool:
-        if now.weekday() >= 5:
-            return False
-        if now.time() < _POST_CLOSE_FUND_NAV_REFRESH_TIME:
-            return False
-        run_date = now.date().isoformat()
-        return self._last_post_close_fund_nav_refresh_date != run_date
-
-    def _maybe_refresh_post_close_valuation_data(
-        self,
-        data_manager,
-        *,
-        now: datetime | None = None,
-    ) -> bool:
-        """Refresh close-driven valuation inputs once after the fixed close time."""
-        current = now or datetime.now()
-        run_date = current.date().isoformat()
-        refreshed = False
-
-        if self._should_refresh_post_close_market_data(current):
-            self._maybe_backfill_historical_bars(data_manager, now=current)
-            self._last_post_close_market_refresh_date = run_date
-            logger.info(
-                "收盘后行情刷新完成: date=%s, scheduled_time=%s",
-                run_date,
-                _POST_CLOSE_MARKET_REFRESH_TIME.isoformat(timespec="minutes"),
-            )
-            refreshed = True
-
-        if self._should_refresh_post_close_fund_nav_data(current):
-            self._sync_fund_nav_quotes(confirmation_only=True)
-            self._last_post_close_fund_nav_refresh_date = run_date
-            logger.info(
-                "收盘后基金净值确认刷新完成: date=%s, scheduled_time=%s",
-                run_date,
-                _POST_CLOSE_FUND_NAV_REFRESH_TIME.isoformat(timespec="minutes"),
-            )
-            refreshed = True
-
-        return refreshed
-
-    def _sync_fund_nav_quotes(self, *, confirmation_only: bool = False) -> None:
-        """Refresh fund NAV/estimate quotes independently from stock quote polling."""
-        if self._db is None:
-            return
-        with self._lock:
-            watchlist = list(self._watchlist)
-            latest_quotes = dict(self._latest_quotes)
-        if not any(asset_class is AssetClass.FUND for _, asset_class in watchlist):
-            return
-
-        try:
-            refresh_kwargs = {"confirmation_only": True} if confirmation_only else {}
-            result = refresh_fund_nav_quotes(
-                self._config,
-                self._db,
-                watchlist,
-                latest_quotes,
-                **refresh_kwargs,
-            )
-        except Exception:
-            logger.warning("基金净值/估值同步失败，将保留已有快照", exc_info=True)
-            return
-
-        if result.quotes:
-            with self._lock:
-                self._latest_quotes.update(result.quotes)
-        if "__valuation_snapshot__" in result.failed:
-            self._pending_valuation_publication_reason = "fund_nav_sync"
 
     def _fetch_market_index_snapshot(
         self,

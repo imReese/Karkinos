@@ -142,9 +142,14 @@ def _freeze_previous_close_evidence(
             if quote_timestamp == _MIN_TIMESTAMP
             else quote_timestamp.astimezone(_SHANGHAI_TZ).date().isoformat()
         )
+        asset_class = (
+            str(quote.get("asset_type") or quote.get("asset_class") or "")
+            .strip()
+            .lower()
+        )
         evidence: dict[str, Any] | None = None
         if symbol and trade_date and db is not None:
-            if hasattr(db, "get_market_bar_on_date_sync"):
+            if asset_class != "fund" and hasattr(db, "get_market_bar_on_date_sync"):
                 same_day_bar = db.get_market_bar_on_date_sync(symbol, trade_date)
                 if same_day_bar and same_day_bar.get(
                     "close", same_day_bar.get("price")
