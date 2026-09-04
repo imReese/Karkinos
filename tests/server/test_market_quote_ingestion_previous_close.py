@@ -75,7 +75,7 @@ def test_prior_session_previous_close_is_preserved_as_daily_close_evidence() -> 
     assert "discarded_previous_close_date" not in command.metadata
 
 
-def test_explicit_verified_same_day_close_is_not_blocked_by_previous_close_guard() -> None:
+def test_explicit_verified_same_day_close_bypasses_previous_close_guard() -> None:
     command = _command(
         {
             "price": 87.40,
