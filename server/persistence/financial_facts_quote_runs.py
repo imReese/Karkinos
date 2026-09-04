@@ -12,6 +12,9 @@ from server.persistence.database_serialization import (
     serialize_metadata_json,
 )
 from server.persistence.event_log import insert_event_sync
+from server.persistence.financial_facts_valuation import (
+    record_valuation_publication_failure_on_connection,
+)
 
 logger = logging.getLogger("server.persistence.financial_facts")
 
@@ -407,46 +410,22 @@ def _block_valuation_publication(
     updated_at: str,
     publication_failure: Exception | None,
 ) -> None:
-    current = conn.execute(
-        "SELECT value_json FROM runtime_controls WHERE key = ? LIMIT 1",
-        ("valuation_snapshot_publication",),
-    ).fetchone()
-    current_value = (
-        metadata_payload_value(current["value_json"]) if current is not None else None
-    )
-    if (
-        publication_failure is None
-        and isinstance(current_value, dict)
-        and current_value.get("status") == "ready"
-    ):
-        return
-
     reason = (
         "quote_batch_publication_failed"
         if publication_failure is not None
         else "quote_fetch_run_not_fully_successful"
     )
-    value = {
-        "status": "failed",
-        "quote_fetch_run_id": run_id,
-        "quote_fetch_run_status": run_status,
-        "reason": reason,
-    }
-    if publication_failure is not None:
-        value["error_type"] = type(publication_failure).__name__
-    conn.execute(
-        """
-        INSERT INTO runtime_controls (key, value_json, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-            value_json = excluded.value_json,
-            updated_at = excluded.updated_at
-        """,
-        (
-            "valuation_snapshot_publication",
-            serialize_metadata_json(value),
-            updated_at,
+    record_valuation_publication_failure_on_connection(
+        conn,
+        updated_at=updated_at,
+        reason=reason,
+        error_type=(
+            type(publication_failure).__name__
+            if publication_failure is not None
+            else None
         ),
+        quote_fetch_run_id=run_id,
+        quote_fetch_run_status=run_status,
     )
 
 
