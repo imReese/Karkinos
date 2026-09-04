@@ -23,7 +23,7 @@ published, non-draft, non-prerelease stable tag:
 
 ```bash
 REPOSITORY=imReese/Karkinos
-TAG=v0.3.6
+TAG=v0.3.7
 BOOTSTRAP_DOWNLOAD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/karkinos-installer.XXXXXX")"
 
 export GH_HOST=github.com
@@ -50,10 +50,10 @@ whose verification code had also been removed.
 
 ## Run a managed protocol transition
 
-For example, releases through `v0.3.6` use the single-process protocol 1. The
-first two-process release uses protocol 2, so `v0.3.6` must not activate it with
-the old controller. Run the target tag's standalone installer without either
-legacy option:
+Releases through `v0.3.6` use the single-process protocol 1. The first
+two-process release, `v0.3.7`, uses protocol 2, so the installed `v0.3.6`
+controller must not activate it. Run the `v0.3.7` standalone installer without
+either legacy option:
 
 ```bash
 "$BOOTSTRAP_DOWNLOAD_DIR/bootstrap_installer.sh" \
