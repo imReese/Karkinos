@@ -63,19 +63,20 @@ guarantee.
 
 ## Project status
 
-The current software version is `0.3.6`. v0.3.6 is a broker-provider-free
-maintenance and native-distribution release. It retains v0.3.5's canonical
-post-close stock and confirmed fund-NAV reconciliation, together with the
-existing research, financial-evidence, planning, paper/shadow,
-OMS/reconciliation, and controlled-execution foundation. Native release
-activation now budgets 120 seconds for verified artifact cold start and real
-state initialization without weakening exact identity, launchd ownership,
-scheduler, activation-guard, or first-iteration checks. The live scheduler
-remains unconditional while automatic trading remains a separate default-off
-runtime gate. The release continues to use verified immutable macOS artifacts,
-journaled `current`/`previous` activation, and automatic rollback. It does not
-select, register, contact, or require a real broker adapter and does not claim
-real-money readiness.
+The current software version is `0.3.7`. v0.3.7 separates authoritative stock,
+ETF, and open-end-fund market identities and keeps confirmed fund NAV evidence
+independent from intraday stock research. Persisted valuation, ledger, action,
+and exact typed quote identities are revalidated atomically before a pre-trade
+risk batch can be recorded. The release also adds a durable, independently
+supervised AI research worker, provider-free account qualification and replay,
+explicit human-only promotion to paper/shadow, and separate research-preview
+and account-action projections in Decision and Overview. The live scheduler is
+unconditional; automatic trading remains a separate default-off runtime gate
+that does not enable broker submission. Native releases now use a two-process
+protocol with exact API and worker identity, verified immutable artifacts,
+journaled `current`/`previous` activation, automatic rollback, and only one
+local rollback version. The release does not select, register, contact, or
+require a real broker adapter and does not claim real-money readiness.
 
 The exact tag commit must already have passed the complete `main` Code CI gate
 and repository acceptance audit; the tag release workflow verifies and reuses
