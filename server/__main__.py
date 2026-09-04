@@ -38,6 +38,11 @@ def main() -> None:
         action="store_true",
         help="校验配置并预检本地持久状态后退出",
     )
+    validation_mode.add_argument(
+        "--research-worker",
+        action="store_true",
+        help="启动独立、受管的 AI 收盘后研究 worker（不启动 HTTP 服务）",
+    )
     args = parser.parse_args()
 
     from server.bootstrap import (
@@ -65,6 +70,19 @@ def main() -> None:
 
         preflight_persistent_state()
         print("Karkinos persisted state compatible")
+        return
+    if args.research_worker:
+        if args.host is not None or args.port is not None or args.reload:
+            parser.error(
+                "--research-worker cannot be combined with --host, --port, or --reload"
+            )
+        import asyncio
+
+        from server.workers.ai_shadow_research_worker import (
+            run_ai_shadow_research_worker,
+        )
+
+        asyncio.run(run_ai_shadow_research_worker(config))
         return
     host = config.host
     port = config.port

@@ -18,6 +18,7 @@ from server.contracts.ai_shadow_research_automation import (
 )
 from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
 from server.services.strategy_promotion_support import (
+    AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
     AI_SHADOW_STRATEGY_PREFIX,
     STRATEGY_PROMOTION_LIFECYCLE_STAGES,
     STRATEGY_PROMOTION_SCHEMA_VERSION,
@@ -27,6 +28,9 @@ from server.services.strategy_promotion_support import (
 )
 from server.services.strategy_promotion_support import (
     ai_shadow_fee_schedule_binding as _ai_shadow_fee_schedule_binding,
+)
+from server.services.strategy_promotion_support import (
+    ai_shadow_qualification_readiness_binding_blockers as _ai_shadow_qualification_readiness_binding_blockers,
 )
 from server.services.strategy_promotion_support import (
     binding_backtest_source as _binding_backtest_source,
@@ -46,6 +50,9 @@ from server.services.strategy_promotion_support import (
 )
 from server.services.strategy_promotion_support import (
     resolve_ai_shadow_daily_strategy_artifact_binding as _resolve_ai_shadow_daily_strategy_artifact_binding,
+)
+from server.services.strategy_promotion_support import (
+    resolve_ai_shadow_qualification_promotion_evidence as _resolve_ai_shadow_qualification_promotion_evidence,
 )
 from server.services.strategy_promotion_support import (
     strategy_advancement_gate_fingerprint as _strategy_advancement_gate_fingerprint,
@@ -376,8 +383,25 @@ def resolve_ai_shadow_strategy_promotion_binding(
     ):
         blockers.append("ai_shadow_strategy_human_review_gate_mismatch")
     blockers = list(dict.fromkeys(blockers))
-    fee_schedule_binding = _ai_shadow_fee_schedule_binding(db, candidate_id)
-    dataset_replay = _ai_shadow_dataset_replay_evidence(db, candidate_id)
+    qualification_candidate_id = str(
+        readiness.get("qualification_candidate_id") or ""
+    ).strip()
+    qualification_evidence: dict[str, Any] = {}
+    if qualification_candidate_id:
+        qualification_evidence, _ = _resolve_ai_shadow_qualification_promotion_evidence(
+            db,
+            qualification_candidate_id,
+        )
+    fee_schedule_binding = (
+        _json_object(qualification_evidence.get("fee_schedule_binding"))
+        if qualification_candidate_id
+        else _ai_shadow_fee_schedule_binding(db, candidate_id)
+    )
+    dataset_replay = (
+        _json_object(qualification_evidence.get("dataset_replay"))
+        if qualification_candidate_id
+        else _ai_shadow_dataset_replay_evidence(db, candidate_id)
+    )
     daily_strategy_artifact_binding = readiness.get("daily_strategy_artifact_binding")
     daily_strategy_artifact_binding = (
         dict(daily_strategy_artifact_binding)
@@ -393,6 +417,9 @@ def resolve_ai_shadow_strategy_promotion_binding(
         "backtest_result_id": state.get("backtest_result_id"),
         "comparison_fingerprint": readiness.get("comparison_fingerprint"),
         "human_approval_id": readiness.get("human_approval_id"),
+        "qualification_candidate_id": qualification_candidate_id or None,
+        "qualification_run_id": readiness.get("qualification_run_id"),
+        "qualification_binding": _json_object(readiness.get("qualification_binding")),
         "human_reviewer": human_review.get("reviewer"),
         "human_review_note_recorded": bool(
             str(human_review.get("review_note") or "").strip()
@@ -526,6 +553,11 @@ def _ai_shadow_readiness_binding_blockers(
     strategy_id = str(readiness.get("strategy_id") or "").strip()
     if not strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
         return []
+    if (
+        readiness.get("schema_version") == AI_SHADOW_QUALIFICATION_READINESS_SCHEMA
+        or str(readiness.get("qualification_candidate_id") or "").strip()
+    ):
+        return _ai_shadow_qualification_readiness_binding_blockers(db, readiness)
     candidate_id = strategy_id.removeprefix(AI_SHADOW_STRATEGY_PREFIX)
     reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
     binding = reader(candidate_id) if callable(reader) and candidate_id else None

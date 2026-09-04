@@ -19,20 +19,11 @@ from server.ai_runtime.provider_call_window import (
     ProviderCallDeferred,
     provider_call_deferred_payload,
 )
-from server.contracts.ai_shadow_research_automation import (
-    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
-    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
-)
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
 )
-from server.ai_runtime.strategy_research_privacy import (
-    NORMALIZED_RESEARCH_NOTIONAL,
-)
 from server.ai_runtime.store import IdempotencyConflict
 from server.ai_runtime.strategy_research import (
-    STRATEGY_RESEARCH_MAX_CANDIDATES,
-    STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
@@ -42,11 +33,30 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchSelection,
     StrategyResearchService,
 )
+from server.ai_runtime.strategy_research_privacy import (
+    NORMALIZED_RESEARCH_NOTIONAL,
+)
 from server.composition.ai_application_services import (
     build_shadow_research_read_service,
     build_shadow_research_write_service,
     build_strategy_research_read_service,
     build_strategy_research_write_service,
+)
+from server.http.ai_shadow_research_automation import (
+    ShadowResearchCitationCallExtensionPayload,
+    ShadowResearchCorrectedPanelCitationResumePayload,
+    ShadowResearchCorrectedPanelRearmPayload,
+    ShadowResearchOutputTruncationCallExtensionPayload,
+    ShadowResearchPolicyPayload,
+    ShadowResearchPromotionPayload,
+    ShadowResearchRetryPayload,
+    ShadowResearchTimeoutResumeCallExtensionPayload,
+)
+from server.http.ai_shadow_research_automation import (
+    create_router as create_shadow_research_automation_router,
+)
+from server.http.ai_shadow_research_qualification import (
+    create_router as create_shadow_research_qualification_router,
 )
 from server.services.strategy_research_factory import (
     strategy_research_model_timeout_seconds as _model_timeout_seconds,
@@ -185,137 +195,6 @@ class HumanReviewPayload(BaseModel):
     ]
 
 
-class ShadowResearchPolicyPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
-    after_close_time: str = Field(default="15:30", min_length=5, max_length=5)
-    max_provider_calls_per_market_date: int = Field(
-        default=STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
-        ge=1,
-        le=STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
-    )
-    daily_token_budget: int | None = None
-    token_budget_mode: Literal["unbounded_daily", "legacy_bounded_daily"] = (
-        "unbounded_daily"
-    )
-    max_candidates_per_run: int = Field(
-        default=STRATEGY_RESEARCH_MAX_CANDIDATES,
-        ge=1,
-        le=STRATEGY_RESEARCH_MAX_CANDIDATES,
-    )
-    baseline_backtest_result_id: int | None = Field(default=None, gt=0)
-    research_capital_mode: Literal["normalized_notional", "account_bound"] = (
-        SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
-    )
-    require_complete_account_evidence: bool = False
-    research_question: str = Field(min_length=1, max_length=4_000)
-    updated_by: str = Field(min_length=1, max_length=128)
-    confirmation: str = Field(min_length=1, max_length=200)
-
-    @model_validator(mode="after")
-    def validate_sequential_iteration_budget(
-        self,
-    ) -> "ShadowResearchPolicyPayload":
-        required_calls = self.max_candidates_per_run * 2
-        if self.max_provider_calls_per_market_date < required_calls:
-            raise ValueError(
-                "max_provider_calls_per_market_date must cover one generation "
-                "and one critique per sequential iteration"
-            )
-        if self.daily_token_budget is not None:
-            if self.token_budget_mode != "legacy_bounded_daily":
-                raise ValueError(
-                    "daily_token_budget requires legacy_bounded_daily token mode"
-                )
-        elif self.token_budget_mode != "unbounded_daily":
-            raise ValueError("token_budget_mode requires a daily_token_budget")
-        if self.require_complete_account_evidence != (
-            self.research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
-        ):
-            raise ValueError(
-                "research_capital_mode conflicts with account evidence requirement"
-            )
-        return self
-
-
-class ShadowResearchPromotionPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    approved_by: str = Field(min_length=1, max_length=128)
-    notes: str = Field(min_length=1, max_length=8_000)
-    confirmation: Literal[
-        "approve_evidence_bound_candidate_for_paper_shadow_only_without_"
-        "production_or_trade_authority"
-    ]
-
-
-class ShadowResearchRetryPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    approved_by: str = Field(min_length=1, max_length=128)
-    notes: str = Field(min_length=1, max_length=8_000)
-    confirmation: Literal[
-        "authorize_one_additional_complete_five_round_ten_call_strategy_"
-        "research_retry_without_strategy_trade_or_capital_authority"
-    ]
-
-
-class ShadowResearchCorrectedPanelRearmPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    approved_by: str = Field(min_length=1, max_length=128)
-    notes: str = Field(min_length=1, max_length=8_000)
-    confirmation: Literal[
-        "authorize_one_corrected_full_market_40_stock_panel_five_round_ten_call_"
-        "research_without_strategy_trade_or_capital_authority"
-    ]
-
-
-class ShadowResearchCitationCallExtensionPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    approved_by: str = Field(min_length=1, max_length=128)
-    notes: str = Field(min_length=1, max_length=8_000)
-    confirmation: Literal[
-        "authorize_one_additional_deepseek_call_for_citation_contract_retry_"
-        "without_strategy_trade_or_capital_authority"
-    ]
-
-
-class ShadowResearchCorrectedPanelCitationResumePayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    approved_by: str = Field(min_length=1, max_length=128)
-    notes: str = Field(min_length=1, max_length=8_000)
-    confirmation: Literal[
-        "authorize_one_additional_deepseek_call_for_corrected_panel_first_"
-        "critique_citation_resume_without_strategy_trade_or_capital_authority"
-    ]
-
-
-class ShadowResearchOutputTruncationCallExtensionPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    approved_by: str = Field(min_length=1, max_length=128)
-    notes: str = Field(min_length=1, max_length=8_000)
-    confirmation: Literal[
-        "authorize_one_additional_deepseek_call_for_output_truncation_retry_"
-        "without_strategy_trade_or_capital_authority"
-    ]
-
-
-class ShadowResearchTimeoutResumeCallExtensionPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    approved_by: str = Field(min_length=1, max_length=128)
-    notes: str = Field(min_length=1, max_length=8_000)
-    confirmation: Literal[
-        "authorize_one_additional_deepseek_call_for_partial_fifth_round_timeout_"
-        "resume_without_strategy_trade_or_capital_authority"
-    ]
-
-
 def create_router() -> APIRouter:
     router = APIRouter(prefix="/api/ai/strategy-research", tags=["ai-research"])
 
@@ -337,197 +216,9 @@ def create_router() -> APIRouter:
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @router.get("/shadow-automation")
-    async def get_shadow_research_automation() -> dict[str, Any]:
-        """Provider-free, write-free projection of policy, runs, and candidates."""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
-        if state.db is None:
-            raise HTTPException(status_code=503, detail="Database is not initialized")
-        return _build_shadow_read_service(state).status()
-
-    @router.get("/shadow-automation/readiness")
-    async def get_shadow_research_readiness() -> dict[str, Any]:
-        return _read_shadow_research_readiness()
-
-    @router.put("/shadow-automation/policy")
-    async def update_shadow_research_policy(
-        payload: ShadowResearchPolicyPayload,
-    ) -> dict[str, Any]:
-        from server.dependencies import get_app_state
-
-        try:
-            return _build_shadow_write_service(get_app_state()).update_policy(
-                payload.model_dump(mode="json")
-            )
-        except Exception as exc:
-            _raise_http(exc)
-
-    @router.post("/shadow-automation/run")
-    async def run_shadow_research_now() -> dict[str, Any]:
-        """Run the same after-close and standing-policy gates as the background loop."""
-        from server.dependencies import get_app_state
-
-        try:
-            result = await _build_shadow_write_service(get_app_state()).run_once()
-            if result.get("run_status") == "deferred_for_provider_off_peak":
-                return JSONResponse(status_code=202, content=result)
-            return result
-        except ProviderCallDeferred as exc:
-            return _provider_call_deferred_response(exc)
-        except Exception as exc:
-            _raise_http(exc)
-
-    @router.post("/shadow-automation/runs/{run_id}/retry-authorizations")
-    async def authorize_shadow_research_retry(
-        run_id: str,
-        payload: ShadowResearchRetryPayload,
-    ) -> JSONResponse:
-        """Record one append-only research retry; no strategy or trade authority."""
-        from server.dependencies import get_app_state
-
-        try:
-            authorization = _build_shadow_write_service(
-                get_app_state()
-            ).authorize_retry(
-                run_id,
-                approved_by=payload.approved_by,
-                notes=payload.notes,
-                confirmation=payload.confirmation,
-            )
-            return JSONResponse(status_code=201, content=authorization)
-        except Exception as exc:
-            _raise_http(exc)
-
-    @router.post(
-        "/shadow-automation/runs/{run_id}/corrected-panel-rearm-authorizations"
-    )
-    async def authorize_shadow_research_corrected_panel_rearm(
-        run_id: str,
-        payload: ShadowResearchCorrectedPanelRearmPayload,
-    ) -> JSONResponse:
-        """Bind one exact 40-stock panel and ten-call research-only rerun."""
-        from server.dependencies import get_app_state
-
-        try:
-            authorization = await _build_shadow_write_service(
-                get_app_state()
-            ).authorize_corrected_panel_rearm(
-                run_id,
-                approved_by=payload.approved_by,
-                notes=payload.notes,
-                confirmation=payload.confirmation,
-            )
-            return JSONResponse(status_code=201, content=authorization)
-        except Exception as exc:
-            _raise_http(exc)
-
-    @router.post("/shadow-automation/runs/{run_id}/citation-call-extensions")
-    async def authorize_shadow_research_citation_call_extension(
-        run_id: str,
-        payload: ShadowResearchCitationCallExtensionPayload,
-    ) -> JSONResponse:
-        """Add exactly one provider call; never add strategy or trade authority."""
-        from server.dependencies import get_app_state
-
-        try:
-            authorization = _build_shadow_write_service(
-                get_app_state()
-            ).authorize_citation_call_extension(
-                run_id,
-                approved_by=payload.approved_by,
-                notes=payload.notes,
-                confirmation=payload.confirmation,
-            )
-            return JSONResponse(status_code=201, content=authorization)
-        except Exception as exc:
-            _raise_http(exc)
-
-    @router.post(
-        "/shadow-automation/runs/{run_id}/corrected-panel-citation-resume-extensions"
-    )
-    async def authorize_corrected_panel_citation_resume_extension(
-        run_id: str,
-        payload: ShadowResearchCorrectedPanelCitationResumePayload,
-    ) -> JSONResponse:
-        """Resume one evidence-bound first critique with exactly one added call."""
-        from server.dependencies import get_app_state
-
-        try:
-            authorization = await _build_shadow_write_service(
-                get_app_state()
-            ).authorize_corrected_panel_citation_resume_extension(
-                run_id,
-                approved_by=payload.approved_by,
-                notes=payload.notes,
-                confirmation=payload.confirmation,
-            )
-            return JSONResponse(status_code=201, content=authorization)
-        except Exception as exc:
-            _raise_http(exc)
-
-    @router.post("/shadow-automation/runs/{run_id}/output-truncation-call-extensions")
-    async def authorize_shadow_research_output_truncation_call_extension(
-        run_id: str,
-        payload: ShadowResearchOutputTruncationCallExtensionPayload,
-    ) -> JSONResponse:
-        """Add one truncation-recovery call; never add trade authority."""
-        from server.dependencies import get_app_state
-
-        try:
-            authorization = _build_shadow_write_service(
-                get_app_state()
-            ).authorize_output_truncation_call_extension(
-                run_id,
-                approved_by=payload.approved_by,
-                notes=payload.notes,
-                confirmation=payload.confirmation,
-            )
-            return JSONResponse(status_code=201, content=authorization)
-        except Exception as exc:
-            _raise_http(exc)
-
-    @router.post("/shadow-automation/runs/{run_id}/timeout-resume-call-extensions")
-    async def authorize_shadow_research_timeout_resume_call_extension(
-        run_id: str,
-        payload: ShadowResearchTimeoutResumeCallExtensionPayload,
-    ) -> JSONResponse:
-        """Resume only a persisted fifth-round timeout; never add trade authority."""
-        from server.dependencies import get_app_state
-
-        try:
-            authorization = _build_shadow_write_service(
-                get_app_state()
-            ).authorize_timeout_resume_call_extension(
-                run_id,
-                approved_by=payload.approved_by,
-                notes=payload.notes,
-                confirmation=payload.confirmation,
-            )
-            return JSONResponse(status_code=201, content=authorization)
-        except Exception as exc:
-            _raise_http(exc)
-
-    @router.post("/shadow-candidates/{candidate_id}/paper-shadow-approvals")
-    async def approve_shadow_research_candidate(
-        candidate_id: str,
-        payload: ShadowResearchPromotionPayload,
-    ) -> JSONResponse:
-        from server.dependencies import get_app_state
-
-        try:
-            service = _build_shadow_write_service(get_app_state())
-            result = service.approve_candidate(
-                candidate_id,
-                approved_by=payload.approved_by,
-                notes=payload.notes,
-                confirmation=payload.confirmation,
-            )
-            return JSONResponse(status_code=201, content=result)
-        except Exception as exc:
-            _raise_http(exc)
-
+    # These two provider-capable routes are explicit human research commands.
+    # Lifespan, daily qualification, and the automatic enqueue loop never call
+    # them; automatic provider work crosses only the durable worker boundary.
     @router.post("/hypotheses")
     async def generate_strategy_hypotheses(
         payload: HypothesisGenerationPayload,
@@ -662,6 +353,14 @@ def create_router() -> APIRouter:
         except Exception as exc:
             _raise_http(exc)
 
+    shadow_automation_router = create_shadow_research_automation_router(
+        build_write_service=lambda state: _build_shadow_write_service(state),
+        build_job_scheduler=lambda state: _build_shadow_job_scheduler(state),
+        build_read_service=lambda state: _build_shadow_read_service(state),
+        raise_http=lambda exc: _raise_http(exc),
+    )
+    router.routes.extend(shadow_automation_router.routes)
+    router.include_router(create_shadow_research_qualification_router())
     return router
 
 
@@ -678,6 +377,20 @@ def _build_read_service(state: Any) -> StrategyResearchService:
 
 def _build_shadow_write_service(state: Any) -> Any:
     return build_shadow_research_write_service(state)
+
+
+def _build_shadow_job_scheduler(state: Any) -> Any:
+    from server.composition.ai_shadow_research_automation import (
+        compose_ai_shadow_research_job_scheduler,
+    )
+    from server.services.ai_shadow_research_job_scheduler import (
+        AiShadowResearchJobScheduler,
+    )
+
+    return compose_ai_shadow_research_job_scheduler(
+        state,
+        service_type=AiShadowResearchJobScheduler,
+    )
 
 
 def _build_shadow_read_service(state: Any) -> Any:

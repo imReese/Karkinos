@@ -103,12 +103,25 @@ export const overviewCopyEn = {
       `Clears when: ${condition}. Viewing or acknowledging alone does not clear it.`,
     dataResolutionCondition:
       'Newer confirmed quote or NAV evidence covers every current holding and shares one valuation and activity scope.',
+    quoteResolutionCondition:
+      'Run explicit quote ingestion for the listed symbols and replace each blocker with newer confirmed quote evidence.',
+    confirmedFundNavResolutionCondition:
+      'The target-date confirmed fund NAV is published and recorded through Sync confirmed NAV. Ordinary quote refresh and intraday estimates cannot clear it.',
+    mixedDataResolutionCondition:
+      'Complete explicit quote ingestion for ordinary quote blockers and record target-date confirmed fund NAV, then rebuild the full-account authoritative valuation.',
     strategyNoLinkedFillsResolution:
       'No action required: contribution appears only after a reconciled fill is explicitly linked to strategy evidence.',
     strategyEvidenceResolution:
       'The signal, review, order, fill, activity record, and valuation references form one auditable evidence chain.',
     dataUsable: 'Market data and NAV are usable.',
     dataNeedsReview: 'Market data or NAV needs review.',
+    stockDataNeedsReview: 'Stock quote evidence needs review.',
+    mixedAssetDataNeedsReview:
+      'Stock quotes and confirmed fund NAV need separate review.',
+    confirmedFundNavNeedsReview:
+      'Confirmed fund NAV is pending; stock research that does not depend on account equity may continue.',
+    confirmedFundNavReviewDetail: (count: number) =>
+      `${count} fund holding${count === 1 ? '' : 's'} still lack target-date confirmed NAV. This does not block stock research that does not depend on account equity, but full-account authoritative valuation and risk remain blocked and no order is authorized.`,
     dataReviewLoading: 'Loading the current-holding evidence review.',
     dataReviewUnavailable:
       'Current-holding evidence is unavailable; interpretation remains blocked.',
@@ -140,6 +153,14 @@ export const overviewCopyEn = {
     strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
     strategyCandidateEmptyDetail:
       'No buy, sell, hold, or rebalance signals have entered the queue.',
+    accountRecommendationNoAction: 'Account action today: no action',
+    accountRecommendationNoActionDetail:
+      'The daily promoted-strategy scan completed without an account action signal.',
+    accountRecommendationBlocked: "Today's account action is not ready",
+    accountRecommendationUnavailable:
+      "Today's account recommendation evidence is unavailable",
+    accountRecommendationReason: (reasons: string) =>
+      `Blocking evidence: ${reasons || 'no verifiable account recommendation is available'}.`,
     researchOperationCandidate:
       'Quant research operation candidates (non-executable; account qualification not evaluated)',
     researchOperationDetail: (summary: string) =>

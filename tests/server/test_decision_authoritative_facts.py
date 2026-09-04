@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from fastapi.routing import APIRoute
 
@@ -55,6 +57,11 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
     tmp_path,
     monkeypatch,
 ) -> None:
+    valuation_now = datetime(2026, 7, 10, 15, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: now or valuation_now,
+    )
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     db.insert_ledger_entry_sync(
@@ -72,12 +79,14 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
         price=20.0,
         gross_amount=2000.0,
         net_cash_impact=-2000.0,
+        asset_class="stock",
         created_at="2026-07-10T09:35:01+08:00",
     )
     db.upsert_latest_quote_sync(
         symbol="603659",
         asset_type="stock",
         price=25.0,
+        previous_close=24.0,
         quote_timestamp="2026-07-10T15:00:00",
         quote_source="deterministic_fixture",
         quote_status="confirmed",
@@ -103,7 +112,7 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
         timestamp="2026-07-10T10:30:00+08:00",
         price=25.0,
     )
-    db.publish_current_valuation_snapshot_sync()
+    db.publish_current_valuation_snapshot_sync(now=valuation_now)
     stale_runtime_portfolio = SimpleNamespace(
         cash=-999.0,
         positions={
@@ -193,6 +202,20 @@ def test_decision_blocks_unconfirmed_fund_estimate_as_persisted_evidence(
         quote_source="eastmoney_fund_estimate",
         provider_name="akshare",
         quote_status="live",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-07-10T09:00:00+08:00",
+        amount=1000.0,
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-07-10T09:30:00+08:00",
+        symbol="019999",
+        direction="buy",
+        quantity=100.0,
+        price=2.0,
+        asset_class="fund",
     )
     published = db.publish_current_valuation_snapshot_sync()
     state = SimpleNamespace(

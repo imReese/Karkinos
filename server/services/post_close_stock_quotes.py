@@ -13,6 +13,7 @@ from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from core.types import AssetClass, Symbol
+from data.market_daily_store import is_supported_stock_receipt_identity
 from server.contracts.quote_ingestion import (
     QuoteIngestionCommand,
     quote_timestamp_instant,
@@ -23,7 +24,6 @@ from server.services.market_calendar_dates import (
 
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _POLICY = "karkinos.post_close_stock_quote.v2"
-_RECEIPT_SCHEMA = "karkinos.market_daily_ingestion_receipt.v1"
 _TRIGGER = "post_close_market_bar"
 _CANONICAL_SOURCE = "market_bar_close"
 _TRUSTED_EQUIVALENT_SOURCES = frozenset(
@@ -59,6 +59,8 @@ class PostCloseStockQuoteDatabase(Protocol):
         symbol: str,
         trade_date: str,
         frequency: str = "1d",
+        *,
+        instrument_type: str,
     ) -> dict[str, Any] | None: ...
 
     def get_latest_quotes_sync(self) -> list[dict[str, Any]]: ...
@@ -393,7 +395,11 @@ def _quote_command(
     calendar_evidence_refs: tuple[str, ...],
 ) -> QuoteIngestionCommand:
     close_price = float(bar["close"])
-    previous = database.get_latest_market_bar_before_date_sync(symbol, trade_date)
+    previous = database.get_latest_market_bar_before_date_sync(
+        symbol,
+        trade_date,
+        instrument_type="stock",
+    )
     previous_close = _positive_float(
         (previous or {}).get("close", (previous or {}).get("price"))
     )
@@ -629,10 +635,9 @@ def _is_valid_receipt(
     if not isinstance(receipt, dict):
         return False
     return bool(
-        receipt.get("schema_version") == _RECEIPT_SCHEMA
+        is_supported_stock_receipt_identity(receipt)
         and receipt.get("trade_date") == trade_date
         and receipt.get("provider_name") == provider_name
-        and receipt.get("storage_authority") == "sqlite_market_bars"
         and isinstance(receipt.get("symbols"), list)
         and receipt.get("symbols")
         and receipt.get("row_count") == len(set(receipt.get("symbols", [])))

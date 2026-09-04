@@ -48,6 +48,12 @@ class AuditReplayResult:
     errors: tuple[str, ...]
 
 
+def begin_immediate(conn: sqlite3.Connection) -> None:
+    """Acquire the canonical write lock for one AI audit transaction."""
+
+    conn.execute("BEGIN IMMEDIATE")
+
+
 class AiAuditStore:
     """Durable append-oriented store for AI research runtime evidence."""
 
@@ -533,7 +539,7 @@ class AiAuditStore:
         created_at: str,
     ) -> str:
         with self._connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            begin_immediate(conn)
             last = conn.execute(
                 """
                 SELECT sequence_number, event_hash

@@ -19,6 +19,15 @@ from server.persistence.ai_shadow_research_partial_resume import (
 from server.persistence.ai_shadow_research_provider_calls import (
     ShadowResearchProviderCallRepositoryMixin,
 )
+from server.persistence.ai_shadow_research_qualification import (
+    ShadowResearchQualificationRepositoryMixin,
+)
+from server.persistence.ai_shadow_research_qualification_candidate_uow import (
+    ShadowResearchQualificationCandidateUnitOfWorkMixin,
+)
+from server.persistence.ai_shadow_research_qualification_promotion import (
+    ShadowResearchQualificationPromotionRepositoryMixin,
+)
 from server.persistence.ai_shadow_research_retry_authorizations import (
     ShadowResearchRetryAuthorizationRepositoryMixin,
 )
@@ -46,11 +55,24 @@ class ShadowResearchStore(
     ShadowResearchProviderCallRepositoryMixin,
     ShadowResearchRunRepositoryMixin,
     ShadowResearchCandidateRepositoryMixin,
+    ShadowResearchQualificationRepositoryMixin,
+    ShadowResearchQualificationCandidateUnitOfWorkMixin,
+    ShadowResearchQualificationPromotionRepositoryMixin,
 ):
     """Atomic run, provider budget, candidate, and promotion audit storage."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        qualification_backup_root: str | Path | None = None,
+    ) -> None:
         self._path = Path(path)
+        self._qualification_backup_root = (
+            Path(qualification_backup_root)
+            if qualification_backup_root is not None
+            else self._path.parent / "strategy-research-backups"
+        )
         self._uow = ShadowResearchUnitOfWork(self._path)
 
     @property

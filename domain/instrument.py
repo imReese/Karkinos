@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from core.types import AssetClass, CommissionType, Settlement, Symbol
+from core.types import (
+    AssetClass,
+    CommissionType,
+    InstrumentType,
+    Settlement,
+    Symbol,
+)
 
 
 @dataclass(frozen=True)
@@ -18,6 +24,7 @@ class Instrument:
     symbol: Symbol
     name: str
     asset_class: AssetClass
+    instrument_type: InstrumentType
     commission_type: CommissionType
     settlement: Settlement
     lot_size: Decimal  # 交易手数（股票/ETF=100, 黄金=1）
@@ -49,6 +56,7 @@ def make_stock(
         symbol=Symbol(symbol),
         name=name,
         asset_class=AssetClass.STOCK,
+        instrument_type=InstrumentType.STOCK,
         commission_type=CommissionType.STOCK_A,
         settlement=Settlement.T_PLUS_1,
         lot_size=Decimal("100"),
@@ -63,6 +71,7 @@ def make_etf(symbol: str, name: str) -> Instrument:
         symbol=Symbol(symbol),
         name=name,
         asset_class=AssetClass.FUND,
+        instrument_type=InstrumentType.ETF,
         commission_type=CommissionType.FUND_ETF,
         settlement=Settlement.T_PLUS_1,
         lot_size=Decimal("100"),
@@ -77,6 +86,7 @@ def make_open_end_fund(symbol: str, name: str) -> Instrument:
         symbol=Symbol(symbol),
         name=name,
         asset_class=AssetClass.FUND,
+        instrument_type=InstrumentType.OPEN_END_FUND,
         commission_type=CommissionType.FUND_OPENEND,
         settlement=Settlement.T_PLUS_0,
         lot_size=Decimal("1"),
@@ -91,6 +101,7 @@ def make_gold_spot(symbol: str = "AU9999", name: str = "黄金现货") -> Instru
         symbol=Symbol(symbol),
         name=name,
         asset_class=AssetClass.GOLD,
+        instrument_type=InstrumentType.GOLD,
         commission_type=CommissionType.GOLD_SPOT,
         settlement=Settlement.T_PLUS_0,
         lot_size=Decimal("1"),
@@ -105,6 +116,7 @@ def make_bond(symbol: str, name: str) -> Instrument:
         symbol=Symbol(symbol),
         name=name,
         asset_class=AssetClass.BOND,
+        instrument_type=InstrumentType.BOND,
         commission_type=CommissionType.BOND_EXCHANGE,
         settlement=Settlement.T_PLUS_0,
         lot_size=Decimal("10"),
@@ -119,6 +131,7 @@ def make_index(symbol: str, name: str) -> Instrument:
         symbol=Symbol(symbol),
         name=name,
         asset_class=AssetClass.INDEX,
+        instrument_type=InstrumentType.INDEX,
         commission_type=CommissionType.STOCK_A,
         settlement=Settlement.T_PLUS_0,
         lot_size=Decimal("1"),

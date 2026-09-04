@@ -133,9 +133,17 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
             fetch_run_id,
         )
 
-    async def get_latest_quote(self, symbol: str) -> dict[str, Any] | None:
-        """获取单个标的最新行情快照。"""
-        return await self._financial_facts.get_latest_quote(symbol)
+    async def get_latest_quote(
+        self,
+        symbol: str,
+        *,
+        instrument_type: str,
+    ) -> dict[str, Any] | None:
+        """获取单个精确标的身份的最新行情快照。"""
+        return await self._financial_facts.get_latest_quote(
+            symbol,
+            instrument_type=instrument_type,
+        )
 
     def get_latest_quotes_sync(self) -> list[dict[str, Any]]:
         """同步获取各标的最新行情快照，供启动恢复使用。"""
@@ -154,10 +162,37 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         return self._financial_facts.list_quote_selection_candidates_sync()
 
     def get_recent_quote_snapshots_sync(
-        self, symbol: str, limit: int = 2
+        self,
+        symbol: str,
+        limit: int = 2,
+        *,
+        instrument_type: str | None = None,
     ) -> list[dict[str, Any]]:
         """同步获取单个标的最近的行情快照序列。"""
-        return self._financial_facts.get_recent_quote_snapshots_sync(symbol, limit)
+        return self._financial_facts.get_recent_quote_snapshots_sync(
+            symbol,
+            limit,
+            instrument_type=instrument_type,
+        )
+
+    def get_historical_price_matrix_sync(
+        self,
+        *,
+        instrument_keys: list[object] | None = None,
+        symbols: list[str] | None = None,
+        start_date: str,
+        end_date: str,
+        symbol_batch_size: int = 400,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Read one bounded matrix of persisted historical price evidence."""
+
+        return self._financial_facts.get_historical_price_matrix_sync(
+            instrument_keys=instrument_keys,
+            symbols=symbols,
+            start_date=start_date,
+            end_date=end_date,
+            symbol_batch_size=symbol_batch_size,
+        )
 
     def save_daily_close_snapshot_sync(
         self,
@@ -178,35 +213,62 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         )
 
     def get_latest_daily_close_before_sync(
-        self, symbol: str, trade_date: str
+        self,
+        symbol: str,
+        trade_date: str,
+        instrument_type: str | None = None,
     ) -> dict[str, Any] | None:
         """获取某日之前最近一个交易日收盘基准。"""
         return self._financial_facts.get_latest_daily_close_before_sync(
-            symbol, trade_date
+            symbol,
+            trade_date,
+            instrument_type,
         )
 
     def get_latest_market_bar_before_date_sync(
-        self, symbol: str, trade_date: str, frequency: str = "1d"
+        self,
+        symbol: str,
+        trade_date: str,
+        frequency: str = "1d",
+        *,
+        instrument_type: str,
     ) -> dict[str, Any] | None:
         """Read the latest daily OHLC bar before trade_date from the data store."""
         return self._financial_facts.get_latest_market_bar_before_date_sync(
-            symbol, trade_date, frequency
+            symbol,
+            trade_date,
+            frequency,
+            instrument_type=instrument_type,
         )
 
     def get_market_bar_on_date_sync(
-        self, symbol: str, trade_date: str, frequency: str = "1d"
+        self,
+        symbol: str,
+        trade_date: str,
+        frequency: str = "1d",
+        *,
+        instrument_type: str,
     ) -> dict[str, Any] | None:
         """Read the daily OHLC bar on trade_date from the data store."""
         return self._financial_facts.get_market_bar_on_date_sync(
-            symbol, trade_date, frequency
+            symbol,
+            trade_date,
+            frequency,
+            instrument_type=instrument_type,
         )
 
     def get_latest_quote_before_date_sync(
-        self, symbol: str, trade_date: str
+        self,
+        symbol: str,
+        trade_date: str,
+        *,
+        instrument_type: str,
     ) -> dict[str, Any] | None:
         """获取某日之前最近一个交易日的最后一条报价快照。"""
         return self._financial_facts.get_latest_quote_before_date_sync(
-            symbol, trade_date
+            symbol,
+            trade_date,
+            instrument_type=instrument_type,
         )
 
     # ---------- Portfolio Snapshots ----------

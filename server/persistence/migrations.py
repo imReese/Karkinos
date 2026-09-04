@@ -20,6 +20,9 @@ import server.persistence.migration_schema_contracts as _schema_contracts
 from server.persistence.legacy_trade_migration_preflight import (
     run_pending_legacy_trade_migration_preflight,
 )
+from server.persistence.market_identity_schema import (
+    build_market_identity_schema_migration,
+)
 from server.persistence.quote_schema_migrations import build_quote_schema_migrations
 
 
@@ -441,6 +444,27 @@ _MIGRATIONS = (
         ),
     ),
     *build_quote_schema_migrations(SchemaMigration),
+    SchemaMigration(
+        version=11,
+        name="protect_immutable_valuation_snapshots",
+        statements=(
+            """
+            CREATE TRIGGER valuation_snapshots_update_guard
+            BEFORE UPDATE ON valuation_snapshots
+            BEGIN
+                SELECT RAISE(ABORT, 'valuation snapshots are immutable');
+            END
+            """,
+            """
+            CREATE TRIGGER valuation_snapshots_delete_guard
+            BEFORE DELETE ON valuation_snapshots
+            BEGIN
+                SELECT RAISE(ABORT, 'valuation snapshots are immutable');
+            END
+            """,
+        ),
+    ),
+    build_market_identity_schema_migration(SchemaMigration),
 )
 
 CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version
@@ -608,10 +632,7 @@ def _repair_known_legacy_v1_schema(
         )
         return
 
-    if conn.in_transaction:
-        raise RuntimeError("legacy v1 schema repair requires its own write transaction")
-    conn.execute("BEGIN IMMEDIATE")
-    try:
+    def repair() -> None:
         # Revalidate after acquiring the write lock so an older process cannot
         # insert a posting or correction between the empty check and ALTER.
         _assert_known_legacy_v1_schema(conn, expected, applied)
@@ -625,7 +646,23 @@ def _repair_known_legacy_v1_schema(
             baseline_initializer=baseline_initializer,
             applied=applied,
         )
+
+    run_immediate_schema_transaction(conn, repair)
+
+
+def run_immediate_schema_transaction(
+    conn: sqlite3.Connection,
+    operation: Callable[[], Any],
+) -> Any:
+    """Run one schema operation under the canonical immediate transaction."""
+
+    if conn.in_transaction:
+        raise RuntimeError("schema operation requires its own write transaction")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        result = operation()
         conn.commit()
+        return result
     except Exception:
         conn.rollback()
         raise
@@ -748,37 +785,12 @@ def _read_applied_migrations(
 
 
 def _validate_applied_migrations(applied: dict[int, tuple[str, str]]) -> None:
-    registered = {migration.version: migration for migration in _MIGRATIONS}
-
-    unknown = sorted(set(applied) - set(registered))
-    if unknown:
-        raise RuntimeError(
-            "database schema is newer than this Karkinos build: "
-            + ", ".join(str(version) for version in unknown)
-        )
-
-    registered_versions = [migration.version for migration in _MIGRATIONS]
-    applied_versions = sorted(applied)
-    if applied_versions != registered_versions[: len(applied_versions)]:
-        raise RuntimeError("schema migration history is not an ordered registry prefix")
-
-    for version, (name, checksum) in applied.items():
-        migration = registered[version]
-        if version == 1 and (name, checksum) == (
-            migration.name,
-            _LEGACY_V1_MIGRATION_CHECKSUM,
-        ):
-            continue
-        if name != migration.name or checksum != migration.checksum:
-            raise RuntimeError(
-                f"schema migration history mismatch at version {version}"
-            )
+    _schema_contracts.validate_applied_migrations(
+        applied,
+        migrations=_MIGRATIONS,
+        legacy_v1_checksum=_LEGACY_V1_MIGRATION_CHECKSUM,
+    )
 
 
 def _validate_registry() -> None:
-    versions = [migration.version for migration in _MIGRATIONS]
-    names = [migration.name for migration in _MIGRATIONS]
-    if versions != sorted(versions) or len(versions) != len(set(versions)):
-        raise RuntimeError("schema migration versions must be unique and ordered")
-    if len(names) != len(set(names)):
-        raise RuntimeError("schema migration names must be unique")
+    _schema_contracts.validate_migration_registry(_MIGRATIONS)

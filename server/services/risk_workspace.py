@@ -94,6 +94,43 @@ def build_risk_workspace(
     snapshot: PortfolioSnapshot,
     equity_curve: list[EquityPoint],
 ) -> RiskWorkspaceResponse:
+    missing_symbols = sorted(
+        set(snapshot.missing_price_symbols)
+        | {
+            position.symbol
+            for position in snapshot.positions
+            if not position.valuation_available
+            or position.market_value is None
+            or position.unrealized_pnl is None
+        }
+    )
+    if (
+        snapshot.valuation_status != "complete"
+        or snapshot.valuation_blockers
+        or snapshot.total_equity is None
+        or missing_symbols
+    ):
+        blockers = list(snapshot.valuation_blockers)
+        blocked_symbols = {
+            blocker.rsplit(":", 1)[-1] for blocker in blockers if ":" in blocker
+        }
+        blockers.extend(
+            f"missing_market_price:{symbol}"
+            for symbol in missing_symbols
+            if symbol not in blocked_symbols
+        )
+        if snapshot.valuation_status != "complete" and not blockers:
+            blockers.append(f"portfolio_valuation_{snapshot.valuation_status}")
+        return RiskWorkspaceResponse(
+            status="blocked",
+            blockers=sorted(set(blockers or ["portfolio_valuation_unavailable"])),
+            metrics=[],
+            drawdown=None,
+            drawdown_series=[],
+            exposure_buckets=[],
+            concentration=[],
+        )
+
     drawdown_summary, drawdown_series = _build_drawdown_summary(equity_curve)
 
     total_equity = snapshot.total_equity or 0.0
@@ -231,6 +268,8 @@ def build_risk_workspace(
         )
 
     return RiskWorkspaceResponse(
+        status="complete",
+        blockers=[],
         metrics=metrics,
         drawdown=drawdown_summary,
         drawdown_series=drawdown_series,

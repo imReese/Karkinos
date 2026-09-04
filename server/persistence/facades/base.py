@@ -19,6 +19,7 @@ from server.persistence.market_calendar_publication_uow import (
 )
 from server.persistence.oms import OmsRepository
 from server.persistence.paper_trading import PaperTradingRepository
+from server.persistence.pre_trade_risk_uow import PreTradeRiskUnitOfWork
 from server.persistence.research_notes import ResearchNotesRepository
 from server.persistence.runtime_controls import RuntimeControlRepository
 from server.persistence.signal_journal import SignalJournalRepository
@@ -42,6 +43,7 @@ class DatabaseRepositoryAccess:
     _market_calendar_publication: MarketCalendarPublicationUnitOfWork
     _oms: OmsRepository
     _paper_trading: PaperTradingRepository
+    _pre_trade_risk: PreTradeRiskUnitOfWork
     _research_notes: ResearchNotesRepository
     _runtime_controls: RuntimeControlRepository
     _signal_journal: SignalJournalRepository

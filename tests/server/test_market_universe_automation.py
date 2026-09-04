@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from core.types import BarFrequency
+from core.types import BarFrequency, InstrumentType
 from data.store import DataStore
 from server.db import AppDatabase
 from server.services.market_universe_automation import (
@@ -84,6 +84,7 @@ class _PersistingManager:
             provider_name="unit_fixture",
             data_source="unit_fixture",
             adjustment_mode="none",
+            instrument_type=InstrumentType.STOCK,
         )
         return SimpleNamespace(total_bars=len(frame))
 

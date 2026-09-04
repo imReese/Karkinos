@@ -511,7 +511,8 @@ def test_reserved_ai_shadow_order_blocks_unreproducible_frozen_dataset(
 
     with sqlite3.connect(tmp_path / "meta.db") as conn:
         conn.execute(
-            "UPDATE market_bars SET close = 99 WHERE symbol = ? AND timestamp = ?",
+            "UPDATE market_bars_v2 SET close = 99 "
+            "WHERE symbol = ? AND instrument_type = 'etf' AND timestamp = ?",
             ("510300.SH", "2026-01-05T00:00:00"),
         )
 

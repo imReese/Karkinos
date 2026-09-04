@@ -78,6 +78,27 @@ def test_current_holding_market_review_route_uses_canonical_snapshot_only(
     assert payload["status"] == "review_required"
     assert payload["review_required_count"] == 1
     assert payload["items"][0]["symbol"] == "FUND-A"
+    assert payload["refreshable_symbols"] == ["FUND-A"]
+    assert payload["quote_refresh_symbols"] == []
+    assert payload["confirmed_fund_nav_refresh_symbols"] == ["FUND-A"]
+    assert payload["evidence_lanes"] == [
+        {
+            "asset_class": "stock",
+            "status": "not_applicable",
+            "current_holding_count": 0,
+            "confirmed_holding_count": 0,
+            "review_required_count": 0,
+            "blocker_statuses": [],
+        },
+        {
+            "asset_class": "fund",
+            "status": "degraded",
+            "current_holding_count": 1,
+            "confirmed_holding_count": 0,
+            "review_required_count": 1,
+            "blocker_statuses": ["confirmed_nav_missing"],
+        },
+    ]
     assert payload["valuation_snapshot_id"] == "valuation-route-fixture"
     assert payload["ledger_cutoff_id"] == 9
     assert payload["provider_contact_performed"] is False

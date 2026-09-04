@@ -159,7 +159,6 @@ def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):
         "change_percent": pytest.approx(0.012716763),
         "display_name": "示例能源",
         "previous_close": 8.65,
-        "previous_close_date": "2026-01-12",
         "price": 8.76,
         "provider_name": "tushare",
         "provider_symbol": "600001.SH",
@@ -308,7 +307,7 @@ def test_tushare_default_realtime_timeout_waits_for_slow_valid_quote(monkeypatch
     assert result["display_name"] == "示例制造"
 
 
-def test_tushare_fetch_latest_fund_uses_fund_nav(monkeypatch):
+def test_tushare_fetch_confirmed_fund_nav_uses_published_nav(monkeypatch):
     calls: dict[str, object] = {}
 
     class FakePro:
@@ -333,14 +332,14 @@ def test_tushare_fetch_latest_fund_uses_fund_nav(monkeypatch):
         SimpleNamespace(pro_api=pro_api),
     )
 
-    result = TushareSource(token="token-1234").fetch_latest(
-        Symbol("019999"), AssetClass.FUND
-    )
+    source = TushareSource(token="token-1234")
+    result = source.fetch_confirmed_fund_nav(Symbol("019999"))
 
     assert result is not None
     assert result["price"] == 2.5123
-    assert result["timestamp"] == "2026-06-04"
+    assert result["timestamp"] == "2026-06-04T15:00:00+08:00"
     assert result["quote_source"] == "tushare_fund_nav"
+    assert result["nav_date"] == "2026-06-04"
     assert result["provider_name"] == "tushare"
     assert result["provider_symbol"] == "019999.OF"
     assert result["symbol"] == "019999"
@@ -351,6 +350,23 @@ def test_tushare_fetch_latest_fund_uses_fund_nav(monkeypatch):
     assert result["day_change_pct"] == pytest.approx(0.00492)
     assert calls["pro_api_token"] == "token-1234"
     assert calls["fund_nav"][0] == "019999.OF"
+
+
+def test_tushare_fetch_latest_fund_delegates_to_confirmed_nav(monkeypatch):
+    source = TushareSource(token="token-1234")
+    expected = {"price": 2.5123, "nav_date": "2026-06-04"}
+    calls: list[Symbol] = []
+
+    def fetch_confirmed(symbol: Symbol) -> dict:
+        calls.append(symbol)
+        return expected
+
+    monkeypatch.setattr(source, "fetch_confirmed_fund_nav", fetch_confirmed)
+
+    result = source.fetch_latest(Symbol("019999"), AssetClass.FUND)
+
+    assert result is expected
+    assert calls == [Symbol("019999")]
 
 
 def test_tushare_fetch_latest_unsupported_asset_returns_none():

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from core.types import Symbol
+from core.types import InstrumentType, Symbol
 from server.models import (
     AllocationItem,
     ClosedPositionResponse,
@@ -29,6 +29,10 @@ from server.projections.portfolio_quotes import (
     quotes_from_valuation_snapshot,
     refresh_policy,
     using_persistent_cache,
+)
+from server.projections.quote_status import (
+    quote_valuation_blocker,
+    quote_valuation_status,
 )
 from server.services.asset_metadata import resolve_asset_metadata
 from server.services.position_presence import classify_position_presence
@@ -60,7 +64,11 @@ def build_portfolio_snapshot_sync(
 ) -> PortfolioSnapshotBuildResult:
     """Build the canonical Portfolio projection from persisted application facts."""
     scheduler = state.scheduler
-    valuation_snapshot = ports.current_valuation_snapshot(state)
+    valuation_snapshot = (
+        ports.current_valuation_snapshot(state)
+        if now is None
+        else ports.current_valuation_snapshot(state, now=now)
+    )
     latest_quotes = quotes_from_valuation_snapshot(valuation_snapshot)
     portfolio, instruments = ports.resolve_projection_sources(
         state,
@@ -82,6 +90,7 @@ def build_portfolio_snapshot_sync(
                 allocation=[],
                 allocation_grouped=[],
                 realized_pnl_total=0.0,
+                valuation_lanes=valuation_snapshot.get("valuation_lanes") or [],
                 **valuation_identity_fields(valuation_snapshot),
             )
         )
@@ -94,6 +103,7 @@ def build_portfolio_snapshot_sync(
     closed_positions: list[ClosedPositionResponse] = []
     position_review_items: list[PositionEvidenceReviewResponse] = []
     realized_pnl_total = 0.0
+    missing_price_symbols: list[str] = []
     daily_ledger_entries = ports.read_daily_ledger_entries(state)
     ledger_asset_classes: dict[str, str] = {}
     for entry in daily_ledger_entries:
@@ -110,6 +120,15 @@ def build_portfolio_snapshot_sync(
             or getattr(getattr(instrument, "asset_class", None), "value", None)
             or ledger_asset_classes.get(symbol)
         )
+        raw_instrument_type = (
+            getattr(instrument, "instrument_type", None)
+            or getattr(instrument, "asset_class", None)
+            or ledger_asset_classes.get(symbol)
+        )
+        try:
+            instrument_type = InstrumentType.from_persisted(raw_instrument_type).value
+        except ValueError:
+            instrument_type = ""
         metadata = resolve_asset_metadata(
             state,
             symbol,
@@ -119,7 +138,16 @@ def build_portfolio_snapshot_sync(
         )
         quantity = float(pos.quantity)
         avg_cost = float(pos.avg_cost)
+        presence, reason_codes = classify_position_presence(pos)
         latest_price_value = quote_latest_price(quote)
+        quote_evidence_status = (
+            quote_valuation_status(quote) if quote is not None else "missing"
+        )
+        valuation_available = (
+            latest_price_value is not None
+            and quote_evidence_status == "complete"
+            and bool(getattr(pos, "valuation_available", True))
+        )
         (
             today_change,
             today_change_pct,
@@ -133,9 +161,15 @@ def build_portfolio_snapshot_sync(
             avg_cost=avg_cost,
             latest_quote=quote,
             latest_price_value=latest_price_value,
+            instrument_type=instrument_type,
             ledger_entries=daily_ledger_entries,
             now=now,
         )
+        if not valuation_available and presence != "closed":
+            # Keep the persisted observation visible, but never derive account
+            # PnL from stale, estimated, or otherwise incomplete evidence.
+            today_change = None
+            today_change_pct = None
         quote_status, stale_reason = ports.position_quote_presentation(
             state,
             symbol=symbol,
@@ -154,14 +188,17 @@ def build_portfolio_snapshot_sync(
             name=metadata.display_name,
             display_name=metadata.display_name,
             asset_class=metadata.asset_class,
+            instrument_type=(
+                getattr(getattr(instrument, "instrument_type", None), "value", None)
+            ),
             quantity=quantity,
             available_qty=float(pos.available_qty),
             frozen_qty=float(pos.frozen_qty),
             avg_cost=avg_cost,
             **cost_basis_fields,
             latest_price=latest_price_value,
-            market_value=float(pos.market_value),
-            unrealized_pnl=float(pos.unrealized_pnl),
+            market_value=float(pos.market_value) if valuation_available else None,
+            unrealized_pnl=(float(pos.unrealized_pnl) if valuation_available else None),
             realized_pnl=float(pos.realized_pnl),
             commission_paid=float(pos.commission_paid),
             today_change=today_change,
@@ -177,9 +214,16 @@ def build_portfolio_snapshot_sync(
             refresh_policy=refresh_policy(now),
             using_persistent_cache=using_persistent_cache(quote),
             nav_date=None if quote is None else quote.get("nav_date"),
+            valuation_available=valuation_available,
+            valuation_blockers=(
+                []
+                if valuation_available
+                else [quote_valuation_blocker(quote, symbol=symbol)]
+            ),
         )
+        if not valuation_available and quantity != 0:
+            missing_price_symbols.append(symbol)
         realized_pnl_total += response_position.realized_pnl
-        presence, reason_codes = classify_position_presence(pos)
         if presence == "current":
             positions.append(response_position)
         elif presence == "closed":
@@ -197,12 +241,17 @@ def build_portfolio_snapshot_sync(
                 )
             )
 
-    total_equity = float(portfolio.cash)
-    for pos in positions:
-        total_equity += pos.market_value
+    total_equity: float | None = None
+    aggregate_valuation_complete = (
+        valuation_snapshot.get("status") == "complete" and not missing_price_symbols
+    )
+    if aggregate_valuation_complete:
+        total_equity = float(portfolio.cash) + sum(
+            float(pos.market_value or 0.0) for pos in positions
+        )
 
     allocation: list[AllocationItem] = []
-    if total_equity > 0:
+    if total_equity is not None and total_equity > 0:
         allocation.append(
             AllocationItem(
                 symbol="CASH",
@@ -233,13 +282,13 @@ def build_portfolio_snapshot_sync(
                 AllocationItem(
                     symbol=pos.symbol,
                     name=name,
-                    weight=pos.market_value / total_equity,
-                    value=pos.market_value,
+                    weight=float(pos.market_value or 0.0) / total_equity,
+                    value=float(pos.market_value or 0.0),
                     asset_class=ac,
                 )
             )
 
-    allocation_grouped = build_grouped_allocation(allocation, total_equity)
+    allocation_grouped = build_grouped_allocation(allocation, total_equity or 0.0)
 
     needs_total_deposits = False
     if hasattr(portfolio, "total_deposits"):
@@ -254,6 +303,17 @@ def build_portfolio_snapshot_sync(
     else:
         total_deposits = 0.0
 
+    valuation_blockers = sorted(
+        {blocker for position in positions for blocker in position.valuation_blockers}
+    )
+    if valuation_snapshot.get("status") != "complete" and not valuation_blockers:
+        valuation_blockers.append(
+            f"portfolio_valuation_{valuation_snapshot.get('status') or 'missing'}"
+        )
+    valuation_identity = valuation_identity_fields(valuation_snapshot)
+    if valuation_blockers and valuation_identity["valuation_status"] != "degraded":
+        valuation_identity["valuation_status"] = "blocked"
+
     return PortfolioSnapshotBuildResult(
         snapshot=PortfolioSnapshot(
             cash=float(portfolio.cash),
@@ -265,7 +325,10 @@ def build_portfolio_snapshot_sync(
             closed_positions=closed_positions,
             position_review_items=position_review_items,
             realized_pnl_total=realized_pnl_total,
-            **valuation_identity_fields(valuation_snapshot),
+            missing_price_symbols=sorted(missing_price_symbols),
+            valuation_blockers=valuation_blockers,
+            valuation_lanes=valuation_snapshot.get("valuation_lanes") or [],
+            **valuation_identity,
         ),
         needs_total_deposits=needs_total_deposits,
     )

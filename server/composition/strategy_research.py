@@ -50,6 +50,7 @@ def build_strategy_research_orchestrator(
     evidence_repository: CanonicalEvidenceRepository,
     selection: StrategyResearchSelection,
     now: Callable[[], str],
+    execution_guard: Callable[[], None] | None = None,
 ) -> DeterministicWorkflowOrchestrator:
     permissions = default_tool_permission_registry()
     permissions.register(
@@ -83,6 +84,7 @@ def build_strategy_research_orchestrator(
         tool_executors=executors,
         now=now,
         max_provider_turns=2,
+        execution_guard=execution_guard,
     )
 
 

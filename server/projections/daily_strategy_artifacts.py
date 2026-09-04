@@ -24,6 +24,11 @@ from server.contracts.daily_strategy_artifacts import (
     DRAFT_BACKUP_FIELDS,
     DailyStrategyArtifactRejected,
 )
+from server.projections.daily_strategy_research_candidates import (
+    VERIFIED_RESEARCH_CANDIDATE_STRATEGY_BATCH_SCHEMA,
+    VERIFIED_RESEARCH_CANDIDATE_STRATEGY_SCHEMA,
+    build_verified_research_candidate_strategy_batch,
+)
 from server.projections.normalized_research_recommendation import (
     build_normalized_research_recommendation,
 )
@@ -549,9 +554,12 @@ def nonempty_text_list(value: Any) -> list[str]:
 
 
 __all__ = [
+    "VERIFIED_RESEARCH_CANDIDATE_STRATEGY_BATCH_SCHEMA",
+    "VERIFIED_RESEARCH_CANDIDATE_STRATEGY_SCHEMA",
     "build_daily_strategy_backup_payload",
     "build_daily_strategy_promotion_binding",
     "build_daily_strategy_selection",
+    "build_verified_research_candidate_strategy_batch",
     "build_verified_winner_operating_constraints",
     "build_verified_winner_strategy",
     "selection_from_record",

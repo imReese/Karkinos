@@ -37,6 +37,9 @@ from server.projections.portfolio_application import (
 from server.projections.portfolio_application import (
     same_day_sell_lots as _same_day_sell_lots,
 )
+from server.projections.portfolio_read_snapshot_persistence import (
+    portfolio_read_snapshot_for_state,
+)
 from server.projections.portfolio_views.explainability import (
     is_missing_equity_quote_status,
     merge_equity_series_quote_status,
@@ -44,6 +47,7 @@ from server.projections.portfolio_views.explainability import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
+from server.projections.quote_status import quote_valuation_status
 from server.services.daily_performance import (
     build_position_daily_context,
     mark_position_daily,
@@ -144,23 +148,45 @@ def normalize_intraday_timestamp(timestamp, tzinfo) -> datetime | None:
 def load_local_intraday_quote_points(
     db,
     *,
+    state=None,
     symbol: str,
+    instrument_type: str,
     start: datetime,
     end: datetime,
 ) -> list[tuple[datetime, float]]:
-    get_snapshots = getattr(db, "get_recent_quote_snapshots_sync", None)
-    if not callable(get_snapshots):
-        return []
+    read_snapshot = (
+        portfolio_read_snapshot_for_state(state) if state is not None else None
+    )
+    if read_snapshot is not None:
+        snapshots = [
+            dict(row)
+            for row in read_snapshot.intraday_quote_rows
+            if str(row.get("symbol") or "").strip() == symbol
+            and _intraday_instrument_type(
+                row.get("instrument_type")
+                or row.get("asset_type")
+                or row.get("asset_class")
+            )
+            == _intraday_instrument_type(instrument_type)
+        ]
+    else:
+        get_snapshots = getattr(db, "get_recent_quote_snapshots_sync", None)
+        if not callable(get_snapshots):
+            return []
 
-    try:
-        snapshots = get_snapshots(symbol, limit=1000)
-    except Exception:
-        logger.warning(
-            "Failed to load local intraday quote snapshots for %s",
-            symbol,
-            exc_info=True,
-        )
-        return []
+        try:
+            snapshots = get_snapshots(
+                symbol,
+                limit=500,
+                instrument_type=_intraday_instrument_type(instrument_type),
+            )
+        except Exception:
+            logger.warning(
+                "Failed to load local intraday quote snapshots for %s",
+                symbol,
+                exc_info=True,
+            )
+            return []
 
     points: list[tuple[datetime, float]] = []
     for snapshot in snapshots:
@@ -185,7 +211,9 @@ def load_local_intraday_quote_points(
 def load_intraday_price_points(
     *,
     db,
+    state=None,
     symbol: str,
+    instrument_type: str,
     start: datetime,
     end: datetime,
     latest_quote: dict | None,
@@ -193,7 +221,9 @@ def load_intraday_price_points(
     points: list[tuple[datetime, float]] = []
     local_points = load_local_intraday_quote_points(
         db,
+        state=state,
         symbol=symbol,
+        instrument_type=instrument_type,
         start=start,
         end=end,
     )
@@ -264,10 +294,17 @@ def build_intraday_equity_curve_series(
             latest_quote.get("asset_class")
             or getattr(getattr(instrument, "asset_class", None), "value", None)
         )
+        instrument_type = _intraday_instrument_type(
+            getattr(getattr(instrument, "instrument_type", None), "value", None)
+            or getattr(getattr(instrument, "asset_class", None), "value", None)
+            or asset_class
+        )
         baseline_price, _, _ = _resolve_live_holding_baseline(
             state,
             symbol,
             latest_quote if latest_quote else None,
+            instrument_type=instrument_type,
+            as_of=session_now,
         )
         same_day_buy_lots = _same_day_buy_lots(
             state,
@@ -296,7 +333,9 @@ def build_intraday_equity_curve_series(
 
         price_points, has_source_intraday_prices = load_intraday_price_points(
             db=state.db,
+            state=state,
             symbol=symbol,
+            instrument_type=instrument_type,
             start=session_start,
             end=session_close,
             latest_quote=latest_quote if latest_quote else None,
@@ -304,7 +343,19 @@ def build_intraday_equity_curve_series(
         has_intraday_prices = has_intraday_prices or has_source_intraday_prices
         holdings.append(
             {
+                "symbol": symbol,
                 "asset_class": asset_class,
+                "valuation_available": (
+                    (
+                        bool(getattr(position, "valuation_available", True))
+                        and quote_valuation_status(latest_quote) == "complete"
+                    )
+                    or (
+                        is_economically_zero_quantity(quantity)
+                        and bool(same_day_sell_lots)
+                        and daily_context.status == "complete"
+                    )
+                ),
                 "quantity": quantity,
                 "avg_cost": float(getattr(position, "avg_cost", 0.0) or 0.0),
                 "daily_context": daily_context,
@@ -367,8 +418,27 @@ def build_intraday_equity_curve_series(
         stocks_daily_change = 0.0
         funds_daily_change = 0.0
         others_daily_change = 0.0
+        lane_value_available = {
+            "stocks": True,
+            "funds": True,
+            "others": True,
+        }
+        lane_change_available = dict(lane_value_available)
+        missing_price_symbols: set[str] = set()
 
         for holding in holdings:
+            lane = (
+                "stocks"
+                if holding["asset_class"] == "stock"
+                else (
+                    "funds" if holding["asset_class"] in {"fund", "etf"} else "others"
+                )
+            )
+            if not holding["valuation_available"]:
+                lane_value_available[lane] = False
+                lane_change_available[lane] = False
+                missing_price_symbols.add(holding["symbol"])
+                continue
             daily_context = holding["daily_context"]
             price = price_at_tick(
                 daily_context,
@@ -376,40 +446,64 @@ def build_intraday_equity_curve_series(
                 quote_points=holding["price_points"],
             )
             mark = mark_position_daily(daily_context, price=price, at=tick)
-            if mark.current_value is None or mark.today_change is None:
+            if mark.current_value is None:
+                lane_value_available[lane] = False
+                lane_change_available[lane] = False
+                missing_price_symbols.add(holding["symbol"])
                 continue
             position_value = mark.current_value
             cost_basis = mark.active_quantity * holding["avg_cost"]
             unrealized_pnl += position_value - cost_basis
             daily_change = mark.today_change
+            if daily_change is None:
+                lane_change_available[lane] = False
 
             if holding["asset_class"] == "stock":
                 stocks_value += position_value
-                stocks_daily_change += daily_change
+                if daily_change is not None:
+                    stocks_daily_change += daily_change
             elif holding["asset_class"] in {"fund", "etf"}:
                 funds_value += position_value
-                funds_daily_change += daily_change
+                if daily_change is not None:
+                    funds_daily_change += daily_change
             else:
                 others_value += position_value
-                others_daily_change += daily_change
+                if daily_change is not None:
+                    others_daily_change += daily_change
 
-        total = cash + stocks_value + funds_value + others_value
+        all_values_available = all(lane_value_available.values())
+        all_changes_available = all(lane_change_available.values())
+        total = (
+            cash + stocks_value + funds_value + others_value
+            if all_values_available
+            else None
+        )
         total_daily_change = (
             stocks_daily_change + funds_daily_change + others_daily_change
+            if all_changes_available
+            else None
         )
         series.append(
             {
                 "timestamp": tick,
                 "total": total,
-                "stocks": stocks_value,
-                "funds": funds_value,
-                "others": others_value,
+                "stocks": stocks_value if lane_value_available["stocks"] else None,
+                "funds": funds_value if lane_value_available["funds"] else None,
+                "others": others_value if lane_value_available["others"] else None,
                 "cash": cash,
-                "unrealized_pnl": unrealized_pnl,
+                "unrealized_pnl": unrealized_pnl if all_values_available else None,
                 "total_daily_change": total_daily_change,
-                "stocks_daily_change": stocks_daily_change,
-                "funds_daily_change": funds_daily_change,
-                "others_daily_change": others_daily_change,
+                "stocks_daily_change": (
+                    stocks_daily_change if lane_change_available["stocks"] else None
+                ),
+                "funds_daily_change": (
+                    funds_daily_change if lane_change_available["funds"] else None
+                ),
+                "others_daily_change": (
+                    others_daily_change if lane_change_available["others"] else None
+                ),
+                "missing_price_symbols": sorted(missing_price_symbols),
+                "lane_availability": lane_value_available,
             }
         )
 
@@ -432,6 +526,13 @@ def build_intraday_equity_curve_series(
         }
         for tick in full_session_ticks
     ]
+
+
+def _intraday_instrument_type(value: object) -> str:
+    normalized = str(value or "stock").strip().lower().replace("-", "_")
+    if normalized in {"fund", "openend_fund"}:
+        return "open_end_fund"
+    return normalized
 
 
 def current_equity_series_point(
@@ -477,9 +578,17 @@ def current_equity_series_point(
         elif asset_class in {"fund", "etf"}:
             bucket = "funds"
 
-        market_value = float(getattr(position, "market_value", 0.0) or 0.0)
-        buckets[bucket] += market_value
-        unrealized_pnl += float(getattr(position, "unrealized_pnl", 0.0) or 0.0)
+        valuation_available = (
+            bool(getattr(position, "valuation_available", True))
+            and quote is not None
+            and quote_valuation_status(quote) == "complete"
+        )
+        if valuation_available:
+            market_value = float(getattr(position, "market_value", 0.0) or 0.0)
+            buckets[bucket] += market_value
+            unrealized_pnl += float(getattr(position, "unrealized_pnl", 0.0) or 0.0)
+        else:
+            missing_price_symbols.add(symbol)
         position_quote_status, position_stale_reason = _position_quote_presentation(
             state,
             symbol=symbol,
@@ -495,7 +604,38 @@ def current_equity_series_point(
             position_quote_status,
         )
 
-    quote_dependent_values_available = not is_missing_equity_quote_status(quote_status)
+    lane_available = {"stocks": True, "funds": True, "others": True}
+    for sym, position in getattr(portfolio, "positions", {}).items():
+        if is_economically_zero_quantity(getattr(position, "quantity", None)):
+            continue
+        symbol = str(sym)
+        quote = latest_quotes.get(symbol)
+        asset_class = _normalize_asset_class_value(
+            (quote or {}).get("asset_class")
+            or getattr(
+                getattr(
+                    (instruments or {}).get(Symbol(symbol))
+                    or (instruments or {}).get(symbol),
+                    "asset_class",
+                    None,
+                ),
+                "value",
+                None,
+            )
+        )
+        bucket = (
+            "stocks"
+            if asset_class == "stock"
+            else "funds" if asset_class in {"fund", "etf"} else "others"
+        )
+        if (
+            quote is None
+            or quote_valuation_status(quote) != "complete"
+            or not bool(getattr(position, "valuation_available", True))
+        ):
+            lane_available[bucket] = False
+
+    quote_dependent_values_available = all(lane_available.values())
     effective_timestamps = [
         timestamp
         for quote in latest_quotes.values()
@@ -509,9 +649,9 @@ def current_equity_series_point(
             if quote_dependent_values_available
             else None
         ),
-        stocks=buckets["stocks"] if quote_dependent_values_available else None,
-        funds=buckets["funds"] if quote_dependent_values_available else None,
-        others=buckets["others"] if quote_dependent_values_available else None,
+        stocks=buckets["stocks"] if lane_available["stocks"] else None,
+        funds=buckets["funds"] if lane_available["funds"] else None,
+        others=buckets["others"] if lane_available["others"] else None,
         cash=cash,
         unrealized_pnl=unrealized_pnl if quote_dependent_values_available else None,
         quote_status=quote_status,

@@ -53,10 +53,10 @@ export type PortfolioCockpitPosition = {
   symbol: string;
   name: string;
   asset_class: string;
-  market_value: number;
-  actual_weight: number;
-  target_weight: number;
-  drift: number;
+  market_value: number | null;
+  actual_weight: number | null;
+  target_weight: number | null;
+  drift: number | null;
   action_task?: PortfolioActionTask | null;
 };
 
@@ -67,9 +67,9 @@ export type PortfolioConstructionRecommendation = {
   direction: string;
   status: string;
   actionable: boolean;
-  actual_weight: number;
-  target_weight: number;
-  drift: number;
+  actual_weight: number | null;
+  target_weight: number | null;
+  drift: number | null;
   account_truth_gate_status: string;
   risk_gate_status: string;
   required_actions: string[];

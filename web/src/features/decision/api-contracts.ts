@@ -1,4 +1,5 @@
 import type { DailyTradingPlanBlockerSummary } from '../../shared/contracts/daily-operations';
+import type { AccountActionRecommendation } from './account-action-recommendation-contract';
 import type { DailyResearchOperationPreview } from './research-operation-preview-contract';
 
 export type { DailyTradingPlanBlockerSummary } from '../../shared/contracts/daily-operations';
@@ -314,6 +315,7 @@ export type DailyTradingPlanResponse = {
   blockers: DailyTradingPlanBlocker[];
   research_operation_preview?: DailyResearchOperationPreview;
   research_operation_instruments?: ResearchOperationInstruments;
+  account_action_recommendation?: AccountActionRecommendation;
   limitations: string[];
 };
 

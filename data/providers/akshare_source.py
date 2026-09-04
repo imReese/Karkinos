@@ -100,6 +100,63 @@ class AKShareSource(OpenEndFundMixin, DataSource):
     _MAX_RETRIES = 3
     _RETRY_DELAY = 2  # seconds
 
+    @staticmethod
+    def _stock_bid_ask_payload(
+        frame: pd.DataFrame,
+        *,
+        observed_at: datetime,
+    ) -> dict | None:
+        """Normalize AKShare's single-stock quote response.
+
+        ``stock_zh_a_spot_em`` downloads the complete A-share market and is not
+        suitable for one request per watched symbol.  The single-stock endpoint
+        has no exchange timestamp, so the client observation time is explicit in
+        both the quote timestamp and metadata instead of being presented as a
+        provider-supplied timestamp.
+        """
+
+        if (
+            frame is None
+            or frame.empty
+            or not {"item", "value"}.issubset(frame.columns)
+        ):
+            return None
+        values = pd.Series(
+            {
+                str(row["item"]): row["value"]
+                for _, row in frame[["item", "value"]].iterrows()
+            }
+        )
+        price = _row_float(values, "最新")
+        if price is None or price <= 0:
+            return None
+        total_lots = _row_float(values, "总手")
+        previous_close = _row_float(values, "昨收")
+        change = _row_float(values, "涨跌")
+        change_percent = _row_float(values, "涨幅")
+        payload: dict[str, object] = {
+            "price": price,
+            "volume": None if total_lots is None else total_lots * 100,
+            "turnover": _row_float(values, "金额"),
+            "timestamp": observed_at.isoformat(timespec="seconds"),
+            "quote_source": "akshare_stock_bid_ask",
+            "metadata": {
+                "timestamp_source": "client_observed_at",
+                "provider_timestamp_available": False,
+            },
+        }
+        if previous_close is not None:
+            payload["previous_close"] = previous_close
+            # This endpoint identifies the value as yesterday's close but does
+            # not identify the owning trading session. A weekday guess is not
+            # authoritative across exchange holidays, so leave the date
+            # unclaimed until calendar-backed evidence can bind it.
+        if change is not None:
+            payload["change"] = change
+        if change_percent is not None:
+            payload["change_percent"] = change_percent / 100
+        return payload
+
     def supports_bars(
         self,
         asset_class: AssetClass = AssetClass.STOCK,
@@ -111,10 +168,21 @@ class AKShareSource(OpenEndFundMixin, DataSource):
             return asset_class in (AssetClass.STOCK, AssetClass.FUND)
         return False
 
-    def _call_with_retry(self, func, **kwargs):
+    def _call_with_retry(
+        self,
+        func,
+        *,
+        retry_delay_seconds: float | None = None,
+        **kwargs,
+    ):
         """带重试的 AKShare API 调用。"""
         import time
 
+        retry_delay = (
+            self._RETRY_DELAY
+            if retry_delay_seconds is None
+            else max(float(retry_delay_seconds), 0.0)
+        )
         last_error = None
         for attempt in range(self._MAX_RETRIES):
             try:
@@ -124,12 +192,13 @@ class AKShareSource(OpenEndFundMixin, DataSource):
                 last_error = e
                 if attempt < self._MAX_RETRIES - 1:
                     logger.warning(
-                        "AKShare 调用失败 (第%d次), %ds 后重试: %s",
+                        "AKShare 调用失败 (第%d次), %.3fs 后重试: %s",
                         attempt + 1,
-                        self._RETRY_DELAY,
+                        retry_delay,
                         e,
                     )
-                    time.sleep(self._RETRY_DELAY)
+                    if retry_delay:
+                        time.sleep(retry_delay)
         raise last_error
 
     def fetch_bars(
@@ -398,32 +467,18 @@ class AKShareSource(OpenEndFundMixin, DataSource):
 
         try:
             if asset_class == AssetClass.STOCK:
-                df = self._call_with_retry(ak.stock_zh_a_spot_em)
-                row = df[df["代码"] == str(symbol)]
-                if row.empty:
+                frame = self._call_with_retry(
+                    ak.stock_bid_ask_em,
+                    symbol=str(symbol),
+                    retry_delay_seconds=0,
+                )
+                observed_at = datetime.now(_CHINA_MARKET_TZ)
+                payload = self._stock_bid_ask_payload(
+                    frame,
+                    observed_at=observed_at,
+                )
+                if payload is None:
                     return None
-                row = row.iloc[0]
-                payload = {
-                    "price": float(row["最新价"]),
-                    "volume": float(row["成交额"]) if "成交额" in row else None,
-                    "timestamp": str(row.get("时间", "")),
-                    "quote_source": "akshare_stock_spot",
-                }
-                previous_close = _row_float(row, "昨收", "昨收价", "昨日收盘")
-                change = _row_float(row, "涨跌额")
-                change_percent = _row_float(row, "涨跌幅")
-                if previous_close is not None:
-                    payload["previous_close"] = previous_close
-                    payload["previous_close_date"] = _previous_weekday(
-                        datetime.now().date()
-                    ).isoformat()
-                if change is not None:
-                    payload["change"] = change
-                if change_percent is not None:
-                    payload["change_percent"] = change_percent / 100
-                if "名称" in row and str(row["名称"]).strip():
-                    payload["name"] = str(row["名称"]).strip()
-                    payload["display_name"] = str(row["名称"]).strip()
                 return self._normalize_latest_quote(symbol, asset_class, payload)
 
             elif asset_class == AssetClass.FUND:

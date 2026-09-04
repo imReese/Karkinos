@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from core.types import BarFrequency, Symbol
+from core.types import BarFrequency, InstrumentType, Symbol
 from data.store import DataStore
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
@@ -87,6 +87,7 @@ def test_research_panel_is_exactly_40_lot_feasible_and_deterministic(tmp_path) -
             provider_name="unit_fixture",
             data_source="unit_fixture",
             adjustment_mode="none",
+            instrument_type=InstrumentType.STOCK,
         )
 
     first = build_market_universe_truth(
@@ -140,6 +141,7 @@ def test_research_panel_fails_closed_before_model_when_one_lot_is_not_feasible(
             provider_name="unit_fixture",
             data_source="unit_fixture",
             adjustment_mode="none",
+            instrument_type=InstrumentType.STOCK,
         )
 
     with pytest.raises(MarketUniverseRejected, match="research_panel_incomplete"):
@@ -167,6 +169,7 @@ def test_market_universe_rejects_previous_day_or_short_history(tmp_path) -> None
             provider_name="unit_fixture",
             data_source="unit_fixture",
             adjustment_mode="none",
+            instrument_type=InstrumentType.STOCK,
         )
 
     with pytest.raises(MarketUniverseRejected, match="research_panel_incomplete"):
@@ -195,6 +198,7 @@ def test_research_panel_hard_filters_the_full_stock_directory(tmp_path) -> None:
             provider_name="unit_fixture",
             data_source="unit_fixture",
             adjustment_mode="none",
+            instrument_type=InstrumentType.STOCK,
         )
 
     result = build_market_universe_truth(

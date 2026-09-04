@@ -14,11 +14,11 @@ class ValuationFacts(Protocol):
     def list_quote_selection_candidates_sync(self) -> list[dict[str, Any]]: ...
 
     def get_market_bar_on_date_sync(
-        self, symbol: str, trade_date: str
+        self, symbol: str, trade_date: str, *, instrument_type: str
     ) -> dict[str, Any] | None: ...
 
     def get_latest_market_bar_before_date_sync(
-        self, symbol: str, trade_date: str
+        self, symbol: str, trade_date: str, *, instrument_type: str
     ) -> dict[str, Any] | None: ...
 
     def get_latest_daily_close_before_sync(
@@ -26,7 +26,7 @@ class ValuationFacts(Protocol):
     ) -> dict[str, Any] | None: ...
 
     def get_latest_quote_before_date_sync(
-        self, symbol: str, trade_date: str
+        self, symbol: str, trade_date: str, *, instrument_type: str
     ) -> dict[str, Any] | None: ...
 
     def get_ledger_entries_sync(

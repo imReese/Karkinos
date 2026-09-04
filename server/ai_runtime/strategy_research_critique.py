@@ -14,12 +14,12 @@ from server.ai_runtime.strategy_research_backtest import (
     RestrictedFormulaBacktestAdapter,
     validate_persisted_fee_schedule_binding,
 )
-from server.ai_runtime.strategy_research_provider import StrategyResearchModelProvider
 from server.ai_runtime.strategy_research_privacy import (
     build_normalized_lot_feasibility_evidence,
     build_normalized_research_pack,
     build_normalized_signal_execution_evidence,
 )
+from server.ai_runtime.strategy_research_provider import StrategyResearchModelProvider
 from server.ai_runtime.strategy_research_support import (
     critique_response,
     report_artifact,
@@ -220,6 +220,7 @@ class StrategyResearchCritiqueMixin:
             evidence_repository=self._evidence_repository,
             selection=selection,
             now=self._now,
+            execution_guard=self._execution_guard,
         )
         workflow = orchestrator.create_workflow(
             definition=strategy_research_workflow_definition(model_id, "critique"),
@@ -243,6 +244,7 @@ class StrategyResearchCritiqueMixin:
                     workflow.workflow_id
                 )
         except ProviderCallDeferred as exc:
+            self._require_execution_current()
             self._research_store.finish_critique(
                 critique["critique_id"],
                 status="blocked",
@@ -251,11 +253,13 @@ class StrategyResearchCritiqueMixin:
                 updated_at=self._now(),
             )
             raise
+        self._require_execution_current()
         artifact_payload = None
         if workflow.status == WorkflowStatus.COMPLETED:
             artifact_payload = report_artifact(
                 self._ai_store, workflow.workflow_id
             ).content
+        self._require_execution_current()
         self._research_store.finish_critique(
             critique["critique_id"],
             status=workflow.status.value,

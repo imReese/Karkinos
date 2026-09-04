@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from server.persistence.database_serialization import serialize_metadata_json
+from server.valuation_snapshot_contract import validate_valuation_snapshot
 
 
 def insert_valuation_snapshot_on_connection(
@@ -16,6 +17,8 @@ def insert_valuation_snapshot_on_connection(
     created_at: str,
 ) -> dict[str, Any]:
     """Insert or verify one immutable content-addressed valuation identity."""
+
+    validate_valuation_snapshot(payload)
 
     quotes_json = serialize_metadata_json(payload.get("quotes") or [])
     metadata_json = serialize_metadata_json(payload.get("metadata") or {})
@@ -120,6 +123,7 @@ class ValuationFactsRepositoryMixin:
         self,
         *,
         valuation_policy: str | None = None,
+        now: datetime | None = None,
     ) -> dict[str, Any]:
         """Atomically publish the immutable snapshot for committed facts."""
         try:
@@ -129,6 +133,7 @@ class ValuationFactsRepositoryMixin:
                 snapshot = self._valuation_transaction_writer(
                     conn,
                     valuation_policy=valuation_policy,
+                    now=now,
                 )
                 conn.commit()
         except Exception as exc:

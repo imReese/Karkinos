@@ -74,7 +74,7 @@ class LedgerEntry:
             settlement_note=str(row.get("settlement_note") or ""),
             cost_basis_method=row.get("cost_basis_method"),
             correction_payload=_as_json_object(row.get("correction_payload_json")),
-            asset_class=str(row.get("asset_class") or "stock"),
+            asset_class=str(row.get("asset_class") or "").strip().lower(),
             note=str(row.get("note") or ""),
             source=str(row.get("source") or "manual"),
             source_ref=row.get("source_ref"),

@@ -78,6 +78,29 @@ def test_review_projects_only_current_nonzero_unconfirmed_holdings() -> None:
     assert report.stale_or_cached_review_count == 1
     assert report.missing_or_error_review_count == 1
     assert report.refreshable_symbols == ["FUND-A", "MISSING", "NEGATIVE"]
+    assert report.quote_refresh_symbols == ["MISSING", "NEGATIVE"]
+    assert report.confirmed_fund_nav_refresh_symbols == ["FUND-A"]
+    assert [lane.model_dump() for lane in report.evidence_lanes] == [
+        {
+            "asset_class": "stock",
+            "status": "missing",
+            "current_holding_count": 3,
+            "confirmed_holding_count": 1,
+            "review_required_count": 2,
+            "blocker_statuses": [
+                "quote_missing_or_error",
+                "quote_stale_or_cached",
+            ],
+        },
+        {
+            "asset_class": "fund",
+            "status": "degraded",
+            "current_holding_count": 1,
+            "confirmed_holding_count": 0,
+            "review_required_count": 1,
+            "blocker_statuses": ["confirmed_nav_missing"],
+        },
+    ]
     assert [item.symbol for item in report.items] == [
         "MISSING",
         "NEGATIVE",
@@ -145,6 +168,10 @@ def test_review_is_deterministic_and_changes_only_with_bound_evidence() -> None:
     assert refreshed.status == "complete"
     assert refreshed.review_required_count == 0
     assert refreshed.refreshable_symbols == []
+    assert refreshed.quote_refresh_symbols == []
+    assert refreshed.confirmed_fund_nav_refresh_symbols == []
+    assert refreshed.evidence_lanes[0].status == "complete"
+    assert refreshed.evidence_lanes[1].status == "not_applicable"
 
 
 def test_review_fails_closed_when_valuation_identity_is_missing() -> None:
@@ -167,6 +194,13 @@ def test_review_fails_closed_when_valuation_identity_is_missing() -> None:
         "ledger_fingerprint_missing",
     ]
     assert report.confirmed_holding_count == 1
+    assert report.evidence_lanes[0].status == "blocked_identity"
+    assert report.evidence_lanes[0].blocker_statuses == [
+        "valuation_snapshot_id_missing",
+        "quote_set_fingerprint_missing",
+        "ledger_fingerprint_missing",
+    ]
+    assert report.evidence_lanes[1].status == "not_applicable"
     assert report.authorizes_execution is False
 
 
@@ -178,6 +212,10 @@ def test_review_reports_no_current_holdings_without_inventing_tasks() -> None:
     assert report.review_required_count == 0
     assert report.items == []
     assert report.next_manual_action == "none"
+    assert [lane.status for lane in report.evidence_lanes] == [
+        "not_applicable",
+        "not_applicable",
+    ]
 
 
 def test_review_keeps_unknown_quote_status_explicit() -> None:
@@ -192,3 +230,36 @@ def test_review_keeps_unknown_quote_status_explicit() -> None:
         report.items[0].next_manual_action
         == "review_unknown_quote_status_before_refresh"
     )
+
+
+def test_review_groups_non_stock_and_non_fund_holdings_in_other_lane() -> None:
+    report = build_current_holding_market_evidence_review(
+        _snapshot(
+            [
+                _position(
+                    "510300",
+                    quantity=100,
+                    quote_status="stale",
+                    asset_class="etf",
+                )
+            ]
+        )
+    )
+
+    assert [lane.asset_class for lane in report.evidence_lanes] == [
+        "stock",
+        "fund",
+        "other",
+    ]
+    assert report.evidence_lanes[0].status == "not_applicable"
+    assert report.evidence_lanes[1].status == "not_applicable"
+    assert report.evidence_lanes[2].model_dump() == {
+        "asset_class": "other",
+        "status": "degraded",
+        "current_holding_count": 1,
+        "confirmed_holding_count": 0,
+        "review_required_count": 1,
+        "blocker_statuses": ["quote_stale_or_cached"],
+    }
+    assert report.quote_refresh_symbols == ["510300"]
+    assert report.confirmed_fund_nav_refresh_symbols == []

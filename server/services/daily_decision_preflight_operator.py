@@ -29,6 +29,11 @@ def build_preflight_operator_checklist(
             "human_review",
         ),
         (
+            "portfolio_valuation",
+            "restore_complete_portfolio_valuation_snapshot",
+            "persisted_evidence_refresh",
+        ),
+        (
             "reviewed_fees",
             "review_account_specific_fee_schedule",
             "human_review",
@@ -183,6 +188,15 @@ def build_preflight_operator_evidence_contract(gate: str) -> dict[str, Any]:
                 "account_truth_covers_latest_ledger_cutoff",
                 "cash_position_fee_and_cost_basis_pass_with_zero_unresolved_mismatches",
                 "private_xls_content_and_account_identifiers_remain_unstored",
+            ],
+        },
+        "portfolio_valuation": {
+            "required_evidence": [
+                "persisted_aggregate_portfolio_valuation_snapshot",
+            ],
+            "completion_criteria": [
+                "aggregate_portfolio_valuation_status_is_complete",
+                "every_held_position_has_authoritative_valuation_evidence",
             ],
         },
         "reviewed_fees": {

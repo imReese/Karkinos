@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from core.types import InstrumentType
 from server.contracts.quote_ingestion import quote_authority_conflict_fields
 from server.persistence.database_serialization import serialize_metadata_json
 from server.persistence.event_log import insert_event_sync
@@ -13,6 +14,11 @@ from server.persistence.financial_fact_event_payloads import (
     quote_instant_storage_key,
     quote_observation_rank,
 )
+from server.persistence.market_bar_facts import (
+    get_latest_market_bar_before_date,
+    get_market_bar_on_date,
+)
+from server.persistence.market_price_matrix import read_historical_price_matrix
 from server.persistence.quote_current_materialization import (
     advance_quote_snapshot_checkpoint_on_connection,
     assert_quote_current_materialization_on_connection,
@@ -23,7 +29,24 @@ from server.persistence.quote_current_materialization import (
 def _quote_snapshot_row(row: sqlite3.Row) -> dict[str, Any]:
     value = dict(row)
     value.pop("quote_instant_utc", None)
+    if not value.get("instrument_type"):
+        instrument_type, provenance = _canonical_quote_identity(
+            value.get("asset_class")
+        )
+        value["instrument_type"] = instrument_type
+        value["identity_provenance"] = provenance
+    if value.get("instrument_type") == "open_end_fund":
+        value["asset_class"] = "fund"
     return value
+
+
+def _canonical_quote_identity(raw_type: object) -> tuple[str, str]:
+    normalized = str(raw_type or "").strip().lower().replace("-", "_")
+    instrument_type = InstrumentType.from_persisted(normalized).value
+    return (
+        instrument_type,
+        ("legacy_fund_compatibility" if normalized == "fund" else "explicit_canonical"),
+    )
 
 
 def list_quote_selection_candidates_on_connection(
@@ -284,22 +307,45 @@ class QuoteFactsRepositoryMixin:
     def get_latest_quote_sync(
         self, symbol: str, asset_type: str | None = None
     ) -> dict[str, Any] | None:
-        """Read the materialized latest quote for one symbol."""
+        """Read one current quote; untyped compatibility fails on ambiguity."""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             assert_quote_current_materialization_on_connection(conn)
             if asset_type is None:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM latest_quotes
+                    WHERE symbol = ?
+                    ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
+                    """,
+                    (symbol,),
+                ).fetchall()
+                canonical_types = {
+                    (
+                        InstrumentType.OPEN_END_FUND.value
+                        if str(item["asset_type"]).strip().lower() == "fund"
+                        else str(item["asset_type"]).strip().lower()
+                    )
+                    for item in rows
+                }
+                if len(canonical_types) != 1:
+                    return None
+                row = rows[0] if rows else None
+            elif _canonical_quote_identity(asset_type)[0] == "open_end_fund":
                 row = conn.execute(
                     """
                     SELECT *
                     FROM latest_quotes
                     WHERE symbol = ?
+                      AND asset_type IN ('fund', 'open_end_fund')
                     ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
                     LIMIT 1
                     """,
                     (symbol,),
                 ).fetchone()
             else:
+                resolved_type, _ = _canonical_quote_identity(asset_type)
                 row = conn.execute(
                     """
                     SELECT *
@@ -307,7 +353,7 @@ class QuoteFactsRepositoryMixin:
                     WHERE symbol = ? AND asset_type = ?
                     LIMIT 1
                     """,
-                    (symbol, asset_type),
+                    (symbol, resolved_type),
                 ).fetchone()
             return dict(row) if row else None
 
@@ -340,6 +386,7 @@ class QuoteFactsRepositoryMixin:
         fetch_run_id: str | None = None,
     ) -> None:
         """Append audit history and atomically advance current quote state."""
+        instrument_type, identity_provenance = _canonical_quote_identity(asset_class)
         now = self._now().isoformat()
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
@@ -349,12 +396,12 @@ class QuoteFactsRepositoryMixin:
                        symbol, asset_class, price, volume, timestamp, created_at,
                        quote_source, provider_name, quote_status, stale_reason,
                        provider_status, captured_reason, nav_date, fetch_run_id,
-                       quote_instant_utc
+                       quote_instant_utc, instrument_type, identity_provenance
                    )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     symbol,
-                    asset_class,
+                    instrument_type,
                     price,
                     volume,
                     timestamp,
@@ -368,6 +415,8 @@ class QuoteFactsRepositoryMixin:
                     nav_date,
                     fetch_run_id,
                     quote_instant_storage_key(timestamp),
+                    instrument_type,
+                    identity_provenance,
                 ),
             )
             snapshot_id = cursor.lastrowid or 0
@@ -382,7 +431,13 @@ class QuoteFactsRepositoryMixin:
                 payload={
                     "snapshot_id": snapshot_id,
                     "symbol": symbol,
-                    "asset_class": asset_class,
+                    "asset_class": (
+                        "fund"
+                        if instrument_type == InstrumentType.OPEN_END_FUND.value
+                        else instrument_type
+                    ),
+                    "instrument_type": instrument_type,
+                    "identity_provenance": identity_provenance,
                     "price": price,
                     "volume": volume,
                     "timestamp": timestamp,
@@ -410,23 +465,42 @@ class QuoteFactsRepositoryMixin:
             advance_quote_snapshot_checkpoint_on_connection(
                 conn,
                 snapshot_id=int(snapshot_id),
-                current_changed=(
-                    current_changed and asset_class.strip().lower() != "index"
-                ),
+                current_changed=(current_changed and instrument_type != "index"),
                 updated_at=now,
             )
             conn.commit()
 
-    async def get_latest_quote(self, symbol: str) -> dict[str, Any] | None:
-        """Read one symbol from the persisted current-quote materialization."""
+    async def get_latest_quote(
+        self,
+        symbol: str,
+        *,
+        instrument_type: str,
+    ) -> dict[str, Any] | None:
+        """Read one exact identity from the current-quote materialization."""
         import asyncio
 
-        row = await asyncio.to_thread(self.get_latest_quote_sync, symbol)
+        row = await asyncio.to_thread(
+            self.get_latest_quote_sync,
+            symbol,
+            instrument_type,
+        )
         if row is None:
             return None
+        raw_asset_type = str(row.get("asset_type") or "").strip().lower()
+        instrument_type = (
+            "open_end_fund" if raw_asset_type == "fund" else raw_asset_type
+        )
         return {
             **row,
-            "asset_class": row.get("asset_type"),
+            "instrument_type": instrument_type,
+            "asset_class": (
+                "fund" if instrument_type == "open_end_fund" else instrument_type
+            ),
+            "identity_provenance": (
+                "legacy_fund_compatibility"
+                if raw_asset_type == "fund"
+                else "persisted_canonical"
+            ),
             "timestamp": row.get("quote_timestamp"),
         }
 
@@ -437,7 +511,20 @@ class QuoteFactsRepositoryMixin:
             assert_quote_current_materialization_on_connection(conn)
             rows = conn.execute("""
                 SELECT
-                    id, symbol, asset_type AS asset_class, price, volume,
+                    id, symbol, asset_type,
+                    CASE
+                        WHEN asset_type = 'fund' THEN 'open_end_fund'
+                        ELSE asset_type
+                    END AS instrument_type,
+                    CASE
+                        WHEN asset_type IN ('fund', 'open_end_fund') THEN 'fund'
+                        ELSE asset_type
+                    END AS asset_class,
+                    CASE
+                        WHEN asset_type = 'fund' THEN 'legacy_fund_compatibility'
+                        ELSE 'persisted_canonical'
+                    END AS identity_provenance,
+                    price, volume,
                     quote_timestamp AS timestamp,
                     quote_source, provider_name, quote_status, stale_reason,
                     provider_status, captured_reason, nav_date, fetch_run_id,
@@ -472,28 +559,60 @@ class QuoteFactsRepositoryMixin:
             return [_quote_snapshot_row(row) for row in rows]
 
     def get_recent_quote_snapshots_sync(
-        self, symbol: str, limit: int = 2
+        self,
+        symbol: str,
+        limit: int = 2,
+        *,
+        instrument_type: str | None = None,
     ) -> list[dict[str, Any]]:
         """Read a bounded canonical-time page from append-only quote history."""
         if limit <= 0 or limit > 500:
             raise ValueError("recent quote snapshot limit is invalid")
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            identity_filter = ""
+            params: tuple[object, ...] = (symbol,)
+            if instrument_type is not None:
+                resolved, _ = _canonical_quote_identity(instrument_type)
+                identity_filter = "AND instrument_type = ?"
+                params = (symbol, resolved)
             rows = conn.execute(
-                """
+                f"""
                 SELECT
-                    id, symbol, asset_class, price, volume, timestamp,
+                    id, symbol, asset_class, instrument_type,
+                    identity_provenance, price, volume, timestamp,
                     quote_source, provider_name, quote_status, stale_reason,
                     provider_status, captured_reason, nav_date, fetch_run_id,
                     created_at
                 FROM quote_snapshots
                 WHERE symbol = ? AND quote_instant_utc IS NOT NULL
+                {identity_filter}
                 ORDER BY quote_instant_utc DESC, id DESC
                 LIMIT ?
                 """,
-                (symbol, limit),
+                (*params, limit),
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def get_historical_price_matrix_sync(
+        self,
+        *,
+        instrument_keys: list[object] | None = None,
+        symbols: list[str] | None = None,
+        start_date: str,
+        end_date: str,
+        symbol_batch_size: int = 400,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Read a bounded multi-instrument matrix from persisted price facts."""
+
+        return read_historical_price_matrix(
+            self._path,
+            instrument_keys=instrument_keys,
+            symbols=symbols,
+            start_date=start_date,
+            end_date=end_date,
+            symbol_batch_size=symbol_batch_size,
+        )
 
     def save_daily_close_snapshot_sync(
         self,
@@ -504,131 +623,134 @@ class QuoteFactsRepositoryMixin:
         close_price: float,
         source: str,
     ) -> None:
-        """同步写入日收盘基准。"""
+        """Write one close under an exact typed identity."""
+        instrument_type, identity_provenance = _canonical_quote_identity(asset_class)
         with sqlite3.connect(self._path) as conn:
             conn.execute(
                 """
-                INSERT INTO daily_close_snapshots
-                    (symbol, asset_class, trade_date, close_price, source, captured_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol, trade_date) DO UPDATE SET
-                    asset_class = excluded.asset_class,
+                INSERT INTO daily_close_snapshots_v2
+                    (symbol, instrument_type, trade_date, close_price, source,
+                     captured_at, identity_provenance)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, instrument_type, trade_date) DO UPDATE SET
                     close_price = excluded.close_price,
                     source = excluded.source,
-                    captured_at = excluded.captured_at
+                    captured_at = excluded.captured_at,
+                    identity_provenance = excluded.identity_provenance
                 """,
                 (
                     symbol,
-                    asset_class,
+                    instrument_type,
                     trade_date,
                     close_price,
                     source,
                     self._now().isoformat(),
+                    identity_provenance,
                 ),
             )
             conn.commit()
 
     def get_latest_daily_close_before_sync(
-        self, symbol: str, trade_date: str
+        self,
+        symbol: str,
+        trade_date: str,
+        instrument_type: str | None = None,
     ) -> dict[str, Any] | None:
-        """获取某日之前最近一个交易日收盘基准。"""
+        """Read an exact close; untyped compatibility fails on ambiguity."""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                SELECT symbol, asset_class, trade_date, close_price, source, captured_at
-                FROM daily_close_snapshots
-                WHERE symbol = ? AND trade_date < ?
+            params: tuple[object, ...] = (symbol, trade_date)
+            identity_filter = ""
+            if instrument_type is not None:
+                resolved, _ = _canonical_quote_identity(instrument_type)
+                identity_filter = "AND instrument_type = ?"
+                params = (symbol, trade_date, resolved)
+            rows = conn.execute(
+                f"""
+                SELECT symbol, instrument_type, trade_date, close_price,
+                       source, captured_at, identity_provenance
+                FROM daily_close_snapshots_v2
+                WHERE symbol = ? AND trade_date < ? {identity_filter}
                 ORDER BY trade_date DESC, id DESC
-                LIMIT 1
+                LIMIT 2
                 """,
-                (symbol, trade_date),
-            ).fetchone()
-            return dict(row) if row else None
+                params,
+            ).fetchall()
+            if not rows:
+                return None
+            newest_date = str(rows[0]["trade_date"])
+            newest = [row for row in rows if str(row["trade_date"]) == newest_date]
+            if (
+                instrument_type is None
+                and len({str(row["instrument_type"]) for row in newest}) != 1
+            ):
+                return None
+            result = dict(newest[0])
+            result["asset_class"] = (
+                "fund"
+                if result["instrument_type"] == "open_end_fund"
+                else result["instrument_type"]
+            )
+            return result
 
     def get_latest_market_bar_before_date_sync(
-        self, symbol: str, trade_date: str, frequency: str = "1d"
+        self,
+        symbol: str,
+        trade_date: str,
+        frequency: str = "1d",
+        *,
+        instrument_type: str,
     ) -> dict[str, Any] | None:
-        """Read the latest daily OHLC bar before trade_date from the data store."""
-        meta_path = self._path.parent / "meta.db"
-        if not meta_path.exists():
-            return None
-        try:
-            with sqlite3.connect(meta_path) as conn:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    """
-                    SELECT
-                        symbol, frequency, timestamp, open, high, low, close,
-                        volume, amount, created_at, updated_at
-                    FROM market_bars
-                    WHERE symbol = ? AND frequency = ? AND substr(timestamp, 1, 10) < ?
-                    ORDER BY substr(timestamp, 1, 10) DESC, timestamp DESC
-                    LIMIT 1
-                    """,
-                    (symbol, frequency, trade_date),
-                ).fetchone()
-        except sqlite3.Error:
-            return None
-        if row is None:
-            return None
-        result = dict(row)
-        result["trade_date"] = str(result["timestamp"])[:10]
-        result["price"] = result["close"]
-        result["source"] = "market_bars"
-        return result
+        return get_latest_market_bar_before_date(
+            self._path,
+            symbol,
+            trade_date,
+            frequency,
+            instrument_type=instrument_type,
+        )
 
     def get_market_bar_on_date_sync(
-        self, symbol: str, trade_date: str, frequency: str = "1d"
+        self,
+        symbol: str,
+        trade_date: str,
+        frequency: str = "1d",
+        *,
+        instrument_type: str,
     ) -> dict[str, Any] | None:
-        """Read the daily OHLC bar on trade_date from the data store."""
-        meta_path = self._path.parent / "meta.db"
-        if not meta_path.exists():
-            return None
-        try:
-            with sqlite3.connect(meta_path) as conn:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    """
-                    SELECT
-                        symbol, frequency, timestamp, open, high, low, close,
-                        volume, amount, created_at, updated_at
-                    FROM market_bars
-                    WHERE symbol = ? AND frequency = ? AND substr(timestamp, 1, 10) = ?
-                    ORDER BY timestamp DESC
-                    LIMIT 1
-                    """,
-                    (symbol, frequency, trade_date),
-                ).fetchone()
-        except sqlite3.Error:
-            return None
-        if row is None:
-            return None
-        result = dict(row)
-        result["trade_date"] = str(result["timestamp"])[:10]
-        result["price"] = result["close"]
-        result["source"] = "market_bars"
-        return result
+        return get_market_bar_on_date(
+            self._path,
+            symbol,
+            trade_date,
+            frequency,
+            instrument_type=instrument_type,
+        )
 
     def get_latest_quote_before_date_sync(
-        self, symbol: str, trade_date: str
+        self,
+        symbol: str,
+        trade_date: str,
+        *,
+        instrument_type: str,
     ) -> dict[str, Any] | None:
-        """获取某日之前最近一个交易日的最后一条报价快照。"""
+        """Read the latest pre-date quote for one exact instrument identity."""
+        resolved_type, _ = _canonical_quote_identity(instrument_type)
         instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
                 SELECT
-                    symbol, asset_class, price, volume, timestamp,
+                    symbol, asset_class, instrument_type, identity_provenance,
+                    price, volume, timestamp,
                     quote_source, provider_name, quote_status, stale_reason,
                     provider_status, captured_reason, nav_date
                 FROM quote_snapshots
-                WHERE symbol = ? AND quote_instant_utc < ?
+                WHERE symbol = ? AND instrument_type = ?
+                  AND quote_instant_utc < ?
                 ORDER BY quote_instant_utc DESC, id DESC
                 LIMIT 1
                 """,
-                (symbol, instant_upper_bound),
+                (symbol, resolved_type, instant_upper_bound),
             ).fetchone()
             return dict(row) if row else None
 

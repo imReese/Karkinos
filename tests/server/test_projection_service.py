@@ -217,7 +217,21 @@ def test_published_valuation_fake_contract_fails_closed_after_fact_drift() -> No
             self.price = 10.0
 
         def get_ledger_entries_sync(self, limit=500, offset=0):
-            return []
+            rows = [
+                {
+                    "id": 1,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-08-26T09:30:00+08:00",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 1.0,
+                    "price": 1.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "source": "manual",
+                }
+            ]
+            return rows[offset : offset + limit]
 
         def get_latest_quotes_sync(self):
             return [

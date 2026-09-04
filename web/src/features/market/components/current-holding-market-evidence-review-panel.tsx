@@ -8,12 +8,14 @@ import {
 } from '../../../shared/ui/workbench';
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatQuantity, formatTimestamp } from '../../../shared/format';
+import { resolveMarketEvidenceRefreshTargets } from '../../../shared/portfolio-evidence/market-evidence-lanes';
 import {
   formatPublicCode,
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import type { CurrentHoldingMarketEvidenceReview } from '../market-feature-boundary';
 import { ConfirmedFundNavRefreshButton } from './confirmed-fund-nav-refresh-button';
+import { CurrentHoldingMarketEvidenceLanes } from './current-holding-market-evidence-lanes';
 import { MarketRefreshButton } from './market-refresh-button';
 
 type Props = {
@@ -57,19 +59,10 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
   const { locale } = usePreferences();
   const labels = copy.market;
   const actionLabels = labels.holdingEvidenceActions;
-  const confirmedNavSymbols =
-    report?.items
-      .filter(
-        (item) =>
-          item.review_reason === 'confirmed_nav_missing' &&
-          item.explicit_refresh_eligible,
-      )
-      .map((item) => item.symbol) ?? [];
-  const confirmedNavSymbolSet = new Set(confirmedNavSymbols);
-  const genericRefreshSymbols =
-    report?.refreshable_symbols.filter(
-      (symbol) => !confirmedNavSymbolSet.has(symbol),
-    ) ?? [];
+  const {
+    quoteSymbols: genericRefreshSymbols,
+    confirmedFundNavSymbols: confirmedNavSymbols,
+  } = resolveMarketEvidenceRefreshTargets(report);
   const title = loading
     ? copy.states.loading
     : error || !report
@@ -266,6 +259,8 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           {labels.holdingEvidenceExplicitRefresh}
         </p>
       ) : null}
+
+      <CurrentHoldingMarketEvidenceLanes report={report} />
 
       {report && !showReviewWorkspace ? (
         <div className="app-type-micro flex min-w-0 flex-wrap gap-x-4 gap-y-1 tabular-nums text-[var(--app-text-tertiary)]">

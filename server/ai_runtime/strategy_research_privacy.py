@@ -7,11 +7,11 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from server.ai_runtime.contracts import JsonObject
-
-NORMALIZED_RESEARCH_NOTIONAL = 1_000_000.0
-NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID = (
-    "karkinos.ai.normalized_research_notional.cny_1m.v1"
+from server.contracts.normalized_strategy_research import (
+    NORMALIZED_RESEARCH_NOTIONAL,
+    NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
 )
+
 NORMALIZED_RESEARCH_PACK_SCHEMA = "karkinos.ai.normalized_research_pack.v1"
 _FORBIDDEN_EXTERNAL_KEYS = {
     "cash",

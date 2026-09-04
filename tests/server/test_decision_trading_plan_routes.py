@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from fastapi.routing import APIRoute
 
@@ -71,11 +72,39 @@ class FakeDecisionDb:
     def get_runtime_control_sync(self, key):
         return None
 
+    def get_ledger_entries_sync(self, limit=500, offset=0):
+        return [
+            {
+                "id": 1,
+                "entry_type": "cash_deposit",
+                "timestamp": "2026-07-01T09:30:00+08:00",
+                "amount": 50_000.0,
+                "asset_class": "cash",
+                "source": "fixture",
+            },
+            {
+                "id": 2,
+                "entry_type": "trade_buy",
+                "timestamp": "2026-07-01T09:40:00+08:00",
+                "symbol": "600519",
+                "direction": "buy",
+                "quantity": 200.0,
+                "price": 10.0,
+                "commission": 0.0,
+                "gross_amount": 2_000.0,
+                "net_cash_impact": -2_000.0,
+                "asset_class": "stock",
+                "source": "fixture",
+            },
+        ][offset : offset + limit]
+
     def get_latest_quote_sync(self, symbol, asset_type=None):
         return {
             "symbol": symbol,
             "asset_type": asset_type or "stock",
             "price": 10.0,
+            "previous_close": 9.5,
+            "previous_close_date": "2026-06-30",
             "quote_status": "live",
             "quote_timestamp": "2026-07-01T09:45:00+08:00",
             "quote_source": "fixture",
@@ -160,6 +189,16 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
                 total_equity=lambda: 50000.0,
             ),
         ),
+    )
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: now
+        or datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    monkeypatch.setattr(
+        "server.projections.quote_status.get_shanghai_now",
+        lambda now=None: now
+        or datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(

@@ -72,6 +72,7 @@ from server.ai_runtime.memory_retrieval import (
 from server.ai_runtime.provider_call_window import (
     DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
     PROVIDER_CALL_COMPLETION_GUARD_SECONDS,
+    ProviderExecutionFence,
     provider_send_admission_for,
 )
 from server.ai_runtime.provider_connectivity import (
@@ -110,6 +111,9 @@ if TYPE_CHECKING:
     from server.services.ai_shadow_research_automation import (
         AiShadowResearchAutomationService,
     )
+    from server.services.ai_shadow_research_qualification import (
+        AiShadowResearchQualificationService,
+    )
 
 
 def build_capture_projection_readers() -> CaptureProjectionReaders:
@@ -127,11 +131,14 @@ def build_capture_projection_readers() -> CaptureProjectionReaders:
 
 def build_human_context_capture_service(
     state: AppState,
+    *,
+    initialize: bool = True,
 ) -> HumanResearchContextCaptureService:
     """Build audit-only capture services on the application's SQLite database."""
     return _build_context_capture_service(
         state,
         projection_readers=build_capture_projection_readers(),
+        initialize=initialize,
     )
 
 
@@ -338,12 +345,14 @@ def build_human_external_memory_analysis_service(
         evidence_repository=CanonicalEvidenceRepository(db_path),
         analysis_store=store,
         now=_utc_now,
-        provider_send_admission_factory=lambda provider_id, endpoint_origin: provider_send_admission_for(
-            provider_id,
-            endpoint_origin=endpoint_origin,
-            minimum_runway=timedelta(
-                seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
-            ),
+        provider_send_admission_factory=lambda provider_id, endpoint_origin: (
+            provider_send_admission_for(
+                provider_id,
+                endpoint_origin=endpoint_origin,
+                minimum_runway=timedelta(
+                    seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
+                ),
+            )
         ),
     )
 
@@ -454,12 +463,14 @@ def build_human_external_promoted_memory_analysis_service(
         evidence_repository=CanonicalEvidenceRepository(db_path),
         analysis_store=store,
         now=_utc_now,
-        provider_send_admission_factory=lambda provider_id, endpoint_origin: provider_send_admission_for(
-            provider_id,
-            endpoint_origin=endpoint_origin,
-            minimum_runway=timedelta(
-                seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
-            ),
+        provider_send_admission_factory=lambda provider_id, endpoint_origin: (
+            provider_send_admission_for(
+                provider_id,
+                endpoint_origin=endpoint_origin,
+                minimum_runway=timedelta(
+                    seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
+                ),
+            )
         ),
     )
     return HumanExternalPromotedMemoryAnalysisService(
@@ -583,11 +594,13 @@ def build_strategy_research_write_service(
     state: AppState,
     *,
     external: bool,
+    provider_execution_fence: ProviderExecutionFence | None = None,
 ) -> StrategyResearchService:
     return _build_strategy_research_write_service(
         state,
         external=external,
         capture_service=build_human_context_capture_service(state),
+        provider_execution_fence=provider_execution_fence,
     )
 
 
@@ -611,6 +624,8 @@ def build_strategy_research_read_service(state: AppState) -> StrategyResearchSer
 
 def build_shadow_research_write_service(
     state: AppState,
+    *,
+    provider_execution_fence: ProviderExecutionFence | None = None,
 ) -> AiShadowResearchAutomationService:
     if state.db is None:
         raise ConnectivityConfigurationError("database is not initialized")
@@ -623,7 +638,37 @@ def build_shadow_research_write_service(
         research_service_builder=lambda external: build_strategy_research_write_service(
             state,
             external=external,
+            provider_execution_fence=provider_execution_fence,
         ),
+        execution_guard=(
+            provider_execution_fence.require_current
+            if provider_execution_fence is not None
+            else None
+        ),
+    )
+
+
+def build_shadow_research_qualification_service(
+    state: AppState,
+) -> AiShadowResearchQualificationService:
+    """Build local account qualification without loading provider credentials."""
+    state.require_database()
+    from server.composition.ai_shadow_research_automation import (
+        compose_ai_shadow_research_qualification_service,
+    )
+    from server.services.ai_shadow_research_qualification import (
+        AiShadowResearchQualificationService,
+    )
+
+    return compose_ai_shadow_research_qualification_service(
+        state,
+        capture_service_factory=lambda: build_human_context_capture_service(
+            state, initialize=False
+        ),
+        account_identity_reader=lambda: (
+            portfolio_application.current_valuation_snapshot(state)
+        ),
+        service_type=AiShadowResearchQualificationService,
     )
 
 

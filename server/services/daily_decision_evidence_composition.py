@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
+from server.contracts.content_identity import content_fingerprint
 from server.services.automation_control import AutomationControlService
 from server.services.daily_decision_evidence_contracts import (
     QuoteRefresher,
@@ -56,8 +57,21 @@ def build_daily_decision_evidence_automation_service(
             portfolio = object_dict(
                 object_dict(decision.get("summary")).get("portfolio")
             )
-            cache_key = promoted_scan_cache_key(decision_date, portfolio)
+            promotion_state_identity = promoted_strategy_state_cache_identity(state.db)
+            cache_key = promoted_scan_cache_key(
+                decision_date,
+                portfolio,
+                promotion_state_identity=promotion_state_identity,
+            )
             cached = scan_cache.get(cache_key)
+            if cached is not None:
+                cached_blockers = await asyncio.to_thread(
+                    scanner.current_input_blockers,
+                    scan=cached["scan"],
+                    portfolio_summary=portfolio,
+                )
+                if cached_blockers:
+                    cached = None
             if cached is None:
                 prepared = await asyncio.to_thread(
                     scanner.run_once,
@@ -84,6 +98,28 @@ def build_daily_decision_evidence_automation_service(
                     additional_blockers=quote_blockers,
                 )
                 decision, trading_plan = await plan_reader(state)
+                final_portfolio = object_dict(
+                    object_dict(decision.get("summary")).get("portfolio")
+                )
+                final_input_blockers = await asyncio.to_thread(
+                    scanner.current_input_blockers,
+                    scan=final_scan,
+                    portfolio_summary=final_portfolio,
+                )
+                if final_input_blockers:
+                    final_scan = {
+                        **final_scan,
+                        "status": "blocked",
+                        "normal_no_signal": False,
+                        "blockers": list(
+                            dict.fromkeys(
+                                [
+                                    *list(final_scan.get("blockers") or []),
+                                    *final_input_blockers,
+                                ]
+                            )
+                        ),
+                    }
                 cached = {
                     "scan": final_scan,
                     "quote_freeze": quote_freeze,
@@ -92,12 +128,19 @@ def build_daily_decision_evidence_automation_service(
                     "completed",
                     "completed_no_signal",
                 }:
-                    final_portfolio = object_dict(
-                        object_dict(decision.get("summary")).get("portfolio")
+                    final_promotion_state_identity = (
+                        promoted_strategy_state_cache_identity(state.db)
                     )
-                    scan_cache[
-                        promoted_scan_cache_key(decision_date, final_portfolio)
-                    ] = cached
+                    if final_promotion_state_identity == promotion_state_identity:
+                        scan_cache[
+                            promoted_scan_cache_key(
+                                decision_date,
+                                final_portfolio,
+                                promotion_state_identity=(
+                                    final_promotion_state_identity
+                                ),
+                            )
+                        ] = cached
             decision = bind_promoted_strategy_scan(
                 decision,
                 cached["scan"],
@@ -176,12 +219,33 @@ def bind_promoted_strategy_scan(
 def promoted_scan_cache_key(
     decision_date: str,
     portfolio: dict[str, Any],
+    *,
+    promotion_state_identity: str = "",
 ) -> tuple[object, ...]:
     return (
         decision_date,
+        promotion_state_identity,
         portfolio.get("valuation_snapshot_id"),
         portfolio.get("ledger_cutoff_id"),
         portfolio.get("ledger_fingerprint"),
         portfolio.get("quote_set_fingerprint"),
+        portfolio.get("valuation_status"),
         portfolio.get("total_equity"),
     )
+
+
+def promoted_strategy_state_cache_identity(db: Any) -> str:
+    """Fingerprint the promoted AI strategy set that one scan will consume."""
+
+    reader = getattr(db, "list_strategy_promotion_states_sync", None)
+    rows = reader() if callable(reader) else []
+    promoted = sorted(
+        (
+            dict(row)
+            for row in rows
+            if str(row.get("strategy_id") or "").startswith("ai_formula_shadow:")
+            and str(row.get("stage") or "") == "paper_shadow"
+        ),
+        key=lambda row: str(row.get("strategy_id") or ""),
+    )
+    return "sha256:" + content_fingerprint(promoted)

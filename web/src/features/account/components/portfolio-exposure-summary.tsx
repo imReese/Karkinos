@@ -21,7 +21,7 @@ export function PortfolioExposureSummary({
   snapshot: PortfolioSnapshot;
 }) {
   const labels = useCopy().overview.cards;
-  if (!(snapshot.total_equity > 0)) {
+  if (snapshot.total_equity === null || !(snapshot.total_equity > 0)) {
     return (
       <div data-testid="portfolio-exposure-summary">
         <EvidenceState kind="missing" title={labels.exposureUnavailable} />

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from core.types import InstrumentType
 from server.models import AccountOverview, PortfolioSnapshot
 from server.projections.portfolio_assets import (
     normalize_asset_class,
@@ -16,6 +17,9 @@ from server.projections.portfolio_quotes import (
     normalize_asset_class_value,
     refresh_policy,
 )
+from server.projections.portfolio_read_snapshot_persistence import (
+    portfolio_read_snapshot_for_state,
+)
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
@@ -24,7 +28,10 @@ from server.services.daily_performance import (
     mark_position_daily,
 )
 from server.services.market_hours import get_shanghai_now
-from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.portfolio_ledger import (
+    rebuild_portfolio_from_entries,
+    rebuild_portfolio_from_ledger,
+)
 
 _SH_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -36,15 +43,26 @@ def has_rows(rows: list[dict]) -> bool:
 
 
 def resolve_live_holding_baseline(
-    state, symbol: str, latest_quote: dict | None
+    state,
+    symbol: str,
+    latest_quote: dict | None,
+    *,
+    instrument_type: object,
+    as_of: datetime | None = None,
 ) -> tuple[float | None, str | None, str]:
+    try:
+        normalized_instrument_type = InstrumentType.from_persisted(
+            instrument_type
+        ).value
+    except ValueError:
+        return None, None, "instrument_identity_unavailable"
     latest_timestamp = _parse_quote_timestamp(
         None if latest_quote is None else latest_quote.get("timestamp")
     )
     trade_date = (
         latest_timestamp.date().isoformat()
         if latest_timestamp is not None
-        else datetime.now().date().isoformat()
+        else (as_of or get_shanghai_now()).astimezone(_SH_TZ).date().isoformat()
     )
 
     if latest_quote:
@@ -60,10 +78,45 @@ def resolve_live_holding_baseline(
         if "valuation_baseline_status" in latest_quote:
             return None, None, "snapshot_baseline_unavailable"
 
+    read_snapshot = portfolio_read_snapshot_for_state(state)
+    if read_snapshot is not None:
+        candidates = [
+            dict(row)
+            for row in read_snapshot.price_matrix_rows
+            if str(row.get("symbol") or "").strip() == symbol
+            and str(row.get("trade_date") or "") < trade_date
+            and row.get("price") not in {None, ""}
+        ]
+        if candidates:
+            baseline = max(
+                candidates,
+                key=lambda row: (
+                    str(row.get("trade_date") or ""),
+                    str(row.get("timestamp") or ""),
+                ),
+            )
+            source = str(baseline.get("source") or "snapshot_price_matrix")
+            if source == "market_bars":
+                source = "market_bar_close"
+            elif source == "daily_close_snapshots":
+                source = "daily_close"
+            elif source == "quote_snapshots":
+                source = "fallback_close"
+            return (
+                float(baseline["price"]),
+                str(baseline.get("trade_date") or "") or None,
+                source,
+            )
+        return None, None, "snapshot_baseline_unavailable"
+
     if state.db is not None and hasattr(
         state.db, "get_latest_market_bar_before_date_sync"
     ):
-        market_bar = state.db.get_latest_market_bar_before_date_sync(symbol, trade_date)
+        market_bar = state.db.get_latest_market_bar_before_date_sync(
+            symbol,
+            trade_date,
+            instrument_type=normalized_instrument_type,
+        )
         if market_bar:
             return (
                 float(market_bar.get("close", market_bar.get("price"))),
@@ -73,7 +126,11 @@ def resolve_live_holding_baseline(
             )
 
     if state.db is not None and hasattr(state.db, "get_latest_daily_close_before_sync"):
-        daily_close = state.db.get_latest_daily_close_before_sync(symbol, trade_date)
+        daily_close = state.db.get_latest_daily_close_before_sync(
+            symbol,
+            trade_date,
+            instrument_type=normalized_instrument_type,
+        )
         if daily_close:
             return (
                 float(daily_close["close_price"]),
@@ -82,7 +139,11 @@ def resolve_live_holding_baseline(
             )
 
     if state.db is not None and hasattr(state.db, "get_latest_quote_before_date_sync"):
-        fallback_quote = state.db.get_latest_quote_before_date_sync(symbol, trade_date)
+        fallback_quote = state.db.get_latest_quote_before_date_sync(
+            symbol,
+            trade_date,
+            instrument_type=normalized_instrument_type,
+        )
         if fallback_quote:
             return (
                 float(fallback_quote["price"]),
@@ -107,6 +168,9 @@ def ledger_entry_shanghai_date(entry: dict) -> date | None:
 
 
 def read_daily_ledger_entries(state, *, batch_size: int = 500) -> list[dict]:
+    read_snapshot = portfolio_read_snapshot_for_state(state)
+    if read_snapshot is not None:
+        return [dict(row) for row in read_snapshot.ledger_rows]
     db = state.db
     if db is None or not hasattr(db, "get_ledger_entries_sync"):
         return []
@@ -255,11 +319,16 @@ def resolve_position_today_change(
     avg_cost: float,
     latest_quote: dict | None,
     latest_price_value: float | None,
+    instrument_type: object,
     ledger_entries: list[dict] | None = None,
     now: datetime | None = None,
 ) -> tuple[float | None, float | None, float | None, str | None, str]:
     baseline_price, baseline_timestamp, baseline_source = resolve_live_holding_baseline(
-        state, symbol, latest_quote
+        state,
+        symbol,
+        latest_quote,
+        instrument_type=instrument_type,
+        as_of=now,
     )
     latest_timestamp = _parse_quote_timestamp(
         None if latest_quote is None else latest_quote.get("timestamp")
@@ -297,18 +366,22 @@ def resolve_position_today_change(
         same_day_buy_lots=buy_lots,
         same_day_sell_lots=sell_lots,
     )
-    reference_price = (
-        latest_price_value
-        if latest_price_value is not None
-        else (float(context.sell_lots[-1].price) if context.sell_lots else avg_cost)
-    )
-    mark = mark_position_daily(context, price=reference_price)
     if (context.lots or context.sell_lots) and context.status == "complete":
         baseline_price = context.baseline_price
         baseline_timestamp = trade_day.isoformat()
         baseline_source = context.source
     elif context.status != "complete":
         baseline_source = context.source
+
+    mark = mark_position_daily(context, price=latest_price_value)
+    if mark.status != "complete":
+        return (
+            None,
+            None,
+            baseline_price,
+            baseline_timestamp,
+            mark.source,
+        )
 
     return (
         mark.today_change,
@@ -334,6 +407,14 @@ def resolve_projection_sources(
     latest_quotes = (
         collect_latest_quotes(state) if latest_quotes is None else latest_quotes
     )
+    read_snapshot = portfolio_read_snapshot_for_state(state)
+    if read_snapshot is not None:
+        rebuilt = rebuild_portfolio_from_entries(
+            state.config,
+            read_snapshot.ledger_rows,
+            latest_quotes=latest_quotes,
+        )
+        return rebuilt.portfolio, rebuilt.instruments
     if hasattr(state.db, "get_ledger_entries_sync"):
         rebuilt = rebuild_portfolio_from_ledger(
             state.config,

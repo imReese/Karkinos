@@ -11,6 +11,9 @@ from server.models import (
     EquityPoint,
     EquitySeriesPoint,
 )
+from server.projections.portfolio_read_snapshot_persistence import (
+    portfolio_read_snapshot_for_state,
+)
 from server.projections.portfolio_views.historical_ledger_series import (
     build_daily_equity_series_from_ledger_history,
     equity_series_bucket,
@@ -25,6 +28,7 @@ from server.projections.portfolio_views.intraday_series import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
+from server.projections.quote_status import quote_valuation_status
 from server.services.market_hours import get_shanghai_now
 from server.services.valuation_snapshot import (
     valuation_identity_fields,
@@ -160,8 +164,11 @@ def cash_flow_adjusted_equity_points_from_series(
     if len(raw_points) < 2:
         return raw_points
 
+    read_snapshot = portfolio_read_snapshot_for_state(state)
     db = getattr(state, "db", None)
-    if db is None or not hasattr(db, "get_ledger_entries_sync"):
+    if read_snapshot is None and (
+        db is None or not hasattr(db, "get_ledger_entries_sync")
+    ):
         return raw_points
 
     by_date: dict[str, EquitySeriesPoint] = {}
@@ -180,7 +187,14 @@ def cash_flow_adjusted_equity_points_from_series(
         return raw_points
 
     try:
-        ledger_entries = load_ledger_entries_for_equity_series(db)
+        ledger_entries = (
+            sorted(
+                (LedgerEntry.from_row(dict(row)) for row in read_snapshot.ledger_rows),
+                key=lambda entry: (entry.timestamp, entry.id or 0),
+            )
+            if read_snapshot is not None
+            else load_ledger_entries_for_equity_series(db)
+        )
     except (KeyError, TypeError, ValueError):
         return raw_points
 
@@ -295,7 +309,13 @@ def trim_intraday_terminal_series_point(
 
 
 def equity_series_status_rank(status: str | None) -> int:
-    if status in {"missing", "error"}:
+    if status in {
+        "missing",
+        "error",
+        "degraded",
+        "estimated",
+        "confirmed_nav_missing",
+    }:
         return 0
     if status == "stale":
         return 1
@@ -386,7 +406,12 @@ def bind_equity_series_valuation(
     valuation_snapshot: dict,
 ) -> list[EquitySeriesPoint]:
     identity = valuation_identity_fields(valuation_snapshot)
-    return [point.model_copy(update=identity) for point in points]
+    return [
+        point.model_copy(
+            update={**identity, **_unavailable_valuation_values(valuation_snapshot)}
+        )
+        for point in points
+    ]
 
 
 def bind_current_equity_valuation(
@@ -399,8 +424,70 @@ def bind_current_equity_valuation(
         update={
             "timestamp": valuation_snapshot["as_of"],
             **valuation_identity_fields(valuation_snapshot),
+            **_unavailable_valuation_values(valuation_snapshot),
         }
     )
+
+
+def _unavailable_valuation_values(valuation_snapshot: dict) -> dict:
+    if valuation_snapshot.get("status") == "complete":
+        return {}
+
+    unavailable_quotes = [
+        quote
+        for quote in valuation_snapshot.get("quotes") or []
+        if quote_valuation_status(quote) != "complete"
+    ]
+    statuses = {
+        str(quote.get("quote_status") or "missing").strip().lower()
+        for quote in unavailable_quotes
+    }
+    if statuses & {"missing", "error"}:
+        quote_status = "missing"
+    elif statuses & {
+        "confirmed_nav_missing",
+        "confirmed_fund_nav_missing_estimate_only",
+    }:
+        quote_status = "confirmed_nav_missing"
+    elif "estimated" in statuses:
+        quote_status = "estimated"
+    else:
+        quote_status = "degraded"
+    values = {
+        "total": None,
+        "unrealized_pnl": None,
+        "total_daily_change": None,
+        "quote_status": quote_status,
+        "missing_price_symbols": sorted(
+            {
+                str(quote.get("symbol") or "")
+                for quote in unavailable_quotes
+                if quote.get("symbol")
+            }
+        ),
+    }
+    lane_fields = {
+        "stock": ("stocks", "stocks_daily_change"),
+        "fund": ("funds", "funds_daily_change"),
+        "etf": ("funds", "funds_daily_change"),
+        "other": ("others", "others_daily_change"),
+        "bond": ("others", "others_daily_change"),
+        "gold": ("others", "others_daily_change"),
+    }
+    valuation_lanes = valuation_snapshot.get("valuation_lanes") or []
+    if not valuation_lanes:
+        for fields in {fields for fields in lane_fields.values()}:
+            values.update(dict.fromkeys(fields))
+        return values
+
+    for lane in valuation_lanes:
+        status = str(lane.get("status") or "missing").strip().lower()
+        if status in {"complete", "not_applicable"}:
+            continue
+        fields = lane_fields.get(str(lane.get("asset_class") or "").strip().lower())
+        if fields is not None:
+            values.update(dict.fromkeys(fields))
+    return values
 
 
 def equity_series_matches_valuation(

@@ -15,7 +15,10 @@ import type { OverviewWorkspaceQueries } from '../model/use-overview-page-contro
 import { OverviewAnalysisSection } from './overview-analysis-section';
 import { OverviewHoldingsSection } from './overview-holdings-section';
 import { OverviewReviewStrip } from './overview-review-strip';
-import { DashboardTodayQueue } from './overview-today-queue';
+import {
+  DashboardDecisionQueueFallback,
+  DashboardTodayQueue,
+} from './overview-today-queue';
 
 export function OverviewResolvedWorkspace({
   queries,
@@ -92,6 +95,17 @@ export function OverviewResolvedWorkspace({
               </button>
             ) : undefined
           }
+        />
+      )}
+
+      {overview.data && snapshot.data ? null : (
+        <DashboardDecisionQueueFallback
+          todayDecision={todayDecision.data}
+          todayDecisionLoading={todayDecision.isLoading}
+          todayDecisionError={todayDecision.isError}
+          tradingPlan={tradingPlan.data}
+          tradingPlanLoading={tradingPlan.isLoading}
+          tradingPlanError={tradingPlan.isError}
         />
       )}
 

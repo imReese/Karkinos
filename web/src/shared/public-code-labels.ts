@@ -251,6 +251,70 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
     daily_candidate_background_window_missed:
       "Today's background decision window was missed",
     valuation_missing: 'Valuation missing',
+    valuation_snapshot_not_complete:
+      'The current account valuation is incomplete',
+    portfolio_total_equity_invalid:
+      'Total account equity is unavailable from complete evidence',
+    promoted_strategy_scan_missing:
+      "Today's promoted-strategy scan has not completed",
+    promoted_daily_candidate_strategy_missing:
+      'No account-qualified promoted strategy is available',
+    verified_promoted_strategy_scan_unavailable:
+      "Today's verified promoted-strategy scan is unavailable",
+    prior_verified_market_date_unavailable:
+      'The prior verified trading date is unavailable',
+    full_market_universe_snapshot_missing:
+      'The full-market universe snapshot is missing',
+    verified_market_history_window_incomplete:
+      'The verified market-history window is incomplete',
+    full_market_daily_receipt_replay_failed:
+      'Full-market ingestion receipts could not be verified',
+    account_qualification_not_evaluated:
+      'The current research batch has not completed account qualification',
+    qualification_current_market_date_unavailable:
+      'The latest officially verified closed trading date is unavailable',
+    qualification_current_market_date_invalid:
+      'The latest officially verified closed trading date is invalid',
+    qualification_source_market_date_future:
+      'The frozen research batch is later than the current verified market date',
+    qualification_valuation_snapshot_missing:
+      'The current persisted valuation snapshot is missing',
+    qualification_valuation_snapshot_not_persisted:
+      'The current valuation is not the published immutable snapshot',
+    qualification_valuation_trade_date_invalid:
+      'The current valuation is not bound to the latest verified closed session',
+    qualification_valuation_snapshot_stale:
+      'The current valuation is older than the latest verified closed session',
+    qualification_valuation_snapshot_future_dated:
+      'The current valuation is future-dated',
+    qualification_valuation_as_of_invalid:
+      'The current valuation timestamp is invalid or future-dated',
+    qualification_valuation_or_ledger_not_complete:
+      'The current valuation or ledger evidence is incomplete',
+    qualification_account_capture_identity_mismatch:
+      'The captured account evidence no longer matches the valuation identity',
+    qualification_account_evidence_not_authoritative:
+      'The current account evidence is not authoritative',
+    qualification_reviewed_stock_fee_schedule_invalid:
+      'The reviewed stock fee schedule is missing, stale, or unverified',
+    qualification_account_capital_evidence_not_passing:
+      'The current account-capital evidence did not pass qualification',
+    qualification_source_candidate_set_incomplete:
+      'The frozen five-candidate research batch is incomplete',
+    qualification_source_run_not_complete:
+      'The source research run is not complete',
+    qualification_source_selection_drift:
+      'The frozen source selection has drifted',
+    qualification_source_selection_binding_invalid:
+      'The normalized source selection binding is invalid',
+    qualification_source_candidate_binding_invalid:
+      'A frozen source candidate binding is invalid',
+    qualification_formula_semantics_changed:
+      'Formula semantics changed during account qualification',
+    qualification_candidate_replay_incomplete:
+      'Account-qualified candidate replay is incomplete',
+    no_candidate_passed_account_qualification:
+      'No candidate passed account qualification',
   },
   zh: {
     canonical_broker_evidence: 'Canonical 券商证据',
@@ -457,5 +521,48 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
     reviewed_fee_schedule_review_fingerprint_invalid: '真实费用复核指纹无效',
     daily_candidate_background_window_missed: '已错过今日后台决策窗口',
     valuation_missing: '缺少估值',
+    valuation_snapshot_not_complete: '当前账户估值证据不完整',
+    portfolio_total_equity_invalid: '无法从完整证据得到账户总权益',
+    promoted_strategy_scan_missing: '今天的已晋级策略扫描尚未完成',
+    promoted_daily_candidate_strategy_missing:
+      '当前没有通过账户资格并晋级的策略',
+    verified_promoted_strategy_scan_unavailable:
+      '今天缺少可验证的已晋级策略扫描',
+    prior_verified_market_date_unavailable: '缺少上一已验证交易日',
+    full_market_universe_snapshot_missing: '缺少全市场标的快照',
+    verified_market_history_window_incomplete: '已验证行情历史窗口不完整',
+    full_market_daily_receipt_replay_failed: '全市场数据采集回执校验失败',
+    account_qualification_not_evaluated: '当前研究批次尚未完成账户资格复核',
+    qualification_current_market_date_unavailable:
+      '缺少最新官方验证的已收盘交易日',
+    qualification_current_market_date_invalid: '最新已验证交易日无效',
+    qualification_source_market_date_future:
+      '冻结研究批次晚于当前已验证行情日期',
+    qualification_valuation_snapshot_missing: '缺少当前持久化估值快照',
+    qualification_valuation_snapshot_not_persisted:
+      '当前估值不是已发布的不可变快照',
+    qualification_valuation_trade_date_invalid:
+      '当前估值未绑定到最新已验证收盘交易日',
+    qualification_valuation_snapshot_stale: '当前估值早于最新已验证收盘交易日',
+    qualification_valuation_snapshot_future_dated: '当前估值日期来自未来',
+    qualification_valuation_as_of_invalid: '当前估值时间无效或来自未来',
+    qualification_valuation_or_ledger_not_complete: '当前估值或账本证据不完整',
+    qualification_account_capture_identity_mismatch:
+      '账户证据与当前估值身份不再一致',
+    qualification_account_evidence_not_authoritative:
+      '当前账户证据不是权威证据',
+    qualification_reviewed_stock_fee_schedule_invalid:
+      '股票真实费用方案缺失、过期或未验证',
+    qualification_account_capital_evidence_not_passing:
+      '当前账户资本证据未通过资格门禁',
+    qualification_source_candidate_set_incomplete: '冻结的五候选研究批次不完整',
+    qualification_source_run_not_complete: '源研究运行尚未完成',
+    qualification_source_selection_drift: '冻结的源选择已发生漂移',
+    qualification_source_selection_binding_invalid: '归一化源选择绑定无效',
+    qualification_source_candidate_binding_invalid: '冻结的源候选绑定无效',
+    qualification_formula_semantics_changed:
+      '账户资格复跑期间 Formula 语义发生变化',
+    qualification_candidate_replay_incomplete: '账户资格候选复跑未完整完成',
+    no_candidate_passed_account_qualification: '没有候选通过账户资格复核',
   },
 };

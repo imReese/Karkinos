@@ -25,15 +25,17 @@ def build_human_context_capture_service(
     state: AppState,
     *,
     projection_readers: CaptureProjectionReaders,
+    initialize: bool = True,
 ) -> HumanResearchContextCaptureService:
     """Build the audit-only capture service from explicit projection ports."""
     db_path = database_path(state.db)
     evidence_repository = CanonicalEvidenceRepository(db_path)
     context_store = AiAuditStore(db_path)
     capture_store = ContextCaptureAuditStore(db_path)
-    evidence_repository.init()
-    context_store.init()
-    capture_store.init()
+    if initialize:
+        evidence_repository.init()
+        context_store.init()
+        capture_store.init()
     return HumanResearchContextCaptureService(
         source=PersistedKarkinosCaptureSource(state, projection_readers),
         evidence_repository=evidence_repository,

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.manager import DataManager
 from data.source import DataSource
 
@@ -126,7 +126,11 @@ class TestDataManager:
         )
 
         # 验证 store 中有数据
-        loaded = store.load_bars(Symbol("600519"), BarFrequency.DAILY)
+        loaded = store.load_bars(
+            Symbol("600519"),
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert loaded is not None
         assert len(loaded) > 0
 
@@ -207,7 +211,11 @@ class TestDataManager:
         assert handler.total_bars > 0
         assert primary.fetch_count == 1
         assert fallback.fetch_count == 1
-        loaded = store.load_bars(Symbol("600001"), BarFrequency.DAILY)
+        loaded = store.load_bars(
+            Symbol("600001"),
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert loaded is not None
         assert len(loaded) > 0
 
@@ -231,7 +239,11 @@ class TestDataManager:
             asset_class=AssetClass.STOCK,
         )
 
-        meta = store.get_meta(Symbol("600001"), BarFrequency.DAILY)
+        meta = store.get_meta(
+            Symbol("600001"),
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert meta is not None
         assert meta["provider_name"] == "akshare"
         assert meta["data_source"] == "akshare"
@@ -250,6 +262,7 @@ class TestDataManager:
             start=_TEST_START,
             end=_TEST_END,
             asset_class=AssetClass.FUND,
+            instrument_type=InstrumentType.OPEN_END_FUND,
         )
 
         assert handler.total_bars > 0
@@ -270,6 +283,7 @@ class TestDataManager:
             start=_TEST_START,
             end=_TEST_END,
             asset_class=AssetClass.FUND,
+            instrument_type=InstrumentType.OPEN_END_FUND,
         )
 
         assert handler.total_bars > 0
@@ -287,6 +301,7 @@ class TestDataManager:
                 start=_TEST_START,
                 end=_TEST_END,
                 asset_class=AssetClass.FUND,
+                instrument_type=InstrumentType.OPEN_END_FUND,
             )
 
         assert source.fetch_count == 0
@@ -350,7 +365,12 @@ class TestDataManager:
 
         store = DataStore(str(tmp_path / "store"))
         cached_df = _make_bars_df(n=10)
-        store.save_bars(Symbol("600519"), BarFrequency.DAILY, cached_df)
+        store.save_bars(
+            Symbol("600519"),
+            BarFrequency.DAILY,
+            cached_df,
+            instrument_type=InstrumentType.STOCK,
+        )
         manager = DataManager({"mock": source}, store=store, default_source="mock")
 
         handler = manager.get_bars(
@@ -371,7 +391,12 @@ class TestDataManager:
 
         store = DataStore(str(tmp_path / "store"))
         cached_df = _make_bars_df(n=10)
-        store.save_bars(Symbol("600519"), BarFrequency.DAILY, cached_df)
+        store.save_bars(
+            Symbol("600519"),
+            BarFrequency.DAILY,
+            cached_df,
+            instrument_type=InstrumentType.STOCK,
+        )
         manager = DataManager({"mock": source}, store=store, default_source="mock")
 
         handler = manager.get_bars(

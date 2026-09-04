@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -135,6 +136,8 @@ from server.services.daily_decision_strategy_gate import (
 from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
 logger = logging.getLogger(__name__)
+
+_DAILY_DECISION_MAX_POLL_INTERVAL_SECONDS = 60.0
 
 __all__ = [
     "AccountTruthReplayResolver",
@@ -342,7 +345,6 @@ async def run_daily_decision_evidence_automation_loop(
     ):
         raise ValueError("daily decision evidence adapters must be supplied together")
     service: DailyDecisionEvidenceAutomationService | None = None
-    interval = max(float(interval_seconds), 1.0)
     current_time = clock or (lambda: datetime.now(timezone.utc))
     while True:
         await wait_for_release_activation(sleep=sleep)
@@ -389,7 +391,24 @@ async def run_daily_decision_evidence_automation_loop(
             raise
         except Exception:
             logger.exception("Unexpected daily decision evidence automation failure")
-        await sleep(interval)
+        await sleep(_daily_decision_poll_interval_seconds(state, interval_seconds))
+
+
+def _daily_decision_poll_interval_seconds(
+    state: Any,
+    fallback_interval_seconds: float,
+) -> float:
+    """Read runtime settings while keeping polls inside the Decision window."""
+
+    config = getattr(state, "config", None)
+    configured = getattr(config, "live_poll_interval", fallback_interval_seconds)
+    try:
+        interval = float(configured)
+    except (TypeError, ValueError):
+        interval = float(fallback_interval_seconds)
+    if not math.isfinite(interval):
+        interval = _DAILY_DECISION_MAX_POLL_INTERVAL_SECONDS
+    return min(max(interval, 1.0), _DAILY_DECISION_MAX_POLL_INTERVAL_SECONDS)
 
 
 # Compatibility aliases keep established imports and monkeypatch seams stable.

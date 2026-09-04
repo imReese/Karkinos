@@ -6,7 +6,8 @@ import asyncio
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from threading import RLock
 from typing import TYPE_CHECKING, Any
 
 from fastapi import Request
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from server.bridge import EventBusBridge
     from server.config import ServerConfig
     from server.db import AppDatabase
+    from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotService
     from server.scheduler import TradingScheduler
     from server.services.execution_gateway_verification import (
         ExecutionGatewayRuntimeProtocol,
@@ -38,6 +40,7 @@ class AppState:
         self.hub: ConnectionHub | None = None
         self.bridge: EventBusBridge | None = None
         self.scheduler: TradingScheduler | None = None
+        self.portfolio_read_snapshot_service: PortfolioReadSnapshotService | None = None
         self.daily_decision_evidence_task: asyncio.Task[None] | None = None
         self.notifier: Notifier | None = None
         self.trading_controls: TradingControlState | None = None
@@ -46,6 +49,8 @@ class AppState:
         self.controlled_broker_release_evidence_provider: (
             Callable[[str], dict[str, Any]] | None
         ) = None
+        self.ai_shadow_research_qualification_data_store: Any | None = None
+        self.ai_shadow_research_qualification_persistence_ready = False
 
     def require_database(self) -> AppDatabase:
         """Return the initialized database or fail before composing a use case."""
@@ -92,6 +97,22 @@ _current_app_state: ContextVar[AppState | None] = ContextVar(
 )
 
 
+@dataclass
+class PortfolioReadRequestState:
+    """Mutable request-local holder for one immutable portfolio read snapshot."""
+
+    snapshot: object | None = None
+    lock: RLock = field(default_factory=RLock)
+
+
+_current_portfolio_read_request_state: ContextVar[PortfolioReadRequestState | None] = (
+    ContextVar(
+        "karkinos_current_portfolio_read_request_state",
+        default=None,
+    )
+)
+
+
 def get_app_state() -> AppState:
     """Return state for the current request or explicitly bound app context."""
     state = _current_app_state.get()
@@ -103,6 +124,12 @@ def get_app_state() -> AppState:
     return state
 
 
+def get_portfolio_read_request_state() -> PortfolioReadRequestState | None:
+    """Return the current request's lazy portfolio snapshot holder, if any."""
+
+    return _current_portfolio_read_request_state.get()
+
+
 @contextmanager
 def bind_app_state(state: AppState) -> Iterator[AppState]:
     """Temporarily bind one application's state to the current context."""
@@ -111,6 +138,18 @@ def bind_app_state(state: AppState) -> Iterator[AppState]:
         yield state
     finally:
         _current_app_state.reset(token)
+
+
+@contextmanager
+def bind_portfolio_read_request_state() -> Iterator[PortfolioReadRequestState]:
+    """Give one ASGI request a single pinned portfolio read identity."""
+
+    state = PortfolioReadRequestState()
+    token = _current_portfolio_read_request_state.set(state)
+    try:
+        yield state
+    finally:
+        _current_portfolio_read_request_state.reset(token)
 
 
 class AppStateContextMiddleware:
@@ -130,7 +169,11 @@ class AppStateContextMiddleware:
             await self.app(scope, receive, send)
             return
         with bind_app_state(self.app_state):
-            await self.app(scope, receive, send)
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+            with bind_portfolio_read_request_state():
+                await self.app(scope, receive, send)
 
 
 def get_scheduler(request: Request) -> TradingScheduler:

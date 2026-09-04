@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, InstrumentType, Symbol
 from data.manager import DataManager, build_sources
 from data.store import DataStore
 from server.config import BacktestConfig
@@ -18,13 +18,13 @@ from server.config_contract import (
 )
 from server.runtime_paths import resolve_data_dir, resolve_runtime_home
 
-_ASSET_CLASS_MAP = {
-    "stock": AssetClass.STOCK,
-    "etf": AssetClass.FUND,
-    "fund": AssetClass.FUND,
-    "gold": AssetClass.GOLD,
-    "bond": AssetClass.BOND,
-    "index": AssetClass.INDEX,
+_INSTRUMENT_ASSET_CLASS_MAP = {
+    InstrumentType.STOCK: AssetClass.STOCK,
+    InstrumentType.ETF: AssetClass.FUND,
+    InstrumentType.OPEN_END_FUND: AssetClass.FUND,
+    InstrumentType.GOLD: AssetClass.GOLD,
+    InstrumentType.BOND: AssetClass.BOND,
+    InstrumentType.INDEX: AssetClass.INDEX,
 }
 
 _NON_STRATEGY_FIELDS = {
@@ -79,6 +79,15 @@ class RuntimeContext:
     data_manager: DataManager
     watchlist: list[tuple[Symbol, AssetClass]]
     instruments: dict[Symbol, Any]
+    instrument_types: dict[Symbol, InstrumentType]
+    instrument_identity_provenance: dict[Symbol, str]
+
+
+@dataclass(frozen=True)
+class _ConfiguredInstrumentIdentity:
+    symbol: Symbol
+    instrument_type: InstrumentType
+    provenance: str
 
 
 def resolve_config_path() -> Path:
@@ -255,11 +264,13 @@ def _apply_runtime_overrides(
         setattr(config, root_field, replace(getattr(config, root_field), **values))
 
 
-def build_watchlist(
+def _configured_instrument_identities(
     config: BacktestConfig,
-) -> list[tuple[Symbol, AssetClass]]:
-    """Convert config assets into normalized symbol/asset-class tuples."""
-    watchlist: list[tuple[Symbol, AssetClass]] = []
+) -> list[_ConfiguredInstrumentIdentity]:
+    """Resolve explicit config identity without inspecting symbol syntax."""
+
+    identities: list[_ConfiguredInstrumentIdentity] = []
+    seen: dict[Symbol, _ConfiguredInstrumentIdentity] = {}
     assets = (
         config.assets.items()
         if isinstance(config.assets, dict)
@@ -277,9 +288,60 @@ def build_watchlist(
             and not isinstance(key, int)
         ):
             asset_cfg = {**asset_cfg, "symbol": str(key)}
-        sym = Symbol(asset_cfg["symbol"])
-        asset_class = _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
-        watchlist.append((sym, asset_class))
+        sym = Symbol(str(asset_cfg["symbol"]).strip())
+        if not str(sym):
+            raise ValueError("configured instrument symbol is required")
+        raw_instrument_type = asset_cfg.get("instrument_type") or asset_cfg.get(
+            "asset_class", "stock"
+        )
+        instrument_type = InstrumentType.from_persisted(raw_instrument_type)
+        provenance = (
+            "legacy_config_fund_compatibility"
+            if str(raw_instrument_type).strip().lower() == "fund"
+            else "config_canonical"
+        )
+        previous = seen.get(sym)
+        if previous is not None and previous.instrument_type is not instrument_type:
+            raise ValueError(
+                "configured instrument identity conflicts for "
+                f"{sym}: {previous.instrument_type.value},{instrument_type.value}"
+            )
+        if previous is None:
+            identity = _ConfiguredInstrumentIdentity(
+                symbol=sym,
+                instrument_type=instrument_type,
+                provenance=provenance,
+            )
+            identities.append(identity)
+            seen[sym] = identity
+        elif (
+            previous.provenance == "legacy_config_fund_compatibility"
+            and provenance == "config_canonical"
+        ):
+            replacement = _ConfiguredInstrumentIdentity(
+                symbol=sym,
+                instrument_type=instrument_type,
+                provenance=provenance,
+            )
+            identities[identities.index(previous)] = replacement
+            seen[sym] = replacement
+    return identities
+
+
+def build_watchlist(
+    config: BacktestConfig,
+) -> list[tuple[Symbol, AssetClass]]:
+    """Build the broad provider watchlist from explicit instrument identities."""
+
+    watchlist: list[tuple[Symbol, AssetClass]] = []
+    for identity in _configured_instrument_identities(config):
+        asset_class = _INSTRUMENT_ASSET_CLASS_MAP.get(identity.instrument_type)
+        if asset_class is None:
+            raise ValueError(
+                "configured instrument type is unsupported: "
+                f"{identity.instrument_type.value}"
+            )
+        watchlist.append((identity.symbol, asset_class))
     return watchlist
 
 
@@ -315,10 +377,20 @@ def create_runtime_context(config: BacktestConfig) -> RuntimeContext:
         store=store,
         default_source=config.data_source,
     )
-    watchlist = build_watchlist(config)
+    configured_identities = _configured_instrument_identities(config)
+    configured_instrument_types = {
+        identity.symbol: identity.instrument_type for identity in configured_identities
+    }
+    watchlist = [
+        (
+            identity.symbol,
+            _INSTRUMENT_ASSET_CLASS_MAP[identity.instrument_type],
+        )
+        for identity in configured_identities
+    ]
     instruments = {
-        symbol: DataManager.get_instrument(symbol, asset_class)
-        for symbol, asset_class in watchlist
+        symbol: DataManager.get_instrument_by_type(symbol, instrument_type)
+        for symbol, instrument_type in configured_instrument_types.items()
     }
     return RuntimeContext(
         config=config,
@@ -327,4 +399,8 @@ def create_runtime_context(config: BacktestConfig) -> RuntimeContext:
         data_manager=data_manager,
         watchlist=watchlist,
         instruments=instruments,
+        instrument_types=configured_instrument_types,
+        instrument_identity_provenance={
+            identity.symbol: identity.provenance for identity in configured_identities
+        },
     )

@@ -8,7 +8,10 @@ import {
   buildOperationsQueueItem,
   decisionQueueResolution,
 } from './today-queue-operations';
-import { buildDecisionQueueItem } from './today-queue-trading-plan';
+import {
+  buildDecisionQueueItem,
+  buildResearchQueueItem,
+} from './today-queue-trading-plan';
 import type {
   DashboardTodayQueueProps,
   TodayQueueItem,
@@ -193,6 +196,16 @@ export function buildTodayQueueModel(
     copy,
     locale,
   });
+  const research = buildResearchQueueItem({
+    todayDecision: props.todayDecision,
+    tradingPlan: props.tradingPlan,
+    instrumentDiagnostics: [
+      ...props.quoteDiagnostics,
+      ...(props.marketHealth?.quotes ?? []),
+    ],
+    copy,
+    locale,
+  });
   const hideDuplicateOperationsReview =
     (market.needsReview && operations.primaryTarget === 'market') ||
     operations.duplicatesTradingPlanReview;
@@ -200,6 +213,7 @@ export function buildTodayQueueModel(
     operations.item,
     market.item,
     decision,
+    ...(research ? [research] : []),
     buildOrdersQueueItem(props, copy),
     buildStrategyQueueItem(props, copy, locale),
   ];
@@ -207,6 +221,7 @@ export function buildTodayQueueModel(
     items: allItems.filter(
       (item) => !(hideDuplicateOperationsReview && item.key === 'operations'),
     ),
-    dataRefreshSymbols: market.refreshSymbols,
+    dataQuoteRefreshSymbols: market.quoteRefreshSymbols,
+    dataConfirmedFundNavRefreshSymbols: market.confirmedFundNavRefreshSymbols,
   };
 }

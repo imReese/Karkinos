@@ -10,15 +10,18 @@ from typing import Any
 
 from core.types import BarFrequency
 from server.ai_runtime.contracts import content_fingerprint
-from server.ai_runtime.provider_call_window import ProviderCallDeferred
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    ProviderExecutionFenced,
+)
 from server.ai_runtime.strategy_research import StrategyResearchSelection
 from server.contracts.ai_shadow_research_automation import (
     CORRECTED_PANEL_CITATION_RESUME_ITERATION,
     CORRECTED_PANEL_CITATION_RESUME_STAGE,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_MAX_CANDIDATES,
     SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
-    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_RUNTIME_CONTRACT,
     SHADOW_RESEARCH_TIMEZONE,
     TIMEOUT_RESUME_COMPLETED_ITERATIONS,
@@ -318,6 +321,7 @@ class AiShadowResearchWorkflowMixin:
             daily_artifacts: dict[str, Any] | None = None
             daily_artifact_failure: str | None = None
             try:
+                self._require_execution_current()
                 daily_artifacts = self._daily_artifacts.record_daily_artifacts(
                     run=run,
                     candidates=candidates,
@@ -329,6 +333,7 @@ class AiShadowResearchWorkflowMixin:
             except DailyStrategyArtifactRejected as exc:
                 daily_artifact_failure = shadow_research_failure_code(exc)
                 terminal_status = "partial"
+            self._require_execution_current()
             self._store.update_run(
                 run["run_id"],
                 now=self._utc_now(),
@@ -371,10 +376,13 @@ class AiShadowResearchWorkflowMixin:
                 "run_id": run["run_id"],
                 "reused": False,
             }
+        except ProviderExecutionFenced:
+            raise
         except Exception as exc:
             logger.warning(
                 "After-close AI shadow research failed closed", exc_info=True
             )
+            self._require_execution_current()
             self._store.update_run(
                 run["run_id"],
                 now=self._utc_now(),

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from server.contracts.ai_shadow_research_automation import (
     PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
@@ -223,6 +225,123 @@ class ShadowResearchProviderCallRepositoryMixin:
         except sqlite3.OperationalError:
             return empty_shadow_research_usage(market_date)
         return project_shadow_research_usage(market_date=market_date, **records)
+
+    def provider_activity_for_local_date(
+        self,
+        local_date: str,
+        *,
+        timezone_name: str,
+    ) -> dict[str, Any]:
+        """Report physical call attempts by local calendar day, not research day."""
+
+        day = date.fromisoformat(local_date)
+        zone = ZoneInfo(timezone_name)
+        starts_at = datetime.combine(day, time.min, tzinfo=zone).astimezone(
+            timezone.utc
+        )
+        ends_at = datetime.combine(
+            day + timedelta(days=1), time.min, tzinfo=zone
+        ).astimezone(timezone.utc)
+        placeholders = ", ".join("?" for _ in PROVIDER_FREE_RETRYABLE_FAILURE_CODES)
+        contacted_predicate = f"""
+            NOT (
+                call.status IN ('failed', 'deferred')
+                AND COALESCE(call.actual_tokens, 0)=0
+                AND (call.failure_code IN ({placeholders})
+                     OR partial_resume.resume_id IS NOT NULL)
+            )
+        """
+        range_predicate = """
+            julianday(call.created_at) >= julianday(?)
+            AND julianday(call.created_at) < julianday(?)
+        """
+        try:
+            with self._connect_readonly() as conn:
+                totals = conn.execute(
+                    f"""
+                    SELECT COUNT(*) AS recorded_call_attempts,
+                           COALESCE(SUM(CASE WHEN {contacted_predicate}
+                                            THEN 1 ELSE 0 END), 0)
+                               AS provider_calls
+                    FROM ai_shadow_research_provider_calls AS call
+                    LEFT JOIN ai_shadow_research_provider_free_partial_resumes
+                              AS partial_resume
+                      ON partial_resume.failed_call_id=call.call_id
+                     AND partial_resume.run_id=call.run_id
+                     AND partial_resume.market_date=call.market_date
+                    WHERE {range_predicate}
+                    """,
+                    (
+                        *PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
+                        starts_at.isoformat(),
+                        ends_at.isoformat(),
+                    ),
+                ).fetchone()
+                last_attempt = conn.execute(
+                    f"""
+                    SELECT call.created_at, call.updated_at, call.status,
+                           call.failure_code, call.call_kind, call.market_date
+                    FROM ai_shadow_research_provider_calls AS call
+                    WHERE {range_predicate}
+                    ORDER BY julianday(call.created_at) DESC, call.call_id DESC
+                    LIMIT 1
+                    """,
+                    (starts_at.isoformat(), ends_at.isoformat()),
+                ).fetchone()
+                last_provider_call = conn.execute(
+                    f"""
+                    SELECT call.created_at, call.market_date
+                    FROM ai_shadow_research_provider_calls AS call
+                    LEFT JOIN ai_shadow_research_provider_free_partial_resumes
+                              AS partial_resume
+                      ON partial_resume.failed_call_id=call.call_id
+                     AND partial_resume.run_id=call.run_id
+                     AND partial_resume.market_date=call.market_date
+                    WHERE {range_predicate} AND {contacted_predicate}
+                    ORDER BY julianday(call.created_at) DESC, call.call_id DESC
+                    LIMIT 1
+                    """,
+                    (
+                        starts_at.isoformat(),
+                        ends_at.isoformat(),
+                        *PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
+                    ),
+                ).fetchone()
+        except sqlite3.OperationalError:
+            totals = None
+            last_attempt = None
+            last_provider_call = None
+        recorded = int(totals["recorded_call_attempts"]) if totals else 0
+        calls = int(totals["provider_calls"]) if totals else 0
+        attempt = dict(last_attempt) if last_attempt is not None else {}
+        return {
+            "schema_version": "karkinos.ai.provider_local_day_activity.v1",
+            "local_date": local_date,
+            "timezone": timezone_name,
+            "provider_calls": calls,
+            "recorded_call_attempts": recorded,
+            "provider_free_rejections": recorded - calls,
+            "last_attempt_at": attempt.get("created_at"),
+            "last_attempt_updated_at": attempt.get("updated_at"),
+            "last_attempt_status": attempt.get("status"),
+            "last_attempt_failure_code": attempt.get("failure_code"),
+            "last_attempt_kind": attempt.get("call_kind"),
+            "last_attempt_market_date": attempt.get("market_date"),
+            "last_provider_call_at": (
+                last_provider_call["created_at"]
+                if last_provider_call is not None
+                else None
+            ),
+            "last_provider_call_market_date": (
+                last_provider_call["market_date"]
+                if last_provider_call is not None
+                else None
+            ),
+            "read_only": True,
+            "provider_contact_performed": False,
+            "database_writes_performed": False,
+            "authority_effect": "none",
+        }
 
     def _load_usage_records(
         self,

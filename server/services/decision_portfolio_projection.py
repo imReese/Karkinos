@@ -152,27 +152,51 @@ def portfolio_state_summary(
             "cash": 0.0,
             "position_count": 0,
             "symbols": [],
+            "instrument_types": {},
             "total_market_value": 0.0,
             "total_equity": 0.0,
         }
     positions = getattr(portfolio, "positions", {}) or {}
     position_items = positions.items() if isinstance(positions, dict) else []
+    instruments = context.get("instruments") or {}
     symbols: list[str] = []
-    total_market_value = 0.0
+    instrument_types: dict[str, str] = {}
+    position_values: list[float] = []
+    position_valuation_complete = True
     for symbol, position in position_items:
-        symbols.append(str(symbol))
-        total_market_value += position_market_value(position)
+        symbol_text = str(symbol)
+        symbols.append(symbol_text)
+        instrument = instruments.get(symbol)
+        instrument_type = getattr(instrument, "instrument_type", None)
+        instrument_type_value = getattr(instrument_type, "value", instrument_type)
+        if str(instrument_type_value or "").strip():
+            instrument_types[symbol_text] = str(instrument_type_value)
+        market_value = position_market_value(position)
+        if market_value is None:
+            position_valuation_complete = False
+        else:
+            position_values.append(market_value)
     cash = float_or_zero(getattr(portfolio, "cash", 0.0))
-    total_equity = portfolio_total_equity(portfolio, cash, total_market_value)
+    snapshot = context.get("valuation_snapshot")
+    aggregate_valuation_complete = (
+        not isinstance(snapshot, dict) or snapshot.get("status") == "complete"
+    ) and str(getattr(portfolio, "valuation_status", "complete")) == "complete"
+    valuation_complete = aggregate_valuation_complete and position_valuation_complete
+    total_market_value = sum(position_values) if valuation_complete else None
+    total_equity = (
+        portfolio_total_equity(portfolio, cash, total_market_value)
+        if total_market_value is not None
+        else None
+    )
     result = {
-        "status": "available",
+        "status": "available" if valuation_complete else "blocked",
         "cash": cash,
         "position_count": len(symbols),
         "symbols": symbols,
+        "instrument_types": instrument_types,
         "total_market_value": total_market_value,
         "total_equity": total_equity,
     }
-    snapshot = context.get("valuation_snapshot")
     if isinstance(snapshot, dict):
         from server.services.valuation_snapshot import valuation_identity_fields
 
@@ -185,7 +209,7 @@ def portfolio_total_equity(
     portfolio: Any,
     cash: float,
     total_market_value: float,
-) -> float:
+) -> float | None:
     total_equity = getattr(portfolio, "total_equity", None)
     if callable(total_equity):
         try:
@@ -197,7 +221,9 @@ def portfolio_total_equity(
     return cash + total_market_value
 
 
-def position_market_value(position: Any) -> float:
+def position_market_value(position: Any) -> float | None:
+    if getattr(position, "valuation_available", True) is False:
+        return None
     market_value = getattr(position, "market_value", None)
     if callable(market_value):
         try:
@@ -227,7 +253,10 @@ def market_data_summary(
 ) -> dict[str, Any]:
     context = portfolio_context or decision_portfolio_context(state)
     symbols = decision_symbols(state, actions, portfolio_context=context)
-    quotes = dict(context.get("quotes") or {})
+    quotes = {
+        **dict(context.get("quotes") or {}),
+        **dict(context.get("candidate_quotes") or {}),
+    }
     relevant_quotes = {symbol: quotes[symbol] for symbol in symbols if symbol in quotes}
     statuses = [
         str(quote.get("quote_status") or quote.get("provider_status") or "live")

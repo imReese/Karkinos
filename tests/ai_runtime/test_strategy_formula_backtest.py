@@ -9,7 +9,13 @@ import pytest
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
 from core.events import MarketEvent
-from core.types import AssetClass, BarFrequency, CommissionType, Symbol
+from core.types import (
+    AssetClass,
+    BarFrequency,
+    CommissionType,
+    InstrumentType,
+    Symbol,
+)
 from data.handler import DataHandler
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
@@ -190,8 +196,15 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
         provider_name="deterministic_fixture",
         data_source="deterministic_fixture",
         adjustment_mode="none",
+        instrument_type=InstrumentType.STOCK,
     )
-    handler = DataHandler(bars, symbol, BarFrequency.DAILY, AssetClass.STOCK)
+    handler = DataHandler(
+        bars,
+        symbol,
+        BarFrequency.DAILY,
+        AssetClass.STOCK,
+        InstrumentType.STOCK,
+    )
     snapshot = build_backtest_dataset_snapshot(
         start_date="2025-01-02",
         end_date="2025-01-09",
@@ -337,13 +350,20 @@ def test_restricted_formula_adapter_calculates_with_exact_reviewed_fee_binding(
         provider_name="deterministic_fixture",
         data_source="deterministic_fixture",
         adjustment_mode="none",
+        instrument_type=InstrumentType.STOCK,
     )
     snapshot = build_backtest_dataset_snapshot(
         start_date="2025-01-02",
         end_date="2025-01-09",
         configured_source="deterministic_fixture",
         data_handlers={
-            symbol: DataHandler(bars, symbol, BarFrequency.DAILY, AssetClass.STOCK)
+            symbol: DataHandler(
+                bars,
+                symbol,
+                BarFrequency.DAILY,
+                AssetClass.STOCK,
+                InstrumentType.STOCK,
+            )
         },
         store=store,
         source_names=["deterministic_fixture"],
@@ -529,6 +549,7 @@ def test_restricted_formula_adapter_run_sealed_reaches_future_window(tmp_path) -
         provider_name="deterministic_fixture",
         data_source="deterministic_fixture",
         adjustment_mode="none",
+        instrument_type=InstrumentType.STOCK,
     )
     selection = StrategyResearchSelection(
         saved_backtest_result_id=1,

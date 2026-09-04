@@ -6,6 +6,10 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
+from server.services.decision_candidate_market_evidence import (
+    bind_candidate_market_evidence,
+    candidate_market_evidence,
+)
 from server.services.decision_contracts import (
     DecisionProjectionPorts,
     has_ready_manual_confirmation,
@@ -27,13 +31,19 @@ def _prepare_decision_projection(
 
     db = state.db
     resolved_portfolio_context = portfolio_context or ports.portfolio_context(state)
+    raw_actions = ports.read_action_tasks(
+        db,
+        decision_date=action_filter_date(resolved_portfolio_context),
+    )
+    if resolved_portfolio_context.get("authority") == "persisted_valuation_snapshot":
+        resolved_portfolio_context = bind_candidate_market_evidence(
+            resolved_portfolio_context,
+            candidate_market_evidence(db, raw_actions, state=state),
+        )
     actions = ports.allocate_actions(
         state,
         resolved_portfolio_context,
-        ports.read_action_tasks(
-            db,
-            decision_date=action_filter_date(resolved_portfolio_context),
-        ),
+        raw_actions,
     )
     return {
         "db": db,
@@ -67,6 +77,11 @@ def _decision_evidence(
         db,
         candidate_actions if attribution_actions is None else attribution_actions,
     )
+    candidate_quotes = dict(
+        portfolio_context.get("candidate_quotes")
+        if portfolio_context.get("authority") == "persisted_valuation_snapshot"
+        else portfolio_context.get("quotes") or {}
+    )
     candidates = [
         ports.decision_candidate(
             action,
@@ -76,7 +91,7 @@ def _decision_evidence(
             account_truth,
             strategy_attribution,
             state=state,
-            quotes=dict(portfolio_context.get("quotes") or {}),
+            quotes=candidate_quotes,
             allow_direct_quote_fallback=(
                 portfolio_context.get("authority") != "persisted_valuation_snapshot"
             ),

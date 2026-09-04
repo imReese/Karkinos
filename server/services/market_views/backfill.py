@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import HTTPException
 
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from server.contracts.http.market import (
     InstrumentMetadataBackfillItem,
     InstrumentMetadataBackfillRequest,
@@ -51,6 +51,8 @@ def metadata_name_is_useful(row: dict | None, symbol: str) -> bool:
 def instrument_metadata_targets(
     state,
     requested_symbols: list[str] | None = None,
+    *,
+    requested_instrument_type: str | None = None,
 ) -> list[dict[str, str]]:
     by_symbol: dict[str, dict[str, str]] = {}
     for asset_cfg in merged_watchlist_assets(state):
@@ -62,22 +64,55 @@ def instrument_metadata_targets(
             {
                 "symbol": symbol,
                 "asset_class": normalize_asset_class(asset_cfg.get("asset_class")),
+                "instrument_type": str(asset_cfg.get("instrument_type") or ""),
             },
         )
+
+    requested_type = (
+        None
+        if requested_instrument_type is None
+        else InstrumentType.from_persisted(requested_instrument_type)
+    )
+
+    def bind_requested_type(target: dict[str, str]) -> dict[str, str]:
+        if requested_type is None:
+            return target
+        existing_type = target.get("instrument_type")
+        if (
+            existing_type
+            and InstrumentType.from_persisted(existing_type) is not requested_type
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="requested instrument_type conflicts with persisted identity",
+            )
+        asset_class = (
+            AssetClass.FUND.value
+            if requested_type is InstrumentType.OPEN_END_FUND
+            else requested_type.value
+        )
+        return {
+            **target,
+            "asset_class": asset_class,
+            "instrument_type": requested_type.value,
+        }
 
     symbols = normalize_refresh_symbols(requested_symbols)
     if symbols:
         return [
-            by_symbol.get(
-                symbol,
-                {
-                    "symbol": symbol,
-                    "asset_class": AssetClass.STOCK.value,
-                },
+            bind_requested_type(
+                by_symbol.get(
+                    symbol,
+                    {
+                        "symbol": symbol,
+                        "asset_class": "",
+                        "instrument_type": "",
+                    },
+                )
             )
             for symbol in symbols
         ]
-    return list(by_symbol.values())
+    return [bind_requested_type(target) for target in by_symbol.values()]
 
 
 def provider_asset_class(asset_class: str) -> AssetClass:
@@ -139,11 +174,65 @@ def market_bar_backfill_targets(
     state,
     request: MarketBarsBackfillRequest,
 ) -> list[dict[str, str]]:
-    targets = instrument_metadata_targets(state, request.symbols)
+    targets = instrument_metadata_targets(
+        state,
+        request.symbols,
+        requested_instrument_type=request.instrument_type,
+    )
+    if any(not target.get("instrument_type") for target in targets):
+        raise HTTPException(
+            status_code=422,
+            detail="instrument_type is required for unknown symbols",
+        )
+    requested_type = (
+        None
+        if request.instrument_type is None
+        else InstrumentType.from_persisted(request.instrument_type)
+    )
     if request.asset_class:
         asset_class = normalize_asset_class(request.asset_class)
         targets = [{**target, "asset_class": asset_class} for target in targets]
-    return targets
+    resolved: list[dict[str, str]] = []
+    for target in targets:
+        raw_type = requested_type or target.get("instrument_type")
+        if raw_type in {None, ""}:
+            asset_class = str(target.get("asset_class") or "")
+            if asset_class == "fund":
+                raise HTTPException(
+                    status_code=422,
+                    detail="fund backfill requires ETF or open_end_fund instrument_type",
+                )
+            try:
+                raw_type = InstrumentType.from_persisted(asset_class)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail="instrument_type is required for unknown symbols",
+                ) from exc
+        instrument_type = (
+            raw_type
+            if isinstance(raw_type, InstrumentType)
+            else InstrumentType.from_persisted(raw_type)
+        )
+        expected_asset_class = (
+            "fund"
+            if instrument_type is InstrumentType.OPEN_END_FUND
+            else instrument_type.value
+        )
+        asset_class = str(target.get("asset_class") or "")
+        if asset_class and normalize_asset_class(asset_class) != expected_asset_class:
+            raise HTTPException(
+                status_code=422,
+                detail="asset_class conflicts with instrument_type",
+            )
+        resolved.append(
+            {
+                **target,
+                "asset_class": expected_asset_class,
+                "instrument_type": instrument_type.value,
+            }
+        )
+    return resolved
 
 
 def meta_covers_range(meta: dict | None, start: datetime, end: datetime) -> bool:
@@ -183,8 +272,15 @@ async def backfill_market_bars(
         for target in targets:
             symbol = target["symbol"]
             asset_class = normalize_asset_class(target.get("asset_class"))
+            instrument_type = InstrumentType.from_persisted(
+                target.get("instrument_type")
+            )
             resolved_provider_asset_class = provider_asset_class(asset_class)
-            before = store.get_meta(Symbol(symbol), frequency)
+            before = store.get_meta(
+                Symbol(symbol),
+                frequency,
+                instrument_type=instrument_type,
+            )
             cached_before = meta_covers_range(before, start, end)
             try:
                 handler = manager.get_bars(
@@ -193,11 +289,16 @@ async def backfill_market_bars(
                     end,
                     frequency,
                     resolved_provider_asset_class,
+                    instrument_type=instrument_type,
                     allow_remote_refresh=True,
                     refresh_ttl_seconds=0 if request.force else None,
                     degrade_to_cache=False,
                 )
-                after = store.get_meta(Symbol(symbol), frequency)
+                after = store.get_meta(
+                    Symbol(symbol),
+                    frequency,
+                    instrument_type=instrument_type,
+                )
                 status = "cached" if cached_before and not request.force else "updated"
                 items.append(
                     MarketBarsBackfillItem(
@@ -275,8 +376,7 @@ async def backfill_instrument_metadata(
     if quote_source is None or not hasattr(quote_source, "fetch_latest"):
         raise HTTPException(status_code=503, detail="akshare source is unavailable")
     configured_provider_name = str(
-        getattr(state.config, "data_source", quote_provider_name)
-        or quote_provider_name
+        getattr(state.config, "data_source", quote_provider_name) or quote_provider_name
     ).strip()
     stock_master_provider_name = (
         configured_provider_name
@@ -291,7 +391,16 @@ async def backfill_instrument_metadata(
     timeout = float(
         getattr(state.config, "metadata_backfill_timeout_seconds", 8.0) or 8.0
     )
-    targets = instrument_metadata_targets(state, request.symbols)
+    targets = instrument_metadata_targets(
+        state,
+        request.symbols,
+        requested_instrument_type=request.instrument_type,
+    )
+    if any(not target.get("instrument_type") for target in targets):
+        raise HTTPException(
+            status_code=422,
+            detail="instrument_type is required for unknown symbols",
+        )
     existing_by_target: dict[tuple[str, str], dict | None] = {}
     for target in targets:
         symbol = target["symbol"]
@@ -471,9 +580,7 @@ async def backfill_instrument_metadata(
 
     return InstrumentMetadataBackfillResponse(
         provider=(
-            stock_master_provider_name
-            if stock_master_updates
-            else quote_provider_name
+            stock_master_provider_name if stock_master_updates else quote_provider_name
         ),
         requested_count=len(items),
         updated_count=sum(1 for item in items if item.status == "updated"),

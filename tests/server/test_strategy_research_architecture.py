@@ -177,7 +177,8 @@ def test_strategy_research_facade_preserves_contracts_and_test_seams() -> None:
         "monotonic: 'Callable[[], float] | None' = None, model_timeout_seconds: "
         "'float' = 180.0, reviewed_fee_schedule_resolver: "
         "'Callable[..., Any] | None' = None, provider_send_admission: "
-        "'ProviderSendAdmission | None' = None) -> 'None'"
+        "'ProviderSendAdmission | None' = None, execution_guard: "
+        "'Callable[[], None] | None' = None) -> 'None'"
     )
 
 

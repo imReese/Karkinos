@@ -24,7 +24,7 @@ from .contracts import (
 )
 from .permissions import ToolEffect, ToolPermissionRegistry
 from .provider import ProviderAdapter, ProviderRequest, ProviderResponse
-from .provider_call_window import ProviderCallDeferred
+from .provider_call_window import ProviderCallDeferred, ProviderExecutionFenced
 from .registry import AiRuntimeRegistry
 from .store import AiAuditStore
 
@@ -66,6 +66,7 @@ class DeterministicWorkflowOrchestrator:
         tool_executors: Mapping[str, ToolExecutor] | None = None,
         now: Callable[[], str] = _utc_now,
         max_provider_turns: int = 8,
+        execution_guard: Callable[[], None] | None = None,
     ) -> None:
         if max_provider_turns <= 0:
             raise ValueError("max_provider_turns must be positive")
@@ -76,6 +77,11 @@ class DeterministicWorkflowOrchestrator:
         self._tool_executors = dict(tool_executors or {})
         self._now = now
         self._max_provider_turns = max_provider_turns
+        self._execution_guard = execution_guard
+
+    def _require_write_allowed(self) -> None:
+        if self._execution_guard is not None:
+            self._execution_guard()
 
     def create_workflow(
         self,
@@ -85,6 +91,7 @@ class DeterministicWorkflowOrchestrator:
         idempotency_key: str,
     ) -> ResearchWorkflow:
         self._validate_definition(definition)
+        self._require_write_allowed()
         created_at = self._now()
         workflow, reused = self._store.create_or_get_workflow(
             definition=definition,
@@ -93,6 +100,7 @@ class DeterministicWorkflowOrchestrator:
             created_at=created_at,
         )
         if not reused:
+            self._require_write_allowed()
             self._store.append_event(
                 workflow.workflow_id,
                 event_type="workflow.created",
@@ -136,6 +144,7 @@ class DeterministicWorkflowOrchestrator:
             else "workflow.resumed"
         )
         now = self._now()
+        self._require_write_allowed()
         workflow = self._store.update_workflow(
             workflow.workflow_id,
             status=WorkflowStatus.RUNNING,
@@ -144,6 +153,7 @@ class DeterministicWorkflowOrchestrator:
             failure_code=None,
             updated_at=now,
         )
+        self._require_write_allowed()
         self._store.append_event(
             workflow.workflow_id,
             event_type=event_type,
@@ -161,6 +171,7 @@ class DeterministicWorkflowOrchestrator:
             processed += 1
 
         completed_at = self._now()
+        self._require_write_allowed()
         workflow = self._store.update_workflow(
             workflow.workflow_id,
             status=WorkflowStatus.COMPLETED,
@@ -169,6 +180,7 @@ class DeterministicWorkflowOrchestrator:
             failure_code=None,
             updated_at=completed_at,
         )
+        self._require_write_allowed()
         self._store.append_event(
             workflow.workflow_id,
             event_type="workflow.completed",
@@ -227,6 +239,7 @@ class DeterministicWorkflowOrchestrator:
         )
         run_id = f"ai-run-{content_fingerprint({'workflow_id': workflow.workflow_id, 'stage_id': stage.stage_id})[:24]}"
         started_at = self._now()
+        self._require_write_allowed()
         agent_run = self._store.start_agent_run(
             run_id=run_id,
             workflow_id=workflow.workflow_id,
@@ -245,6 +258,7 @@ class DeterministicWorkflowOrchestrator:
                 failure_code="non_resumable_agent_run_state",
                 response=None,
             )
+        self._require_write_allowed()
         self._store.append_event(
             workflow.workflow_id,
             event_type="stage.started",
@@ -310,6 +324,8 @@ class DeterministicWorkflowOrchestrator:
                 context=context,
                 required=stage.required,
             )
+        except ProviderExecutionFenced:
+            raise
         except ProviderCallDeferred as exc:
             self._block_provider_call_deferred(
                 workflow,
@@ -343,6 +359,7 @@ class DeterministicWorkflowOrchestrator:
         assert final_response is not None
         artifact_ids = []
         for draft in final_response.artifacts:
+            self._require_write_allowed()
             artifact = self._store.record_artifact(
                 workflow_id=workflow.workflow_id,
                 run_id=run_id,
@@ -359,6 +376,7 @@ class DeterministicWorkflowOrchestrator:
             if final_response.partial
             else AgentRunStatus.COMPLETED
         )
+        self._require_write_allowed()
         self._store.finish_agent_run(
             run_id,
             status=run_status,
@@ -371,6 +389,7 @@ class DeterministicWorkflowOrchestrator:
             finished_at=finished_at,
         )
         if final_response.partial:
+            self._require_write_allowed()
             workflow = self._store.update_workflow(
                 workflow.workflow_id,
                 status=WorkflowStatus.PARTIAL,
@@ -379,6 +398,7 @@ class DeterministicWorkflowOrchestrator:
                 failure_code="partial_stage_result",
                 updated_at=finished_at,
             )
+            self._require_write_allowed()
             self._store.append_event(
                 workflow.workflow_id,
                 event_type="stage.partial",
@@ -392,6 +412,7 @@ class DeterministicWorkflowOrchestrator:
             return workflow
 
         next_index = workflow.current_stage_index + 1
+        self._require_write_allowed()
         workflow = self._store.update_workflow(
             workflow.workflow_id,
             status=WorkflowStatus.RUNNING,
@@ -400,6 +421,7 @@ class DeterministicWorkflowOrchestrator:
             failure_code=None,
             updated_at=finished_at,
         )
+        self._require_write_allowed()
         self._store.append_event(
             workflow.workflow_id,
             event_type="stage.completed",
@@ -432,6 +454,7 @@ class DeterministicWorkflowOrchestrator:
         call_id = f"ai-tool-{content_fingerprint({'run_id': run_id, **request.to_dict()})[:24]}"
         created_at = self._now()
         if not authorization.allowed:
+            self._require_write_allowed()
             self._store.record_tool_call(
                 ToolCall(
                     call_id=call_id,
@@ -451,6 +474,7 @@ class DeterministicWorkflowOrchestrator:
             raise PermissionError(authorization.reason)
         executor = self._tool_executors.get(request.tool_name)
         if executor is None:
+            self._require_write_allowed()
             self._store.record_tool_call(
                 ToolCall(
                     call_id=call_id,
@@ -484,6 +508,7 @@ class DeterministicWorkflowOrchestrator:
                         "read tool output is not marked persisted-facts-only"
                     )
         except Exception as exc:
+            self._require_write_allowed()
             self._store.record_tool_call(
                 ToolCall(
                     call_id=call_id,
@@ -502,6 +527,7 @@ class DeterministicWorkflowOrchestrator:
             )
             raise
         completed_at = self._now()
+        self._require_write_allowed()
         self._store.record_tool_call(
             ToolCall(
                 call_id=call_id,
@@ -571,6 +597,7 @@ class DeterministicWorkflowOrchestrator:
         response: dict[str, Any] | None,
     ) -> ResearchWorkflow:
         failed_at = self._now()
+        self._require_write_allowed()
         self._store.finish_agent_run(
             run_id,
             status=AgentRunStatus.FAILED,
@@ -579,6 +606,7 @@ class DeterministicWorkflowOrchestrator:
             finished_at=failed_at,
         )
         partial_result = bool(self._store.list_artifacts(workflow.workflow_id))
+        self._require_write_allowed()
         workflow = self._store.update_workflow(
             workflow.workflow_id,
             status=WorkflowStatus.FAILED,
@@ -587,6 +615,7 @@ class DeterministicWorkflowOrchestrator:
             failure_code=failure_code,
             updated_at=failed_at,
         )
+        self._require_write_allowed()
         self._store.append_event(
             workflow.workflow_id,
             event_type="stage.failed",
@@ -612,6 +641,7 @@ class DeterministicWorkflowOrchestrator:
 
         blocked_at = self._now()
         failure_code = str(response["error"])
+        self._require_write_allowed()
         self._store.finish_agent_run(
             run_id,
             status=AgentRunStatus.BLOCKED,
@@ -619,6 +649,7 @@ class DeterministicWorkflowOrchestrator:
             error_code=failure_code,
             finished_at=blocked_at,
         )
+        self._require_write_allowed()
         workflow = self._store.update_workflow(
             workflow.workflow_id,
             status=WorkflowStatus.BLOCKED,
@@ -627,6 +658,7 @@ class DeterministicWorkflowOrchestrator:
             failure_code=failure_code,
             updated_at=blocked_at,
         )
+        self._require_write_allowed()
         self._store.append_event(
             workflow.workflow_id,
             event_type="stage.blocked",
@@ -646,6 +678,7 @@ class DeterministicWorkflowOrchestrator:
         current_context: EvidenceBoundContextSnapshot,
     ) -> ResearchWorkflow:
         blocked_at = self._now()
+        self._require_write_allowed()
         workflow = self._store.update_workflow(
             workflow.workflow_id,
             status=WorkflowStatus.BLOCKED,
@@ -654,6 +687,7 @@ class DeterministicWorkflowOrchestrator:
             failure_code="evidence_drift",
             updated_at=blocked_at,
         )
+        self._require_write_allowed()
         self._store.append_event(
             workflow.workflow_id,
             event_type="workflow.blocked",

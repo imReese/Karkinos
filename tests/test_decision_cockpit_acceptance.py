@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from fastapi.routing import APIRoute
@@ -14,7 +15,7 @@ from analytics.report import generate_report
 from backtest.engine import BacktestEngine
 from core.event_bus import EventBus
 from core.events import OrderIntentEvent, SignalEvent
-from core.types import AssetClass, BarFrequency, OrderSide, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, OrderSide, Symbol
 from data.features import FeatureEngine
 from data.handler import DataHandler
 from data.store import DataStore
@@ -94,9 +95,14 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         provider_name="fixture",
         data_source="deterministic_decision_fixture",
         adjustment_mode="none",
+        instrument_type=InstrumentType.ETF,
     )
-    meta = store.get_meta(symbol, BarFrequency.DAILY)
-    cached_bars = store.load_bars(symbol, BarFrequency.DAILY)
+    meta = store.get_meta(
+        symbol, BarFrequency.DAILY, instrument_type=InstrumentType.ETF
+    )
+    cached_bars = store.load_bars(
+        symbol, BarFrequency.DAILY, instrument_type=InstrumentType.ETF
+    )
 
     assert meta is not None
     assert meta["provider_name"] == "fixture"
@@ -124,6 +130,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
                 featured_bars,
                 symbol,
                 asset_class=AssetClass.FUND,
+                instrument_type=InstrumentType.ETF,
             )
         },
         initial_cash=Decimal("100000"),
@@ -149,7 +156,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         direction="buy",
         target_weight=float(signal.target_weight),
         price=float(signal.price) if signal.price is not None else None,
-        asset_class="fund",
+        asset_class="etf",
     )
     db.upsert_action_task_sync(
         source_signal_id=1,
@@ -164,7 +171,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         price=float(signal.price) if signal.price is not None else None,
         strategy_id=signal.strategy_id,
         timestamp=signal.timestamp.isoformat(),
-        asset_class="fund",
+        asset_class="etf",
     )
     quote_price = float(signal.price or Decimal("4.92"))
     quantity = 4000.0
@@ -198,14 +205,15 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
             ),
             fee_rule_id="decision_fixture_zero_fee",
             fee_rule_version="v1",
-            asset_class="fund",
+            asset_class="etf",
             note="deterministic decision cockpit holding",
         )
     )
     db.upsert_latest_quote_sync(
         symbol=str(signal.symbol),
-        asset_type="fund",
+        asset_type="etf",
         price=quote_price,
+        previous_close=quote_price - 0.04,
         quote_timestamp=signal.timestamp.isoformat(),
         quote_source="deterministic_fixture",
         provider_name="fixture",
@@ -213,7 +221,18 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         quote_status="live",
         metadata={"dataset_id": meta["dataset_id"], "feature_columns": ["sma_3"]},
     )
-    db.publish_current_valuation_snapshot_sync()
+    valuation_now = signal.timestamp.to_pydatetime().replace(
+        tzinfo=ZoneInfo("Asia/Shanghai")
+    ) + timedelta(minutes=1)
+    db.publish_current_valuation_snapshot_sync(now=valuation_now)
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: now or valuation_now,
+    )
+    monkeypatch.setattr(
+        "server.projections.quote_status.get_shanghai_now",
+        lambda now=None: now or valuation_now,
+    )
 
     oos_validation = build_out_of_sample_validation(
         strategy_id=signal.strategy_id,
@@ -318,7 +337,13 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         "server.dependencies.get_app_state",
         lambda: SimpleNamespace(
             config=SimpleNamespace(
-                assets=[{"symbol": "510300", "asset_class": "fund"}]
+                assets=[
+                    {
+                        "symbol": "510300",
+                        "asset_class": "fund",
+                        "instrument_type": "etf",
+                    }
+                ]
             ),
             scheduler=SimpleNamespace(
                 portfolio=fake_portfolio,
@@ -345,6 +370,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
     assert today["decision"] == "review_required"
     assert today["requires_manual_confirmation"] is False
     assert today["summary"]["portfolio"]["total_equity"] == 100000.0
+    assert today["summary"]["portfolio"]["instrument_types"] == {"510300": "etf"}
     assert today["summary"]["market_data"]["source_health"] == "live"
     assert today["summary"]["audit"]["signal_count"] == 1
     assert today["summary"]["audit"]["risk_checked_count"] == 1
@@ -352,6 +378,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
 
     candidate = today["candidates"][0]
     assert candidate["symbol"] == "510300"
+    assert candidate["asset_class"] == "etf"
     assert candidate["action"] == "buy"
     assert candidate["risk_gate_status"] == "passed"
     assert candidate["manual_confirmation_status"] == (

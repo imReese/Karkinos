@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.types import AssetClass, CommissionType, Settlement
+from core.types import AssetClass, CommissionType, InstrumentType, Settlement
 from domain.instrument import (
     Instrument,
     make_bond,
@@ -25,6 +25,7 @@ class TestMakeStock:
         assert inst.symbol == "600519"
         assert inst.name == "贵州茅台"
         assert inst.asset_class == AssetClass.STOCK
+        assert inst.instrument_type == InstrumentType.STOCK
         assert inst.commission_type == CommissionType.STOCK_A
         assert inst.settlement == Settlement.T_PLUS_1
         assert inst.lot_size == Decimal("100")
@@ -51,6 +52,7 @@ class TestMakeETF:
     def test_etf_fields(self):
         inst = make_etf("510300", "沪深300ETF")
         assert inst.asset_class == AssetClass.FUND
+        assert inst.instrument_type == InstrumentType.ETF
         assert inst.commission_type == CommissionType.FUND_ETF
         assert inst.settlement == Settlement.T_PLUS_1
         assert inst.lot_size == Decimal("100")
@@ -62,6 +64,7 @@ class TestMakeOpenEndFund:
     def test_open_end_fund_fields(self):
         inst = make_open_end_fund("000001", "示例成长")
         assert inst.asset_class == AssetClass.FUND
+        assert inst.instrument_type == InstrumentType.OPEN_END_FUND
         assert inst.commission_type == CommissionType.FUND_OPENEND
         assert inst.settlement == Settlement.T_PLUS_0
         assert inst.lot_size == Decimal("1")

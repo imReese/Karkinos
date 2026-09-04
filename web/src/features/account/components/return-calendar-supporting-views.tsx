@@ -16,20 +16,36 @@ export function ReturnCalendarEmptyState({
   copy: AppCopy;
   compact: boolean;
 }) {
-  const totalUnrealizedPnl = positions.reduce(
-    (total, position) => total + position.unrealized_pnl,
-    0,
+  const valuedPositions = positions.filter(
+    (
+      position,
+    ): position is ReturnCalendarPosition & {
+      market_value: number;
+      unrealized_pnl: number;
+    } =>
+      typeof position.market_value === 'number' &&
+      typeof position.unrealized_pnl === 'number',
   );
+  const valuationComplete = valuedPositions.length === positions.length;
+  const totalUnrealizedPnl = valuationComplete
+    ? valuedPositions.reduce(
+        (total, position) => total + position.unrealized_pnl,
+        0,
+      )
+    : null;
   const totalRealizedPnl = positions.reduce(
     (total, position) => total + position.realized_pnl,
     0,
   );
-  const totalMarketValue = positions.reduce(
-    (total, position) => total + position.market_value,
-    0,
-  );
-  const totalPnl = totalUnrealizedPnl + totalRealizedPnl;
-  const rankedPositions = positions
+  const totalMarketValue = valuationComplete
+    ? valuedPositions.reduce(
+        (total, position) => total + position.market_value,
+        0,
+      )
+    : null;
+  const totalPnl =
+    totalUnrealizedPnl === null ? null : totalUnrealizedPnl + totalRealizedPnl;
+  const rankedPositions = valuedPositions
     .slice()
     .sort(
       (left, right) =>

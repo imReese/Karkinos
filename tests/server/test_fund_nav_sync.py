@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, InstrumentType, Symbol
 from server.db import AppDatabase
 
 
@@ -69,6 +69,46 @@ class ConfirmedFundSource:
         }
 
 
+def test_fund_nav_sync_requires_canonical_fund_identity(tmp_path) -> None:
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    with pytest.raises(
+        ValueError,
+        match="canonical fund instrument type is required for 510300",
+    ):
+        fund_nav_sync.refresh_fund_nav_quotes(
+            SimpleNamespace(data_source="akshare", tushare_token=""),
+            db,
+            watchlist=[(Symbol("510300"), AssetClass.FUND)],
+            latest_quotes={},
+        )
+
+
+def test_fund_nav_sync_does_not_fetch_etf(monkeypatch, tmp_path) -> None:
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda **kwargs: pytest.fail("ETF must not enter the open-end NAV lane"),
+    )
+
+    result = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="akshare", tushare_token=""),
+        db,
+        watchlist=[(Symbol("510300"), InstrumentType.ETF)],
+        latest_quotes={},
+    )
+
+    assert result.refreshed == []
+    assert result.failed == {}
+
+
 def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_path):
     from server.services import fund_nav_sync
 
@@ -87,7 +127,7 @@ def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_pat
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         db,
         watchlist=[
-            (Symbol("019999"), AssetClass.FUND),
+            (Symbol("019999"), InstrumentType.OPEN_END_FUND),
             (Symbol("600002"), AssetClass.STOCK),
         ],
         latest_quotes={},
@@ -136,7 +176,7 @@ def test_refresh_fund_nav_quotes_skips_fresh_cached_fund(monkeypatch, tmp_path):
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="akshare", tushare_token=""),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={
             "019999": {
                 "price": 2.20,
@@ -184,7 +224,7 @@ def test_confirmation_only_skips_same_day_confirmed_nav_even_after_ttl(
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token=""),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={
             "019999": {
                 "price": 2.4,
@@ -232,7 +272,7 @@ def test_confirmation_only_refetches_target_date_nonconfirmed_nav_after_midnight
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={
             "019999": {
                 "price": 2.4,
@@ -258,6 +298,65 @@ def test_confirmation_only_refetches_target_date_nonconfirmed_nav_after_midnight
     assert latest["quote_status"] == "confirmed"
 
 
+def test_confirmation_only_falls_back_after_tushare_fund_nav_permission_error(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    calls: list[tuple[str, str]] = []
+
+    class PermissionDeniedTushare:
+        def fetch_confirmed_fund_nav(self, symbol: Symbol):
+            calls.append(("tushare", str(symbol)))
+            raise RuntimeError("tushare_fund_nav_permission_denied")
+
+    class PublicFundPage:
+        def fetch_confirmed_fund_nav(self, symbol: Symbol):
+            calls.append(("akshare", str(symbol)))
+            return {
+                "price": 2.5123,
+                "timestamp": "2026-06-12T15:00:00+08:00",
+                "nav_date": "2026-06-12",
+                "source": "akshare",
+                "quote_source": "eastmoney_fund_page",
+                "provider_name": "akshare",
+                "provider_symbol": str(symbol),
+            }
+
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {
+            "tushare": PermissionDeniedTushare(),
+            "akshare": PublicFundPage(),
+        },
+    )
+
+    result = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
+        db,
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
+        latest_quotes={},
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=0,
+        confirmation_only=True,
+        target_date="2026-06-12",
+    )
+
+    latest = db.get_latest_quote_sync(
+        "019999", asset_type=InstrumentType.OPEN_END_FUND.value
+    )
+    assert calls == [("tushare", "019999"), ("akshare", "019999")]
+    assert result.refreshed == ["019999"]
+    assert result.failed == {}
+    assert latest is not None
+    assert latest["quote_source"] == "eastmoney_fund_page"
+    assert latest["nav_date"] == "2026-06-12"
+
+
 def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
     monkeypatch, tmp_path
 ):
@@ -276,8 +375,8 @@ def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
         SimpleNamespace(data_source="akshare", tushare_token=""),
         db,
         watchlist=[
-            (Symbol("019999"), AssetClass.FUND),
-            (Symbol("019998"), AssetClass.FUND),
+            (Symbol("019999"), InstrumentType.OPEN_END_FUND),
+            (Symbol("019998"), InstrumentType.OPEN_END_FUND),
         ],
         latest_quotes={},
         now=datetime(2026, 6, 12, 15, 5),
@@ -338,7 +437,7 @@ def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={
             "019999": {
                 "price": 2.5123,
@@ -355,7 +454,7 @@ def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
     replay = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         now=datetime(2026, 6, 12, 21, 30),
         ttl_seconds=900,
@@ -401,7 +500,7 @@ def test_confirmation_only_rejects_intraday_estimate(monkeypatch, tmp_path):
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="akshare", tushare_token=""),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         now=datetime(2026, 6, 12, 21, 30),
         ttl_seconds=0,
@@ -442,7 +541,7 @@ def test_confirmation_only_rejects_previous_day_confirmed_nav(monkeypatch, tmp_p
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         now=datetime(2026, 6, 12, 21, 30),
         ttl_seconds=0,
@@ -482,7 +581,7 @@ def test_confirmation_only_request_replays_persisted_run_after_restart(
     first = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         **kwargs,
     )
@@ -498,7 +597,7 @@ def test_confirmation_only_request_replays_persisted_run_after_restart(
     replay = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         restarted_db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         **kwargs,
     )
@@ -550,7 +649,7 @@ def test_confirmation_only_request_replays_running_run_without_provider_contact(
     replay = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="deterministic_fixture", tushare_token=""),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         now=datetime(2026, 6, 12, 21, 30),
         ttl_seconds=0,
@@ -584,7 +683,7 @@ def test_confirmation_only_request_rejects_idempotency_payload_drift(
     fund_nav_sync.refresh_fund_nav_quotes(
         config,
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         now=datetime(2026, 6, 12, 21, 30),
         ttl_seconds=0,
@@ -596,7 +695,7 @@ def test_confirmation_only_request_rejects_idempotency_payload_drift(
         fund_nav_sync.refresh_fund_nav_quotes(
             config,
             db,
-            watchlist=[(Symbol("019998"), AssetClass.FUND)],
+            watchlist=[(Symbol("019998"), InstrumentType.OPEN_END_FUND)],
             latest_quotes={},
             now=datetime(2026, 6, 12, 21, 30),
             ttl_seconds=0,
@@ -627,7 +726,7 @@ def test_confirmation_only_request_rejects_target_date_drift(
     fund_nav_sync.refresh_fund_nav_quotes(
         config,
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         now=datetime(2026, 6, 12, 21, 30),
         ttl_seconds=0,
@@ -640,7 +739,7 @@ def test_confirmation_only_request_rejects_target_date_drift(
         fund_nav_sync.refresh_fund_nav_quotes(
             config,
             db,
-            watchlist=[(Symbol("019999"), AssetClass.FUND)],
+            watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
             latest_quotes={},
             now=datetime(2026, 6, 13, 0, 5),
             ttl_seconds=0,
@@ -690,7 +789,7 @@ def test_confirmation_only_duplicate_during_active_request_replays_running_run(
         return fund_nav_sync.refresh_fund_nav_quotes(
             config,
             db,
-            watchlist=[(Symbol("019999"), AssetClass.FUND)],
+            watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
             latest_quotes={},
             now=datetime(2026, 6, 12, 21, 30),
             ttl_seconds=0,
@@ -739,14 +838,14 @@ def test_confirmation_only_failed_request_replays_exact_failure_without_refetch(
     first = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="akshare", tushare_token=""),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         **kwargs,
     )
     replay = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="akshare", tushare_token=""),
         db,
-        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
         latest_quotes={},
         **kwargs,
     )
@@ -803,7 +902,7 @@ def test_confirmation_only_concurrent_create_race_admits_one_provider_effect(
         return fund_nav_sync.refresh_fund_nav_quotes(
             config,
             db,
-            watchlist=[(Symbol("019999"), AssetClass.FUND)],
+            watchlist=[(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
             latest_quotes={},
             now=datetime(2026, 6, 12, 21, 30),
             ttl_seconds=0,

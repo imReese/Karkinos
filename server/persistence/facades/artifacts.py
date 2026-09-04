@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from server.persistence.facades.base import DatabaseRepositoryAccess
@@ -63,10 +64,12 @@ class ArtifactDatabaseFacade(DatabaseRepositoryAccess):
         self,
         *,
         valuation_policy: str | None = None,
+        now: datetime | None = None,
     ) -> dict[str, Any]:
         """Build and persist the immutable snapshot for committed facts."""
         return self._financial_facts.publish_current_valuation_snapshot_sync(
             valuation_policy=valuation_policy,
+            now=now,
         )
 
     def get_valuation_snapshot_sync(self, snapshot_id: str) -> dict[str, Any] | None:

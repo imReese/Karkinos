@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -43,6 +44,17 @@ class ConfirmedFundNavRefreshResponse(BaseModel):
 
 class InstrumentMetadataBackfillRequest(BaseModel):
     symbols: list[str] | None = None
+    instrument_type: (
+        Literal[
+            "stock",
+            "etf",
+            "open_end_fund",
+            "gold",
+            "bond",
+            "index",
+        ]
+        | None
+    ) = None
     force: bool = False
 
 
@@ -67,6 +79,17 @@ class InstrumentMetadataBackfillResponse(BaseModel):
 class MarketBarsBackfillRequest(BaseModel):
     symbols: list[str] | None = None
     asset_class: str | None = None
+    instrument_type: (
+        Literal[
+            "stock",
+            "etf",
+            "open_end_fund",
+            "gold",
+            "bond",
+            "index",
+        ]
+        | None
+    ) = None
     start: str | None = None
     end: str | None = None
     interval: str = "1d"

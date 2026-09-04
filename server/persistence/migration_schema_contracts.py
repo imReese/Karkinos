@@ -11,7 +11,11 @@ from typing import Any, Protocol
 
 class MigrationSpec(Protocol):
     version: int
+    name: str
     statements: tuple[str, ...]
+
+    @property
+    def checksum(self) -> str: ...
 
 
 LEGACY_V1_REPAIR_TABLE = "controlled_submission_ledger_postings"
@@ -35,7 +39,49 @@ _VERSIONED_SCHEMA_OBJECTS = (
     (10, "table", "quote_current_materialization_state"),
     (10, "index", "idx_quote_snapshots_symbol_instant"),
     (10, "index", "uq_quote_snapshots_fetch_run_identity"),
+    (12, "table", "daily_close_snapshots_v2"),
+    (12, "index", "idx_quote_snapshots_typed_identity_instant"),
+    (12, "index", "idx_daily_close_v2_identity_trade_date"),
 )
+
+
+def validate_migration_registry(migrations: Sequence[MigrationSpec]) -> None:
+    versions = [migration.version for migration in migrations]
+    names = [migration.name for migration in migrations]
+    if versions != sorted(versions) or len(versions) != len(set(versions)):
+        raise RuntimeError("schema migration versions must be unique and ordered")
+    if len(names) != len(set(names)):
+        raise RuntimeError("schema migration names must be unique")
+
+
+def validate_applied_migrations(
+    applied: dict[int, tuple[str, str]],
+    *,
+    migrations: Sequence[MigrationSpec],
+    legacy_v1_checksum: str,
+) -> None:
+    registered = {migration.version: migration for migration in migrations}
+    unknown = sorted(set(applied) - set(registered))
+    if unknown:
+        raise RuntimeError(
+            "database schema is newer than this Karkinos build: "
+            + ", ".join(str(version) for version in unknown)
+        )
+    registered_versions = [migration.version for migration in migrations]
+    applied_versions = sorted(applied)
+    if applied_versions != registered_versions[: len(applied_versions)]:
+        raise RuntimeError("schema migration history is not an ordered registry prefix")
+    for version, (name, checksum) in applied.items():
+        migration = registered[version]
+        if version == 1 and (name, checksum) == (
+            migration.name,
+            legacy_v1_checksum,
+        ):
+            continue
+        if name != migration.name or checksum != migration.checksum:
+            raise RuntimeError(
+                f"schema migration history mismatch at version {version}"
+            )
 
 
 def has_legacy_v1_repair_column(conn: sqlite3.Connection) -> bool:
@@ -193,6 +239,9 @@ def versioned_schema_artifacts(
         }
         if "quote_instant_utc" in columns:
             artifacts.append((9, "column:quote_snapshots.quote_instant_utc"))
+        for column in ("instrument_type", "identity_provenance"):
+            if column in columns:
+                artifacts.append((12, f"column:quote_snapshots.{column}"))
 
     objects = {
         (str(row[0]), str(row[1]))

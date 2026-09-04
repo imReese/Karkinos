@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
 from data.source import DataSource
 from data.store import DataStore
@@ -48,6 +48,41 @@ _ASSET_NAMES: dict[AssetClass, str] = {
     AssetClass.INDEX: "指数",
 }
 
+_ASSET_INSTRUMENT_TYPES: dict[AssetClass, InstrumentType] = {
+    AssetClass.STOCK: InstrumentType.STOCK,
+    AssetClass.GOLD: InstrumentType.GOLD,
+    AssetClass.BOND: InstrumentType.BOND,
+    AssetClass.INDEX: InstrumentType.INDEX,
+}
+
+
+def _bar_instrument_type(
+    asset_class: AssetClass,
+    *,
+    instrument_type: InstrumentType | None,
+) -> InstrumentType:
+    """Require the ETF/open-end distinction before cache access or writes."""
+
+    if instrument_type is not None:
+        if instrument_type is InstrumentType.UNKNOWN:
+            raise ValueError("authoritative instrument type is unresolved")
+        expected = _ASSET_INSTRUMENT_TYPES.get(asset_class)
+        if expected is not None and instrument_type is not expected:
+            raise ValueError("instrument_type conflicts with asset_class")
+        if asset_class is AssetClass.FUND and instrument_type not in {
+            InstrumentType.ETF,
+            InstrumentType.OPEN_END_FUND,
+        }:
+            raise ValueError("fund bar identity must be ETF or open-end fund")
+        return instrument_type
+    resolved = _ASSET_INSTRUMENT_TYPES.get(asset_class)
+    if resolved is None:
+        raise ValueError(
+            "AssetClass.FUND is ambiguous; instrument_type must distinguish "
+            "ETF from open-end fund"
+        )
+    return resolved
+
 
 class DataManager:
     """数据管线编排。
@@ -73,14 +108,23 @@ class DataManager:
         end: datetime,
         frequency: BarFrequency = BarFrequency.DAILY,
         asset_class: AssetClass = AssetClass.STOCK,
+        instrument_type: InstrumentType | None = None,
         source_name: str | None = None,
         allow_remote_refresh: bool = True,
         refresh_ttl_seconds: int | None = None,
         degrade_to_cache: bool = False,
     ) -> DataHandler:
         """获取 K 线数据，支持本地优先和受控增量补缺。"""
+        resolved_instrument_type = _bar_instrument_type(
+            asset_class,
+            instrument_type=instrument_type,
+        )
         if self.store is not None:
-            cached = self.store.load_bars(symbol, frequency)
+            cached = self.store.load_bars(
+                symbol,
+                frequency,
+                instrument_type=resolved_instrument_type,
+            )
             if cached is not None and len(cached) > 0 and "timestamp" in cached.columns:
                 ts_min = cached["timestamp"].min()
                 ts_max = cached["timestamp"].max()
@@ -93,6 +137,7 @@ class DataManager:
                         symbol,
                         frequency,
                         asset_class,
+                        resolved_instrument_type,
                     )
 
                 if not allow_remote_refresh or not self._should_refresh_remote(
@@ -100,6 +145,7 @@ class DataManager:
                     frequency,
                     end,
                     refresh_ttl_seconds,
+                    instrument_type=resolved_instrument_type,
                 ):
                     logger.info(
                         "使用本地缓存，跳过远端补缺: %s (%s)",
@@ -111,6 +157,7 @@ class DataManager:
                         symbol,
                         frequency,
                         asset_class,
+                        resolved_instrument_type,
                     )
 
                 gaps = self._compute_gaps(ts_min, ts_max, start, end)
@@ -133,7 +180,12 @@ class DataManager:
                                 source_name=source_name,
                             )
                             if not df.empty:
-                                self.store.append_bars(symbol, frequency, df)
+                                self.store.append_bars(
+                                    symbol,
+                                    frequency,
+                                    df,
+                                    instrument_type=resolved_instrument_type,
+                                )
                         except Exception:
                             logger.warning(
                                 "增量拉取失败，回退使用本地缓存: %s %s~%s",
@@ -142,13 +194,18 @@ class DataManager:
                                 gap_end.date(),
                                 exc_info=True,
                             )
-                    cached = self.store.load_bars(symbol, frequency)
+                    cached = self.store.load_bars(
+                        symbol,
+                        frequency,
+                        instrument_type=resolved_instrument_type,
+                    )
                     if cached is not None and len(cached) > 0:
                         return DataHandler(
                             self._slice_cached(cached, start, end),
                             symbol,
                             frequency,
                             asset_class,
+                            resolved_instrument_type,
                         )
 
                 return DataHandler(
@@ -156,6 +213,7 @@ class DataManager:
                     symbol,
                     frequency,
                     asset_class,
+                    resolved_instrument_type,
                 )
 
         if not allow_remote_refresh:
@@ -167,6 +225,7 @@ class DataManager:
                 symbol,
                 frequency,
                 asset_class,
+                resolved_instrument_type,
             )
 
         logger.info(
@@ -197,6 +256,7 @@ class DataManager:
                     symbol,
                     frequency,
                     asset_class,
+                    resolved_instrument_type,
                 )
             raise
 
@@ -206,9 +266,20 @@ class DataManager:
             )
 
         if self.store is not None:
-            self.store.save_bars(symbol, frequency, df)
+            self.store.save_bars(
+                symbol,
+                frequency,
+                df,
+                instrument_type=resolved_instrument_type,
+            )
 
-        return DataHandler(df, symbol, frequency, asset_class)
+        return DataHandler(
+            df,
+            symbol,
+            frequency,
+            asset_class,
+            resolved_instrument_type,
+        )
 
     def _source_candidates(
         self, source_name: str | None = None
@@ -314,13 +385,19 @@ class DataManager:
         frequency: BarFrequency,
         end: datetime,
         refresh_ttl_seconds: int | None,
+        *,
+        instrument_type: InstrumentType,
     ) -> bool:
         if not self._targets_recent_range(end, frequency):
             return False
         if refresh_ttl_seconds is None or self.store is None:
             return True
 
-        meta = self.store.get_meta(symbol, frequency)
+        meta = self.store.get_meta(
+            symbol,
+            frequency,
+            instrument_type=instrument_type,
+        )
         if meta is None or not meta.get("last_updated"):
             return True
 
@@ -356,7 +433,13 @@ class DataManager:
 
     @staticmethod
     def get_instrument(symbol: Symbol, asset_class: AssetClass) -> Instrument:
-        """根据 symbol + asset_class 自动创建 Instrument。"""
+        """Legacy broad-class adapter; authoritative callers must pass a type.
+
+        ``AssetClass.FUND`` cannot distinguish an exchange-traded ETF from an
+        open-end fund.  The historical symbol heuristic remains only for old
+        backtest adapters; live and persisted-fact paths use
+        :meth:`get_instrument_by_type`.
+        """
         sym_str = str(symbol)
         name = f"{sym_str} {_ASSET_NAMES.get(asset_class, '')}"
 
@@ -374,3 +457,36 @@ class DataManager:
             return make_index(sym_str, name)
         else:
             raise ValueError(f"不支持的资产类别: {asset_class}")
+
+    @staticmethod
+    def get_instrument_by_type(
+        symbol: Symbol,
+        instrument_type: InstrumentType,
+        *,
+        name: str | None = None,
+    ) -> Instrument:
+        """Build an instrument from an unambiguous canonical identity.
+
+        Authoritative valuation and research paths must use this method instead
+        of guessing an ETF/open-end-fund distinction from a symbol.
+        """
+
+        sym_str = str(symbol).strip()
+        if not sym_str:
+            raise ValueError("instrument symbol is required")
+        display_name = name or sym_str
+        if instrument_type is InstrumentType.STOCK:
+            return make_stock(sym_str, display_name)
+        if instrument_type is InstrumentType.ETF:
+            return make_etf(sym_str, display_name)
+        if instrument_type is InstrumentType.OPEN_END_FUND:
+            return make_open_end_fund(sym_str, display_name)
+        if instrument_type is InstrumentType.GOLD:
+            return make_gold_spot(symbol=sym_str, name=display_name)
+        if instrument_type is InstrumentType.BOND:
+            return make_bond(sym_str, display_name)
+        if instrument_type is InstrumentType.INDEX:
+            return make_index(sym_str, display_name)
+        raise ValueError(
+            f"authoritative instrument type is unresolved: {instrument_type.value}"
+        )

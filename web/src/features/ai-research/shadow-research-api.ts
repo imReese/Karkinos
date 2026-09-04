@@ -134,6 +134,66 @@ export type ShadowResearchDailyBackup = {
   contains_broker_export_rows: false;
 };
 
+export type ShadowResearchQualificationRun = {
+  schema_version: 'karkinos.ai.shadow_research_account_qualification.v1';
+  qualification_run_id: string;
+  source_run_id: string;
+  market_date: string;
+  source_selection_id: string;
+  status: 'running' | 'completed' | 'blocked' | 'failed';
+  selection_status: 'winner_selected' | 'no_selection' | 'failed' | null;
+  winner_qualification_candidate_id: string | null;
+  blockers: string[];
+  failure_code: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ShadowResearchQualificationCandidate = {
+  schema_version: 'karkinos.ai.shadow_research_account_qualification.v1';
+  qualification_candidate_id: string;
+  qualification_run_id: string;
+  source_candidate_id: string;
+  source_draft_id: string;
+  source_formula_fingerprint: string;
+  qualified_formula_fingerprint: string;
+  status: 'qualified' | 'blocked' | 'failed';
+  recommendation: 'paper_shadow_review' | 'keep_researching' | 'reject';
+  rank: number;
+  created_at: string;
+};
+
+export type ShadowResearchQualificationApproval = {
+  schema_version: 'karkinos.ai.shadow_research_account_qualification_approval.v1';
+  qualification_approval_id: string;
+  qualification_run_id: string;
+  qualification_candidate_id: string;
+  target_stage: 'paper_shadow';
+  created_at: string;
+};
+
+export type ShadowResearchQualificationAttempt = {
+  schema_version: 'karkinos.ai.shadow_research_account_qualification_attempt.v1';
+  attempt_id: string;
+  source_run_id: string;
+  market_date: string;
+  status: 'blocked';
+  failure_code: string;
+  blockers: string[];
+  evidence_fingerprint: string;
+  created_at: string | null;
+  finished_at: string | null;
+  provider_call_performed: false;
+  automatic_strategy_replacement_enabled: false;
+  production_strategy_mutation_enabled: false;
+  broker_order_created: false;
+  broker_submission_enabled: false;
+  ledger_mutation_performed: false;
+  capital_authority_granted: false;
+  private_account_values_redacted: true;
+  authority_effect: 'none';
+};
+
 export type ShadowResearchAutomationStatus = {
   schema_version: string;
   runtime_contract?: string;
@@ -169,6 +229,26 @@ export type ShadowResearchAutomationStatus = {
     reserved_tokens: number;
     actual_tokens: number;
   };
+  today_provider_activity?: {
+    schema_version: 'karkinos.ai.provider_local_day_activity.v1';
+    local_date: string;
+    timezone: 'Asia/Shanghai';
+    provider_calls: number;
+    recorded_call_attempts: number;
+    provider_free_rejections: number;
+    last_attempt_at: string | null;
+    last_attempt_updated_at: string | null;
+    last_attempt_status: string | null;
+    last_attempt_failure_code: string | null;
+    last_attempt_kind: string | null;
+    last_attempt_market_date: string | null;
+    last_provider_call_at: string | null;
+    last_provider_call_market_date: string | null;
+    read_only: true;
+    provider_contact_performed: false;
+    database_writes_performed: false;
+    authority_effect: 'none';
+  };
   runs: Array<{
     run_id: string;
     market_date: string;
@@ -179,6 +259,10 @@ export type ShadowResearchAutomationStatus = {
   candidates: ShadowResearchCandidate[];
   daily_selections: ShadowResearchDailySelection[];
   daily_backups: ShadowResearchDailyBackup[];
+  qualification_runs: ShadowResearchQualificationRun[];
+  qualification_candidates: ShadowResearchQualificationCandidate[];
+  qualification_approvals: ShadowResearchQualificationApproval[];
+  latest_qualification_attempt: ShadowResearchQualificationAttempt | null;
   daily_new_candidate_winner_id: string | null;
   /** Compatibility alias; this is a research winner, not a trading decision. */
   daily_winner_candidate_id: string | null;
@@ -190,7 +274,15 @@ export type ShadowResearchAutomationStatus = {
       | 'no_new_candidate_current_strategy_unchanged';
     new_candidate_winner_id: string | null;
     research_winner_candidate_id?: string | null;
-    account_qualification_status?: 'not_evaluated' | 'not_applicable';
+    account_qualification_status:
+      | 'running'
+      | 'passed'
+      | 'blocked'
+      | 'failed'
+      | 'not_evaluated'
+      | 'not_applicable';
+    qualification_run_id: string | null;
+    winner_qualification_candidate_id: string | null;
     incumbent_strategy_policy: 'leave_current_human_approved_strategy_unchanged';
     incumbent_strategy_state_changed: false;
     daily_trading_decision_status: 'not_evaluated';
@@ -307,6 +399,36 @@ export function useApproveShadowResearchCandidateMutation() {
           notes: input.notes,
           confirmation:
             'approve_evidence_bound_candidate_for_paper_shadow_only_without_production_or_trade_authority',
+        },
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['ai-shadow-research-automation'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['strategy-promotion-states'],
+        }),
+      ]);
+    },
+  });
+}
+
+export function useApproveShadowResearchQualificationCandidateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      qualification_candidate_id: string;
+      approved_by: string;
+      notes: string;
+    }) =>
+      postJson<Record<string, unknown>>(
+        `/api/ai/strategy-research/shadow-qualification-candidates/${encodeURIComponent(input.qualification_candidate_id)}/paper-shadow-approvals`,
+        {
+          approved_by: input.approved_by,
+          notes: input.notes,
+          confirmation:
+            'approve_exact_account_qualified_candidate_for_paper_shadow_only_without_order_trade_or_capital_authority',
         },
       ),
     onSuccess: async () => {

@@ -15,6 +15,25 @@ from server.db import AppDatabase
 from server.routes import ledger as ledger_routes
 
 
+def _seed_position(
+    database: AppDatabase,
+    *,
+    symbol: str,
+    quantity: float,
+    asset_class: str = "stock",
+) -> None:
+    database.insert_ledger_entry_sync(
+        entry_type="manual_adjustment",
+        timestamp="2026-01-01T09:00:00+08:00",
+        symbol=symbol,
+        quantity=quantity,
+        price=1.0,
+        asset_class=asset_class,
+        source="internal_fixture",
+        source_ref=f"opening-position-{symbol}",
+    )
+
+
 @pytest.mark.parametrize(
     ("model", "payload"),
     (
@@ -162,6 +181,7 @@ def test_settlement_route_replays_and_maps_request_conflict(
 ) -> None:
     database = AppDatabase(tmp_path / "app.db")
     database.init_sync()
+    _seed_position(database, symbol="600519", quantity=100)
     entry_id = database.insert_ledger_entry_sync(
         entry_type="trade_sell",
         timestamp="2026-08-26T10:00:00+08:00",

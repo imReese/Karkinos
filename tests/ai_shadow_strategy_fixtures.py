@@ -28,7 +28,7 @@ from analytics.strategy_advancement_gate import (
 )
 from analytics.sweep_robustness import build_sweep_robustness_evidence
 from backtest.result import BacktestResult
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
@@ -744,6 +744,7 @@ def _seed_frozen_dataset(db: Any) -> dict[str, Any]:
         provider_name="fixture_market",
         data_source="fixture_market",
         adjustment_mode="qfq",
+        instrument_type=InstrumentType.ETF,
     )
     return build_backtest_dataset_snapshot(
         start_date="2026-01-01",
@@ -755,6 +756,7 @@ def _seed_frozen_dataset(db: Any) -> dict[str, Any]:
                 symbol,
                 BarFrequency.DAILY,
                 AssetClass.FUND,
+                InstrumentType.ETF,
             )
         },
         store=store,

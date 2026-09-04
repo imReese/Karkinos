@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
 from data.store import DataStore
 from server.ai_runtime.formula_dsl import (
@@ -176,8 +176,15 @@ def test_restricted_formula_backtest_persists_preview_in_canonical_metrics(
         provider_name="deterministic_fixture",
         data_source="deterministic_fixture",
         adjustment_mode="none",
+        instrument_type=InstrumentType.STOCK,
     )
-    handler = DataHandler(bars, symbol, BarFrequency.DAILY, AssetClass.STOCK)
+    handler = DataHandler(
+        bars,
+        symbol,
+        BarFrequency.DAILY,
+        AssetClass.STOCK,
+        InstrumentType.STOCK,
+    )
     snapshot = build_backtest_dataset_snapshot(
         start_date="2026-08-21",
         end_date="2026-08-28",

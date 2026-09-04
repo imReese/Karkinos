@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, InstrumentKey, InstrumentType, Symbol
 from server.models import (
     MarketCalendarSnapshotResponse,
     MarketHealthQuote,
@@ -43,23 +43,82 @@ def adapt_latest_quote_for_health(row: dict) -> dict:
     return quote
 
 
+def instrument_key_from_mapping(
+    row: dict,
+    *,
+    symbol: object | None = None,
+) -> InstrumentKey | None:
+    """Return an exact identity without inferring from symbol shape."""
+
+    resolved_symbol = str(symbol or row.get("symbol") or "").strip()
+    raw_identity = (
+        row.get("instrument_type") or row.get("asset_type") or row.get("asset_class")
+    )
+    try:
+        return InstrumentKey.from_values(resolved_symbol, raw_identity)
+    except (TypeError, ValueError):
+        return None
+
+
+def _unambiguous_quotes_by_symbol(
+    quotes: dict[InstrumentKey, dict],
+) -> dict[str, dict]:
+    identities_by_symbol: dict[str, list[InstrumentKey]] = {}
+    for key in quotes:
+        identities_by_symbol.setdefault(key.symbol, []).append(key)
+    return {
+        symbol: quotes[keys[0]]
+        for symbol, keys in identities_by_symbol.items()
+        if len(keys) == 1
+    }
+
+
 def find_asset_config(
-    assets: list[dict[str, str]], symbol: str
+    assets: list[dict[str, str]],
+    symbol: str,
+    *,
+    instrument_type: object | None = None,
 ) -> dict[str, str] | None:
-    for asset_cfg in assets:
-        if asset_cfg["symbol"] == symbol:
-            return asset_cfg
-    return None
+    candidates = [asset for asset in assets if asset.get("symbol") == symbol]
+    if instrument_type is not None:
+        try:
+            requested = InstrumentKey.from_values(symbol, instrument_type)
+        except (TypeError, ValueError):
+            return None
+        candidates = [
+            asset
+            for asset in candidates
+            if instrument_key_from_mapping(asset) == requested
+        ]
+    return candidates[0] if len(candidates) == 1 else None
 
 
-def resolve_asset_class(symbol: str, assets: list[dict[str, str]]) -> AssetClass:
-    if asset_cfg := find_asset_config(assets, symbol):
+def resolve_asset_class(
+    symbol: str,
+    assets: list[dict[str, str]],
+    *,
+    instrument_type: object | None = None,
+) -> AssetClass:
+    if asset_cfg := find_asset_config(
+        assets,
+        symbol,
+        instrument_type=instrument_type,
+    ):
         return _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
-    return AssetClass.STOCK
+    raise ValueError(f"instrument identity is missing or ambiguous: {symbol}")
 
 
-def resolve_asset_display_name(assets: list[dict[str, str]], symbol: str) -> str:
-    if asset_cfg := find_asset_config(assets, symbol):
+def resolve_asset_display_name(
+    assets: list[dict[str, str]],
+    symbol: str,
+    *,
+    instrument_type: object | None = None,
+) -> str:
+    if asset_cfg := find_asset_config(
+        assets,
+        symbol,
+        instrument_type=instrument_type,
+    ):
         return str(asset_cfg.get("display_name") or asset_cfg["symbol"])
     return symbol
 
@@ -79,10 +138,8 @@ def provider_configured(state, provider_name: str) -> bool:
 
 
 def provider_supports_funds(provider_name: str) -> bool | None:
-    if provider_name == "akshare":
+    if provider_name in {"akshare", "tushare"}:
         return True
-    if provider_name == "tushare":
-        return False
     return None
 
 
@@ -206,24 +263,35 @@ def extract_runtime_portfolio(state):
     scheduler = getattr(state, "scheduler", None)
     portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
     instruments = getattr(scheduler, "instruments", {}) if scheduler else {}
-    latest_quotes: dict[str, dict] = {}
+    latest_quotes_by_key: dict[InstrumentKey, dict] = {}
     db = getattr(state, "db", None)
     persistent_reader_available = db is not None and (
         hasattr(db, "get_latest_quotes_sync") or hasattr(db, "list_latest_quotes_sync")
     )
     if db is not None and hasattr(db, "list_latest_quotes_sync"):
         for row in db.list_latest_quotes_sync():
-            latest_quotes[str(row["symbol"])] = row
+            quote = adapt_latest_quote_for_health(row)
+            key = instrument_key_from_mapping(quote)
+            if key is not None:
+                latest_quotes_by_key[key] = quote
     if db is not None and hasattr(db, "get_latest_quotes_sync"):
         for row in db.get_latest_quotes_sync():
-            latest_quotes.setdefault(str(row["symbol"]), row)
+            quote = adapt_latest_quote_for_health(row)
+            key = instrument_key_from_mapping(quote)
+            if key is not None:
+                latest_quotes_by_key.setdefault(key, quote)
     if (
         not persistent_reader_available
         and scheduler
         and getattr(scheduler, "latest_quotes", None)
     ):
         for symbol, quote in scheduler.latest_quotes.items():
-            latest_quotes[str(symbol)] = quote
+            adapted = adapt_latest_quote_for_health(quote)
+            key = instrument_key_from_mapping(adapted, symbol=symbol)
+            if key is not None:
+                latest_quotes_by_key[key] = adapted
+
+    latest_quotes = _unambiguous_quotes_by_symbol(latest_quotes_by_key)
 
     if (
         db is not None
@@ -252,8 +320,8 @@ def ledger_position_assets(state) -> list[dict[str, str]]:
     if not callable(get_entries):
         return []
 
-    quantities: dict[str, float] = {}
-    asset_classes: dict[str, str] = {}
+    quantities: dict[InstrumentKey, float] = {}
+    identity_provenance: dict[InstrumentKey, str] = {}
     offset = 0
     batch_size = 500
     while True:
@@ -275,19 +343,37 @@ def ledger_position_assets(state) -> list[dict[str, str]]:
                 quantity = abs(quantity)
             else:
                 continue
-            quantities[symbol] = quantities.get(symbol, 0.0) + quantity
-            asset_classes[symbol] = normalize_asset_class(
-                row.get("asset_class") or AssetClass.STOCK.value
+            raw_identity = row.get("instrument_type") or row.get("asset_class")
+            try:
+                key = InstrumentKey.from_values(symbol, raw_identity)
+            except (TypeError, ValueError):
+                continue
+            quantities[key] = quantities.get(key, 0.0) + quantity
+            normalized_identity = (
+                str(getattr(raw_identity, "value", raw_identity) or "").strip().lower()
             )
+            provenance = (
+                "legacy_fund_compatibility"
+                if normalized_identity == "fund"
+                else "ledger_canonical"
+            )
+            if key not in identity_provenance or provenance == "ledger_canonical":
+                identity_provenance[key] = provenance
         if len(rows) < batch_size:
             break
         offset += batch_size
 
     assets: list[dict[str, str]] = []
-    for symbol, quantity in quantities.items():
+    for key, quantity in quantities.items():
         if quantity <= 0:
             continue
-        asset_class = asset_classes.get(symbol, AssetClass.STOCK.value)
+        symbol = key.symbol
+        instrument_type = key.instrument_type
+        asset_class = (
+            AssetClass.FUND.value
+            if instrument_type is InstrumentType.OPEN_END_FUND
+            else instrument_type.value
+        )
         metadata = resolve_asset_metadata(
             state,
             symbol,
@@ -298,6 +384,8 @@ def ledger_position_assets(state) -> list[dict[str, str]]:
             {
                 "symbol": symbol,
                 "asset_class": metadata.asset_class,
+                "instrument_type": instrument_type.value,
+                "identity_provenance": identity_provenance[key],
                 "display_name": metadata.display_name,
             }
         )
@@ -305,9 +393,9 @@ def ledger_position_assets(state) -> list[dict[str, str]]:
 
 
 def merged_watchlist_assets(state) -> list[dict[str, str]]:
-    _, positions, instruments, latest_quotes = extract_runtime_portfolio(state)
+    _, positions, instruments, _ = extract_runtime_portfolio(state)
     merged: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen: set[InstrumentKey] = set()
 
     db = getattr(state, "db", None)
     list_watchlist = getattr(db, "list_watchlist_assets_sync", None)
@@ -318,22 +406,39 @@ def merged_watchlist_assets(state) -> list[dict[str, str]]:
 
     for asset_cfg in persisted_assets:
         symbol = str(asset_cfg.get("symbol") or "").strip()
-        if not symbol or symbol in seen:
+        if not symbol:
             continue
+        raw_identity = asset_cfg.get("instrument_type") or asset_cfg.get("asset_class")
+        try:
+            key = InstrumentKey.from_values(symbol, raw_identity)
+        except (TypeError, ValueError):
+            continue
+        if key in seen:
+            continue
+        instrument_type = key.instrument_type
+        display_asset_class = (
+            "fund"
+            if instrument_type is InstrumentType.OPEN_END_FUND
+            else instrument_type.value
+        )
         metadata = resolve_asset_metadata(
             state,
             symbol,
-            asset_class=str(asset_cfg.get("asset_class") or "stock"),
+            asset_class=display_asset_class,
             fallback_name=str(asset_cfg.get("display_name") or symbol),
         )
         merged.append(
             {
                 "symbol": symbol,
-                "asset_class": metadata.asset_class,
+                "asset_class": display_asset_class,
+                "instrument_type": instrument_type.value,
+                "identity_provenance": str(
+                    asset_cfg.get("identity_provenance") or "persisted_canonical"
+                ),
                 "display_name": metadata.display_name,
             }
         )
-        seen.add(symbol)
+        seen.add(key)
 
     for asset_cfg in config_assets:
         symbol = str(
@@ -342,50 +447,96 @@ def merged_watchlist_assets(state) -> list[dict[str, str]]:
             or asset_cfg.get("code")
             or asset_cfg["symbol"]
         )
-        if symbol in seen:
+        raw_identity = asset_cfg.get("instrument_type") or asset_cfg.get("asset_class")
+        try:
+            key = InstrumentKey.from_values(symbol, raw_identity)
+        except (TypeError, ValueError):
             continue
+        if key in seen:
+            continue
+        instrument_type = key.instrument_type
+        display_asset_class = (
+            "fund"
+            if instrument_type is InstrumentType.OPEN_END_FUND
+            else instrument_type.value
+        )
         merged.append(
             {
                 "symbol": symbol,
-                "asset_class": asset_cfg["asset_class"],
+                "asset_class": display_asset_class,
+                "instrument_type": instrument_type.value,
+                "identity_provenance": (
+                    "legacy_fund_compatibility"
+                    if str(getattr(raw_identity, "value", raw_identity) or "")
+                    .strip()
+                    .lower()
+                    == "fund"
+                    else "config_canonical"
+                ),
                 "display_name": asset_cfg.get("display_name")
                 or asset_cfg.get("symbol", symbol),
             }
         )
-        seen.add(symbol)
+        seen.add(key)
 
     for raw_symbol in positions:
         symbol = str(raw_symbol)
-        if symbol in seen:
-            continue
         instrument = instruments.get(Symbol(symbol))
+        raw_identity = getattr(instrument, "instrument_type", None) or getattr(
+            instrument, "asset_class", None
+        )
+        try:
+            key = InstrumentKey.from_values(symbol, raw_identity)
+        except (TypeError, ValueError):
+            continue
+        if key in seen:
+            continue
+        instrument_type = key.instrument_type
+        default_asset_class = (
+            AssetClass.FUND.value
+            if instrument_type is InstrumentType.OPEN_END_FUND
+            else instrument_type.value
+        )
         asset_class = normalize_asset_class(
-            getattr(instrument, "asset_class", None)
-            or latest_quotes.get(symbol, {}).get("asset_class")
-            or AssetClass.STOCK.value
+            getattr(instrument, "asset_class", None) or default_asset_class
         )
         metadata = resolve_asset_metadata(
             state,
             symbol,
             asset_class=asset_class,
-            quote=latest_quotes.get(symbol),
             fallback_name=getattr(instrument, "name", None) or symbol,
         )
         merged.append(
             {
                 "symbol": symbol,
                 "asset_class": metadata.asset_class,
+                "instrument_type": instrument_type.value,
+                "identity_provenance": (
+                    "legacy_fund_compatibility"
+                    if str(getattr(raw_identity, "value", raw_identity) or "")
+                    .strip()
+                    .lower()
+                    == "fund"
+                    else "runtime_canonical"
+                ),
                 "display_name": metadata.display_name,
             }
         )
-        seen.add(symbol)
+        seen.add(key)
 
     for asset_cfg in ledger_position_assets(state):
         symbol = asset_cfg["symbol"]
-        if symbol in seen:
+        try:
+            key = InstrumentKey.from_values(
+                symbol,
+                asset_cfg.get("instrument_type"),
+            )
+        except (TypeError, ValueError):
+            continue
+        if key in seen:
             continue
         merged.append(asset_cfg)
-        seen.add(symbol)
+        seen.add(key)
 
     return merged
 
@@ -394,13 +545,17 @@ def with_default_market_indices(
     assets: list[dict[str, str]],
 ) -> list[dict[str, str]]:
     merged = list(assets)
-    seen = {asset["symbol"] for asset in merged}
+    seen = {
+        key
+        for asset in merged
+        if (key := instrument_key_from_mapping(asset)) is not None
+    }
     for asset_cfg in default_market_index_assets():
-        symbol = asset_cfg["symbol"]
-        if symbol in seen:
+        key = instrument_key_from_mapping(asset_cfg)
+        if key is None or key in seen:
             continue
         merged.append(asset_cfg)
-        seen.add(symbol)
+        seen.add(key)
     return merged
 
 
@@ -444,6 +599,7 @@ __all__ = (
     "extract_runtime_portfolio",
     "find_asset_config",
     "has_live_fund_quotes",
+    "instrument_key_from_mapping",
     "json_array",
     "ledger_position_assets",
     "market_calendar_snapshot_response",

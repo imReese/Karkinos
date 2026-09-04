@@ -180,6 +180,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "paper_shadow_run_uow.py": 1,
         "pending_fund_confirmation_uow.py": 2,
         "portfolio_cash_flow_uow.py": 2,
+        "pre_trade_risk_uow.py": 1,
         "reviewed_fee_schedule_reviews.py": 1,
         "runtime_controls.py": 1,
         "strategy_research_uow.py": 1,

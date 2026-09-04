@@ -9,6 +9,27 @@ from server.ledger.models import LedgerEntry
 from server.ledger.repository import LedgerRepository
 
 
+def _seed_position(
+    repository: LedgerRepository,
+    *,
+    symbol: str,
+    quantity: float,
+    asset_class: str = "stock",
+) -> None:
+    repository.insert_entry(
+        LedgerEntry(
+            entry_type="manual_adjustment",
+            timestamp="2026-01-01T09:00:00+08:00",
+            symbol=symbol,
+            quantity=quantity,
+            price=1.0,
+            asset_class=asset_class,
+            source="internal_fixture",
+            source_ref=f"opening-position-{symbol}",
+        )
+    )
+
+
 def test_ledger_repository_persists_trade_buy_entry(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -94,6 +115,7 @@ def test_ledger_repository_confirms_broker_settlement_and_preserves_estimate(
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     repository = LedgerRepository(db)
+    _seed_position(repository, symbol="600066", quantity=100)
     entry_id = repository.insert_entry(
         LedgerEntry(
             entry_type="trade_sell",
@@ -184,6 +206,7 @@ def test_ledger_repository_rejects_reused_broker_settlement_evidence(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     repository = LedgerRepository(db)
+    _seed_position(repository, symbol="600066", quantity=200)
     entry_ids = [
         repository.insert_entry(
             LedgerEntry(

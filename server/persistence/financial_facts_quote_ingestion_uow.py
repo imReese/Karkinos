@@ -204,7 +204,7 @@ def _materialize_quote(
         existing_snapshot = conn.execute(
             """
             SELECT * FROM quote_snapshots
-            WHERE fetch_run_id = ? AND symbol = ? AND asset_class = ?
+            WHERE fetch_run_id = ? AND symbol = ? AND instrument_type = ?
             LIMIT 1
             """,
             (command.fetch_run_id, command.symbol, command.asset_type),
@@ -216,8 +216,8 @@ def _materialize_quote(
                 symbol, asset_class, price, volume, timestamp, created_at,
                 quote_source, provider_name, quote_status, stale_reason,
                 provider_status, captured_reason, nav_date, fetch_run_id,
-                quote_instant_utc
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                quote_instant_utc, instrument_type, identity_provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 command.symbol,
@@ -235,6 +235,8 @@ def _materialize_quote(
                 command.nav_date,
                 command.fetch_run_id,
                 quote_instant_storage_key(command.quote_timestamp),
+                command.asset_type,
+                command.identity_provenance,
             ),
         )
         snapshot_id = int(cursor.lastrowid or 0)
@@ -256,9 +258,16 @@ def _materialize_quote(
         "display_name": command.display_name,
         "previous_close_date": command.previous_close_date,
     }
+    identity_aliases = _quote_identity_aliases(command.asset_type)
+    placeholders = ", ".join("?" for _ in identity_aliases)
     existing_latest = conn.execute(
-        "SELECT * FROM latest_quotes WHERE symbol = ? AND asset_type = ?",
-        (command.symbol, command.asset_type),
+        f"""
+        SELECT * FROM latest_quotes
+        WHERE symbol = ? AND asset_type IN ({placeholders})
+        ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (command.symbol, *identity_aliases),
     ).fetchone()
     candidate_rank = quote_observation_rank(
         {"quote_timestamp": command.quote_timestamp}
@@ -380,16 +389,20 @@ def _materialize_daily_close(
         return
     existing = conn.execute(
         """
-        SELECT asset_class, close_price, source FROM daily_close_snapshots
-        WHERE symbol = ? AND trade_date = ?
+        SELECT instrument_type, close_price, source
+        FROM daily_close_snapshots_v2
+        WHERE symbol = ? AND instrument_type = ? AND trade_date = ?
         LIMIT 1
         """,
-        (command.symbol, command.daily_close_date),
+        (command.symbol, command.asset_type, command.daily_close_date),
     ).fetchone()
     if existing is not None:
         if (
             float(existing["close_price"]) != float(command.daily_close_price)
-            or str(existing["asset_class"]) != command.asset_type
+            or not _same_instrument_identity(
+                str(existing["instrument_type"]),
+                command.asset_type,
+            )
             or str(existing["source"])
             != (command.daily_close_source or "reported_previous_close")
         ):
@@ -397,14 +410,15 @@ def _materialize_daily_close(
         return
     conn.execute(
         """
-        INSERT INTO daily_close_snapshots
-            (symbol, asset_class, trade_date, close_price, source, captured_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(symbol, trade_date) DO UPDATE SET
-            asset_class = excluded.asset_class,
+        INSERT INTO daily_close_snapshots_v2
+            (symbol, instrument_type, trade_date, close_price, source,
+             captured_at, identity_provenance)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(symbol, instrument_type, trade_date) DO UPDATE SET
             close_price = excluded.close_price,
             source = excluded.source,
-            captured_at = excluded.captured_at
+            captured_at = excluded.captured_at,
+            identity_provenance = excluded.identity_provenance
         """,
         (
             command.symbol,
@@ -413,7 +427,20 @@ def _materialize_daily_close(
             command.daily_close_price,
             command.daily_close_source or "reported_previous_close",
             materialized_at,
+            command.identity_provenance,
         ),
+    )
+
+
+def _quote_identity_aliases(instrument_type: str) -> tuple[str, ...]:
+    if instrument_type == "open_end_fund":
+        return ("open_end_fund", "fund")
+    return (instrument_type,)
+
+
+def _same_instrument_identity(left: str, right: str) -> bool:
+    return bool(
+        set(_quote_identity_aliases(left)) & set(_quote_identity_aliases(right))
     )
 
 
@@ -455,7 +482,11 @@ def _materialize_instrument_metadata(
             "quote",
             command.quote_timestamp,
             serialize_metadata_json(
-                {"source": command.source, "quote_source": command.quote_source}
+                {
+                    "source": command.source,
+                    "quote_source": command.quote_source,
+                    "identity_provenance": command.identity_provenance,
+                }
             ),
             materialized_at,
             materialized_at,

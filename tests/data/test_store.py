@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from core.types import BarFrequency, Symbol
+from core.types import BarFrequency, InstrumentType, Symbol
 from data.store import DataStore
 
 
@@ -36,9 +36,18 @@ def sample_df() -> pd.DataFrame:
 class TestDataStore:
     def test_save_and_load_bars(self, store: DataStore, sample_df: pd.DataFrame):
         symbol = Symbol("600519")
-        store.save_bars(symbol, BarFrequency.DAILY, sample_df)
+        store.save_bars(
+            symbol,
+            BarFrequency.DAILY,
+            sample_df,
+            instrument_type=InstrumentType.STOCK,
+        )
 
-        loaded = store.load_bars(symbol, BarFrequency.DAILY)
+        loaded = store.load_bars(
+            symbol,
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert loaded is not None
         assert len(loaded) == 3
         assert list(loaded["close"]) == list(sample_df["close"])
@@ -47,14 +56,19 @@ class TestDataStore:
         self, store: DataStore, sample_df: pd.DataFrame
     ):
         symbol = Symbol("600519")
-        store.save_bars(symbol, BarFrequency.DAILY, sample_df)
+        store.save_bars(
+            symbol,
+            BarFrequency.DAILY,
+            sample_df,
+            instrument_type=InstrumentType.STOCK,
+        )
 
         with sqlite3.connect(store._meta_path) as conn:
             count = conn.execute(
                 """
                 SELECT COUNT(*)
-                FROM market_bars
-                WHERE symbol = ? AND frequency = ?
+                FROM market_bars_v2
+                WHERE symbol = ? AND instrument_type = 'stock' AND frequency = ?
                 """,
                 ("600519", BarFrequency.DAILY.value),
             ).fetchone()[0]
@@ -65,13 +79,26 @@ class TestDataStore:
         self, store: DataStore, sample_df: pd.DataFrame
     ):
         symbol = Symbol("600519")
-        store.save_bars(symbol, BarFrequency.DAILY, sample_df)
+        store.save_bars(
+            symbol,
+            BarFrequency.DAILY,
+            sample_df,
+            instrument_type=InstrumentType.STOCK,
+        )
         parquet_path = (
-            store._root / "bars" / BarFrequency.DAILY.value / f"{symbol}.parquet"
+            store._root
+            / "bars"
+            / BarFrequency.DAILY.value
+            / "stock"
+            / f"{symbol}.parquet"
         )
         parquet_path.unlink()
 
-        loaded = store.load_bars(symbol, BarFrequency.DAILY)
+        loaded = store.load_bars(
+            symbol,
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
 
         assert loaded is not None
         assert len(loaded) == 3
@@ -84,10 +111,13 @@ class TestDataStore:
         parquet_path = (
             store._root / "bars" / BarFrequency.DAILY.value / f"{symbol}.parquet"
         )
+        parquet_path = parquet_path.parent / "stock" / parquet_path.name
         parquet_path.parent.mkdir(parents=True, exist_ok=True)
         sample_df.to_parquet(parquet_path, index=False)
 
-        summary = store.sync_parquet_bars_to_database()
+        summary = store.sync_parquet_bars_to_database(
+            instrument_type=InstrumentType.STOCK
+        )
 
         assert summary["synced_files"] == 1
         assert summary["synced_rows"] == 3
@@ -95,19 +125,27 @@ class TestDataStore:
             count = conn.execute(
                 """
                 SELECT COUNT(*)
-                FROM market_bars
-                WHERE symbol = ? AND frequency = ?
+                FROM market_bars_v2
+                WHERE symbol = ? AND instrument_type = 'stock' AND frequency = ?
                 """,
                 ("600519", BarFrequency.DAILY.value),
             ).fetchone()[0]
         assert count == 3
-        meta = store.get_meta(symbol, BarFrequency.DAILY)
+        meta = store.get_meta(
+            symbol,
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert meta is not None
         assert meta["row_count"] == 3
         assert meta["data_source"] == "local_parquet_sync"
 
         parquet_path.unlink()
-        loaded = store.load_bars(symbol, BarFrequency.DAILY)
+        loaded = store.load_bars(
+            symbol,
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert loaded is not None
         assert list(loaded["close"]) == list(sample_df["close"])
 
@@ -117,9 +155,18 @@ class TestDataStore:
 
     def test_get_meta(self, store: DataStore, sample_df: pd.DataFrame):
         symbol = Symbol("600519")
-        store.save_bars(symbol, BarFrequency.DAILY, sample_df)
+        store.save_bars(
+            symbol,
+            BarFrequency.DAILY,
+            sample_df,
+            instrument_type=InstrumentType.STOCK,
+        )
 
-        meta = store.get_meta(symbol, BarFrequency.DAILY)
+        meta = store.get_meta(
+            symbol,
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert meta is not None
         assert meta["symbol"] == "600519"
         assert meta["frequency"] == "1d"
@@ -145,8 +192,13 @@ class TestDataStore:
             provider_name="mock_provider",
             data_source="unit_fixture",
             adjustment_mode="qfq",
+            instrument_type=InstrumentType.STOCK,
         )
-        meta = store.get_meta(symbol, BarFrequency.DAILY)
+        meta = store.get_meta(
+            symbol,
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert meta is not None
         first_dataset_id = meta["dataset_id"]
 
@@ -170,16 +222,34 @@ class TestDataStore:
             provider_name="mock_provider",
             data_source="unit_fixture",
             adjustment_mode="qfq",
+            instrument_type=InstrumentType.STOCK,
         )
-        meta_after_resave = store.get_meta(symbol, BarFrequency.DAILY)
+        meta_after_resave = store.get_meta(
+            symbol,
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert meta_after_resave is not None
         assert meta_after_resave["dataset_id"] == first_dataset_id
 
     def test_list_symbols(self, store: DataStore, sample_df: pd.DataFrame):
-        store.save_bars(Symbol("600519"), BarFrequency.DAILY, sample_df)
-        store.save_bars(Symbol("000001"), BarFrequency.DAILY, sample_df)
+        store.save_bars(
+            Symbol("600519"),
+            BarFrequency.DAILY,
+            sample_df,
+            instrument_type=InstrumentType.STOCK,
+        )
+        store.save_bars(
+            Symbol("000001"),
+            BarFrequency.DAILY,
+            sample_df,
+            instrument_type=InstrumentType.STOCK,
+        )
 
-        symbols = store.list_symbols(BarFrequency.DAILY)
+        symbols = store.list_symbols(
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
         assert len(symbols) == 2
         assert Symbol("600519") in symbols
         assert Symbol("000001") in symbols
@@ -221,8 +291,9 @@ class TestDataStore:
 
         with sqlite3.connect(store._meta_path) as conn:
             conn.execute("""
-                UPDATE market_bars SET close = 99
-                WHERE symbol = '000001' AND frequency = '1d'
+                UPDATE market_bars_v2 SET close = 99
+                WHERE symbol = '000001' AND instrument_type = 'stock'
+                  AND frequency = '1d'
                   AND substr(timestamp, 1, 10) = '2026-08-21'
                 """)
             conn.commit()

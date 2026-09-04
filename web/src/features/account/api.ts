@@ -7,13 +7,13 @@ import type { DailyOperationsSummary } from '../../shared/contracts/daily-operat
 export type { DailyOperationsSummary } from '../../shared/contracts/daily-operations';
 
 export type AccountOverview = {
-  total_equity: number;
+  total_equity: number | null;
   available_cash: number;
   total_deposits: number;
   positions_count: number;
-  unrealized_pnl: number;
+  unrealized_pnl: number | null;
   realized_pnl: number;
-  cash_ratio: number;
+  cash_ratio: number | null;
   today_pnl?: number | null;
   today_pnl_breakdown?: {
     stocks?: number | null;
@@ -51,6 +51,8 @@ export type AccountOverview = {
   ledger_cutoff_id?: number;
   ledger_fingerprint?: string | null;
   quote_set_fingerprint?: string | null;
+  missing_price_symbols?: string[];
+  valuation_blockers?: string[];
 };
 
 export type EquityPoint = {
@@ -99,7 +101,7 @@ export type AccountStateResponse = {
   summary: AccountOverview;
   snapshot: {
     cash: number;
-    total_equity: number;
+    total_equity: number | null;
     total_deposits: number;
     positions: Array<{
       symbol: string;
@@ -110,8 +112,8 @@ export type AccountStateResponse = {
       available_qty: number;
       frozen_qty: number;
       avg_cost: number;
-      market_value: number;
-      unrealized_pnl: number;
+      market_value: number | null;
+      unrealized_pnl: number | null;
       realized_pnl: number;
       commission_paid: number;
     }>;
@@ -143,7 +145,7 @@ export type AccountStateResponse = {
 export type ExplainabilityBridgeItem = {
   key: string;
   label: string;
-  value: number;
+  value: number | null;
   detail: string;
 };
 
@@ -170,8 +172,8 @@ export type ExplainabilityPositionDriver = {
   asset_class: string;
   quantity: number;
   avg_cost: number;
-  market_value: number;
-  unrealized_pnl: number;
+  market_value: number | null;
+  unrealized_pnl: number | null;
   realized_pnl: number;
   last_activity_at: string | null;
   last_activity_note: string | null;
@@ -183,7 +185,7 @@ export type ExplainabilityResponse = {
   positions: ExplainabilityPositionDriver[];
   timeline: Array<{
     date: string;
-    equity: number;
+    equity: number | null;
     delta: number;
     external_flow: number;
     market_pnl: number;
@@ -230,6 +232,8 @@ export type ExplainabilityResponse = {
 };
 
 export type RiskWorkspaceResponse = {
+  status: 'complete' | 'blocked';
+  blockers: string[];
   metrics: Array<{
     key: string;
     label: string;
@@ -245,7 +249,7 @@ export type RiskWorkspaceResponse = {
     peak_equity: number;
     peak_timestamp: string | null;
     trough_timestamp: string | null;
-  };
+  } | null;
   drawdown_series: Array<{
     timestamp: string;
     equity: number;

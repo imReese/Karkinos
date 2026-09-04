@@ -66,8 +66,9 @@ export function filterAndSortPortfolioPositions({
         assetClassFilter === 'all' || assetClass === assetClassFilter;
       const matchesPnl =
         pnlFilter === 'all' ||
-        (pnlFilter === 'winners' && position.unrealized_pnl >= 0) ||
-        (pnlFilter === 'losers' && position.unrealized_pnl < 0);
+        (typeof position.unrealized_pnl === 'number' &&
+          ((pnlFilter === 'winners' && position.unrealized_pnl >= 0) ||
+            (pnlFilter === 'losers' && position.unrealized_pnl < 0)));
       const needsQuoteReview = quoteNeedsReview(position.quote_status);
       const matchesQuote =
         quoteFilter === 'all' ||

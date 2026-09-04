@@ -23,6 +23,10 @@ from server.projections.portfolio_quote_assets import (
     optional_float_attr,
     optional_float_value,
 )
+from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotRejected
+from server.projections.portfolio_read_snapshot_persistence import (
+    portfolio_read_snapshot_for_state,
+)
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
@@ -58,6 +62,15 @@ def has_position_ledger_entries(entries: object) -> bool:
 
 def collect_latest_quote_timestamps(state) -> dict[str, str]:
     latest: dict[str, str] = {}
+    read_snapshot = portfolio_read_snapshot_for_state(state)
+    if read_snapshot is not None:
+        for row in read_snapshot.published_valuation.get("quotes") or ():
+            quote = adapt_persistent_quote_for_portfolio(dict(row))
+            timestamp = quote.get("timestamp") or quote.get("quote_timestamp")
+            symbol = quote.get("symbol")
+            if symbol and timestamp:
+                latest[str(symbol)] = str(timestamp)
+        return latest
     db = state.db
     persistent_reader_available = db is not None and (
         hasattr(db, "list_latest_quotes_sync") or hasattr(db, "get_latest_quotes_sync")
@@ -206,6 +219,9 @@ def collect_latest_quotes(state) -> dict[str, dict]:
     those in-memory values into authoritative facts.
     """
     latest: dict[str, dict] = {}
+    read_snapshot = portfolio_read_snapshot_for_state(state)
+    if read_snapshot is not None:
+        return quotes_from_valuation_snapshot(dict(read_snapshot.published_valuation))
     db = state.db
     persistent_reader_available = db is not None and (
         hasattr(db, "get_latest_quotes_sync") or hasattr(db, "list_latest_quotes_sync")
@@ -230,8 +246,18 @@ def collect_latest_quotes(state) -> dict[str, dict]:
     return latest
 
 
-def current_valuation_snapshot(state) -> dict:
-    snapshot = build_current_valuation_projection(state.db, persist=False)
+def current_valuation_snapshot(
+    state,
+    *,
+    now: datetime | None = None,
+) -> dict:
+    try:
+        read_snapshot = portfolio_read_snapshot_for_state(state)
+    except PortfolioReadSnapshotRejected as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if read_snapshot is not None:
+        return dict(read_snapshot.published_valuation)
+    snapshot = build_current_valuation_projection(state.db, persist=False, now=now)
     publication_reader = getattr(state.db, "get_runtime_control_sync", None)
     publication = (
         publication_reader("valuation_snapshot_publication")
@@ -301,6 +327,12 @@ def is_unconfirmed_fund_estimate(
     if not is_fund_estimate_quote_source(source):
         return False
 
+    if portfolio_read_snapshot_for_state(state) is not None:
+        # A published valuation has already frozen same-day NAV/close evidence.
+        # An estimate that remains in that snapshot is therefore unconfirmed;
+        # do not perform a second mutable database lookup during the request.
+        return True
+
     quote_timestamp = _parse_quote_timestamp(quote.get("timestamp"))
     if quote_timestamp is None:
         return True
@@ -308,7 +340,11 @@ def is_unconfirmed_fund_estimate(
 
     if state.db is None or not hasattr(state.db, "get_market_bar_on_date_sync"):
         return True
-    market_bar = state.db.get_market_bar_on_date_sync(symbol, trade_date)
+    market_bar = state.db.get_market_bar_on_date_sync(
+        symbol,
+        trade_date,
+        instrument_type="open_end_fund",
+    )
     if not market_bar:
         return True
     close = market_bar.get("close", market_bar.get("price"))

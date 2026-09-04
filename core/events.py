@@ -7,7 +7,14 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from core.types import AssetClass, BarFrequency, OrderSide, OrderType, Symbol
+from core.types import (
+    AssetClass,
+    BarFrequency,
+    InstrumentType,
+    OrderSide,
+    OrderType,
+    Symbol,
+)
 
 
 @dataclass(frozen=True)
@@ -29,6 +36,7 @@ class MarketEvent(Event):
     volume: Decimal
     frequency: BarFrequency = BarFrequency.DAILY
     asset_class: AssetClass | None = None
+    instrument_type: InstrumentType | None = None
 
 
 @dataclass(frozen=True)

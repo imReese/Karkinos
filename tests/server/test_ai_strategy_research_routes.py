@@ -28,11 +28,11 @@ from server.routes.ai_strategy_research import (
     create_router,
 )
 from server.services.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION,
     SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
     SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
-    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_RETRY_CONFIRMATION,
     SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION,
@@ -291,12 +291,26 @@ def test_external_strategy_routes_return_non_authorizing_provider_defer(
 
 
 @pytest.mark.unit
-def test_shadow_run_route_returns_non_authorizing_provider_defer(monkeypatch):
-    service = FixtureService(error=_peak_deferred())
+def test_shadow_run_route_enqueues_without_constructing_provider_service(monkeypatch):
+    result = {
+        "status": "enqueued",
+        "job_id": "automation:research-worker:fixture",
+        "available_at": "2026-08-31T10:00:00+00:00",
+        "deadline_at": "2026-09-01T01:00:00+00:00",
+        "provider_call_performed": False,
+        "execution_authority_granted": False,
+        "capital_authority_granted": False,
+    }
     client = _client(monkeypatch, FixtureService())
     monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_job_scheduler",
+        lambda state: SimpleNamespace(enqueue_if_authorized=lambda: result),
+    )
+    monkeypatch.setattr(
         "server.routes.ai_strategy_research._build_shadow_write_service",
-        lambda state: service,
+        lambda state: (_ for _ in ()).throw(
+            AssertionError("provider-capable service must not be constructed")
+        ),
     )
 
     response = client.post(
@@ -304,26 +318,24 @@ def test_shadow_run_route_returns_non_authorizing_provider_defer(monkeypatch):
     )
 
     assert response.status_code == 202
-    assert response.json()["next_eligible_at"] == "2026-08-31T18:00:00+08:00"
+    assert response.json()["job_id"] == "automation:research-worker:fixture"
     assert response.json()["provider_call_performed"] is False
-    assert response.json()["authority_effect"] == "none"
+    assert response.json()["execution_authority_granted"] is False
 
 
 @pytest.mark.unit
-def test_shadow_run_route_maps_preflight_defer_result_to_accepted(monkeypatch):
-    service = FixtureService(
-        run_result={
-            "run_status": "deferred_for_provider_off_peak",
-            "failure_code": "deepseek_peak_pricing_window",
-            "next_eligible_at": "2026-08-31T18:00:00+08:00",
-            "provider_call_performed": False,
-            "authority_effect": "none",
-        }
-    )
+def test_shadow_run_route_maps_existing_durable_job_to_accepted(monkeypatch):
+    result = {
+        "status": "already_enqueued",
+        "job_id": "automation:research-worker:fixture",
+        "provider_call_performed": False,
+        "execution_authority_granted": False,
+        "capital_authority_granted": False,
+    }
     client = _client(monkeypatch, FixtureService())
     monkeypatch.setattr(
-        "server.routes.ai_strategy_research._build_shadow_write_service",
-        lambda state: service,
+        "server.routes.ai_strategy_research._build_shadow_job_scheduler",
+        lambda state: SimpleNamespace(enqueue_if_authorized=lambda: result),
     )
 
     response = client.post(
@@ -331,7 +343,7 @@ def test_shadow_run_route_maps_preflight_defer_result_to_accepted(monkeypatch):
     )
 
     assert response.status_code == 202
-    assert response.json() == service.run_result
+    assert response.json() == result
 
 
 @pytest.mark.unit
@@ -941,6 +953,10 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
     assert ("/api/ai/strategy-research/backtests", "POST") in routes
     assert ("/api/ai/strategy-research/critiques", "POST") in routes
     assert ("/api/ai/strategy-research/shadow-automation", "GET") in routes
+    assert (
+        "/api/ai/strategy-research/shadow-automation/worker-jobs",
+        "GET",
+    ) in routes
     assert (
         "/api/ai/strategy-research/shadow-automation/policy",
         "PUT",

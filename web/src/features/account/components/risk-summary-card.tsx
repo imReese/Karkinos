@@ -17,10 +17,10 @@ export function RiskSummaryCard({
     0,
   );
   const deploymentRatio =
-    snapshot.total_equity > 0
+    snapshot.total_equity !== null && snapshot.total_equity > 0
       ? Math.max(snapshot.total_equity - snapshot.cash, 0) /
         snapshot.total_equity
-      : 0;
+      : null;
 
   const items = [
     {
@@ -32,16 +32,23 @@ export function RiskSummaryCard({
     {
       label: labels.cashBuffer,
       value: formatPercent(overview.cash_ratio),
-      hint: overview.cash_ratio >= 0.2 ? labels.cashHealthy : labels.cashWatch,
+      hint:
+        overview.cash_ratio === null
+          ? '--'
+          : overview.cash_ratio >= 0.2
+            ? labels.cashHealthy
+            : labels.cashWatch,
       boundary: labels.cashBoundary,
     },
     {
       label: labels.deployment,
       value: formatPercent(deploymentRatio),
       hint:
-        deploymentRatio >= 0.8
-          ? labels.deploymentHigh
-          : labels.deploymentBalanced,
+        deploymentRatio === null
+          ? '--'
+          : deploymentRatio >= 0.8
+            ? labels.deploymentHigh
+            : labels.deploymentBalanced,
       boundary: labels.deploymentBoundary,
     },
     {

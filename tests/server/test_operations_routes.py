@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -26,6 +27,7 @@ def _endpoint(path: str, method: str = "GET"):
 
 
 def _allow_paper_shadow_evaluation(monkeypatch) -> None:
+    _freeze_valuation_clock(monkeypatch)
     monkeypatch.setattr(
         "server.services.decision_application._account_truth_gate_evidence",
         lambda state: {
@@ -49,6 +51,18 @@ def _allow_paper_shadow_evaluation(monkeypatch) -> None:
             },
             [],
         ),
+    )
+
+
+def _freeze_valuation_clock(monkeypatch) -> None:
+    fixture_now = datetime(2026, 7, 1, 1, 46, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: fixture_now,
+    )
+    monkeypatch.setattr(
+        "server.projections.quote_status.get_shanghai_now",
+        lambda now=None: fixture_now,
     )
 
 
@@ -589,7 +603,9 @@ def test_today_operations_route_surfaces_execution_reconciliation_open_items(
 
 
 def test_today_operations_route_surfaces_scheduler_run_evidence(monkeypatch):
+    _freeze_valuation_clock(monkeypatch)
     fake_db = FakeOperationsDb()
+    _seed_persisted_portfolio_facts(fake_db)
     plan_date = "2026-07-01"
     run_id = f"market-session:{plan_date}:100000"
     fake_db.automation_runs.append(

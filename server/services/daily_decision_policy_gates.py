@@ -39,6 +39,11 @@ from server.services.daily_decision_preflight_operator import (
     safe_preflight_blocker,
 )
 
+_ACCOUNT_ACTION_READ_ONLY_WINDOW_BLOCKERS = {
+    "decision_generated_outside_reviewed_window",
+    "plan_generated_outside_reviewed_window",
+}
+
 
 def build_daily_candidate_base_gate(
     *,
@@ -206,6 +211,43 @@ def build_daily_candidate_base_gate(
     }
 
 
+def current_account_action_evidence_blockers(
+    *,
+    decision_payload: dict[str, Any],
+    trading_plan: dict[str, Any],
+    additional_blockers: list[str] | None = None,
+) -> list[str]:
+    """Validate current read evidence without reopening the 09:35 write window."""
+
+    plan_date = str(
+        trading_plan.get("plan_date") or decision_payload.get("decision_date") or ""
+    )
+    base = build_daily_candidate_base_gate(
+        decision_payload=decision_payload,
+        trading_plan=trading_plan,
+        plan_date=plan_date,
+    )
+    gate_blockers = object_dict(base.get("gate_blockers"))
+    blockers = [
+        str(item)
+        for item in gate_blockers.get("decision_plan") or []
+        if str(item) not in _ACCOUNT_ACTION_READ_ONLY_WINDOW_BLOCKERS
+    ]
+    blockers.extend(str(item) for item in gate_blockers.get("account_truth") or [])
+
+    summary = object_dict(decision_payload.get("summary"))
+    portfolio = object_dict(summary.get("portfolio"))
+    if str(portfolio.get("valuation_status") or "").lower() != "complete":
+        blockers.append("valuation_snapshot_not_complete")
+
+    market = object_dict(summary.get("market_data"))
+    if str(market.get("source_health") or "unknown").lower() != "unknown":
+        blockers.extend(str(item) for item in gate_blockers.get("market_data") or [])
+
+    blockers.extend(str(item) for item in additional_blockers or [] if str(item))
+    return list(dict.fromkeys(blockers))
+
+
 def project_daily_candidate_financial_preflight(
     *,
     decision_payload: dict[str, Any],
@@ -252,6 +294,22 @@ def project_daily_candidate_financial_preflight(
             decision_plan_blockers.append(f"daily_trading_plan:{reason}")
     financial_gates.append(
         build_preflight_gate("decision_plan", decision_plan_blockers)
+    )
+    portfolio = object_dict(
+        object_dict(decision_payload.get("summary")).get("portfolio")
+    )
+    portfolio_valuation_status = (
+        str(portfolio.get("valuation_status") or "missing").strip().lower()
+    )
+    financial_gates.append(
+        build_preflight_gate(
+            "portfolio_valuation",
+            (
+                []
+                if portfolio_valuation_status == "complete"
+                else ["valuation_snapshot_not_complete"]
+            ),
+        )
     )
     financial_gates.append(
         build_preflight_gate(

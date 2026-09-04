@@ -4,11 +4,33 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 
-from core.types import AssetClass
+from core.types import AssetClass, Symbol
 from server.services.market_refresh_errors import provider_error_code
 
 logger = logging.getLogger(__name__)
+
+
+def fetch_provider_latest_with_timeout(
+    source,
+    symbol: str,
+    asset_class: AssetClass,
+    *,
+    timeout_seconds: float,
+) -> dict | None:
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="quote-provider")
+    future = executor.submit(source.fetch_latest, Symbol(symbol), asset_class)
+    try:
+        return future.result(timeout=max(float(timeout_seconds), 0.001))
+    except FutureTimeoutError as exc:
+        future.cancel()
+        raise TimeoutError(
+            f"provider fetch_latest timed out after {timeout_seconds:.1f}s"
+        ) from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def load_provider_quote_payload(
@@ -121,4 +143,4 @@ def load_provider_quote_payload(
     return payload
 
 
-__all__ = ("load_provider_quote_payload",)
+__all__ = ("fetch_provider_latest_with_timeout", "load_provider_quote_payload")

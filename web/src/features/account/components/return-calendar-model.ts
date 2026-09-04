@@ -21,7 +21,7 @@ export type ReturnCalendarBreakdownItem = {
 
 export type ReturnCalendarTimelinePoint = {
   date: string;
-  equity: number;
+  equity: number | null;
   delta: number;
   external_flow: number;
   market_pnl: number;
@@ -48,8 +48,8 @@ export type ReturnCalendarPosition = {
   name?: string | null;
   display_name?: string | null;
   asset_class?: string | null;
-  market_value: number;
-  unrealized_pnl: number;
+  market_value: number | null;
+  unrealized_pnl: number | null;
   realized_pnl: number;
 };
 
@@ -88,17 +88,21 @@ export function aggregateReturnTimeline(
   timeline.forEach((point) => {
     const label = toReturnBucket(point.date, bucket);
     const existing = groups.get(label);
-    const previousEquity = point.equity - point.delta;
+    const equity = point.equity;
+    const hasEquity = typeof equity === 'number';
+    const previousEquity = hasEquity ? equity - point.delta : 0;
     const missingPriceSymbols = point.missing_price_symbols ?? [];
     const valuationStatus =
-      missingPriceSymbols.length > 0
+      !hasEquity || missingPriceSymbols.length > 0
         ? 'missing'
         : normalizeValuationStatus(point.valuation_status);
     if (existing) {
       existing.delta += point.delta;
       existing.externalFlow += point.external_flow;
       existing.marketPnl += point.market_pnl;
-      existing.endEquity = point.equity;
+      if (hasEquity) {
+        existing.endEquity = equity;
+      }
       existing.valuationStatus = combineValuationStatus(
         existing.valuationStatus,
         valuationStatus,
@@ -119,7 +123,7 @@ export function aggregateReturnTimeline(
       externalFlow: point.external_flow,
       marketPnl: point.market_pnl,
       startEquity: previousEquity,
-      endEquity: point.equity,
+      endEquity: hasEquity ? equity : 0,
       valuationStatus,
       missingPriceSymbols: new Set(missingPriceSymbols),
       marketBreakdown: buildBreakdownMap(point.market_breakdown),
@@ -313,7 +317,7 @@ export function formatReturnPercent(value: number) {
   });
 }
 
-export function formatReturnCurrency(value: number) {
+export function formatReturnCurrency(value: number | null) {
   return formatCurrencyValue(value);
 }
 

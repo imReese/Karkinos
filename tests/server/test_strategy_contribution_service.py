@@ -180,6 +180,10 @@ def test_snapshot_identity_drift_blocks_replay(tmp_path) -> None:
 
 def test_sell_without_strategy_owned_inventory_is_blocked(tmp_path) -> None:
     db = _database(tmp_path)
+    # The account owns inventory, but that earlier buy is intentionally not
+    # linked to this strategy.  The canonical ledger rejects an impossible
+    # naked sell before contribution attribution is evaluated.
+    _post_fill(db, _fill(fill_id="ACCOUNT-INVENTORY", side="buy"))
     fill = _fill(side="sell")
     _post_fill(db, fill)
     _publish_quote(db)

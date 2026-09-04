@@ -46,8 +46,15 @@ from server.projections.portfolio_application import (
 from server.projections.portfolio_application import (
     using_persistent_cache as _using_persistent_cache,
 )
+from server.projections.portfolio_read_snapshot_persistence import (
+    portfolio_read_snapshot_for_state,
+)
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
+)
+from server.projections.quote_status import (
+    quote_valuation_blocker,
+    quote_valuation_status,
 )
 from server.services.asset_metadata import resolve_asset_metadata
 from server.services.market_hours import get_shanghai_now, is_cn_trading_session
@@ -72,6 +79,7 @@ def session_closed_market_bar_price(
     state,
     *,
     symbol: str,
+    instrument_type: str,
     latest_quote: dict | None,
 ) -> tuple[float | None, str | None]:
     latest_timestamp = _parse_quote_timestamp(
@@ -85,9 +93,26 @@ def session_closed_market_bar_price(
     now = get_shanghai_now()
     if trade_day != now.date() or is_cn_trading_session(now):
         return None, None
+    read_snapshot = portfolio_read_snapshot_for_state(state)
+    if read_snapshot is not None:
+        candidates = [
+            dict(row)
+            for row in read_snapshot.price_matrix_rows
+            if str(row.get("symbol") or "").strip() == symbol
+            and str(row.get("trade_date") or "") == trade_day.isoformat()
+            and row.get("price") not in {None, ""}
+        ]
+        if not candidates:
+            return None, None
+        row = max(candidates, key=lambda item: str(item.get("timestamp") or ""))
+        return float(row["price"]), trade_day.isoformat()
     if state.db is None or not hasattr(state.db, "get_market_bar_on_date_sync"):
         return None, None
-    market_bar = state.db.get_market_bar_on_date_sync(symbol, trade_day.isoformat())
+    market_bar = state.db.get_market_bar_on_date_sync(
+        symbol,
+        trade_day.isoformat(),
+        instrument_type=instrument_type,
+    )
     if not market_bar:
         return None, None
     close = market_bar.get("close", market_bar.get("price"))
@@ -111,11 +136,47 @@ def resolve_live_holding_latest_price(
     return latest_price_value
 
 
-def get_recent_quote_snapshots(state, symbol: str, limit: int = 2) -> list[dict]:
+def get_recent_quote_snapshots(
+    state,
+    symbol: str,
+    *,
+    instrument_type: str,
+    limit: int = 2,
+) -> list[dict]:
+    read_snapshot = portfolio_read_snapshot_for_state(state)
+    if read_snapshot is not None:
+        rows = [
+            dict(row)
+            for row in read_snapshot.intraday_quote_rows
+            if str(row.get("symbol") or "").strip() == symbol
+            and _live_instrument_type(
+                row.get("instrument_type")
+                or row.get("asset_type")
+                or row.get("asset_class")
+            )
+            == _live_instrument_type(instrument_type)
+        ]
+        rows.sort(
+            key=lambda row: (
+                str(row.get("timestamp") or ""),
+                int(row.get("id") or 0),
+            ),
+            reverse=True,
+        )
+        return rows[:limit]
     if state.db is None or not hasattr(state.db, "get_recent_quote_snapshots_sync"):
         return []
-    rows = state.db.get_recent_quote_snapshots_sync(symbol, limit=limit)
+    rows = state.db.get_recent_quote_snapshots_sync(
+        symbol,
+        limit=limit,
+        instrument_type=instrument_type,
+    )
     return rows if isinstance(rows, list) else []
+
+
+def _live_instrument_type(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    return "open_end_fund" if normalized in {"fund", "openend_fund"} else normalized
 
 
 def has_same_day_sell(
@@ -161,6 +222,7 @@ def build_live_holdings_response(
 
     groups: dict[str, list[LiveHoldingItemResponse]] = defaultdict(list)
     daily_ledger_entries = _read_daily_ledger_entries(state)
+    missing_price_symbols: list[str] = []
 
     for sym, pos in portfolio.positions.items():
         quantity = float(pos.quantity)
@@ -170,6 +232,10 @@ def build_live_holdings_response(
         symbol = str(sym)
         instrument = instruments.get(Symbol(symbol)) if instruments else None
         latest_quote = latest_quotes.get(symbol, {})
+        instrument_type = _live_instrument_type(
+            getattr(getattr(instrument, "instrument_type", None), "value", None)
+            or getattr(getattr(instrument, "asset_class", None), "value", None)
+        )
         asset_class = _normalize_asset_class(
             latest_quote.get("asset_class")
             or getattr(getattr(instrument, "asset_class", None), "value", None)
@@ -191,6 +257,14 @@ def build_live_holdings_response(
             latest_quote=latest_quote if latest_quote else None,
             latest_price_value=latest_price_value,
         )
+        quote_evidence_status = (
+            quote_valuation_status(latest_quote) if latest_quote else "missing"
+        )
+        valuation_available = (
+            latest_price_value is not None
+            and quote_evidence_status == "complete"
+            and bool(getattr(pos, "valuation_available", True))
+        )
         (
             today_change,
             today_change_pct,
@@ -204,18 +278,24 @@ def build_live_holdings_response(
             avg_cost=float(pos.avg_cost),
             latest_quote=latest_quote if latest_quote else None,
             latest_price_value=latest_price_value,
+            instrument_type=instrument_type,
             ledger_entries=daily_ledger_entries,
             now=resolved_now,
         )
+        if not valuation_available:
+            today_change = None
+            today_change_pct = None
         avg_cost = float(pos.avg_cost)
-        market_value = (
-            quantity * latest_price_value
-            if latest_price_value is not None
-            else float(pos.market_value)
-        )
+        market_value = quantity * latest_price_value if valuation_available else None
         cost_basis = quantity * avg_cost
-        since_buy_pnl = market_value - cost_basis
-        since_buy_pnl_pct = None if cost_basis == 0 else since_buy_pnl / cost_basis
+        since_buy_pnl = None if market_value is None else market_value - cost_basis
+        since_buy_pnl_pct = (
+            None
+            if cost_basis == 0 or since_buy_pnl is None
+            else since_buy_pnl / cost_basis
+        )
+        if not valuation_available:
+            missing_price_symbols.append(symbol)
         quote_status, stale_reason = _position_quote_presentation(
             state,
             symbol=symbol,
@@ -230,6 +310,9 @@ def build_live_holdings_response(
                 name=metadata.display_name,
                 display_name=metadata.display_name,
                 asset_class=metadata.asset_class,
+                instrument_type=getattr(
+                    getattr(instrument, "instrument_type", None), "value", None
+                ),
                 quantity=quantity,
                 avg_cost=avg_cost,
                 market_value=market_value,
@@ -249,32 +332,61 @@ def build_live_holdings_response(
                 refresh_policy=_refresh_policy(resolved_now),
                 using_persistent_cache=_using_persistent_cache(latest_quote),
                 nav_date=latest_quote.get("nav_date"),
+                valuation_available=valuation_available,
+                valuation_blockers=(
+                    []
+                    if valuation_available
+                    else [quote_valuation_blocker(latest_quote, symbol=symbol)]
+                ),
             )
         )
 
     response_groups: list[LiveHoldingGroupResponse] = []
     for asset_class, items in groups.items():
-        items.sort(key=lambda item: item.market_value, reverse=True)
+        items.sort(key=lambda item: item.market_value or 0.0, reverse=True)
         today_change_complete = all(item.today_change is not None for item in items)
+        valuation_complete = all(item.market_value is not None for item in items)
+        since_buy_complete = all(item.since_buy_pnl is not None for item in items)
         response_groups.append(
             LiveHoldingGroupResponse(
                 asset_class=asset_class,
                 label=_ASSET_CLASS_LABELS.get(asset_class, asset_class.upper()),
-                total_market_value=sum(item.market_value for item in items),
+                total_market_value=(
+                    sum(float(item.market_value) for item in items)
+                    if valuation_complete
+                    else None
+                ),
                 total_today_change=(
                     sum(float(item.today_change) for item in items)
                     if today_change_complete
                     else None
                 ),
-                total_since_buy_pnl=sum(item.since_buy_pnl for item in items),
+                total_since_buy_pnl=(
+                    sum(float(item.since_buy_pnl) for item in items)
+                    if since_buy_complete
+                    else None
+                ),
                 items=items,
             )
         )
 
-    response_groups.sort(key=lambda group: -group.total_market_value)
+    response_groups.sort(key=lambda group: -(group.total_market_value or 0.0))
+    valuation_blockers = sorted(
+        {
+            blocker
+            for group in response_groups
+            for item in group.items
+            for blocker in item.valuation_blockers
+        }
+    )
+    valuation_identity = valuation_identity_fields(valuation_snapshot)
+    if valuation_blockers:
+        valuation_identity["valuation_status"] = "blocked"
     return LiveHoldingsResponse(
         groups=response_groups,
-        **valuation_identity_fields(valuation_snapshot),
+        missing_price_symbols=sorted(missing_price_symbols),
+        valuation_blockers=valuation_blockers,
+        **valuation_identity,
     )
 
 

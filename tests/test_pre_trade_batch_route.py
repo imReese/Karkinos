@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from fastapi.routing import APIRoute
@@ -16,6 +17,17 @@ def _route(router, path: str, method: str = "POST"):
         if isinstance(route, APIRoute)
         and route.path == path
         and method in route.methods
+    )
+
+
+def _freeze_valuation_clock(monkeypatch, now: datetime) -> None:
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda value=None: now,
+    )
+    monkeypatch.setattr(
+        "server.projections.quote_status.get_shanghai_now",
+        lambda value=None: now,
     )
 
 
@@ -98,7 +110,9 @@ def _publish_complete_valuation(
         quote_source="deterministic_fixture",
         quote_status="confirmed",
     )
-    return db.publish_current_valuation_snapshot_sync()
+    return db.publish_current_valuation_snapshot_sync(
+        now=datetime(2026, 7, 2, 1, 31, tzinfo=timezone.utc)
+    )
 
 
 def test_decision_batch_pre_trade_risk_route_runs_without_creating_orders(
@@ -109,6 +123,10 @@ def test_decision_batch_pre_trade_risk_route_runs_without_creating_orders(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _freeze_valuation_clock(
+        monkeypatch,
+        datetime(2026, 7, 2, 1, 31, tzinfo=timezone.utc),
+    )
     _add_action(db)
     published = _publish_complete_valuation(db)
     fake_state = SimpleNamespace(
@@ -143,6 +161,10 @@ def test_decision_batch_pre_trade_risk_route_applies_cash_bounded_allocation(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _freeze_valuation_clock(
+        monkeypatch,
+        datetime(2026, 7, 2, 1, 31, tzinfo=timezone.utc),
+    )
     _add_action(db)
     _publish_complete_valuation(db, existing_position_value=95000.0)
     portfolio = SimpleNamespace(
@@ -180,6 +202,10 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _freeze_valuation_clock(
+        monkeypatch,
+        datetime(2026, 7, 2, 1, 31, tzinfo=timezone.utc),
+    )
     _add_action(db)
     published = _publish_complete_valuation(db)
     db.get_account_truth_score_sync = lambda: {
@@ -209,6 +235,7 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
     )
     fake_state = SimpleNamespace(
         db=db,
+        require_database=lambda: db,
         config=SimpleNamespace(initial_cash=0.0, assets=[]),
         trading_controls=TradingControlState(db=db),
         scheduler=scheduler,
@@ -276,6 +303,10 @@ def test_decision_batch_pre_trade_risk_blocks_unconfirmed_fund_without_writes(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _freeze_valuation_clock(
+        monkeypatch,
+        datetime(2026, 7, 2, 6, 31, tzinfo=timezone.utc),
+    )
     db.insert_ledger_entry_sync(
         entry_type="cash_deposit",
         timestamp="2026-07-02T09:00:00+08:00",
@@ -312,7 +343,9 @@ def test_decision_batch_pre_trade_risk_blocks_unconfirmed_fund_without_writes(
         quote_source="eastmoney_fund_estimate",
         quote_status="live",
     )
-    published = db.publish_current_valuation_snapshot_sync()
+    published = db.publish_current_valuation_snapshot_sync(
+        now=datetime(2026, 7, 2, 6, 31, tzinfo=timezone.utc)
+    )
     fake_state = SimpleNamespace(
         db=db,
         config=SimpleNamespace(initial_cash=0.0, assets=[]),
@@ -329,7 +362,7 @@ def test_decision_batch_pre_trade_risk_blocks_unconfirmed_fund_without_writes(
     first = asyncio.run(endpoint())
     second = asyncio.run(endpoint())
 
-    assert published["status"] == "degraded"
+    assert published["status"] == "complete"
     assert first == second
     assert first["status"] == "blocked_by_data_quality"
     assert first["processed_count"] == 0
@@ -338,8 +371,10 @@ def test_decision_batch_pre_trade_risk_blocks_unconfirmed_fund_without_writes(
     assert first["database_writes_performed"] is False
     assert first["valuation_snapshot_id"] == published["snapshot_id"]
     assert {blocker["code"] for blocker in first["blockers"]} >= {
-        "valuation_snapshot_not_complete",
         "candidate_market_data_not_complete",
+    }
+    assert "valuation_snapshot_not_complete" not in {
+        blocker["code"] for blocker in first["blockers"]
     }
     assert db.get_risk_decisions_sync() == []
     action = db.get_action_tasks_sync()[0]

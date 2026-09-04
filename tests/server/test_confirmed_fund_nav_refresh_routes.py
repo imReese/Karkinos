@@ -291,3 +291,41 @@ def test_confirmed_fund_nav_refresh_rejects_non_fund_before_provider_contact(
     assert source.calls == []
     assert db.list_quote_fetch_runs() == []
     assert db.get_ledger_entries_sync(limit=100) == []
+
+
+def test_confirmed_fund_nav_refresh_keeps_exact_fund_lane_with_same_symbol_stock(
+    monkeypatch,
+    tmp_path,
+    inline_market_fetch,
+):
+    from server.routes.market import ConfirmedFundNavRefreshRequest
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    source = DeterministicConfirmedFundNavSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {
+            "deterministic_fixture": source,
+            "akshare": source,
+        },
+    )
+    state = _state(db)
+    state.config.assets.append(
+        {
+            "symbol": "FUND-A",
+            "asset_class": "stock",
+            "display_name": "同码股票",
+        }
+    )
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
+
+    response = asyncio.run(
+        _route_endpoint()(ConfirmedFundNavRefreshRequest(symbols=["FUND-A"]))
+    )
+
+    assert response.status == "success"
+    assert response.refreshed_symbols == ["FUND-A"]
+    assert source.calls == ["FUND-A"]

@@ -134,6 +134,7 @@ class AiShadowResearchAutomationService(
         provider_call_runway_seconds: int = (
             SHADOW_RESEARCH_SINGLE_PROVIDER_CALL_RUNWAY_SECONDS
         ),
+        execution_guard: Callable[[], None] | None = None,
     ) -> None:
         self._state = state
         self._db = state.require_database()
@@ -149,6 +150,11 @@ class AiShadowResearchAutomationService(
         self._provider_call_window_policy = provider_call_window_policy
         self._provider_runway_seconds = provider_runway_seconds
         self._provider_call_runway_seconds = provider_call_runway_seconds
+        self._execution_guard = execution_guard
+
+    def _require_execution_current(self) -> None:
+        if self._execution_guard is not None:
+            self._execution_guard()
 
     def _build_corrected_panel_rearm_evidence(
         self, prepared: PreparedBaseline
@@ -171,6 +177,7 @@ def build_ai_shadow_research_automation_service(
     state: AppState,
     *,
     research_service_builder: Callable[[bool], StrategyResearchService],
+    execution_guard: Callable[[], None] | None = None,
 ) -> AiShadowResearchAutomationService:
     from server.composition.ai_shadow_research_automation import (
         compose_ai_shadow_research_automation_service,
@@ -180,30 +187,58 @@ def build_ai_shadow_research_automation_service(
         state,
         research_service_builder=research_service_builder,
         service_type=AiShadowResearchAutomationService,
+        execution_guard=execution_guard,
     )
 
 
 async def run_ai_shadow_research_automation_loop(
     *,
     state: AppState,
-    research_service_builder: Callable[[bool], StrategyResearchService],
+    job_scheduler_builder: Callable[[], Any],
+    qualification_service_builder: Callable[[], Any] | None = None,
     interval_seconds: float = 300.0,
 ) -> None:
-    """Poll a read-mostly standing policy and run once per new evidence identity."""
-    service: AiShadowResearchAutomationService | None = None
+    """Run provider-free qualification and enqueue isolated research work."""
+    qualification_service: Any | None = None
+    job_scheduler: Any | None = None
     while True:
         await wait_for_release_activation()
         try:
-            if service is None:
-                service = build_ai_shadow_research_automation_service(
-                    state,
-                    research_service_builder=research_service_builder,
-                )
-            await service.run_once()
+            if job_scheduler is None:
+                job_scheduler = job_scheduler_builder()
+            await asyncio.to_thread(job_scheduler.enqueue_if_authorized)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.warning(
-                "Shadow research automation loop failed closed", exc_info=True
+                "Shadow research durable enqueue failed closed", exc_info=True
             )
+        if qualification_service_builder is not None:
+            try:
+                if qualification_service is None:
+                    qualification_service = qualification_service_builder()
+                qualification_result = await qualification_service.run_once()
+                if qualification_result.get("status") in {"blocked", "failed"}:
+                    attempt = qualification_result.get("qualification_attempt") or {}
+                    run = qualification_result.get("run") or {}
+                    logger.warning(
+                        "Shadow research account qualification returned %s "
+                        "for source_run_id=%s failure_code=%s blockers=%s "
+                        "attempt_id=%s",
+                        qualification_result.get("status"),
+                        attempt.get("source_run_id") or run.get("source_run_id"),
+                        qualification_result.get("failure_code")
+                        or run.get("failure_code"),
+                        qualification_result.get("blockers")
+                        or run.get("blockers")
+                        or [],
+                        attempt.get("attempt_id"),
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning(
+                    "Shadow research account qualification failed closed",
+                    exc_info=True,
+                )
         await asyncio.sleep(max(30.0, interval_seconds))

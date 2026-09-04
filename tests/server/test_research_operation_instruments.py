@@ -78,8 +78,7 @@ def test_research_operation_names_are_one_bounded_persisted_batch_read() -> None
 
 def test_research_operation_name_lookup_prioritizes_buys_and_caps_at_40() -> None:
     exits = [
-        _operation(f"6{index:05d}", "exit_if_held_candidate")
-        for index in range(45)
+        _operation(f"6{index:05d}", "exit_if_held_candidate") for index in range(45)
     ]
     preview = {
         "status": "available",
@@ -102,7 +101,10 @@ def test_unavailable_research_preview_does_not_read_metadata() -> None:
 
     result = build_research_operation_instruments(
         db,
-        {"status": "unavailable", "operations": [_operation("000155", "buy_candidate")]},
+        {
+            "status": "unavailable",
+            "operations": [_operation("000155", "buy_candidate")],
+        },
     )
 
     assert db.calls == []

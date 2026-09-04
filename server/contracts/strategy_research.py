@@ -11,10 +11,10 @@ from typing import Any
 from core.types import BarFrequency
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.formula_dsl import (
-    CANONICAL_COST_MODEL_REFERENCE,
     is_operator_approved_cost_model_reference,
 )
-from server.ai_runtime.strategy_research_privacy import (
+from server.contracts.normalized_strategy_research import (
+    CANONICAL_COST_MODEL_REFERENCE,
     NORMALIZED_RESEARCH_NOTIONAL,
     NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
 )

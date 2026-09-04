@@ -58,11 +58,12 @@ export function RiskBridgePanel({
             return {
               id: item.key,
               label,
-              value: formatRiskCurrency(item.value),
+              value:
+                item.value === null ? '--' : formatRiskCurrency(item.value),
               tone:
-                isPnlMetric && item.value > 0
+                isPnlMetric && item.value !== null && item.value > 0
                   ? ('pnl-positive' as const)
-                  : isPnlMetric && item.value < 0
+                  : isPnlMetric && item.value !== null && item.value < 0
                     ? ('pnl-negative' as const)
                     : ('neutral' as const),
             };
@@ -207,21 +208,25 @@ export function RiskPositionsPanel({
                 )}
               </div>
               <div className="text-sm font-medium tabular-nums sm:text-right">
-                {formatRiskCurrency(item.market_value)}
+                {item.market_value === null
+                  ? '--'
+                  : formatRiskCurrency(item.market_value)}
               </div>
               <div className="app-muted text-sm">
                 {copy.explainability.quantity} {formatQuantity(item.quantity)} ·{' '}
                 {copy.portfolio.table.unrealized}{' '}
                 <span
                   className={
-                    item.unrealized_pnl < 0
+                    item.unrealized_pnl !== null && item.unrealized_pnl < 0
                       ? 'text-[var(--app-pnl-negative)]'
-                      : item.unrealized_pnl > 0
+                      : item.unrealized_pnl !== null && item.unrealized_pnl > 0
                         ? 'text-[var(--app-pnl-positive)]'
                         : 'text-[var(--app-pnl-neutral)]'
                   }
                 >
-                  {formatRiskCurrency(item.unrealized_pnl)}
+                  {item.unrealized_pnl === null
+                    ? '--'
+                    : formatRiskCurrency(item.unrealized_pnl)}
                 </span>
               </div>
               {item.last_activity_at ? (
@@ -282,7 +287,7 @@ export function RiskTimelinePanel({
           items={items.map((point) => ({
             id: `${point.date}-${point.equity}`,
             timestamp: point.date,
-            title: `${copy.explainability.equity} ${formatRiskCurrency(point.equity)}`,
+            title: `${copy.explainability.equity} ${point.equity === null ? '--' : formatRiskCurrency(point.equity)}`,
             description: `${copy.explainability.netChange} ${formatRiskCurrency(point.delta)} · ${copy.explainability.externalFlow} ${formatRiskCurrency(point.external_flow)} · ${copy.explainability.marketPnl} ${formatRiskCurrency(point.market_pnl)}`,
             evidence:
               point.events.length > 0 ? (

@@ -12,7 +12,13 @@ import pandas as pd
 import pytest
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
-from core.types import AssetClass, BarFrequency, CommissionType, Symbol
+from core.types import (
+    AssetClass,
+    BarFrequency,
+    CommissionType,
+    InstrumentType,
+    Symbol,
+)
 from data.handler import DataHandler
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
@@ -34,6 +40,7 @@ from server.ai_runtime.orchestrator import _failure_code as _workflow_failure_co
 from server.ai_runtime.provider_call_window import (
     DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
     ProviderCallDeferred,
+    ProviderExecutionFenced,
     ProviderSendAdmission,
 )
 from server.ai_runtime.provider_connectivity import (
@@ -440,13 +447,20 @@ def _service(
         provider_name="deterministic_fixture",
         data_source="deterministic_fixture",
         adjustment_mode="none",
+        instrument_type=InstrumentType.STOCK,
     )
     snapshot = build_backtest_dataset_snapshot(
         start_date="2025-01-02",
         end_date="2025-01-09",
         configured_source="deterministic_fixture",
         data_handlers={
-            symbol: DataHandler(bars, symbol, BarFrequency.DAILY, AssetClass.STOCK)
+            symbol: DataHandler(
+                bars,
+                symbol,
+                BarFrequency.DAILY,
+                AssetClass.STOCK,
+                InstrumentType.STOCK,
+            )
         },
         store=market,
         source_names=["akshare", "deterministic_fixture"],
@@ -793,6 +807,60 @@ async def test_strategy_hypothesis_crossing_nine_is_blocked_at_send_edge(
         "deepseek_peak_pricing_window",
     )
     assert json.loads(agent["response_json"])["provider_contact_performed"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_strategy_provider_discards_response_when_post_send_fence_is_lost(
+    tmp_path,
+) -> None:
+    events: list[str] = []
+
+    class Fence:
+        def require_current(self) -> None:
+            events.append("current")
+
+        def begin_provider_send(self, *, timeout_seconds: float) -> object:
+            events.append(f"begin:{timeout_seconds:g}")
+            return "generation-1-send-1"
+
+        def finish_provider_send(self, token: object) -> None:
+            events.append(f"finish:{token}")
+            raise ProviderExecutionFenced("research_worker_provider_response_fenced")
+
+    service, selection, transport, db_path = _service(
+        tmp_path,
+        provider_send_admission=ProviderSendAdmission(
+            policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+            now=lambda: datetime.fromisoformat("2026-07-15T12:00:00+00:00"),
+            execution_fence=Fence(),
+        ),
+    )
+
+    with pytest.raises(
+        ProviderExecutionFenced, match="research_worker_provider_response_fenced"
+    ):
+        await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key="post-send-fenced",
+                requested_by="automation:test",
+                account_alias="synthetic-research-only",
+                research_question="Generate one bounded formula hypothesis.",
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            )
+        )
+
+    assert len(transport.calls) == 1
+    assert events[-3:] == ["begin:180", "current", "finish:generation-1-send-1"]
+    with sqlite3.connect(db_path) as conn:
+        draft_count = conn.execute(
+            "SELECT COUNT(*) FROM ai_strategy_hypothesis_drafts"
+        ).fetchone()[0]
+        artifact_count = conn.execute("SELECT COUNT(*) FROM ai_artifacts").fetchone()[0]
+    assert draft_count == 0
+    assert artifact_count == 0
 
 
 @pytest.mark.unit
@@ -1750,6 +1818,7 @@ async def test_persisted_dataset_drift_blocks_formula_backtest_before_engine_run
         provider_name="deterministic_fixture",
         data_source="deterministic_fixture",
         adjustment_mode="none",
+        instrument_type=InstrumentType.STOCK,
     )
 
     with pytest.raises(Exception, match="dataset_snapshot_drift"):

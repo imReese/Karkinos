@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.routing import APIRoute
@@ -178,6 +180,16 @@ def test_closed_ledger_position_is_historical_but_not_current_across_consumers(
         db=db,
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda: datetime(2026, 7, 10, 15, 5, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: now
+        or datetime(2026, 7, 10, 15, 5, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
 
     portfolio_router = portfolio_routes.create_router()
     snapshot = asyncio.run(_endpoint(portfolio_router, "/api/portfolio")())

@@ -572,7 +572,11 @@ def _persisted_window_ready(
     end_date: str,
     minimum_rows: int,
 ) -> bool:
-    frame = data_store.load_bars(symbol, BarFrequency.DAILY)
+    frame = data_store.load_bars(
+        symbol,
+        BarFrequency.DAILY,
+        instrument_type="stock",
+    )
     if frame is None or frame.empty or "timestamp" not in frame.columns:
         return False
     timestamps = pd.to_datetime(frame["timestamp"])

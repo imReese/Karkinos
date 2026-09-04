@@ -72,12 +72,19 @@ def create_router(dependencies: RefreshEndpointDependencies) -> APIRouter:
         watchlist_assets = dependencies.with_default_market_indices(
             dependencies.merged_watchlist_assets(state)
         )
-        asset_class_by_symbol = {
-            asset_cfg["symbol"]: dependencies.asset_class_map.get(
-                asset_cfg["asset_class"], AssetClass.STOCK
+        asset_class_by_symbol: dict[str, AssetClass] = {}
+        for asset_cfg in watchlist_assets:
+            # User/config/ledger assets precede built-in market indices. A
+            # symbol-only public request keeps that stable preference here;
+            # refresh_one_quote still resolves and validates exact identity
+            # before any quote is persisted.
+            asset_class_by_symbol.setdefault(
+                asset_cfg["symbol"],
+                dependencies.asset_class_map.get(
+                    asset_cfg["asset_class"],
+                    AssetClass.STOCK,
+                ),
             )
-            for asset_cfg in watchlist_assets
-        }
         dependencies.create_manual_quote_fetch_run(
             state,
             run_id=run_id,

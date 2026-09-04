@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -21,6 +21,20 @@ DEEPSEEK_CALL_WINDOW_POLICY_ID = "deepseek.beijing_weekday_peak.v1"
 DEEPSEEK_PEAK_WINDOW_FAILURE_CODE = "deepseek_peak_pricing_window"
 DEEPSEEK_RUNWAY_FAILURE_CODE = "deepseek_off_peak_runway_insufficient"
 PROVIDER_CALL_COMPLETION_GUARD_SECONDS = 5
+
+
+class ProviderExecutionFenced(RuntimeError):
+    """Raised when an isolated worker generation may no longer act."""
+
+
+class ProviderExecutionFence(Protocol):
+    """Durably fence blocking transport work to one worker lease generation."""
+
+    def require_current(self) -> None: ...
+
+    def begin_provider_send(self, *, timeout_seconds: float) -> object: ...
+
+    def finish_provider_send(self, token: object) -> None: ...
 
 
 def is_deepseek_endpoint(endpoint_origin: str | None) -> bool:
@@ -281,10 +295,12 @@ class ProviderSendAdmission:
         policy: ProviderCallWindowPolicy,
         now: Callable[[], datetime] | None = None,
         minimum_runway: timedelta = timedelta(0),
+        execution_fence: ProviderExecutionFence | None = None,
     ) -> None:
         self._policy = policy
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._minimum_runway = minimum_runway
+        self._execution_fence = execution_fence
 
     @property
     def policy(self) -> ProviderCallWindowPolicy:
@@ -294,10 +310,36 @@ class ProviderSendAdmission:
         return self._policy.evaluate(self._now(), minimum_runway=self._minimum_runway)
 
     def require_allowed(self) -> ProviderCallWindowDecision:
+        if self._execution_fence is not None:
+            self._execution_fence.require_current()
         decision = self.decision()
         if not decision.allowed:
             raise ProviderCallDeferred(decision)
         return decision
+
+    def begin_send(self, *, timeout_seconds: float) -> object | None:
+        """Apply all gates and durably register a blocking transport call."""
+
+        self.require_allowed()
+        if self._execution_fence is None:
+            return None
+        token = self._execution_fence.begin_provider_send(
+            timeout_seconds=timeout_seconds
+        )
+        self.require_allowed()
+        return token
+
+    def finish_send(self, token: object | None) -> None:
+        """Fence the response before it may enter parsing or persistence."""
+
+        if self._execution_fence is not None:
+            self._execution_fence.finish_provider_send(token)
+            try:
+                self.require_allowed()
+            except ProviderCallDeferred as exc:
+                raise ProviderExecutionFenced(
+                    "research_worker_provider_window_closed_after_send"
+                ) from exc
 
 
 DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY = ProviderCallWindowPolicy(
@@ -325,6 +367,7 @@ def provider_send_admission_for(
     endpoint_origin: str | None = None,
     now: Callable[[], datetime] | None = None,
     minimum_runway: timedelta = timedelta(0),
+    execution_fence: ProviderExecutionFence | None = None,
 ) -> ProviderSendAdmission | None:
     if not is_deepseek_provider_endpoint(provider_id, endpoint_origin):
         return None
@@ -332,4 +375,5 @@ def provider_send_admission_for(
         policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
         now=now,
         minimum_runway=minimum_runway,
+        execution_fence=execution_fence,
     )

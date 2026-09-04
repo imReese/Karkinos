@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from server.contracts.http.market_models import (
     KlineBar,
     MarketQuote,
@@ -17,6 +17,32 @@ from server.contracts.http.market_models import (
 from server.http.market_endpoints.dependencies import WatchlistEndpointDependencies
 
 WatchlistLoader = Callable[[], Awaitable[list[WatchlistItem]]]
+
+
+def _resolve_instrument_type(
+    assets: list[dict[str, object]],
+    *,
+    symbol: str,
+    explicit: str | None,
+) -> InstrumentType | None:
+    if explicit is not None:
+        try:
+            return InstrumentType.from_persisted(explicit)
+        except ValueError:
+            return None
+    identities: set[InstrumentType] = set()
+    for asset in assets:
+        if str(asset.get("symbol") or "").strip() != symbol:
+            continue
+        try:
+            identities.add(
+                InstrumentType.from_persisted(
+                    asset.get("instrument_type") or asset.get("asset_class")
+                )
+            )
+        except ValueError:
+            return None
+    return next(iter(identities)) if len(identities) == 1 else None
 
 
 def create_router(
@@ -48,6 +74,8 @@ def create_router(
                 WatchlistItem(
                     symbol=sym,
                     asset_class=ac,
+                    instrument_type=asset_cfg.get("instrument_type"),
+                    identity_provenance=asset_cfg.get("identity_provenance"),
                     name=str(asset_cfg.get("display_name") or sym),
                     is_holding=position is not None,
                     quantity=None if position is None else float(position.quantity),
@@ -78,6 +106,29 @@ def create_router(
         symbol = request.symbol.strip()
         if not symbol:
             raise HTTPException(status_code=400, detail="symbol is required")
+        try:
+            instrument_type = InstrumentType.from_persisted(
+                request.instrument_type or request.asset_class
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="instrument_type is required and must be supported",
+            ) from exc
+        compatible_asset_classes = {
+            InstrumentType.STOCK: {"stock"},
+            InstrumentType.ETF: {"etf", "fund"},
+            InstrumentType.OPEN_END_FUND: {"open_end_fund", "fund"},
+            InstrumentType.GOLD: {"gold"},
+            InstrumentType.BOND: {"bond"},
+            InstrumentType.INDEX: {"index"},
+        }
+        normalized_asset_class = request.asset_class.strip().lower().replace("-", "_")
+        if normalized_asset_class not in compatible_asset_classes[instrument_type]:
+            raise HTTPException(
+                status_code=400,
+                detail="asset_class conflicts with instrument_type",
+            )
         if any(
             asset["symbol"].lower() == symbol.lower()
             for asset in _merged_watchlist_assets(state)
@@ -91,6 +142,7 @@ def create_router(
         upsert_watchlist(
             symbol=symbol,
             asset_class=request.asset_class,
+            instrument_type=instrument_type.value,
             display_name=symbol,
             source="manual",
         )
@@ -115,26 +167,35 @@ def create_router(
     async def get_quote(
         symbol: str,
         background_tasks: BackgroundTasks,
+        instrument_type: str | None = None,
     ) -> MarketQuote:
         """只读取持久化报价事实；行情刷新必须走显式命令接口。"""
         del background_tasks
         from server.dependencies import get_app_state
 
         state = get_app_state()
-        asset_class = _ASSET_CLASS_MAP.get(
-            next(
-                (
-                    asset["asset_class"]
-                    for asset in _merged_watchlist_assets(state)
-                    if asset["symbol"] == symbol
-                ),
-                AssetClass.STOCK.value,
-            ),
-            AssetClass.STOCK,
+        assets = _merged_watchlist_assets(state)
+        resolved_type = _resolve_instrument_type(
+            assets,
+            symbol=symbol,
+            explicit=instrument_type,
+        )
+        if resolved_type is None:
+            raise HTTPException(
+                status_code=422,
+                detail="instrument identity is missing or ambiguous",
+            )
+        asset_class = (
+            AssetClass.FUND
+            if resolved_type in {InstrumentType.ETF, InstrumentType.OPEN_END_FUND}
+            else _ASSET_CLASS_MAP.get(resolved_type.value, AssetClass.STOCK)
         )
 
         if state.db is not None:
-            cached = await state.db.get_latest_quote(symbol)
+            cached = await state.db.get_latest_quote(
+                symbol,
+                instrument_type=resolved_type.value,
+            )
             if cached:
                 return MarketQuote(**cached)
 
@@ -146,9 +207,19 @@ def create_router(
         start: str = "2025-01-02",
         end: str = _DEFAULT_END_DATE,
         interval: str = "1d",
+        instrument_type: str | None = None,
     ) -> list[KlineBar]:
         """只读取已持久化历史 K 线；远端同步必须走 bars/backfill。"""
         from server.bootstrap import resolve_data_dir
+        from server.dependencies import get_app_state
+
+        resolved_type = _resolve_instrument_type(
+            _merged_watchlist_assets(get_app_state()),
+            symbol=symbol,
+            explicit=instrument_type,
+        )
+        if resolved_type is None:
+            return []
 
         def _load_bars() -> list[KlineBar]:
             frequency = {
@@ -164,6 +235,7 @@ def create_router(
             rows = _read_market_bars(
                 store_path,
                 symbol=str(Symbol(symbol)),
+                instrument_type=resolved_type.value,
                 frequency=frequency.value,
                 start_at=start_at,
                 end_exclusive=end_exclusive,

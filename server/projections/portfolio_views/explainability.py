@@ -262,7 +262,7 @@ def equity_series_components_by_date(
 
 
 def build_timeline(
-    equity_curve: list[EquityPoint],
+    equity_curve: list[EquityPoint | EquitySeriesPoint],
     entries: list[dict],
     *,
     state=None,
@@ -387,9 +387,12 @@ def build_timeline(
     previous_missing_price_symbols: list[str] = []
     for point in equity_curve:
         point_date = point.timestamp.split("T")[0]
+        point_equity = optional_float(
+            getattr(point, "equity", getattr(point, "total", None))
+        )
         point_components = (component_values_by_date or {}).get(point_date)
         if from_date and point_date < from_date:
-            previous_equity = point.equity
+            previous_equity = point_equity
             previous_components = point_components
             previous_valuation_status = (valuation_status_by_date or {}).get(
                 point_date, "complete"
@@ -401,13 +404,17 @@ def build_timeline(
         if to_date and point_date > to_date:
             continue
         external_flow = external_flow_by_date.get(point_date, 0.0)
-        daily_performance = calculate_account_daily_performance(
-            starting_equity=previous_equity,
-            ending_equity=point.equity,
-            external_flow=external_flow,
-        )
-        delta = daily_performance.equity_delta
-        market_pnl = daily_performance.market_move
+        if point_equity is None:
+            delta = 0.0
+            market_pnl = 0.0
+        else:
+            daily_performance = calculate_account_daily_performance(
+                starting_equity=previous_equity,
+                ending_equity=point_equity,
+                external_flow=external_flow,
+            )
+            delta = daily_performance.equity_delta
+            market_pnl = daily_performance.market_move
         point_valuation_status = (valuation_status_by_date or {}).get(
             point_date, "complete"
         )
@@ -417,17 +424,26 @@ def build_timeline(
         valuation_status = point_valuation_status
         missing_price_symbols = point_missing_price_symbols
         if previous_equity is not None and (
-            point_valuation_status in {"missing", "partial"}
-            or previous_valuation_status in {"missing", "partial"}
+            is_missing_equity_quote_status(point_valuation_status)
+            or is_missing_equity_quote_status(previous_valuation_status)
+            or point_valuation_status == "partial"
+            or previous_valuation_status == "partial"
         ):
-            valuation_status = "missing"
+            valuation_status = (
+                "missing"
+                if "partial" in {point_valuation_status, previous_valuation_status}
+                else merge_equity_series_quote_status(
+                    point_valuation_status,
+                    previous_valuation_status,
+                )
+            )
             market_pnl = 0.0
             missing_price_symbols = sorted(
                 set(missing_price_symbols) | set(previous_missing_price_symbols)
             )
         market_breakdown: list[ExplainabilityTimelineBreakdownItem] = []
         if (
-            valuation_status != "missing"
+            not is_missing_equity_quote_status(valuation_status)
             and previous_components is not None
             and point_components is not None
         ):
@@ -454,7 +470,7 @@ def build_timeline(
         timeline.append(
             ExplainabilityTimelinePoint(
                 date=point_date,
-                equity=point.equity,
+                equity=point_equity,
                 delta=delta,
                 external_flow=external_flow,
                 market_pnl=market_pnl,
@@ -465,7 +481,7 @@ def build_timeline(
                 external_flow_breakdown=external_flow_breakdown,
             )
         )
-        previous_equity = point.equity
+        previous_equity = point_equity
         previous_components = point_components
         previous_valuation_status = point_valuation_status
         previous_missing_price_symbols = point_missing_price_symbols
@@ -496,7 +512,11 @@ def build_position_drivers(
         drivers.append(
             ExplainabilityPositionDriver(
                 symbol=position.symbol,
-                asset_class=asset_class_by_symbol.get(position.symbol, "stock"),
+                asset_class=(
+                    asset_class_by_symbol.get(position.symbol)
+                    or position.asset_class
+                    or "other"
+                ),
                 quantity=position.quantity,
                 avg_cost=position.avg_cost,
                 market_value=position.market_value,
@@ -512,8 +532,19 @@ def build_position_drivers(
 def build_equity_bridge(
     snapshot: PortfolioSnapshot, summary: AccountOverview
 ) -> list[ExplainabilityBridgeItem]:
-    market_value = max(snapshot.total_equity - snapshot.cash, 0)
-    total_pnl = summary.realized_pnl + summary.unrealized_pnl
+    valuation_available = (
+        snapshot.total_equity is not None and summary.unrealized_pnl is not None
+    )
+    market_value = (
+        max(snapshot.total_equity - snapshot.cash, 0)
+        if snapshot.total_equity is not None
+        else None
+    )
+    total_pnl = (
+        summary.realized_pnl + summary.unrealized_pnl
+        if summary.unrealized_pnl is not None
+        else None
+    )
     return [
         ExplainabilityBridgeItem(
             key="deposits",
@@ -531,7 +562,11 @@ def build_equity_bridge(
             key="unrealized",
             label="Unrealized PnL",
             value=summary.unrealized_pnl,
-            detail="Mark-to-market move on current positions.",
+            detail=(
+                "Mark-to-market move on current positions."
+                if valuation_available
+                else "Unavailable because current market evidence is incomplete."
+            ),
         ),
         ExplainabilityBridgeItem(
             key="cash",
@@ -543,13 +578,21 @@ def build_equity_bridge(
             key="market_value",
             label="Market Value",
             value=market_value,
-            detail="Current marked value of open positions.",
+            detail=(
+                "Current marked value of open positions."
+                if valuation_available
+                else "Unavailable because current market evidence is incomplete."
+            ),
         ),
         ExplainabilityBridgeItem(
             key="equity",
             label="Total Equity",
             value=snapshot.total_equity,
-            detail=f"Deposits plus total PnL ({total_pnl:.2f}).",
+            detail=(
+                f"Deposits plus total PnL ({total_pnl:.2f})."
+                if total_pnl is not None
+                else "Unavailable because current market evidence is incomplete."
+            ),
         ),
     ]
 
@@ -559,6 +602,7 @@ def merge_equity_series_quote_status(current: str, candidate: str) -> str:
         "missing": 50,
         "error": 50,
         "confirmed_nav_missing": 40,
+        "degraded": 35,
         "estimated": 30,
         "stale": 20,
         "cache": 10,
@@ -571,7 +615,14 @@ def merge_equity_series_quote_status(current: str, candidate: str) -> str:
 
 
 def is_missing_equity_quote_status(status: str | None) -> bool:
-    return str(status or "").strip().lower() in {"missing", "error"}
+    return str(status or "").strip().lower() in {
+        "missing",
+        "error",
+        "degraded",
+        "estimated",
+        "confirmed_nav_missing",
+        "confirmed_fund_nav_missing_estimate_only",
+    }
 
 
 __all__ = (

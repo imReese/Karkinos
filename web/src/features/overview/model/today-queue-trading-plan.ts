@@ -139,9 +139,6 @@ function visibleResearchOperationPreview(
   const preview = tradingPlan?.research_operation_preview;
   if (
     !tradingPlan ||
-    tradingPlan.candidate_pool_count !== 0 ||
-    tradingPlan.blocked_count !== 0 ||
-    tradingPlan.order_intent_count !== 0 ||
     preview?.schema_version !==
       'karkinos.decision.research_operation_preview.v1' ||
     preview.status !== 'available' ||
@@ -261,7 +258,11 @@ export function buildDecisionQueueItem({
 }): TodayQueueItem {
   const labels = copy.overview.dashboard;
   const candidates = todayDecision?.candidates ?? [];
-  const researchPreview = visibleResearchOperationPreview(tradingPlan);
+  const accountRecommendation =
+    tradingPlan?.account_action_recommendation?.schema_version ===
+    'karkinos.decision.account_action_recommendation.v1'
+      ? tradingPlan.account_action_recommendation
+      : null;
   const leadingCandidate = candidates[0];
   const decisionActionLabel = leadingCandidate
     ? (labels.decisionActionLabels[leadingCandidate.action] ??
@@ -276,56 +277,61 @@ export function buildDecisionQueueItem({
     )?.cash_shortfall ?? 0;
   const title = tradingPlanError
     ? labels.tradingPlanUnavailable
-    : tradingPlan?.conclusion_status === 'cash_shortfall'
-      ? labels.tradingPlanCashShortfall
-      : (tradingPlan?.manual_ready_count ?? 0) > 0
-        ? labels.tradingPlanManualReady(tradingPlan?.manual_ready_count ?? 0)
-        : (tradingPlan?.blocked_count ?? 0) > 0
-          ? labels.tradingPlanNeedsReview
-          : (tradingPlan?.candidate_pool_count ?? candidates.length) > 0
-            ? labels.strategyCandidateAction
-            : researchPreview
-              ? labels.researchOperationCandidate
-              : labels.strategyCandidateClear;
+    : accountRecommendation?.status === 'no_action'
+      ? labels.accountRecommendationNoAction
+      : accountRecommendation?.status === 'blocked'
+        ? labels.accountRecommendationBlocked
+        : accountRecommendation?.status === 'unavailable'
+          ? labels.accountRecommendationUnavailable
+          : tradingPlan?.conclusion_status === 'cash_shortfall'
+            ? labels.tradingPlanCashShortfall
+            : (tradingPlan?.manual_ready_count ?? 0) > 0
+              ? labels.tradingPlanManualReady(
+                  tradingPlan?.manual_ready_count ?? 0,
+                )
+              : (tradingPlan?.blocked_count ?? 0) > 0
+                ? labels.tradingPlanNeedsReview
+                : (tradingPlan?.candidate_pool_count ?? candidates.length) > 0
+                  ? labels.strategyCandidateAction
+                  : labels.strategyCandidateClear;
   const detail = tradingPlanError
     ? labels.tradingPlanUnavailable
     : tradingPlanLoading
       ? labels.tradingPlanLoading
-      : tradingPlan?.conclusion_status === 'cash_shortfall'
-        ? labels.tradingPlanCashShortfallDetail(
-            formatCurrencyValue(cashShortfall),
-          )
-        : (tradingPlan?.manual_ready_count ?? 0) > 0
-          ? tradingPlan && tradingPlan.order_intents.length > 0
-            ? tradingPlanManualIntentSummary(
-                tradingPlan,
-                candidates,
-                instrumentDiagnostics,
-                locale,
+      : accountRecommendation?.status === 'no_action'
+        ? labels.accountRecommendationNoActionDetail
+        : accountRecommendation?.status === 'blocked' ||
+            accountRecommendation?.status === 'unavailable'
+          ? labels.accountRecommendationReason(
+              accountRecommendation.reason_codes
+                .slice(0, 3)
+                .map((reason) => formatPublicStatus(reason, locale))
+                .join(' · '),
+            )
+          : tradingPlan?.conclusion_status === 'cash_shortfall'
+            ? labels.tradingPlanCashShortfallDetail(
+                formatCurrencyValue(cashShortfall),
               )
-            : labels.tradingPlanManualReadyDetail(
-                tradingPlan?.manual_ready_count ?? 0,
-              )
-          : (tradingPlan?.blocked_count ?? 0) > 0
-            ? tradingPlanBlockedDetailText(
-                tradingPlan,
-                locale,
-                labels.tradingPlanBlockedDetail(
-                  tradingPlan?.blocked_count ?? 0,
-                ),
-              )
-            : candidateDetail;
-  const resolvedDetail = researchPreview
-    ? labels.researchOperationDetail(
-        researchOperationSummary(
-          researchPreview,
-          tradingPlan!,
-          candidates,
-          instrumentDiagnostics,
-          locale,
-        ),
-      )
-    : detail;
+            : (tradingPlan?.manual_ready_count ?? 0) > 0
+              ? tradingPlan && tradingPlan.order_intents.length > 0
+                ? tradingPlanManualIntentSummary(
+                    tradingPlan,
+                    candidates,
+                    instrumentDiagnostics,
+                    locale,
+                  )
+                : labels.tradingPlanManualReadyDetail(
+                    tradingPlan?.manual_ready_count ?? 0,
+                  )
+              : (tradingPlan?.blocked_count ?? 0) > 0
+                ? tradingPlanBlockedDetailText(
+                    tradingPlan,
+                    locale,
+                    labels.tradingPlanBlockedDetail(
+                      tradingPlan?.blocked_count ?? 0,
+                    ),
+                  )
+                : candidateDetail;
   const blockerSummary = tradingPlanBlockerSummaryText(tradingPlan, locale);
   const meta = tradingPlanLoading
     ? copy.states.loading
@@ -342,53 +348,91 @@ export function buildDecisionQueueItem({
             tradingPlan.blocked_count,
           )
       : labels.candidateCount(candidates.length);
-  const resolvedMeta = researchPreview
-    ? labels.researchOperationMeta(
-        researchPreview.operations.length,
-        researchPreview.market_date ?? '--',
-        researchPreview.target_market_date ?? '--',
-      )
-    : meta;
   const tone = tradingPlanError
     ? 'danger'
-    : (tradingPlan?.manual_ready_count ?? 0) > 0 ||
-        (tradingPlan?.blocked_count ?? 0) > 0 ||
-        candidates.length > 0
+    : accountRecommendation?.status === 'blocked' ||
+        accountRecommendation?.status === 'unavailable'
       ? 'warning'
-      : researchPreview
-        ? 'neutral'
-        : 'success';
+      : accountRecommendation?.status === 'no_action'
+        ? 'success'
+        : (tradingPlan?.manual_ready_count ?? 0) > 0 ||
+            (tradingPlan?.blocked_count ?? 0) > 0 ||
+            candidates.length > 0
+          ? 'warning'
+          : 'success';
   const priority =
     tradingPlanError ||
     tradingPlan?.conclusion_status === 'cash_shortfall' ||
     (tradingPlan?.manual_ready_count ?? 0) > 0
       ? 'first'
-      : (tradingPlan?.blocked_count ?? 0) > 0 || candidates.length > 0
+      : accountRecommendation?.status === 'blocked' ||
+          accountRecommendation?.status === 'unavailable'
         ? 'watch'
-        : researchPreview
-          ? 'watch'
-          : 'normal';
+        : accountRecommendation?.status === 'no_action'
+          ? 'normal'
+          : (tradingPlan?.blocked_count ?? 0) > 0 || candidates.length > 0
+            ? 'watch'
+            : 'normal';
   return {
     key: 'decision',
     title: todayDecisionError ? labels.strategyDecisionUnavailable : title,
     detail:
       todayDecisionLoading || tradingPlanLoading
         ? labels.strategyCandidateLoading
-        : resolvedDetail,
+        : detail,
     meta:
-      todayDecisionLoading || tradingPlanLoading
-        ? copy.states.loading
-        : resolvedMeta,
-    href: researchPreview ? '/ai-research' : '/decision',
-    actionLabel: researchPreview ? labels.viewAiResearch : labels.viewDecision,
+      todayDecisionLoading || tradingPlanLoading ? copy.states.loading : meta,
+    href: '/decision',
+    actionLabel: labels.viewDecision,
     tone: todayDecisionError ? 'danger' : tone,
     priority: todayDecisionError ? 'watch' : priority,
-    alwaysVisible: researchPreview !== null,
+    alwaysVisible: accountRecommendation?.status === 'no_action',
     resolution:
-      todayDecisionLoading || tradingPlanLoading
-        ? undefined
-        : researchPreview
-          ? labels.researchOperationResolution
-          : resolution,
+      todayDecisionLoading || tradingPlanLoading ? undefined : resolution,
+  };
+}
+
+export function buildResearchQueueItem({
+  todayDecision,
+  tradingPlan,
+  instrumentDiagnostics,
+  copy,
+  locale,
+}: {
+  todayDecision?: DecisionResponse | null;
+  tradingPlan?: DailyTradingPlanResponse | null;
+  instrumentDiagnostics: QuoteDiagnosticItem[];
+  copy: AppCopy;
+  locale: Locale;
+}): TodayQueueItem | null {
+  const preview = visibleResearchOperationPreview(tradingPlan);
+  if (!preview || !tradingPlan) {
+    return null;
+  }
+  const labels = copy.overview.dashboard;
+  const candidates = todayDecision?.candidates ?? [];
+  return {
+    key: 'research',
+    title: labels.researchOperationCandidate,
+    detail: labels.researchOperationDetail(
+      researchOperationSummary(
+        preview,
+        tradingPlan,
+        candidates,
+        instrumentDiagnostics,
+        locale,
+      ),
+    ),
+    meta: labels.researchOperationMeta(
+      preview.operations.length,
+      preview.market_date ?? '--',
+      preview.target_market_date ?? '--',
+    ),
+    href: '/ai-research',
+    actionLabel: labels.viewAiResearch,
+    tone: 'neutral',
+    priority: 'normal',
+    alwaysVisible: true,
+    resolution: labels.researchOperationResolution,
   };
 }

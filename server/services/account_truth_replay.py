@@ -112,15 +112,12 @@ def build_account_truth_replay_evidence(
                 valuation_metadata_fingerprint = _fingerprint_json(
                     snapshot.get("metadata") or {}
                 )
-                expected_snapshot_id = "valuation-" + _fingerprint_json(
-                    {
-                        "valuation_policy": valuation_policy,
-                        "quote_set_fingerprint": quote_set_fingerprint,
-                        "ledger_fingerprint": ledger_fingerprint,
-                        "ledger_cutoff_id": snapshot_cutoff,
-                    }
-                )
-                if normalized_valuation_snapshot_id != expected_snapshot_id:
+                # ``valuation_snapshot_from_row`` validates the versioned content
+                # identity (including the legacy v4 compatibility path).  Keep
+                # this boundary check focused on the requested row identity so a
+                # v5 snapshot is not accidentally re-derived with the old v4
+                # field set.
+                if snapshot.get("snapshot_id") != normalized_valuation_snapshot_id:
                     blockers.append("account_truth_replay_valuation_identity_mismatch")
                 if snapshot_cutoff != normalized_ledger_cutoff_id:
                     blockers.append("account_truth_replay_ledger_cutoff_mismatch")

@@ -15,6 +15,42 @@ from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 _CN_MORNING_OPEN = time(9, 30)
 _FUND_ESTIMATE_QUOTE_SOURCES = FUND_ESTIMATE_QUOTE_SOURCES | {"eastmoney_fund_page"}
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+_MISSING_VALUATION_STATUSES = {"missing", "error"}
+_DEGRADED_VALUATION_STATUSES = {
+    "stale",
+    "estimated",
+    "confirmed_nav_missing",
+    "confirmed_fund_nav_missing_estimate_only",
+}
+
+
+def quote_valuation_status(quote: dict) -> str:
+    """Classify whether one persisted quote can support account valuation."""
+
+    quote_status_value = str(quote.get("quote_status") or "live").strip().lower()
+    if quote_status_value in _MISSING_VALUATION_STATUSES:
+        return "missing"
+    if quote_status_value in _DEGRADED_VALUATION_STATUSES:
+        return "degraded"
+    if quote.get("valuation_baseline_status") == "missing":
+        return "degraded"
+    return "complete"
+
+
+def quote_valuation_blocker(quote: dict | None, *, symbol: str) -> str:
+    """Return the canonical account-valuation blocker for one holding."""
+
+    if not quote or quote.get("price") in {None, "", 0, 0.0}:
+        return f"missing_market_price:{symbol}"
+    quote_status_value = str(quote.get("quote_status") or "").strip().lower()
+    if quote_status_value in {
+        "confirmed_nav_missing",
+        "confirmed_fund_nav_missing_estimate_only",
+    }:
+        return f"confirmed_nav_missing:{symbol}"
+    if quote.get("valuation_baseline_status") == "missing":
+        return f"valuation_baseline_missing:{symbol}"
+    return f"market_evidence_{quote_status_value or 'degraded'}:{symbol}"
 
 
 def parse_quote_timestamp(timestamp: object) -> datetime | None:

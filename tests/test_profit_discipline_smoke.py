@@ -9,7 +9,7 @@ from analytics.report import generate_report
 from backtest.engine import BacktestEngine
 from core.event_bus import EventBus
 from core.events import OrderIntentEvent, SignalEvent
-from core.types import AssetClass, BarFrequency, OrderSide, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, OrderSide, Symbol
 from data.features import FeatureEngine
 from data.handler import DataHandler
 from data.store import DataStore
@@ -75,9 +75,14 @@ def test_profit_discipline_smoke_path_reaches_risk_journal_and_action_queue(
         provider_name="fixture",
         data_source="deterministic_fixture",
         adjustment_mode="none",
+        instrument_type=InstrumentType.ETF,
     )
-    meta = store.get_meta(symbol, BarFrequency.DAILY)
-    cached_bars = store.load_bars(symbol, BarFrequency.DAILY)
+    meta = store.get_meta(
+        symbol, BarFrequency.DAILY, instrument_type=InstrumentType.ETF
+    )
+    cached_bars = store.load_bars(
+        symbol, BarFrequency.DAILY, instrument_type=InstrumentType.ETF
+    )
 
     assert meta is not None
     assert meta["provider_name"] == "fixture"
@@ -105,6 +110,7 @@ def test_profit_discipline_smoke_path_reaches_risk_journal_and_action_queue(
                 featured_bars,
                 symbol,
                 asset_class=AssetClass.FUND,
+                instrument_type=InstrumentType.ETF,
             )
         },
         initial_cash=Decimal("100000"),

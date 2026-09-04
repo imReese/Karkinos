@@ -73,6 +73,7 @@ class ReferenceDataDatabaseFacade(DatabaseRepositoryAccess):
         *,
         symbol: str,
         asset_class: str = "stock",
+        instrument_type: str | None = None,
         display_name: str | None = None,
         source: str = "manual",
     ) -> dict[str, Any] | None:
@@ -80,6 +81,7 @@ class ReferenceDataDatabaseFacade(DatabaseRepositoryAccess):
         return self._watchlist.upsert_asset(
             symbol=symbol,
             asset_class=asset_class,
+            instrument_type=instrument_type,
             display_name=display_name,
             source=source,
         )

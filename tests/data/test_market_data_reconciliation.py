@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from core.types import BarFrequency, Symbol
+from core.types import BarFrequency, InstrumentType, Symbol
 from data.market_data_reconciliation import (
     reconcile_market_bars,
     reconcile_store_with_provider,
@@ -102,7 +102,12 @@ def test_reconcile_store_with_provider_fetches_requested_range(tmp_path):
             "volume": [1000.0, 1200.0],
         }
     )
-    store.save_bars(symbol, BarFrequency.DAILY, local)
+    store.save_bars(
+        symbol,
+        BarFrequency.DAILY,
+        local,
+        instrument_type=InstrumentType.STOCK,
+    )
     provider = _FakeSource(local.copy())
 
     report = reconcile_store_with_provider(

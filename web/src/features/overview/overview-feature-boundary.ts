@@ -49,6 +49,7 @@ export type {
   MarketHealthQuote,
 } from '../market/api';
 export { MarketRefreshButton } from '../market/components/market-refresh-button';
+export { ConfirmedFundNavRefreshButton } from '../market/components/confirmed-fund-nav-refresh-button';
 
 export { useOperationsTodayQuery } from '../operations/api';
 export type { OperationsTodayResponse } from '../operations/api';

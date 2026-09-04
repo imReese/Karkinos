@@ -10,6 +10,7 @@ from server.ai_runtime.capture import HumanResearchContextCaptureService
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.provider_call_window import (
     PROVIDER_CALL_COMPLETION_GUARD_SECONDS,
+    ProviderExecutionFence,
     is_deepseek_provider_endpoint,
     provider_send_admission_for,
 )
@@ -37,6 +38,7 @@ def build_strategy_research_write_service(
     *,
     external: bool,
     capture_service: HumanResearchContextCaptureService,
+    provider_execution_fence: ProviderExecutionFence | None = None,
 ) -> StrategyResearchService:
     """Build the mutation-capable AI audit boundary from explicit dependencies."""
     if state.db is None:
@@ -75,8 +77,14 @@ def build_strategy_research_write_service(
                         model_timeout_seconds + PROVIDER_CALL_COMPLETION_GUARD_SECONDS
                     )
                 ),
+                execution_fence=provider_execution_fence,
             )
             if settings is not None
+            else None
+        ),
+        execution_guard=(
+            provider_execution_fence.require_current
+            if provider_execution_fence is not None
             else None
         ),
         reviewed_fee_schedule_resolver=lambda **kwargs: resolve_reviewed_fee_schedule(

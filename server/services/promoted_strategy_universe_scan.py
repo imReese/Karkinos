@@ -9,32 +9,34 @@ from typing import Any
 
 import pandas as pd
 
+from core.types import InstrumentType
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
-from server.ai_runtime.formula_dsl import validate_formula_ast
 from server.bootstrap import resolve_data_dir
 from server.services.ai_shadow_research_daily_artifacts import (
+    DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
 )
 from server.services.market_universe_automation import verified_trading_dates
-from server.services.market_universe_truth import (
-    MarketUniversePolicy,
-    build_full_market_universe_truth,
-)
+from server.services.market_universe_truth import MarketUniversePolicy
 from server.services.promoted_strategy_universe_scan_persistence import (
     persist_recommendation_tasks,
 )
 from server.services.promoted_strategy_universe_scan_support import (
+    SIGNAL_SELECTION_POLICY,
+    aggregate_ranked_signals,
     automation_safety_blockers,
     decision_window_blockers,
-    evaluate_strategy_signals,
-    formula_history_rows,
+    evaluate_promoted_strategy_market,
     history_start,
     json_object,
     positive_float,
     prior_verified_trading_date,
-    select_ranked_signals,
+    promoted_scan_evaluation_policy_fingerprint,
     truth_projection,
+)
+from server.services.promoted_strategy_universe_scan_validation import (
+    current_scan_input_blockers,
 )
 from server.services.strategy_promotion_pipeline import (
     AI_SHADOW_STRATEGY_PREFIX,
@@ -48,6 +50,36 @@ PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE = "promoted_strategy_universe_scan"
 StrategyGateResolver = Callable[..., tuple[dict[str, Any], list[str]]]
 StrategyLoader = Callable[..., dict[str, Any]]
 SafetyGateReader = Callable[[], Mapping[str, Any]]
+
+
+def _portfolio_stock_symbols(
+    portfolio_summary: Mapping[str, Any],
+    blockers: list[str],
+) -> list[str]:
+    symbols = sorted(
+        {
+            str(symbol)
+            for symbol in portfolio_summary.get("symbols") or []
+            if str(symbol)
+        }
+    )
+    instrument_types = portfolio_summary.get("instrument_types")
+    if not isinstance(instrument_types, Mapping):
+        if symbols:
+            blockers.append("portfolio_instrument_type_evidence_missing")
+        return []
+    stocks: list[str] = []
+    for symbol in symbols:
+        try:
+            instrument_type = InstrumentType.from_persisted(
+                instrument_types.get(symbol)
+            )
+        except ValueError:
+            blockers.append(f"portfolio_instrument_type_unresolved:{symbol}")
+            continue
+        if instrument_type is InstrumentType.STOCK:
+            stocks.append(symbol)
+    return stocks
 
 
 class PromotedStrategyUniverseScanService:
@@ -105,7 +137,7 @@ class PromotedStrategyUniverseScanService:
         market, market_blockers = self._load_market_evidence(
             market_date=market_date,
             promoted=promoted,
-            portfolio_symbols=portfolio["symbols"],
+            portfolio_stock_symbols=portfolio["stock_symbols"],
         )
         blockers.extend(market_blockers)
         if blockers:
@@ -135,6 +167,25 @@ class PromotedStrategyUniverseScanService:
             ),
         )
 
+    def current_input_blockers(
+        self,
+        *,
+        scan: Mapping[str, Any],
+        portfolio_summary: Mapping[str, Any],
+    ) -> list[str]:
+        """Reopen every mutable input before a persisted scan is consumed."""
+        return current_scan_input_blockers(
+            db=self._db,
+            config=self._config,
+            data_store=self._data_store,
+            policy=self._policy,
+            scan=scan,
+            portfolio_summary=portfolio_summary,
+            portfolio_reader=self._portfolio_context,
+            promoted_reader=self._resolve_promoted_strategies,
+            safety_reader=self._read_safety_gate,
+        )
+
     def _portfolio_context(
         self,
         portfolio_summary: Mapping[str, Any],
@@ -144,6 +195,11 @@ class PromotedStrategyUniverseScanService:
         if total_equity is None:
             blockers.append("portfolio_total_equity_invalid")
             total_equity = 0.0
+        valuation_status = (
+            str(portfolio_summary.get("valuation_status") or "missing").strip().lower()
+        )
+        if valuation_status != "complete":
+            blockers.append("valuation_snapshot_not_complete")
         valuation_snapshot_id = str(
             portfolio_summary.get("valuation_snapshot_id") or ""
         )
@@ -151,6 +207,7 @@ class PromotedStrategyUniverseScanService:
             blockers.append("valuation_snapshot_identity_missing")
         return {
             "total_equity": total_equity,
+            "valuation_status": valuation_status,
             "valuation_snapshot_id": valuation_snapshot_id,
             "symbols": sorted(
                 {
@@ -159,6 +216,7 @@ class PromotedStrategyUniverseScanService:
                     if str(symbol)
                 }
             ),
+            "stock_symbols": _portfolio_stock_symbols(portfolio_summary, blockers),
         }, blockers
 
     def _load_market_evidence(
@@ -166,7 +224,7 @@ class PromotedStrategyUniverseScanService:
         *,
         market_date: str | None,
         promoted: list[dict[str, Any]],
-        portfolio_symbols: list[str],
+        portfolio_stock_symbols: list[str],
     ) -> tuple[dict[str, Any], list[str]]:
         evidence: dict[str, Any] = {
             "snapshot": {},
@@ -212,7 +270,7 @@ class PromotedStrategyUniverseScanService:
                 for member in snapshot.get("members") or []
                 if isinstance(member, Mapping)
             ]
-            held_symbols = sorted(set(portfolio_symbols) & set(members))
+            held_symbols = sorted(set(portfolio_stock_symbols))
             frames = self._data_store.load_market_bar_windows(
                 symbols=members,
                 start_date=start_date,
@@ -235,65 +293,21 @@ class PromotedStrategyUniverseScanService:
         market: Mapping[str, Any],
         total_equity: float,
     ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], list[str]]:
-        truths: dict[str, dict[str, Any]] = {}
-        raw_signals: list[dict[str, Any]] = []
-        blockers: list[str] = []
         start_date = market.get("history_start")
         if market_date is None or not isinstance(start_date, str):
-            return truths, raw_signals, blockers
-        for promoted_strategy in promoted:
-            strategy_id = str(promoted_strategy["strategy_id"])
-            strategy = dict(promoted_strategy["strategy"])
-            formula_ast = strategy.get("formula_ast")
-            selected_universe = tuple(
-                str(symbol) for symbol in strategy.get("selected_universe") or []
-            )
-            try:
-                validate_formula_ast(formula_ast, universe_size=len(selected_universe))
-                target_weight = 1.0 / self._policy.allocation_slots
-                truth = build_full_market_universe_truth(
-                    snapshot=market["snapshot"],
-                    frames=market["frames"],
-                    receipts=market["receipts"],
-                    required_trading_dates=market["trading_dates"],
-                    start_date=start_date,
-                    end_date=market_date,
-                    initial_cash=total_equity,
-                    target_weight=target_weight,
-                    held_symbols=market["held_symbols"],
-                    minimum_history_rows=max(
-                        self._policy.minimum_history_rows,
-                        formula_history_rows(formula_ast),
-                    ),
-                    policy=self._policy,
-                )
-            except Exception as exc:
-                blockers.append(
-                    f"strategy_full_market_truth_failed:{strategy_id}:"
-                    f"{type(exc).__name__}:{exc}"
-                )
-                continue
-            truths[strategy_id] = truth
-            if truth.get("status") != "complete":
-                blockers.extend(
-                    f"strategy_full_market_truth:{strategy_id}:{item}"
-                    for item in truth.get("blockers") or []
-                )
-                continue
-            raw_signals.extend(
-                evaluate_strategy_signals(
-                    strategy_id=strategy_id,
-                    formula_ast=formula_ast,
-                    universe_size=len(selected_universe),
-                    target_weight=target_weight,
-                    frames=market["frames"],
-                    eligible_symbols=list(truth["eligible_symbols"]),
-                    maintenance_symbols=list(truth["maintenance_symbols"]),
-                    held_symbols=set(market["held_symbols"]),
-                    market_date=market_date,
-                )
-            )
-        return truths, raw_signals, blockers
+            return {}, [], []
+        return evaluate_promoted_strategy_market(
+            promoted=promoted,
+            market_date=market_date,
+            snapshot=market["snapshot"],
+            frames=market["frames"],
+            receipts=market["receipts"],
+            trading_dates=market["trading_dates"],
+            start_date=start_date,
+            total_equity=total_equity,
+            held_stock_symbols=market["held_symbols"],
+            policy=self._policy,
+        )
 
     def _complete_run(
         self,
@@ -312,10 +326,11 @@ class PromotedStrategyUniverseScanService:
         expected_signal_selection_fingerprint: str | None,
     ) -> dict[str, Any]:
         blockers = list(dict.fromkeys(blockers))
-        selected_signals = select_ranked_signals(
+        selected_signals, signal_conflict_blockers = aggregate_ranked_signals(
             raw_signals,
             allocation_slots=self._policy.allocation_slots,
         )
+        blockers.extend(signal_conflict_blockers)
         signal_selection_fingerprint = "sha256:" + content_fingerprint(
             {
                 "decision_date": decision_date,
@@ -346,6 +361,7 @@ class PromotedStrategyUniverseScanService:
                     "order_generation_gate_fingerprint": item.get(
                         "order_generation_gate_fingerprint"
                     ),
+                    "qualification_fingerprint": item.get("qualification_fingerprint"),
                     "universe_truth_fingerprint": truth_by_strategy.get(
                         str(item["strategy_id"]), {}
                     ).get("evidence_fingerprint"),
@@ -354,6 +370,7 @@ class PromotedStrategyUniverseScanService:
             ],
             "portfolio_binding": {
                 "valuation_snapshot_id": portfolio["valuation_snapshot_id"] or None,
+                "valuation_status": portfolio["valuation_status"],
                 "held_symbol_fingerprint": "sha256:"
                 + content_fingerprint(market["held_symbols"]),
                 "held_stock_count": len(market["held_symbols"]),
@@ -361,13 +378,15 @@ class PromotedStrategyUniverseScanService:
                 + content_fingerprint(
                     {
                         "valuation_snapshot_id": portfolio["valuation_snapshot_id"],
+                        "valuation_status": portfolio["valuation_status"],
                         "total_equity": portfolio["total_equity"],
                     }
                 ),
             },
-            "signal_selection_policy": (
-                "exits_first_then_20d_median_amount_desc_then_symbol_asc"
+            "evaluation_policy_fingerprint": (
+                promoted_scan_evaluation_policy_fingerprint(self._policy)
             ),
+            "signal_selection_policy": SIGNAL_SELECTION_POLICY,
             "signal_selection_fingerprint": signal_selection_fingerprint,
             "safety_gate_fingerprint": "sha256:" + content_fingerprint(safety_gate),
         }
@@ -498,6 +517,19 @@ class PromotedStrategyUniverseScanService:
                 continue
             promotion = dict(gate.get("promotion") or {})
             artifact = dict(promotion.get("daily_strategy_artifact_binding") or {})
+            qualification_binding = dict(promotion.get("qualification_binding") or {})
+            qualification_fingerprint = str(
+                qualification_binding.get("evidence_fingerprint") or ""
+            )
+            if (
+                artifact.get("qualification_overlay_required") is True
+                and not qualification_fingerprint
+            ):
+                blockers.append(
+                    f"promoted_strategy_gate:{strategy_id}:"
+                    "qualification_binding_missing"
+                )
+                continue
             candidate_id = str(artifact.get("winner_candidate_id") or "")
             run_id = str(artifact.get("run_id") or "")
             try:
@@ -530,6 +562,7 @@ class PromotedStrategyUniverseScanService:
                     ),
                     "order_generation_gate_fingerprint": "sha256:"
                     + content_fingerprint(gate),
+                    "qualification_fingerprint": (qualification_fingerprint or None),
                 }
             )
         return resolved, blockers
@@ -540,7 +573,16 @@ class PromotedStrategyUniverseScanService:
             database_path,
             database_path.parent / "strategy-research-backups",
         )
-        return store.load_verified_winner_strategy(
-            candidate_id=candidate_id,
-            run_id=run_id,
-        )
+        try:
+            return store.load_verified_winner_strategy(
+                candidate_id=candidate_id,
+                run_id=run_id,
+            )
+        except DailyStrategyArtifactRejected as winner_error:
+            try:
+                return store.require_verified_research_candidate(
+                    candidate_id=candidate_id,
+                    run_id=run_id,
+                )
+            except DailyStrategyArtifactRejected:
+                raise winner_error

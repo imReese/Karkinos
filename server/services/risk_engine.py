@@ -23,6 +23,37 @@ def build_risk_summary(
 ) -> list[RiskSummaryItem]:
     items: list[RiskSummaryItem] = []
 
+    missing_symbols = sorted(
+        set(snapshot.missing_price_symbols)
+        | {
+            position.symbol
+            for position in snapshot.positions
+            if not position.valuation_available
+            or position.market_value is None
+            or position.unrealized_pnl is None
+        }
+    )
+    if (
+        snapshot.valuation_status != "complete"
+        or snapshot.valuation_blockers
+        or snapshot.total_equity is None
+        or missing_symbols
+    ):
+        named_blockers = sorted(set(snapshot.valuation_blockers))
+        detail = "持仓估值证据不完整，权威收益、敞口、集中度和回撤计算已阻断"
+        if named_blockers:
+            detail += f"：{', '.join(named_blockers)}"
+        elif missing_symbols:
+            detail += f"：{', '.join(missing_symbols)}"
+        return [
+            RiskSummaryItem(
+                kind="data",
+                level="high",
+                title="权威风险结果不可用",
+                detail=detail,
+            )
+        ]
+
     if snapshot.total_equity > 0:
         non_cash = [item for item in snapshot.allocation if item.asset_class != "cash"]
         largest = max(non_cash, key=lambda item: item.weight, default=None)
