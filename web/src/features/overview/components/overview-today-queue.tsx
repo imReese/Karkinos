@@ -7,12 +7,16 @@ import {
   type ExceptionItem,
 } from '../../../shared/ui/workbench';
 import { buildTodayQueueModel } from '../model/today-queue-model';
+import { buildDecisionQueueItem } from '../model/today-queue-trading-plan';
 import {
   TODAY_QUEUE_PRIORITY_ORDER,
   type DashboardTodayQueueProps,
   type TodayQueuePriority,
 } from '../model/today-queue-types';
-import { MarketRefreshButton } from '../overview-feature-boundary';
+import {
+  ConfirmedFundNavRefreshButton,
+  MarketRefreshButton,
+} from '../overview-feature-boundary';
 
 function todayQueuePriorityLabel(
   priority: TodayQueuePriority,
@@ -27,20 +31,108 @@ function todayQueuePriorityLabel(
   return labels.queuePriorityNormal;
 }
 
+function exceptionLabels(locale: 'en' | 'zh') {
+  return locale === 'zh'
+    ? {
+        reason: '阻断原因',
+        unblockCondition: '解除条件',
+        nextAction: '安全下一步',
+        evidence: '证据',
+      }
+    : {
+        reason: 'Reason',
+        unblockCondition: 'Unblock condition',
+        nextAction: 'Safe next step',
+        evidence: 'Evidence',
+      };
+}
+
+/** Keep today's account-recommendation status visible without portfolio views. */
+export function DashboardDecisionQueueFallback({
+  todayDecision,
+  todayDecisionLoading,
+  todayDecisionError,
+  tradingPlan,
+  tradingPlanLoading,
+  tradingPlanError,
+}: Pick<
+  DashboardTodayQueueProps,
+  | 'todayDecision'
+  | 'todayDecisionLoading'
+  | 'todayDecisionError'
+  | 'tradingPlan'
+  | 'tradingPlanLoading'
+  | 'tradingPlanError'
+>) {
+  const copy = useCopy();
+  const { locale } = usePreferences();
+  const labels = copy.overview.dashboard;
+  const item = buildDecisionQueueItem({
+    todayDecision,
+    todayDecisionLoading,
+    todayDecisionError,
+    tradingPlan,
+    tradingPlanLoading,
+    tradingPlanError,
+    instrumentDiagnostics: [],
+    copy,
+    locale,
+  });
+  return (
+    <section className="min-w-0" data-testid="overview-decision-queue-fallback">
+      <div className="mb-2">
+        <div className="app-type-overline text-[var(--app-text-tertiary)]">
+          {labels.dailyWorkbench}
+        </div>
+        <h2 className="app-type-section-title mt-1 text-[var(--app-text)]">
+          {labels.todayToReview}
+        </h2>
+      </div>
+      <ExceptionList
+        ariaLabel={labels.todayToReview}
+        emptyState={labels.noActionItems}
+        density="compact"
+        labels={exceptionLabels(locale)}
+        items={[
+          {
+            id: item.key,
+            severity:
+              item.tone === 'danger'
+                ? 'danger'
+                : item.tone === 'warning'
+                  ? 'warning'
+                  : 'info',
+            statusLabel: todayQueuePriorityLabel(item.priority, labels),
+            title: item.title,
+            reason: item.detail,
+            unblockCondition: item.resolution,
+            nextAction: (
+              <a
+                href={item.href}
+                className="font-semibold text-[var(--app-accent)] hover:underline"
+              >
+                {item.actionLabel}
+              </a>
+            ),
+            evidence: item.meta,
+          },
+        ]}
+      />
+    </section>
+  );
+}
+
 export function DashboardTodayQueue(props: DashboardTodayQueueProps) {
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = copy.overview.dashboard;
-  const { items, dataRefreshSymbols } = buildTodayQueueModel(
-    props,
-    copy,
-    locale,
-  );
+  const { items, dataQuoteRefreshSymbols, dataConfirmedFundNavRefreshSymbols } =
+    buildTodayQueueModel(props, copy, locale);
   const actionableCount = items.filter(
     (item) => item.priority !== 'normal',
   ).length;
   const exceptionItems: (ExceptionItem & { alwaysVisible: boolean })[] = items
-    .filter((item) => item.priority !== 'normal')
+    .filter((item) => item.priority !== 'normal' || item.alwaysVisible === true)
     .sort(
       (left, right) =>
         TODAY_QUEUE_PRIORITY_ORDER.indexOf(left.priority) -
@@ -59,9 +151,19 @@ export function DashboardTodayQueue(props: DashboardTodayQueueProps) {
       reason: item.detail,
       unblockCondition: item.resolution,
       nextAction:
-        item.key === 'data' && dataRefreshSymbols.length > 0 ? (
+        item.key === 'data' &&
+        (dataQuoteRefreshSymbols.length > 0 ||
+          dataConfirmedFundNavRefreshSymbols.length > 0) ? (
           <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-            <MarketRefreshButton compact symbols={dataRefreshSymbols} />
+            {dataConfirmedFundNavRefreshSymbols.length > 0 ? (
+              <ConfirmedFundNavRefreshButton
+                compact
+                symbols={dataConfirmedFundNavRefreshSymbols}
+              />
+            ) : null}
+            {dataQuoteRefreshSymbols.length > 0 ? (
+              <MarketRefreshButton compact symbols={dataQuoteRefreshSymbols} />
+            ) : null}
             <a
               href={item.href}
               className="inline-flex min-h-8 items-center font-semibold text-[var(--app-accent)] hover:underline"
@@ -88,21 +190,6 @@ export function DashboardTodayQueue(props: DashboardTodayQueueProps) {
   const additionalExceptionItems = exceptionItems
     .slice(1)
     .filter((item) => !item.alwaysVisible);
-  const exceptionLabels =
-    locale === 'zh'
-      ? {
-          reason: '阻断原因',
-          unblockCondition: '解除条件',
-          nextAction: '安全下一步',
-          evidence: '证据',
-        }
-      : {
-          reason: 'Reason',
-          unblockCondition: 'Unblock condition',
-          nextAction: 'Safe next step',
-          evidence: 'Evidence',
-        };
-
   return (
     <section className="min-w-0" data-testid="overview-today-queue">
       <div className="mb-2 flex items-end justify-between gap-3">
@@ -124,7 +211,7 @@ export function DashboardTodayQueue(props: DashboardTodayQueueProps) {
         emptyState={labels.noActionItems}
         density="compact"
         className="app-overview-primary-exception"
-        labels={exceptionLabels}
+        labels={exceptionLabels(locale)}
       />
       {additionalExceptionItems.length > 0 ? (
         <details
@@ -148,7 +235,7 @@ export function DashboardTodayQueue(props: DashboardTodayQueueProps) {
             emptyState={labels.noActionItems}
             density="compact"
             className="border-b-0"
-            labels={exceptionLabels}
+            labels={exceptionLabels(locale)}
           />
         </details>
       ) : null}

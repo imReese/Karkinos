@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, time
 from decimal import Decimal
 from typing import Any, Callable
 
 from core.events import MarketEvent, SignalEvent
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, InstrumentType, Symbol
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from server.contracts.quote_ingestion import QuoteIngestionCommand
@@ -24,6 +24,11 @@ from server.scheduler_contracts import (
     SchedulerRuntimeContext,
     SchedulerStrategy,
     SchedulerStrategyPublisher,
+)
+from server.scheduler_quote_restore import (
+    INSTRUMENT_ASSET_CLASS_MAP,
+    runtime_quote_from_persisted,
+    runtime_quotes_from_persisted,
 )
 from server.scheduler_values import (
     SchedulerQuoteEvidence,
@@ -116,30 +121,6 @@ class BufferedStrategyEventPublisher:
         self._events.clear()
         for event in pending:
             event_bus.publish(event)
-
-
-def runtime_quote_from_persisted(quote: dict[str, Any]) -> dict[str, Any]:
-    """Normalize one persisted latest-quote row for scheduler runtime use."""
-
-    quote_source = (
-        quote.get("quote_source")
-        or quote.get("source")
-        or quote.get("provider_name")
-        or quote.get("provider")
-    )
-    return {
-        "price": float(quote["price"]),
-        "volume": float(quote["volume"]) if quote["volume"] is not None else None,
-        "timestamp": quote["timestamp"],
-        "asset_class": quote["asset_class"],
-        "quote_source": quote_source,
-        "provider_name": quote.get("provider_name"),
-        "quote_status": quote.get("quote_status"),
-        "stale_reason": quote.get("stale_reason"),
-        "provider_status": quote.get("provider_status"),
-        "captured_reason": quote.get("captured_reason"),
-        "nav_date": quote.get("nav_date"),
-    }
 
 
 class SchedulerLoop:
@@ -295,30 +276,35 @@ class SchedulerLoop:
         restored_watchlist: list[tuple[Symbol, AssetClass]] = []
         restored_instruments: dict[Symbol, Instrument] = {}
         watched_symbols: set[Symbol] = set()
-        supported_asset_classes = {
-            "stock": AssetClass.STOCK,
-            "fund": AssetClass.FUND,
-            "etf": AssetClass.FUND,
-            "gold": AssetClass.GOLD,
-            "bond": AssetClass.BOND,
-        }
         for asset in persisted_watchlist:
             symbol = Symbol(str(asset.get("symbol") or "").strip())
             if not str(symbol):
                 raise RuntimeError("persisted scheduler watchlist contains no symbol")
-            raw_asset_class = str(asset.get("asset_class") or "").strip().lower()
-            asset_class = supported_asset_classes.get(raw_asset_class)
-            if asset_class is None:
+            raw_instrument_type = (
+                str(asset.get("instrument_type") or asset.get("asset_class") or "")
+                .strip()
+                .lower()
+            )
+            try:
+                instrument_type = InstrumentType.from_persisted(raw_instrument_type)
+                asset_class = INSTRUMENT_ASSET_CLASS_MAP[instrument_type]
+            except (KeyError, ValueError):
                 raise RuntimeError(
                     "persisted scheduler watchlist contains unsupported asset class: "
-                    f"{raw_asset_class or '<empty>'}"
+                    f"{raw_instrument_type or '<empty>'}"
+                ) from None
+            if raw_instrument_type == "fund":
+                logger.warning(
+                    "Restoring legacy broad fund identity as open-end fund: %s",
+                    symbol,
                 )
             if symbol in watched_symbols:
                 continue
             restored_watchlist.append((symbol, asset_class))
-            restored_instruments[symbol] = data_manager.get_instrument(
+            restored_instruments[symbol] = data_manager.get_instrument_by_type(
                 symbol,
-                asset_class,
+                instrument_type,
+                name=str(asset.get("display_name") or symbol),
             )
             watched_symbols.add(symbol)
 
@@ -331,10 +317,10 @@ class SchedulerLoop:
             return
         try:
             persisted_quotes = database.get_latest_quotes_sync()
-            restored_quotes = {
-                quote["symbol"]: runtime_quote_from_persisted(quote)
-                for quote in persisted_quotes
-            }
+            restored_quotes = runtime_quotes_from_persisted(
+                persisted_quotes,
+                self._state.instruments,
+            )
             self._state.replace_runtime_quotes(restored_quotes)
         except Exception as exc:
             raise RuntimeError(
@@ -469,6 +455,7 @@ class SchedulerLoop:
             events, quote_fetch_run_id = dependencies.poll_watchlist_quotes(
                 runtime.feed
             )
+            events = [self._bind_market_event_identity(event) for event in events]
             capture_time = dependencies.now()
             for market_event in events:
                 snapshot = (
@@ -522,6 +509,54 @@ class SchedulerLoop:
         event_bus = state.runtime_event_bus()
         runtime.strategy_events.flush_into(event_bus)
         event_bus.drain()
+
+    def _bind_market_event_identity(self, event: MarketEvent) -> MarketEvent:
+        """Bind provider output to the scheduler's explicit runtime identity."""
+
+        instrument = self._state.instruments.get(event.symbol)
+        runtime_type = getattr(instrument, "instrument_type", None)
+        event_type = event.instrument_type
+        if event_type is not None and not isinstance(event_type, InstrumentType):
+            raise RuntimeError(
+                f"scheduler market event instrument type is invalid: {event.symbol}"
+            )
+        if runtime_type is not None and not isinstance(runtime_type, InstrumentType):
+            raise RuntimeError(
+                f"scheduler runtime instrument type is invalid: {event.symbol}"
+            )
+        if (
+            event_type is not None
+            and runtime_type is not None
+            and event_type is not runtime_type
+        ):
+            raise RuntimeError(
+                f"scheduler market event identity conflicts: {event.symbol}"
+            )
+        instrument_type = event_type or runtime_type
+        if instrument_type is None:
+            if event.asset_class is AssetClass.FUND:
+                raise RuntimeError(
+                    f"scheduler fund instrument type is unresolved: {event.symbol}"
+                )
+            try:
+                instrument_type = InstrumentType.from_persisted(
+                    getattr(event.asset_class, "value", event.asset_class)
+                )
+            except ValueError as exc:
+                raise RuntimeError(
+                    "scheduler market event instrument type is unresolved: "
+                    f"{event.symbol}"
+                ) from exc
+        expected_asset_class = INSTRUMENT_ASSET_CLASS_MAP[instrument_type]
+        if event.asset_class not in {None, expected_asset_class}:
+            raise RuntimeError(
+                f"scheduler market event asset class conflicts: {event.symbol}"
+            )
+        return replace(
+            event,
+            asset_class=expected_asset_class,
+            instrument_type=instrument_type,
+        )
 
     def _record_market_event(
         self,
@@ -589,9 +624,13 @@ class SchedulerLoop:
 
         raw_metadata = snapshot.get("metadata")
         metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        if market_event.instrument_type is None:
+            raise RuntimeError(
+                f"scheduler quote instrument type is unresolved: {market_event.symbol}"
+            )
         return QuoteIngestionCommand(
             symbol=str(market_event.symbol),
-            asset_type=market_event.asset_class.value,
+            asset_type=market_event.instrument_type.value,
             price=float(market_event.close),
             volume=float(market_event.volume),
             previous_close=previous_close,

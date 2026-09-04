@@ -16,12 +16,14 @@ from typing import Any, Mapping
 import pandas as pd
 
 from data.features import FeatureEngine
+from server.contracts.normalized_strategy_research import (
+    CANONICAL_COST_MODEL_REFERENCE,
+)
 
 from .contracts import JsonObject, canonical_json, content_fingerprint
 
 FORMULA_AST_CONTRACT = "karkinos.ai.formula_ast.v1"
 FORMULA_BINDING_CONTRACT = "karkinos.ai.formula_binding.v1"
-CANONICAL_COST_MODEL_REFERENCE = "karkinos.backtest.multi_asset_commission.default.v1"
 REVIEWED_ACCOUNT_COST_MODEL_PREFIX = (
     "karkinos.backtest.reviewed_account_fee_schedule.v1:"
 )

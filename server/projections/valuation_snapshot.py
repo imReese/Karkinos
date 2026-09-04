@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,11 +14,27 @@ from server.contracts.quote_ingestion import (
     quote_authority_conflict_fields,
     quote_timestamp_instant,
 )
+from server.ledger.models import LedgerEntry
+from server.projections.quote_status import (
+    expected_quote_date,
+    parse_quote_timestamp,
+    quote_is_stale,
+    quote_valuation_status,
+)
+from server.projections.service import build_portfolio_projection
+from server.services.market_hours import get_shanghai_now
+from server.services.position_presence import is_economically_zero_quantity
+from server.valuation_snapshot_contract import validate_valuation_snapshot
 
-VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v4"
+VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v5"
+_VALUATION_SCOPE_POLICY = "current_nonzero_positions.v1"
+_VALUATION_FRESHNESS_POLICY = "expected_session_and_live_ttl.v1"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
 _UNCONFIRMED_FUND_ESTIMATE_REASON = "confirmed_fund_nav_missing_estimate_only"
+_VALUATION_LANE_ASSET_CLASSES = ("stock", "fund")
+_MISSING_QUOTE_STATUSES = {"missing", "error"}
+_DEGRADED_QUOTE_STATUSES = {"stale", "estimated", "confirmed_nav_missing"}
 
 
 def _canonical_json(value: Any) -> str:
@@ -33,6 +49,23 @@ def _canonical_json(value: Any) -> str:
 
 def _fingerprint(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _valuation_snapshot_identity_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the complete v5 content-addressed identity payload."""
+
+    return {
+        "valuation_policy": payload["valuation_policy"],
+        "as_of": payload["as_of"],
+        "trade_date": payload["trade_date"],
+        "status": payload["status"],
+        "ledger_cutoff_id": int(payload.get("ledger_cutoff_id") or 0),
+        "ledger_fingerprint": payload["ledger_fingerprint"],
+        "quote_set_fingerprint": payload["quote_set_fingerprint"],
+        "metadata": payload["metadata"],
+    }
 
 
 def load_persisted_quote_rows(db: Any) -> list[dict[str, Any]]:
@@ -51,7 +84,12 @@ def load_persisted_quote_rows(db: Any) -> list[dict[str, Any]]:
 def _quote_identity(row: dict[str, Any]) -> tuple[str, str]:
     return (
         str(row.get("symbol") or ""),
-        str(row.get("asset_type") or row.get("asset_class") or "stock"),
+        _normalized_instrument_type(
+            row.get("instrument_type")
+            or row.get("asset_type")
+            or row.get("asset_class")
+            or "stock"
+        ),
     )
 
 
@@ -125,7 +163,10 @@ def _account_valuation_quote_rows(
 
 
 def _freeze_previous_close_evidence(
-    db: Any, quotes: list[dict[str, Any]]
+    db: Any,
+    quotes: list[dict[str, Any]],
+    *,
+    now: datetime,
 ) -> list[dict[str, Any]]:
     """Bind every quote to the exact persisted baseline used for daily PnL."""
     frozen: list[dict[str, Any]] = []
@@ -147,10 +188,26 @@ def _freeze_previous_close_evidence(
             .strip()
             .lower()
         )
+        instrument_type = _normalized_instrument_type(
+            quote.get("instrument_type") or asset_class
+        )
         evidence: dict[str, Any] | None = None
         if symbol and trade_date and db is not None:
-            if asset_class != "fund" and hasattr(db, "get_market_bar_on_date_sync"):
-                same_day_bar = db.get_market_bar_on_date_sync(symbol, trade_date)
+            same_day_close_available = trade_date < now.date().isoformat() or (
+                trade_date == now.date().isoformat()
+                and now.weekday() < 5
+                and now.time() >= time(15, 0)
+            )
+            if (
+                instrument_type != "open_end_fund"
+                and same_day_close_available
+                and hasattr(db, "get_market_bar_on_date_sync")
+            ):
+                same_day_bar = db.get_market_bar_on_date_sync(
+                    symbol,
+                    trade_date,
+                    instrument_type=instrument_type,
+                )
                 if same_day_bar and same_day_bar.get(
                     "close", same_day_bar.get("price")
                 ) not in {None, ""}:
@@ -173,7 +230,11 @@ def _freeze_previous_close_evidence(
                     quote["valuation_price_date"] = trade_date
                     quote["valuation_price_timestamp"] = valuation_timestamp
             if hasattr(db, "get_latest_market_bar_before_date_sync"):
-                row = db.get_latest_market_bar_before_date_sync(symbol, trade_date)
+                row = db.get_latest_market_bar_before_date_sync(
+                    symbol,
+                    trade_date,
+                    instrument_type=instrument_type,
+                )
                 if row and row.get("close", row.get("price")) not in {None, ""}:
                     evidence = {
                         "price": float(row.get("close", row.get("price"))),
@@ -183,7 +244,11 @@ def _freeze_previous_close_evidence(
                         "observation_source": row.get("source") or "market_bars",
                     }
             if evidence is None and hasattr(db, "get_latest_daily_close_before_sync"):
-                row = db.get_latest_daily_close_before_sync(symbol, trade_date)
+                row = db.get_latest_daily_close_before_sync(
+                    symbol,
+                    trade_date,
+                    instrument_type=instrument_type,
+                )
                 if row and row.get("close_price") not in {None, ""}:
                     evidence = {
                         "price": float(row["close_price"]),
@@ -193,7 +258,11 @@ def _freeze_previous_close_evidence(
                         or "daily_close_snapshots",
                     }
             if evidence is None and hasattr(db, "get_latest_quote_before_date_sync"):
-                row = db.get_latest_quote_before_date_sync(symbol, trade_date)
+                row = db.get_latest_quote_before_date_sync(
+                    symbol,
+                    trade_date,
+                    instrument_type=instrument_type,
+                )
                 if row and row.get("price") not in {None, ""}:
                     evidence = {
                         "price": float(row["price"]),
@@ -242,6 +311,46 @@ def _mark_unconfirmed_fund_estimate(quote: dict[str, Any]) -> None:
     quote["stale_reason"] = _UNCONFIRMED_FUND_ESTIMATE_REASON
     quote["valuation_price_source"] = source
     quote["valuation_evidence_status"] = "unconfirmed_estimate"
+
+
+def _freeze_current_quote_freshness(
+    quotes: list[dict[str, Any]],
+    *,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    """Freeze one wall-clock decision into otherwise persisted quote facts."""
+
+    expected_date = expected_quote_date(now)
+    frozen: list[dict[str, Any]] = []
+    for raw in quotes:
+        quote = dict(raw)
+        if quote_valuation_status(quote) != "complete":
+            frozen.append(quote)
+            continue
+        timestamp = parse_quote_timestamp(
+            quote.get("quote_timestamp") or quote.get("timestamp")
+        )
+        stale_reason: str | None = None
+        if timestamp is None:
+            stale_reason = "invalid_quote_timestamp"
+        elif timestamp > now + timedelta(minutes=1):
+            stale_reason = "quote_timestamp_after_valuation_clock"
+        elif quote_is_stale(
+            {**quote, "timestamp": timestamp.isoformat()},
+            now=now,
+        ):
+            stale_reason = (
+                "quote_older_than_expected_session"
+                if timestamp.date() < expected_date
+                else "quote_older_than_live_ttl"
+            )
+        if stale_reason is not None:
+            quote.setdefault("observed_quote_status", quote.get("quote_status"))
+            quote["quote_status"] = "stale"
+            quote["stale_reason"] = stale_reason
+            quote["valuation_evidence_status"] = "stale"
+        frozen.append(quote)
+    return frozen
 
 
 def _load_ledger_rows(
@@ -297,17 +406,182 @@ def ledger_identity_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _snapshot_status(quotes: list[dict[str, Any]]) -> str:
     if not quotes:
+        return "complete"
+    statuses = {quote_valuation_status(row) for row in quotes}
+    if "missing" in statuses:
         return "missing"
-    statuses = {
-        str(row.get("quote_status") or "live").strip().lower() for row in quotes
-    }
-    if statuses & {"missing", "error"}:
-        return "missing"
-    if statuses & {"stale", "estimated", "confirmed_nav_missing"}:
-        return "degraded"
-    if any(row.get("valuation_baseline_status") == "missing" for row in quotes):
+    if "degraded" in statuses:
         return "degraded"
     return "complete"
+
+
+def _valuation_lane_asset_class(quote: dict[str, Any]) -> str:
+    asset_class = (
+        str(quote.get("asset_type") or quote.get("asset_class") or "stock")
+        .strip()
+        .lower()
+    )
+    if asset_class in {*_VALUATION_LANE_ASSET_CLASSES, "etf"}:
+        return asset_class
+    return "other"
+
+
+def _valuation_lane_blockers(quotes: list[dict[str, Any]]) -> list[str]:
+    blockers: set[str] = set()
+    for quote in quotes:
+        quote_status = str(quote.get("quote_status") or "live").strip().lower()
+        if quote_status in _MISSING_QUOTE_STATUSES | _DEGRADED_QUOTE_STATUSES:
+            blockers.add(quote_status)
+        if quote.get("valuation_baseline_status") == "missing":
+            blockers.add("valuation_baseline_missing")
+    return sorted(blockers)
+
+
+def valuation_lanes_from_quotes(
+    quotes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Summarize quote completeness by asset class under one snapshot identity."""
+
+    grouped: dict[str, list[dict[str, Any]]] = {
+        asset_class: [] for asset_class in _VALUATION_LANE_ASSET_CLASSES
+    }
+    for quote in quotes:
+        grouped.setdefault(_valuation_lane_asset_class(quote), []).append(quote)
+
+    ordered_asset_classes = [*_VALUATION_LANE_ASSET_CLASSES]
+    if grouped.get("etf"):
+        ordered_asset_classes.append("etf")
+    if grouped.get("other"):
+        ordered_asset_classes.append("other")
+
+    lanes: list[dict[str, Any]] = []
+    for asset_class in ordered_asset_classes:
+        lane_quotes = grouped[asset_class]
+        review_required_count = sum(
+            quote_valuation_status(quote) != "complete" for quote in lane_quotes
+        )
+        lanes.append(
+            {
+                "asset_class": asset_class,
+                "status": (
+                    _snapshot_status(lane_quotes) if lane_quotes else "not_applicable"
+                ),
+                "quote_count": len(lane_quotes),
+                "complete_quote_count": len(lane_quotes) - review_required_count,
+                "review_required_quote_count": review_required_count,
+                "blocker_statuses": _valuation_lane_blockers(lane_quotes),
+            }
+        )
+    return lanes
+
+
+def _normalized_instrument_type(value: Any) -> str:
+    normalized = str(value or "stock").strip().lower().replace("-", "_")
+    if normalized in {"fund", "openend_fund"}:
+        return "open_end_fund"
+    return normalized
+
+
+def _current_position_scope(
+    ledger_rows: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Resolve canonical non-zero holdings from the same ledger rows we hash."""
+
+    entries = [LedgerEntry.from_row(row) for row in ledger_rows]
+    projection = build_portfolio_projection(entries, latest_quotes={})
+    evidence: dict[str, list[str]] = {}
+    for row in ledger_rows:
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        evidence.setdefault(symbol, []).append(
+            _normalized_instrument_type(row.get("asset_class"))
+        )
+    return {
+        symbol: _resolve_position_instrument_type(symbol, evidence.get(symbol, ()))
+        for symbol, position in projection.positions.items()
+        if not is_economically_zero_quantity(position.quantity)
+    }
+
+
+def _resolve_position_instrument_type(
+    symbol: str,
+    values: list[str] | tuple[str, ...],
+) -> str:
+    explicit = {value for value in values if value != "fund"}
+    has_legacy_fund = "fund" in values
+    if len(explicit) > 1:
+        kinds = ",".join(sorted(explicit))
+        raise ValueError(
+            f"authoritative instrument identity conflicts for {symbol}: {kinds}"
+        )
+    if explicit:
+        resolved = next(iter(explicit))
+        if has_legacy_fund and resolved not in {"etf", "open_end_fund"}:
+            raise ValueError(
+                f"authoritative instrument identity conflicts for {symbol}: "
+                f"{resolved},fund"
+            )
+        return resolved
+    if has_legacy_fund:
+        return "open_end_fund"
+    return "stock"
+
+
+def _valuation_asset_type(instrument_type: str) -> str:
+    return "fund" if instrument_type == "open_end_fund" else instrument_type
+
+
+def _quotes_for_current_positions(
+    quotes: list[dict[str, Any]],
+    position_scope: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Keep exactly one matching observation or an explicit missing row per holding."""
+
+    candidates: dict[tuple[str, str], dict[str, Any]] = {}
+    for quote in quotes:
+        identity = (
+            str(quote.get("symbol") or "").strip(),
+            _normalized_instrument_type(
+                quote.get("instrument_type")
+                or quote.get("asset_type")
+                or quote.get("asset_class")
+            ),
+        )
+        candidates[identity] = quote
+
+    scoped: list[dict[str, Any]] = []
+    for symbol, instrument_type in sorted(position_scope.items()):
+        quote = candidates.get((symbol, instrument_type))
+        # Legacy rows used ``fund`` for open-end funds.  An ETF must retain an
+        # explicit ETF identity; otherwise a same-symbol fund observation could
+        # silently satisfy the wrong valuation lane.
+        if quote is None and instrument_type == "open_end_fund":
+            quote = candidates.get((symbol, "fund"))
+        if quote is None:
+            scoped.append(
+                {
+                    "symbol": symbol,
+                    "asset_type": _valuation_asset_type(instrument_type),
+                    "quote_status": "missing",
+                    "stale_reason": "holding_quote_missing",
+                    "valuation_baseline_status": "missing",
+                    "valuation_evidence_status": "missing",
+                }
+            )
+            continue
+        scoped.append(
+            {
+                **quote,
+                "observation_instrument_type": _normalized_instrument_type(
+                    quote.get("instrument_type")
+                    or quote.get("asset_type")
+                    or quote.get("asset_class")
+                ),
+                "asset_type": _valuation_asset_type(instrument_type),
+            }
+        )
+    return scoped
 
 
 def _snapshot_as_of(
@@ -343,33 +617,56 @@ def build_current_valuation_snapshot(
     valuation_policy: str = VALUATION_POLICY_VERSION,
     persist: bool = False,
     candidate_ledger_rows: list[dict[str, Any]] | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build an immutable valuation identity, persisting only when requested."""
-    persisted_quote_rows = load_persisted_quote_rows(db)
-    quotes = _freeze_previous_close_evidence(
-        db,
-        select_authoritative_quote_rows(
-            _account_valuation_quote_rows(persisted_quote_rows)
-        ),
-    )
+    frozen_now = get_shanghai_now(now)
+    valuation_expected_date = expected_quote_date(frozen_now).isoformat()
     ledger_identity = ledger_identity_from_rows(
         _load_ledger_rows(db, candidate_rows=candidate_ledger_rows)
     )
     ledger_rows = ledger_identity["rows"]
+    persisted_quote_rows = load_persisted_quote_rows(db)
+    selected_quotes = select_authoritative_quote_rows(
+        _account_valuation_quote_rows(persisted_quote_rows)
+    )
+    position_scope = _current_position_scope(ledger_rows)
+    position_scope_fingerprint = _fingerprint(position_scope)
+    scoped_quotes = _quotes_for_current_positions(selected_quotes, position_scope)
+    observed_quotes = [
+        quote for quote in scoped_quotes if quote.get("quote_status") != "missing"
+    ]
+    missing_quotes = [
+        quote for quote in scoped_quotes if quote.get("quote_status") == "missing"
+    ]
+    quotes = _freeze_current_quote_freshness(
+        [
+            *_freeze_previous_close_evidence(db, observed_quotes, now=frozen_now),
+            *missing_quotes,
+        ],
+        now=frozen_now,
+    )
     quote_set_fingerprint = _fingerprint(quotes)
     ledger_fingerprint = ledger_identity["ledger_fingerprint"]
     ledger_cutoff_id = ledger_identity["ledger_cutoff_id"]
     as_of = _snapshot_as_of(quotes, ledger_rows)
     trade_date = _snapshot_trade_date(quotes, as_of)
-    identity_payload = {
-        "valuation_policy": valuation_policy,
-        "quote_set_fingerprint": quote_set_fingerprint,
-        "ledger_fingerprint": ledger_fingerprint,
-        "ledger_cutoff_id": ledger_cutoff_id,
+    metadata = {
+        "quote_count": len(quotes),
+        "current_position_count": len(position_scope),
+        "valuation_scope_policy": _VALUATION_SCOPE_POLICY,
+        "valuation_freshness_policy": _VALUATION_FRESHNESS_POLICY,
+        "valuation_expected_date": valuation_expected_date,
+        "current_position_scope_fingerprint": position_scope_fingerprint,
+        "ledger_entry_count": len(ledger_rows),
+        "persisted_facts_only": True,
+        "runtime_cache_used": False,
+        "provider_fetch_used": False,
+        "ingestion_run_ids": sorted(
+            {str(row["fetch_run_id"]) for row in quotes if row.get("fetch_run_id")}
+        ),
     }
-    snapshot_id = f"valuation-{_fingerprint(identity_payload)}"
     payload = {
-        "snapshot_id": snapshot_id,
         "as_of": as_of,
         "trade_date": trade_date,
         "valuation_policy": valuation_policy,
@@ -377,18 +674,13 @@ def build_current_valuation_snapshot(
         "ledger_fingerprint": ledger_fingerprint,
         "quote_set_fingerprint": quote_set_fingerprint,
         "status": _snapshot_status(quotes),
+        "valuation_lanes": valuation_lanes_from_quotes(quotes),
         "quotes": quotes,
-        "metadata": {
-            "quote_count": len(quotes),
-            "ledger_entry_count": len(ledger_rows),
-            "persisted_facts_only": True,
-            "runtime_cache_used": False,
-            "provider_fetch_used": False,
-            "ingestion_run_ids": sorted(
-                {str(row["fetch_run_id"]) for row in quotes if row.get("fetch_run_id")}
-            ),
-        },
+        "metadata": metadata,
     }
+    payload["snapshot_id"] = (
+        f"valuation-{_fingerprint(_valuation_snapshot_identity_payload(payload))}"
+    )
     if persist:
         raise RuntimeError(
             "valuation projections are read-only; publish through the service boundary"
@@ -412,7 +704,8 @@ def valuation_identity_fields(payload: dict[str, Any]) -> dict[str, Any]:
 
 def valuation_snapshot_from_row(row: dict[str, Any]) -> dict[str, Any]:
     """Deserialize one persisted valuation snapshot row for API use."""
-    return {
+    quotes = json.loads(row.get("quotes_json") or "[]")
+    payload = {
         "snapshot_id": row["snapshot_id"],
         "as_of": row["as_of"],
         "trade_date": row["trade_date"],
@@ -421,7 +714,24 @@ def valuation_snapshot_from_row(row: dict[str, Any]) -> dict[str, Any]:
         "ledger_fingerprint": row["ledger_fingerprint"],
         "quote_set_fingerprint": row["quote_set_fingerprint"],
         "status": row["status"],
-        "quotes": json.loads(row.get("quotes_json") or "[]"),
+        "valuation_lanes": valuation_lanes_from_quotes(quotes),
+        "quotes": quotes,
         "metadata": json.loads(row.get("metadata_json") or "{}"),
         "created_at": row["created_at"],
     }
+    validate_valuation_snapshot(payload)
+    return payload
+
+
+__all__ = [
+    "VALUATION_POLICY_VERSION",
+    "build_current_valuation_snapshot",
+    "ledger_identity_from_rows",
+    "load_persisted_quote_rows",
+    "quote_valuation_status",
+    "select_authoritative_quote_rows",
+    "valuation_identity_fields",
+    "valuation_lanes_from_quotes",
+    "valuation_snapshot_from_row",
+    "validate_valuation_snapshot",
+]

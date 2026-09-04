@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,9 @@ from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
     build_daily_strategy_selection,
+)
+from server.services.promoted_strategy_universe_scan import (
+    PromotedStrategyUniverseScanService,
 )
 from tests.ai_shadow_strategy_fixtures import seed_ai_shadow_canonical_sources
 
@@ -90,6 +94,132 @@ def _passed_candidates(tmp_path: Path) -> tuple[AppDatabase, list[dict]]:
     return db, candidates
 
 
+def _normalized_candidates(
+    *,
+    run_id: str = "run-normalized-research",
+    candidate_prefix: str = "normalized-candidate",
+    draft_prefix: str = "draft",
+) -> list[dict]:
+    candidates = []
+    for ordinal in range(1, 6):
+        candidates.append(
+            {
+                "candidate_id": f"{candidate_prefix}-{ordinal}",
+                "run_id": run_id,
+                "session_id": f"session-{run_id}",
+                "draft_id": f"{draft_prefix}-{ordinal}",
+                "critique_id": f"critique-{ordinal}",
+                "status": "evaluated_research_only",
+                "recommendation": "formula_research_candidate",
+                "comparison": {
+                    "research_capital_mode": "normalized_notional",
+                    "account_qualification_status": "not_evaluated",
+                    "baseline_source_fingerprint": "sha256:" + "a" * 64,
+                    "candidate_source_fingerprint": (f"sha256:{ordinal + 20:064x}"),
+                    "candidate": {
+                        "dataset_snapshot_id": "sha256:" + "d" * 64,
+                        "initial_cash": 1_000_000,
+                        "total_return": ordinal / 100,
+                        "mean_oos_return": ordinal / 200,
+                        "worst_oos_return": ordinal / 400,
+                        "sharpe": 1 + ordinal / 10,
+                        "max_drawdown": 0.1,
+                        "total_cost": 1_000,
+                    },
+                    "iteration_lineage": {
+                        "iteration_number": ordinal,
+                        "total_iterations": 5,
+                        "formula_fingerprint": f"sha256:{ordinal:064x}",
+                        "parent_candidate_id": (
+                            None
+                            if ordinal == 1
+                            else f"{candidate_prefix}-{ordinal - 1}"
+                        ),
+                        "parent_draft_id": (
+                            None if ordinal == 1 else f"{draft_prefix}-{ordinal - 1}"
+                        ),
+                        "parent_formula_fingerprint": (
+                            None if ordinal == 1 else f"sha256:{ordinal - 1:064x}"
+                        ),
+                        "iteration_context_fingerprint": (
+                            f"sha256:{ordinal + 100:064x}"
+                        ),
+                        "sequential_feedback_bound": True,
+                    },
+                    "promotion_gate": {
+                        "status": "blocked",
+                        "blockers": ["account_qualification_not_evaluated"],
+                    },
+                },
+            }
+        )
+    return candidates
+
+
+def _normalized_drafts(
+    *,
+    market_date: str = "2026-08-31",
+    draft_prefix: str = "draft",
+) -> list[dict]:
+    drafts = []
+    for ordinal in range(1, 6):
+        draft = _draft(ordinal)
+        draft["draft_id"] = f"{draft_prefix}-{ordinal}"
+        draft["dataset_snapshot_id"] = "sha256:" + "d" * 64
+        draft["test_window"] = {
+            "start_date": "2025-01-01",
+            "end_date": market_date,
+        }
+        draft["cost_model_reference"] = (
+            "karkinos.backtest.multi_asset_commission.default.v1"
+        )
+        drafts.append(draft)
+    return drafts
+
+
+def _record_normalized_artifacts(tmp_path: Path) -> DailyStrategyArtifactStore:
+    artifacts = DailyStrategyArtifactStore(
+        tmp_path / "app.db", tmp_path / "strategy-research-backups"
+    )
+    _record_normalized_batch(
+        artifacts,
+        run_id="run-normalized-research",
+        market_date="2026-08-31",
+        candidate_prefix="normalized-candidate",
+        draft_prefix="draft",
+    )
+    return artifacts
+
+
+def _record_normalized_batch(
+    artifacts: DailyStrategyArtifactStore,
+    *,
+    run_id: str,
+    market_date: str,
+    candidate_prefix: str,
+    draft_prefix: str,
+) -> dict:
+    return artifacts.record_daily_artifacts(
+        run={
+            "run_id": run_id,
+            "market_date": market_date,
+            "input_fingerprint": "sha256:" + "e" * 64,
+        },
+        candidates=_normalized_candidates(
+            run_id=run_id,
+            candidate_prefix=candidate_prefix,
+            draft_prefix=draft_prefix,
+        ),
+        drafts=_normalized_drafts(
+            market_date=market_date,
+            draft_prefix=draft_prefix,
+        ),
+        expected_candidate_count=5,
+        run_status="completed",
+        created_at=f"{market_date}T10:16:00+00:00",
+    )
+
+
 @pytest.mark.unit
 @pytest.mark.trading_safety
 def test_five_complete_sequential_rounds_get_one_deterministic_winner_and_backup(
@@ -145,6 +275,221 @@ def test_five_complete_sequential_rounds_get_one_deterministic_winner_and_backup
         artifacts.require_verified_winner(
             candidate_id="candidate-2", run_id="run-daily-selection"
         )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_latest_verified_normalized_batch_loads_every_formula_without_authority(
+    tmp_path,
+) -> None:
+    artifacts = _record_normalized_artifacts(tmp_path)
+
+    batch = artifacts.load_latest_verified_research_candidate_strategies()
+    candidate = artifacts.require_verified_research_candidate(
+        candidate_id="normalized-candidate-2",
+        run_id="run-normalized-research",
+    )
+
+    assert batch["run_id"] == "run-normalized-research"
+    assert batch["expected_candidate_count"] == 5
+    assert batch["research_winner_candidate_id"] == "normalized-candidate-5"
+    assert batch["source_research_selection"] == {
+        "schema_version": "karkinos.ai.normalized_source_selection_binding.v1",
+        "universe": ["510300"],
+        "asset_classes": ["stock"],
+        "asset_class_policy": "daily_candidate_stock_only",
+        "dataset_snapshot_id": "sha256:" + "d" * 64,
+        "start_date": "2025-01-01",
+        "end_date": "2026-08-31",
+        "frequency": "1d",
+        "initial_cash": 1_000_000.0,
+        "notional_policy_id": "karkinos.ai.normalized_research_notional.cny_1m.v1",
+        "cost_model_reference": ("karkinos.backtest.multi_asset_commission.default.v1"),
+        "account_fact_binding": "not_applicable_strategy_only_research",
+        "saved_backtest_result_id": None,
+        "saved_backtest_result_id_status": ("not_present_in_privacy_minimized_backup"),
+        "contains_private_account_identifiers": False,
+        "authority_effect": "research_only",
+    }
+    assert [item["iteration_number"] for item in batch["candidate_strategies"]] == [
+        1,
+        2,
+        3,
+        4,
+        5,
+    ]
+    assert candidate["candidate_id"] == "normalized-candidate-2"
+    assert candidate["strategy"]["formula_ast"]["entry"]["op"] == "const"
+    assert candidate["formula_fingerprint"] == "sha256:" + f"{2:064x}"
+    assert len(candidate["source_comparison_fingerprint"]) == 64
+    assert candidate["account_qualification_status"] == "not_evaluated"
+    assert candidate["provider_contact_performed"] is False
+    assert candidate["read_only"] is True
+    assert candidate["authorizes_strategy_promotion"] is False
+    assert candidate["authorizes_order_creation"] is False
+    assert candidate["authorizes_execution"] is False
+    assert candidate["changes_capital_authority"] is False
+    assert candidate["authority_effect"] == "none"
+    with pytest.raises(
+        DailyStrategyArtifactRejected,
+        match="candidate_is_not_verified_daily_winner",
+    ):
+        artifacts.require_verified_winner(
+            candidate_id="normalized-candidate-5",
+            run_id="run-normalized-research",
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_verified_research_pairs_are_live_checked_and_oldest_first(tmp_path) -> None:
+    artifacts = _record_normalized_artifacts(tmp_path)
+    _record_normalized_batch(
+        artifacts,
+        run_id="run-newer-normalized-research",
+        market_date="2026-09-01",
+        candidate_prefix="newer-normalized-candidate",
+        draft_prefix="newer-draft",
+    )
+
+    assert [
+        item["run_id"] for item in artifacts.list_verified_research_artifact_pairs()
+    ] == ["run-normalized-research", "run-newer-normalized-research"]
+
+    oldest_backup = next(
+        item
+        for item in artifacts.list_backups(limit=-1)
+        if item["run_id"] == "run-normalized-research"
+    )
+    backup_path = (
+        tmp_path / "strategy-research-backups" / oldest_backup["relative_path"]
+    )
+    backup_path.write_text("{}", encoding="utf-8")
+
+    assert [
+        item["run_id"] for item in artifacts.list_verified_research_artifact_pairs()
+    ] == ["run-newer-normalized-research"]
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_promoted_scan_reopens_exact_older_batch_after_new_research_batch(
+    tmp_path,
+) -> None:
+    artifacts = _record_normalized_artifacts(tmp_path)
+    old_candidate = artifacts.require_verified_research_candidate(
+        candidate_id="normalized-candidate-5",
+        run_id="run-normalized-research",
+    )
+    _record_normalized_batch(
+        artifacts,
+        run_id="run-newer-normalized-research",
+        market_date="2026-09-01",
+        candidate_prefix="newer-normalized-candidate",
+        draft_prefix="newer-draft",
+    )
+    strategy_id = "ai_formula_shadow:normalized-candidate-5"
+    db = SimpleNamespace(
+        path=tmp_path / "app.db",
+        list_strategy_promotion_states_sync=lambda: [
+            {"strategy_id": strategy_id, "stage": "paper_shadow"}
+        ],
+    )
+    service = object.__new__(PromotedStrategyUniverseScanService)
+    service._db = db
+    service._strategy_loader = service._load_strategy
+    service._strategy_gate_resolver = lambda current_db, current_id, **kwargs: (
+        {
+            "status": "pass",
+            "promotion": {
+                "daily_strategy_artifact_binding": {
+                    "winner_candidate_id": old_candidate["candidate_id"],
+                    "run_id": old_candidate["run_id"],
+                    "qualification_overlay_required": True,
+                    "operating_constraints": {
+                        "strategy_artifact_fingerprint": old_candidate[
+                            "strategy_artifact_fingerprint"
+                        ]
+                    },
+                },
+                "qualification_binding": {"evidence_fingerprint": "sha256:" + "f" * 64},
+            },
+        },
+        [],
+    )
+
+    latest = artifacts.load_latest_verified_research_candidate_strategies()
+    promoted, blockers = service._resolve_promoted_strategies("2026-09-02")
+
+    assert latest["run_id"] == "run-newer-normalized-research"
+    assert blockers == []
+    assert len(promoted) == 1
+    assert promoted[0]["strategy_id"] == strategy_id
+    assert promoted[0]["strategy"] == old_candidate["strategy"]
+    assert (
+        promoted[0]["strategy_artifact_fingerprint"]
+        == old_candidate["strategy_artifact_fingerprint"]
+    )
+
+    old_backup = next(
+        item
+        for item in artifacts.list_backups()
+        if item["run_id"] == "run-normalized-research"
+    )
+    (tmp_path / "strategy-research-backups" / old_backup["relative_path"]).write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        DailyStrategyArtifactRejected,
+        match="daily_research_backup_not_verified",
+    ):
+        artifacts.require_verified_research_candidate(
+            candidate_id="normalized-candidate-5",
+            run_id="run-normalized-research",
+        )
+    drifted_promoted, drift_blockers = service._resolve_promoted_strategies(
+        "2026-09-02"
+    )
+    assert drifted_promoted == []
+    assert len(drift_blockers) == 1
+    assert drift_blockers[0].startswith(f"promoted_strategy_snapshot:{strategy_id}:")
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.parametrize(
+    ("tamper", "error"),
+    [
+        ("duplicate_candidate", "daily_research_candidate_identity_conflict"),
+        ("comparison", "daily_research_candidate_comparison_mismatch"),
+        ("strategy", "daily_research_candidate_strategy_mismatch"),
+    ],
+)
+def test_normalized_batch_fails_closed_on_cross_artifact_mismatch(
+    tmp_path,
+    monkeypatch,
+    tamper: str,
+    error: str,
+) -> None:
+    artifacts = _record_normalized_artifacts(tmp_path)
+    payload = deepcopy(artifacts.load_latest_verified_research_artifacts()["payload"])
+    if tamper == "duplicate_candidate":
+        payload["candidates"][-1] = deepcopy(payload["candidates"][0])
+    elif tamper == "comparison":
+        payload["candidates"][0]["comparison_fingerprint"] = "sha256:" + "9" * 64
+    else:
+        payload["candidates"][0]["strategy"]["formula_fingerprint"] = (
+            "sha256:" + "9" * 64
+        )
+    monkeypatch.setattr(
+        artifacts,
+        "_load_verified_payload",
+        lambda record, **kwargs: payload,
+    )
+
+    with pytest.raises(DailyStrategyArtifactRejected, match=error):
+        artifacts.load_latest_verified_research_candidate_strategies()
 
 
 @pytest.mark.unit
@@ -357,3 +702,8 @@ def test_authorized_corrected_panel_result_atomically_supersedes_old_no_selectio
     assert superseded_selections[0]["superseded_by_run_id"] == ("new-forty-stock-run")
     assert superseded_backups[0]["run_id"] == "old-single-stock-run"
     assert superseded_backups[0]["verification_status"] == "verified"
+    with pytest.raises(
+        DailyStrategyArtifactRejected,
+        match="daily_research_selection_or_backup_missing",
+    ):
+        artifacts.load_verified_research_artifacts(run_id="old-single-stock-run")

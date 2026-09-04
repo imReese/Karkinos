@@ -22,10 +22,20 @@ export function PerformanceBreakdownCard({
 }) {
   const copy = useCopy();
   const labels = copy.overview.breakdown;
-  const investedCapital = Math.max(snapshot.total_equity - snapshot.cash, 0);
-  const totalPnl = overview.realized_pnl + overview.unrealized_pnl;
+  const investedCapital =
+    snapshot.total_equity === null
+      ? null
+      : Math.max(snapshot.total_equity - snapshot.cash, 0);
+  const totalPnl =
+    overview.unrealized_pnl === null
+      ? null
+      : overview.realized_pnl + overview.unrealized_pnl;
   const deploymentRatio =
-    snapshot.total_equity > 0 ? investedCapital / snapshot.total_equity : 0;
+    snapshot.total_equity !== null &&
+    snapshot.total_equity > 0 &&
+    investedCapital !== null
+      ? investedCapital / snapshot.total_equity
+      : null;
 
   const items =
     mode === 'account'

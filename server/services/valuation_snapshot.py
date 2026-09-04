@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from server.projections.valuation_snapshot import (
@@ -14,6 +15,7 @@ from server.projections.valuation_snapshot import (
     ledger_identity_from_rows,
     load_persisted_quote_rows,
     select_authoritative_quote_rows,
+    validate_valuation_snapshot,
     valuation_identity_fields,
     valuation_snapshot_from_row,
 )
@@ -24,6 +26,7 @@ def build_current_valuation_snapshot(
     *,
     valuation_policy: str = VALUATION_POLICY_VERSION,
     persist: bool = False,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a projection or atomically publish it with an explicit choice."""
 
@@ -32,13 +35,16 @@ def build_current_valuation_snapshot(
         if not callable(publisher):
             raise RuntimeError("valuation snapshot publication is unavailable")
         if valuation_policy == VALUATION_POLICY_VERSION:
-            return publisher()
-        return publisher(valuation_policy=valuation_policy)
+            return publisher() if now is None else publisher(now=now)
+        if now is None:
+            return publisher(valuation_policy=valuation_policy)
+        return publisher(valuation_policy=valuation_policy, now=now)
 
     payload = _build_current_valuation_snapshot(
         db,
         valuation_policy=valuation_policy,
         persist=False,
+        now=now,
     )
     return payload
 
@@ -49,6 +55,7 @@ __all__ = [
     "ledger_identity_from_rows",
     "load_persisted_quote_rows",
     "select_authoritative_quote_rows",
+    "validate_valuation_snapshot",
     "valuation_identity_fields",
     "valuation_snapshot_from_row",
 ]

@@ -6,10 +6,10 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from server.ai_runtime.strategy_research_privacy import (
+from server.contracts.content_identity import content_fingerprint
+from server.contracts.normalized_strategy_research import (
     NORMALIZED_RESEARCH_NOTIONAL,
 )
-from server.contracts.content_identity import content_fingerprint
 from server.projections.normalized_research_operation_preview import (
     bind_research_winner_operation_preview,
     is_valid_research_operation_recommendation,

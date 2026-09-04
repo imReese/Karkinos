@@ -1,7 +1,9 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 
+import { formatTimestamp } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import {
+  useApproveShadowResearchQualificationCandidateMutation,
   useApproveShadowResearchCandidateMutation,
   usePauseShadowResearchCandidateMutation,
   useRunShadowResearchMutation,
@@ -13,6 +15,7 @@ import {
   type ShadowResearchPolicyInput,
 } from '../api';
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
+import { ShadowResearchQualificationReview } from './shadow-research-qualification';
 import {
   CandidateCard,
   Field,
@@ -117,6 +120,68 @@ function verifiedDailyCandidateIds(
   };
 }
 
+function TodayProviderActivityMetric({
+  copy,
+  activity,
+}: {
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  activity: ShadowResearchAutomationStatus['today_provider_activity'];
+}) {
+  return (
+    <StatusMetric
+      label={copy.todayCalls}
+      value={String(activity?.provider_calls ?? 0)}
+      detail={
+        activity?.last_provider_call_at
+          ? `${copy.lastProviderCall}: ${formatTimestamp(
+              activity.last_provider_call_at,
+            )} · ${copy.researchMarketDate}: ${activity.last_provider_call_market_date ?? '—'}`
+          : `${activity?.local_date ?? '—'} · ${copy.noCallsToday}`
+      }
+    />
+  );
+}
+
+function ShadowResearchUsageMetrics({
+  copy,
+  status,
+  policy,
+  providerWindow,
+}: {
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  status: ShadowResearchAutomationStatus | undefined;
+  policy: ShadowResearchPolicyInput;
+  providerWindow: ShadowResearchAutomationStatus['provider_call_window'];
+}) {
+  const latestRun = status?.runs[0];
+  return (
+    <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <StatusMetric
+        label={copy.calls}
+        value={`${status?.usage.provider_calls ?? 0} / ${status?.policy.max_provider_calls_per_market_date ?? policy.max_provider_calls_per_market_date}`}
+        detail={status?.usage.market_date ?? '—'}
+      />
+      <TodayProviderActivityMetric
+        copy={copy}
+        activity={status?.today_provider_activity}
+      />
+      <ProviderCallWindowMetric copy={copy} providerWindow={providerWindow} />
+      <StatusMetric
+        label={copy.tokens}
+        value={String(status?.usage.actual_tokens ?? 0)}
+        detail={`${status?.policy.token_budget_mode === 'unbounded_daily' ? copy.unboundedDailyTokens : copy.legacyBoundedDailyTokens} · ${copy.tokenAccountingEstimate} ${status?.usage.reserved_tokens ?? 0}`}
+      />
+      <StatusMetric
+        label={copy.candidates}
+        value={String(status?.candidates.length ?? 0)}
+        detail={
+          latestRun ? `${latestRun.market_date} · ${latestRun.status}` : '—'
+        }
+      />
+    </div>
+  );
+}
+
 export function ShadowResearchPanel() {
   const { locale } = usePreferences();
   const copy = SHADOW_RESEARCH_COPY[locale];
@@ -125,6 +190,8 @@ export function ShadowResearchPanel() {
   const updatePolicy = useUpdateShadowResearchPolicyMutation();
   const run = useRunShadowResearchMutation();
   const approve = useApproveShadowResearchCandidateMutation();
+  const approveQualification =
+    useApproveShadowResearchQualificationCandidateMutation();
   const pause = usePauseShadowResearchCandidateMutation();
   const [policy, setPolicy] = useState<ShadowResearchPolicyInput>(EMPTY_POLICY);
   const [policyConfirmed, setPolicyConfirmed] = useState(false);
@@ -217,7 +284,6 @@ export function ShadowResearchPanel() {
   const persistedPolicyReady = status?.policy
     ? isFiveRoundPolicy(status.policy)
     : false;
-  const latestRun = status?.runs[0];
   const providerWindow = status?.provider_call_window;
   const providerWindowEligible =
     providerWindow?.status !== 'deferred_for_provider_off_peak';
@@ -251,26 +317,12 @@ export function ShadowResearchPanel() {
         />
       </div>
 
-      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatusMetric
-          label={copy.calls}
-          value={`${status?.usage.provider_calls ?? 0} / ${status?.policy.max_provider_calls_per_market_date ?? policy.max_provider_calls_per_market_date}`}
-          detail={status?.usage.market_date ?? '—'}
-        />
-        <ProviderCallWindowMetric copy={copy} providerWindow={providerWindow} />
-        <StatusMetric
-          label={copy.tokens}
-          value={String(status?.usage.actual_tokens ?? 0)}
-          detail={`${status?.policy.token_budget_mode === 'unbounded_daily' ? copy.unboundedDailyTokens : copy.legacyBoundedDailyTokens} · ${copy.tokenAccountingEstimate} ${status?.usage.reserved_tokens ?? 0}`}
-        />
-        <StatusMetric
-          label={copy.candidates}
-          value={String(status?.candidates.length ?? 0)}
-          detail={
-            latestRun ? `${latestRun.market_date} · ${latestRun.status}` : '—'
-          }
-        />
-      </div>
+      <ShadowResearchUsageMetrics
+        copy={copy}
+        status={status}
+        policy={policy}
+        providerWindow={providerWindow}
+      />
       <p className="app-muted mt-2 text-xs leading-5">
         {copy.fiveCandidateRule}
       </p>
@@ -419,12 +471,28 @@ export function ShadowResearchPanel() {
         updatePolicy.isError ||
         run.isError ||
         approve.isError ||
+        approveQualification.isError ||
         pause.isError ||
         promotionStates.isError) && (
         <p className="mt-3 text-sm text-[var(--app-danger-text)]">
           {copy.failure}
         </p>
       )}
+
+      <ShadowResearchQualificationReview
+        approvedBy={policy.updated_by}
+        copy={copy}
+        locale={locale}
+        onApprove={async (qualificationCandidateId, approvalNotes) => {
+          await approveQualification.mutateAsync({
+            qualification_candidate_id: qualificationCandidateId,
+            approved_by: policy.updated_by,
+            notes: approvalNotes,
+          });
+        }}
+        pending={approveQualification.isPending}
+        status={status}
+      />
 
       <ShadowCandidateList
         approvals={approvals}

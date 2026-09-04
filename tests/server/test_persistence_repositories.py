@@ -47,6 +47,8 @@ def test_watchlist_repository_preserves_upsert_order_and_delete_semantics(
     assert updated["id"] == created["id"]
     assert updated["created_at"] == created["created_at"]
     assert updated["asset_class"] == "etf"
+    assert updated["instrument_type"] == "etf"
+    assert updated["identity_provenance"] == "persisted_canonical"
     assert updated["display_name"] == "沪深300 ETF"
     assert [row["symbol"] for row in repository.list_assets()] == [
         "510300",
@@ -82,10 +84,49 @@ def test_watchlist_repository_seed_is_repeatable_without_duplicate_rows(
         ("019999", "示例基金"),
         ("600001", "示例能源"),
     ]
+    assert second_rows[0]["instrument_type"] == "stock"
     assert [row["id"] for row in second_rows] == [row["id"] for row in first_rows]
     assert all(row["source"] == "config_migration" for row in second_rows)
     assert repository.upsert_asset(symbol=" ") is None
     assert repository.seed_from_config(None) == 0
+
+
+def test_watchlist_new_fund_write_is_canonical_but_legacy_seed_is_tagged(
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    database.init_sync()
+    repository = WatchlistRepository(database.path)
+
+    created = repository.upsert_asset(
+        symbol="019999",
+        asset_class="fund",
+        display_name="示例开放式基金",
+    )
+    repository.seed_from_config(
+        [{"symbol": "019998", "asset_class": "fund", "display_name": "旧基金"}]
+    )
+
+    assert created is not None
+    assert created["asset_class"] == "fund"
+    assert created["instrument_type"] == "open_end_fund"
+    assert created["identity_provenance"] == "persisted_canonical"
+    rows = repository.list_assets()
+    legacy = next(row for row in rows if row["symbol"] == "019998")
+    assert legacy["instrument_type"] == "open_end_fund"
+    assert legacy["identity_provenance"] == "legacy_fund_compatibility"
+    with sqlite3.connect(database.path) as conn:
+        persisted = dict(
+            zip(
+                ("symbol", "asset_class"),
+                conn.execute(
+                    "SELECT symbol, asset_class FROM watchlist_assets "
+                    "WHERE symbol = '019999'"
+                ).fetchone(),
+                strict=True,
+            )
+        )
+    assert persisted == {"symbol": "019999", "asset_class": "open_end_fund"}
 
 
 def test_runtime_control_repository_overwrites_one_key_without_duplication(
@@ -600,6 +641,7 @@ def test_app_database_methods_delegate_to_focused_repositories(
             {
                 "symbol": "510300",
                 "asset_class": "stock",
+                "instrument_type": None,
                 "display_name": None,
                 "source": "manual",
             },

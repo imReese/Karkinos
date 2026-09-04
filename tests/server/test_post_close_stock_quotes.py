@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from core.types import AssetClass, Symbol
+from data.market_daily_store import is_supported_stock_receipt_identity
 from data.store import DataStore
 from server.db import AppDatabase
 from server.services.market_calendar_dates import (
@@ -20,6 +21,33 @@ _ORIGINAL_OFFICIAL_FINGERPRINT = "d" * 64
 _DRIFTED_OFFICIAL_FINGERPRINT = "e" * 64
 _TRADE_DATE = date(2026, 5, 29)
 _WATCHLIST = [(Symbol("600001"), AssetClass.STOCK)]
+
+
+def test_stock_daily_receipt_identity_accepts_only_legacy_or_typed_stock() -> None:
+    assert is_supported_stock_receipt_identity(
+        {
+            "schema_version": "karkinos.market_daily_ingestion_receipt.v1",
+            "storage_authority": "sqlite_market_bars",
+        }
+    )
+    assert is_supported_stock_receipt_identity(
+        {
+            "schema_version": "karkinos.market_daily_ingestion_receipt.v2",
+            "storage_authority": "sqlite_market_bars_v2:stock",
+        }
+    )
+    assert not is_supported_stock_receipt_identity(
+        {
+            "schema_version": "karkinos.market_daily_ingestion_receipt.v2",
+            "storage_authority": "sqlite_market_bars_v2:etf",
+        }
+    )
+    assert not is_supported_stock_receipt_identity(
+        {
+            "schema_version": "karkinos.market_daily_ingestion_receipt.v2",
+            "storage_authority": "sqlite_market_bars",
+        }
+    )
 
 
 def _database(tmp_path) -> AppDatabase:

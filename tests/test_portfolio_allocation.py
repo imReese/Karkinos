@@ -102,6 +102,26 @@ def test_portfolio_allocation_does_not_rebuy_existing_target_quantity() -> None:
     assert allocated["target_weight"] == 0.2
 
 
+def test_persisted_allocation_never_falls_back_to_action_price() -> None:
+    action = _action(1, "600001", "buy", 0.2, "stock")
+    action["price"] = 10.0
+
+    allocated = allocate_action_tasks(
+        [action],
+        portfolio=SimpleNamespace(
+            cash=30000.0,
+            total_equity=50000.0,
+            positions={},
+        ),
+        quotes={"600001": {"price": 0.0}},
+        require_persisted_quote_price=True,
+    )[0]
+
+    assert allocated["allocation_price"] is None
+    assert allocated["allocation_quantity"] == 0.0
+    assert allocated["allocation_status"] == "missing_price_or_equity"
+
+
 def _action(
     action_id: int,
     symbol: str,

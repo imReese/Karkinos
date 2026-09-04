@@ -83,7 +83,7 @@ class SignalAutomationDatabaseFacade(DatabaseRepositoryAccess):
         strategy_id: str,
         timestamp: str,
         asset_class: str,
-    ) -> None:
+    ) -> int:
         """同步写入或更新待执行任务，避免重复生成。"""
         return self._signal_journal.upsert_action_task_sync(
             source_signal_id=source_signal_id,
@@ -173,6 +173,26 @@ class SignalAutomationDatabaseFacade(DatabaseRepositoryAccess):
         """同步写入风控决策审计记录。"""
         return self._signal_journal.save_risk_decision_sync(
             intent=intent, decision=decision
+        )
+
+    def capture_pre_trade_risk_guard_sync(
+        self,
+        *,
+        tasks: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Capture exact persisted identities for one candidate risk batch."""
+        return self._pre_trade_risk.capture_guard_sync(tasks=tasks)
+
+    def commit_pre_trade_risk_batch_sync(
+        self,
+        *,
+        writes: list[tuple[Any, Any]],
+        evidence_binding: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically revalidate and persist a complete candidate risk batch."""
+        return self._pre_trade_risk.commit_batch_sync(
+            writes=writes,
+            evidence_binding=evidence_binding,
         )
 
     def get_risk_decisions_sync(

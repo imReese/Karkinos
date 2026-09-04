@@ -17,6 +17,7 @@ def allocate_action_tasks(
     portfolio: Any,
     quotes: dict[str, dict[str, Any]],
     config: Any = None,
+    require_persisted_quote_price: bool = False,
 ) -> list[dict[str, Any]]:
     """Convert raw per-symbol targets into a cash-bounded account allocation.
 
@@ -48,6 +49,7 @@ def allocate_action_tasks(
         total_equity=total_equity,
         available_buy_cash=remaining_buy_cash,
         max_single_symbol_weight=max_single_symbol_weight,
+        require_persisted_quote_price=require_persisted_quote_price,
     )
     allocated: list[dict[str, Any]] = []
 
@@ -63,7 +65,11 @@ def allocate_action_tasks(
         current_quantity = _position_quantity(position)
         available_quantity = _position_available_quantity(position)
         quote = quotes.get(symbol) or {}
-        price = _decimal(quote.get("price") or action.get("price"))
+        price = _allocation_price(
+            quote,
+            action,
+            require_persisted_quote_price=require_persisted_quote_price,
+        )
         direction = str(action.get("direction") or "").lower()
 
         allocation_quantity = _ZERO
@@ -148,6 +154,7 @@ def _allocate_buy_quantities(
     total_equity: Decimal,
     available_buy_cash: Decimal,
     max_single_symbol_weight: Decimal,
+    require_persisted_quote_price: bool,
 ) -> dict[int, Decimal]:
     demands: list[dict[str, Any]] = []
     for index, action in enumerate(actions):
@@ -160,7 +167,11 @@ def _allocate_buy_quantities(
             continue
         symbol = str(action.get("symbol") or "")
         asset_class = str(action.get("asset_class") or "stock").lower()
-        price = _decimal((quotes.get(symbol) or {}).get("price") or action.get("price"))
+        price = _allocation_price(
+            quotes.get(symbol) or {},
+            action,
+            require_persisted_quote_price=require_persisted_quote_price,
+        )
         if price <= 0 or total_equity <= 0:
             continue
         current_quantity = _position_quantity(positions.get(symbol))
@@ -246,6 +257,18 @@ def _portfolio_equity(portfolio: Any, cash: Decimal) -> Decimal:
         ),
         _ZERO,
     )
+
+
+def _allocation_price(
+    quote: dict[str, Any],
+    action: dict[str, Any],
+    *,
+    require_persisted_quote_price: bool,
+) -> Decimal:
+    quote_price = _decimal(quote.get("price"))
+    if require_persisted_quote_price or quote_price > 0:
+        return quote_price
+    return _decimal(action.get("price"))
 
 
 def _target_total_quantity(

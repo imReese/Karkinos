@@ -4,6 +4,10 @@ import type {
   CurrentHoldingMarketEvidenceReview,
   PortfolioSnapshot,
 } from '../overview-feature-boundary';
+import {
+  findMarketEvidenceLane,
+  resolveMarketEvidenceRefreshTargets,
+} from '../../../shared/portfolio-evidence/market-evidence-lanes';
 import type { TodayQueueItem } from './today-queue-types';
 
 function currentHoldingMarketReviewSummary(
@@ -89,6 +93,29 @@ export function buildMarketEvidenceQueueItem({
     (!marketEvidenceReviewLoading && !contractValid);
   const identityBlocked =
     contractValid && marketEvidenceReview?.status === 'blocked_identity';
+  const { quoteSymbols, confirmedFundNavSymbols } = contractValid
+    ? resolveMarketEvidenceRefreshTargets(marketEvidenceReview)
+    : { quoteSymbols: [], confirmedFundNavSymbols: [] };
+  const stockLane = findMarketEvidenceLane(marketEvidenceReview, 'stock');
+  const stockLaneAllowsResearch =
+    !stockLane ||
+    stockLane.status === 'complete' ||
+    stockLane.status === 'not_applicable';
+  const confirmedFundNavOnly = Boolean(
+    contractValid &&
+    marketEvidenceReview?.status === 'review_required' &&
+    stockLaneAllowsResearch &&
+    marketEvidenceReview.fund_nav_review_count > 0 &&
+    marketEvidenceReview.review_required_count ===
+      marketEvidenceReview.fund_nav_review_count,
+  );
+  const stockLaneNeedsReview = Boolean(
+    stockLane && !['complete', 'not_applicable'].includes(stockLane.status),
+  );
+  const mixedAssetReview = Boolean(
+    stockLaneNeedsReview &&
+    (marketEvidenceReview?.fund_nav_review_count ?? 0) > 0,
+  );
   const needsReview = Boolean(
     unavailable ||
     identityBlocked ||
@@ -100,12 +127,16 @@ export function buildMarketEvidenceQueueItem({
       ? labels.dataReviewUnavailable
       : identityBlocked
         ? labels.dataReviewIdentityBlocked
-        : marketEvidenceReview?.status === 'review_required'
-          ? currentHoldingMarketReviewSummary(marketEvidenceReview, labels)
-          : `${labels.valuationTime}: ${formatTimestamp(
-              marketEvidenceReview?.valuation_as_of ??
-                overview.valuation_timestamp,
-            )}`;
+        : confirmedFundNavOnly && marketEvidenceReview
+          ? labels.confirmedFundNavReviewDetail(
+              marketEvidenceReview.fund_nav_review_count,
+            )
+          : marketEvidenceReview?.status === 'review_required'
+            ? currentHoldingMarketReviewSummary(marketEvidenceReview, labels)
+            : `${labels.valuationTime}: ${formatTimestamp(
+                marketEvidenceReview?.valuation_as_of ??
+                  overview.valuation_timestamp,
+              )}`;
   const meta = marketEvidenceReviewLoading
     ? copy.states.loading
     : unavailable
@@ -115,16 +146,18 @@ export function buildMarketEvidenceQueueItem({
         : labels.dataReviewConfirmedCount(
             marketEvidenceReview?.confirmed_holding_count ?? 0,
           );
-  const refreshSymbols =
-    contractValid && marketEvidenceReview?.status === 'review_required'
-      ? marketEvidenceReview.refreshable_symbols
-      : [];
   const item: TodayQueueItem = {
     key: 'data',
     title: marketEvidenceReviewLoading
       ? labels.dataReviewLoading
       : needsReview
-        ? labels.dataNeedsReview
+        ? confirmedFundNavOnly
+          ? labels.confirmedFundNavNeedsReview
+          : mixedAssetReview
+            ? labels.mixedAssetDataNeedsReview
+            : stockLaneNeedsReview
+              ? labels.stockDataNeedsReview
+              : labels.dataNeedsReview
         : labels.dataUsable,
     detail,
     meta,
@@ -140,8 +173,19 @@ export function buildMarketEvidenceQueueItem({
     priority: unavailable || needsReview ? 'first' : 'normal',
     resolution:
       needsReview && !marketEvidenceReviewLoading
-        ? labels.dataResolutionCondition
+        ? quoteSymbols.length > 0 && confirmedFundNavSymbols.length > 0
+          ? labels.mixedDataResolutionCondition
+          : confirmedFundNavSymbols.length > 0
+            ? labels.confirmedFundNavResolutionCondition
+            : quoteSymbols.length > 0
+              ? labels.quoteResolutionCondition
+              : labels.dataResolutionCondition
         : undefined,
   };
-  return { item, needsReview, refreshSymbols };
+  return {
+    item,
+    needsReview,
+    quoteRefreshSymbols: quoteSymbols,
+    confirmedFundNavRefreshSymbols: confirmedFundNavSymbols,
+  };
 }

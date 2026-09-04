@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from server.contracts.http.ledger_models import EquityPoint
+from server.contracts.http.ledger_models import EquityPoint, EquitySeriesPoint
 from server.contracts.http.portfolio_models import (
     ExplainabilityResponse,
     RiskWorkspaceResponse,
@@ -13,6 +13,9 @@ from server.http.portfolio_endpoints.dependencies import (
     PortfolioAnalysisDependencies,
     PortfolioPerformanceOperations,
     PortfolioSnapshotOperations,
+)
+from server.projections.portfolio_read_snapshot_persistence import (
+    portfolio_read_snapshot_for_state,
 )
 
 
@@ -66,7 +69,7 @@ def create_router(
                 _collect_latest_quote_timestamps(state),
             ),
         ).summary
-        equity_curve: list[EquityPoint] = []
+        equity_curve: list[EquityPoint | EquitySeriesPoint] = []
         equity_valuation_consistent = True
         valuation_status_by_date: dict[str, str] = {}
         missing_price_symbols_by_date: dict[str, list[str]] = {}
@@ -83,7 +86,7 @@ def create_router(
             equity_series = _trim_non_trading_terminal_series_point(equity_series)
             equity_series = _trim_intraday_terminal_series_point(equity_series)
             equity_series = _dedupe_equity_series_points_by_date(equity_series)
-            equity_curve = _equity_points_from_series(equity_series)
+            equity_curve = equity_series
             component_values_by_date = _equity_series_components_by_date(equity_series)
             (
                 valuation_status_by_date,
@@ -92,9 +95,20 @@ def create_router(
         if equity_valuation_consistent and not equity_curve:
             equity_curve = await performance.get_equity_curve()
 
-        entries = []
-        if state.db is not None and hasattr(state.db, "get_ledger_entries_sync"):
+        read_snapshot = portfolio_read_snapshot_for_state(state)
+        if read_snapshot is not None:
+            entries = sorted(
+                (dict(row) for row in read_snapshot.ledger_rows),
+                key=lambda row: (
+                    str(row.get("timestamp") or ""),
+                    int(row.get("id") or 0),
+                ),
+                reverse=True,
+            )[:limit]
+        elif state.db is not None and hasattr(state.db, "get_ledger_entries_sync"):
             entries = state.db.get_ledger_entries_sync(limit=limit, offset=0)
+        else:
+            entries = []
 
         return ExplainabilityResponse(
             equity_bridge=_build_equity_bridge(portfolio_snapshot, summary),
@@ -139,9 +153,12 @@ def create_router(
             state,
             equity_series,
         )
-        if not _equity_series_matches_valuation(
-            equity_series,
-            portfolio_snapshot.valuation_snapshot_id,
+        if (
+            not _equity_series_matches_valuation(
+                equity_series,
+                portfolio_snapshot.valuation_snapshot_id,
+            )
+            and portfolio_snapshot.total_equity is not None
         ):
             equity_curve = [
                 EquityPoint(

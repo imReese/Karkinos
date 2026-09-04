@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import math
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -16,6 +18,7 @@ from data.source import DataSource, normalize_provider_quote
 logger = logging.getLogger(__name__)
 
 _DEFAULT_REALTIME_TIMEOUT_SECONDS = 2.0
+_CHINA_MARKET_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _clean_stock_master_text(value: object) -> str | None:
@@ -126,15 +129,20 @@ class TushareSource(DataSource):
             )
 
         if asset_class == AssetClass.FUND:
-            ts_code = self._fund_ts_code(symbol)
-            return self._normalize_latest_quote(
-                symbol,
-                asset_class,
-                self._fetch_fund_nav_latest(ts_code),
-                ts_code,
-            )
+            return self.fetch_confirmed_fund_nav(symbol)
 
         return None
+
+    def fetch_confirmed_fund_nav(self, symbol: Symbol) -> dict | None:
+        """Fetch the latest published open-end fund NAV, never an estimate."""
+
+        ts_code = self._fund_ts_code(symbol)
+        return self._normalize_latest_quote(
+            symbol,
+            AssetClass.FUND,
+            self._fetch_fund_nav_latest(ts_code),
+            ts_code,
+        )
 
     def list_symbols(self) -> list[Symbol]:
         return [
@@ -249,6 +257,9 @@ class TushareSource(DataSource):
         timestamp = self._format_quote_timestamp(
             trade_date, self._row_value(row, "TIME", "time")
         )
+        # DATE identifies the current quote session, not the session that owns
+        # PRE_CLOSE.  Leave that date unclaimed until calendar-backed evidence
+        # is available so ingestion cannot persist yesterday's close as today.
         return {
             "price": price,
             "volume": self._row_float(row, "VOLUME", "volume", "VOL", "vol"),
@@ -260,7 +271,6 @@ class TushareSource(DataSource):
             "previous_close": previous_close,
             "change": change,
             "change_percent": change_percent,
-            "previous_close_date": trade_date,
         }
 
     def _fetch_daily_latest(self, ts_code: str) -> dict | None:
@@ -307,10 +317,18 @@ class TushareSource(DataSource):
         latest = df.iloc[0].to_dict()
         previous = df.iloc[1].to_dict() if len(df) > 1 else {}
         price = self._row_float(latest, "unit_nav", "nav")
-        if price is None:
+        nav_date = self._format_trade_date(self._row_value(latest, "nav_date"))
+        try:
+            published_date = datetime.strptime(str(nav_date), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return None
+        if price is None or not math.isfinite(price) or price <= 0:
             return None
 
         previous_close = self._row_float(previous, "unit_nav", "nav")
+        previous_close_date = self._format_trade_date(
+            self._row_value(previous, "nav_date")
+        )
         day_change_value = (
             price - previous_close if previous_close not in {None, 0} else None
         )
@@ -323,13 +341,18 @@ class TushareSource(DataSource):
             "price": price,
             "volume": None,
             "turnover": None,
-            "timestamp": self._format_trade_date(self._row_value(latest, "nav_date")),
+            "timestamp": datetime(
+                published_date.year,
+                published_date.month,
+                published_date.day,
+                15,
+                tzinfo=_CHINA_MARKET_TZ,
+            ).isoformat(),
             "source": "tushare",
             "quote_source": "tushare_fund_nav",
+            "nav_date": published_date.isoformat(),
             "previous_close": previous_close,
-            "previous_close_date": self._format_trade_date(
-                self._row_value(previous, "nav_date")
-            ),
+            "previous_close_date": previous_close_date,
             "day_change_value": day_change_value,
             "day_change_pct": day_change_pct,
         }

@@ -58,7 +58,7 @@ const LABELS: Record<'en' | 'zh', Labels> = {
   },
 };
 
-function percent(value: number) {
+function percent(value: number | null) {
   return formatPercent(value, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

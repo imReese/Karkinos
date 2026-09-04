@@ -8,6 +8,7 @@ from typing import Any
 
 from data.market_data import is_fund_estimate_quote_source
 from server.models import (
+    CurrentHoldingMarketEvidenceLane,
     CurrentHoldingMarketEvidenceReviewItem,
     CurrentHoldingMarketEvidenceReviewResponse,
     PortfolioSnapshot,
@@ -27,6 +28,7 @@ _STALE_OR_CACHED_STATUSES = {
     "stale",
 }
 _MISSING_OR_ERROR_STATUSES = {"", "error", "missing", "unknown"}
+_EVIDENCE_LANE_ASSET_CLASSES = ("stock", "fund")
 
 
 def build_current_holding_market_evidence_review(
@@ -60,6 +62,26 @@ def build_current_holding_market_evidence_review(
         status = "complete"
         next_manual_action = "none"
 
+    confirmed_fund_nav_refresh_symbols = sorted(
+        {
+            item.symbol
+            for item in items
+            if item.review_reason == "confirmed_nav_missing"
+            and _evidence_lane_asset_class(item.asset_class) == "fund"
+        }
+    )
+    confirmed_fund_nav_refresh_symbol_set = set(confirmed_fund_nav_refresh_symbols)
+    quote_refresh_symbols = sorted(
+        {
+            item.symbol
+            for item in items
+            if item.symbol not in confirmed_fund_nav_refresh_symbol_set
+        }
+    )
+    refreshable_symbols = sorted(
+        {*quote_refresh_symbols, *confirmed_fund_nav_refresh_symbols}
+    )
+
     core = {
         "schema_version": CURRENT_HOLDING_MARKET_EVIDENCE_REVIEW_SCHEMA_VERSION,
         "status": status,
@@ -76,7 +98,17 @@ def build_current_holding_market_evidence_review(
         "unknown_status_review_count": _count_reason(
             items, "quote_status_not_confirmed"
         ),
-        "refreshable_symbols": sorted({item.symbol for item in items}),
+        "refreshable_symbols": refreshable_symbols,
+        "quote_refresh_symbols": quote_refresh_symbols,
+        "confirmed_fund_nav_refresh_symbols": confirmed_fund_nav_refresh_symbols,
+        "evidence_lanes": [
+            lane.model_dump(mode="json")
+            for lane in _evidence_lanes(
+                current_positions,
+                items,
+                identity_blockers=source_blockers,
+            )
+        ],
         "items": [item.model_dump(mode="json") for item in items],
         "source_blockers": source_blockers,
         "valuation_snapshot_id": snapshot.valuation_snapshot_id,
@@ -153,6 +185,74 @@ def _identity_blockers(snapshot: PortfolioSnapshot) -> list[str]:
     if isinstance(snapshot.ledger_cutoff_id, bool) or snapshot.ledger_cutoff_id < 0:
         blockers.append("ledger_cutoff_id_invalid")
     return blockers
+
+
+def _evidence_lane_asset_class(value: Any) -> str:
+    asset_class = str(value or "stock").strip().lower()
+    return asset_class if asset_class in _EVIDENCE_LANE_ASSET_CLASSES else "other"
+
+
+def _evidence_lanes(
+    current_positions: list[Any],
+    items: list[CurrentHoldingMarketEvidenceReviewItem],
+    *,
+    identity_blockers: list[str],
+) -> list[CurrentHoldingMarketEvidenceLane]:
+    positions_by_asset_class: dict[str, list[Any]] = {
+        asset_class: [] for asset_class in _EVIDENCE_LANE_ASSET_CLASSES
+    }
+    items_by_asset_class: dict[str, list[CurrentHoldingMarketEvidenceReviewItem]] = {
+        asset_class: [] for asset_class in _EVIDENCE_LANE_ASSET_CLASSES
+    }
+    for position in current_positions:
+        asset_class = _evidence_lane_asset_class(getattr(position, "asset_class", None))
+        positions_by_asset_class.setdefault(asset_class, []).append(position)
+    for item in items:
+        asset_class = _evidence_lane_asset_class(item.asset_class)
+        items_by_asset_class.setdefault(asset_class, []).append(item)
+
+    ordered_asset_classes = [*_EVIDENCE_LANE_ASSET_CLASSES]
+    if positions_by_asset_class.get("other"):
+        ordered_asset_classes.append("other")
+
+    lanes: list[CurrentHoldingMarketEvidenceLane] = []
+    for asset_class in ordered_asset_classes:
+        positions = positions_by_asset_class[asset_class]
+        lane_items = items_by_asset_class[asset_class]
+        if not positions:
+            status = "not_applicable"
+        elif identity_blockers:
+            status = "blocked_identity"
+        elif not lane_items:
+            status = "complete"
+        elif any(
+            item.review_reason
+            in {"quote_missing_or_error", "quote_status_not_confirmed"}
+            for item in lane_items
+        ):
+            status = "missing"
+        else:
+            status = "degraded"
+        evidence_blockers = sorted(
+            {item.review_reason for item in lane_items},
+            key=lambda reason: (_review_priority(reason), reason),
+        )
+        blocker_statuses = (
+            [*identity_blockers, *evidence_blockers]
+            if positions and identity_blockers
+            else evidence_blockers
+        )
+        lanes.append(
+            CurrentHoldingMarketEvidenceLane(
+                asset_class=asset_class,
+                status=status,
+                current_holding_count=len(positions),
+                confirmed_holding_count=len(positions) - len(lane_items),
+                review_required_count=len(lane_items),
+                blocker_statuses=blocker_statuses,
+            )
+        )
+    return lanes
 
 
 def _normalize_status(value: Any) -> str:

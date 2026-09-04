@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+from core.types import InstrumentType
 from domain.portfolio_accounting import (
     moving_average_cost_after_buy,
     realized_pnl_after_sell,
 )
 from server.ledger.models import LedgerEntry
-from server.projections.legacy_fund_trade_duplicate_contract import (
-    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE,
-    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_PLAN_SCHEMA_VERSION,
-    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
+from server.projections.ledger_projection_correction import (
+    apply_projection_correction as _apply_projection_correction,
+)
+from server.projections.ledger_projection_correction import (
+    is_projection_correction_entry_type as _is_projection_correction_entry_type,
 )
 from server.projections.models import ZERO, PortfolioProjection, ProjectedPosition
 from server.projections.portfolio_projection_values import (
@@ -40,23 +43,97 @@ _DIVIDEND_TYPES = {"dividend"}
 _CASH_INTEREST_TYPES = {"cash_interest", "interest_income"}
 _FEE_TYPES = {"fee"}
 _MANUAL_ADJUSTMENT_TYPES = {"manual_adjustment"}
-_PROJECTION_CORRECTION_CONTRACTS = {
-    "controlled_projection_correction": (
-        "controlled_submission_ledger_correction",
-        "karkinos.controlled_submission_ledger_correction_plan.v1",
-        "Controlled ledger correction",
-    ),
-    "manual_trade_projection_correction": (
-        "manual_trade_correction",
-        "karkinos.manual_trade_correction_plan.v1",
-        "Manual trade correction",
-    ),
-    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE: (
-        LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
-        LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_PLAN_SCHEMA_VERSION,
-        "Legacy fund trade duplicate correction",
-    ),
-}
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioReplayValuation:
+    """Strict point-in-time valuation from an incrementally replayed ledger."""
+
+    cash: Decimal
+    total: Decimal | None
+    stocks: Decimal | None
+    funds: Decimal | None
+    others: Decimal | None
+    unrealized_pnl: Decimal | None
+    missing_price_symbols: tuple[str, ...]
+
+
+class PortfolioReplayAccumulator:
+    """Apply each canonical ledger entry once while emitting daily valuations."""
+
+    def __init__(self, *, initial_cash: float | Decimal = 0) -> None:
+        self._projection = PortfolioProjection(cash=_as_decimal(initial_cash))
+        self._asset_classes: dict[str, str] = {}
+        self._applied_entry_count = 0
+
+    @property
+    def applied_entry_count(self) -> int:
+        return self._applied_entry_count
+
+    @property
+    def active_symbols(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                symbol
+                for symbol, position in self._projection.positions.items()
+                if not is_economically_zero_quantity(position.quantity)
+            )
+        )
+
+    def apply(self, entry: LedgerEntry) -> None:
+        symbol = str(entry.symbol or "").strip()
+        if symbol:
+            instrument_type = InstrumentType.from_persisted(entry.asset_class)
+            self._asset_classes[symbol] = instrument_type.value
+        _apply_ledger_entry(self._projection, entry)
+        self._applied_entry_count += 1
+
+    def value(
+        self,
+        latest_quotes: Mapping[str, Any],
+    ) -> PortfolioReplayValuation:
+        _apply_valuations(self._projection, latest_quotes)
+        missing = tuple(self._projection.missing_price_symbols)
+        buckets = _bucket_position_values_with_availability(
+            self._projection,
+            self._asset_classes,
+        )
+        if missing:
+            self._projection.total_equity = None
+            return PortfolioReplayValuation(
+                cash=self._projection.cash,
+                total=None,
+                stocks=buckets["stocks"],
+                funds=buckets["funds"],
+                others=buckets["others"],
+                unrealized_pnl=None,
+                missing_price_symbols=missing,
+            )
+
+        total = (
+            self._projection.cash
+            + buckets["stocks"]
+            + buckets["funds"]
+            + buckets["others"]
+        )
+        self._projection.total_equity = total
+        unrealized_pnl = sum(
+            (
+                position.unrealized_pnl
+                for position in self._projection.positions.values()
+                if not is_economically_zero_quantity(position.quantity)
+            ),
+            ZERO,
+        )
+        return PortfolioReplayValuation(
+            cash=self._projection.cash,
+            total=total,
+            stocks=buckets["stocks"],
+            funds=buckets["funds"],
+            others=buckets["others"],
+            unrealized_pnl=unrealized_pnl,
+            missing_price_symbols=(),
+        )
 
 
 def build_portfolio_projection(
@@ -72,8 +149,11 @@ def build_portfolio_projection(
         _apply_ledger_entry(projection, entry)
 
     _apply_valuations(projection, latest_quotes or {})
-    projection.total_equity = projection.cash + sum(
-        position.market_value for position in projection.positions.values()
+    projection.total_equity = (
+        None
+        if projection.missing_price_symbols
+        else projection.cash
+        + sum(position.market_value for position in projection.positions.values())
     )
     return projection
 
@@ -116,6 +196,8 @@ def build_equity_curve_from_entries(
     for entry in _sorted_entries(entries):
         _apply_ledger_entry(projection, entry)
         _apply_valuations(projection, quotes)
+        if projection.missing_price_symbols:
+            continue
         total_equity = projection.cash + sum(
             position.market_value for position in projection.positions.values()
         )
@@ -129,9 +211,9 @@ def build_equity_series_from_entries(
     *,
     initial_cash: float | Decimal = 0,
     latest_quotes: Mapping[str, Any] | None = None,
-) -> list[dict[str, datetime | Decimal]]:
+) -> list[dict[str, Any]]:
     projection = PortfolioProjection(cash=_as_decimal(initial_cash))
-    points: list[dict[str, datetime | Decimal]] = []
+    points: list[dict[str, Any]] = []
     quotes = latest_quotes or {}
     asset_classes: dict[str, str] = {}
 
@@ -140,9 +222,16 @@ def build_equity_series_from_entries(
         _apply_ledger_entry(projection, entry)
         _apply_valuations(projection, quotes)
 
-        buckets = _bucket_position_values(projection, asset_classes)
         cash = projection.cash
-        total = cash + buckets["stocks"] + buckets["funds"] + buckets["others"]
+        missing_price_symbols = list(projection.missing_price_symbols)
+        buckets = _bucket_position_values_with_availability(
+            projection,
+            asset_classes,
+        )
+        if missing_price_symbols:
+            total = None
+        else:
+            total = cash + buckets["stocks"] + buckets["funds"] + buckets["others"]
         points.append(
             {
                 "timestamp": datetime.fromisoformat(entry.timestamp),
@@ -151,6 +240,7 @@ def build_equity_series_from_entries(
                 "funds": buckets["funds"],
                 "others": buckets["others"],
                 "cash": cash,
+                "missing_price_symbols": missing_price_symbols,
             }
         )
 
@@ -163,7 +253,7 @@ def build_equity_series_from_db(
     initial_cash: float | Decimal = 0,
     latest_quotes: Mapping[str, Any] | None = None,
     batch_size: int = 500,
-) -> list[dict[str, datetime | Decimal]]:
+) -> list[dict[str, Any]]:
     entries: list[LedgerEntry] = []
     offset = 0
     while True:
@@ -232,11 +322,27 @@ def _bucket_position_values(
     return buckets
 
 
+def _bucket_position_values_with_availability(
+    projection: PortfolioProjection,
+    asset_classes: Mapping[str, str],
+) -> dict[str, Decimal | None]:
+    buckets: dict[str, Decimal | None] = _bucket_position_values(
+        projection,
+        asset_classes,
+    )
+    for symbol in projection.missing_price_symbols:
+        bucket = _equity_bucket(asset_classes.get(symbol))
+        if bucket is None:
+            return {"stocks": None, "funds": None, "others": None}
+        buckets[bucket] = None
+    return buckets
+
+
 def _equity_bucket(asset_class: str | None) -> str | None:
     normalized = (asset_class or "stock").strip().lower()
     if normalized == "stock":
         return "stocks"
-    if normalized in {"fund", "etf"}:
+    if normalized in {"fund", "etf", "open_end_fund"}:
         return "funds"
     if normalized in {"bond", "gold"}:
         return "others"
@@ -290,7 +396,7 @@ def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> 
         _apply_manual_adjustment(projection, entry)
         return
 
-    if entry_type in _PROJECTION_CORRECTION_CONTRACTS:
+    if _is_projection_correction_entry_type(entry_type):
         _apply_projection_correction(projection, entry, entry_type=entry_type)
         return
 
@@ -472,134 +578,3 @@ def _apply_manual_adjustment(
     elif previous_quantity == ZERO:
         position.closed_at = None
     position.sync_available_qty()
-
-
-def _apply_projection_correction(
-    projection: PortfolioProjection,
-    entry: LedgerEntry,
-    *,
-    entry_type: str,
-) -> None:
-    """Apply a protected, canonical-replay-derived compensating event."""
-
-    expected_source, expected_schema, label = _PROJECTION_CORRECTION_CONTRACTS[
-        entry_type
-    ]
-    if entry.source != expected_source:
-        raise ValueError(f"{label} source is invalid")
-    payload = entry.correction_payload
-    if not isinstance(payload, dict):
-        raise ValueError(f"{label} payload is missing")
-    if payload.get("schema_version") != expected_schema:
-        raise ValueError(f"{label} schema is invalid")
-    if payload.get("arbitrary_financial_input_used") is not False:
-        raise ValueError(f"{label} derivation is invalid")
-
-    symbol = _require_text(str(payload.get("symbol") or ""), "symbol")
-    if (entry.symbol or "") != symbol:
-        raise ValueError(f"{label} symbol is invalid")
-    before = payload.get("position_before")
-    after = payload.get("position_after")
-    if not isinstance(before, Mapping) or not isinstance(after, Mapping):
-        raise ValueError(f"{label} position state is invalid")
-
-    position = projection.positions.get(symbol)
-    if position is None:
-        position = ProjectedPosition(symbol=symbol)
-    if _projected_position_accounting_state(position) != _normalized_position_state(
-        before
-    ):
-        raise ValueError(f"{label} position evidence drifted for {symbol}")
-
-    cash_delta = _as_decimal(payload.get("cash_delta", "0"))
-    if entry_type == LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE:
-        cash_before = _as_decimal(payload.get("cash_before"))
-        cash_after = _as_decimal(payload.get("cash_after"))
-        if payload.get("cash_allocation") != "ordered_batch_absolute_cash_state_v1":
-            raise ValueError(f"{label} cash allocation is invalid")
-        if projection.cash != cash_before:
-            raise ValueError(f"{label} cash evidence drifted")
-        if cash_after - cash_before != cash_delta:
-            raise ValueError(f"{label} cash delta is invalid")
-        projection.cash = cash_after
-    else:
-        projection.cash += cash_delta
-    deposits_delta = _as_decimal(payload.get("total_deposits_delta", "0"))
-    if deposits_delta != ZERO:
-        raise ValueError(f"{label} cannot change deposits")
-    projection.total_deposits += deposits_delta
-
-    normalized_after = _normalized_position_state(after)
-    previous_quantity = position.quantity
-    position.quantity = normalized_after["quantity"]
-    position.available_qty = normalized_after["available_qty"]
-    position.frozen_qty = normalized_after["frozen_qty"]
-    position.avg_cost = normalized_after["avg_cost"]
-    position.realized_pnl = normalized_after["realized_pnl"]
-    position.commission_paid = normalized_after["commission_paid"]
-    position.broker_displayed_cost_basis = normalized_after[
-        "broker_displayed_cost_basis"
-    ]
-    position.broker_displayed_unit_cost = normalized_after["broker_displayed_unit_cost"]
-    position.broker_cost_basis_difference = normalized_after[
-        "broker_cost_basis_difference"
-    ]
-    position.broker_cost_basis_method = normalized_after["broker_cost_basis_method"]
-    position.broker_cost_basis_status = normalized_after["broker_cost_basis_status"]
-    if position.quantity == ZERO and previous_quantity != ZERO:
-        position.closed_at = entry.timestamp
-    elif position.quantity != ZERO and previous_quantity == ZERO:
-        position.closed_at = None
-    if position.available_qty != position.quantity - position.frozen_qty:
-        raise ValueError(f"{label} availability is invalid")
-    projection.positions[symbol] = position
-
-
-def _projected_position_accounting_state(
-    position: ProjectedPosition,
-) -> dict[str, Decimal | str | None]:
-    return {
-        "quantity": position.quantity,
-        "available_qty": position.available_qty,
-        "frozen_qty": position.frozen_qty,
-        "avg_cost": position.avg_cost,
-        "realized_pnl": position.realized_pnl,
-        "commission_paid": position.commission_paid,
-        "broker_displayed_cost_basis": position.broker_displayed_cost_basis,
-        "broker_displayed_unit_cost": position.broker_displayed_unit_cost,
-        "broker_cost_basis_difference": position.broker_cost_basis_difference,
-        "broker_cost_basis_method": position.broker_cost_basis_method,
-        "broker_cost_basis_status": position.broker_cost_basis_status,
-    }
-
-
-def _normalized_position_state(
-    raw: Mapping[str, Any],
-) -> dict[str, Decimal | str | None]:
-    decimal_fields = (
-        "quantity",
-        "available_qty",
-        "frozen_qty",
-        "avg_cost",
-        "realized_pnl",
-        "commission_paid",
-        "broker_displayed_cost_basis",
-        "broker_displayed_unit_cost",
-        "broker_cost_basis_difference",
-    )
-    required = {*decimal_fields, "broker_cost_basis_method", "broker_cost_basis_status"}
-    if set(raw) != required:
-        raise ValueError("Ledger correction position fields are invalid")
-    return {
-        **{field: _as_decimal(raw[field]) for field in decimal_fields},
-        "broker_cost_basis_method": (
-            None
-            if raw["broker_cost_basis_method"] is None
-            else str(raw["broker_cost_basis_method"])
-        ),
-        "broker_cost_basis_status": (
-            None
-            if raw["broker_cost_basis_status"] is None
-            else str(raw["broker_cost_basis_status"])
-        ),
-    }

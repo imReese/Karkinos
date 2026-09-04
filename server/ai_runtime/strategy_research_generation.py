@@ -143,6 +143,7 @@ class StrategyResearchGenerationMixin:
             evidence_repository=self._evidence_repository,
             selection=request.selection,
             now=self._now,
+            execution_guard=self._execution_guard,
         )
         workflow = orchestrator.create_workflow(
             definition=strategy_research_workflow_definition(model_id, "hypothesis"),
@@ -173,6 +174,7 @@ class StrategyResearchGenerationMixin:
                     workflow.workflow_id
                 )
         except ProviderCallDeferred as exc:
+            self._require_execution_current()
             self._research_store.finish_session(
                 session["session_id"],
                 status="blocked",
@@ -180,6 +182,7 @@ class StrategyResearchGenerationMixin:
                 updated_at=self._now(),
             )
             raise
+        self._require_execution_current()
         status = workflow.status.value
         if workflow.status == WorkflowStatus.COMPLETED:
             artifact = report_artifact(self._ai_store, workflow.workflow_id)
@@ -196,9 +199,11 @@ class StrategyResearchGenerationMixin:
                 provider_id=provider_id,
                 model_id=model_id,
             )
+            self._require_execution_current()
             self._research_store.save_drafts(
                 session["session_id"], drafts, created_at=self._now()
             )
+        self._require_execution_current()
         self._research_store.finish_session(
             session["session_id"],
             status=status,

@@ -45,6 +45,7 @@ from server.persistence.market_calendar_publication_uow import (
 )
 from server.persistence.oms import OmsRepository
 from server.persistence.paper_trading import PaperTradingRepository
+from server.persistence.pre_trade_risk_uow import PreTradeRiskUnitOfWork
 from server.persistence.research_notes import ResearchNotesRepository
 from server.persistence.runtime_controls import RuntimeControlRepository
 from server.persistence.schema_v1 import (
@@ -114,6 +115,9 @@ class AppDatabase(
             self._path, now=lambda tz=None: datetime.now(tz)
         )
         self._paper_trading = PaperTradingRepository(
+            self._path, now=lambda tz=None: datetime.now(tz)
+        )
+        self._pre_trade_risk = PreTradeRiskUnitOfWork(
             self._path, now=lambda tz=None: datetime.now(tz)
         )
         self._financial_facts = FinancialFactsRepository(

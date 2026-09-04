@@ -9,13 +9,21 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = PROJECT_ROOT / "server/contracts/daily_strategy_artifacts.py"
+NORMALIZED_RESEARCH_CONTRACT = (
+    PROJECT_ROOT / "server/contracts/normalized_strategy_research.py"
+)
 PROJECTION = PROJECT_ROOT / "server/projections/daily_strategy_artifacts.py"
+RESEARCH_CANDIDATE_PROJECTION = (
+    PROJECT_ROOT / "server/projections/daily_strategy_research_candidates.py"
+)
 SQLITE_REPOSITORY = PROJECT_ROOT / "server/persistence/daily_strategy_artifacts.py"
 BACKUP_REPOSITORY = PROJECT_ROOT / "server/persistence/daily_strategy_backups.py"
 SERVICE = PROJECT_ROOT / "server/services/ai_shadow_research_daily_artifacts.py"
 PRODUCTION_FILES = (
     CONTRACT,
+    NORMALIZED_RESEARCH_CONTRACT,
     PROJECTION,
+    RESEARCH_CANDIDATE_PROJECTION,
     SQLITE_REPOSITORY,
     BACKUP_REPOSITORY,
     SERVICE,
@@ -61,7 +69,12 @@ def test_daily_strategy_contracts_and_projections_do_not_depend_on_adapters() ->
         "server.routes",
         "server.services",
     )
-    for path in (CONTRACT, PROJECTION):
+    for path in (
+        CONTRACT,
+        NORMALIZED_RESEARCH_CONTRACT,
+        PROJECTION,
+        RESEARCH_CANDIDATE_PROJECTION,
+    ):
         imports = _imports(path)
         assert not {
             imported for imported in imports if imported.startswith(forbidden_prefixes)

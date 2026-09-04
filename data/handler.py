@@ -7,7 +7,7 @@ from decimal import Decimal
 import pandas as pd
 
 from core.events import MarketEvent
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 
 
 class DataHandler:
@@ -23,11 +23,13 @@ class DataHandler:
         symbol: Symbol,
         frequency: BarFrequency = BarFrequency.DAILY,
         asset_class: AssetClass | None = None,
+        instrument_type: InstrumentType | None = None,
     ) -> None:
         self._df = df.reset_index(drop=True)
         self._symbol = symbol
         self._frequency = frequency
         self._asset_class = asset_class
+        self._instrument_type = instrument_type
         self._index = 0
 
     def __iter__(self):
@@ -59,6 +61,7 @@ class DataHandler:
             volume=Decimal(str(row["volume"])),
             frequency=self._frequency,
             asset_class=self._asset_class,
+            instrument_type=self._instrument_type,
         )
 
     def stream(self):
@@ -68,3 +71,7 @@ class DataHandler:
     @property
     def total_bars(self) -> int:
         return len(self._df)
+
+    @property
+    def instrument_type(self) -> InstrumentType | None:
+        return self._instrument_type

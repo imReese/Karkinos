@@ -72,7 +72,11 @@ def create_router(
         state = dependencies.get_state()
         if state.db is None:
             raise HTTPException(status_code=503, detail="database unavailable")
-        return build_current_valuation_snapshot(state.db, persist=True)
+        return build_current_valuation_snapshot(
+            state.db,
+            persist=True,
+            now=get_shanghai_now(),
+        )
 
     @r.get("/valuation-snapshots/{snapshot_id}")
     async def get_valuation_snapshot(snapshot_id: str) -> dict:
@@ -139,7 +143,7 @@ def create_router(
             equity_series,
             snapshot.valuation_snapshot_id,
         )
-        if not equity_valuation_consistent:
+        if not equity_valuation_consistent and snapshot.total_equity is not None:
             equity_curve = [
                 EquityPoint(
                     timestamp=snapshot.valuation_as_of
@@ -165,18 +169,27 @@ def create_router(
                 "stale_reason": "valuation_snapshot_changed_during_request",
             }
         )
+        drawdown = risk_workspace.drawdown
         return overview.model_copy(
             update={
                 **today_pnl_update,
-                "current_drawdown": risk_workspace.drawdown.current_drawdown,
-                "current_drawdown_amount": max(
-                    risk_workspace.drawdown.peak_equity
-                    - risk_workspace.drawdown.latest_equity,
-                    0.0,
+                "current_drawdown": (
+                    None if drawdown is None else drawdown.current_drawdown
                 ),
-                "drawdown_peak_equity": risk_workspace.drawdown.peak_equity,
-                "drawdown_latest_equity": risk_workspace.drawdown.latest_equity,
-                "drawdown_peak_timestamp": risk_workspace.drawdown.peak_timestamp,
+                "current_drawdown_amount": (
+                    None
+                    if drawdown is None
+                    else max(drawdown.peak_equity - drawdown.latest_equity, 0.0)
+                ),
+                "drawdown_peak_equity": (
+                    None if drawdown is None else drawdown.peak_equity
+                ),
+                "drawdown_latest_equity": (
+                    None if drawdown is None else drawdown.latest_equity
+                ),
+                "drawdown_peak_timestamp": (
+                    None if drawdown is None else drawdown.peak_timestamp
+                ),
                 "daily_operations": _overview_daily_operations_summary(state),
             }
         )
@@ -205,9 +218,11 @@ def create_router(
         positions: list[PortfolioCockpitPosition] = []
         for position in snapshot.positions:
             actual_weight = (
-                position.market_value / snapshot.total_equity
-                if snapshot.total_equity > 0
-                else 0.0
+                float(position.market_value) / snapshot.total_equity
+                if position.market_value is not None
+                and snapshot.total_equity is not None
+                and snapshot.total_equity > 0
+                else None
             )
             action = actions_by_symbol.get(position.symbol)
             target_weight = (
@@ -221,7 +236,11 @@ def create_router(
                     market_value=position.market_value,
                     actual_weight=actual_weight,
                     target_weight=target_weight,
-                    drift=target_weight - actual_weight,
+                    drift=(
+                        None
+                        if target_weight is None or actual_weight is None
+                        else target_weight - actual_weight
+                    ),
                     action_task=action,
                 )
             )

@@ -13,6 +13,7 @@ from typing import Any, Mapping, Sequence
 import pandas as pd
 
 from core.types import BarFrequency, Symbol
+from data.market_daily_store import is_supported_stock_receipt_identity
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 
@@ -347,8 +348,7 @@ def build_full_market_universe_truth(
         receipt = receipt_by_date[market_date]
         fingerprint = str(receipt.get("receipt_fingerprint") or "")
         if (
-            receipt.get("schema_version")
-            != "karkinos.market_daily_ingestion_receipt.v1"
+            not is_supported_stock_receipt_identity(receipt)
             or str(receipt.get("provider_name") or "") != provider_name
             or not fingerprint.startswith("sha256:")
         ):
@@ -452,7 +452,11 @@ def _assess_panel_member(
     policy: MarketUniversePolicy,
 ) -> dict[str, Any]:
     symbol_text = str(member["symbol"])
-    frame = data_store.load_bars(Symbol(symbol_text), BarFrequency.DAILY)
+    frame = data_store.load_bars(
+        Symbol(symbol_text),
+        BarFrequency.DAILY,
+        instrument_type="stock",
+    )
     return _assess_member_frame(
         frame=frame,
         member=member,

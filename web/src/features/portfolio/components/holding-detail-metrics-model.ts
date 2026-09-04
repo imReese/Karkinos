@@ -101,11 +101,13 @@ export function buildHoldingMetricsModel(
         evidence.pnlPct,
       )}\n${labels.realizedPnl} ${formatCurrency(position.realized_pnl)}`,
       tone:
-        position.unrealized_pnl > 0
-          ? 'pnl-positive'
-          : position.unrealized_pnl < 0
-            ? 'pnl-negative'
-            : undefined,
+        position.unrealized_pnl === null
+          ? undefined
+          : position.unrealized_pnl > 0
+            ? 'pnl-positive'
+            : position.unrealized_pnl < 0
+              ? 'pnl-negative'
+              : undefined,
     },
   ];
   const brokerCostBasisMetrics: DetailMetric[] =

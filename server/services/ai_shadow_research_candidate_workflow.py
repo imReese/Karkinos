@@ -11,7 +11,10 @@ from analytics.strategy_advancement_gate import (
     strategy_advancement_backtest_view,
 )
 from server.ai_runtime.contracts import content_fingerprint
-from server.ai_runtime.provider_call_window import ProviderCallDeferred
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    ProviderExecutionFenced,
+)
 from server.ai_runtime.strategy_research import (
     BACKTEST_CONFIRMATION,
     CRITIQUE_EXPORT_CONFIRMATION,
@@ -106,12 +109,15 @@ class AiShadowResearchCandidateWorkflowMixin:
         except ProviderCallDeferred as exc:
             self._defer_provider_call(call_id, str(exc))
             raise
+        except ProviderExecutionFenced:
+            raise
         except asyncio.CancelledError:
             self._fail_provider_call(call_id, "provider_call_cancelled_uncertain")
             raise
         except Exception as exc:
             self._fail_provider_call(call_id, shadow_research_failure_code(exc))
             raise
+        self._require_execution_current()
         self._store.finish_provider_call(
             call_id,
             status=str(hypotheses.get("status") or "failed"),
@@ -227,12 +233,15 @@ class AiShadowResearchCandidateWorkflowMixin:
             except ProviderCallDeferred as exc:
                 self._defer_provider_call(call_id, str(exc))
                 raise
+            except ProviderExecutionFenced:
+                raise
             except asyncio.CancelledError:
                 self._fail_provider_call(call_id, "provider_call_cancelled_uncertain")
                 raise
             except Exception as exc:
                 self._fail_provider_call(call_id, shadow_research_failure_code(exc))
                 raise
+            self._require_execution_current()
             self._store.finish_provider_call(
                 call_id,
                 status=str(critique.get("status") or "failed"),
@@ -267,6 +276,7 @@ class AiShadowResearchCandidateWorkflowMixin:
                 if normalized_research
                 else str(comparison["recommendation"])
             )
+            self._require_execution_current()
             return self._store.save_candidate(
                 run_id=str(run["run_id"]),
                 session_id=str(hypotheses["session_id"]),
@@ -290,7 +300,10 @@ class AiShadowResearchCandidateWorkflowMixin:
             )
         except ProviderCallDeferred:
             raise
+        except ProviderExecutionFenced:
+            raise
         except Exception as exc:
+            self._require_execution_current()
             return self._store.save_candidate(
                 run_id=str(run["run_id"]),
                 session_id=str(hypotheses["session_id"]),

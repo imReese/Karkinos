@@ -10,6 +10,25 @@ from server.contracts.ledger_mutations import ledger_entry_state_fingerprint
 from server.db import AppDatabase
 
 
+def _seed_position(
+    database: AppDatabase,
+    *,
+    symbol: str,
+    quantity: float,
+    asset_class: str = "stock",
+) -> None:
+    database.insert_ledger_entry_sync(
+        entry_type="manual_adjustment",
+        timestamp="2026-01-01T09:00:00+08:00",
+        symbol=symbol,
+        quantity=quantity,
+        price=1.0,
+        asset_class=asset_class,
+        source="internal_fixture",
+        source_ref=f"opening-position-{symbol}",
+    )
+
+
 def test_ledger_entries_include_instrument_display_name(tmp_path, monkeypatch):
     from server.routes import ledger as ledger_routes
 
@@ -115,6 +134,7 @@ def test_ledger_trade_route_preserves_structured_sell_cost_fields(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _seed_position(db, symbol="600519", quantity=10)
 
     fake_state = SimpleNamespace(db=db)
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
@@ -172,6 +192,7 @@ def test_ledger_trade_route_uses_configured_fee_contract_when_fee_is_omitted(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _seed_position(db, symbol="SYN001", quantity=200)
 
     fake_state = SimpleNamespace(
         db=db,
@@ -244,6 +265,7 @@ def test_ledger_trade_route_uses_symbol_exchange_transfer_fee_split(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _seed_position(db, symbol="000001", quantity=1000)
 
     fake_state = SimpleNamespace(
         db=db,
@@ -366,6 +388,12 @@ def test_ledger_trade_route_uses_configured_convertible_bond_fee_contract(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _seed_position(
+        db,
+        symbol="113001",
+        quantity=100,
+        asset_class="convertible_bond",
+    )
 
     fake_state = SimpleNamespace(
         db=db,
@@ -431,6 +459,7 @@ def test_ledger_trade_settlement_route_confirms_broker_values(tmp_path, monkeypa
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _seed_position(db, symbol="600066", quantity=100)
     entry_id = db.insert_ledger_entry_sync(
         entry_type="trade_sell",
         timestamp="2026-07-03T14:08:29+08:00",
@@ -509,6 +538,7 @@ def test_ledger_trade_settlement_route_rejects_inconsistent_net_cash(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _seed_position(db, symbol="600066", quantity=100)
     entry_id = db.insert_ledger_entry_sync(
         entry_type="trade_sell",
         timestamp="2026-07-03T14:08:29+08:00",

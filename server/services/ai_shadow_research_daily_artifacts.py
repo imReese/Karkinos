@@ -25,9 +25,12 @@ from server.persistence.daily_strategy_artifacts import (
 )
 from server.persistence.daily_strategy_backups import DailyStrategyBackupStore
 from server.projections.daily_strategy_artifacts import (
+    VERIFIED_RESEARCH_CANDIDATE_STRATEGY_BATCH_SCHEMA,
+    VERIFIED_RESEARCH_CANDIDATE_STRATEGY_SCHEMA,
     build_daily_strategy_backup_payload,
     build_daily_strategy_promotion_binding,
     build_daily_strategy_selection,
+    build_verified_research_candidate_strategy_batch,
     build_verified_winner_operating_constraints,
     build_verified_winner_strategy,
     selection_from_record,
@@ -123,6 +126,47 @@ class DailyStrategyArtifactStore:
             )
         ]
 
+    def list_verified_research_artifact_pairs(self) -> list[dict[str, Any]]:
+        """List every still-current, live-verified pair from oldest to newest."""
+
+        selections = self.list_selections(limit=-1)
+        backups = {
+            str(item.get("run_id") or ""): item for item in self.list_backups(limit=-1)
+        }
+        pairs: list[dict[str, Any]] = []
+        for selection in selections:
+            run_id = str(selection.get("run_id") or "")
+            backup = backups.get(run_id)
+            if (
+                not run_id
+                or selection.get("integrity_status") != "verified"
+                or not isinstance(backup, Mapping)
+                or backup.get("verification_status") != "verified"
+                or backup.get("market_date") != selection.get("market_date")
+                or backup.get("selection_id") != selection.get("selection_id")
+            ):
+                continue
+            pairs.append(
+                {
+                    "run_id": run_id,
+                    "market_date": str(selection.get("market_date") or ""),
+                    "selection_id": str(selection.get("selection_id") or ""),
+                    "selection_fingerprint": str(
+                        selection.get("selection_fingerprint") or ""
+                    ),
+                    "backup_artifact_fingerprint": str(
+                        backup.get("artifact_fingerprint") or ""
+                    ),
+                }
+            )
+        return sorted(
+            pairs,
+            key=lambda item: (
+                item["market_date"],
+                item["run_id"],
+            ),
+        )
+
     def load_latest_verified_research_artifacts(self) -> dict[str, Any]:
         """Read the latest selection and exact backup without requiring promotion."""
 
@@ -130,6 +174,13 @@ class DailyStrategyArtifactStore:
         if not records:
             raise DailyStrategyArtifactRejected("daily_research_selection_missing")
         run_id = str(records[0].get("run_id") or "")
+        return self.load_verified_research_artifacts(run_id=run_id)
+
+    def load_verified_research_artifacts(self, *, run_id: str) -> dict[str, Any]:
+        """Re-open one exact, still-current selection and its verified backup."""
+
+        if not run_id:
+            raise DailyStrategyArtifactRejected("daily_research_run_identity_missing")
         selection_record, backup_record = self._repository.current_pair(run_id=run_id)
         if selection_record is None or backup_record is None:
             raise DailyStrategyArtifactRejected(
@@ -200,6 +251,58 @@ class DailyStrategyArtifactStore:
             "operating_constraints": operating_constraints,
         }
 
+    def load_latest_verified_research_candidate_strategies(
+        self,
+    ) -> dict[str, Any]:
+        """Load the complete latest normalized Formula batch for qualification."""
+
+        artifacts = self.load_latest_verified_research_artifacts()
+        return self._build_verified_research_candidate_strategies(artifacts)
+
+    def load_verified_research_candidate_strategies(
+        self,
+        *,
+        run_id: str,
+    ) -> dict[str, Any]:
+        """Re-open the complete verified normalized Formula batch for one run."""
+
+        artifacts = self.load_verified_research_artifacts(run_id=run_id)
+        return self._build_verified_research_candidate_strategies(artifacts)
+
+    @staticmethod
+    def _build_verified_research_candidate_strategies(
+        artifacts: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return build_verified_research_candidate_strategy_batch(
+            payload=artifacts["payload"],
+            selection=artifacts["selection"],
+            backup=artifacts["backup"],
+        )
+
+    def require_verified_research_candidate(
+        self,
+        *,
+        candidate_id: str,
+        run_id: str,
+    ) -> dict[str, Any]:
+        """Re-open one member of an exact normalized batch without promoting it."""
+
+        if not candidate_id or not run_id:
+            raise DailyStrategyArtifactRejected(
+                "daily_research_candidate_identity_missing"
+            )
+        batch = self.load_verified_research_candidate_strategies(run_id=run_id)
+        matches = [
+            item
+            for item in batch["candidate_strategies"]
+            if item.get("candidate_id") == candidate_id
+        ]
+        if len(matches) != 1:
+            raise DailyStrategyArtifactRejected(
+                "candidate_is_not_in_verified_research_batch"
+            )
+        return dict(matches[0])
+
     def load_verified_winner_strategy(
         self,
         *,
@@ -257,6 +360,8 @@ __all__ = [
     "DAILY_STRATEGY_OPERATING_CONSTRAINTS_SCHEMA",
     "DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA",
     "DAILY_STRATEGY_SELECTION_SCHEMA",
+    "VERIFIED_RESEARCH_CANDIDATE_STRATEGY_BATCH_SCHEMA",
+    "VERIFIED_RESEARCH_CANDIDATE_STRATEGY_SCHEMA",
     "DailyStrategyArtifactRejected",
     "DailyStrategyArtifactStore",
     "build_daily_strategy_promotion_binding",

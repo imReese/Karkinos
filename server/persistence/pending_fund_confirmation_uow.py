@@ -10,6 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from core.types import InstrumentKey, InstrumentType
 from server.contracts.portfolio_mutations import PortfolioMutationConflict
 from server.contracts.portfolio_trades import (
     ManualTradeWrite,
@@ -340,6 +341,10 @@ def _load_confirmed_nav_evidence(
     order: dict[str, Any],
     command: PendingFundConfirmationWrite,
 ) -> dict[str, Any]:
+    instrument_key = InstrumentKey.from_values(
+        order["symbol"],
+        InstrumentType.OPEN_END_FUND,
+    )
     rows = conn.execute(
         """
         SELECT quote.*, run.status AS run_status, run.trigger AS run_trigger,
@@ -348,10 +353,10 @@ def _load_confirmed_nav_evidence(
         JOIN quote_fetch_runs AS run ON run.run_id = quote.fetch_run_id
         WHERE quote.fetch_run_id = ?
           AND quote.symbol = ?
-          AND quote.asset_class = 'fund'
+          AND quote.instrument_type = ?
         ORDER BY quote.id ASC
         """,
-        (command.evidence_fetch_run_id, order["symbol"]),
+        (command.evidence_fetch_run_id, *instrument_key.storage_tuple()),
     ).fetchall()
     if len(rows) != 1:
         raise RuntimeError("confirmed NAV evidence must identify exactly one snapshot")

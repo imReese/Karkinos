@@ -150,6 +150,7 @@ class StrategyResearchService(
         model_timeout_seconds: float = 180.0,
         reviewed_fee_schedule_resolver: Callable[..., Any] | None = None,
         provider_send_admission: ProviderSendAdmission | None = None,
+        execution_guard: Callable[[], None] | None = None,
     ) -> None:
         self._db = db
         self._db_path = db_path
@@ -165,10 +166,15 @@ class StrategyResearchService(
         self._model_timeout_seconds = model_timeout_seconds
         self._reviewed_fee_schedule_resolver = reviewed_fee_schedule_resolver
         self._provider_send_admission = provider_send_admission
+        self._execution_guard = execution_guard
 
     def _require_provider_send_window(self) -> None:
         if self._provider_send_admission is not None:
             self._provider_send_admission.require_allowed()
+
+    def _require_execution_current(self) -> None:
+        if self._execution_guard is not None:
+            self._execution_guard()
 
 
 # Compatibility aliases for existing direct tests and callers. Concrete

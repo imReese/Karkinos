@@ -9,7 +9,7 @@ from analytics.dataset_snapshot import (
     build_backtest_dataset_snapshot,
     verify_backtest_dataset_snapshot_replay,
 )
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
 from data.store import DataStore
 
@@ -21,6 +21,7 @@ def _snapshot(frame: pd.DataFrame) -> dict:
         symbol,
         BarFrequency.DAILY,
         AssetClass.STOCK,
+        InstrumentType.STOCK,
     )
     return build_backtest_dataset_snapshot(
         start_date="2025-01-02",
@@ -109,6 +110,7 @@ def test_dataset_snapshot_quality_uses_exact_consumed_frame_not_stale_source_ord
         provider_name="fixture_provider",
         data_source="fixture_provider",
         adjustment_mode="qfq",
+        instrument_type=InstrumentType.STOCK,
     )
 
     snapshot = build_backtest_dataset_snapshot(
@@ -121,6 +123,7 @@ def test_dataset_snapshot_quality_uses_exact_consumed_frame_not_stale_source_ord
                 symbol,
                 BarFrequency.DAILY,
                 AssetClass.STOCK,
+                InstrumentType.STOCK,
             )
         },
         store=store,
@@ -147,6 +150,7 @@ def test_dataset_snapshot_still_blocks_actual_non_monotonic_consumed_frame(
         provider_name="fixture_provider",
         data_source="fixture_provider",
         adjustment_mode="qfq",
+        instrument_type=InstrumentType.STOCK,
     )
 
     snapshot = build_backtest_dataset_snapshot(
@@ -159,6 +163,7 @@ def test_dataset_snapshot_still_blocks_actual_non_monotonic_consumed_frame(
                 symbol,
                 BarFrequency.DAILY,
                 AssetClass.STOCK,
+                InstrumentType.STOCK,
             )
         },
         store=store,
@@ -185,6 +190,7 @@ def test_dataset_snapshot_replay_uses_exact_persisted_window_and_detects_drift(
         provider_name="fixture_provider",
         data_source="fixture_provider",
         adjustment_mode="qfq",
+        instrument_type=InstrumentType.STOCK,
     )
     snapshot = build_backtest_dataset_snapshot(
         start_date="2025-01-02",
@@ -196,6 +202,7 @@ def test_dataset_snapshot_replay_uses_exact_persisted_window_and_detects_drift(
                 symbol,
                 BarFrequency.DAILY,
                 AssetClass.STOCK,
+                InstrumentType.STOCK,
             )
         },
         store=store,
@@ -212,6 +219,7 @@ def test_dataset_snapshot_replay_uses_exact_persisted_window_and_detects_drift(
         provider_name="fixture_provider",
         data_source="fixture_provider",
         adjustment_mode="qfq",
+        instrument_type=InstrumentType.STOCK,
     )
     after_append = verify_backtest_dataset_snapshot_replay(
         snapshot,
@@ -225,7 +233,11 @@ def test_dataset_snapshot_replay_uses_exact_persisted_window_and_detects_drift(
 
     with sqlite3.connect(tmp_path / "meta.db") as conn:
         conn.execute(
-            "UPDATE market_bars SET close = 99 WHERE symbol = ? AND timestamp = ?",
+            """
+            UPDATE market_bars_v2
+            SET close = 99
+            WHERE symbol = ? AND instrument_type = 'stock' AND timestamp = ?
+            """,
             ("600000", "2025-01-03T00:00:00"),
         )
     drifted = verify_backtest_dataset_snapshot_replay(snapshot, store_root=tmp_path)

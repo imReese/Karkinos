@@ -91,6 +91,7 @@ class BlockingSource(DataSource):
         self.started = threading.Event()
         self.release = threading.Event()
         self.finished = threading.Event()
+        self.call_count = 0
 
     def fetch_bars(self, symbol, start, end, frequency=None, asset_class=None):
         return MagicMock()
@@ -102,6 +103,7 @@ class BlockingSource(DataSource):
         return []
 
     def fetch_latest(self, symbol, asset_class=AssetClass.STOCK):
+        self.call_count += 1
         self.started.set()
         self.release.wait(timeout=1)
         self.finished.set()
@@ -178,6 +180,21 @@ class TestLiveDataFeed:
         bus.drain()
         assert received == []
         assert feed.get_last_snapshot(Symbol("600519"), AssetClass.STOCK) is None
+
+    def test_poll_all_does_not_duplicate_a_still_running_symbol_request(self):
+        source = BlockingSource()
+        feed = LiveDataFeed(source, EventBus(), poll_timeout_seconds=0.01)
+        watchlist = [(Symbol("600519"), AssetClass.STOCK)]
+
+        try:
+            assert feed.poll_all(watchlist) == []
+            assert source.started.is_set()
+            assert feed.poll_all(watchlist) == []
+            assert source.call_count == 1
+        finally:
+            feed.close()
+            source.release.set()
+            assert source.finished.wait(timeout=1)
 
     def test_poll_all_returns_events(self):
         """poll_all 轮询多个标的。"""

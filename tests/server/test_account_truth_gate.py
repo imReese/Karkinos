@@ -155,7 +155,11 @@ cash-replay,cash_snapshot,2026-07-10T09:30:00+08:00,2026-07-10,,,,CNY,0,0,0.00,0
         parse_broker_statement_csv(statement),
         source_name="private-name-must-not-leak.csv",
     )
-    valuation = build_current_valuation_snapshot(db, persist=True)
+    valuation = build_current_valuation_snapshot(
+        db,
+        persist=True,
+        now=datetime(2026, 7, 10, 1, 34, tzinfo=timezone.utc),
+    )
 
     first = build_account_truth_replay_evidence(
         db,

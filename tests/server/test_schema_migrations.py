@@ -326,7 +326,9 @@ def test_quote_materialization_migration_rejects_duplicate_fetch_identity(
             SELECT 1 FROM sqlite_master
             WHERE type = 'table' AND name = 'quote_current_materialization_state'
             """).fetchone()
-    assert versions == [(migration.version,) for migration in registered[:-1]]
+    assert versions == [
+        (migration.version,) for migration in registered if migration.version < 10
+    ]
     assert state_table is None
 
 

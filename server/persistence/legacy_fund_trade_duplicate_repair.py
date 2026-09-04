@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Generic, TypeVar
@@ -181,6 +182,7 @@ class LegacyFundTradeDuplicateRepairUnitOfWork:
                 AppDatabase(self._database_path),
                 self._conn,
                 candidate_ledger_rows=candidate_ledger_rows,
+                now=_parse_aware_datetime(self._created_at),
             )
         self._inject("after_valuation")
         return valuation
@@ -188,6 +190,13 @@ class LegacyFundTradeDuplicateRepairUnitOfWork:
     def _inject(self, stage: str) -> None:
         if self._failure_injector is not None:
             self._failure_injector(stage)
+
+
+def _parse_aware_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        raise RuntimeError("legacy duplicate repair timestamp must be timezone-aware")
+    return parsed
 
 
 class LegacyFundTradeDuplicateRepairPersistence:

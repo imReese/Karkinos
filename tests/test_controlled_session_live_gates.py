@@ -48,6 +48,7 @@ def _attestation() -> dict:
                 {
                     "order_id": "OMS-1",
                     "symbol": "510300.SH",
+                    "instrument_type": "etf",
                     "gateway_gates": {
                         "status": "pass",
                         "gates": {
@@ -151,7 +152,7 @@ def _persist_session(db: AppDatabase) -> None:
     assert issued["status"] == "enabled"
     db.upsert_latest_quote_sync(
         symbol="510300.SH",
-        asset_type="fund",
+        asset_type="etf",
         price=4.0,
         quote_timestamp=NOW.isoformat(),
         quote_source="synthetic-test",

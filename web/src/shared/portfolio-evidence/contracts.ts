@@ -3,6 +3,7 @@ export type Position = {
   name?: string | null;
   display_name?: string | null;
   asset_class?: string | null;
+  instrument_type?: string | null;
   quantity: number;
   available_qty: number;
   frozen_qty: number;
@@ -13,8 +14,8 @@ export type Position = {
   broker_cost_basis_method?: string | null;
   broker_cost_basis_status?: string | null;
   latest_price?: number | null;
-  market_value: number;
-  unrealized_pnl: number;
+  market_value: number | null;
+  unrealized_pnl: number | null;
   realized_pnl: number;
   commission_paid: number;
   today_change?: number | null;
@@ -31,6 +32,8 @@ export type Position = {
   using_persistent_cache?: boolean;
   nav_date?: string | null;
   closed_at?: string | null;
+  valuation_available?: boolean;
+  valuation_blockers?: string[];
 };
 
 export type AllocationItem = {
@@ -55,9 +58,18 @@ export type PositionEvidenceReview = {
   position: Position;
 };
 
+export type ValuationLane = {
+  asset_class: string;
+  status: 'not_applicable' | 'complete' | 'degraded' | 'missing';
+  quote_count: number;
+  complete_quote_count: number;
+  review_required_quote_count: number;
+  blocker_statuses: string[];
+};
+
 export type PortfolioSnapshot = {
   cash: number;
-  total_equity: number;
+  total_equity: number | null;
   total_deposits: number;
   positions: Position[];
   allocation: AllocationItem[];
@@ -70,15 +82,19 @@ export type PortfolioSnapshot = {
   valuation_trade_date?: string | null;
   valuation_policy?: string | null;
   valuation_status?: string;
+  valuation_lanes?: ValuationLane[];
   ledger_cutoff_id?: number;
   ledger_fingerprint?: string | null;
   quote_set_fingerprint?: string | null;
+  missing_price_symbols?: string[];
+  valuation_blockers?: string[];
 };
 
 export type CurrentHoldingMarketEvidenceReviewItem = {
   symbol: string;
   name: string;
   asset_class: string;
+  instrument_type?: string | null;
   quantity: number;
   quote_status: string;
   quote_source?: string | null;
@@ -89,6 +105,16 @@ export type CurrentHoldingMarketEvidenceReviewItem = {
   next_manual_action: string;
   explicit_refresh_eligible: boolean;
   blocks_authoritative_decisions: boolean;
+};
+
+export type CurrentHoldingMarketEvidenceLane = {
+  asset_class: string;
+  status:
+    'not_applicable' | 'complete' | 'degraded' | 'missing' | 'blocked_identity';
+  current_holding_count: number;
+  confirmed_holding_count: number;
+  review_required_count: number;
+  blocker_statuses: string[];
 };
 
 export type CurrentHoldingMarketEvidenceReview = {
@@ -104,7 +130,15 @@ export type CurrentHoldingMarketEvidenceReview = {
   stale_or_cached_review_count: number;
   missing_or_error_review_count: number;
   unknown_status_review_count: number;
+  /**
+   * New responses own the two refresh lanes explicitly. These remain optional
+   * while the Web can still be paired with an older local service that exposes
+   * only their ordered union in `refreshable_symbols`.
+   */
+  quote_refresh_symbols?: string[];
+  confirmed_fund_nav_refresh_symbols?: string[];
   refreshable_symbols: string[];
+  evidence_lanes?: CurrentHoldingMarketEvidenceLane[];
   items: CurrentHoldingMarketEvidenceReviewItem[];
   source_blockers: string[];
   review_fingerprint: string;
@@ -135,10 +169,10 @@ export type LiveHoldingItem = {
   asset_class: string;
   quantity: number;
   avg_cost: number;
-  market_value: number;
+  market_value: number | null;
   latest_price: number | null;
   quote_timestamp: string | null;
-  since_buy_pnl: number;
+  since_buy_pnl: number | null;
   since_buy_pnl_pct: number | null;
   today_change: number | null;
   today_change_pct: number | null;
@@ -152,14 +186,16 @@ export type LiveHoldingItem = {
   refresh_policy?: string | null;
   using_persistent_cache?: boolean;
   nav_date?: string | null;
+  valuation_available?: boolean;
+  valuation_blockers?: string[];
 };
 
 export type LiveHoldingGroup = {
   asset_class: string;
   label: string;
-  total_market_value: number;
+  total_market_value: number | null;
   total_today_change: number | null;
-  total_since_buy_pnl: number;
+  total_since_buy_pnl: number | null;
   items: LiveHoldingItem[];
 };
 
@@ -173,4 +209,6 @@ export type LiveHoldingsResponse = {
   ledger_cutoff_id?: number;
   ledger_fingerprint?: string | null;
   quote_set_fingerprint?: string | null;
+  missing_price_symbols?: string[];
+  valuation_blockers?: string[];
 };

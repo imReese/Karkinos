@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.source import DataSource
 from data.store import DataStore
 
@@ -134,11 +134,22 @@ def reconcile_store_with_provider(
     *,
     provider_name: str,
     asset_class: AssetClass = AssetClass.STOCK,
+    instrument_type: InstrumentType | None = None,
     price_tolerance: float = 0.01,
     volume_tolerance: float = 1.0,
 ) -> MarketBarReconciliationReport:
     """Fetch provider bars and compare them with the local SQLite cache."""
-    local = store.load_bars(symbol, frequency)
+    if instrument_type is None:
+        if asset_class is AssetClass.FUND:
+            raise ValueError(
+                "fund reconciliation requires ETF or open-end instrument_type"
+            )
+        instrument_type = InstrumentType.from_persisted(asset_class.value)
+    local = store.load_bars(
+        symbol,
+        frequency,
+        instrument_type=instrument_type,
+    )
     local_slice = _slice_bars(local, start, end)
     provider = source.fetch_bars(symbol, start, end, frequency, asset_class)
     return reconcile_market_bars(

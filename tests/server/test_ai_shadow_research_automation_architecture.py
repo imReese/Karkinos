@@ -49,6 +49,9 @@ from tests.test_server_import_boundaries import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = PROJECT_ROOT / "server/contracts/ai_shadow_research_automation.py"
+QUALIFICATION_CONTRACT = (
+    PROJECT_ROOT / "server/contracts/ai_shadow_research_qualification.py"
+)
 COMPOSITION = PROJECT_ROOT / "server/composition/ai_shadow_research_automation.py"
 PROJECTION = PROJECT_ROOT / "server/projections/ai_shadow_research.py"
 SERVICE_ROOT = PROJECT_ROOT / "server/services"
@@ -58,8 +61,13 @@ SERVICE_PATHS = {
     SERVICE_ROOT / "ai_shadow_research_candidate_workflow.py",
     SERVICE_ROOT / "ai_shadow_research_commands.py",
     SERVICE_ROOT / "ai_shadow_research_daily_artifacts.py",
+    SERVICE_ROOT / "ai_shadow_research_job_scheduler.py",
     SERVICE_ROOT / "ai_shadow_research_policy.py",
+    SERVICE_ROOT / "ai_shadow_research_qualification.py",
+    SERVICE_ROOT / "ai_shadow_research_qualification_support.py",
     SERVICE_ROOT / "ai_shadow_research_support.py",
+    SERVICE_ROOT / "ai_shadow_research_worker.py",
+    SERVICE_ROOT / "ai_shadow_research_worker_status.py",
     SERVICE_ROOT / "ai_shadow_research_workflow.py",
 }
 PERSISTENCE_ROOT = PROJECT_ROOT / "server/persistence"
@@ -70,6 +78,11 @@ PERSISTENCE_PATHS = {
     PERSISTENCE_ROOT / "ai_shadow_research_citation_resume.py",
     PERSISTENCE_ROOT / "ai_shadow_research_partial_resume.py",
     PERSISTENCE_ROOT / "ai_shadow_research_provider_calls.py",
+    PERSISTENCE_ROOT / "ai_shadow_research_worker_jobs.py",
+    PERSISTENCE_ROOT / "ai_shadow_research_qualification.py",
+    PERSISTENCE_ROOT / "ai_shadow_research_qualification_candidate_uow.py",
+    PERSISTENCE_ROOT / "ai_shadow_research_qualification_promotion.py",
+    PERSISTENCE_ROOT / "ai_shadow_research_qualification_promotion.py",
     PERSISTENCE_ROOT / "ai_shadow_research_records.py",
     PERSISTENCE_ROOT / "ai_shadow_research_retry_authorizations.py",
     PERSISTENCE_ROOT / "ai_shadow_research_run_claims.py",
@@ -80,6 +93,7 @@ PERSISTENCE_PATHS = {
 }
 PRODUCTION_PATHS = {
     CONTRACT,
+    QUALIFICATION_CONTRACT,
     COMPOSITION,
     PROJECTION,
     *SERVICE_PATHS,
@@ -138,7 +152,13 @@ def test_shadow_research_facade_preserves_public_identity_and_patch_seams() -> N
 
 
 def test_shadow_research_sql_schema_and_transactions_have_physical_owners() -> None:
-    for path in {CONTRACT, COMPOSITION, PROJECTION, *SERVICE_PATHS}:
+    for path in {
+        CONTRACT,
+        QUALIFICATION_CONTRACT,
+        COMPOSITION,
+        PROJECTION,
+        *SERVICE_PATHS,
+    }:
         source = path.read_text(encoding="utf-8")
         assert "sqlite3" not in _imports(path), path.name
         assert "BEGIN IMMEDIATE" not in source, path.name
@@ -168,7 +188,7 @@ def test_shadow_research_layers_do_not_invert_dependencies() -> None:
         "server.routes",
         "server.services",
     )
-    for path in (CONTRACT, PROJECTION):
+    for path in (CONTRACT, QUALIFICATION_CONTRACT, PROJECTION):
         imports = _imports(path)
         assert not {
             imported

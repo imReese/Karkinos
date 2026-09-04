@@ -10,12 +10,26 @@ from server.services.controlled_session_automatic_pause import (
     ControlledSessionAutomaticPauseService,
 )
 from server.services.controlled_session_automatic_trading_gate import (
-    automatic_trading_gate_blockers,
     automatic_trading_gate_evidence,
     automatic_trading_gate_values,
 )
 from server.services.controlled_session_gate_contract import (
     CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
+)
+from server.services.controlled_session_live_gate_projection import (
+    gate_blockers as _gate_blockers,
+)
+from server.services.controlled_session_live_gate_projection import (
+    missing_gate_values as _missing_gate_values,
+)
+from server.services.controlled_session_live_gate_projection import (
+    missing_snapshot as _missing_snapshot,
+)
+from server.services.controlled_session_live_gate_projection import (
+    nested_gate_status as _nested_gate_status,
+)
+from server.services.controlled_session_live_gate_projection import (
+    snapshot_response as _snapshot_response,
 )
 from server.services.controlled_session_live_gate_values import aware_utc as _aware_utc
 from server.services.controlled_session_live_gate_values import (
@@ -418,13 +432,42 @@ class ControlledSessionLiveGateSnapshotService:
         *,
         now: datetime,
     ) -> tuple[dict[str, Any], list[str]]:
-        symbols = sorted({str(item.get("symbol") or "") for item in orders if item})
         blockers: list[str] = []
         observations: list[dict[str, Any]] = []
-        if not symbols:
+        identities: set[tuple[str, str]] = set()
+        for item in orders:
+            symbol = str(item.get("symbol") or "").strip()
+            instrument_type = (
+                str(item.get("instrument_type") or item.get("asset_type") or "")
+                .strip()
+                .lower()
+                .replace("-", "_")
+            )
+            if instrument_type in {"fund", "openend_fund"}:
+                instrument_type = "open_end_fund"
+            if not symbol or instrument_type not in {
+                "stock",
+                "etf",
+                "open_end_fund",
+                "gold",
+                "bond",
+                "index",
+            }:
+                blockers.append(
+                    f"live_gate_market_identity_missing:{symbol or 'unknown'}"
+                )
+                continue
+            identities.add((symbol, instrument_type))
+        if not identities:
             blockers.append("live_gate_market_symbol_scope_missing")
-        for symbol in symbols:
-            row = self._db.get_latest_quote_sync(symbol) or {}
+        for symbol, instrument_type in sorted(identities):
+            row = (
+                self._db.get_latest_quote_sync(
+                    symbol,
+                    asset_type=instrument_type,
+                )
+                or {}
+            )
             timestamp = _parse_timestamp(
                 row.get("quote_timestamp") or row.get("timestamp")
             )
@@ -449,6 +492,7 @@ class ControlledSessionLiveGateSnapshotService:
             observations.append(
                 {
                     "symbol": symbol,
+                    "instrument_type": instrument_type,
                     "quote_timestamp": timestamp.isoformat() if timestamp else "",
                     "age_seconds": age_seconds,
                     "quote_status": quote_status,
@@ -678,121 +722,3 @@ class ControlledSessionAutomaticPauseOrchestratorService:
             "broker_submission_enabled": False,
             "safety": _safety_flags(),
         }
-
-
-def _snapshot_response(row: dict[str, Any], *, reused: bool) -> dict[str, Any]:
-    payload = _json_object(row.get("payload_json"))
-    return {
-        **payload,
-        "database_id": int(row.get("id") or 0),
-        "snapshot_id": str(row.get("snapshot_id") or payload.get("snapshot_id") or ""),
-        "snapshot_fingerprint": str(
-            row.get("snapshot_fingerprint") or payload.get("snapshot_fingerprint") or ""
-        ),
-        "session_id": str(row.get("session_id") or payload.get("session_id") or ""),
-        "observed_at": str(row.get("observed_at") or payload.get("observed_at") or ""),
-        "status": str(row.get("status") or payload.get("status") or "blocked"),
-        "gate_snapshot": _json_object(
-            row.get("gate_snapshot_json") or payload.get("gate_snapshot") or {}
-        ),
-        "source_evidence": _json_object(
-            row.get("source_evidence_json") or payload.get("source_evidence") or {}
-        ),
-        "blockers": _json_list(
-            row.get("blockers_json") or payload.get("blockers") or []
-        ),
-        "persisted": bool(row),
-        "reused": reused,
-        "broker_submission_enabled": False,
-        "safety": _safety_flags(),
-    }
-
-
-def _nested_gate_status(order: dict[str, Any], gate: str) -> str:
-    gateway_gates = _mapping(order.get("gateway_gates"))
-    gates = _mapping(gateway_gates.get("gates"))
-    item = _mapping(gates.get(gate))
-    return str(item.get("status") or "missing").lower()
-
-
-def _gate_blockers(gates: dict[str, Any]) -> list[str]:
-    blockers: list[str] = []
-    expected = {
-        "account_truth_status": {"pass", "clear"},
-        "risk_gate_status": {"pass", "passed"},
-        "reconciliation_status": {"clear", "manually_accepted"},
-        "paper_shadow_status": {"within_expectations", "manually_accepted"},
-        "gateway_health_status": {"healthy"},
-        "market_data_status": {"current", "confirmed", "live"},
-        "budget_status": {"current_reserved", "current_reserved_non_executing"},
-        "rate_limit_status": {"clear"},
-    }
-    for field, passing in expected.items():
-        if gates.get(field) not in passing:
-            blockers.append(f"live_gate_not_clear:{field}")
-    if gates.get("kill_switch_enabled") is not False:
-        blockers.append("live_gate_kill_switch_not_clear")
-    blockers.extend(automatic_trading_gate_blockers(gates))
-    for field in (
-        "budget_exhausted",
-        "daily_loss_limit_reached",
-        "drawdown_limit_reached",
-        "rejection_spike",
-        "unexpected_account_change",
-    ):
-        if gates.get(field) is not False:
-            blockers.append(f"live_gate_boolean_fact_not_clear:{field}")
-    consecutive = gates.get("consecutive_errors")
-    maximum = gates.get("max_consecutive_errors")
-    if (
-        not isinstance(consecutive, int)
-        or not isinstance(maximum, int)
-        or consecutive < 0
-        or maximum <= 0
-        or consecutive >= maximum
-    ):
-        blockers.append("live_gate_consecutive_error_limit_not_clear")
-    return blockers
-
-
-def _missing_gate_values() -> dict[str, Any]:
-    return {
-        "source_fingerprint": "",
-        "account_truth_status": "missing",
-        "risk_gate_status": "missing",
-        "reconciliation_status": "missing",
-        "paper_shadow_status": "missing",
-        "gateway_health_status": "missing",
-        "market_data_status": "missing",
-        "budget_status": "missing",
-        "rate_limit_status": "missing",
-        "kill_switch_enabled": None,
-        "automatic_trading_status": "unavailable",
-        "automatic_trading_configured_enabled": None,
-        "automatic_trading_enabled": False,
-        "automatic_trading_revision": None,
-        "automatic_trading_control_fingerprint": "",
-        "automatic_trading_blockers": ["automatic_trading_control_missing"],
-        "budget_exhausted": None,
-        "daily_loss_limit_reached": None,
-        "drawdown_limit_reached": None,
-        "rejection_spike": None,
-        "unexpected_account_change": None,
-        "consecutive_errors": None,
-        "max_consecutive_errors": None,
-    }
-
-
-def _missing_snapshot(session_id: str, blockers: list[str]) -> dict[str, Any]:
-    return {
-        "schema_version": CONTROLLED_SESSION_LIVE_GATE_SCHEMA_VERSION,
-        "status": "blocked",
-        "session_id": session_id,
-        "gate_snapshot": _missing_gate_values(),
-        "blockers": list(dict.fromkeys(blockers)),
-        "resolution_status": "missing",
-        "resolution_blockers": list(dict.fromkeys(blockers)),
-        "persisted": False,
-        "broker_submission_enabled": False,
-        "safety": _safety_flags(),
-    }

@@ -5,12 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime
 from functools import partial
 from zoneinfo import ZoneInfo
 
-from core.types import AssetClass, Symbol
+from core.types import AssetClass
 from server.contracts.http.market import (
     QuoteRefreshSymbolResult,
 )
@@ -32,7 +31,20 @@ from server.services.market_refresh_errors import (
     provider_error_code,
     provider_error_reason,
 )
-from server.services.market_refresh_provider import load_provider_quote_payload
+from server.services.market_refresh_identity import (
+    instrument_type_for_refresh as _instrument_type_for_refresh,
+)
+from server.services.market_refresh_identity import (
+    is_real_persistent_quote,
+    latest_persistent_real_quote,
+)
+from server.services.market_refresh_identity import (
+    provider_asset_class as _provider_asset_class,
+)
+from server.services.market_refresh_provider import (
+    fetch_provider_latest_with_timeout,
+    load_provider_quote_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +124,6 @@ def quote_source(state, quote: dict | None) -> str | None:
     return None
 
 
-def is_real_persistent_quote(quote: dict | None) -> bool:
-    return bool(quote and quote.get("price") not in {None, ""})
-
-
 def mark_persistent_cache_quote(
     quote: dict | None, *, stale_reason: str = "source_unavailable"
 ) -> dict | None:
@@ -192,7 +200,11 @@ def quote_metadata(
             if quote
             else ""
         )
-        or market_index_display_name(symbol)
+        or (
+            market_index_display_name(symbol)
+            if asset_class == AssetClass.INDEX.value
+            else None
+        )
         or metadata.display_name
     )
     daily_change = (
@@ -256,15 +268,6 @@ def quote_metadata(
     }
 
 
-def latest_persistent_real_quote(state, symbol: str) -> dict | None:
-    if state.db is None or not hasattr(state.db, "get_latest_quotes_sync"):
-        return None
-    for row in state.db.get_latest_quotes_sync():
-        if row.get("symbol") == symbol and is_real_persistent_quote(row):
-            return row
-    return None
-
-
 def store_runtime_quote(state, symbol: str, quote: dict) -> None:
     scheduler = state.scheduler
     if scheduler is None:
@@ -282,13 +285,22 @@ def publish_committed_runtime_quotes(state, results) -> None:
     if database is None or not hasattr(database, "get_latest_quote_sync"):
         raise RuntimeError("published quote database is unavailable")
     for result in results:
-        row = database.get_latest_quote_sync(result.symbol, result.asset_class)
+        instrument_type = _instrument_type_for_refresh(
+            state,
+            result.symbol,
+            result.asset_class,
+        )
+        row = database.get_latest_quote_sync(
+            result.symbol,
+            instrument_type.value,
+        )
         if not isinstance(row, dict) or row.get("fetch_run_id") is None:
             raise RuntimeError(f"published quote missing for {result.symbol}")
         quote = {
             **row,
             "timestamp": row.get("quote_timestamp"),
-            "asset_class": row.get("asset_type") or result.asset_class,
+            "asset_class": _provider_asset_class(instrument_type).value,
+            "instrument_type": instrument_type.value,
         }
         store_runtime_quote(state, result.symbol, quote)
 
@@ -335,26 +347,6 @@ def load_latest_snapshot_from_provider(
     )
 
 
-def fetch_provider_latest_with_timeout(
-    source,
-    symbol: str,
-    asset_class: AssetClass,
-    *,
-    timeout_seconds: float,
-) -> dict | None:
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="quote-provider")
-    future = executor.submit(source.fetch_latest, Symbol(symbol), asset_class)
-    try:
-        return future.result(timeout=max(float(timeout_seconds), 0.001))
-    except FutureTimeoutError as exc:
-        future.cancel()
-        raise TimeoutError(
-            f"provider fetch_latest timed out after {timeout_seconds:.1f}s"
-        ) from exc
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
-
-
 def persist_latest_snapshot(
     state,
     symbol: str,
@@ -365,9 +357,15 @@ def persist_latest_snapshot(
     database = getattr(state, "db", None)
     if database is None:
         raise RuntimeError("quote persistence database is unavailable")
+    instrument_type = _instrument_type_for_refresh(
+        state,
+        symbol,
+        payload.get("instrument_type") or payload.get("asset_class"),
+    )
+    payload = {**payload, "instrument_type": instrument_type.value}
     command = build_quote_ingestion_command(
         symbol=symbol,
-        asset_type=str(payload["asset_class"]),
+        asset_type=instrument_type.value,
         snapshot=payload,
         quote_source=str(payload.get("quote_source") or "") or None,
         provider_name=str(payload.get("provider_name") or "") or None,
@@ -414,7 +412,7 @@ async def refresh_one_quote(
             timeout=timeout,
         )
     except asyncio.TimeoutError:
-        cached_quote = latest_persistent_real_quote(state, symbol)
+        cached_quote = latest_persistent_real_quote(state, symbol, asset_class)
         cached_quote = mark_persistent_cache_quote(
             cached_quote, stale_reason="provider_timeout"
         )
@@ -447,7 +445,7 @@ async def refresh_one_quote(
             using_persistent_cache=bool(cached_quote),
         )
     except Exception as exc:
-        cached_quote = latest_persistent_real_quote(state, symbol)
+        cached_quote = latest_persistent_real_quote(state, symbol, asset_class)
         logger.warning("Manual quote refresh failed for %s", symbol, exc_info=True)
         error_code = provider_error_code(exc)
         error_message = error_code or str(exc)
@@ -483,7 +481,7 @@ async def refresh_one_quote(
         )
 
     if not snapshot:
-        cached_quote = latest_persistent_real_quote(state, symbol)
+        cached_quote = latest_persistent_real_quote(state, symbol, asset_class)
         cached_quote = mark_persistent_cache_quote(
             cached_quote, stale_reason="source_unavailable"
         )
@@ -518,6 +516,12 @@ async def refresh_one_quote(
         )
 
     try:
+        instrument_type = _instrument_type_for_refresh(state, symbol, asset_class)
+        snapshot = {
+            **snapshot,
+            "asset_class": _provider_asset_class(instrument_type).value,
+            "instrument_type": instrument_type.value,
+        }
         persist_latest_snapshot(
             state,
             symbol,
@@ -538,7 +542,9 @@ async def refresh_one_quote(
             reason="行情已获取但未完整落库，拒绝发布为可用行情",
             last_refresh_attempt=attempted_at.isoformat(),
             last_refresh_error=error_message,
-            using_persistent_cache=bool(latest_persistent_real_quote(state, symbol)),
+            using_persistent_cache=bool(
+                latest_persistent_real_quote(state, symbol, asset_class)
+            ),
         )
     if fetch_run_id is None:
         store_runtime_quote(state, symbol, snapshot)

@@ -6,7 +6,7 @@ from functools import partial
 
 from fastapi import HTTPException
 
-from core.types import AssetClass, Symbol
+from core.types import InstrumentType, Symbol
 from server.contracts.http.market import (
     ConfirmedFundNavRefreshRequest,
     ConfirmedFundNavRefreshResponse,
@@ -21,15 +21,6 @@ from server.services.market_views.health_inputs import (
     merged_watchlist_assets,
     normalize_refresh_symbols,
 )
-
-_ASSET_CLASS_MAP = {
-    "stock": AssetClass.STOCK,
-    "etf": AssetClass.FUND,
-    "fund": AssetClass.FUND,
-    "gold": AssetClass.GOLD,
-    "bond": AssetClass.BOND,
-    "index": AssetClass.INDEX,
-}
 
 
 async def refresh_confirmed_fund_nav(
@@ -64,16 +55,20 @@ async def refresh_confirmed_fund_nav(
     if not requested_symbols:
         raise HTTPException(status_code=422, detail="at least one symbol is required")
 
-    assets_by_symbol = {
-        asset["symbol"]: asset for asset in merged_watchlist_assets(state)
-    }
-    invalid_symbols = [
-        symbol
-        for symbol in requested_symbols
-        if symbol not in assets_by_symbol
-        or _ASSET_CLASS_MAP.get(assets_by_symbol[symbol]["asset_class"])
-        is not AssetClass.FUND
-    ]
+    open_end_fund_symbols: set[str] = set()
+    for asset in merged_watchlist_assets(state):
+        try:
+            instrument_type = InstrumentType.from_persisted(
+                asset.get("instrument_type") or asset.get("asset_class")
+            )
+        except ValueError:
+            continue
+        if instrument_type is InstrumentType.OPEN_END_FUND:
+            open_end_fund_symbols.add(str(asset["symbol"]))
+    invalid_symbols: list[str] = []
+    for symbol in requested_symbols:
+        if symbol not in open_end_fund_symbols:
+            invalid_symbols.append(symbol)
     if invalid_symbols:
         raise HTTPException(
             status_code=422,
@@ -84,7 +79,9 @@ async def refresh_confirmed_fund_nav(
         )
 
     _, _, _, latest_quotes = extract_runtime_portfolio(state)
-    watchlist = [(Symbol(symbol), AssetClass.FUND) for symbol in requested_symbols]
+    watchlist = [
+        (Symbol(symbol), InstrumentType.OPEN_END_FUND) for symbol in requested_symbols
+    ]
     try:
         result = await run_blocking_fetch(
             partial(

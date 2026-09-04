@@ -7,8 +7,9 @@ import {
   ReturnCalendarCard,
   type ReturnCalendarMarketCalendar,
 } from './return-calendar-card';
+import type { ReturnCalendarTimelinePoint } from './return-calendar-model';
 
-const timeline = [
+const timeline: ReturnCalendarTimelinePoint[] = [
   {
     date: '2026-01-03',
     equity: 100500,
@@ -359,12 +360,12 @@ test('shows live returns normally and only true missing rows as price gaps', asy
     },
     {
       date: '2026-06-18',
-      equity: 100900,
-      delta: -100,
+      equity: null,
+      delta: 0,
       external_flow: 0,
-      market_pnl: -100,
+      market_pnl: 0,
       valuation_status: 'confirmed_nav_missing',
-      missing_price_symbols: [],
+      missing_price_symbols: ['019999'],
     },
     {
       date: '2026-06-19',
@@ -385,12 +386,12 @@ test('shows live returns normally and only true missing rows as price gaps', asy
     screen.getByRole('button', { name: '2026-06-17 · ¥700.00' }),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-18 · -¥100.00' }),
+    screen.getByRole('button', { name: '2026-06-18 · Price gap' }),
   ).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '2026-06-19 · Price gap' }),
   ).toBeTruthy();
-  expect(screen.getAllByText('Unconfirmed').length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText('Unconfirmed').length).toBeGreaterThanOrEqual(1);
 
   await userEvent.click(
     screen.getByRole('button', { name: '2026-06-17 · ¥700.00' }),

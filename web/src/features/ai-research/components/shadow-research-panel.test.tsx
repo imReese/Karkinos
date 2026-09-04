@@ -44,6 +44,26 @@ const status = {
     reserved_tokens: 450560,
     actual_tokens: 1900,
   },
+  today_provider_activity: {
+    schema_version: 'karkinos.ai.provider_local_day_activity.v1',
+    local_date: '2026-08-12',
+    timezone: 'Asia/Shanghai',
+    provider_calls: 1,
+    recorded_call_attempts: 1,
+    provider_free_rejections: 0,
+    last_attempt_at: '2026-08-12T10:06:00+08:00',
+    last_attempt_updated_at: '2026-08-12T10:06:10+08:00',
+    last_attempt_status: 'completed',
+    last_attempt_failure_code: null,
+    last_attempt_kind: 'critique',
+    last_attempt_market_date: '2026-08-11',
+    last_provider_call_at: '2026-08-12T10:06:00+08:00',
+    last_provider_call_market_date: '2026-08-11',
+    read_only: true,
+    provider_contact_performed: false,
+    database_writes_performed: false,
+    authority_effect: 'none',
+  },
   runs: [
     {
       run_id: 'run-1',
@@ -301,6 +321,12 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
   ).toHaveLength(2);
   expect(screen.getByText('Sequential round 1/5')).toBeTruthy();
   expect(screen.getByText('Verified')).toBeTruthy();
+  expect(
+    screen.getByText('Today provider calls').parentElement?.textContent,
+  ).toContain('1');
+  expect(
+    screen.getByText(/Last provider call: .*research market date: 2026-08-11/),
+  ).toBeTruthy();
   expect(screen.getByText('More regimes are needed.')).toBeTruthy();
   expect(screen.getAllByText('Mean / worst OOS')).toHaveLength(2);
   const approveButton = screen.getByRole('button', {

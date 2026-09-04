@@ -28,6 +28,7 @@ CAPABILITY_METHODS = {
         "list_quote_fetch_runs",
     },
     "financial_facts_quotes.py": {
+        "get_historical_price_matrix_sync",
         "get_latest_daily_close_before_sync",
         "get_latest_market_bar_before_date_sync",
         "get_latest_quote",

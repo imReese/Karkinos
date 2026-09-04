@@ -10,7 +10,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from core.types import BarFrequency, Symbol
+from core.types import BarFrequency, InstrumentKey, InstrumentType, Symbol
+from data.market_bar_identity import (
+    ensure_market_bar_v2_schema,
+    migrate_legacy_market_bars_to_v2,
+)
 from data.market_daily_store import (
     MarketDailyIngestionMixin,
 )
@@ -91,6 +95,7 @@ class DataStore(MarketDailyIngestionMixin):
                 CREATE INDEX IF NOT EXISTS idx_market_bars_symbol_frequency_ts
                 ON market_bars(symbol, frequency, timestamp)
             """)
+            ensure_market_bar_v2_schema(conn)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS market_universe_snapshots (
                     snapshot_id TEXT PRIMARY KEY,
@@ -133,18 +138,20 @@ class DataStore(MarketDailyIngestionMixin):
         provider_name: str | None = None,
         data_source: str | None = None,
         adjustment_mode: str | None = None,
+        instrument_type: InstrumentType | str,
     ) -> None:
-        """保存 K 线数据到 SQLite，并保留 Parquet 镜像。"""
-        freq_dir = self._root / "bars" / frequency.value
+        """Persist bars under an exact identity in typed v2 storage."""
+        key = InstrumentKey.from_values(symbol, instrument_type)
+        freq_dir = self._root / "bars" / frequency.value / key.instrument_type.value
         freq_dir.mkdir(parents=True, exist_ok=True)
-        path = freq_dir / f"{symbol}.parquet"
+        path = freq_dir / f"{key.symbol}.parquet"
         df.to_parquet(path, index=False)
-        self._save_bars_to_db(symbol, frequency, df)
+        self._save_bars_to_db(key, frequency, df)
         provider_name = _metadata_value(df, "provider_name", provider_name)
         data_source = _metadata_value(df, "data_source", data_source or provider_name)
         adjustment_mode = _metadata_value(df, "adjustment_mode", adjustment_mode)
         self._save_bar_meta(
-            symbol,
+            key,
             frequency,
             df,
             provider_name=provider_name,
@@ -156,13 +163,28 @@ class DataStore(MarketDailyIngestionMixin):
         self,
         symbol: Symbol,
         frequency: BarFrequency = BarFrequency.DAILY,
+        *,
+        instrument_type: InstrumentType | str | None = None,
     ) -> pd.DataFrame | None:
-        """从 Parquet 加载 K 线数据。"""
-        db_df = self._load_bars_from_db(symbol, frequency)
+        """Load exact v2 bars, or read the legacy source when type is omitted."""
+        key = (
+            None
+            if instrument_type is None
+            else InstrumentKey.from_values(symbol, instrument_type)
+        )
+        db_df = self._load_bars_from_db(symbol, frequency, key=key)
         if db_df is not None:
             return db_df
 
-        path = self._root / "bars" / frequency.value / f"{symbol}.parquet"
+        path = (
+            self._root / "bars" / frequency.value / f"{symbol}.parquet"
+            if key is None
+            else self._root
+            / "bars"
+            / frequency.value
+            / key.instrument_type.value
+            / f"{key.symbol}.parquet"
+        )
         if not path.exists():
             return None
         df = pd.read_parquet(path)
@@ -179,9 +201,15 @@ class DataStore(MarketDailyIngestionMixin):
         provider_name: str | None = None,
         data_source: str | None = None,
         adjustment_mode: str | None = None,
+        instrument_type: InstrumentType | str,
     ) -> None:
-        """追加 K 线数据到已有 Parquet，按 timestamp 去重排序。"""
-        existing = self.load_bars(symbol, frequency)
+        """Append bars to one exact v2 identity."""
+        key = InstrumentKey.from_values(symbol, instrument_type)
+        existing = self.load_bars(
+            symbol,
+            frequency,
+            instrument_type=key.instrument_type,
+        )
 
         if existing is None or existing.empty:
             self.save_bars(
@@ -191,6 +219,7 @@ class DataStore(MarketDailyIngestionMixin):
                 provider_name=provider_name,
                 data_source=data_source,
                 adjustment_mode=adjustment_mode,
+                instrument_type=key.instrument_type,
             )
             return
 
@@ -206,21 +235,28 @@ class DataStore(MarketDailyIngestionMixin):
             provider_name=_metadata_value(new_df, "provider_name", provider_name),
             data_source=_metadata_value(new_df, "data_source", data_source),
             adjustment_mode=_metadata_value(new_df, "adjustment_mode", adjustment_mode),
+            instrument_type=key.instrument_type,
         )
 
     def sync_parquet_bars_to_database(
         self,
         frequency: BarFrequency | None = None,
         *,
+        instrument_type: InstrumentType | str,
         data_source: str = "local_parquet_sync",
     ) -> dict[str, object]:
         """Import existing Parquet bar mirrors into SQLite.
 
         This is idempotent and does not fetch remote data. It is intended for
         local cache migrations where historical bars already exist under
-        ``bars/<frequency>/<symbol>.parquet`` and must be made queryable from
-        the authoritative ``market_bars`` table.
+        ``bars/<frequency>/<instrument_type>/<symbol>.parquet`` and must be
+        made queryable from the typed ``market_bars_v2`` table.
         """
+        resolved_type = InstrumentType.from_persisted(
+            instrument_type.value
+            if isinstance(instrument_type, InstrumentType)
+            else instrument_type
+        )
         frequencies = (
             [frequency] if frequency is not None else self._list_bar_frequencies()
         )
@@ -228,18 +264,19 @@ class DataStore(MarketDailyIngestionMixin):
         synced_rows = 0
 
         for bar_frequency in frequencies:
-            freq_dir = self._root / "bars" / bar_frequency.value
+            freq_dir = self._root / "bars" / bar_frequency.value / resolved_type.value
             if not freq_dir.exists():
                 continue
             for path in sorted(freq_dir.glob("*.parquet")):
                 symbol = Symbol(path.stem)
                 df = pd.read_parquet(path)
-                self._save_bars_to_db(symbol, bar_frequency, df)
+                key = InstrumentKey(str(symbol), resolved_type)
+                self._save_bars_to_db(key, bar_frequency, df)
                 provider_name = _metadata_value(df, "provider_name", None)
                 frame_data_source = _metadata_value(df, "data_source", None)
                 adjustment_mode = _metadata_value(df, "adjustment_mode", None)
                 self._save_bar_meta(
-                    symbol,
+                    key,
                     bar_frequency,
                     df,
                     provider_name=provider_name,
@@ -251,6 +288,7 @@ class DataStore(MarketDailyIngestionMixin):
                 files.append(
                     {
                         "symbol": str(symbol),
+                        "instrument_type": resolved_type.value,
                         "frequency": bar_frequency.value,
                         "rows": row_count,
                         "path": str(path),
@@ -263,14 +301,30 @@ class DataStore(MarketDailyIngestionMixin):
             "files": files,
         }
 
-    def get_meta(self, symbol: Symbol, frequency: BarFrequency) -> dict | None:
-        """获取行情元数据。"""
+    def get_meta(
+        self,
+        symbol: Symbol,
+        frequency: BarFrequency,
+        *,
+        instrument_type: InstrumentType | str | None = None,
+    ) -> dict | None:
+        """Read exact v2 metadata, or the read-only legacy source."""
         with sqlite3.connect(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM bar_meta WHERE symbol=? AND frequency=?",
-                (str(symbol), frequency.value),
-            ).fetchone()
+            if instrument_type is None:
+                row = conn.execute(
+                    "SELECT * FROM bar_meta WHERE symbol=? AND frequency=?",
+                    (str(symbol), frequency.value),
+                ).fetchone()
+            else:
+                key = InstrumentKey.from_values(symbol, instrument_type)
+                row = conn.execute(
+                    """
+                    SELECT * FROM bar_meta_v2
+                    WHERE symbol=? AND instrument_type=? AND frequency=?
+                    """,
+                    (*key.storage_tuple(), frequency.value),
+                ).fetchone()
             if row is None:
                 return None
             meta = dict(row)
@@ -287,7 +341,7 @@ class DataStore(MarketDailyIngestionMixin):
 
     def _save_bar_meta(
         self,
-        symbol: Symbol,
+        key: InstrumentKey,
         frequency: BarFrequency,
         df: pd.DataFrame,
         *,
@@ -306,17 +360,19 @@ class DataStore(MarketDailyIngestionMixin):
 
         with sqlite3.connect(self._meta_path) as conn:
             conn.execute(
-                """INSERT OR REPLACE INTO bar_meta
+                """INSERT OR REPLACE INTO bar_meta_v2
                    (
-                       symbol, frequency, start_date, end_date, last_updated,
+                       symbol, instrument_type, frequency,
+                       start_date, end_date, last_updated,
                        row_count, provider_name, data_source, adjustment_mode,
                        fetched_at, dataset_id, diagnostics_json,
                        duplicate_timestamp_count, missing_ohlcv_count,
-                       is_monotonic
+                       is_monotonic, identity_provenance
                    )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    str(symbol),
+                    key.symbol,
+                    key.instrument_type.value,
                     frequency.value,
                     start,
                     end,
@@ -327,7 +383,7 @@ class DataStore(MarketDailyIngestionMixin):
                     adjustment_mode,
                     fetched_at,
                     _build_dataset_id(
-                        symbol,
+                        Symbol(key.symbol),
                         frequency,
                         df,
                         provider_name=provider_name,
@@ -336,29 +392,50 @@ class DataStore(MarketDailyIngestionMixin):
                         start=start,
                         end=end,
                         diagnostics=diagnostics,
+                        instrument_type=key.instrument_type,
                     ),
                     json.dumps(diagnostics, sort_keys=True),
                     diagnostics["duplicate_timestamp_count"],
                     diagnostics["missing_ohlcv_count"],
                     int(diagnostics["is_monotonic"]),
+                    "explicit_canonical",
                 ),
             )
 
     # ---------- 辅助 ----------
 
     def list_symbols(
-        self, frequency: BarFrequency = BarFrequency.DAILY
+        self,
+        frequency: BarFrequency = BarFrequency.DAILY,
+        *,
+        instrument_type: InstrumentType | str | None = None,
     ) -> list[Symbol]:
-        """列出已存储的标的。"""
+        """List symbols, optionally within one exact identity namespace."""
         symbols: set[Symbol] = set()
         with sqlite3.connect(self._meta_path) as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT symbol FROM market_bars WHERE frequency = ?",
-                (frequency.value,),
-            ).fetchall()
+            if instrument_type is None:
+                rows = conn.execute(
+                    "SELECT DISTINCT symbol FROM market_bars WHERE frequency = ?",
+                    (frequency.value,),
+                ).fetchall()
+            else:
+                resolved_type = InstrumentType.from_persisted(
+                    instrument_type.value
+                    if isinstance(instrument_type, InstrumentType)
+                    else instrument_type
+                )
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT symbol FROM market_bars_v2
+                    WHERE instrument_type = ? AND frequency = ?
+                    """,
+                    (resolved_type.value, frequency.value),
+                ).fetchall()
             symbols.update(Symbol(str(row[0])) for row in rows)
 
         freq_dir = self._root / "bars" / frequency.value
+        if instrument_type is not None:
+            freq_dir = freq_dir / resolved_type.value
         if freq_dir.exists():
             symbols.update(Symbol(p.stem) for p in freq_dir.glob("*.parquet"))
         return sorted(symbols, key=str)
@@ -484,7 +561,7 @@ class DataStore(MarketDailyIngestionMixin):
 
     def _save_bars_to_db(
         self,
-        symbol: Symbol,
+        key: InstrumentKey,
         frequency: BarFrequency,
         df: pd.DataFrame,
     ) -> None:
@@ -498,7 +575,8 @@ class DataStore(MarketDailyIngestionMixin):
         for _, row in normalized.iterrows():
             rows.append(
                 (
-                    str(symbol),
+                    key.symbol,
+                    key.instrument_type.value,
                     frequency.value,
                     row["timestamp"].isoformat(),
                     _nullable_float(row.get("open")),
@@ -509,17 +587,20 @@ class DataStore(MarketDailyIngestionMixin):
                     _nullable_float(row.get("amount")),
                     now,
                     now,
+                    "explicit_canonical",
                 )
             )
 
         with sqlite3.connect(self._meta_path) as conn:
             conn.executemany(
                 """
-                INSERT INTO market_bars (
-                    symbol, frequency, timestamp, open, high, low, close,
-                    volume, amount, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol, frequency, timestamp) DO UPDATE SET
+                INSERT INTO market_bars_v2 (
+                    symbol, instrument_type, frequency, timestamp,
+                    open, high, low, close, volume, amount,
+                    created_at, updated_at, identity_provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, instrument_type, frequency, timestamp)
+                DO UPDATE SET
                     open = excluded.open,
                     high = excluded.high,
                     low = excluded.low,
@@ -535,19 +616,42 @@ class DataStore(MarketDailyIngestionMixin):
         self,
         symbol: Symbol,
         frequency: BarFrequency,
+        *,
+        key: InstrumentKey | None,
     ) -> pd.DataFrame | None:
         with sqlite3.connect(self._meta_path) as conn:
-            df = pd.read_sql_query(
+            if key is None:
+                sql = """
+                    SELECT timestamp, open, high, low, close, volume, amount
+                    FROM market_bars
+                    WHERE symbol = ? AND frequency = ?
+                    ORDER BY timestamp ASC
                 """
-                SELECT timestamp, open, high, low, close, volume, amount
-                FROM market_bars
-                WHERE symbol = ? AND frequency = ?
-                ORDER BY timestamp ASC
-                """,
-                conn,
-                params=(str(symbol), frequency.value),
-            )
+                params = (str(symbol), frequency.value)
+            else:
+                sql = """
+                    SELECT timestamp, open, high, low, close, volume, amount
+                    FROM market_bars_v2
+                    WHERE symbol = ? AND instrument_type = ? AND frequency = ?
+                    ORDER BY timestamp ASC
+                """
+                params = (*key.storage_tuple(), frequency.value)
+            df = pd.read_sql_query(sql, conn, params=params)
         if df.empty:
             return None
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         return df
+
+    def migrate_legacy_market_bars_to_v2(
+        self,
+        *,
+        identity_evidence: dict[str, object] | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, object]:
+        """Plan or apply the evidence-bound legacy-to-v2 migration."""
+
+        return migrate_legacy_market_bars_to_v2(
+            self._meta_path,
+            identity_evidence=identity_evidence,
+            dry_run=dry_run,
+        )

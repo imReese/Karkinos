@@ -795,7 +795,27 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
       confirmed_holding_count: 1,
       review_required_count: 1,
       fund_nav_review_count: 1,
+      quote_refresh_symbols: [],
+      confirmed_fund_nav_refresh_symbols: ['FUND-A'],
       refreshable_symbols: ['FUND-A'],
+      evidence_lanes: [
+        {
+          asset_class: 'stock',
+          status: 'complete',
+          current_holding_count: 1,
+          confirmed_holding_count: 1,
+          review_required_count: 0,
+          blocker_statuses: [],
+        },
+        {
+          asset_class: 'fund',
+          status: 'degraded',
+          current_holding_count: 1,
+          confirmed_holding_count: 0,
+          review_required_count: 1,
+          blocker_statuses: ['confirmed_nav_missing'],
+        },
+      ],
       items: [
         {
           symbol: 'FUND-A',
@@ -820,6 +840,20 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   const panel = await screen.findByTestId(
     'current-holding-market-evidence-review',
   );
+  const stockLane = await within(panel).findByTestId(
+    'holding-evidence-lane-stock',
+  );
+  const fundLane = within(panel).getByTestId('holding-evidence-lane-fund');
+  expect(
+    within(stockLane).getByText(
+      'Stock quote evidence is complete, so stock research that does not depend on account equity may continue. This does not authorize orders or pass account-level risk.',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(fundLane).getByText(
+      'Confirmed fund NAV is still pending. Full-account authoritative valuation and risk remain blocked; ordinary quote refresh cannot clear this lane.',
+    ),
+  ).toBeTruthy();
   expect(await within(panel).findByText('证据基金')).toBeTruthy();
   expect(within(panel).getByText(/FUND-A/)).toBeTruthy();
   expect(

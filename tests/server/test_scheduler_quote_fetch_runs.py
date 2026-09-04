@@ -15,8 +15,16 @@ import pandas as pd
 import pytest
 
 from core.events import MarketEvent, OrderEvent, OrderIntentEvent, SignalEvent
-from core.types import AssetClass, BarFrequency, OrderSide, OrderType, Symbol
+from core.types import (
+    AssetClass,
+    BarFrequency,
+    InstrumentType,
+    OrderSide,
+    OrderType,
+    Symbol,
+)
 from data.store import DataStore
+from domain.instrument import make_etf, make_open_end_fund
 from server.db import AppDatabase
 from server.services.valuation_snapshot import build_current_valuation_snapshot
 
@@ -45,6 +53,7 @@ def _market_event(
     symbol: str,
     asset_class: AssetClass = AssetClass.STOCK,
     price: Decimal = Decimal("12.5"),
+    instrument_type: InstrumentType | None = None,
 ) -> MarketEvent:
     return MarketEvent(
         timestamp=datetime(2026, 5, 23, 10, 0),
@@ -56,6 +65,7 @@ def _market_event(
         volume=Decimal("1000"),
         frequency=BarFrequency.DAILY,
         asset_class=asset_class,
+        instrument_type=instrument_type,
     )
 
 
@@ -241,6 +251,7 @@ def _run_scheduler_once(
     clock=None,
     configure_database=None,
     observe_scheduler=None,
+    instruments: dict | None = None,
 ) -> AppDatabase:
     from server import scheduler as scheduler_module
 
@@ -265,6 +276,7 @@ def _run_scheduler_once(
     runtime = _scheduler_runtime(
         data_source=data_source,
         watchlist=watchlist,
+        instruments=instruments,
         sources=sources,
     )
 
@@ -777,12 +789,13 @@ def test_scheduler_syncs_fund_nav_quotes_before_live_poll(monkeypatch, tmp_path)
         watchlist=[(Symbol("019999"), AssetClass.FUND)],
         events=[],
         fund_nav_sync=fake_refresh_fund_nav_quotes,
+        instruments={Symbol("019999"): make_open_end_fund("019999", "示例成长混合C")},
     )
 
     assert calls == [
         {
             "data_source": "akshare",
-            "watchlist": [(Symbol("019999"), AssetClass.FUND)],
+            "watchlist": [(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
             "latest_quotes": {},
         }
     ]
@@ -795,7 +808,12 @@ def test_scheduler_does_not_send_intraday_fund_estimates_to_strategy(
     strategy = FakeStrategy()
     observed_runtime_quotes = {}
     stock_event = _market_event("600519", AssetClass.STOCK)
-    fund_event = _market_event("019999", AssetClass.FUND, Decimal("2.2527"))
+    fund_event = _market_event(
+        "019999",
+        AssetClass.FUND,
+        Decimal("2.2527"),
+        InstrumentType.OPEN_END_FUND,
+    )
 
     db = _run_scheduler_once(
         monkeypatch,
@@ -828,9 +846,66 @@ def test_scheduler_does_not_send_intraday_fund_estimates_to_strategy(
     latest_fund = db.get_latest_quote_sync("019999", asset_type="fund")
     assert latest_fund is not None
     assert latest_fund["quote_source"] == "sina_fund_estimate"
-    run_metadata = json.loads(db.list_quote_fetch_runs()[0]["metadata_json"])
+    run = db.list_quote_fetch_runs()[0]
+    assert run["status"] == "success"
+    run_metadata = json.loads(run["metadata_json"])
     assert run_metadata["quote_status_counts"] == {"estimated": 1, "live": 1}
-    assert observed_runtime_quotes == {}
+    assert set(observed_runtime_quotes) == {"600519", "019999"}
+    assert observed_runtime_quotes["600519"]["quote_status"] == "live"
+    assert observed_runtime_quotes["019999"]["quote_status"] == "estimated"
+    assert observed_runtime_quotes["019999"]["quote_source"] == ("sina_fund_estimate")
+    valuation = build_current_valuation_snapshot(db, persist=False)
+    assert valuation["quotes"] == []
+    assert valuation["metadata"]["current_position_count"] == 0
+
+
+def test_scheduler_persists_etf_and_numeric_open_end_fund_as_distinct_identities(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    etf_event = _market_event("510300", AssetClass.FUND, Decimal("4.25"))
+    fund_event = _market_event("019999", AssetClass.FUND, Decimal("1.05"))
+
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        watchlist=[
+            (Symbol("510300"), AssetClass.FUND),
+            (Symbol("019999"), AssetClass.FUND),
+        ],
+        events=[etf_event, fund_event],
+        snapshots={
+            ("510300", AssetClass.FUND): {
+                "timestamp": etf_event.timestamp.isoformat(),
+                "quote_source": "fixture_exchange_quote",
+                "provider_name": "fixture",
+                "previous_close": 4.2,
+                "previous_close_date": "2026-05-22",
+            },
+            ("019999", AssetClass.FUND): {
+                "timestamp": fund_event.timestamp.isoformat(),
+                "quote_source": "tushare_fund_nav",
+                "provider_name": "fixture",
+                "nav_date": "2026-05-23",
+                "previous_close": 1.04,
+                "previous_close_date": "2026-05-22",
+            },
+        },
+        instruments={
+            Symbol("510300"): make_etf("510300", "沪深300ETF"),
+            Symbol("019999"): make_open_end_fund("019999", "示例混合C"),
+        },
+    )
+
+    etf_quote = db.get_latest_quote_sync("510300", asset_type="etf")
+    fund_quote = db.get_latest_quote_sync(
+        "019999",
+        asset_type="open_end_fund",
+    )
+    assert etf_quote is not None
+    assert etf_quote["asset_type"] == "etf"
+    assert fund_quote is not None
+    assert fund_quote["asset_type"] == "open_end_fund"
 
 
 def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(
@@ -1112,7 +1187,11 @@ def test_scheduler_backfill_never_refreshes_a_frozen_daily_batch_remotely():
     assert calls[0][1]["allow_remote_refresh"] is False
 
 
-def test_scheduler_post_close_promotes_new_stock_bar_into_current_quote(tmp_path):
+@pytest.mark.parametrize("held", [False, True], ids=["unheld", "held"])
+def test_scheduler_post_close_promotes_new_stock_bar_into_current_quote(
+    tmp_path,
+    held: bool,
+):
     from server.scheduler import TradingScheduler
 
     db = AppDatabase(tmp_path / "app.db")
@@ -1127,6 +1206,17 @@ def test_scheduler_post_close_promotes_new_stock_bar_into_current_quote(tmp_path
         provider_name="akshare",
         quote_status="confirmed",
     )
+    if held:
+        db.insert_ledger_entry_sync(
+            entry_type="manual_adjustment",
+            timestamp="2026-01-01T09:00:00+08:00",
+            symbol="600001",
+            quantity=100,
+            price=10.0,
+            asset_class="stock",
+            source="internal_fixture",
+            source_ref="opening-position-600001",
+        )
     published_before = db.publish_current_valuation_snapshot_sync()
     store = DataStore(tmp_path)
     store.save_bars(
@@ -1146,6 +1236,7 @@ def test_scheduler_post_close_promotes_new_stock_bar_into_current_quote(tmp_path
         ),
         provider_name="akshare",
         data_source="akshare",
+        instrument_type=InstrumentType.STOCK,
     )
     receipt = _ingest_daily_receipt(
         store,
@@ -1167,15 +1258,21 @@ def test_scheduler_post_close_promotes_new_stock_bar_into_current_quote(tmp_path
     runs = db.list_quote_fetch_runs(trigger="post_close_market_bar")
     assert publication is not None
     assert publication["snapshot_id"] == current["snapshot_id"]
-    assert publication["snapshot_id"] != published_before["snapshot_id"]
+    if held:
+        assert publication["snapshot_id"] != published_before["snapshot_id"]
+        assert current["quotes"][0]["quote_source"] == "market_bar_close"
+        assert current["quotes"][0]["valuation_price_date"] == "2026-05-29"
+        assert current["metadata"]["current_position_count"] == 1
+    else:
+        assert publication["snapshot_id"] == published_before["snapshot_id"]
+        assert current["quotes"] == []
+        assert current["metadata"]["current_position_count"] == 0
     assert latest is not None
     assert latest["price"] == 11.0
     assert latest["quote_timestamp"] == "2026-05-29T15:00:00+08:00"
     assert latest["quote_source"] == "market_bar_close"
     assert latest["quote_status"] == "confirmed"
     assert latest["fetch_run_id"] == runs[0]["run_id"]
-    assert current["quotes"][0]["quote_source"] == "market_bar_close"
-    assert current["quotes"][0]["valuation_price_date"] == "2026-05-29"
     assert scheduler.latest_quotes["600001"]["timestamp"] == (
         "2026-05-29T15:00:00+08:00"
     )
@@ -1287,8 +1384,9 @@ def test_scheduler_post_close_rejects_drifted_market_daily_receipt(tmp_path):
     )
     with sqlite3.connect(store._meta_path) as conn:
         conn.execute("""
-            UPDATE market_bars SET close = 99
-            WHERE symbol = '600001' AND frequency = '1d'
+            UPDATE market_bars_v2 SET close = 99
+            WHERE symbol = '600001' AND instrument_type = 'stock'
+              AND frequency = '1d'
               AND substr(timestamp, 1, 10) = '2026-05-29'
             """)
         conn.commit()
@@ -1617,6 +1715,10 @@ def test_scheduler_retries_fund_confirmation_until_all_targets_persisted(
         (Symbol("019998"), AssetClass.FUND),
         (Symbol("019999"), AssetClass.FUND),
     ]
+    scheduler._instruments = {
+        Symbol("019998"): make_open_end_fund("019998", "示例基金 A"),
+        Symbol("019999"): make_open_end_fund("019999", "示例基金 B"),
+    }
     from server.services.market_calendar_dates import (
         resolve_latest_verified_closed_trading_date,
     )
@@ -2116,7 +2218,9 @@ def test_scheduler_prefers_persistent_watchlist_over_config_assets(
         watchlist=[(Symbol("600519"), AssetClass.STOCK)],
         instruments={Symbol("600519"): object()},
         data_manager=SimpleNamespace(
-            get_instrument=lambda symbol, asset_class: SimpleNamespace(symbol=symbol)
+            get_instrument_by_type=lambda symbol, instrument_type, **kwargs: make_etf(
+                str(symbol), kwargs.get("name") or str(symbol)
+            )
         ),
     )
     holder = {}
@@ -2153,6 +2257,7 @@ def test_scheduler_prefers_persistent_watchlist_over_config_assets(
     scheduler._run_loop()
 
     assert scheduler.watchlist == [(Symbol("510300"), AssetClass.FUND)]
+    assert scheduler.instruments[Symbol("510300")].instrument_type is InstrumentType.ETF
 
 
 def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):

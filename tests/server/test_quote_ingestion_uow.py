@@ -214,6 +214,16 @@ def test_provider_time_only_quote_binds_to_shanghai_capture_date() -> None:
     assert command.captured_at == "2026-08-26T03:00:00Z"
 
 
+def test_quote_ingestion_marks_legacy_fund_compatibility_identity() -> None:
+    command = replace(_command(run_id=None), asset_type="fund")
+
+    assert command.asset_type == "open_end_fund"
+    assert command.identity_provenance == "legacy_fund_compatibility"
+    assert command.metadata["identity_provenance"] == "legacy_fund_compatibility"
+    assert command.valuation_row()["instrument_type"] == "open_end_fund"
+    assert command.valuation_row()["asset_class"] == "fund"
+
+
 def test_staged_quote_batch_is_invisible_until_atomic_publication(tmp_path) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -247,7 +257,7 @@ def test_staged_quote_batch_is_invisible_until_atomic_publication(tmp_path) -> N
     assert latest is not None
     assert latest["fetch_run_id"] == run_id
     assert _table_count(db.path, "quote_snapshots") == 1
-    assert _table_count(db.path, "daily_close_snapshots") == 1
+    assert _table_count(db.path, "daily_close_snapshots_v2") == 1
     assert _table_count(db.path, "instrument_metadata") == 1
     assert _table_count(db.path, "valuation_snapshots") == 1
     publication = db.get_runtime_control_sync("valuation_snapshot_publication")
@@ -257,10 +267,17 @@ def test_staged_quote_batch_is_invisible_until_atomic_publication(tmp_path) -> N
     assert publication["valuation_snapshot_status"] == "complete"
     assert publication["quote_fetch_run_id"] == run_id
     current = _assert_published_snapshot_replays(db)
-    assert current["quotes"][0]["asset_type"] == "stock"
-    assert current["quotes"][0]["quote_timestamp"] == command.quote_timestamp
-    assert current["quotes"][0]["valuation_baseline_status"] == "complete"
-    assert current["quotes"][0]["previous_close_date"] == "2026-08-25"
+    assert latest["asset_type"] == "stock"
+    assert latest["quote_timestamp"] == command.quote_timestamp
+    assert latest["previous_close"] == 10.0
+    assert json.loads(latest["metadata_json"])["previous_close_date"] == "2026-08-25"
+    assert current["status"] == "complete"
+    assert current["quotes"] == []
+    assert current["metadata"]["current_position_count"] == 0
+    assert [lane["status"] for lane in current["valuation_lanes"]] == [
+        "not_applicable",
+        "not_applicable",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -396,9 +413,12 @@ def test_single_quote_publication_is_replayable_after_commit(tmp_path) -> None:
     result = db.persist_quote_ingestion_sync(_command(run_id=None))
 
     assert result["symbol"] == "600001"
+    latest = db.get_latest_quote_sync("600001", "stock")
+    assert latest is not None
+    assert latest["price"] == 10.5
     current = _assert_published_snapshot_replays(db)
-    assert current["quotes"][0]["price"] == 10.5
-    assert current["quotes"][0]["valuation_baseline_status"] == "complete"
+    assert current["quotes"] == []
+    assert current["metadata"]["current_position_count"] == 0
 
 
 def test_same_timestamp_conflicting_financial_facts_fail_closed(tmp_path) -> None:
@@ -552,7 +572,7 @@ def test_startup_quote_reconciliation_keeps_latest_timezone_conflict_blocking(
         build_current_valuation_snapshot(db, persist=False)
 
 
-def test_startup_quote_reconciliation_ignores_superseded_conflict_for_valuation(
+def test_startup_quote_reconciliation_excludes_unheld_superseded_conflict(
     tmp_path,
 ) -> None:
     db = AppDatabase(tmp_path / "app.db")
@@ -568,8 +588,12 @@ def test_startup_quote_reconciliation_ignores_superseded_conflict_for_valuation(
     db.init_sync()
 
     snapshot = build_current_valuation_snapshot(db, persist=False)
+    latest = db.get_latest_quote_sync("600001", "stock")
 
-    assert snapshot["quotes"][0]["price"] == 11.0
+    assert latest is not None
+    assert latest["price"] == 11.0
+    assert snapshot["quotes"] == []
+    assert snapshot["metadata"]["current_position_count"] == 0
 
 
 def test_quote_staging_rejects_conflicting_idempotency_replay(tmp_path) -> None:

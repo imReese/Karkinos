@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Callable, Protocol
 
 from core.events import Event, MarketEvent
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, InstrumentType, Symbol
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from server.contracts.quote_ingestion import QuoteIngestionCommand
@@ -45,6 +45,14 @@ class SchedulerDataManager(Protocol):
         self,
         symbol: Symbol,
         asset_class: AssetClass,
+    ) -> Instrument: ...
+
+    def get_instrument_by_type(
+        self,
+        symbol: Symbol,
+        instrument_type: InstrumentType,
+        *,
+        name: str | None = None,
     ) -> Instrument: ...
 
 

@@ -9,6 +9,10 @@ from fastapi import HTTPException
 
 from core.types import Symbol
 from data.market_data import is_fund_estimate_quote_source
+from server.services.decision_candidate_market_evidence import (
+    bind_candidate_market_evidence,
+    candidate_market_evidence,
+)
 from server.services.decision_contracts import (
     TRUSTED_DATA_STATUSES,
     action_sort_key,
@@ -43,6 +47,11 @@ async def run_batch_pre_trade_risk(
     tasks = read_action_tasks_resolver(
         state.db,
         decision_date=action_filter_date_resolver(portfolio_context),
+    )
+    candidate_evidence = candidate_market_evidence(state.db, tasks, state=state)
+    portfolio_context = bind_candidate_market_evidence(
+        portfolio_context,
+        candidate_evidence,
     )
     evidence_gate = evidence_gate_resolver(
         state.db,
@@ -82,7 +91,7 @@ async def run_batch_pre_trade_risk(
     return {
         **result,
         **evidence_gate["evidence_binding"],
-        "blockers": [],
+        "blockers": list(result.get("blockers") or []),
         "persisted_facts_only": True,
     }
 
@@ -149,8 +158,15 @@ def allocate_decision_actions(
     return allocate_action_tasks(
         actions,
         portfolio=portfolio,
-        quotes=dict(portfolio_context.get("quotes") or {}),
+        quotes=dict(
+            portfolio_context.get("candidate_quotes")
+            or portfolio_context.get("quotes")
+            or {}
+        ),
         config=getattr(state, "config", None),
+        require_persisted_quote_price=(
+            portfolio_context.get("authority") == "persisted_valuation_snapshot"
+        ),
     )
 
 
@@ -169,13 +185,61 @@ def batch_pre_trade_risk_evidence_gate(
     valuation_status = str(snapshot_payload.get("status") or "missing").lower()
     snapshot_id = str(snapshot_payload.get("snapshot_id") or "") or None
     ledger_cutoff_id = int_or_none(snapshot_payload.get("ledger_cutoff_id")) or 0
-    evidence_binding = {
+    evidence_binding: dict[str, Any] = {
         "valuation_snapshot_id": snapshot_id,
         "ledger_cutoff_id": ledger_cutoff_id,
         "valuation_status": valuation_status,
         "fact_authority": authority,
     }
     blockers: list[dict[str, Any]] = []
+
+    candidate_evidence = portfolio_context.get("candidate_market_evidence")
+    if not isinstance(candidate_evidence, dict):
+        candidate_evidence = {}
+    evidence_binding.update(
+        {
+            "candidate_market_evidence_fingerprint": candidate_evidence.get(
+                "fingerprint"
+            ),
+            "candidate_quote_bindings": list(candidate_evidence.get("bindings") or []),
+        }
+    )
+
+    guard_reader = getattr(db, "capture_pre_trade_risk_guard_sync", None)
+    if not callable(guard_reader):
+        guard: dict[str, Any] = {
+            "status": "blocked",
+            "quote_current_revision": None,
+            "action_task_bindings": [],
+            "blockers": [{"code": "pre_trade_risk_write_guard_unavailable"}],
+        }
+    else:
+        try:
+            guard = guard_reader(tasks=tasks)
+        except (RuntimeError, ValueError):
+            guard = {
+                "status": "blocked",
+                "quote_current_revision": None,
+                "action_task_bindings": [],
+                "blockers": [{"code": "pre_trade_risk_write_guard_unavailable"}],
+            }
+    evidence_binding.update(
+        {
+            "quote_current_revision": guard.get("quote_current_revision"),
+            "action_task_bindings": list(guard.get("action_task_bindings") or []),
+        }
+    )
+    blockers.extend(list(guard.get("blockers") or []))
+    if (
+        guard.get("valuation_snapshot_id") is not None
+        and guard.get("valuation_snapshot_id") != snapshot_id
+    ):
+        blockers.append({"code": "valuation_publication_snapshot_drift"})
+    if (
+        guard.get("ledger_cutoff_id") is not None
+        and guard.get("ledger_cutoff_id") != ledger_cutoff_id
+    ):
+        blockers.append({"code": "valuation_publication_ledger_cutoff_drift"})
 
     if authority != "persisted_valuation_snapshot":
         blockers.append(
@@ -196,7 +260,24 @@ def batch_pre_trade_risk_evidence_gate(
     if ledger_cutoff_id <= 0:
         blockers.append({"code": "ledger_cutoff_missing"})
 
-    quotes = dict(portfolio_context.get("quotes") or {})
+    if candidate_evidence.get("source_status") != "persisted_current_quotes":
+        blockers.append({"code": "candidate_market_evidence_unavailable"})
+    for task_id in candidate_evidence.get("invalid_task_ids") or []:
+        blockers.append(
+            {
+                "code": "candidate_instrument_identity_missing",
+                "action_id": task_id,
+            }
+        )
+    for symbol in candidate_evidence.get("ambiguous_symbols") or []:
+        blockers.append(
+            {
+                "code": "candidate_instrument_identity_ambiguous",
+                "symbol": symbol,
+            }
+        )
+
+    quotes = dict(portfolio_context.get("candidate_quotes") or {})
     for task in tasks:
         freshness = data_freshness_resolver(
             task,

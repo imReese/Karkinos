@@ -175,11 +175,213 @@ def _build_daily_trading_plan_for_state(
         ),
         research_operation_preview=research_operation_preview,
     )
+    from server.projections.account_action_recommendation import (
+        build_account_action_recommendation,
+        resolve_latest_verified_promoted_strategy_scan,
+    )
+
+    promoted_scan = resolve_latest_verified_promoted_strategy_scan(
+        getattr(state, "db", None),
+        decision_date=str(decision_payload.get("decision_date") or ""),
+    )
+    current_blockers, current_fingerprint = _current_account_action_evidence(
+        state,
+        decision_payload=decision_payload,
+        trading_plan=plan,
+        promoted_scan=promoted_scan,
+    )
+    plan["account_action_recommendation"] = build_account_action_recommendation(
+        decision_payload=decision_payload,
+        trading_plan=plan,
+        promoted_scan=promoted_scan,
+        current_evidence_blockers=current_blockers,
+        current_evidence_fingerprint=current_fingerprint,
+    )
     plan["research_operation_instruments"] = build_research_operation_instruments(
         getattr(state, "db", None),
         plan.get("research_operation_preview"),
     )
     return plan
+
+
+def _current_account_action_evidence(
+    state: Any,
+    *,
+    decision_payload: dict[str, Any],
+    trading_plan: dict[str, Any],
+    promoted_scan: dict[str, Any],
+) -> tuple[list[str], str]:
+    from server.services.daily_decision_evidence_identity import (
+        evidence_fingerprint,
+    )
+    from server.services.daily_decision_policy_gates import (
+        current_account_action_evidence_blockers,
+    )
+
+    additional_blockers: list[str] = []
+    qualification_blockers, qualification_fingerprint = (
+        _current_shadow_qualification_evidence(
+            state,
+            promoted_scan=promoted_scan,
+        )
+    )
+    additional_blockers.extend(qualification_blockers)
+    if promoted_scan.get("verified") is True:
+        try:
+            from server.services.automation_control import AutomationControlService
+            from server.services.promoted_strategy_universe_scan import (
+                PromotedStrategyUniverseScanService,
+            )
+
+            controls = AutomationControlService(
+                db=state.db,
+                trading_controls=state.trading_controls,
+            )
+            scanner = PromotedStrategyUniverseScanService(
+                db=state.db,
+                config=state.config,
+                safety_gate_reader=controls.get_status,
+            )
+            summary = dict(decision_payload.get("summary") or {})
+            portfolio = dict(summary.get("portfolio") or {})
+            additional_blockers.extend(
+                scanner.current_input_blockers(
+                    scan=promoted_scan,
+                    portfolio_summary=portfolio,
+                )
+            )
+        except Exception:
+            additional_blockers.append(
+                "promoted_strategy_scan_current_evidence_unavailable"
+            )
+    blockers = current_account_action_evidence_blockers(
+        decision_payload=decision_payload,
+        trading_plan=trading_plan,
+        additional_blockers=additional_blockers,
+    )
+    decision_plan_fingerprint = evidence_fingerprint(decision_payload, trading_plan)
+    if not qualification_fingerprint:
+        return blockers, decision_plan_fingerprint
+
+    from server.contracts.content_identity import content_fingerprint
+
+    return blockers, content_fingerprint(
+        {
+            "decision_plan_fingerprint": decision_plan_fingerprint,
+            "qualification_evidence_fingerprint": qualification_fingerprint,
+        }
+    )
+
+
+def _current_shadow_qualification_evidence(
+    state: Any,
+    *,
+    promoted_scan: dict[str, Any],
+) -> tuple[list[str], str | None]:
+    """Explain an exact current qualification failure without replacing a strategy."""
+
+    if promoted_scan.get("verified") is True and promoted_scan.get("strategy_bindings"):
+        return [], None
+    db = getattr(state, "db", None)
+    promotion_reader = getattr(db, "list_strategy_promotion_states_sync", None)
+    if callable(promotion_reader):
+        try:
+            active_promotions = promotion_reader() or []
+        except (OSError, RuntimeError, TypeError, ValueError):
+            active_promotions = []
+        from server.services.strategy_promotion_pipeline import (
+            AI_SHADOW_STRATEGY_PREFIX,
+        )
+
+        if any(
+            str(item.get("strategy_id") or "").startswith(AI_SHADOW_STRATEGY_PREFIX)
+            and item.get("stage") == "paper_shadow"
+            for item in active_promotions
+            if isinstance(item, dict)
+        ):
+            return [], None
+
+    try:
+        from server.composition.ai_application_services import (
+            build_shadow_research_read_service,
+        )
+
+        status = build_shadow_research_read_service(state).status()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return [], None
+
+    attempt = status.get("latest_qualification_attempt")
+    if isinstance(attempt, dict):
+        blockers = _qualification_reason_codes(attempt)
+        fingerprint = str(attempt.get("evidence_fingerprint") or "") or None
+        return blockers, fingerprint
+
+    outcome = status.get("research_outcome")
+    outcome = outcome if isinstance(outcome, dict) else {}
+    qualification_run_id = str(outcome.get("qualification_run_id") or "")
+    runs = status.get("qualification_runs")
+    current_run = next(
+        (
+            item
+            for item in runs or []
+            if isinstance(item, dict)
+            and item.get("qualification_run_id") == qualification_run_id
+        ),
+        None,
+    )
+    if current_run is not None and current_run.get("status") in {
+        "blocked",
+        "failed",
+    }:
+        from server.contracts.content_identity import content_fingerprint
+
+        blockers = _qualification_reason_codes(current_run)
+        fingerprint = content_fingerprint(
+            {
+                "qualification_run_id": qualification_run_id,
+                "input_fingerprint": current_run.get("input_fingerprint"),
+                "selection_fingerprint": current_run.get("selection_fingerprint"),
+                "status": current_run.get("status"),
+                "blockers": blockers,
+            }
+        )
+        return blockers, fingerprint
+
+    if outcome.get("account_qualification_status") == "not_evaluated" and status.get(
+        "daily_research_winner_candidate_id"
+    ):
+        from server.contracts.content_identity import content_fingerprint
+
+        selection = next(
+            (
+                item
+                for item in status.get("daily_selections") or []
+                if isinstance(item, dict) and item.get("integrity_status") == "verified"
+            ),
+            {},
+        )
+        return ["account_qualification_not_evaluated"], content_fingerprint(
+            {
+                "source_run_id": selection.get("run_id"),
+                "source_selection_id": selection.get("selection_id"),
+                "source_selection_fingerprint": selection.get("selection_fingerprint"),
+            }
+        )
+    return [], None
+
+
+def _qualification_reason_codes(evidence: dict[str, Any]) -> list[str]:
+    allowed_nonprefixed = {"no_candidate_passed_account_qualification"}
+    blockers = [
+        str(item)
+        for item in evidence.get("blockers") or []
+        if isinstance(item, str)
+        and (item.startswith("qualification_") or item in allowed_nonprefixed)
+    ]
+    failure_code = str(evidence.get("failure_code") or "")
+    if failure_code.startswith("qualification_"):
+        blockers.append(failure_code)
+    return list(dict.fromkeys(blockers))
 
 
 def _raise_decision_quality_http_error(exc: Exception) -> None:

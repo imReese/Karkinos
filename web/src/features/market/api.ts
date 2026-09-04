@@ -11,6 +11,8 @@ import { visiblePersistedProjectionRefetchInterval } from '../../shared/api/quer
 export type MarketHealthQuote = {
   symbol: string;
   asset_class: string;
+  instrument_type?: string | null;
+  identity_provenance?: string | null;
   name?: string | null;
   display_name?: string | null;
   timestamp: string | null;

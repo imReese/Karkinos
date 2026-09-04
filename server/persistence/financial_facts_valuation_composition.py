@@ -29,37 +29,69 @@ class _TransactionValuationFacts:
         self,
         symbol: str,
         trade_date: str,
+        instrument_type: str | None = None,
     ) -> dict[str, Any] | None:
-        row = self._conn.execute(
-            """
-            SELECT symbol, asset_class, trade_date, close_price, source, captured_at
-            FROM daily_close_snapshots
-            WHERE symbol = ? AND trade_date < ?
+        identity_filter = ""
+        params: tuple[object, ...] = (symbol, trade_date)
+        if instrument_type is not None:
+            normalized = str(instrument_type).strip().lower().replace("-", "_")
+            if normalized == "fund":
+                normalized = "open_end_fund"
+            identity_filter = "AND instrument_type = ?"
+            params = (symbol, trade_date, normalized)
+        rows = self._conn.execute(
+            f"""
+            SELECT symbol, instrument_type, trade_date, close_price, source,
+                   captured_at, identity_provenance
+            FROM daily_close_snapshots_v2
+            WHERE symbol = ? AND trade_date < ? {identity_filter}
             ORDER BY trade_date DESC, id DESC
-            LIMIT 1
+            LIMIT 2
             """,
-            (symbol, trade_date),
-        ).fetchone()
-        return dict(row) if row is not None else None
+            params,
+        ).fetchall()
+        if not rows:
+            return None
+        newest_date = str(rows[0]["trade_date"])
+        newest = [row for row in rows if str(row["trade_date"]) == newest_date]
+        if (
+            instrument_type is None
+            and len({str(row["instrument_type"]) for row in newest}) != 1
+        ):
+            return None
+        result = dict(newest[0])
+        result["asset_class"] = (
+            "fund"
+            if result["instrument_type"] == "open_end_fund"
+            else result["instrument_type"]
+        )
+        return result
 
     def get_latest_quote_before_date_sync(
         self,
         symbol: str,
         trade_date: str,
+        *,
+        instrument_type: str,
     ) -> dict[str, Any] | None:
+        normalized = str(instrument_type).strip().lower().replace("-", "_")
+        if normalized == "fund":
+            normalized = "open_end_fund"
         instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
         row = self._conn.execute(
             """
             SELECT
-                symbol, asset_class, price, volume, timestamp,
+                symbol, asset_class, instrument_type, identity_provenance,
+                price, volume, timestamp,
                 quote_source, provider_name, quote_status, stale_reason,
                 provider_status, captured_reason, nav_date
             FROM quote_snapshots
-            WHERE symbol = ? AND quote_instant_utc < ?
+            WHERE symbol = ? AND instrument_type = ?
+              AND quote_instant_utc < ?
             ORDER BY quote_instant_utc DESC, id DESC
             LIMIT 1
             """,
-            (symbol, instant_upper_bound),
+            (symbol, normalized, instant_upper_bound),
         ).fetchone()
         return dict(row) if row is not None else None
 
@@ -110,6 +142,7 @@ def build_and_publish_transaction_valuation(
     candidate_ledger_rows: list[dict[str, Any]] | None = None,
     quote_fetch_run_id: str | None = None,
     valuation_policy: str | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Publish the valuation derived from candidate facts in the caller transaction."""
 
@@ -118,9 +151,11 @@ def build_and_publish_transaction_valuation(
         publish_valuation_control_on_connection,
     )
 
+    frozen_now = now or repository._now(timezone.utc)
     projection_options: dict[str, Any] = {
         "persist": False,
         "candidate_ledger_rows": candidate_ledger_rows,
+        "now": frozen_now,
     }
     if valuation_policy is not None:
         projection_options["valuation_policy"] = valuation_policy
@@ -128,12 +163,12 @@ def build_and_publish_transaction_valuation(
         _TransactionValuationFacts(repository, conn),
         **projection_options,
     )
-    now = datetime.now(timezone.utc).isoformat()
-    insert_valuation_snapshot_on_connection(conn, snapshot, created_at=now)
+    persisted_at = frozen_now.astimezone(timezone.utc).isoformat()
+    insert_valuation_snapshot_on_connection(conn, snapshot, created_at=persisted_at)
     publish_valuation_control_on_connection(
         conn,
         snapshot,
-        updated_at=now,
+        updated_at=persisted_at,
         quote_fetch_run_id=quote_fetch_run_id,
     )
     return snapshot

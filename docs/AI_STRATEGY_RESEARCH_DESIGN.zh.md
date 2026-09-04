@@ -182,9 +182,34 @@ Formula discovery 当前固定使用 1,000,000 CNY 归一化研究名义资金�
 `karkinos.ai.normalized_research_notional.cny_1m.v1` 绑定该金额；成本使用 canonical 预估模型。
 它不要求同日 Account Truth，也不读取 broker provider。生成的 candidate 必须保持
 research-only；由于没有账户专属、已对账成本和容量证据，现有 promotion、shadow 准入、
-Daily Decision 和 execution 门禁继续 fail closed。当前尚未实现对既有 normalized candidate
-独立补录 Account Truth、以账户专属成本重算并产生可晋级证据的 qualification/replay service；
-不得把现有 fail-closed 门禁表述为该服务已上线，也不得为此向模型外发账户证据。
+Daily Decision 和 execution 门禁继续 fail closed。账户资格重放是 Formula discovery 之后的
+独立 provider-free 本地阶段：它只接受最新、指纹有效且内容寻址备份可重开的 normalized
+selection，要求其中恰好包含 5 个唯一 candidate，并逐一交叉验证 source comparison、Formula
+语义、dataset、window、universe、cost model 和串行 lineage；原 normalized selection、backup
+与 candidate 永不改写。
+
+资格阶段重新读取当前 canonical Account State，绑定完整组合估值 snapshot、正数 ledger cutoff、
+同一 cutoff 的 ledger fingerprint、已对账 Account Truth source/scope，以及仍有效且只覆盖股票策略
+范围的 reviewed fee schedule。账户回放本金固定为
+`min(karkinos.ai.normalized_research_notional.cny_1m.v1, current reconciled total_equity)`；基准和全部
+5 个 candidate 必须使用同一冻结 dataset、同一 Formula 语义、同一本金与同一 reviewed fee
+calculator 重跑，不能只重放 normalized 排名第一项，也不能复用 discovery 的估算费率。完成后由
+本地 deterministic advancement gate 和预声明字典序重新排序，DeepSeek 不参与资格选优。
+
+qualification run、逐候选结果、selection 与 approval 使用 append-only overlay 并绑定 source
+selection/backup、Account State、valuation/ledger、Account Truth、费用和回测指纹；私有绝对资金值
+不进入公共投影。缺失、过期、撤销、漂移、非股票费用范围、Formula 语义改变或组合总估值不完整
+都产生明确 blocked/no-selection，而不是补猜事实。只有胜出的 account-qualified candidate 在 owner
+给出精确 paper/shadow-only confirmation 后才能进入 paper/shadow promotion；该批准不创建订单、
+不提交券商、不写账本且不授予 execution/capital authority。随后交易日的 promoted-universe scan 与
+Daily Decision 才能在当前行情、Account Truth、风险、费用和前序对账仍全部通过时生成 account
+recommendation 或 first-class no-action。Overview 必须并列展示不可执行的 research preview 与
+账户资格/账户 recommendation，不能把前者伪装成后者。
+
+该资格契约的本地代码与确定性验证完成不等于真实 provider、券商、paper/shadow 样本或 live
+financial readiness 已证明；这些运营证据和人工决定仍由各自门禁负责。Formula discovery 不消费
+`total_equity`，所以基金确认净值延迟不会阻断股票研究 lane；qualification、Decision、资本和组合
+风险会消费 `total_equity`，因此仍要求基金/股票共同组成的 aggregate valuation 完整并 fail closed。
 
 ## Dataset 与 Universe Truth
 
@@ -1268,7 +1293,8 @@ DSH 使用独立 CPU/内存/文件描述符/进程数限制；DSH 卡死、生�
 当前 research stage/canary 失败，不能挤占 Daily Decision 的 executor、连接池或绝对 deadline。
 
 准入必须在加载 universe 或运行基线前完成廉价检查：交易日历、收盘后窗口、policy、与 capital mode 匹配的
-成本模型（normalized-notional discovery 使用 canonical 预估；未来 account-bound qualification 才需已复核费用）、
+成本模型（normalized-notional discovery 使用 canonical 预估；provider-free account qualification 使用当前有效、
+Account Truth 已对账且 stock-only scope 精确匹配的 reviewed fee schedule）、
 既有 run/lease 和不可变研究输入可用性。Account Truth 只在 charter 明确进入本地账户
 容量或 shadow 准入 stage 时检查，不得阻断归一化名义资金下的 Formula discovery。
 

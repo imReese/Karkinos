@@ -8,8 +8,8 @@ import logging
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from core.types import AssetClass
-from server.scheduler_loop import runtime_quote_from_persisted
+from core.types import AssetClass, InstrumentType
+from server.scheduler_loop import runtime_quotes_from_persisted
 from server.services.fund_nav_sync import (
     is_confirmed_fund_nav_quote,
     refresh_fund_nav_quotes,
@@ -102,10 +102,10 @@ class SchedulerPostCloseMixin:
         try:
             persisted_quotes = self._db.get_latest_quotes_sync()
             self.replace_runtime_quotes(
-                {
-                    str(quote["symbol"]): runtime_quote_from_persisted(quote)
-                    for quote in persisted_quotes
-                }
+                runtime_quotes_from_persisted(
+                    persisted_quotes,
+                    self.instruments,
+                )
             )
         except Exception:
             logger.exception(
@@ -288,12 +288,22 @@ class SchedulerPostCloseMixin:
             return False
         with self._lock:
             watchlist = list(self._watchlist)
+            instruments = dict(self._instruments)
             latest_quotes = dict(self._latest_quotes)
-        fund_symbols = [
-            str(symbol)
-            for symbol, asset_class in watchlist
-            if asset_class is AssetClass.FUND
-        ]
+        fund_watchlist: list[tuple[Any, InstrumentType]] = []
+        for symbol, asset_class in watchlist:
+            if asset_class is not AssetClass.FUND:
+                continue
+            instrument_type = getattr(instruments.get(symbol), "instrument_type", None)
+            if not isinstance(instrument_type, InstrumentType):
+                logger.error(
+                    "基金净值同步被阻断: canonical instrument type missing: %s",
+                    symbol,
+                )
+                return False
+            if instrument_type is InstrumentType.OPEN_END_FUND:
+                fund_watchlist.append((symbol, instrument_type))
+        fund_symbols = [str(symbol) for symbol, _ in fund_watchlist]
         if not fund_symbols:
             return True
 
@@ -310,7 +320,7 @@ class SchedulerPostCloseMixin:
             result = refresh_fund_nav_quotes(
                 self._config,
                 self._db,
-                watchlist,
+                fund_watchlist,
                 latest_quotes,
                 **refresh_kwargs,
             )
@@ -330,7 +340,10 @@ class SchedulerPostCloseMixin:
         try:
             completed = all(
                 is_confirmed_fund_nav_quote(
-                    self._db.get_latest_quote_sync(symbol, asset_type="fund"),
+                    self._db.get_latest_quote_sync(
+                        symbol,
+                        asset_type=InstrumentType.OPEN_END_FUND.value,
+                    ),
                     target_date=confirmation_target_date,
                 )
                 for symbol in fund_symbols
@@ -347,10 +360,10 @@ class SchedulerPostCloseMixin:
         try:
             persisted_quotes = self._db.get_latest_quotes_sync()
             self.replace_runtime_quotes(
-                {
-                    str(quote["symbol"]): runtime_quote_from_persisted(quote)
-                    for quote in persisted_quotes
-                }
+                runtime_quotes_from_persisted(
+                    persisted_quotes,
+                    self.instruments,
+                )
             )
         except Exception:
             logger.warning("基金确认净值运行时缓存恢复失败，将重试", exc_info=True)

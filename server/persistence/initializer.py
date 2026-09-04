@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
+from server.persistence.market_identity_migrations import (
+    migrate_legacy_daily_closes_on_connection,
+)
 from server.persistence.migrations import (
     apply_schema_migrations,
     assert_schema_compatible,
@@ -34,6 +37,11 @@ def initialize_database(database_path: str | Path) -> None:
             baseline_initializer=initialize_v1_baseline_schema,
         )
         _backfill_quote_snapshot_instants(conn)
+        if _table_exists(conn, "daily_close_snapshots_v2"):
+            migrate_legacy_daily_closes_on_connection(
+                conn,
+                meta_database_path=Path(database_path).parent / "meta.db",
+            )
         if _table_exists(conn, "quote_current_materialization_state"):
             reconcile_quote_current_materialization_on_connection(
                 conn,

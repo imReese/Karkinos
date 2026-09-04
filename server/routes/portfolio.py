@@ -229,10 +229,15 @@ def _build_live_holdings_response(
 ) -> LiveHoldingsResponse:
     """Bind the request clock for live-holding evidence semantics."""
 
+    frozen_now = get_shanghai_now()
+    valuation_snapshot = valuation_snapshot or _current_valuation_snapshot(
+        state,
+        now=frozen_now,
+    )
     return _raw_build_live_holdings_response(
         state,
         valuation_snapshot,
-        now=get_shanghai_now(),
+        now=frozen_now,
     )
 
 
@@ -481,7 +486,7 @@ def create_router(
 def current_valuation_snapshot(state) -> dict:
     """Compatibility port for non-HTTP composition callers."""
 
-    return _current_valuation_snapshot(state)
+    return _current_valuation_snapshot(state, now=get_shanghai_now())
 
 
 def quotes_from_valuation_snapshot(payload: dict) -> dict[str, dict]:

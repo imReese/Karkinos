@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-
 RESEARCH_OPERATION_INSTRUMENTS_SCHEMA_VERSION = (
     "karkinos.decision.research_operation_instruments.v1"
 )

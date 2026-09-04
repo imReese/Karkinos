@@ -14,6 +14,7 @@ class PositionResponse(BaseModel):
     name: str | None = None
     display_name: str | None = None
     asset_class: str | None = None
+    instrument_type: str | None = None
     quantity: float
     available_qty: float
     frozen_qty: float
@@ -24,8 +25,8 @@ class PositionResponse(BaseModel):
     broker_cost_basis_method: str | None = None
     broker_cost_basis_status: str | None = None
     latest_price: float | None = None
-    market_value: float
-    unrealized_pnl: float
+    market_value: float | None
+    unrealized_pnl: float | None
     realized_pnl: float
     commission_paid: float
     today_change: float | None = None
@@ -41,6 +42,8 @@ class PositionResponse(BaseModel):
     refresh_policy: str | None = None
     using_persistent_cache: bool = False
     nav_date: str | None = None
+    valuation_available: bool = True
+    valuation_blockers: list[str] = Field(default_factory=list)
 
 
 class PositionEvidenceReviewResponse(BaseModel):
@@ -75,6 +78,28 @@ class CurrentHoldingMarketEvidenceReviewItem(BaseModel):
     blocks_authoritative_decisions: bool = True
 
 
+class CurrentHoldingMarketEvidenceLane(BaseModel):
+    """Current non-zero holding evidence summarized by asset-class lane."""
+
+    asset_class: str
+    status: str
+    current_holding_count: int
+    confirmed_holding_count: int
+    review_required_count: int
+    blocker_statuses: list[str] = Field(default_factory=list)
+
+
+class ValuationLaneResponse(BaseModel):
+    """Persisted valuation quote completeness under one snapshot identity."""
+
+    asset_class: str
+    status: str
+    quote_count: int
+    complete_quote_count: int
+    review_required_quote_count: int
+    blocker_statuses: list[str] = Field(default_factory=list)
+
+
 class CurrentHoldingMarketEvidenceReviewResponse(BaseModel):
     """Evidence-bound review queue for canonical non-zero holdings."""
 
@@ -90,6 +115,9 @@ class CurrentHoldingMarketEvidenceReviewResponse(BaseModel):
     missing_or_error_review_count: int
     unknown_status_review_count: int
     refreshable_symbols: list[str] = Field(default_factory=list)
+    quote_refresh_symbols: list[str] = Field(default_factory=list)
+    confirmed_fund_nav_refresh_symbols: list[str] = Field(default_factory=list)
+    evidence_lanes: list[CurrentHoldingMarketEvidenceLane] = Field(default_factory=list)
     items: list[CurrentHoldingMarketEvidenceReviewItem] = Field(default_factory=list)
     source_blockers: list[str] = Field(default_factory=list)
     review_fingerprint: str
@@ -133,7 +161,7 @@ class AllocationGroup(BaseModel):
 
 class PortfolioSnapshot(BaseModel):
     cash: float
-    total_equity: float
+    total_equity: float | None
     total_deposits: float = 0.0
     positions: list[PositionResponse]
     allocation: list[AllocationItem]
@@ -148,9 +176,12 @@ class PortfolioSnapshot(BaseModel):
     valuation_trade_date: str | None = None
     valuation_policy: str | None = None
     valuation_status: str = "missing"
+    valuation_lanes: list[ValuationLaneResponse] = Field(default_factory=list)
     ledger_cutoff_id: int = 0
     ledger_fingerprint: str | None = None
     quote_set_fingerprint: str | None = None
+    missing_price_symbols: list[str] = Field(default_factory=list)
+    valuation_blockers: list[str] = Field(default_factory=list)
 
 
 class LiveHoldingItemResponse(BaseModel):
@@ -158,12 +189,13 @@ class LiveHoldingItemResponse(BaseModel):
     name: str
     display_name: str | None = None
     asset_class: str
+    instrument_type: str | None = None
     quantity: float
     avg_cost: float
-    market_value: float
+    market_value: float | None
     latest_price: float | None = None
     quote_timestamp: str | None = None
-    since_buy_pnl: float
+    since_buy_pnl: float | None
     since_buy_pnl_pct: float | None = None
     today_change: float | None = None
     today_change_pct: float | None = None
@@ -177,14 +209,16 @@ class LiveHoldingItemResponse(BaseModel):
     refresh_policy: str | None = None
     using_persistent_cache: bool = False
     nav_date: str | None = None
+    valuation_available: bool = True
+    valuation_blockers: list[str] = Field(default_factory=list)
 
 
 class LiveHoldingGroupResponse(BaseModel):
     asset_class: str
     label: str
-    total_market_value: float
+    total_market_value: float | None
     total_today_change: float | None
-    total_since_buy_pnl: float
+    total_since_buy_pnl: float | None
     items: list[LiveHoldingItemResponse]
 
 
@@ -198,6 +232,8 @@ class LiveHoldingsResponse(BaseModel):
     ledger_cutoff_id: int = 0
     ledger_fingerprint: str | None = None
     quote_set_fingerprint: str | None = None
+    missing_price_symbols: list[str] = Field(default_factory=list)
+    valuation_blockers: list[str] = Field(default_factory=list)
 
 
 class TodayPnlBreakdown(BaseModel):
@@ -238,13 +274,13 @@ class DailyOperationsSummary(BaseModel):
 
 
 class AccountOverview(BaseModel):
-    total_equity: float
+    total_equity: float | None
     available_cash: float
     total_deposits: float = 0.0
     positions_count: int
-    unrealized_pnl: float
+    unrealized_pnl: float | None
     realized_pnl: float
-    cash_ratio: float
+    cash_ratio: float | None
     today_pnl: float | None = None
     today_pnl_breakdown: TodayPnlBreakdown | None = None
     today_contributors: list[TodayPnlContributor] = Field(default_factory=list)
@@ -269,6 +305,8 @@ class AccountOverview(BaseModel):
     ledger_cutoff_id: int = 0
     ledger_fingerprint: str | None = None
     quote_set_fingerprint: str | None = None
+    missing_price_symbols: list[str] = Field(default_factory=list)
+    valuation_blockers: list[str] = Field(default_factory=list)
 
 
 class AccountStateResponse(BaseModel):
@@ -288,7 +326,7 @@ class RiskSummaryItem(BaseModel):
 class ExplainabilityBridgeItem(BaseModel):
     key: str
     label: str
-    value: float
+    value: float | None
     detail: str
 
 
@@ -312,11 +350,11 @@ class ExplainabilityDriver(BaseModel):
 
 class ExplainabilityPositionDriver(BaseModel):
     symbol: str
-    asset_class: str = "stock"
+    asset_class: str
     quantity: float
     avg_cost: float
-    market_value: float
-    unrealized_pnl: float
+    market_value: float | None
+    unrealized_pnl: float | None
     realized_pnl: float
     last_activity_at: str | None = None
     last_activity_note: str | None = None
@@ -350,7 +388,7 @@ class ExplainabilityTimelineBreakdownItem(BaseModel):
 
 class ExplainabilityTimelinePoint(BaseModel):
     date: str
-    equity: float
+    equity: float | None
     delta: float
     external_flow: float
     market_pnl: float
@@ -425,8 +463,10 @@ class RiskConcentrationItem(BaseModel):
 
 
 class RiskWorkspaceResponse(BaseModel):
+    status: str = "complete"
+    blockers: list[str] = Field(default_factory=list)
     metrics: list[RiskMetricItem]
-    drawdown: RiskDrawdownSummary
+    drawdown: RiskDrawdownSummary | None
     drawdown_series: list[RiskDrawdownPoint]
     exposure_buckets: list[RiskExposureBucket]
     concentration: list[RiskConcentrationItem]
@@ -460,10 +500,10 @@ class PortfolioCockpitPosition(BaseModel):
     symbol: str
     name: str
     asset_class: str
-    market_value: float
-    actual_weight: float
-    target_weight: float
-    drift: float
+    market_value: float | None
+    actual_weight: float | None
+    target_weight: float | None
+    drift: float | None
     action_task: ActionCard | None = None
 
 
@@ -474,9 +514,9 @@ class PortfolioConstructionRecommendation(BaseModel):
     direction: str
     status: str
     actionable: bool
-    actual_weight: float
-    target_weight: float
-    drift: float
+    actual_weight: float | None
+    target_weight: float | None
+    drift: float | None
     account_truth_gate_status: str
     risk_gate_status: str
     required_actions: list[str] = Field(default_factory=list)

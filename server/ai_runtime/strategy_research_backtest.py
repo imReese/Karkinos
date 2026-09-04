@@ -30,7 +30,7 @@ from analytics.sweep_robustness import build_sweep_robustness_evidence
 from backtest.engine import BacktestEngine
 from backtest.result import BacktestResult
 from core.events import MarketEvent
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
 from data.store import DataStore
@@ -703,14 +703,19 @@ def _load_bound_inputs(
     ):
         symbol = Symbol(symbol_text)
         try:
+            instrument_type = InstrumentType.from_persisted(asset_class_text)
             asset_class = (
                 AssetClass.FUND
-                if asset_class_text == "etf"
-                else AssetClass(asset_class_text)
+                if instrument_type in {InstrumentType.ETF, InstrumentType.OPEN_END_FUND}
+                else AssetClass(instrument_type.value)
             )
         except ValueError as exc:
             raise StrategyResearchRejected("asset_class_invalid") from exc
-        frame = data_store.load_bars(symbol, BarFrequency.DAILY)
+        frame = data_store.load_bars(
+            symbol,
+            BarFrequency.DAILY,
+            instrument_type=instrument_type,
+        )
         if frame is None:
             raise StrategyResearchRejected(f"persisted_bars_missing:{symbol_text}")
         sliced = _slice_frame(frame, selection.start_date, effective_end)
@@ -721,8 +726,12 @@ def _load_bound_inputs(
             symbol,
             BarFrequency.DAILY,
             asset_class,
+            instrument_type,
         )
-        instruments[symbol] = DataManager.get_instrument(symbol, asset_class)
+        instruments[symbol] = DataManager.get_instrument_by_type(
+            symbol,
+            instrument_type,
+        )
     configured_source: str | None = None
     source_names: list[str] = []
     if expected_dataset_snapshot is not None:

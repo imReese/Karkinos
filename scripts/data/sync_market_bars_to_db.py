@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from core.types import BarFrequency
+from core.types import BarFrequency, InstrumentType
 from data.store import DataStore
 
 
@@ -21,8 +21,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Import existing data/store/bars parquet market data into "
-            "data/store/meta.db.market_bars. This command does not fetch remote data."
+            "data/store/meta.db.market_bars_v2. This command does not fetch remote data."
         )
+    )
+    parser.add_argument(
+        "--instrument-type",
+        required=True,
+        choices=[
+            value.value
+            for value in InstrumentType
+            if value is not InstrumentType.UNKNOWN
+        ],
+        help="Exact identity namespace of every parquet file being imported.",
     )
     parser.add_argument(
         "--root",
@@ -40,7 +50,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     frequency = BarFrequency(args.frequency) if args.frequency else None
-    summary = DataStore(args.root).sync_parquet_bars_to_database(frequency)
+    summary = DataStore(args.root).sync_parquet_bars_to_database(
+        frequency,
+        instrument_type=InstrumentType(args.instrument_type),
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 from datetime import datetime
 
 from core.types import Symbol
+from server.dependencies import (
+    bind_portfolio_read_request_state,
+    get_portfolio_read_request_state,
+)
 from server.models import (
     AccountOverview,
     AccountStateResponse,
@@ -105,12 +110,18 @@ async def build_portfolio_snapshot(
         resolve_position_today_change=resolve_position_today_change,
         resolve_projection_sources=resolve_projection_sources,
     )
-    result: PortfolioSnapshotBuildResult = await asyncio.to_thread(
-        _build_portfolio_snapshot_sync,
-        state,
-        ports=ports,
-        now=now,
+    snapshot_scope = (
+        bind_portfolio_read_request_state()
+        if get_portfolio_read_request_state() is None
+        else nullcontext()
     )
+    with snapshot_scope:
+        result: PortfolioSnapshotBuildResult = await asyncio.to_thread(
+            _build_portfolio_snapshot_sync,
+            state,
+            ports=ports,
+            now=now,
+        )
     if not result.needs_total_deposits:
         return result.snapshot
 

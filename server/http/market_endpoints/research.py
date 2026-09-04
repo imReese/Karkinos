@@ -34,6 +34,8 @@ def create_router(
                 {
                     "symbol": item.symbol,
                     "asset_class": item.asset_class,
+                    "instrument_type": item.instrument_type,
+                    "identity_provenance": item.identity_provenance,
                     "display_name": item.name,
                 }
                 for item in watchlist

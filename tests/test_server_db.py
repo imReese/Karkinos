@@ -156,8 +156,9 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
     db.init_sync()
     with sqlite3.connect(tmp_path / "meta.db") as conn:
         conn.execute("""
-            CREATE TABLE market_bars (
+            CREATE TABLE market_bars_v2 (
                 symbol TEXT NOT NULL,
+                instrument_type TEXT NOT NULL,
                 frequency TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
                 open REAL,
@@ -166,20 +167,23 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
                 close REAL NOT NULL,
                 volume REAL,
                 amount REAL,
+                identity_provenance TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                PRIMARY KEY (symbol, frequency, timestamp)
+                PRIMARY KEY (symbol, instrument_type, frequency, timestamp)
             )
         """)
         conn.execute(
             """
-            INSERT INTO market_bars (
-                symbol, frequency, timestamp, open, high, low, close,
-                volume, amount, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO market_bars_v2 (
+                symbol, instrument_type, frequency, timestamp,
+                open, high, low, close, volume, amount,
+                identity_provenance, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "600001",
+                "stock",
                 "1d",
                 "2026-06-12T00:00:00",
                 9.1,
@@ -188,13 +192,16 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
                 9.24,
                 1890788.75,
                 1737699.868,
+                "explicit_canonical",
                 "2026-06-14T22:00:00",
                 "2026-06-14T22:00:00",
             ),
         )
         conn.commit()
 
-    bar = db.get_latest_market_bar_before_date_sync("600001", "2026-06-13")
+    bar = db.get_latest_market_bar_before_date_sync(
+        "600001", "2026-06-13", instrument_type="stock"
+    )
 
     assert bar is not None
     assert bar["trade_date"] == "2026-06-12"
@@ -202,13 +209,18 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
     assert bar["close"] == 9.24
     assert bar["price"] == 9.24
 
-    same_day_bar = db.get_market_bar_on_date_sync("600001", "2026-06-12")
+    same_day_bar = db.get_market_bar_on_date_sync(
+        "600001", "2026-06-12", instrument_type="stock"
+    )
 
     assert same_day_bar is not None
     assert same_day_bar["trade_date"] == "2026-06-12"
     assert same_day_bar["close"] == 9.24
     assert same_day_bar["price"] == 9.24
-    assert db.get_market_bar_on_date_sync("600001", "2026-06-13") is None
+    assert (
+        db.get_market_bar_on_date_sync("600001", "2026-06-13", instrument_type="stock")
+        is None
+    )
 
 
 def test_app_database_initializes_instrument_metadata_table(tmp_path):
@@ -260,6 +272,9 @@ def test_app_database_persists_watchlist_assets(tmp_path):
     assert updated["display_name"] == "沪深300 ETF"
     assert seeded == 1
     assert [row["symbol"] for row in rows] == ["510300", "019999"]
+    assert rows[0]["instrument_type"] == "etf"
+    assert rows[1]["instrument_type"] == "open_end_fund"
+    assert rows[1]["identity_provenance"] == "legacy_fund_compatibility"
     assert deleted is True
     assert [row["symbol"] for row in db.list_watchlist_assets_sync()] == ["019999"]
 
@@ -448,7 +463,9 @@ def test_app_database_upserts_and_reads_latest_quote(tmp_path):
     }
 
 
-def test_app_database_latest_quote_default_read_uses_newest_symbol_row(tmp_path):
+def test_app_database_latest_quote_default_read_fails_closed_on_ambiguous_identity(
+    tmp_path,
+):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
 
@@ -469,9 +486,9 @@ def test_app_database_latest_quote_default_read_uses_newest_symbol_row(tmp_path)
 
     quote = db.get_latest_quote_sync("510300")
 
-    assert quote is not None
-    assert quote["asset_type"] == "fund"
-    assert quote["price"] == 4.0
+    assert quote is None
+    assert db.get_latest_quote_sync("510300", "stock")["price"] == 3.9
+    assert db.get_latest_quote_sync("510300", "open_end_fund")["price"] == 4.0
 
 
 def test_app_database_lists_latest_quotes_by_quote_timestamp(tmp_path):
@@ -700,6 +717,8 @@ def test_app_database_persists_latest_quote_snapshot(tmp_path):
         "asset_class": "stock",
         "captured_reason": "test_refresh",
         "fetch_run_id": None,
+        "identity_provenance": "explicit_canonical",
+        "instrument_type": "stock",
         "nav_date": "2026-04-18",
         "price": 123.45,
         "provider_name": "akshare",
@@ -849,7 +868,7 @@ def test_current_quote_readers_ignore_large_superseded_history(
     current = db.get_latest_quote_sync("600519", asset_type="stock")
     current_rows = db.list_latest_quotes_sync()
     startup_rows = db.get_latest_quotes_sync()
-    async_current = asyncio.run(db.get_latest_quote("600519"))
+    async_current = asyncio.run(db.get_latest_quote("600519", instrument_type="stock"))
 
     assert current is not None and current["price"] == 99.0
     assert [row["price"] for row in current_rows] == [99.0]

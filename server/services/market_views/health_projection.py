@@ -7,7 +7,7 @@ from datetime import datetime
 
 from fastapi import BackgroundTasks
 
-from core.types import AssetClass
+from core.types import AssetClass, InstrumentKey
 from server.models import (
     MarketDataHealthResponse,
     MarketHealthQuote,
@@ -15,7 +15,6 @@ from server.models import (
 from server.services.asset_metadata import (
     metadata_configured_count,
 )
-from server.services.data_health import build_data_health
 from server.services.market_hours import is_cn_trading_session
 from server.services.market_refresh import (
     MANUAL_REFRESH_TIMEOUT_SECONDS as _MANUAL_REFRESH_TIMEOUT_SECONDS,
@@ -43,6 +42,7 @@ from server.services.market_views.health_inputs import (
     aggregate_market_data_health_status,
     configured_provider_name,
     has_live_fund_quotes,
+    instrument_key_from_mapping,
     provider_configured,
     provider_next_action,
     provider_requires_token,
@@ -112,8 +112,8 @@ def build_market_data_health_response(
         for asset_cfg in market_health_assets
     ]
 
-    latest_quotes: dict[str, dict] = {}
-    persistent_quotes: dict[str, dict] = {}
+    latest_quotes: dict[InstrumentKey, dict] = {}
+    persistent_quotes: dict[InstrumentKey, dict] = {}
     persistent_reader_available = state.db is not None and (
         hasattr(state.db, "list_latest_quotes_sync")
         or hasattr(state.db, "get_latest_quotes_sync")
@@ -124,36 +124,39 @@ def build_market_data_health_response(
         and scheduler
         and getattr(scheduler, "latest_quotes", None)
     ):
-        latest_quotes.update(
-            {str(symbol): quote for symbol, quote in scheduler.latest_quotes.items()}
-        )
+        for symbol, row in scheduler.latest_quotes.items():
+            quote = adapt_latest_quote_for_health(row)
+            key = instrument_key_from_mapping(quote, symbol=symbol)
+            if key is not None:
+                latest_quotes[key] = quote
     if state.db is not None:
         if hasattr(state.db, "list_latest_quotes_sync"):
             for row in state.db.list_latest_quotes_sync():
                 quote = adapt_latest_quote_for_health(row)
+                key = instrument_key_from_mapping(quote)
+                if key is None:
+                    continue
                 if _is_real_persistent_quote(quote):
-                    persistent_quotes[quote["symbol"]] = quote
-                latest_quotes[quote["symbol"]] = quote
+                    persistent_quotes[key] = quote
+                latest_quotes[key] = quote
         if hasattr(state.db, "get_latest_quotes_sync"):
             for row in state.db.get_latest_quotes_sync():
                 quote = adapt_latest_quote_for_health(row)
+                key = instrument_key_from_mapping(quote)
+                if key is None:
+                    continue
                 if _is_real_persistent_quote(quote):
-                    persistent_quotes.setdefault(quote["symbol"], quote)
-                latest_quotes.setdefault(quote["symbol"], quote)
-
-    payload = build_data_health(
-        watchlist=watchlist,
-        latest_quotes=latest_quotes,
-        bar_coverage={},
-    )
+                    persistent_quotes.setdefault(key, quote)
+                latest_quotes.setdefault(key, quote)
     market_open = is_cn_trading_session()
     refresh_policy = "live" if market_open else "cache_only"
     now = _shanghai_now()
     health_quotes: list[MarketHealthQuote] = []
-    for item in payload["quotes"]:
-        symbol = item["symbol"]
-        asset_class = item["asset_class"]
-        quote = latest_quotes.get(symbol)
+    for asset in market_health_assets:
+        symbol = str(asset.get("symbol") or "").strip()
+        asset_class = str(asset.get("asset_class") or "").strip()
+        key = instrument_key_from_mapping(asset)
+        quote = None if key is None else latest_quotes.get(key)
         metadata = _quote_metadata(
             state,
             symbol,
@@ -167,8 +170,10 @@ def build_market_data_health_response(
             MarketHealthQuote(
                 symbol=symbol,
                 asset_class=asset_class,
-                timestamp=item["timestamp"],
-                price=item["price"],
+                instrument_type=(None if key is None else key.instrument_type.value),
+                identity_provenance=asset.get("identity_provenance"),
+                timestamp=None if quote is None else quote.get("timestamp"),
+                price=None if quote is None else quote.get("price"),
                 **metadata,
             )
         )

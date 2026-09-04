@@ -65,7 +65,7 @@ def persist_recommendation_tasks(
                 available_cash=0,
                 existing_positions={},
             ).tasks[0]
-            db.upsert_action_task_sync(
+            action_id = db.upsert_action_task_sync(
                 source_signal_id=task.source_signal_id,
                 symbol=task.symbol,
                 title=task.title,
@@ -80,6 +80,7 @@ def persist_recommendation_tasks(
             )
             persisted.append(
                 {
+                    "action_id": int(action_id),
                     "source_signal_id": signal_id,
                     "symbol": task.symbol,
                     "direction": task.direction,

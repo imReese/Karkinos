@@ -68,8 +68,11 @@ export function useOverviewPageController() {
   const strategyContribution = useAccountStrategyContributionQuery(
     secondaryQueriesEnabled,
   );
-  const todayDecision = useTodayDecisionQuery(secondaryQueriesEnabled);
-  const tradingPlan = useDailyTradingPlanQuery(secondaryQueriesEnabled);
+  // The current Decision is operational evidence in its own right.  Keep it
+  // visible when either portfolio projection fails instead of silently
+  // turning "unavailable" into an empty dashboard.
+  const todayDecision = useTodayDecisionQuery();
+  const tradingPlan = useDailyTradingPlanQuery();
   const operationsToday = useOperationsTodayQuery(secondaryQueriesEnabled);
   const positions = useMemo(
     () => snapshot.data?.positions ?? [],

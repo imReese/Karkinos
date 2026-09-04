@@ -636,7 +636,7 @@ test('uses a compact evidence-first layout while persisted overview projections 
   expect(screen.queryByTestId('equity-curve-skeleton')).toBeNull();
 });
 
-test('starts only canonical primary projections before secondary evidence', async () => {
+test('loads account Decision independently before dependent evidence', async () => {
   let releaseSnapshot!: () => void;
   const snapshotGate = new Promise<void>((resolve) => {
     releaseSnapshot = resolve;
@@ -658,7 +658,20 @@ test('starts only canonical primary projections before secondary evidence', asyn
 
   renderOverviewPage({ installFetch: false });
 
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => String(input))
+        .filter((url) =>
+          [
+            '/api/portfolio',
+            '/api/portfolio/overview',
+            '/api/decision/today',
+            '/api/decision/trading-plan',
+          ].includes(url),
+        ),
+    ).toHaveLength(4),
+  );
   const initialUrls = fetchMock.mock.calls.map(([input]) =>
     typeof input === 'string'
       ? input
@@ -668,12 +681,16 @@ test('starts only canonical primary projections before secondary evidence', asyn
   );
   try {
     expect(initialUrls).toEqual(
-      expect.arrayContaining(['/api/portfolio', '/api/portfolio/overview']),
+      expect.arrayContaining([
+        '/api/portfolio',
+        '/api/portfolio/overview',
+        '/api/decision/today',
+        '/api/decision/trading-plan',
+      ]),
     );
     expect(initialUrls).not.toEqual(
       expect.arrayContaining([
         expect.stringContaining('/api/ledger/entries'),
-        expect.stringContaining('/api/decision/today'),
         expect.stringContaining('/api/market/data-health'),
         expect.stringContaining('/api/operations/today'),
       ]),
@@ -702,7 +719,18 @@ test('starts only canonical primary projections before secondary evidence', asyn
 });
 
 test('falls back to the richer overview when the snapshot request fails', async () => {
-  const baseFetch = installOverviewFetchMock();
+  const baseFetch = installOverviewFetchMock(
+    {},
+    {
+      tradingPlan: dualLaneTradingPlanFixture(
+        accountActionRecommendationFixture({
+          status: 'unavailable',
+          promotedScanStatus: 'unavailable',
+          reasonCodes: ['verified_promoted_strategy_scan_unavailable'],
+        }),
+      ),
+    },
+  );
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/api/portfolio')) {
@@ -718,7 +746,21 @@ test('falls back to the richer overview when the snapshot request fails', async 
   const holdings = screen.getByTestId('overview-holdings-section');
   expect(within(holdings).getByText('Failed to load positions.')).toBeTruthy();
   expect(screen.queryByTestId('overview-daily-workbench')).toBeNull();
+  const decisionFallback = screen.getByTestId(
+    'overview-decision-queue-fallback',
+  );
+  expect(
+    within(decisionFallback).getByText(
+      "Today's account recommendation evidence is unavailable",
+    ),
+  ).toBeTruthy();
   const requestUrls = fetchMock.mock.calls.map(([input]) => String(input));
+  expect(requestUrls).toEqual(
+    expect.arrayContaining([
+      '/api/decision/today',
+      '/api/decision/trading-plan',
+    ]),
+  );
   expect(requestUrls.indexOf('/api/portfolio/overview')).toBeGreaterThan(
     requestUrls.indexOf('/api/portfolio'),
   );
@@ -3085,7 +3127,7 @@ test('shows missing market pulse move fields as explicit data gaps', async () =>
   expect(within(marketPulse).queryByText('--')).toBeNull();
 });
 
-test('keeps user-readable data work items on stale homepage status', async () => {
+test('keeps stock research separate while confirmed fund NAV blocks account authority', async () => {
   installOverviewFetchMock(
     {
       quote_status: 'stale',
@@ -3100,8 +3142,46 @@ test('keeps user-readable data work items on stale homepage status', async () =>
         current_holding_count: 1,
         review_required_count: 1,
         fund_nav_review_count: 1,
+        quote_refresh_symbols: [],
+        confirmed_fund_nav_refresh_symbols: ['FUND-A'],
         refreshable_symbols: ['FUND-A'],
-        items: [{ symbol: 'FUND-A' }],
+        evidence_lanes: [
+          {
+            asset_class: 'stock',
+            status: 'not_applicable',
+            current_holding_count: 0,
+            confirmed_holding_count: 0,
+            review_required_count: 0,
+            blocker_statuses: [],
+          },
+          {
+            asset_class: 'fund',
+            status: 'degraded',
+            current_holding_count: 1,
+            confirmed_holding_count: 0,
+            review_required_count: 1,
+            blocker_statuses: ['confirmed_nav_missing'],
+          },
+        ],
+        valuation_status: 'degraded',
+        items: [
+          {
+            symbol: 'FUND-A',
+            name: 'Evidence fund',
+            asset_class: 'fund',
+            quantity: 100,
+            quote_status: 'confirmed_nav_missing',
+            quote_source: 'eastmoney_fund_estimate',
+            quote_timestamp: '2026-02-10T15:00:00+08:00',
+            stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+            nav_date: null,
+            review_reason: 'confirmed_nav_missing',
+            next_manual_action:
+              'wait_for_confirmed_nav_then_run_explicit_refresh',
+            explicit_refresh_eligible: true,
+            blocks_authoritative_decisions: true,
+          },
+        ],
       },
     },
   );
@@ -3119,12 +3199,24 @@ test('keeps user-readable data work items on stale homepage status', async () =>
   const queue = await screen.findByTestId('overview-today-queue');
   expect(within(queue).getByText("Today's to-dos")).toBeTruthy();
   expect(
-    await within(queue).findByText('Market data or NAV needs review.'),
+    await within(queue).findByText(
+      'Confirmed fund NAV is pending; stock research that does not depend on account equity may continue.',
+    ),
   ).toBeTruthy();
-  expect(within(queue).getByText('1 fund NAV')).toBeTruthy();
   expect(
-    within(queue).getByRole('button', { name: 'Refresh quotes' }),
+    within(queue).getByText(
+      /This does not block stock research that does not depend on account equity, but full-account authoritative valuation and risk remain blocked/,
+    ),
   ).toBeTruthy();
+  expect(
+    within(queue).getByRole('button', { name: 'Sync confirmed NAV' }),
+  ).toBeTruthy();
+  expect(
+    within(queue).queryByRole('button', { name: 'Refresh quotes' }),
+  ).toBeNull();
+  expect(queue.textContent).toContain(
+    'Ordinary quote refresh and intraday estimates cannot clear it.',
+  );
   expect(
     within(queue).getByRole('link', { name: 'View data status' }),
   ).toBeTruthy();
@@ -3134,7 +3226,7 @@ test('keeps user-readable data work items on stale homepage status', async () =>
   ).toBeNull();
 });
 
-test('refreshes only the homepage holdings eligible for explicit refresh', async () => {
+test('refreshes only generic quote blockers through the homepage quote action', async () => {
   const baseFetch = installOverviewFetchMock(
     {
       quote_status: 'stale',
@@ -3148,9 +3240,29 @@ test('refreshes only the homepage holdings eligible for explicit refresh', async
         next_manual_action: 'review_current_holding_market_evidence',
         current_holding_count: 2,
         review_required_count: 2,
-        fund_nav_review_count: 2,
-        refreshable_symbols: ['FUND-A', 'FUND-B'],
-        items: [{ symbol: 'FUND-A' }, { symbol: 'FUND-B' }],
+        stale_or_cached_review_count: 2,
+        quote_refresh_symbols: ['600001', '600002'],
+        confirmed_fund_nav_refresh_symbols: [],
+        refreshable_symbols: ['600001', '600002'],
+        evidence_lanes: [
+          {
+            asset_class: 'stock',
+            status: 'degraded',
+            current_holding_count: 2,
+            confirmed_holding_count: 0,
+            review_required_count: 2,
+            blocker_statuses: ['stale'],
+          },
+          {
+            asset_class: 'fund',
+            status: 'not_applicable',
+            current_holding_count: 0,
+            confirmed_holding_count: 0,
+            review_required_count: 0,
+            blocker_statuses: [],
+          },
+        ],
+        items: [{ symbol: '600001' }, { symbol: '600002' }],
       },
     },
   );
@@ -3171,6 +3283,12 @@ test('refreshes only the homepage holdings eligible for explicit refresh', async
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
+  expect(
+    await within(queue).findByText('Stock quote evidence needs review.'),
+  ).toBeTruthy();
+  expect(
+    within(queue).queryByRole('button', { name: 'Sync confirmed NAV' }),
+  ).toBeNull();
   await user.click(
     await within(queue).findByRole('button', { name: 'Refresh quotes' }),
   );
@@ -3180,7 +3298,7 @@ test('refreshes only the homepage holdings eligible for explicit refresh', async
     expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({
-        symbols: ['FUND-A', 'FUND-B'],
+        symbols: ['600001', '600002'],
         force: true,
       }),
     }),
@@ -3193,7 +3311,7 @@ test('refreshes only the homepage holdings eligible for explicit refresh', async
   await act(async () => {
     resolveRefresh(
       jsonResponse({
-        requested_symbols: ['FUND-A', 'FUND-B'],
+        requested_symbols: ['600001', '600002'],
         refreshed: [],
         failed: [],
         skipped: [],
@@ -3544,13 +3662,13 @@ test('scopes the homepage data review count to canonical current holdings', asyn
   expect(await within(queue).findByText('1 stale/cache')).toBeTruthy();
   expect(within(queue).getByText('1 holding needs review')).toBeTruthy();
   expect(queue.textContent).toContain(
-    'Newer confirmed quote or NAV evidence covers every current holding and shares one valuation and activity scope.',
+    'Run explicit quote ingestion for the listed symbols and replace each blocker with newer confirmed quote evidence.',
   );
   expect(within(queue).queryByText('2 holdings need review')).toBeNull();
   expect(queue.textContent).not.toContain('Closed fixture holding');
 });
 
-test('keeps market index diagnostics out of the current-holding review count', async () => {
+test('keeps index diagnostics out and routes a legacy fund-only review separately', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock(
     {},
@@ -3611,7 +3729,15 @@ test('keeps market index diagnostics out of the current-holding review count', a
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  expect(await within(queue).findByText('3 基金净值')).toBeTruthy();
+  expect(
+    await within(queue).findByText(
+      '基金确认净值待处理；不依赖账户总权益的股票研究可继续。',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(queue).getByRole('button', { name: '同步确认净值' }),
+  ).toBeTruthy();
+  expect(within(queue).queryByRole('button', { name: '刷新行情' })).toBeNull();
   expect(
     within(queue).queryByText(
       /个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。/,
@@ -3734,6 +3860,141 @@ test('keeps the last identity-bound curve visible after a transient refetch erro
     ),
   ).toBeTruthy();
 });
+
+function dualLaneResearchPreviewFixture() {
+  return {
+    schema_version: 'karkinos.decision.research_operation_preview.v1',
+    status: 'available',
+    market_date: '2026-02-10',
+    target_market_date: '2026-02-11',
+    market_calendar_evidence_refs: [
+      'market_calendar:SSE:2026:fixture:official-fixture',
+    ],
+    run_id: 'run-dual-lane-fixture',
+    selection_id: 'selection-dual-lane-fixture',
+    selection_fingerprint: 'selection-fingerprint-dual-lane-fixture',
+    backup_artifact_fingerprint: 'backup-fingerprint-dual-lane-fixture',
+    research_winner_candidate_id: 'candidate-dual-lane-fixture',
+    source_preview_fingerprint: 'preview-fingerprint-dual-lane-fixture',
+    dataset_snapshot_id: `sha256:${'d'.repeat(64)}`,
+    formula_fingerprint: `sha256:${'f'.repeat(64)}`,
+    research_window_end_date: '2026-02-10',
+    signal_observed_at: '2026-02-10T15:00:00+08:00',
+    execution_timing: 'next_verified_market_session',
+    allocation_slots: 4,
+    canonical_target_weight: 0.25,
+    operations: [
+      {
+        symbol: '000155',
+        signal_date: '2026-02-10',
+        signal_type: 'entry',
+        operation: 'buy_candidate',
+        target_weight: 0.25,
+        account_position_status: 'not_evaluated',
+        next_session_only: true,
+        research_only: true,
+        executable: false,
+      },
+    ],
+    blockers: [],
+    account_qualification_status: 'not_evaluated',
+    account_positions_evaluated: false,
+    provider_contacted: false,
+    database_writes_performed: false,
+    read_only: true,
+    research_only: true,
+    executable: false,
+    authorizes_order_creation: false,
+    authorizes_execution: false,
+    authority_effect: 'none',
+    evidence_fingerprint: 'research-operation-dual-lane-fixture',
+  };
+}
+
+function accountActionRecommendationFixture({
+  status,
+  promotedScanStatus,
+  reasonCodes,
+}: {
+  status: 'blocked' | 'unavailable' | 'no_action';
+  promotedScanStatus: 'blocked' | 'unavailable' | 'completed_no_signal';
+  reasonCodes: string[];
+}) {
+  return {
+    schema_version: 'karkinos.decision.account_action_recommendation.v1',
+    decision_date: '2026-02-10',
+    status,
+    reason_codes: reasonCodes,
+    source_action_task_ids: [],
+    actions: [],
+    promoted_scan: {
+      run_id:
+        promotedScanStatus === 'unavailable'
+          ? null
+          : 'automation:promoted-strategy-universe-scan:fixture',
+      status: promotedScanStatus,
+      input_fingerprint:
+        promotedScanStatus === 'unavailable'
+          ? null
+          : `sha256:${'1'.repeat(64)}`,
+      output_fingerprint:
+        promotedScanStatus === 'unavailable'
+          ? null
+          : `sha256:${'2'.repeat(64)}`,
+      selected_signal_count: 0,
+    },
+    account_evidence: {
+      valuation_snapshot_id: 'valuation-overview-fixture',
+      ledger_cutoff_id: 42,
+      quote_set_fingerprint: 'quotes-overview-fixture',
+      valuation_status: status === 'no_action' ? 'complete' : 'degraded',
+      account_truth_status: status === 'no_action' ? 'passed' : 'blocked',
+      account_qualification_status:
+        status === 'no_action' ? 'passed' : 'blocked',
+      account_positions_evaluated: false,
+    },
+    read_only: true,
+    manual_confirmation_required: true,
+    creates_oms_order: false,
+    submits_broker_order: false,
+    authorizes_execution: false,
+    changes_capital_authority: false,
+    authority_effect: 'none',
+    evidence_fingerprint: `sha256:${'3'.repeat(64)}`,
+  };
+}
+
+function dualLaneTradingPlanFixture(
+  accountRecommendation: ReturnType<typeof accountActionRecommendationFixture>,
+) {
+  return {
+    schema_version: 'karkinos.daily_trading_plan.v1',
+    plan_date: '2026-02-10',
+    generated_at: '2026-02-10T18:30:00+08:00',
+    source_decision: 'no_action',
+    conclusion_status:
+      accountRecommendation.status === 'no_action'
+        ? 'no_manual_action'
+        : 'account_truth_blocked',
+    primary_target:
+      accountRecommendation.status === 'no_action'
+        ? 'decision'
+        : 'account-truth',
+    candidate_pool_count: 0,
+    manual_ready_count: 0,
+    order_intent_count: 0,
+    blocked_count: 0,
+    available_cash: accountRecommendation.status === 'no_action' ? 76000 : 0,
+    total_equity: accountRecommendation.status === 'no_action' ? 101000 : 0,
+    default_execution_mode: 'manual_confirmation',
+    broker_bridge_status: 'disabled',
+    order_intents: [],
+    blockers: [],
+    research_operation_preview: dualLaneResearchPreviewFixture(),
+    account_action_recommendation: accountRecommendation,
+    limitations: [],
+  };
+}
 
 test('shows account-independent research operations without presenting an order path', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
@@ -3933,4 +4194,169 @@ test('shows account-independent research operations without presenting an order 
       String(input).includes('/api/market/instrument-metadata/backfill'),
     ),
   ).toBe(false);
+});
+
+test.each([
+  {
+    status: 'blocked' as const,
+    promotedScanStatus: 'blocked' as const,
+    reasonCodes: ['account_truth_blocked'],
+    decisionTitle: '今日账户操作尚未就绪',
+  },
+  {
+    status: 'unavailable' as const,
+    promotedScanStatus: 'unavailable' as const,
+    reasonCodes: ['verified_promoted_strategy_scan_unavailable'],
+    decisionTitle: '今日账户建议证据不可用',
+  },
+])(
+  'keeps a $status account Decision beside the independent research preview',
+  async ({ status, promotedScanStatus, reasonCodes, decisionTitle }) => {
+    window.localStorage.setItem('karkinos.locale', 'zh');
+    installOverviewFetchMock(
+      {},
+      {
+        tradingPlan: {
+          ...dualLaneTradingPlanFixture(
+            accountActionRecommendationFixture({
+              status,
+              promotedScanStatus,
+              reasonCodes,
+            }),
+          ),
+          candidate_pool_count: 3,
+          blocked_count: 2,
+          order_intent_count: 1,
+        },
+      },
+    );
+
+    renderOverviewPage({ installFetch: false });
+
+    const queue = await screen.findByTestId('overview-today-queue');
+    const decisionTitleNode = await within(queue).findByText(decisionTitle);
+    const researchTitleNode = within(queue).getByText(
+      '研究型量化操作候选（不可执行，账户资格未评估）',
+    );
+    const decisionItem = decisionTitleNode.closest('li');
+    const researchItem = researchTitleNode.closest('li');
+
+    expect(decisionItem).toBeTruthy();
+    expect(researchItem).toBeTruthy();
+    expect(decisionItem).not.toBe(researchItem);
+    expect(
+      within(decisionItem as HTMLElement)
+        .getByRole('link', { name: '查看决策证据' })
+        .getAttribute('href'),
+    ).toBe('/decision');
+    expect(
+      within(researchItem as HTMLElement)
+        .getByRole('link', { name: '查看 AI 策略研究' })
+        .getAttribute('href'),
+    ).toBe('/ai-research');
+    expect(
+      within(researchItem as HTMLElement).getByText(
+        '仅在 AI 策略研究页复核公式证据；不得据此创建订单或人工下单。',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(decisionItem as HTMLElement).getByText('今日关注'),
+    ).toBeTruthy();
+    expect(
+      within(researchItem as HTMLElement).getByText('正常状态'),
+    ).toBeTruthy();
+    expect(
+      queue.querySelector(':scope > div:first-child > span')?.textContent,
+    ).toBe('1');
+    expect(within(queue).queryByTestId('overview-today-queue-more')).toBeNull();
+  },
+);
+
+test('shows the exact current qualification blocker on the account Decision', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock(
+    {},
+    {
+      tradingPlan: dualLaneTradingPlanFixture(
+        accountActionRecommendationFixture({
+          status: 'unavailable',
+          promotedScanStatus: 'unavailable',
+          reasonCodes: [
+            'promoted_strategy_scan_missing',
+            'qualification_valuation_or_ledger_not_complete',
+          ],
+        }),
+      ),
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  const decisionTitle =
+    await within(queue).findByText('今日账户建议证据不可用');
+  const decisionItem = decisionTitle.closest('li');
+  expect(decisionItem).toBeTruthy();
+  expect(
+    within(decisionItem as HTMLElement).getByText(
+      /今天的已晋级策略扫描尚未完成.*当前估值或账本证据不完整/,
+    ),
+  ).toBeTruthy();
+});
+
+test('shows completed_no_signal as first-class account no-action beside normal research', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock(
+    {},
+    {
+      tradingPlan: dualLaneTradingPlanFixture(
+        accountActionRecommendationFixture({
+          status: 'no_action',
+          promotedScanStatus: 'completed_no_signal',
+          reasonCodes: ['promoted_strategy_scan_completed_without_signal'],
+        }),
+      ),
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  const decisionTitleNode =
+    await within(queue).findByText('今日账户操作：无操作');
+  const researchTitleNode = within(queue).getByText(
+    '研究型量化操作候选（不可执行，账户资格未评估）',
+  );
+  const decisionItem = decisionTitleNode.closest('li');
+  const researchItem = researchTitleNode.closest('li');
+
+  expect(decisionItem).toBeTruthy();
+  expect(researchItem).toBeTruthy();
+  expect(decisionItem).not.toBe(researchItem);
+  expect(
+    within(decisionItem as HTMLElement).getByText(
+      '已完成当日晋级策略扫描，未产生账户操作信号。',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(decisionItem as HTMLElement)
+      .getByRole('link', { name: '查看决策证据' })
+      .getAttribute('href'),
+  ).toBe('/decision');
+  expect(
+    within(researchItem as HTMLElement)
+      .getByRole('link', { name: '查看 AI 策略研究' })
+      .getAttribute('href'),
+  ).toBe('/ai-research');
+  expect(
+    within(decisionItem as HTMLElement).getByText('正常状态'),
+  ).toBeTruthy();
+  expect(
+    within(researchItem as HTMLElement).getByText('正常状态'),
+  ).toBeTruthy();
+  expect(
+    queue.querySelector(':scope > div:first-child > span')?.textContent,
+  ).toBe('0');
+  expect(within(queue).queryByText('当前没有紧急事项。')).toBeNull();
+  expect(within(queue).queryByTestId('overview-today-queue-more')).toBeNull();
 });

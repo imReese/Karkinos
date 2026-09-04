@@ -1,12 +1,48 @@
 from __future__ import annotations
 
 DEFAULT_MARKET_INDEX_ASSETS: tuple[dict[str, str], ...] = (
-    {"symbol": "000001", "asset_class": "index", "display_name": "上证指数"},
-    {"symbol": "399001", "asset_class": "index", "display_name": "深证成指"},
-    {"symbol": "399006", "asset_class": "index", "display_name": "创业板指"},
-    {"symbol": "000300", "asset_class": "index", "display_name": "沪深300"},
-    {"symbol": "000905", "asset_class": "index", "display_name": "中证500"},
-    {"symbol": "000016", "asset_class": "index", "display_name": "上证50"},
+    {
+        "symbol": "000001",
+        "asset_class": "index",
+        "instrument_type": "index",
+        "identity_provenance": "built_in_canonical",
+        "display_name": "上证指数",
+    },
+    {
+        "symbol": "399001",
+        "asset_class": "index",
+        "instrument_type": "index",
+        "identity_provenance": "built_in_canonical",
+        "display_name": "深证成指",
+    },
+    {
+        "symbol": "399006",
+        "asset_class": "index",
+        "instrument_type": "index",
+        "identity_provenance": "built_in_canonical",
+        "display_name": "创业板指",
+    },
+    {
+        "symbol": "000300",
+        "asset_class": "index",
+        "instrument_type": "index",
+        "identity_provenance": "built_in_canonical",
+        "display_name": "沪深300",
+    },
+    {
+        "symbol": "000905",
+        "asset_class": "index",
+        "instrument_type": "index",
+        "identity_provenance": "built_in_canonical",
+        "display_name": "中证500",
+    },
+    {
+        "symbol": "000016",
+        "asset_class": "index",
+        "instrument_type": "index",
+        "identity_provenance": "built_in_canonical",
+        "display_name": "上证50",
+    },
 )
 
 

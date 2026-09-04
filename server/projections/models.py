@@ -19,6 +19,8 @@ class ProjectedPosition:
     avg_cost: Decimal = ZERO
     market_value: Decimal = ZERO
     unrealized_pnl: Decimal = ZERO
+    valuation_available: bool = False
+    valuation_price: Decimal | None = None
     realized_pnl: Decimal = ZERO
     commission_paid: Decimal = ZERO
     broker_displayed_cost_basis: Decimal = ZERO
@@ -37,6 +39,8 @@ class PortfolioProjection:
     """Deterministic portfolio snapshot reconstructed from ledger entries."""
 
     cash: Decimal = ZERO
-    total_equity: Decimal = ZERO
+    total_equity: Decimal | None = ZERO
     total_deposits: Decimal = ZERO
     positions: dict[str, ProjectedPosition] = field(default_factory=dict)
+    valuation_status: str = "complete"
+    missing_price_symbols: list[str] = field(default_factory=list)

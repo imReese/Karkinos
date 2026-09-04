@@ -23,6 +23,9 @@ from server.services.asset_metadata import (
     iter_configured_asset_metadata,
     metadata_configured_count,
 )
+from server.services.market_views.health_inputs import (
+    provider_supports_funds as _provider_supports_funds,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +55,6 @@ def _provider_configured(config, provider_name: str) -> bool:
     if _provider_requires_token(provider_name):
         return bool(getattr(config, "tushare_token", ""))
     return provider_name in {"akshare", "tushare"}
-
-
-def _provider_supports_funds(provider_name: str) -> bool | None:
-    if provider_name == "akshare":
-        return True
-    if provider_name == "tushare":
-        return False
-    return None
 
 
 def _has_fund_assets(state) -> bool:

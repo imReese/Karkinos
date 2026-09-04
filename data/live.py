@@ -45,6 +45,7 @@ class LiveDataFeed:
         )
         self._lifecycle_lock = threading.Lock()
         self._closed: bool = False
+        self._inflight: dict[tuple[Symbol, AssetClass], Future] = {}
         self._last_prices: dict[tuple[Symbol, AssetClass], float] = {}
         self._last_snapshots: dict[tuple[Symbol, AssetClass], dict] = {}
 
@@ -231,13 +232,32 @@ class LiveDataFeed:
         with self._lifecycle_lock:
             if self._closed:
                 raise RuntimeError("live data feed is closed")
-            futures: dict[Future, tuple[Symbol, AssetClass]] = {
-                self._executor.submit(self.poll_latest, symbol, asset_class): (
+            futures: dict[Future, tuple[Symbol, AssetClass]] = {}
+            for symbol, asset_class in watchlist:
+                key = (symbol, asset_class)
+                previous = self._inflight.get(key)
+                if previous is not None and not previous.done():
+                    logger.warning(
+                        "上一轮行情请求仍在执行，跳过重复请求: %s (%s)",
+                        symbol,
+                        asset_class.value,
+                    )
+                    continue
+                future = self._executor.submit(
+                    self.poll_latest,
                     symbol,
                     asset_class,
                 )
-                for symbol, asset_class in watchlist
-            }
+                self._inflight[key] = future
+                futures[future] = key
+                future.add_done_callback(
+                    lambda completed, *, inflight_key=key: self._forget_inflight(
+                        inflight_key,
+                        completed,
+                    )
+                )
+        if not futures:
+            return []
         done, pending = wait(futures, timeout=self.poll_timeout_seconds)
 
         for future in pending:
@@ -267,3 +287,12 @@ class LiveDataFeed:
             if event is not None:
                 events.append(event)
         return events
+
+    def _forget_inflight(
+        self,
+        key: tuple[Symbol, AssetClass],
+        completed: Future,
+    ) -> None:
+        with self._lifecycle_lock:
+            if self._inflight.get(key) is completed:
+                self._inflight.pop(key, None)

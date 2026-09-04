@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, InstrumentType, Symbol
 from server.bootstrap import (
     build_strategy,
     build_watchlist,
@@ -500,6 +500,39 @@ def test_server_main_check_config_loads_default_dotenv_without_starting(
     assert "Karkinos configuration valid: config.json" in capsys.readouterr().out
 
 
+def test_server_main_research_worker_dispatches_without_starting_http(
+    tmp_path,
+    monkeypatch,
+):
+    import asyncio
+
+    from server import __main__ as server_main
+    from server.workers import ai_shadow_research_worker as worker_runtime
+
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("KARKINOS_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("KARKINOS_ENV_FILE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["python -m server", "--research-worker"])
+    sentinel = object()
+    captured = {}
+
+    def fake_worker(config):
+        captured["config"] = config
+        return sentinel
+
+    def fake_asyncio_run(awaitable):
+        captured["awaitable"] = awaitable
+
+    monkeypatch.setattr(worker_runtime, "run_ai_shadow_research_worker", fake_worker)
+    monkeypatch.setattr(asyncio, "run", fake_asyncio_run)
+
+    server_main.main()
+
+    assert isinstance(captured["config"], ServerConfig)
+    assert captured["awaitable"] is sentinel
+
+
 def test_runtime_environment_overrides_file_and_explicit_values_win(
     tmp_path,
     monkeypatch,
@@ -623,8 +656,8 @@ def test_create_runtime_context_builds_data_manager_with_default_store(monkeypat
             created["default_source"] = default_source
 
         @staticmethod
-        def get_instrument(sym, ac):
-            return (sym, ac)
+        def get_instrument_by_type(sym, instrument_type, *, name=None):
+            return (sym, instrument_type)
 
     monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
     monkeypatch.setattr("server.bootstrap.DataManager", FakeDataManager)
@@ -642,6 +675,8 @@ def test_create_runtime_context_builds_data_manager_with_default_store(monkeypat
 
 
 def test_create_runtime_context_builds_watchlist_from_explicit_assets(monkeypatch):
+    built = []
+
     class FakeStore:
         def __init__(self, base_path="data/store"):
             pass
@@ -651,8 +686,9 @@ def test_create_runtime_context_builds_watchlist_from_explicit_assets(monkeypatc
             pass
 
         @staticmethod
-        def get_instrument(sym, ac):
-            return (sym, ac)
+        def get_instrument_by_type(sym, instrument_type, *, name=None):
+            built.append((sym, instrument_type))
+            return (sym, instrument_type)
 
     monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
     monkeypatch.setattr("server.bootstrap.DataManager", FakeDataManager)
@@ -662,10 +698,31 @@ def test_create_runtime_context_builds_watchlist_from_explicit_assets(monkeypatc
     )
 
     context = create_runtime_context(
-        BacktestConfig(assets=[{"symbol": "600519", "asset_class": "stock"}])
+        BacktestConfig(
+            assets=[
+                {"symbol": "600519", "asset_class": "stock"},
+                {"symbol": "019999", "asset_class": "fund"},
+                {"symbol": "510300", "asset_class": "etf"},
+            ]
+        )
     )
 
     assert context.watchlist[0][0] == Symbol("600519")
+    assert built == [
+        (Symbol("600519"), InstrumentType.STOCK),
+        (Symbol("019999"), InstrumentType.OPEN_END_FUND),
+        (Symbol("510300"), InstrumentType.ETF),
+    ]
+    assert context.instrument_types == {
+        Symbol("600519"): InstrumentType.STOCK,
+        Symbol("019999"): InstrumentType.OPEN_END_FUND,
+        Symbol("510300"): InstrumentType.ETF,
+    }
+    assert context.instrument_identity_provenance == {
+        Symbol("600519"): "config_canonical",
+        Symbol("019999"): "legacy_config_fund_compatibility",
+        Symbol("510300"): "config_canonical",
+    }
 
 
 def test_backtest_tool_uses_loaded_runtime_config_from_json(tmp_path, monkeypatch):
@@ -1434,8 +1491,8 @@ def test_create_runtime_context_supports_env_data_dir(monkeypatch):
             created["store"] = store
 
         @staticmethod
-        def get_instrument(sym, ac):
-            return (sym, ac)
+        def get_instrument_by_type(sym, instrument_type, *, name=None):
+            return (sym, instrument_type)
 
     monkeypatch.setenv("KARKINOS_DATA_DIR", "/tmp/karkinos-data")
     monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
@@ -1550,6 +1607,13 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
         "run_daily_decision_evidence_automation_loop",
         inert_automation_loop,
     )
+    monkeypatch.setattr(
+        "server.composition.ai_shadow_research_automation."
+        "initialize_ai_shadow_research_qualification_persistence",
+        lambda state: setattr(
+            state, "ai_shadow_research_qualification_persistence_ready", True
+        ),
+    )
 
     async def run_lifespan():
         async with app_module.lifespan(fake_app):
@@ -1644,6 +1708,13 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
         "server.services.market_universe_automation."
         "run_market_universe_automation_loop",
         fake_market_universe_loop,
+    )
+    monkeypatch.setattr(
+        "server.composition.ai_shadow_research_automation."
+        "initialize_ai_shadow_research_qualification_persistence",
+        lambda state: setattr(
+            state, "ai_shadow_research_qualification_persistence_ready", True
+        ),
     )
 
     async def run_lifespan():

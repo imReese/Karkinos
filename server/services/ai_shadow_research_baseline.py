@@ -22,8 +22,8 @@ from backtest.engine import BacktestEngine
 from core.types import BarFrequency, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
-from server.ai_runtime.strategy_research import rolling_oos_parameters
 from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE
+from server.ai_runtime.strategy_research import rolling_oos_parameters
 from server.ai_runtime.strategy_research_privacy import (
     NORMALIZED_RESEARCH_NOTIONAL,
 )
@@ -55,7 +55,20 @@ from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 
 
 class AiShadowResearchBaselineMixin:
-    def _prepare_baseline(self, policy: ShadowResearchPolicy) -> PreparedBaseline:
+    def _prepare_baseline(
+        self,
+        policy: ShadowResearchPolicy,
+        *,
+        initial_cash_override: float | None = None,
+        expected_market_date: str | None = None,
+        expected_dataset_snapshot_id: str | None = None,
+        reviewed_fee_schedule_resolution: Any | None = None,
+    ) -> PreparedBaseline:
+        """Build one deterministic baseline, optionally replaying frozen inputs.
+
+        The optional bindings are used by provider-free account qualification.
+        Discovery callers keep the original behavior by omitting them.
+        """
         rows = asyncio.run(self._db.get_backtest_results())
         seed = None
         if policy.baseline_backtest_result_id is not None:
@@ -96,14 +109,25 @@ class AiShadowResearchBaselineMixin:
         seed_initial_cash = float(
             config.get("initial_cash") or seed.get("initial_cash") or 0
         )
-        initial_cash = (
-            NORMALIZED_RESEARCH_NOTIONAL
-            if policy.research_capital_mode
-            == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
-            else seed_initial_cash
-        )
+        if initial_cash_override is not None:
+            if (
+                policy.research_capital_mode
+                == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+                or initial_cash_override <= 0
+            ):
+                raise ShadowResearchRejected("baseline_initial_cash_override_invalid")
+            initial_cash = float(initial_cash_override)
+        else:
+            initial_cash = (
+                NORMALIZED_RESEARCH_NOTIONAL
+                if policy.research_capital_mode
+                == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+                else seed_initial_cash
+            )
         market_universe_snapshot = self._data_store.get_market_universe_snapshot()
         market_date = str((market_universe_snapshot or {}).get("trade_date") or "")
+        if expected_market_date is not None and market_date != expected_market_date:
+            raise ShadowResearchRejected("baseline_market_date_replay_mismatch")
         provider_name = str((market_universe_snapshot or {}).get("provider_name") or "")
         try:
             ingestion_run = self._db.get_automation_run_sync(
@@ -165,7 +189,11 @@ class AiShadowResearchBaselineMixin:
             symbol = Symbol(symbol_text)
             asset_class_text = "stock"
             asset_class = shadow_research_asset_class(asset_class_text)
-            frame = self._data_store.load_bars(symbol, BarFrequency.DAILY)
+            frame = self._data_store.load_bars(
+                symbol,
+                BarFrequency.DAILY,
+                instrument_type="stock",
+            )
             if frame is None or frame.empty or "timestamp" not in frame.columns:
                 raise ShadowResearchRejected(f"persisted_bars_missing:{symbol}")
             frame = frame.copy()
@@ -205,6 +233,11 @@ class AiShadowResearchBaselineMixin:
         )
         if snapshot.get("data_quality", {}).get("status") != "ok":
             raise ShadowResearchRejected("baseline_dataset_quality_not_complete")
+        if (
+            expected_dataset_snapshot_id is not None
+            and snapshot.get("snapshot_id") != expected_dataset_snapshot_id
+        ):
+            raise ShadowResearchRejected("baseline_dataset_snapshot_replay_mismatch")
         request = BacktestRequest(
             start_date=start_date,
             end_date=market_date,
@@ -232,18 +265,20 @@ class AiShadowResearchBaselineMixin:
                 "authorizes_execution": False,
             }
         else:
-            fee_resolution = self._resolve_reviewed_fee_schedule(
-                start_date=start_date,
-                end_date=market_date,
-                universe=tuple(asset["symbol"] for asset in normalized_assets),
-                asset_classes=tuple(
-                    asset["asset_class"] for asset in normalized_assets
-                ),
-                account_truth_as_of=shadow_research_market_close_as_of(
-                    market_date,
-                    policy.after_close_time,
-                ),
-            )
+            fee_resolution = reviewed_fee_schedule_resolution
+            if fee_resolution is None:
+                fee_resolution = self._resolve_reviewed_fee_schedule(
+                    start_date=start_date,
+                    end_date=market_date,
+                    universe=tuple(asset["symbol"] for asset in normalized_assets),
+                    asset_classes=tuple(
+                        asset["asset_class"] for asset in normalized_assets
+                    ),
+                    account_truth_as_of=shadow_research_market_close_as_of(
+                        market_date,
+                        policy.after_close_time,
+                    ),
+                )
             commission_calc = getattr(fee_resolution, "commission_calc", None)
             fee_schedule_evidence = getattr(fee_resolution, "fee_evidence", None)
             cost_model_reference = str(

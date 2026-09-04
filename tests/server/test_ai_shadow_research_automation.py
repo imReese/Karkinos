@@ -15,7 +15,7 @@ from analytics.strategy_advancement_gate import (
     STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
     StrategyAdvancementGate,
 )
-from core.types import BarFrequency, CommissionType, Symbol
+from core.types import BarFrequency, CommissionType, InstrumentType, Symbol
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
@@ -1063,6 +1063,82 @@ def _service(tmp_path) -> AiShadowResearchAutomationService:
         store=store,
         data_store=DataStore(tmp_path / "market"),
     )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_shadow_status_separates_local_call_day_from_research_market_date(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    run, _ = store.claim_run(
+        market_date="2026-09-03",
+        input_fingerprint="cross-calendar-call-day",
+        baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+        research_context_id="normalized-cross-calendar-call-day",
+        valuation_snapshot_id=None,
+        ledger_cutoff_id=0,
+        now="2026-09-03T15:00:00+00:00",
+    )
+    for call_id, created_at in (
+        ("previous-local-day", "2026-09-03T15:50:00+00:00"),
+        ("current-local-day", "2026-09-03T16:10:00+00:00"),
+        ("current-local-day-provider-free", "2026-09-03T17:10:00+00:00"),
+    ):
+        store.claim_provider_call(
+            call_id=call_id,
+            run_id=str(run["run_id"]),
+            market_date="2026-09-03",
+            call_kind="hypothesis",
+            call_limit=10,
+            now=created_at,
+        )
+        store.finish_provider_call(
+            call_id,
+            status=("failed" if call_id.endswith("provider-free") else "completed"),
+            actual_tokens=(0 if call_id.endswith("provider-free") else 12),
+            failure_code=(
+                "deepseek_peak_pricing_window"
+                if call_id.endswith("provider-free")
+                else None
+            ),
+            now=created_at,
+        )
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        now=lambda: datetime(2026, 9, 4, 20, 0, tzinfo=SHANGHAI),
+    )
+
+    status = service.status()
+
+    assert status["usage"]["market_date"] == "2026-09-03"
+    assert status["usage"]["provider_calls"] == 2
+    assert status["today_provider_activity"] == {
+        "schema_version": "karkinos.ai.provider_local_day_activity.v1",
+        "local_date": "2026-09-04",
+        "timezone": "Asia/Shanghai",
+        "provider_calls": 1,
+        "recorded_call_attempts": 2,
+        "provider_free_rejections": 1,
+        "last_attempt_at": "2026-09-03T17:10:00+00:00",
+        "last_attempt_updated_at": "2026-09-03T17:10:00+00:00",
+        "last_attempt_status": "failed",
+        "last_attempt_failure_code": "deepseek_peak_pricing_window",
+        "last_attempt_kind": "hypothesis",
+        "last_attempt_market_date": "2026-09-03",
+        "last_provider_call_at": "2026-09-03T16:10:00+00:00",
+        "last_provider_call_market_date": "2026-09-03",
+        "read_only": True,
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "authority_effect": "none",
+    }
 
 
 @pytest.mark.unit
@@ -3423,6 +3499,8 @@ async def test_five_round_policy_runs_sequential_generation_backtest_and_critiqu
         "new_candidate_winner_id": None,
         "research_winner_candidate_id": research_winner_candidate_id,
         "account_qualification_status": "not_evaluated",
+        "qualification_run_id": None,
+        "winner_qualification_candidate_id": None,
         "incumbent_strategy_policy": (
             "leave_current_human_approved_strategy_unchanged"
         ),
@@ -4172,6 +4250,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             provider_name="deterministic_fixture",
             data_source="deterministic_fixture",
             adjustment_mode="none",
+            instrument_type=InstrumentType.STOCK,
         )
     market_dates = [timestamp.date().isoformat() for timestamp in bars["timestamp"]]
     calendar_source_fingerprint = "c" * 64

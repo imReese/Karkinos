@@ -1,5 +1,6 @@
 """Karkinos 核心类型定义。"""
 
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 from typing import NewType
@@ -18,6 +19,88 @@ class AssetClass(Enum):
     GOLD = "gold"
     BOND = "bond"
     INDEX = "index"
+
+
+class InstrumentType(Enum):
+    """Canonical instrument identity used by authoritative market facts.
+
+    ``AssetClass.FUND`` remains a broad provider/portfolio grouping for backward
+    compatibility.  It is not sufficient to identify how an instrument trades
+    or how its market facts must be interpreted; ETF and open-end fund are
+    deliberately separate here.
+    """
+
+    STOCK = "stock"
+    ETF = "etf"
+    OPEN_END_FUND = "open_end_fund"
+    GOLD = "gold"
+    BOND = "bond"
+    INDEX = "index"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def from_persisted(cls, value: object) -> "InstrumentType":
+        """Parse a persisted identity without guessing from the symbol."""
+
+        if isinstance(value, cls):
+            return value
+        persisted_value = getattr(value, "value", value)
+        normalized = str(persisted_value or "").strip().lower().replace("-", "_")
+        aliases = {
+            "stock": cls.STOCK,
+            "etf": cls.ETF,
+            "fund": cls.OPEN_END_FUND,
+            "open_end_fund": cls.OPEN_END_FUND,
+            "openend_fund": cls.OPEN_END_FUND,
+            "gold": cls.GOLD,
+            "bond": cls.BOND,
+            "index": cls.INDEX,
+        }
+        instrument_type = aliases.get(normalized)
+        if instrument_type is None:
+            raise ValueError(
+                f"authoritative instrument type is unresolved: {normalized or 'missing'}"
+            )
+        return instrument_type
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentKey:
+    """Exact persisted identity for one market instrument.
+
+    Symbols are not globally unique across instrument namespaces.  Authoritative
+    market facts therefore use this pair instead of passing a bare symbol or a
+    broad ``AssetClass.FUND`` value between layers.
+    """
+
+    symbol: str
+    instrument_type: InstrumentType
+
+    def __post_init__(self) -> None:
+        normalized_symbol = str(self.symbol).strip()
+        if not normalized_symbol:
+            raise ValueError("instrument symbol is missing")
+        if not isinstance(self.instrument_type, InstrumentType):
+            raise TypeError("instrument_type must be InstrumentType")
+        if self.instrument_type is InstrumentType.UNKNOWN:
+            raise ValueError("authoritative instrument type is unresolved")
+        object.__setattr__(self, "symbol", normalized_symbol)
+
+    @classmethod
+    def from_values(
+        cls,
+        symbol: object,
+        instrument_type: object,
+    ) -> "InstrumentKey":
+        parsed_type = (
+            instrument_type
+            if isinstance(instrument_type, InstrumentType)
+            else InstrumentType.from_persisted(instrument_type)
+        )
+        return cls(str(symbol), parsed_type)
+
+    def storage_tuple(self) -> tuple[str, str]:
+        return self.symbol, self.instrument_type.value
 
 
 class BarFrequency(Enum):

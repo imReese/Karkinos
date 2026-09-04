@@ -30,6 +30,7 @@ from server.ai_runtime.provider import (
 )
 from server.ai_runtime.provider_call_window import ProviderSendAdmission
 from server.ai_runtime.provider_connectivity_contracts import (
+    HttpJsonResponse,
     JsonHttpTransport,
     ProviderConnectivitySettings,
     ProviderProbeError,
@@ -285,17 +286,15 @@ class StrategyResearchModelProvider(ProviderAdapter):
         started = self._monotonic()
         try:
             if self._send_admission is not None:
-                self._send_admission.require_allowed()
-            response = self._transport.post_json(
-                url=self._settings.endpoint_url,
-                headers={
-                    "Authorization": f"Bearer {self._settings.api_key}",
-                    "Content-Type": "application/json",
-                    "User-Agent": "Karkinos-Strategy-Research/1",
-                },
-                payload=payload,
-                timeout_seconds=self._timeout_seconds,
-            )
+                send_token = self._send_admission.begin_send(
+                    timeout_seconds=self._timeout_seconds
+                )
+                try:
+                    response = self._post_json(payload)
+                finally:
+                    self._send_admission.finish_send(send_token)
+            else:
+                response = self._post_json(payload)
         except ProviderProbeError as exc:
             if exc.code == "provider_timeout":
                 raise ExternalResearchTimeoutError("provider_timeout") from exc
@@ -407,4 +406,16 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 ),
             ),
             message="Strategy research artifact completed without authority.",
+        )
+
+    def _post_json(self, payload: JsonObject) -> HttpJsonResponse:
+        return self._transport.post_json(
+            url=self._settings.endpoint_url,
+            headers={
+                "Authorization": f"Bearer {self._settings.api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Karkinos-Strategy-Research/1",
+            },
+            payload=payload,
+            timeout_seconds=self._timeout_seconds,
         )

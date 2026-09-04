@@ -28,6 +28,11 @@ from .store import AiAuditStore, IdempotencyConflict
 CAPTURE_CONFIRMATION = "capture_read_only_research_context"
 
 
+def _require_write_open(write_guard: Callable[[], Any] | None) -> None:
+    if callable(write_guard):
+        write_guard()
+
+
 class CaptureEvidenceType(StrEnum):
     PORTFOLIO = "portfolio"
     ACCOUNT_STATE = "account_state"
@@ -237,8 +242,17 @@ class ContextCaptureAuditStore:
         self._path = Path(db_path)
         self._repository = ContextCaptureSqliteRepository(self._path)
 
+    @property
+    def path(self) -> Path:
+        return self._path
+
     def init(self) -> None:
         self._repository.init()
+
+    def capture_guarded(self, **kwargs: Any) -> tuple[Any, ...]:
+        """Delegate one atomic capture to the canonical persistence adapter."""
+
+        return self._repository.capture_guarded(**kwargs)
 
     def create_or_get(
         self,
@@ -393,7 +407,18 @@ class HumanResearchContextCaptureService:
     async def capture(
         self,
         request: HumanContextCaptureRequest,
+        *,
+        write_guard: Callable[[], Any] | None = None,
     ) -> ContextCaptureResult:
+        if callable(write_guard):
+            batch = await self._source.load(request)
+            self._validate_batch(request, batch)
+            return self._capture_guarded_atomically(
+                request,
+                batch=batch,
+                write_guard=write_guard,
+            )
+        _require_write_open(write_guard)
         run, reused = self._capture_store.create_or_get(
             request,
             created_at=self._now(),
@@ -403,6 +428,7 @@ class HumanResearchContextCaptureService:
         if reused and run.evidence_reference_ids:
             return self._resume_from_captured_evidence(request, run)
         if reused:
+            _require_write_open(write_guard)
             run = self._capture_store.mark_running(
                 run.capture_id,
                 updated_at=self._now(),
@@ -413,7 +439,7 @@ class HumanResearchContextCaptureService:
             batch = await self._source.load(request)
             self._validate_batch(request, batch)
             records = tuple(
-                self._evidence_repository.persist(
+                self._persist_guarded_evidence(
                     CanonicalEvidenceRecord.capture(
                         tool_name=projection.tool_name,
                         valuation_snapshot_id=batch.valuation_snapshot_id,
@@ -424,10 +450,12 @@ class HumanResearchContextCaptureService:
                         source_schema_version=projection.source_schema_version,
                         payload=projection.payload,
                         captured_at=run.created_at,
-                    )
+                    ),
+                    write_guard=write_guard,
                 )
                 for projection in batch.projections
             )
+            _require_write_open(write_guard)
             run = self._capture_store.mark_evidence_captured(
                 run.capture_id,
                 evidence_reference_ids=tuple(record.reference_id for record in records),
@@ -438,7 +466,9 @@ class HumanResearchContextCaptureService:
                 records=records,
                 created_at=run.created_at,
             )
+            _require_write_open(write_guard)
             self._context_store.save_context(context)
+            _require_write_open(write_guard)
             run = self._capture_store.mark_completed(
                 run.capture_id,
                 context_snapshot_id=context.snapshot_id,
@@ -454,12 +484,114 @@ class HumanResearchContextCaptureService:
                 reused=reused,
             )
         except Exception as exc:
+            _require_write_open(write_guard)
             self._capture_store.mark_failed(
                 run.capture_id,
                 failure_code=_capture_failure_code(exc),
                 updated_at=self._now(),
             )
             raise
+
+    def _capture_guarded_atomically(
+        self,
+        request: HumanContextCaptureRequest,
+        *,
+        batch: CaptureSourceBatch,
+        write_guard: Callable[[], Any],
+    ) -> ContextCaptureResult:
+        """Commit a guarded capture only if the deadline remains open."""
+
+        paths = {
+            self._capture_store.path.resolve(),
+            self._evidence_repository.path.resolve(),
+            self._context_store.path.resolve(),
+        }
+        if len(paths) != 1:
+            raise RuntimeError("guarded capture stores must share one database")
+        capture_identity = {
+            "idempotency_key": request.idempotency_key,
+            "request_fingerprint": request.fingerprint,
+        }
+        capture_id = f"ai-capture-{content_fingerprint(capture_identity)[:24]}"
+
+        def build_records(created_at: str) -> tuple[CanonicalEvidenceRecord, ...]:
+            return tuple(
+                CanonicalEvidenceRecord.capture(
+                    tool_name=projection.tool_name,
+                    valuation_snapshot_id=batch.valuation_snapshot_id,
+                    ledger_cutoff_id=batch.ledger_cutoff_id,
+                    ledger_fingerprint=batch.ledger_fingerprint,
+                    status=projection.status,
+                    as_of=projection.as_of,
+                    source_schema_version=projection.source_schema_version,
+                    payload=projection.payload,
+                    captured_at=created_at,
+                )
+                for projection in batch.projections
+            )
+
+        def build_context(
+            records: Sequence[CanonicalEvidenceRecord], created_at: str
+        ) -> EvidenceBoundContextSnapshot:
+            return EvidenceContextBuilder().build(
+                account_alias=request.account_alias,
+                records=records,
+                created_at=created_at,
+            )
+
+        row, records, context, reused, completed_existing = (
+            self._capture_store.capture_guarded(
+                capture_id=capture_id,
+                idempotency_key=request.idempotency_key,
+                request_json=canonical_json(request.to_dict()),
+                request_fingerprint=request.fingerprint,
+                running_status=CaptureRunStatus.RUNNING.value,
+                completed_status=CaptureRunStatus.COMPLETED.value,
+                created_at=self._now,
+                updated_at=self._now,
+                write_guard=write_guard,
+                build_records=build_records,
+                record_values=lambda record: {
+                    **record.to_dict(),
+                    "payload_json": canonical_json(record.payload),
+                },
+                build_context=build_context,
+                context_values=lambda value, captured_records: {
+                    "snapshot_id": value.snapshot_id,
+                    "context_fingerprint": value.fingerprint,
+                    "valuation_snapshot_id": value.valuation_snapshot_id,
+                    "ledger_cutoff_id": value.ledger_cutoff_id,
+                    "ledger_fingerprint": value.ledger_fingerprint,
+                    "payload_json": canonical_json(value.to_dict()),
+                    "created_at": value.created_at,
+                    "evidence_reference_ids_json": canonical_json(
+                        [record.reference_id for record in captured_records]
+                    ),
+                },
+                identity_conflict=IdempotencyConflict,
+                evidence_conflict=EvidenceIdentityMismatch,
+            )
+        )
+        run = _capture_run_from_mapping(row)
+        if completed_existing:
+            return self._restore_completed(run, reused=True)
+        if context is None:
+            raise RuntimeError("guarded capture returned no context")
+        return ContextCaptureResult(
+            run=run,
+            context=context,
+            records=tuple(records),
+            reused=reused,
+        )
+
+    def _persist_guarded_evidence(
+        self,
+        record: CanonicalEvidenceRecord,
+        *,
+        write_guard: Callable[[], Any] | None,
+    ) -> CanonicalEvidenceRecord:
+        _require_write_open(write_guard)
+        return self._evidence_repository.persist(record)
 
     def _resume_from_captured_evidence(
         self,

@@ -209,7 +209,7 @@ def mark_position_daily(
     at: datetime | None = None,
 ) -> PositionDailyMark:
     """Mark one position at a price and optional intraday cutoff."""
-    if context.status != "complete" or price is None:
+    if context.status != "complete":
         return PositionDailyMark(
             active_quantity=context.quantity,
             baseline_value=None,
@@ -217,7 +217,7 @@ def mark_position_daily(
             today_change=None,
             today_change_pct=None,
             status="unavailable",
-            source=context.source if price is not None else "latest_price_unavailable",
+            source=context.source,
         )
 
     active_lots = (
@@ -246,10 +246,20 @@ def mark_position_daily(
             source="daily_trade_inventory_conflict",
         )
     active_quantity = max(active_quantity, 0.0)
+    if active_quantity > 0 and price is None:
+        return PositionDailyMark(
+            active_quantity=active_quantity,
+            baseline_value=None,
+            current_value=None,
+            today_change=None,
+            today_change_pct=None,
+            status="unavailable",
+            source="latest_price_unavailable",
+        )
     baseline_value = context.overnight_quantity * float(
         context.previous_close or 0.0
     ) + sum(lot.total_cost for lot in active_lots)
-    current_value = active_quantity * float(price)
+    current_value = active_quantity * float(price or 0.0)
     net_sell_proceeds = sum(lot.net_proceeds for lot in active_sell_lots)
     attributed_value = current_value + net_sell_proceeds
     today_change = attributed_value - baseline_value

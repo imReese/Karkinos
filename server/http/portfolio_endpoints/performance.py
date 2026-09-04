@@ -15,6 +15,9 @@ from server.http.portfolio_endpoints.dependencies import (
     PortfolioPerformanceDependencies,
     PortfolioPerformanceOperations,
 )
+from server.projections.portfolio_read_snapshot_persistence import (
+    portfolio_read_snapshot_for_state,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,12 +74,22 @@ def create_router(
     ) -> list[EquitySeriesPoint]:
         """Build the persisted historical curve in one worker-thread stage."""
 
-        valuation_snapshot = _current_valuation_snapshot(state)
+        valuation_snapshot = _current_valuation_snapshot(
+            state,
+            now=get_shanghai_now(),
+        )
         latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
-        if state.db is None or not hasattr(state.db, "get_ledger_entries_sync"):
+        read_snapshot = portfolio_read_snapshot_for_state(state)
+        if state.db is None or (
+            read_snapshot is None and not hasattr(state.db, "get_ledger_entries_sync")
+        ):
             return []
 
-        sample_entries = state.db.get_ledger_entries_sync(limit=1, offset=0)
+        sample_entries = (
+            read_snapshot.ledger_rows
+            if read_snapshot is not None
+            else state.db.get_ledger_entries_sync(limit=1, offset=0)
+        )
         if not _has_rows(sample_entries):
             return []
 
@@ -104,7 +117,7 @@ def create_router(
             selected_range=selected_range,
             current_point=current_point,
         )
-        if daily_points:
+        if daily_points or read_snapshot is not None:
             return _append_current_equity_series_point(daily_points, current_point)
 
         points = build_equity_series_from_db(
@@ -115,13 +128,14 @@ def create_router(
         series_points = [
             EquitySeriesPoint(
                 timestamp=str(point["timestamp"].isoformat()),
-                total=float(point["total"]),
-                stocks=float(point["stocks"]),
-                funds=float(point["funds"]),
-                others=float(point["others"]),
+                total=None if point["total"] is None else float(point["total"]),
+                stocks=None if point["stocks"] is None else float(point["stocks"]),
+                funds=None if point["funds"] is None else float(point["funds"]),
+                others=None if point["others"] is None else float(point["others"]),
                 cash=float(point["cash"]),
                 unrealized_pnl=None,
-                quote_status="live",
+                quote_status="missing" if point["total"] is None else "live",
+                missing_price_symbols=list(point.get("missing_price_symbols") or []),
             )
             for point in points
         ]
@@ -137,6 +151,15 @@ def create_router(
     async def get_equity_curve() -> list[EquityPoint]:
         """获取权益曲线。"""
         state = dependencies.get_state()
+        read_snapshot = portfolio_read_snapshot_for_state(state)
+        if read_snapshot is not None:
+            series = await get_equity_curve_series("all")
+            return [
+                EquityPoint(timestamp=point.timestamp, equity=float(point.total))
+                for point in series
+                if point.total is not None
+            ]
+
         scheduler = state.scheduler
         portfolio = scheduler.portfolio if scheduler else None
 
@@ -174,7 +197,10 @@ def create_router(
         state = dependencies.get_state()
         selected_range = str(range).lower()
         if selected_range == "1d":
-            valuation_snapshot = _current_valuation_snapshot(state)
+            valuation_snapshot = _current_valuation_snapshot(
+                state,
+                now=get_shanghai_now(),
+            )
             latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
             portfolio, instruments = _resolve_projection_sources(
                 state,

@@ -87,12 +87,24 @@ export const overviewCopyZh = {
       `解除条件：${condition}。仅查看或确认不会清除此状态。`,
     dataResolutionCondition:
       '更新且已确认的行情或净值覆盖全部当前持仓，并绑定同一估值与流水范围；仅查看不会清除。',
+    quoteResolutionCondition:
+      '对列出的普通行情标的完成显式行情采集，并由更新且已确认的行情替代当前阻断证据。',
+    confirmedFundNavResolutionCondition:
+      '目标交易日的基金确认净值已发布并通过“同步确认净值”记录；普通行情刷新和盘中估算都不能清除。',
+    mixedDataResolutionCondition:
+      '普通行情标的完成显式行情采集，同时基金取得目标交易日确认净值；两条采集通道都完成后再重建全账户权威估值。',
     strategyNoLinkedFillsResolution:
       '无需处理：只有完成对账的成交被明确关联到策略证据后，系统才会展示策略贡献。',
     strategyEvidenceResolution:
       '信号、复核、订单、成交、流水记录与估值引用形成同一条可审计证据链。',
     dataUsable: '行情与净值可用于解读。',
     dataNeedsReview: '行情或净值需要复核。',
+    stockDataNeedsReview: '股票行情证据需要复核。',
+    mixedAssetDataNeedsReview: '股票行情与基金净值分别需要复核。',
+    confirmedFundNavNeedsReview:
+      '基金确认净值待处理；不依赖账户总权益的股票研究可继续。',
+    confirmedFundNavReviewDetail: (count: number) =>
+      `${count} 个基金持仓仍缺目标交易日确认净值。基金缺口不阻断不依赖账户总权益的股票研究，但全账户权威估值与风控仍被阻断，不能据此生成订单。`,
     dataReviewLoading: '正在读取当前持仓证据。',
     dataReviewUnavailable: '当前持仓证据暂不可用；账户解读继续阻断。',
     dataReviewIdentityBlocked: '账户估值或流水范围不完整；需要先恢复证据关联。',
@@ -121,6 +133,13 @@ export const overviewCopyZh = {
     strategyDecisionUnavailable: '策略候选信号暂不可用',
     strategyCandidateEmptyDetail:
       '当前没有买入、卖出、持有或再平衡信号进入队列。',
+    accountRecommendationNoAction: '今日账户操作：无操作',
+    accountRecommendationNoActionDetail:
+      '已完成当日晋级策略扫描，未产生账户操作信号。',
+    accountRecommendationBlocked: '今日账户操作尚未就绪',
+    accountRecommendationUnavailable: '今日账户建议证据不可用',
+    accountRecommendationReason: (reasons: string) =>
+      `阻断证据：${reasons || '尚未形成可核验的账户建议'}。`,
     researchOperationCandidate:
       '研究型量化操作候选（不可执行，账户资格未评估）',
     researchOperationDetail: (summary: string) =>

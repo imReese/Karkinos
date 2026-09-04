@@ -154,6 +154,12 @@ test('names daily financial preflight blockers without exposing private facts', 
 
 test('formats unknown Chinese snake-case values as generic review labels', () => {
   expect(formatPublicStatus('new_backend_gate_state', 'zh')).toBe('待确认状态');
+  expect(
+    formatPublicStatus('qualification_valuation_or_ledger_not_complete', 'zh'),
+  ).toBe('当前估值或账本证据不完整');
+  expect(formatPublicStatus('promoted_strategy_scan_missing', 'zh')).toBe(
+    '今天的已晋级策略扫描尚未完成',
+  );
   expect(formatPublicCode('new_backend_required_action', 'zh')).toBe(
     '待人工复核项',
   );

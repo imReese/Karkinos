@@ -540,6 +540,9 @@ def test_manual_trade_replay_fails_closed_when_valuation_identity_drifts(
     uow.record(command)
 
     with sqlite3.connect(path) as conn:
+        # Simulate out-of-band corruption despite the production immutability
+        # guard so replay drift handling remains directly covered.
+        conn.execute("DROP TRIGGER valuation_snapshots_update_guard")
         conn.execute(
             "UPDATE valuation_snapshots SET status = 'blocked' WHERE snapshot_id = ?",
             ("test-1",),

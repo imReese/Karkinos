@@ -23,7 +23,9 @@ def _normalize_asset_class(value: Any) -> str:
     if value is None:
         return "other"
     normalized = getattr(value, "value", value)
-    normalized = str(normalized).strip().lower()
+    normalized = str(normalized).strip().lower().replace("-", "_")
+    if normalized in {"open_end_fund", "openend_fund"}:
+        return "fund"
     if normalized in {"stock", "fund", "etf", "gold", "bond", "cash"}:
         return normalized
     return "other"

@@ -18,6 +18,8 @@ class MarketQuote(BaseModel):
 class WatchlistItem(BaseModel):
     symbol: str
     asset_class: str
+    instrument_type: str | None = None
+    identity_provenance: str | None = None
     name: str = ""
     is_holding: bool = False
     quantity: float | None = None
@@ -31,6 +33,17 @@ class WatchlistItem(BaseModel):
 class WatchlistCreateRequest(BaseModel):
     symbol: str
     asset_class: str = "stock"
+    instrument_type: (
+        Literal[
+            "stock",
+            "etf",
+            "open_end_fund",
+            "gold",
+            "bond",
+            "index",
+        ]
+        | None
+    ) = None
 
 
 class KlineBar(BaseModel):
@@ -45,6 +58,8 @@ class KlineBar(BaseModel):
 class MarketHealthQuote(BaseModel):
     symbol: str
     asset_class: str
+    instrument_type: str | None = None
+    identity_provenance: str | None = None
     name: str | None = None
     display_name: str | None = None
     timestamp: str | None = None

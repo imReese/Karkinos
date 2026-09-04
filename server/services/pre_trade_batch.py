@@ -8,7 +8,7 @@ from decimal import ROUND_FLOOR, Decimal
 from typing import Any
 
 from core.events import OrderIntentEvent, RiskDecisionEvent
-from core.types import AssetClass, OrderSide, Symbol
+from core.types import AssetClass, InstrumentKey, OrderSide, Symbol
 from risk.pre_trade import (
     ContextProvider,
     PreTradePolicy,
@@ -52,6 +52,7 @@ def run_pre_trade_risk_batch(
     resolved_policy = policy or default_pre_trade_batch_policy(context, config=config)
     bound_evidence = dict(evidence_binding or {})
     results: list[dict[str, Any]] = []
+    pending_writes: list[tuple[OrderIntentEvent, RiskDecisionEvent]] = []
     skipped_count = 0
 
     for task in selected_tasks:
@@ -81,6 +82,8 @@ def run_pre_trade_risk_batch(
             context=context,
             policy=resolved_policy,
         )
+        preview_reasons = preview.get("reasons")
+        preview_metadata = preview.get("metadata")
         decision_id = f"RISK-BATCH-{uuid.uuid4().hex[:10]}"
         decision = RiskDecisionEvent(
             timestamp=intent.timestamp,
@@ -89,18 +92,22 @@ def run_pre_trade_risk_batch(
             passed=bool(preview["passed"]),
             symbol=intent.symbol,
             side=intent.side,
-            reasons=list(preview["reasons"]),
+            reasons=(
+                list(preview_reasons) if isinstance(preview_reasons, list) else []
+            ),
             resulting_order_id=None,
             severity=str(preview["severity"]),
             metadata={
-                **dict(preview["metadata"]),
+                **(
+                    dict(preview_metadata) if isinstance(preview_metadata, dict) else {}
+                ),
                 "batch_runner": "decision_pre_trade_batch",
                 "does_not_create_order": True,
                 "default_execution_mode": "manual_confirmation",
                 "evidence_binding": bound_evidence,
             },
         )
-        db.save_risk_decision_sync(intent=intent, decision=decision)
+        pending_writes.append((intent, decision))
         results.append(
             {
                 "action_id": task.get("id"),
@@ -111,6 +118,67 @@ def run_pre_trade_risk_batch(
                 "reasons": decision.reasons,
             }
         )
+
+    commit_result: dict[str, Any] = {
+        "status": "committed",
+        "write_count": 0,
+        "event_count": 0,
+        "blockers": [],
+    }
+    if pending_writes:
+        writer = getattr(db, "commit_pre_trade_risk_batch_sync", None)
+        if not callable(writer):
+            commit_result = {
+                "status": "blocked",
+                "write_count": 0,
+                "event_count": 0,
+                "blockers": [{"code": "pre_trade_risk_batch_uow_unavailable"}],
+            }
+        else:
+            commit_result = writer(
+                writes=pending_writes,
+                evidence_binding=bound_evidence,
+            )
+    if commit_result.get("status") != "committed":
+        blockers = list(commit_result.get("blockers") or [])
+        blocker_codes = list(
+            dict.fromkeys(
+                str(blocker.get("code") or "pre_trade_risk_evidence_drift")
+                for blocker in blockers
+            )
+        )
+        blocked_results = [
+            (
+                {
+                    **item,
+                    "status": "skipped",
+                    "passed": None,
+                    "decision_id": None,
+                    "reasons": blocker_codes,
+                }
+                if item.get("status") in _CHECKED_RISK_STATUSES
+                else item
+            )
+            for item in results
+        ]
+        return {
+            "schema_version": "karkinos.pre_trade_risk_batch.v1",
+            "status": "blocked_by_evidence_drift",
+            "processed_count": 0,
+            "passed_count": 0,
+            "blocked_count": 0,
+            "skipped_count": len(selected_tasks),
+            "candidate_count": len(selected_tasks),
+            "does_not_create_order": True,
+            "does_not_submit_broker_order": True,
+            "does_not_write_ledger": True,
+            "risk_decision_writes_performed": False,
+            "database_writes_performed": False,
+            "default_execution_mode": "manual_confirmation",
+            "evidence_binding": bound_evidence,
+            "blockers": blockers,
+            "results": blocked_results,
+        }
 
     passed_count = sum(1 for item in results if item.get("status") == "passed")
     blocked_count = sum(1 for item in results if item.get("status") == "blocked")
@@ -127,6 +195,7 @@ def run_pre_trade_risk_batch(
         "does_not_submit_broker_order": True,
         "does_not_write_ledger": True,
         "risk_decision_writes_performed": processed_count > 0,
+        "database_writes_performed": processed_count > 0,
         "default_execution_mode": "manual_confirmation",
         "evidence_binding": bound_evidence,
         "results": results,
@@ -191,6 +260,9 @@ def _intent_from_action_task(
     if timestamp is None:
         return {"status": "skipped", "reason": "invalid_action_timestamp"}
     asset_class = _asset_class(task.get("asset_class"))
+    instrument_type = _instrument_type(task)
+    if instrument_type is None:
+        return {"status": "skipped", "reason": "missing_instrument_identity"}
     intent = OrderIntentEvent(
         timestamp=timestamp,
         intent_id=f"ACTION-{task.get('id')}-BATCH-RISK",
@@ -212,6 +284,7 @@ def _intent_from_action_task(
             ),
             "effective_target_weight": task.get("target_weight"),
             "portfolio_allocation": dict(task.get("allocation_evidence") or {}),
+            "instrument_type": instrument_type,
             "does_not_create_order": True,
         },
     )
@@ -274,6 +347,18 @@ def _asset_class(value: Any) -> AssetClass | None:
         if item.value == normalized:
             return item
     return None
+
+
+def _instrument_type(task: dict[str, Any]) -> str | None:
+    try:
+        return InstrumentKey.from_values(
+            task.get("symbol"),
+            task.get("instrument_type")
+            or task.get("asset_type")
+            or task.get("asset_class"),
+        ).instrument_type.value
+    except (TypeError, ValueError):
+        return None
 
 
 def _position_quantity(position: Any) -> Decimal:

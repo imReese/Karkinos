@@ -15,7 +15,7 @@ export type TodayQueueTone = 'success' | 'warning' | 'danger' | 'neutral';
 export type TodayQueuePriority = 'first' | 'watch' | 'normal';
 
 export type TodayQueueItem = {
-  key: 'operations' | 'data' | 'decision' | 'orders' | 'strategy';
+  key: 'operations' | 'data' | 'decision' | 'research' | 'orders' | 'strategy';
   title: string;
   detail: string;
   meta: string;

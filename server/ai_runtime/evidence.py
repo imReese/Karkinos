@@ -196,6 +196,10 @@ class CanonicalEvidenceRepository:
         self._path = Path(db_path)
         self._repository = CanonicalEvidenceSqliteRepository(self._path)
 
+    @property
+    def path(self) -> Path:
+        return self._path
+
     def init(self) -> None:
         self._repository.init()
 

@@ -233,7 +233,7 @@ class SignalJournalRepository(SQLiteRepository):
         strategy_id: str,
         timestamp: str,
         asset_class: str,
-    ) -> None:
+    ) -> int:
         """同步写入或更新待执行任务，避免重复生成。"""
         now = self._now().isoformat()
         with sqlite3.connect(self._path) as conn:
@@ -294,6 +294,9 @@ class SignalJournalRepository(SQLiteRepository):
                     payload=action_task_event_payload(row),
                 )
             conn.commit()
+        if row is None:
+            raise RuntimeError("action_task_upsert_did_not_return_identity")
+        return int(row["id"])
 
     async def get_action_tasks(
         self, statuses: list[str] | None = None, limit: int = 20, offset: int = 0

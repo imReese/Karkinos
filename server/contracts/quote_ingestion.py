@@ -10,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from core.types import InstrumentType
+
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _MIN_QUOTE_INSTANT = datetime.min.replace(tzinfo=timezone.utc)
 PUBLISHED_QUOTE_RUN_STATUSES = frozenset({"success"})
@@ -60,6 +62,7 @@ class QuoteIngestionCommand:
     exchange: str | None = None
     market: str | None = None
     source: str | None = None
+    identity_provenance: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     daily_close_price: float | None = None
     daily_close_date: str | None = None
@@ -70,6 +73,23 @@ class QuoteIngestionCommand:
             raise ValueError("quote ingestion symbol must not be empty")
         if not self.asset_type.strip():
             raise ValueError("quote ingestion asset_type must not be empty")
+        raw_asset_type = self.asset_type.strip().lower().replace("-", "_")
+        try:
+            canonical_type = InstrumentType.from_persisted(raw_asset_type)
+        except ValueError as exc:
+            raise ValueError("quote ingestion instrument type is unresolved") from exc
+        object.__setattr__(self, "asset_type", canonical_type.value)
+        identity_provenance = (
+            "legacy_fund_compatibility"
+            if raw_asset_type == "fund"
+            else self.identity_provenance or "explicit_canonical"
+        )
+        object.__setattr__(self, "identity_provenance", identity_provenance)
+        object.__setattr__(
+            self,
+            "metadata",
+            {**self.metadata, "identity_provenance": identity_provenance},
+        )
         if not self.quote_timestamp.strip():
             raise ValueError("quote ingestion timestamp must not be empty")
         _require_iso_datetime("quote_timestamp", self.quote_timestamp)
@@ -101,10 +121,16 @@ class QuoteIngestionCommand:
         return asdict(self)
 
     def valuation_row(self) -> dict[str, Any]:
+        broad_asset_class = (
+            "fund"
+            if self.asset_type == InstrumentType.OPEN_END_FUND.value
+            else self.asset_type
+        )
         return {
             "symbol": self.symbol,
             "asset_type": self.asset_type,
-            "asset_class": self.asset_type,
+            "instrument_type": self.asset_type,
+            "asset_class": broad_asset_class,
             "price": self.price,
             "previous_close": self.previous_close,
             "previous_close_date": self.previous_close_date,
@@ -125,6 +151,7 @@ class QuoteIngestionCommand:
             "nav_date": self.nav_date,
             "fetch_run_id": self.fetch_run_id,
             "display_name": self.display_name,
+            "identity_provenance": self.identity_provenance,
             "metadata": dict(self.metadata),
         }
 

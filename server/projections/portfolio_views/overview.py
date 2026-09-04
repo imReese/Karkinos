@@ -197,22 +197,35 @@ def portfolio_construction_recommendations(
             continue
 
         risk_gate_status = str(action.risk_gate_status or "not_checked")
+        valuation_available = (
+            position.actual_weight is not None
+            and position.target_weight is not None
+            and position.drift is not None
+        )
         actionable = (
-            account_truth_gate_status == "pass" and risk_gate_status == "passed"
+            valuation_available
+            and account_truth_gate_status == "pass"
+            and risk_gate_status == "passed"
         )
         required_actions = portfolio_construction_required_actions(
             account_truth_gate_status=account_truth_gate_status,
             risk_gate_status=risk_gate_status,
         )
+        if not valuation_available:
+            required_actions.insert(0, "refresh_market_evidence_before_rebalance")
         recommendations.append(
             PortfolioConstructionRecommendation(
                 symbol=position.symbol,
                 name=position.name,
                 asset_class=position.asset_class,
                 direction=action.direction,
-                status=portfolio_construction_status(
-                    account_truth_gate_status=account_truth_gate_status,
-                    risk_gate_status=risk_gate_status,
+                status=(
+                    portfolio_construction_status(
+                        account_truth_gate_status=account_truth_gate_status,
+                        risk_gate_status=risk_gate_status,
+                    )
+                    if valuation_available
+                    else "blocked"
                 ),
                 actionable=actionable,
                 actual_weight=position.actual_weight,
@@ -221,10 +234,14 @@ def portfolio_construction_recommendations(
                 account_truth_gate_status=account_truth_gate_status,
                 risk_gate_status=risk_gate_status,
                 required_actions=required_actions,
-                rationale=portfolio_construction_rationale(
-                    account_truth_gate_status=account_truth_gate_status,
-                    risk_gate_status=risk_gate_status,
-                    actionable=actionable,
+                rationale=(
+                    portfolio_construction_rationale(
+                        account_truth_gate_status=account_truth_gate_status,
+                        risk_gate_status=risk_gate_status,
+                        actionable=actionable,
+                    )
+                    if valuation_available
+                    else "持仓行情证据不完整，组合权重与偏离不可用，不能进入执行候选。"
                 ),
                 source_action_task_id=action.id,
             )

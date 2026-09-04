@@ -39,6 +39,7 @@ from server.projections.portfolio_views.intraday_series import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
+from server.projections.quote_status import quote_valuation_status
 from server.services.daily_performance import (
     build_position_daily_context,
     mark_position_daily,
@@ -101,6 +102,11 @@ def synthetic_intraday_equity_series_from_current_quotes(
             latest_quote.get("asset_class")
             or getattr(getattr(instrument, "asset_class", None), "value", None)
         )
+        instrument_type = _synthetic_instrument_type(
+            getattr(getattr(instrument, "instrument_type", None), "value", None)
+            or getattr(getattr(instrument, "asset_class", None), "value", None)
+            or asset_class
+        )
         latest_price = latest_quote.get("price")
         latest_price_value = (
             float(latest_price) if latest_price not in {None, ""} else None
@@ -109,6 +115,8 @@ def synthetic_intraday_equity_series_from_current_quotes(
             state,
             symbol,
             latest_quote if latest_quote else None,
+            instrument_type=instrument_type,
+            as_of=now,
         )
         quote_timestamp = _parse_quote_timestamp(latest_quote.get("timestamp"))
         same_day_buy_lots = _same_day_buy_lots(
@@ -151,7 +159,20 @@ def synthetic_intraday_equity_series_from_current_quotes(
 
         holdings.append(
             {
+                "symbol": symbol,
                 "asset_class": asset_class,
+                "valuation_available": (
+                    (
+                        bool(getattr(position, "valuation_available", True))
+                        and bool(latest_quote)
+                        and quote_valuation_status(latest_quote) == "complete"
+                    )
+                    or (
+                        is_economically_zero_quantity(quantity)
+                        and bool(same_day_sell_lots)
+                        and daily_context.status == "complete"
+                    )
+                ),
                 "quantity": quantity,
                 "avg_cost": float(getattr(position, "avg_cost", 0.0) or 0.0),
                 "daily_context": daily_context,
@@ -189,7 +210,26 @@ def synthetic_intraday_equity_series_from_current_quotes(
         stocks_daily_change = 0.0
         funds_daily_change = 0.0
         others_daily_change = 0.0
+        lane_value_available = {
+            "stocks": True,
+            "funds": True,
+            "others": True,
+        }
+        lane_change_available = dict(lane_value_available)
+        missing_price_symbols: set[str] = set()
         for holding in holdings:
+            lane = (
+                "stocks"
+                if holding["asset_class"] == "stock"
+                else (
+                    "funds" if holding["asset_class"] in {"fund", "etf"} else "others"
+                )
+            )
+            if not holding["valuation_available"]:
+                lane_value_available[lane] = False
+                lane_change_available[lane] = False
+                missing_price_symbols.add(holding["symbol"])
+                continue
             daily_context = holding["daily_context"]
             price = price_at_tick(
                 daily_context,
@@ -197,44 +237,72 @@ def synthetic_intraday_equity_series_from_current_quotes(
                 quote_points=holding["price_points"],
             )
             mark = mark_position_daily(daily_context, price=price, at=tick)
-            if mark.current_value is None or mark.today_change is None:
+            if mark.current_value is None:
+                lane_value_available[lane] = False
+                lane_change_available[lane] = False
+                missing_price_symbols.add(holding["symbol"])
                 continue
             position_value = mark.current_value
             cost_basis = mark.active_quantity * holding["avg_cost"]
             unrealized_pnl += position_value - cost_basis
             daily_change = mark.today_change
+            if daily_change is None:
+                lane_change_available[lane] = False
 
             if holding["asset_class"] == "stock":
                 stocks_value += position_value
-                stocks_daily_change += daily_change
+                if daily_change is not None:
+                    stocks_daily_change += daily_change
             elif holding["asset_class"] in {"fund", "etf"}:
                 funds_value += position_value
-                funds_daily_change += daily_change
+                if daily_change is not None:
+                    funds_daily_change += daily_change
             else:
                 others_value += position_value
-                others_daily_change += daily_change
+                if daily_change is not None:
+                    others_daily_change += daily_change
 
+        all_values_available = all(lane_value_available.values())
+        all_changes_available = all(lane_change_available.values())
         total_daily_change = (
             stocks_daily_change + funds_daily_change + others_daily_change
+            if all_changes_available
+            else None
         )
         points.append(
             EquitySeriesPoint(
                 timestamp=tick.isoformat(),
-                total=tick_cash + stocks_value + funds_value + others_value,
-                stocks=stocks_value,
-                funds=funds_value,
-                others=others_value,
+                total=(
+                    tick_cash + stocks_value + funds_value + others_value
+                    if all_values_available
+                    else None
+                ),
+                stocks=(stocks_value if lane_value_available["stocks"] else None),
+                funds=funds_value if lane_value_available["funds"] else None,
+                others=others_value if lane_value_available["others"] else None,
                 cash=tick_cash,
-                unrealized_pnl=unrealized_pnl,
+                unrealized_pnl=unrealized_pnl if all_values_available else None,
                 total_daily_change=total_daily_change,
-                stocks_daily_change=stocks_daily_change,
-                funds_daily_change=funds_daily_change,
-                others_daily_change=others_daily_change,
+                stocks_daily_change=(
+                    stocks_daily_change if lane_change_available["stocks"] else None
+                ),
+                funds_daily_change=(
+                    funds_daily_change if lane_change_available["funds"] else None
+                ),
+                others_daily_change=(
+                    others_daily_change if lane_change_available["others"] else None
+                ),
                 quote_status=quote_status,
+                missing_price_symbols=sorted(missing_price_symbols),
             )
         )
 
     return points
+
+
+def _synthetic_instrument_type(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    return "open_end_fund" if normalized in {"fund", "openend_fund"} else normalized
 
 
 def should_fetch_intraday_equity_curve(now: datetime) -> bool:
@@ -246,7 +314,8 @@ def series_point_from_intraday(
     quote_status: str = "live",
     missing_price_symbols: list[str] | None = None,
 ) -> EquitySeriesPoint:
-    if is_missing_equity_quote_status(quote_status):
+    lane_aware = "lane_availability" in point
+    if is_missing_equity_quote_status(quote_status) and not lane_aware:
         return EquitySeriesPoint(
             timestamp=str(point["timestamp"].isoformat()),
             total=None,
@@ -263,14 +332,21 @@ def series_point_from_intraday(
             missing_price_symbols=sorted(set(missing_price_symbols or [])),
         )
 
+    def optional_float(value):
+        return None if value is None else float(value)
+
+    timestamp = point["timestamp"]
+    timestamp_text = (
+        timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp)
+    )
     return EquitySeriesPoint(
-        timestamp=str(point["timestamp"].isoformat()),
-        total=float(point["total"]),
-        stocks=float(point["stocks"]),
-        funds=float(point["funds"]),
-        others=float(point["others"]),
+        timestamp=timestamp_text,
+        total=optional_float(point.get("total")),
+        stocks=optional_float(point.get("stocks")),
+        funds=optional_float(point.get("funds")),
+        others=optional_float(point.get("others")),
         cash=float(point["cash"]),
-        unrealized_pnl=float(point["unrealized_pnl"]),
+        unrealized_pnl=optional_float(point.get("unrealized_pnl")),
         total_daily_change=(
             None
             if point.get("total_daily_change") is None
@@ -292,7 +368,10 @@ def series_point_from_intraday(
             else float(point["others_daily_change"])
         ),
         quote_status=quote_status,
-        missing_price_symbols=sorted(set(missing_price_symbols or [])),
+        missing_price_symbols=sorted(
+            set(missing_price_symbols or [])
+            | set(point.get("missing_price_symbols") or [])
+        ),
     )
 
 

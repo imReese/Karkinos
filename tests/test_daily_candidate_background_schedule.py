@@ -380,6 +380,114 @@ def test_background_loop_waits_for_collector_after_daily_snapshot_roll_forward(
     assert len(preparation_runs) == 1
 
 
+def test_background_loop_bounds_polling_and_observes_runtime_interval_changes(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    config = SimpleNamespace(live_poll_interval=3600)
+    observed_intervals: list[float] = []
+
+    async def update_interval_then_stop(interval: float) -> None:
+        observed_intervals.append(interval)
+        if len(observed_intervals) == 1:
+            config.live_poll_interval = 7
+            return
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(
+            run_daily_decision_evidence_automation_loop(
+                state=SimpleNamespace(db=db, config=config),
+                interval_seconds=3600,
+                clock=lambda: datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc),
+                sleep=update_interval_then_stop,
+            )
+        )
+
+    assert observed_intervals == [60.0, 7.0]
+
+
+def test_oversized_poll_interval_cannot_skip_the_decision_window(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "daily-candidate-preparation:fixture",
+            "run_type": DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
+            "run_date": RUN_DATE,
+            "status": "ready_for_window_time_evidence",
+            "execution_mode": "provider_free_preparation_only",
+            "started_at": PREPARATION_TIME.isoformat(),
+            "finished_at": PREPARATION_TIME.isoformat(),
+            "source_ref": None,
+            "payload": {},
+        }
+    )
+    run_calls = 0
+
+    class FakeService:
+        async def run_once(self, *, expected_plan_date):
+            nonlocal run_calls
+            run_calls += 1
+            assert expected_plan_date == RUN_DATE
+            return {
+                "run_id": "daily-candidate:bounded-poll",
+                "plan_date": RUN_DATE,
+                "status": "no_candidates",
+                "decision_outcome": "no_action",
+                "input_fingerprint": "a" * 64,
+                "no_action_reasons": ["no_strategy_candidate"],
+                "manual_ticket_candidate_count": 0,
+            }
+
+        async def _send_no_action_notification(self, *, result):
+            assert result["decision_outcome"] == "no_action"
+            return {"status": "not_configured", "sent": False}
+
+    monkeypatch.setattr(
+        automation_module,
+        "build_daily_decision_evidence_automation_service",
+        lambda state: FakeService(),
+    )
+    current_time = {"value": datetime(2026, 7, 1, 1, 34, 59, tzinfo=timezone.utc)}
+    observed_intervals: list[float] = []
+
+    async def advance_once_then_stop(interval: float) -> None:
+        observed_intervals.append(interval)
+        if len(observed_intervals) == 1:
+            current_time["value"] += timedelta(seconds=interval)
+            return
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(
+            run_daily_decision_evidence_automation_loop(
+                state=SimpleNamespace(
+                    db=db,
+                    config=SimpleNamespace(live_poll_interval=3600),
+                ),
+                interval_seconds=3600,
+                clock=lambda: current_time["value"],
+                sleep=advance_once_then_stop,
+            )
+        )
+
+    assert observed_intervals == [60.0, 60.0]
+    assert current_time["value"] == datetime(2026, 7, 1, 1, 35, 59, tzinfo=timezone.utc)
+    assert run_calls == 1
+    attempts = db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
+        run_date=RUN_DATE,
+    )
+    assert len(attempts) == 1
+
+
 def test_background_preparation_contract_drift_fails_closed_without_retry(
     tmp_path,
     monkeypatch,

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, InstrumentType, Symbol
 from data.manager import build_sources
 from server.services.market_hours import get_shanghai_now
 from server.services.market_quote_ingestion import (
@@ -122,10 +122,26 @@ def _replay_fund_nav_result(
     )
 
 
-def _is_fund_asset_class(asset_class: AssetClass | str) -> bool:
-    if isinstance(asset_class, AssetClass):
-        return asset_class is AssetClass.FUND
-    return str(asset_class).strip().lower() in {"fund", "etf"}
+def _open_end_fund_symbols(
+    watchlist: list[tuple[Symbol, InstrumentType | AssetClass | str]],
+) -> list[str]:
+    """Select only explicit open-end funds; broad FUND is not authoritative."""
+
+    symbols: list[str] = []
+    for symbol, raw_identity in watchlist:
+        if isinstance(raw_identity, InstrumentType):
+            instrument_type = raw_identity
+        elif isinstance(raw_identity, AssetClass):
+            if raw_identity is AssetClass.FUND:
+                raise ValueError(
+                    f"canonical fund instrument type is required for {symbol}"
+                )
+            instrument_type = InstrumentType.from_persisted(raw_identity.value)
+        else:
+            instrument_type = InstrumentType.from_persisted(raw_identity)
+        if instrument_type is InstrumentType.OPEN_END_FUND:
+            symbols.append(str(symbol))
+    return symbols
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -252,6 +268,7 @@ def _normalize_snapshot(
     return {
         "symbol": symbol,
         "asset_class": AssetClass.FUND.value,
+        "instrument_type": InstrumentType.OPEN_END_FUND.value,
         "price": float(price),
         "volume": (
             None
@@ -286,7 +303,7 @@ def _persist_fund_quote(
 ) -> None:
     command = build_quote_ingestion_command(
         symbol=str(quote["symbol"]),
-        asset_type=AssetClass.FUND.value,
+        asset_type=InstrumentType.OPEN_END_FUND.value,
         snapshot=quote,
         quote_source=str(quote["quote_source"]),
         provider_name=str(quote["provider_name"]),
@@ -303,7 +320,7 @@ def _persist_fund_quote(
 def refresh_fund_nav_quotes(
     config: Any,
     db: Any,
-    watchlist: list[tuple[Symbol, AssetClass]],
+    watchlist: list[tuple[Symbol, InstrumentType | AssetClass | str]],
     latest_quotes: dict[str, dict[str, Any]],
     *,
     now: datetime | None = None,
@@ -327,11 +344,7 @@ def refresh_fund_nav_quotes(
             raise ValueError("invalid confirmed fund NAV target date") from exc
     normalized_request_id, request_run_id = _request_run_id(request_id)
     result = FundNavSyncResult(request_id=normalized_request_id)
-    fund_symbols = [
-        str(symbol)
-        for symbol, asset_class in watchlist
-        if _is_fund_asset_class(asset_class)
-    ]
+    fund_symbols = _open_end_fund_symbols(watchlist)
     if not fund_symbols:
         return result
 
@@ -359,7 +372,7 @@ def refresh_fund_nav_quotes(
             persisted_reader = getattr(db, "get_latest_quote_sync", None)
             try:
                 current_quote = (
-                    persisted_reader(symbol, asset_type="fund")
+                    persisted_reader(symbol, asset_type="open_end_fund")
                     if callable(persisted_reader)
                     else None
                 )
@@ -391,7 +404,7 @@ def refresh_fund_nav_quotes(
                 started_at=current.isoformat(),
                 trigger="fund_nav_sync",
                 provider=str(getattr(config, "data_source", "akshare") or "akshare"),
-                asset_type=AssetClass.FUND.value,
+                asset_type=InstrumentType.OPEN_END_FUND.value,
                 symbol_count=len(due_symbols),
                 status="running",
                 metadata={
@@ -581,6 +594,7 @@ def refresh_fund_nav_quotes(
             "volume": quote["volume"],
             "timestamp": quote["timestamp"],
             "asset_class": quote["asset_class"],
+            "instrument_type": quote["instrument_type"],
             "quote_source": quote["quote_source"],
             "provider_name": quote["provider_name"],
             "quote_status": quote["quote_status"],

@@ -144,11 +144,18 @@ async def lifespan(app: FastAPI):
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
     from server.composition.ai_application_services import (
-        build_strategy_research_write_service,
+        build_shadow_research_qualification_service,
+    )
+    from server.composition.ai_shadow_research_automation import (
+        compose_ai_shadow_research_job_scheduler,
+        initialize_ai_shadow_research_qualification_persistence,
     )
     from server.config import BrokerStatementCollectorConfig, ServerConfig
     from server.services.ai_shadow_research_automation import (
         run_ai_shadow_research_automation_loop,
+    )
+    from server.services.ai_shadow_research_job_scheduler import (
+        AiShadowResearchJobScheduler,
     )
     from server.services.daily_decision_evidence_automation import (
         DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
@@ -202,6 +209,7 @@ async def lifespan(app: FastAPI):
                 migrated_count,
             )
     state.db = db
+    initialize_ai_shadow_research_qualification_persistence(state)
     try:
         db.publish_current_valuation_snapshot_sync()
     except Exception:
@@ -289,17 +297,18 @@ async def lifespan(app: FastAPI):
             ),
             name="local-broker-statement-collector",
         )
-    # This loop is inert until an owner-authorized research-only policy exists.
-    # It remains independent of live monitoring because it reads persisted
-    # after-close evidence and has no execution authority.
+    # The API process performs only provider-free qualification and durable
+    # enqueue.  The supervised research-worker is the sole automatic external
+    # provider execution boundary; neither process has execution/capital authority.
     shadow_research_task = asyncio.create_task(
         run_ai_shadow_research_automation_loop(
             state=state,
-            research_service_builder=lambda external: (
-                build_strategy_research_write_service(
-                    state,
-                    external=external,
-                )
+            job_scheduler_builder=lambda: compose_ai_shadow_research_job_scheduler(
+                state,
+                service_type=AiShadowResearchJobScheduler,
+            ),
+            qualification_service_builder=lambda: (
+                build_shadow_research_qualification_service(state)
             ),
         ),
         name="ai-shadow-research-automation",

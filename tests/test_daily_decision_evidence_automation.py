@@ -17,6 +17,11 @@ from server.services.daily_decision_evidence_automation import (
     project_daily_candidate_financial_preflight,
     unavailable_daily_candidate_financial_preflight,
 )
+from server.services.daily_decision_evidence_composition import (
+    build_daily_decision_evidence_automation_service,
+    promoted_scan_cache_key,
+    promoted_strategy_state_cache_identity,
+)
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
 
@@ -120,6 +125,7 @@ def _decision(*, risk_checked: bool) -> dict:
             "candidate_count": 1,
             "portfolio": {
                 "valuation_snapshot_id": "valuation-001",
+                "valuation_status": "complete",
                 "ledger_cutoff_id": 7,
             },
             "account_truth": {
@@ -431,6 +437,179 @@ def test_financial_preflight_fails_closed_on_account_truth_staleness() -> None:
     assert result["eligible_for_background_attempt"] is False
     assert "account_truth_not_fresh" in result["no_action_reasons"]
     assert "account_truth_age_exceeds_reviewed_limit" in result["no_action_reasons"]
+
+
+def test_financial_preflight_has_independent_portfolio_valuation_gate() -> None:
+    inputs = _financial_preflight_inputs()
+    inputs["decision_payload"]["summary"]["portfolio"]["valuation_status"] = "degraded"
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    gates = {item["gate"]: item for item in result["gates"]}
+    assert gates["portfolio_valuation"] == {
+        "gate": "portfolio_valuation",
+        "status": "blocked",
+        "blockers": ["valuation_snapshot_not_complete"],
+    }
+    assert gates["account_truth"]["status"] == "pass"
+    assert result["status"] == "no_action"
+    assert result["financial_gate_status"] == "blocked"
+    assert result["eligible_for_background_attempt"] is False
+    assert result["financial_blockers"] == ["valuation_snapshot_not_complete"]
+    assert result["operator_checklist"][0]["gate"] == "portfolio_valuation"
+    assert result["database_writes_performed"] is False
+
+
+def test_promoted_scan_cache_identity_includes_valuation_status() -> None:
+    complete = {
+        "valuation_snapshot_id": "valuation-001",
+        "valuation_status": "complete",
+        "total_equity": 100_000,
+    }
+    degraded = {**complete, "valuation_status": "degraded"}
+
+    assert promoted_scan_cache_key("2026-07-02", complete) != (
+        promoted_scan_cache_key("2026-07-02", degraded)
+    )
+
+
+def test_promoted_scan_cache_identity_changes_after_human_promotion() -> None:
+    class PromotionStateDb:
+        rows: list[dict] = []
+
+        def list_strategy_promotion_states_sync(self) -> list[dict]:
+            return self.rows
+
+    db = PromotionStateDb()
+    before = promoted_strategy_state_cache_identity(db)
+    db.rows = [
+        {
+            "strategy_id": "ai_formula_shadow:qualified-candidate",
+            "stage": "paper_shadow",
+            "updated_at": "2026-07-02T09:40:00+08:00",
+            "payload_json": '{"qualification_approval_id":"approval-1"}',
+        }
+    ]
+    after = promoted_strategy_state_cache_identity(db)
+
+    assert before != after
+    assert promoted_scan_cache_key(
+        "2026-07-02",
+        {},
+        promotion_state_identity=before,
+    ) != promoted_scan_cache_key(
+        "2026-07-02",
+        {},
+        promotion_state_identity=after,
+    )
+
+
+def test_promoted_scan_cache_reopens_current_inputs_before_reuse(monkeypatch) -> None:
+    class Db:
+        def list_strategy_promotion_states_sync(self) -> list[dict]:
+            return []
+
+    class Scanner:
+        instance = None
+
+        def __init__(self, **_kwargs) -> None:
+            self.run_count = 0
+            self.validation_count = 0
+            Scanner.instance = self
+
+        def run_once(self, **kwargs) -> dict:
+            self.run_count += 1
+            persisted = kwargs.get("persist_actions", True)
+            return {
+                "schema_version": "karkinos.promoted_strategy_universe_scan.v1",
+                "decision_date": "2026-07-02",
+                "market_date": "2026-07-01",
+                "status": "completed_no_signal" if persisted else "prepared_no_signal",
+                "blockers": [],
+                "strategy_bindings": [{"strategy_id": "ai_formula_shadow:one"}],
+                "selected_signal_count": 0,
+                "normal_no_signal": persisted,
+                "input_fingerprint": "input",
+                "output_fingerprint": "output",
+            }
+
+        def current_input_blockers(self, **_kwargs) -> list[str]:
+            self.validation_count += 1
+            return (
+                ["promoted_strategy_scan_current_strategy_binding_changed"]
+                if self.validation_count == 2
+                else []
+            )
+
+    class QuoteFreezer:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        async def run_once(self, _prepared) -> dict:
+            return {"status": "completed", "blockers": []}
+
+    class Service:
+        def __init__(self, *, plan_reader, **_kwargs) -> None:
+            self.plan_reader = plan_reader
+
+    monkeypatch.setattr(
+        "server.services.promoted_strategy_universe_scan."
+        "PromotedStrategyUniverseScanService",
+        Scanner,
+    )
+    monkeypatch.setattr(
+        "server.services.daily_candidate_quote_freeze."
+        "DailyCandidateQuoteFreezeService",
+        QuoteFreezer,
+    )
+    state = type(
+        "State",
+        (),
+        {
+            "db": Db(),
+            "config": object(),
+            "trading_controls": object(),
+            "notifier": object(),
+        },
+    )()
+
+    async def plan_reader(_state) -> tuple[dict, dict]:
+        decision = {
+            "decision_date": "2026-07-02",
+            "summary": {
+                "portfolio": {
+                    "valuation_snapshot_id": "valuation-1",
+                    "ledger_cutoff_id": 1,
+                    "ledger_fingerprint": "ledger",
+                    "quote_set_fingerprint": "quotes",
+                    "valuation_status": "complete",
+                    "total_equity": 100_000,
+                }
+            },
+            "candidates": [],
+        }
+        return decision, {"plan_date": "2026-07-02"}
+
+    async def risk_runner(_state) -> dict:
+        return {}
+
+    async def quote_refresher(_state, _symbols) -> dict:
+        return {}
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=plan_reader,
+        risk_runner=risk_runner,
+        quote_refresher=quote_refresher,
+        service_type=Service,
+    )
+
+    asyncio.run(service.plan_reader())
+    asyncio.run(service.plan_reader())
+
+    assert Scanner.instance is not None
+    assert Scanner.instance.run_count == 4
+    assert Scanner.instance.validation_count == 3
 
 
 def test_financial_preflight_fails_closed_on_fee_or_strategy_binding_drift() -> None:

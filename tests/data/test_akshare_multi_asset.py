@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -11,6 +12,7 @@ import pandas as pd
 import pytest
 
 from core.types import AssetClass, BarFrequency, Symbol
+from data.providers import akshare_source as akshare_source_module
 from data.providers.akshare_source import AKShareSource
 
 
@@ -341,23 +343,65 @@ class TestAKShareMultiAsset:
 class TestAKShareFetchLatest:
     """AKShareSource.fetch_latest 测试。"""
 
-    @patch("akshare.stock_zh_a_spot_em")
+    @patch("akshare.stock_bid_ask_em")
     def test_fetch_latest_stock(self, mock_ak, source):
         """A 股实时行情快照。"""
         mock_ak.return_value = pd.DataFrame(
             {
-                "代码": ["600519", "000001"],
-                "名称": ["贵州茅台", "平安银行"],
-                "最新价": [1850.0, 12.5],
-                "成交额": [5000000.0, 3000000.0],
-                "时间": ["10:30:00", "10:30:00"],
+                "item": ["最新", "总手", "金额"],
+                "value": [1850.0, 50000.0, 5000000.0],
             }
         )
 
         result = source.fetch_latest(Symbol("600519"), AssetClass.STOCK)
         assert result is not None
         assert result["price"] == 1850.0
-        assert result["display_name"] == "贵州茅台"
+        assert result["volume"] == 5000000.0
+        assert result["turnover"] == 5000000.0
+        assert result["quote_source"] == "akshare_stock_bid_ask"
+        assert result["metadata"] == {
+            "timestamp_source": "client_observed_at",
+            "provider_timestamp_available": False,
+        }
+        mock_ak.assert_called_once_with(symbol="600519")
+
+    def test_fetch_latest_stock_retries_without_backoff_then_observes_timestamp(
+        self,
+        monkeypatch,
+        source,
+    ):
+        """A successful retry must fit the poll budget and own the observed time."""
+        import akshare as ak
+
+        call_order: list[str] = []
+        observed_at = datetime.fromisoformat("2026-09-04T10:30:05+08:00")
+
+        def fake_stock_bid_ask_em(*, symbol):
+            call_order.append(f"provider:{symbol}")
+            if len(call_order) < 3:
+                raise ConnectionError("remote disconnected")
+            return pd.DataFrame({"item": ["最新"], "value": [8.76]})
+
+        clock = MagicMock()
+        sleep = MagicMock()
+        clock.now.side_effect = lambda tz: (
+            call_order.append("observed_at") or observed_at
+        )
+        monkeypatch.setattr(ak, "stock_bid_ask_em", fake_stock_bid_ask_em)
+        monkeypatch.setattr(akshare_source_module, "datetime", clock)
+        monkeypatch.setattr(time, "sleep", sleep)
+
+        result = source.fetch_latest(Symbol("600001"), AssetClass.STOCK)
+
+        assert result is not None
+        assert call_order == [
+            "provider:600001",
+            "provider:600001",
+            "provider:600001",
+            "observed_at",
+        ]
+        sleep.assert_not_called()
+        assert result["timestamp"] == "2026-09-04T10:30:05+08:00"
 
     @pytest.mark.parametrize(
         ("symbol", "series_name"),
@@ -688,22 +732,15 @@ class TestAKShareFetchLatest:
         assert source._resolve_open_end_fund_code(Symbol("示例成长混合C")) == "019999"
         assert source._resolve_open_end_fund_code(Symbol("示例科技混合C")) == "029999"
 
-    @patch("akshare.stock_zh_a_spot_em")
+    @patch("akshare.stock_bid_ask_em")
     def test_fetch_latest_stock_includes_previous_close_and_change(
         self, mock_ak, source
     ):
         """A股最新行情应包含昨收、涨跌额和涨跌幅。"""
         mock_ak.return_value = pd.DataFrame(
             {
-                "代码": ["600001"],
-                "名称": ["示例能源"],
-                "最新价": [8.76],
-                "昨收": [8.65],
-                "涨跌额": [0.11],
-                "涨跌幅": [1.27],
-                "成交量": [123456.0],
-                "成交额": [1081488.0],
-                "时间": ["10:30:00"],
+                "item": ["最新", "昨收", "涨跌", "涨幅", "总手", "金额"],
+                "value": [8.76, 8.65, 0.11, 1.27, 1234.56, 1081488.0],
             }
         )
 
@@ -714,22 +751,23 @@ class TestAKShareFetchLatest:
         assert result["previous_close"] == 8.65
         assert result["change"] == 0.11
         assert result["change_percent"] == pytest.approx(0.0127)
-        assert result["previous_close_date"] is not None
-        assert result["display_name"] == "示例能源"
+        assert "previous_close_date" not in result
+        assert result["volume"] == pytest.approx(123456.0)
+        assert result["turnover"] == pytest.approx(1081488.0)
         assert result["symbol"] == "600001"
         assert result["asset_class"] == "stock"
         assert result["provider_name"] == "akshare"
         assert result["provider_symbol"] == "600001"
         assert result["source"] == "akshare"
-        assert result["quote_source"] == "akshare_stock_spot"
+        assert result["quote_source"] == "akshare_stock_bid_ask"
 
-    @patch("akshare.stock_zh_a_spot_em")
+    @patch("akshare.stock_bid_ask_em")
     def test_fetch_latest_not_found(self, mock_ak, source):
         """找不到 symbol 时返回 None。"""
         mock_ak.return_value = pd.DataFrame(
             {
-                "代码": ["000001"],
-                "最新价": [12.5],
+                "item": ["最新"],
+                "value": [None],
             }
         )
 

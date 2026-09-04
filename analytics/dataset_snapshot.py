@@ -45,6 +45,20 @@ def _handler_asset_class(handler: Any) -> Any:
     return getattr(handler, "_asset_class", None)
 
 
+def _handler_instrument_type(handler: Any) -> str:
+    raw = getattr(handler, "instrument_type", None) or getattr(
+        handler, "_instrument_type", None
+    )
+    if raw is not None:
+        normalized = str(getattr(raw, "value", raw)).strip().lower()
+        if normalized:
+            return "open_end_fund" if normalized == "fund" else normalized
+    asset_class = str(_enum_value(_handler_asset_class(handler)) or "").strip().lower()
+    if asset_class and asset_class != "fund":
+        return asset_class
+    raise ValueError("backtest dataset instrument identity is unresolved")
+
+
 def _handler_row_count(handler: Any) -> int:
     total_bars = getattr(handler, "total_bars", None)
     if isinstance(total_bars, int):
@@ -126,11 +140,21 @@ def _canonical_numeric_value(raw: Any) -> str:
     return format(value.normalize(), "f")
 
 
-def _safe_store_meta(store: Any, symbol: Any, frequency: Any) -> dict[str, Any]:
+def _safe_store_meta(
+    store: Any,
+    symbol: Any,
+    frequency: Any,
+    *,
+    instrument_type: str,
+) -> dict[str, Any]:
     if store is None or frequency is None or not hasattr(store, "get_meta"):
         return {}
     try:
-        meta = store.get_meta(symbol, frequency)
+        meta = store.get_meta(
+            symbol,
+            frequency,
+            instrument_type=instrument_type,
+        )
     except Exception:
         logger.warning(
             "Failed to read backtest dataset metadata for %s", symbol, exc_info=True
@@ -201,7 +225,13 @@ def build_backtest_dataset_snapshot(
 
     for symbol, handler in sorted(data_handlers.items(), key=lambda item: str(item[0])):
         frequency = _handler_frequency(handler)
-        meta = _safe_store_meta(store, symbol, frequency)
+        instrument_type = _handler_instrument_type(handler)
+        meta = _safe_store_meta(
+            store,
+            symbol,
+            frequency,
+            instrument_type=instrument_type,
+        )
         metadata_available = metadata_available or bool(meta)
         attrs = _handler_attrs(handler)
         source_diagnostics = meta.get("diagnostics")
@@ -237,6 +267,7 @@ def build_backtest_dataset_snapshot(
         rows.append(
             {
                 "symbol": str(symbol),
+                "instrument_type": instrument_type,
                 "asset_class": _enum_value(_handler_asset_class(handler)),
                 "frequency": _enum_value(frequency),
                 "row_count": row_count,
@@ -360,12 +391,17 @@ def verify_backtest_dataset_snapshot_replay(
     ):
         blockers.append("dataset_snapshot_universe_invalid")
     identities = [
-        (str(row.get("symbol") or ""), str(row.get("frequency") or ""))
+        (
+            str(row.get("symbol") or ""),
+            str(row.get("instrument_type") or ""),
+            str(row.get("frequency") or ""),
+        )
         for row in universe
     ]
-    if any(not symbol or not frequency for symbol, frequency in identities) or len(
-        set(identities)
-    ) != len(identities):
+    if any(
+        not symbol or not instrument_type or not frequency
+        for symbol, instrument_type, frequency in identities
+    ) or len(set(identities)) != len(identities):
         blockers.append("dataset_snapshot_universe_identity_invalid")
 
     verified_symbols = 0
@@ -425,17 +461,18 @@ def _verify_symbol_replay(
     end: pd.Timestamp | None,
 ) -> str | None:
     symbol = str(manifest.get("symbol") or "")
+    instrument_type = str(manifest.get("instrument_type") or "")
     frequency = str(manifest.get("frequency") or "")
     if start is None or end is None:
         return "dataset_snapshot_date_range_invalid"
     rows = connection.execute(
         """
         SELECT timestamp, open, high, low, close, volume
-        FROM market_bars
-        WHERE symbol=? AND frequency=?
+        FROM market_bars_v2
+        WHERE symbol=? AND instrument_type=? AND frequency=?
         ORDER BY timestamp ASC
         """,
-        (symbol, frequency),
+        (symbol, instrument_type, frequency),
     ).fetchall()
     if not rows:
         return f"dataset_replay_bars_missing:{symbol}:{frequency}"

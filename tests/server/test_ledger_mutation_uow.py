@@ -28,16 +28,16 @@ def _append_command(
         operator_id="local-owner",
         request_id=request_id,
         entry=LedgerEntryDraft(
-            entry_type="trade_sell",
+            entry_type="trade_buy",
             timestamp="2026-08-26T10:00:00+08:00",
             amount=1000.0,
             symbol=symbol,
-            direction="sell",
+            direction="buy",
             quantity=100.0,
             price=10.0,
             commission=5.0,
             gross_amount=1000.0,
-            net_cash_impact=995.0,
+            net_cash_impact=-1005.0,
             fee_breakdown_json=canonical_json(
                 {
                     "commission": "5.0",
@@ -62,7 +62,7 @@ def _settlement_command(
     request_id: str,
     entry_id: int,
     expected_entry_fingerprint: str,
-    net_cash_impact: float = 993.5,
+    net_cash_impact: float = -1006.5,
 ) -> LedgerTradeSettlementCommand:
     return LedgerTradeSettlementCommand(
         operator_id="local-owner",
@@ -74,9 +74,9 @@ def _settlement_command(
         fee_breakdown_json=canonical_json(
             {
                 "commission": "5.0",
-                "stamp_tax": "1.5",
+                "stamp_tax": "0",
                 "transfer_fee": "0",
-                "other_fees": "0",
+                "other_fees": "1.5",
                 "total_fee": "6.5",
             }
         ),
@@ -180,6 +180,29 @@ def test_append_rolls_back_claim_ledger_event_and_publication_failure(
     with pytest.raises(RuntimeError, match="injected valuation publication failure"):
         database.append_ledger_entry_sync(
             _append_command("ledger-request-fault", source_ref="manual-ledger-fault")
+        )
+
+    assert _count(database, "ledger_entries") == 0
+    assert _count(database, "ledger_mutation_claims") == 0
+    assert _count(database, "event_log") == 0
+    assert _count(database, "valuation_snapshots") == 0
+
+
+def test_append_oversell_rolls_back_claim_ledger_event_and_valuation(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    database.init_sync()
+
+    with pytest.raises(ValueError, match="Sell quantity 100.0 exceeds position 0"):
+        database.append_ledger_entry_sync(
+            LedgerAppendCommand(
+                operator_id="local-owner",
+                request_id="oversell-request",
+                entry=_trade_draft(
+                    entry_type="trade_sell",
+                    direction="sell",
+                    net_cash_impact=995.0,
+                ),
+            )
         )
 
     assert _count(database, "ledger_entries") == 0
@@ -315,8 +338,8 @@ def test_settlement_is_idempotent_cas_and_preserves_estimate(tmp_path) -> None:
     assert replayed.replayed is True
     assert replayed.entry_fingerprint == settled.entry_fingerprint
     assert settled.entry["settlement_status"] == "confirmed"
-    assert settled.entry["estimated_net_cash_impact"] == 995.0
-    assert settled.entry["net_cash_impact"] == 993.5
+    assert settled.entry["estimated_net_cash_impact"] == -1005.0
+    assert settled.entry["net_cash_impact"] == -1006.5
     events = database.list_events_sync(
         event_type="portfolio.trade_settlement.confirmed",
         entity_type="ledger_entry",
@@ -328,7 +351,7 @@ def test_settlement_is_idempotent_cas_and_preserves_estimate(tmp_path) -> None:
         request_id="ledger-settlement-1",
         entry_id=int(appended.entry["id"]),
         expected_entry_fingerprint=appended.entry_fingerprint,
-        net_cash_impact=992.5,
+        net_cash_impact=-1007.5,
     )
     with pytest.raises(IdempotencyConflict):
         database.settle_ledger_trade_sync(changed)

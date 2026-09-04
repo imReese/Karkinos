@@ -5,14 +5,29 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from core.types import BarFrequency, Symbol
+from core.types import BarFrequency, InstrumentType, Symbol
 
 _OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
+_STOCK_RECEIPT_STORAGE_AUTHORITY_BY_SCHEMA = {
+    "karkinos.market_daily_ingestion_receipt.v1": "sqlite_market_bars",
+    "karkinos.market_daily_ingestion_receipt.v2": "sqlite_market_bars_v2:stock",
+}
+
+
+def is_supported_stock_receipt_identity(receipt: Mapping[str, object]) -> bool:
+    """Accept only the exact legacy or typed stock daily-receipt identity."""
+
+    schema_version = str(receipt.get("schema_version") or "")
+    expected_authority = _STOCK_RECEIPT_STORAGE_AUTHORITY_BY_SCHEMA.get(schema_version)
+    return expected_authority is not None and (
+        receipt.get("storage_authority") == expected_authority
+    )
 
 
 class MarketDailyIngestionMixin:
@@ -69,13 +84,13 @@ class MarketDailyIngestionMixin:
         )
         symbols = [record[0] for record in records]
         receipt_core: dict[str, object] = {
-            "schema_version": "karkinos.market_daily_ingestion_receipt.v1",
+            "schema_version": "karkinos.market_daily_ingestion_receipt.v2",
             "trade_date": normalized_date,
             "provider_name": normalized_provider,
             "row_count": len(records),
             "symbols": symbols,
             "dataset_fingerprint": dataset_fingerprint,
-            "storage_authority": "sqlite_market_bars",
+            "storage_authority": "sqlite_market_bars_v2:stock",
             "parquet_mirror_required_for_decision": False,
             "provider_contact_performed_during_ingestion": True,
             "read_endpoints_contact_providers": False,
@@ -122,11 +137,14 @@ class MarketDailyIngestionMixin:
 
             conn.executemany(
                 """
-                INSERT INTO market_bars (
-                    symbol, frequency, timestamp, open, high, low, close,
-                    volume, amount, created_at, updated_at
-                ) VALUES (?, '1d', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol, frequency, timestamp) DO UPDATE SET
+                INSERT INTO market_bars_v2 (
+                    symbol, instrument_type, frequency, timestamp,
+                    open, high, low, close, volume, amount,
+                    identity_provenance, created_at, updated_at
+                ) VALUES (?, 'stock', '1d', ?, ?, ?, ?, ?, ?, ?,
+                          'verified_market_daily_ingestion_receipt', ?, ?)
+                ON CONFLICT(symbol, instrument_type, frequency, timestamp)
+                DO UPDATE SET
                     open = excluded.open,
                     high = excluded.high,
                     low = excluded.low,
@@ -254,8 +272,8 @@ class MarketDailyIngestionMixin:
             frame = pd.read_sql_query(
                 """
                 SELECT symbol, timestamp, open, high, low, close, volume, amount
-                FROM market_bars
-                WHERE frequency = '1d'
+                FROM market_bars_v2
+                WHERE instrument_type = 'stock' AND frequency = '1d'
                   AND timestamp >= ?
                   AND timestamp < ?
                 ORDER BY symbol, timestamp
@@ -280,18 +298,24 @@ class MarketDailyIngestionMixin:
         conn: sqlite3.Connection,
         receipt: dict[str, object],
     ) -> bool:
-        if receipt.get("schema_version") != (
-            "karkinos.market_daily_ingestion_receipt.v1"
-        ):
+        schema_version = str(receipt.get("schema_version") or "")
+        if not is_supported_stock_receipt_identity(receipt):
             return False
         symbols = receipt.get("symbols")
         if not isinstance(symbols, list) or not symbols:
             return False
+        if schema_version == "karkinos.market_daily_ingestion_receipt.v2":
+            storage_table = "market_bars_v2"
+            identity_filter = "instrument_type = 'stock' AND"
+        else:
+            storage_table = "market_bars"
+            identity_filter = ""
         rows = conn.execute(
-            """
+            f"""
             SELECT symbol, timestamp, open, high, low, close, volume, amount
-            FROM market_bars
-            WHERE frequency = '1d' AND substr(timestamp, 1, 10) = ?
+            FROM {storage_table}
+            WHERE {identity_filter} frequency = '1d'
+              AND substr(timestamp, 1, 10) = ?
             ORDER BY symbol
             """,
             (str(receipt.get("trade_date") or ""),),
@@ -423,9 +447,11 @@ def _build_dataset_id(
     start: str,
     end: str,
     diagnostics: dict,
+    instrument_type: InstrumentType | None = None,
 ) -> str:
     payload = {
         "symbol": str(symbol),
+        "instrument_type": (None if instrument_type is None else instrument_type.value),
         "frequency": frequency.value,
         "provider_name": provider_name,
         "data_source": data_source,

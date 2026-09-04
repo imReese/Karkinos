@@ -15,13 +15,96 @@ import pytest
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.routing import APIRoute
 
-from core.types import Symbol
+from core.types import InstrumentType, Symbol
 from server.projections import portfolio_application
 from server.projections import quote_status as quote_status_projection
 from server.services import decision_application, market_refresh
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 from tests.portfolio_valuation_fakes import bind_published_valuation
 from tests.route_assertions import registered_app_routes
+
+_ROUTE_TEST_QUOTE_TIMESTAMP = (
+    datetime.now(ZoneInfo("Asia/Shanghai")).replace(microsecond=0).isoformat()
+)
+
+
+def _persisted_quote(
+    symbol: str,
+    *,
+    price: float,
+    asset_class: str,
+    timestamp: str | None = None,
+    previous_close: float | None = None,
+) -> dict[str, object]:
+    """Build explicit persisted market evidence for route-test holdings."""
+
+    quote_timestamp = timestamp or _ROUTE_TEST_QUOTE_TIMESTAMP
+    return {
+        "symbol": symbol,
+        "asset_class": asset_class,
+        "price": price,
+        "previous_close": price if previous_close is None else previous_close,
+        "previous_close_date": quote_timestamp.split("T", 1)[0],
+        "timestamp": quote_timestamp,
+        "source": "persisted_route_test_quote",
+        "quote_status": "live",
+    }
+
+
+def _persisted_buy_entry(
+    symbol: str,
+    *,
+    quantity: float,
+    price: float,
+    asset_class: str = "stock",
+    timestamp: str = "2026-06-22T10:00:00+08:00",
+    entry_id: int = 1,
+) -> dict[str, object]:
+    """Build one canonical ledger fact for route-test current holdings."""
+
+    return {
+        "id": entry_id,
+        "entry_type": "trade_buy",
+        "timestamp": timestamp,
+        "amount": quantity * price,
+        "symbol": symbol,
+        "direction": "buy",
+        "quantity": quantity,
+        "price": price,
+        "commission": 0.0,
+        "asset_class": asset_class,
+        "note": "",
+        "source": "manual",
+        "source_ref": f"route-test-{entry_id}",
+        "created_at": timestamp,
+    }
+
+
+def _persisted_cash_entry(
+    amount: float,
+    *,
+    entry_type: str = "cash_deposit",
+    timestamp: str = "2026-06-22T09:00:00+08:00",
+    entry_id: int = 1,
+) -> dict[str, object]:
+    """Build one canonical external-cash ledger fact for route tests."""
+
+    return {
+        "id": entry_id,
+        "entry_type": entry_type,
+        "timestamp": timestamp,
+        "amount": amount,
+        "symbol": None,
+        "direction": None,
+        "quantity": None,
+        "price": None,
+        "commission": 0.0,
+        "asset_class": "cash",
+        "note": "",
+        "source": "manual",
+        "source_ref": f"route-test-cash-{entry_id}",
+        "created_at": timestamp,
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -801,6 +884,7 @@ def test_run_single_backtest_attaches_oos_validation_for_benchmark_strategy(
                 symbol,
                 frequency=BarFrequency.DAILY,
                 asset_class=asset_class,
+                instrument_type=InstrumentType.ETF,
             )
 
     monkeypatch.setattr("data.store.DataStore", FakeStore)
@@ -877,6 +961,7 @@ def test_run_single_backtest_attaches_rolling_oos_validation(monkeypatch):
                 symbol,
                 frequency=BarFrequency.DAILY,
                 asset_class=asset_class,
+                instrument_type=InstrumentType.ETF,
             )
 
     monkeypatch.setattr("data.store.DataStore", FakeStore)
@@ -931,9 +1016,10 @@ def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
     from server.routes import backtest as backtest_routes
 
     class FakeStore:
-        def get_meta(self, symbol, frequency):
+        def get_meta(self, symbol, frequency, *, instrument_type):
             assert symbol == Symbol("600519")
             assert frequency == BarFrequency.DAILY
+            assert instrument_type == InstrumentType.STOCK.value
             return {
                 "provider_name": "fixture_provider",
                 "data_source": "fixture",
@@ -972,6 +1058,7 @@ def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
                 symbol,
                 frequency=BarFrequency.DAILY,
                 asset_class=asset_class,
+                instrument_type=InstrumentType.STOCK,
             )
 
     class FakeEngine:
@@ -1054,6 +1141,7 @@ def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
     assert [symbol_snapshot] == [
         {
             "symbol": "600519",
+            "instrument_type": "stock",
             "asset_class": "stock",
             "frequency": "1d",
             "row_count": 2,
@@ -1251,7 +1339,8 @@ def test_market_quote_prefers_persisted_snapshot_and_refreshes_async(monkeypatch
     )
     endpoint = quote_route.endpoint
 
-    async def fake_get_latest_quote(symbol: str):
+    async def fake_get_latest_quote(symbol: str, *, instrument_type: str):
+        assert instrument_type == "stock"
         return {
             "symbol": "600519",
             "asset_class": "stock",
@@ -1303,7 +1392,8 @@ def test_market_quote_refresh_is_throttled(monkeypatch):
     )
     endpoint = quote_route.endpoint
 
-    async def fake_get_latest_quote(symbol: str):
+    async def fake_get_latest_quote(symbol: str, *, instrument_type: str):
+        assert instrument_type == "stock"
         return {
             "symbol": "600519",
             "asset_class": "stock",
@@ -1395,7 +1485,8 @@ def test_market_quote_prefers_persisted_snapshot_without_refresh_when_closed(
     )
     endpoint = quote_route.endpoint
 
-    async def fake_get_latest_quote(symbol: str):
+    async def fake_get_latest_quote(symbol: str, *, instrument_type: str):
+        assert instrument_type == "stock"
         return {
             "symbol": "600519",
             "asset_class": "stock",
@@ -1511,6 +1602,75 @@ def test_market_data_health_includes_default_market_indices(monkeypatch):
         "000300",
     ]
     assert index_quotes[0].display_name == "上证指数"
+
+
+def test_market_data_health_keeps_same_code_stock_and_index_quotes_separate(
+    monkeypatch,
+):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    class FakeDb:
+        @staticmethod
+        def list_latest_quotes_sync():
+            return [
+                {
+                    "symbol": "000001",
+                    "asset_type": "stock",
+                    "price": 12.5,
+                    "quote_timestamp": "2026-09-04T10:00:00+08:00",
+                    "quote_source": "fixture",
+                    "quote_status": "live",
+                },
+                {
+                    "symbol": "000001",
+                    "asset_type": "index",
+                    "price": 3500.0,
+                    "quote_timestamp": "2026-09-04T10:00:00+08:00",
+                    "quote_source": "fixture",
+                    "quote_status": "live",
+                },
+            ]
+
+        @staticmethod
+        def get_latest_quotes_sync():
+            return []
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[
+                {
+                    "symbol": "000001",
+                    "instrument_type": "stock",
+                    "display_name": "synthetic stock",
+                }
+            ],
+            data_source="akshare",
+        ),
+        scheduler=SimpleNamespace(watchlist=[], latest_quotes={}),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: False,
+    )
+
+    response = asyncio.run(health_route.endpoint())
+    same_code = [quote for quote in response.quotes if quote.symbol == "000001"]
+
+    assert [(quote.instrument_type, quote.price) for quote in same_code] == [
+        ("stock", 12.5),
+        ("index", 3500.0),
+    ]
+    assert same_code[0].display_name == "synthetic stock"
+    assert same_code[1].display_name == "上证指数"
 
 
 def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
@@ -1910,7 +2070,13 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
         scheduler=SimpleNamespace(
             watchlist=[],
             portfolio=SimpleNamespace(positions={"600001": object()}),
-            instruments={},
+            instruments={
+                Symbol("600001"): SimpleNamespace(
+                    asset_class="stock",
+                    instrument_type=InstrumentType.STOCK,
+                    name="600001",
+                )
+            },
             latest_quotes={},
         ),
         db=FakeDb(),
@@ -2264,7 +2430,9 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
     assert latest["fetch_run_id"] == runs[0]["run_id"]
     assert snapshots[0]["fetch_run_id"] == runs[0]["run_id"]
     valuation = build_current_valuation_snapshot(db, persist=False)
-    assert valuation["metadata"]["ingestion_run_ids"] == [runs[0]["run_id"]]
+    assert valuation["quotes"] == []
+    assert valuation["metadata"]["current_position_count"] == 0
+    assert valuation["metadata"]["ingestion_run_ids"] == []
 
 
 def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path):
@@ -2762,7 +2930,7 @@ def test_market_instrument_metadata_backfill_batches_stock_master_names(
     response = asyncio.run(
         route.endpoint(
             market_routes.InstrumentMetadataBackfillRequest(
-                symbols=["600001", "000001"]
+                symbols=["600001", "000001"], instrument_type="stock"
             )
         )
     )
@@ -2951,6 +3119,7 @@ def test_market_instrument_metadata_backfill_reports_missing_provider_name(
 
 def test_market_data_health_reports_provider_configuration_next_action(monkeypatch):
     from server.routes import market as market_routes
+    from server.routes import settings as settings_routes
 
     router = market_routes.create_router()
     health_route = next(
@@ -2977,12 +3146,15 @@ def test_market_data_health_reports_provider_configuration_next_action(monkeypat
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
 
     response = asyncio.run(health_route.endpoint())
+    settings_response = settings_routes._build_data_source_status(fake_state)
 
     assert response.provider_name == "tushare"
     assert response.provider_configured is False
     assert response.provider_requires_token is True
-    assert response.provider_supports_funds is False
+    assert response.provider_supports_funds is True
     assert response.next_action == "configure_data_source_token"
+    assert settings_response.provider_supports_funds is True
+    assert settings_response.next_action == "configure_data_source_token"
 
 
 def test_refresh_one_quote_real_provider_does_not_fallback_to_unregistered_provider(
@@ -3625,7 +3797,8 @@ def test_market_quote_falls_back_to_persisted_snapshot(monkeypatch):
     )
     endpoint = quote_route.endpoint
 
-    async def fake_get_latest_quote(symbol: str):
+    async def fake_get_latest_quote(symbol: str, *, instrument_type: str):
+        assert instrument_type == "stock"
         return {
             "symbol": "600519",
             "asset_class": "stock",
@@ -3700,6 +3873,7 @@ def test_market_watchlist_includes_holding_fields(monkeypatch):
 
 
 def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
+    from domain.instrument import make_open_end_fund
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -3736,7 +3910,12 @@ def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
             is_running=False,
             latest_quotes={},
             portfolio=SimpleNamespace(positions={"示例成长混合C": fake_position}),
-            instruments={},
+            instruments={
+                Symbol("示例成长混合C"): make_open_end_fund(
+                    "示例成长混合C",
+                    "示例成长混合C",
+                )
+            },
         ),
         db=FakeDb(),
     )
@@ -3755,7 +3934,7 @@ def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
 def test_market_kline_reads_only_the_persisted_store(monkeypatch, tmp_path):
     import pandas as pd
 
-    from core.types import BarFrequency
+    from core.types import BarFrequency, InstrumentType
     from data.store import DataStore
     from server.routes import market as market_routes
 
@@ -3776,6 +3955,7 @@ def test_market_kline_reads_only_the_persisted_store(monkeypatch, tmp_path):
                 }
             ]
         ),
+        instrument_type=InstrumentType.STOCK,
     )
     monkeypatch.setenv("KARKINOS_DATA_DIR", str(store_root))
 
@@ -3902,11 +4082,18 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
     assert response.items[0].symbol == "600001"
     assert response.items[0].row_count == 2
 
-    stored = store.load_bars(Symbol("600001"))
+    stored = store.load_bars(
+        Symbol("600001"),
+        instrument_type=InstrumentType.STOCK,
+    )
     assert stored is not None
     assert list(stored["close"]) == [8.74, 8.78]
     assert (
-        store.get_meta(Symbol("600001"), market_routes.BarFrequency.DAILY)["row_count"]
+        store.get_meta(
+            Symbol("600001"),
+            market_routes.BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )["row_count"]
         == 2
     )
 
@@ -3960,7 +4147,13 @@ def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
     assert response.failed_count == 1
     assert response.items[0].status == "failed"
     assert "provider unavailable" in response.items[0].error
-    assert store.load_bars(Symbol("600001")) is None
+    assert (
+        store.load_bars(
+            Symbol("600001"),
+            instrument_type=InstrumentType.STOCK,
+        )
+        is None
+    )
 
 
 def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch):
@@ -3974,7 +4167,8 @@ def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch)
     )
     endpoint = quote_route.endpoint
 
-    async def fake_get_latest_quote(symbol: str):
+    async def fake_get_latest_quote(symbol: str, *, instrument_type: str):
+        assert instrument_type == "open_end_fund"
         return {
             "symbol": symbol,
             "asset_class": "fund",
@@ -4003,7 +4197,13 @@ def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch)
                     )
                 }
             ),
-            instruments={},
+            instruments={
+                Symbol("示例成长混合C"): SimpleNamespace(
+                    asset_class="fund",
+                    instrument_type=InstrumentType.OPEN_END_FUND,
+                    name="示例成长混合C",
+                )
+            },
         ),
         db=SimpleNamespace(
             get_latest_quote=fake_get_latest_quote,
@@ -4105,7 +4305,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
             return {
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "2026-06-04T10:30:00+08:00",
+                "timestamp": _ROUTE_TEST_QUOTE_TIMESTAMP,
                 "display_name": "示例能源",
             }
 
@@ -4156,7 +4356,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
             return {
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "2026-06-04T10:30:00+08:00",
+                "timestamp": _ROUTE_TEST_QUOTE_TIMESTAMP,
                 "display_name": "示例能源",
                 "previous_close": 8.65,
                 "previous_close_date": "2026-06-03",
@@ -4263,7 +4463,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
             return {
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "2026-06-04T10:30:00+08:00",
+                "timestamp": _ROUTE_TEST_QUOTE_TIMESTAMP,
                 "display_name": "示例能源",
                 "previous_close": 8.65,
                 "previous_close_date": "2026-06-03",
@@ -4313,7 +4513,7 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
                 "quote_source": "akshare_stock_spot",
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "2026-06-04T10:30:00+08:00",
+                "timestamp": _ROUTE_TEST_QUOTE_TIMESTAMP,
                 "display_name": "示例能源",
                 "exchange": "SH",
                 "market": "CN",
@@ -4378,7 +4578,7 @@ def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
     assert response["price"] == 2.2503
     assert saved_command["quote_timestamp"] == "2026-04-22"
     assert saved_command["symbol"] == "019999"
-    assert saved_command["asset_type"] == "fund"
+    assert saved_command["asset_type"] == "open_end_fund"
     assert saved_command["daily_close_date"] == "2026-04-21"
     assert saved_command["daily_close_price"] == 2.2606
     assert saved_command["daily_close_source"] == "reported_previous_close"
@@ -4430,6 +4630,15 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
             },
         ),
         db=SimpleNamespace(
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_buy_entry(
+                    "019999",
+                    quantity=456.31067961165047,
+                    price=1.0,
+                    asset_class="fund",
+                    timestamp="2026-04-21T10:00:00+08:00",
+                )
+            ][offset : offset + limit],
             get_latest_quotes_sync=lambda: [
                 {
                     "symbol": "019999",
@@ -4440,10 +4649,15 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
                     "previous_close": 2.2606,
                     "previous_close_date": "2026-04-21",
                 }
-            ]
+            ],
         ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 4, 22, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -4961,7 +5175,35 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
 
     fake_db = SimpleNamespace(
         get_total_deposits=fake_get_total_deposits,
-        list_quote_selection_candidates_sync=lambda: [],
+        get_ledger_entries_sync=lambda limit=500, offset=0: [
+            _persisted_cash_entry(
+                2000.0,
+                timestamp="2026-06-22T09:00:00+08:00",
+                entry_id=1,
+            ),
+            _persisted_buy_entry(
+                "600519",
+                quantity=100.0,
+                price=10.0,
+                timestamp="2026-06-22T10:00:00+08:00",
+                entry_id=2,
+            ),
+            _persisted_cash_entry(
+                500.0,
+                entry_type="cash_withdrawal",
+                timestamp="2026-06-22T11:00:00+08:00",
+                entry_id=3,
+            ),
+        ][offset : offset + limit],
+        list_quote_selection_candidates_sync=lambda: [
+            _persisted_quote(
+                "600519",
+                price=15.0,
+                asset_class="stock",
+                timestamp="2026-06-22T15:00:00+08:00",
+                previous_close=14.5,
+            )
+        ],
     )
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=1000),
@@ -4972,9 +5214,11 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
             instruments={},
         ),
     )
+    valuation_now = datetime(2026, 6, 22, 15, 1, tzinfo=ZoneInfo("Asia/Shanghai"))
     valuation_snapshot_id = portfolio_routes.build_current_valuation_snapshot(
         fake_db,
         persist=False,
+        now=valuation_now,
     )["snapshot_id"]
 
     monkeypatch.setattr(
@@ -5043,14 +5287,20 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
         ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: valuation_now,
+    )
 
     response = asyncio.run(endpoint())
 
     assert response.total_equity == 2000
     assert response.available_cash == 500
+    assert response.total_deposits == 1500
     assert response.positions_count == 1
     assert response.unrealized_pnl == 500
-    assert response.realized_pnl == 120
+    assert response.realized_pnl == 0
     assert response.cash_ratio == 0.25
     assert response.today_pnl == pytest.approx(40.0)
     assert response.today_pnl_breakdown.stocks == pytest.approx(50.0)
@@ -5060,7 +5310,7 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
         "600519",
         "019999",
     ]
-    assert response.current_drawdown == pytest.approx(200 / 2200)
+    assert response.current_drawdown == pytest.approx(0.0)
 
 
 def test_portfolio_overview_includes_daily_operations_summary(monkeypatch):
@@ -5249,25 +5499,40 @@ def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
         async def get_total_deposits(self):
             return 20000.0
 
+        def list_latest_quotes_sync(self):
+            return [
+                _persisted_quote(
+                    "600001",
+                    price=10.0,
+                    asset_class="stock",
+                    timestamp="2026-06-26T15:00:00+08:00",
+                    previous_close=10.5,
+                )
+            ]
+
         def get_ledger_entries_sync(self, limit=500, offset=0):
             return ledger_rows[offset : offset + limit]
 
-        def get_latest_market_bar_before_date_sync(self, symbol, before_date):
+        def get_latest_market_bar_before_date_sync(
+            self, symbol, before_date, *, instrument_type
+        ):
             if symbol != "600001":
                 return None
             close_by_before_date = {
-                "2026-06-25": 10.5,
-                "2026-06-26": 10.0,
-                "2026-06-27": 10.0,
+                "2026-06-25": ("2026-06-24", 10.5),
+                "2026-06-26": ("2026-06-25", 10.0),
+                "2026-06-27": ("2026-06-26", 10.0),
             }
-            close = close_by_before_date.get(before_date)
-            if close is None:
+            market_bar = close_by_before_date.get(before_date)
+            if market_bar is None:
                 return None
+            trade_date, close = market_bar
             return {
                 "asset_class": "stock",
                 "close": close,
                 "price": close,
-                "timestamp": before_date,
+                "trade_date": trade_date,
+                "timestamp": f"{trade_date}T15:00:00+08:00",
             }
 
     fake_state = SimpleNamespace(
@@ -5281,6 +5546,11 @@ def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 26, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
     monkeypatch.setattr(
         portfolio_routes,
         "_current_equity_series_point",
@@ -5371,25 +5641,40 @@ def test_portfolio_overview_drawdown_counts_already_applied_future_cash_deposit(
         async def get_total_deposits(self):
             return 20000.0
 
+        def list_latest_quotes_sync(self):
+            return [
+                _persisted_quote(
+                    "600001",
+                    price=10.0,
+                    asset_class="stock",
+                    timestamp="2026-06-26T15:00:00+08:00",
+                    previous_close=10.5,
+                )
+            ]
+
         def get_ledger_entries_sync(self, limit=500, offset=0):
             return ledger_rows[offset : offset + limit]
 
-        def get_latest_market_bar_before_date_sync(self, symbol, before_date):
+        def get_latest_market_bar_before_date_sync(
+            self, symbol, before_date, *, instrument_type
+        ):
             if symbol != "600001":
                 return None
             close_by_before_date = {
-                "2026-06-25": 10.0,
-                "2026-06-26": 10.5,
-                "2026-06-27": 10.0,
+                "2026-06-25": ("2026-06-24", 10.0),
+                "2026-06-26": ("2026-06-25", 10.5),
+                "2026-06-27": ("2026-06-26", 10.0),
             }
-            close = close_by_before_date.get(before_date)
-            if close is None:
+            market_bar = close_by_before_date.get(before_date)
+            if market_bar is None:
                 return None
+            trade_date, close = market_bar
             return {
                 "asset_class": "stock",
                 "close": close,
                 "price": close,
-                "timestamp": before_date,
+                "trade_date": trade_date,
+                "timestamp": f"{trade_date}T15:00:00+08:00",
             }
 
     fake_state = SimpleNamespace(
@@ -5403,6 +5688,11 @@ def test_portfolio_overview_drawdown_counts_already_applied_future_cash_deposit(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 26, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
     monkeypatch.setattr(
         portfolio_routes,
         "_current_equity_series_point",
@@ -5468,7 +5758,26 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
                 }
             ],
         ),
-        db=SimpleNamespace(get_total_deposits=AsyncMock(return_value=0.0)),
+        db=SimpleNamespace(
+            get_total_deposits=AsyncMock(return_value=0.0),
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_cash_entry(3500.0, entry_id=1),
+                _persisted_buy_entry(
+                    "019999",
+                    quantity=1000.0,
+                    price=1.0,
+                    asset_class="fund",
+                    entry_id=2,
+                ),
+            ][offset : offset + limit],
+            list_latest_quotes_sync=lambda: [
+                _persisted_quote(
+                    "019999",
+                    price=1.126,
+                    asset_class="fund",
+                )
+            ],
+        ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(cash=2500.0, positions={"019999": fake_position}),
             latest_quotes={},
@@ -5564,7 +5873,26 @@ def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
             instruments=[],
             assets={"029999": "示例基金B"},
         ),
-        db=SimpleNamespace(get_total_deposits=AsyncMock(return_value=0.0)),
+        db=SimpleNamespace(
+            get_total_deposits=AsyncMock(return_value=0.0),
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_cash_entry(1000.0, entry_id=1),
+                _persisted_buy_entry(
+                    "029999",
+                    quantity=1000.0,
+                    price=1.0,
+                    asset_class="fund",
+                    entry_id=2,
+                ),
+            ][offset : offset + limit],
+            list_latest_quotes_sync=lambda: [
+                _persisted_quote(
+                    "029999",
+                    price=1.2,
+                    asset_class="fund",
+                )
+            ],
+        ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(cash=0.0, positions={"029999": fake_position}),
             latest_quotes={},
@@ -5644,27 +5972,6 @@ def test_portfolio_snapshot_does_not_fetch_missing_fund_quotes_in_request(
         ),
     )
 
-    def fake_rebuild(config, db, latest_quotes):
-        price = latest_quotes["019999"]["price"]
-        return SimpleNamespace(
-            portfolio=SimpleNamespace(
-                cash=2500.0,
-                positions={
-                    "019999": SimpleNamespace(
-                        quantity=1000,
-                        available_qty=1000,
-                        frozen_qty=0,
-                        avg_cost=1.0,
-                        market_value=price * 1000,
-                        unrealized_pnl=(price - 1.0) * 1000,
-                        realized_pnl=0.0,
-                        commission_paid=0.0,
-                    )
-                },
-            ),
-            instruments=fake_state.scheduler.instruments,
-        )
-
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.market._fetch_latest_snapshot",
@@ -5672,16 +5979,14 @@ def test_portfolio_snapshot_does_not_fetch_missing_fund_quotes_in_request(
             "portfolio snapshot must not fetch remotely"
         ),
     )
-    monkeypatch.setattr(
-        "server.routes.portfolio.rebuild_portfolio_from_ledger",
-        fake_rebuild,
-    )
-
     response = asyncio.run(endpoint())
 
-    assert response.total_equity == 3500.0
-    assert response.positions[0].market_value == 1000.0
-    assert response.positions[0].unrealized_pnl == pytest.approx(0.0)
+    assert response.total_equity is None
+    assert response.positions[0].market_value is None
+    assert response.positions[0].unrealized_pnl is None
+    assert response.positions[0].valuation_available is False
+    assert response.valuation_status == "blocked"
+    assert response.missing_price_symbols == ["019999"]
 
 
 def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
@@ -5728,7 +6033,12 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
                     "asset_class": "fund",
                     "price": 1.023,
                     "volume": None,
-                    "timestamp": "2026-04-18",
+                    "timestamp": "2026-04-18T20:00:00+08:00",
+                    "previous_close": 1.0,
+                    "previous_close_date": "2026-04-17",
+                    "quote_source": "confirmed_nav",
+                    "quote_status": "confirmed",
+                    "nav_date": "2026-04-18",
                 }
             ]
 
@@ -5750,6 +6060,11 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 4, 18, 20, 1, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
 
     response = asyncio.run(endpoint())
 
@@ -5791,7 +6106,22 @@ def test_portfolio_state_projection_exposes_totals_and_next_step(monkeypatch):
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=1000),
-        db=SimpleNamespace(get_total_deposits=fake_get_total_deposits),
+        db=SimpleNamespace(
+            get_total_deposits=fake_get_total_deposits,
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_cash_entry(2000.0, entry_id=1),
+                _persisted_buy_entry("600519", quantity=100.0, price=10.0, entry_id=2),
+                _persisted_cash_entry(
+                    500.0,
+                    entry_type="cash_withdrawal",
+                    timestamp="2026-06-22T11:00:00+08:00",
+                    entry_id=3,
+                ),
+            ][offset : offset + limit],
+            list_latest_quotes_sync=lambda: [
+                _persisted_quote("600519", price=15.0, asset_class="stock")
+            ],
+        ),
         scheduler=SimpleNamespace(
             portfolio=fake_portfolio,
             watchlist=[],
@@ -5806,7 +6136,7 @@ def test_portfolio_state_projection_exposes_totals_and_next_step(monkeypatch):
     assert response.summary.available_cash == 500
     assert response.summary.positions_count == 1
     assert response.snapshot.total_equity == 2000
-    assert response.next_step == "确认待执行建议"
+    assert response.next_step == "复核风险后再确认任何建议"
 
 
 def test_portfolio_risk_summary_flags_concentration_and_low_cash(monkeypatch):
@@ -5836,7 +6166,15 @@ def test_portfolio_risk_summary_flags_concentration_and_low_cash(monkeypatch):
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=1000),
-        db=SimpleNamespace(get_total_deposits=fake_get_total_deposits),
+        db=SimpleNamespace(
+            get_total_deposits=fake_get_total_deposits,
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_buy_entry("600519", quantity=100.0, price=10.0)
+            ][offset : offset + limit],
+            list_latest_quotes_sync=lambda: [
+                _persisted_quote("600519", price=18.0, asset_class="stock")
+            ],
+        ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
                 cash=Decimal("200"),
@@ -5887,11 +6225,16 @@ def test_portfolio_risk_summary_flags_stale_quote_data(monkeypatch):
         config=SimpleNamespace(initial_cash=1000),
         db=SimpleNamespace(
             get_total_deposits=fake_get_total_deposits,
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_buy_entry("600519", quantity=100.0, price=10.0)
+            ][offset : offset + limit],
             get_latest_quotes_sync=lambda: [
-                {
-                    "symbol": "600519",
-                    "timestamp": "2026-04-15T09:30:00",
-                }
+                _persisted_quote(
+                    "600519",
+                    price=5.0,
+                    asset_class="stock",
+                    timestamp="2026-04-15T09:30:00+08:00",
+                )
             ],
         ),
         scheduler=SimpleNamespace(
@@ -5945,11 +6288,16 @@ def test_portfolio_risk_summary_accepts_timezone_aware_quote_timestamps(monkeypa
         config=SimpleNamespace(initial_cash=1000),
         db=SimpleNamespace(
             get_total_deposits=fake_get_total_deposits,
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_buy_entry("600519", quantity=100.0, price=10.0)
+            ][offset : offset + limit],
             get_latest_quotes_sync=lambda: [
-                {
-                    "symbol": "600519",
-                    "timestamp": quote_timestamp,
-                }
+                _persisted_quote(
+                    "600519",
+                    price=5.0,
+                    asset_class="stock",
+                    timestamp=quote_timestamp,
+                )
             ],
         ),
         scheduler=SimpleNamespace(
@@ -6055,7 +6403,14 @@ def test_portfolio_explainability_uses_snapshot_and_ledger(monkeypatch):
         config=SimpleNamespace(initial_cash=1000),
         db=SimpleNamespace(
             get_total_deposits=fake_get_total_deposits,
-            get_latest_quotes_sync=lambda: [],
+            get_latest_quotes_sync=lambda: [
+                _persisted_quote(
+                    "600519",
+                    price=15.0,
+                    asset_class="stock",
+                    timestamp="2026-04-18T15:00:00+08:00",
+                )
+            ],
             get_instrument_metadata_sync=lambda symbol, asset_class=None: (
                 {
                     "symbol": symbol,
@@ -6158,7 +6513,14 @@ def test_portfolio_explainability_filters_timeline(monkeypatch):
         config=SimpleNamespace(initial_cash=1000),
         db=SimpleNamespace(
             get_total_deposits=fake_get_total_deposits,
-            get_latest_quotes_sync=lambda: [],
+            get_latest_quotes_sync=lambda: [
+                _persisted_quote(
+                    "600519",
+                    price=15.0,
+                    asset_class="stock",
+                    timestamp="2026-04-19T15:00:00+08:00",
+                )
+            ],
             get_ledger_entries_sync=lambda limit=50, offset=0: [
                 {
                     "id": 1,
@@ -6166,6 +6528,7 @@ def test_portfolio_explainability_filters_timeline(monkeypatch):
                     "timestamp": "2026-04-18T10:00:00+00:00",
                     "symbol": "600519",
                     "amount": 20.0,
+                    "asset_class": "stock",
                     "note": "cash income",
                 },
                 {
@@ -6173,8 +6536,11 @@ def test_portfolio_explainability_filters_timeline(monkeypatch):
                     "entry_type": "trade_buy",
                     "timestamp": "2026-04-19T10:00:00+00:00",
                     "symbol": "600519",
+                    "direction": "buy",
                     "quantity": 100.0,
                     "price": 10.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
                     "note": "added",
                 },
             ],
@@ -6242,7 +6608,21 @@ def test_portfolio_explainability_builds_daily_timeline_from_ledger_history(
             {
                 "symbol": "600519",
                 "asset_class": "stock",
+                "trade_date": "2026-05-07",
+                "close_price": 10.5,
+                "source": "test_close",
+            },
+            {
+                "symbol": "600519",
+                "asset_class": "stock",
                 "trade_date": "2026-05-08",
+                "close_price": 11.0,
+                "source": "test_close",
+            },
+            {
+                "symbol": "600519",
+                "asset_class": "stock",
+                "trade_date": "2026-05-11",
                 "close_price": 11.0,
                 "source": "test_close",
             },
@@ -6292,10 +6672,14 @@ def test_portfolio_explainability_builds_daily_timeline_from_ledger_history(
                     "price": 12.0,
                     "volume": 1000.0,
                     "timestamp": "2026-05-12T15:00:00+08:00",
+                    "previous_close": 11.0,
+                    "previous_close_date": "2026-05-08",
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             candidates = [
                 close
                 for close in self.daily_closes
@@ -6303,7 +6687,9 @@ def test_portfolio_explainability_builds_daily_timeline_from_ledger_history(
             ]
             return candidates[-1] if candidates else None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -6390,10 +6776,14 @@ def test_portfolio_explainability_marks_missing_historical_prices(monkeypatch):
         def get_latest_quotes_sync(self):
             return []
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -6420,8 +6810,13 @@ def test_portfolio_explainability_marks_missing_historical_prices(monkeypatch):
     response = asyncio.run(endpoint(limit=50))
     timeline_by_date = {point.date: point for point in response.timeline}
 
-    assert response.valuation_status == "missing"
-    assert "2026-04-22" not in timeline_by_date
+    assert response.valuation_status == "blocked"
+    assert response.equity_bridge[-1].value is None
+    assert response.positions[0].market_value is None
+    assert response.positions[0].unrealized_pnl is None
+    assert timeline_by_date["2026-04-22"].equity is None
+    assert timeline_by_date["2026-04-22"].valuation_status == "missing"
+    assert timeline_by_date["2026-04-22"].missing_price_symbols == ["600519"]
 
 
 def test_portfolio_explainability_does_not_attribute_weekend_current_quotes(
@@ -6504,7 +6899,9 @@ def test_portfolio_explainability_does_not_attribute_weekend_current_quotes(
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             candidates = [
                 close
                 for close in self.daily_closes
@@ -6512,7 +6909,9 @@ def test_portfolio_explainability_does_not_attribute_weekend_current_quotes(
             ]
             return candidates[-1] if candidates else None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -6612,7 +7011,9 @@ def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
                 }
             ]
 
-        def get_latest_market_bar_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_market_bar_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             candidates = [
                 (bar_date, bar)
                 for (bar_symbol, bar_date), bar in self.market_bars.items()
@@ -6631,10 +7032,14 @@ def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
                 "source": "market_bars",
             }
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -6661,6 +7066,9 @@ def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
     response = asyncio.run(endpoint(limit=50))
 
     assert response.timeline[-1].date == "2026-06-12"
+    assert response.timeline[-1].equity is None
+    assert response.timeline[-1].valuation_status == "confirmed_nav_missing"
+    assert response.timeline[-1].missing_price_symbols == ["012999"]
     assert all(point.date != "2026-06-15" for point in response.timeline)
 
 
@@ -6787,11 +7195,13 @@ def test_portfolio_explainability_skips_nullable_missing_valuation_points():
     assert missing_symbols_by_date["2026-06-15"] == ["600519"]
 
 
-def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_attribution():
+def test_historical_equity_quote_requires_exact_date_market_evidence():
     from server.routes.portfolio import _historical_quote_for_equity_day
 
     class FakeDb:
-        def get_latest_market_bar_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_market_bar_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             assert symbol == "012999"
             assert trade_date == "2026-06-16"
             return {
@@ -6804,10 +7214,14 @@ def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_att
                 "source": "market_bars",
             }
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
     quote = _historical_quote_for_equity_day(
@@ -6828,10 +7242,8 @@ def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_att
     )
 
     assert quote is not None
-    assert quote["source"] == "market_bars"
-    assert quote["quote_status"] == "confirmed"
-    assert quote["timestamp"] == "2026-06-12T15:00:00+08:00"
-    assert quote["price"] == pytest.approx(0.9194)
+    assert quote["quote_timestamp"] == "2026-06-15 10:45"
+    assert quote["quote_status"] == "confirmed_nav_missing"
 
 
 def test_historical_equity_quote_fails_closed_without_historical_reader():
@@ -6865,7 +7277,10 @@ def test_historical_equity_quote_fails_closed_without_historical_reader():
     )
 
     assert historical is None
-    assert current == latest["600519"]
+    assert current is not None
+    assert current["price"] == pytest.approx(1500.0)
+    assert current["timestamp"] == "2026-07-10T14:57:00+08:00"
+    assert current["quote_status"] == "confirmed"
 
 
 def test_historical_equity_ignores_missing_quotes_for_closed_positions(tmp_path):
@@ -7052,7 +7467,9 @@ def test_current_equity_series_point_marks_confirmed_nav_missing_fund_estimate(
                 }
             ]
 
-        def get_market_bar_on_date_sync(self, symbol: str, trade_date: str):
+        def get_market_bar_on_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             assert symbol == "029999"
             assert trade_date == "2026-06-17"
             return None
@@ -7331,7 +7748,9 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
                 },
             ]
 
-        def get_latest_market_bar_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_market_bar_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             candidates = [
                 (bar_date, bar)
                 for (bar_symbol, bar_date), bar in self.market_bars.items()
@@ -7350,7 +7769,9 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
                 "source": "market_bars",
             }
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             candidates = [
                 close
                 for close in self.daily_closes
@@ -7358,7 +7779,9 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
             ]
             return candidates[-1] if candidates else None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -7420,7 +7843,29 @@ def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=1000),
-        db=SimpleNamespace(get_total_deposits=fake_get_total_deposits),
+        db=SimpleNamespace(
+            get_total_deposits=fake_get_total_deposits,
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_cash_entry(2000.0, entry_id=1),
+                _persisted_buy_entry("600519", quantity=100.0, price=10.0, entry_id=2),
+                _persisted_cash_entry(
+                    200.0,
+                    entry_type="cash_withdrawal",
+                    timestamp="2026-06-22T11:00:00+08:00",
+                    entry_id=3,
+                ),
+            ][offset : offset + limit],
+            list_latest_quotes_sync=lambda: [
+                _persisted_quote("600519", price=12.0, asset_class="stock")
+            ],
+            get_latest_daily_close_before_sync=lambda symbol, trade_date, *, instrument_type: {
+                "symbol": symbol,
+                "asset_class": "stock",
+                "trade_date": "2026-06-22",
+                "close_price": 14.0,
+                "source": "persisted_route_test_close",
+            },
+        ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
                 cash=800,
@@ -7479,6 +7924,9 @@ def test_portfolio_risk_workspace_uses_equity_series_when_legacy_curve_is_empty(
         return 1000.0
 
     class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [_persisted_quote("600519", price=12.0, asset_class="stock")]
+
         def get_cash_flows_sync(self, limit=1, offset=0):
             return [{"id": 1}]
 
@@ -7486,7 +7934,9 @@ def test_portfolio_risk_workspace_uses_equity_series_when_legacy_curve_is_empty(
             return []
 
         def get_ledger_entries_sync(self, limit=1, offset=0):
-            return [{"id": 1}]
+            return [_persisted_buy_entry("600519", quantity=100.0, price=10.0)][
+                offset : offset + limit
+            ]
 
         async def get_total_deposits(self):
             return await fake_get_total_deposits()
@@ -7611,6 +8061,13 @@ def test_portfolio_cockpit_returns_targets_drift_actions_and_risk_alerts(
         db=SimpleNamespace(
             get_total_deposits=fake_get_total_deposits,
             get_action_tasks=fake_get_action_tasks,
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_cash_entry(1200.0, entry_id=1),
+                _persisted_buy_entry("600519", quantity=100.0, price=10.0, entry_id=2),
+            ][offset : offset + limit],
+            list_latest_quotes_sync=lambda: [
+                _persisted_quote("600519", price=8.0, asset_class="stock")
+            ],
         ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
@@ -7717,6 +8174,13 @@ def test_portfolio_cockpit_marks_construction_recommendation_actionable_only_aft
             get_total_deposits=fake_get_total_deposits,
             get_action_tasks=fake_get_action_tasks,
             get_account_truth_score_sync=lambda: {"gate_status": "pass", "score": 92},
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_cash_entry(1600.0, entry_id=1),
+                _persisted_buy_entry("600519", quantity=100.0, price=10.0, entry_id=2),
+            ][offset : offset + limit],
+            list_latest_quotes_sync=lambda: [
+                _persisted_quote("600519", price=4.0, asset_class="stock")
+            ],
         ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
@@ -7804,6 +8268,18 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
         ),
         db=SimpleNamespace(
             get_ledger_entries_sync=fake_get_ledger_entries_sync,
+            list_latest_quotes_sync=lambda: [
+                _persisted_quote(
+                    "示例成长混合C",
+                    price=1.0,
+                    asset_class="fund",
+                ),
+                _persisted_quote(
+                    "示例科技混合C",
+                    price=1.0,
+                    asset_class="fund",
+                ),
+            ],
         ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
@@ -9259,6 +9735,19 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
 ):
     from server.routes import decision as decision_routes
 
+    fixture_now = datetime(
+        2026,
+        4,
+        18,
+        9,
+        35,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
+    monkeypatch.setattr(
+        "server.projections.quote_status.get_shanghai_now",
+        lambda now=None: now or fixture_now,
+    )
+
     router = decision_routes.create_router()
     today_route = next(
         route
@@ -9345,6 +9834,40 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
                 },
             ]
 
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            rows = [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-04-17T09:00:00+08:00",
+                    "amount": 40000.0,
+                    "asset_class": "cash",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-17T09:30:00+08:00",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 100.0,
+                    "price": 200.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                },
+                {
+                    "id": 3,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-17T09:31:00+08:00",
+                    "symbol": "019999",
+                    "direction": "buy",
+                    "quantity": 1000.0,
+                    "price": 8.0,
+                    "commission": 0.0,
+                    "asset_class": "fund",
+                },
+            ]
+            return rows[offset : offset + limit]
+
         async def get_backtest_results(self):
             return []
 
@@ -9374,11 +9897,11 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
     response = asyncio.run(endpoint())
 
     summary = response["summary"]
-    assert summary["portfolio"]["status"] == "available"
+    assert summary["portfolio"]["status"] == "blocked"
     assert summary["portfolio"]["cash"] == 12000.0
     assert summary["portfolio"]["position_count"] == 2
-    assert summary["portfolio"]["total_market_value"] == 28000.0
-    assert summary["portfolio"]["total_equity"] == 40000.0
+    assert summary["portfolio"]["total_market_value"] is None
+    assert summary["portfolio"]["total_equity"] is None
     assert summary["market_data"]["source_health"] == "partial"
     assert summary["market_data"]["quote_count"] == 2
     assert summary["market_data"]["live_quote_count"] == 1
@@ -10783,7 +11306,7 @@ def test_portfolio_equity_curve_series_validates_publication_before_empty_result
 ):
     from server.routes import portfolio as portfolio_routes
 
-    def unpublished_valuation(_state):
+    def unpublished_valuation(_state, *, now=None):
         raise HTTPException(
             status_code=503,
             detail="valuation publication unavailable",
@@ -10925,36 +11448,46 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
 
         def get_latest_quotes_sync(self):
             return [
-                {
-                    "symbol": "600519",
-                    "price": 1100.0,
-                    "asset_class": "stock",
-                    "timestamp": "2026-04-30T15:00:00+08:00",
+                _persisted_quote(
+                    "600519",
+                    price=1100.0,
+                    previous_close=1000.0,
+                    asset_class="stock",
+                    timestamp="2026-04-30T15:00:00+08:00",
+                ),
+                _persisted_quote(
+                    "019999",
+                    price=2.1,
+                    previous_close=2.0,
+                    asset_class="fund",
+                    timestamp="2026-04-30T15:00:00+08:00",
+                )
+                | {
+                    "quote_source": "confirmed_nav",
+                    "quote_status": "confirmed",
+                    "nav_date": "2026-04-30",
                 },
-                {
-                    "symbol": "019999",
-                    "price": 2.1,
-                    "asset_class": "fund",
-                    "timestamp": "2026-04-30T15:00:00+08:00",
-                },
-                {
-                    "symbol": "510300",
-                    "price": 3.2,
-                    "asset_class": "etf",
-                    "timestamp": "2026-04-30T15:00:00+08:00",
-                },
-                {
-                    "symbol": "BOND1",
-                    "price": 101.0,
-                    "asset_class": "bond",
-                    "timestamp": "2026-04-30T15:00:00+08:00",
-                },
-                {
-                    "symbol": "GOLD1",
-                    "price": 2100.0,
-                    "asset_class": "gold",
-                    "timestamp": "2026-04-30T15:00:00+08:00",
-                },
+                _persisted_quote(
+                    "510300",
+                    price=3.2,
+                    previous_close=3.0,
+                    asset_class="etf",
+                    timestamp="2026-04-30T15:00:00+08:00",
+                ),
+                _persisted_quote(
+                    "BOND1",
+                    price=101.0,
+                    previous_close=100.0,
+                    asset_class="bond",
+                    timestamp="2026-04-30T15:00:00+08:00",
+                ),
+                _persisted_quote(
+                    "GOLD1",
+                    price=2100.0,
+                    previous_close=2000.0,
+                    asset_class="gold",
+                    timestamp="2026-04-30T15:00:00+08:00",
+                ),
             ]
 
     fake_state = SimpleNamespace(
@@ -10965,24 +11498,37 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 4, 30, 15, 1, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
 
     series = asyncio.run(endpoint())
 
     assert len(series) > 7
     assert series[0].timestamp.endswith("T15:00:00+08:00")
-    assert series[0].stocks == pytest.approx(10000.0)
-    assert series[0].funds == pytest.approx(5000.0)
-    assert series[0].others == pytest.approx(9000.0)
+    assert series[0].stocks is None
+    assert series[0].funds is None
+    assert series[0].others is None
     assert series[0].cash == pytest.approx(76000.0)
-    assert series[0].total == pytest.approx(100000.0)
-    assert series[-2].stocks == pytest.approx(10000.0)
-    assert series[-2].funds == pytest.approx(5000.0)
-    assert series[-2].others == pytest.approx(9000.0)
+    assert series[0].total is None
+    assert series[0].quote_status == "missing"
+    assert series[0].missing_price_symbols == [
+        "019999",
+        "510300",
+        "600519",
+        "BOND1",
+        "GOLD1",
+    ]
+    assert series[-2].stocks is None
+    assert series[-2].funds is None
+    assert series[-2].others is None
     assert series[-2].cash == pytest.approx(76000.0)
-    assert series[-2].total == pytest.approx(100000.0)
+    assert series[-2].total is None
     assert series[-1].timestamp > series[-2].timestamp
     assert series[-1].total == pytest.approx(101550.0)
-    assert series[-1].quote_status == "stale"
+    assert series[-1].quote_status == "live"
 
 
 def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
@@ -11068,13 +11614,19 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
                 },
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_recent_quote_snapshots_sync(self, symbol: str, limit: int = 1000):
+        def get_recent_quote_snapshots_sync(
+            self, symbol: str, limit: int = 1000, *, instrument_type: str
+        ):
             prices = {
                 "600519": [
                     ("2026-04-20T09:35:00", 1005.0),
@@ -11222,14 +11774,18 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return {
                 "symbol": symbol,
                 "trade_date": "2026-04-17",
                 "close_price": 1000.0,
             }
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
     fake_portfolio = SimpleNamespace(
@@ -11273,8 +11829,11 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
 
     assert series[0].timestamp.startswith("2026-04-20T09:30:00")
     assert series[-1].timestamp.startswith("2026-04-20T15:00:00")
-    assert all(point.total == pytest.approx(100000.0) for point in series)
-    assert all(point.unrealized_pnl == pytest.approx(0.0) for point in series)
+    assert all(point.total is None for point in series)
+    assert all(point.stocks is None for point in series)
+    assert all(point.funds == pytest.approx(0.0) for point in series)
+    assert all(point.others == pytest.approx(0.0) for point in series)
+    assert all(point.unrealized_pnl is None for point in series)
 
 
 def test_portfolio_equity_curve_series_1d_marks_current_quote_when_minute_bars_missing(
@@ -11328,16 +11887,20 @@ def test_portfolio_equity_curve_series_1d_marks_current_quote_when_minute_bars_m
                     "symbol": "600519",
                     "asset_class": "stock",
                     "price": 1010.0,
-                    "timestamp": "2026-04-20T09:40:00+08:00",
+                    "timestamp": "2026-04-20T09:59:00+08:00",
                     "previous_close": 1000.0,
                     "previous_close_date": "2026-04-17",
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
     fake_portfolio = SimpleNamespace(
@@ -11384,7 +11947,7 @@ def test_portfolio_equity_curve_series_1d_marks_current_quote_when_minute_bars_m
     assert series[0].total == pytest.approx(60000.0)
     assert [point.timestamp for point in series] == [
         "2026-04-20T09:30:00+08:00",
-        "2026-04-20T09:40:00+08:00",
+        "2026-04-20T09:59:00+08:00",
     ]
     assert series[-1].stocks == pytest.approx(10100.0)
     assert series[-1].total == pytest.approx(60100.0)
@@ -11446,10 +12009,14 @@ def test_portfolio_equity_curve_series_1d_does_not_fabricate_missing_quote_value
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
     fake_portfolio = SimpleNamespace(
@@ -11504,8 +12071,8 @@ def test_portfolio_equity_curve_series_1d_does_not_fabricate_missing_quote_value
     assert all(point.cash == pytest.approx(50000.0) for point in series)
     assert all(point.total is None for point in series)
     assert all(point.stocks is None for point in series)
-    assert all(point.funds is None for point in series)
-    assert all(point.others is None for point in series)
+    assert all(point.funds == pytest.approx(0.0) for point in series)
+    assert all(point.others == pytest.approx(0.0) for point in series)
     assert all(point.unrealized_pnl is None for point in series)
     assert all(point.total_daily_change is None for point in series)
     assert all(point.stocks_daily_change is None for point in series)
@@ -11566,7 +12133,9 @@ def test_portfolio_equity_curve_series_1d_uses_local_quote_snapshots(
                 }
             ]
 
-        def get_recent_quote_snapshots_sync(self, symbol: str, limit=500):
+        def get_recent_quote_snapshots_sync(
+            self, symbol: str, limit=500, *, instrument_type: str
+        ):
             assert symbol == "600519"
             return [
                 {
@@ -11595,10 +12164,14 @@ def test_portfolio_equity_curve_series_1d_uses_local_quote_snapshots(
                 },
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
     fake_portfolio = SimpleNamespace(
@@ -11688,10 +12261,14 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         def get_ledger_entries_sync(self, limit=500, offset=0):
@@ -11820,10 +12397,14 @@ def test_portfolio_equity_curve_series_1d_splits_overnight_and_intraday_lots(
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol, trade_date):
+        def get_latest_daily_close_before_sync(
+            self, symbol, trade_date, *, instrument_type
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol, trade_date):
+        def get_latest_quote_before_date_sync(
+            self, symbol, trade_date, *, instrument_type
+        ):
             return None
 
         def get_ledger_entries_sync(self, limit=500, offset=0):
@@ -11951,14 +12532,30 @@ def test_portfolio_equity_curve_series_1d_skips_intraday_source_when_market_clos
             latest_quotes={},
         ),
         db=SimpleNamespace(
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_cash_entry(
+                    100000.0,
+                    timestamp="2026-06-12T09:00:00+08:00",
+                    entry_id=1,
+                ),
+                _persisted_buy_entry(
+                    "600519",
+                    quantity=100.0,
+                    price=10.0,
+                    timestamp="2026-06-12T10:00:00+08:00",
+                    entry_id=2,
+                ),
+            ][offset : offset + limit],
             get_latest_quotes_sync=lambda: [
                 {
                     "symbol": "600519",
                     "asset_class": "stock",
                     "price": 12.0,
                     "timestamp": "2026-06-14T09:59:00+08:00",
+                    "previous_close": 12.0,
+                    "previous_close_date": "2026-06-12",
                 }
-            ]
+            ],
         ),
     )
 
@@ -12017,6 +12614,17 @@ def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypat
     )
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "510300",
+                    quantity=100.0,
+                    price=10.0,
+                    asset_class="etf",
+                    timestamp="2026-04-20T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def get_latest_quotes_sync(self):
             return [
                 {
@@ -12028,7 +12636,9 @@ def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypat
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             assert symbol == "510300"
             assert trade_date == "2026-04-21"
             return {
@@ -12040,7 +12650,9 @@ def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypat
                 "captured_at": "2026-04-20T15:01:00",
             }
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -12062,6 +12674,13 @@ def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypat
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(
+            2026, 4, 21, 14, 31, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+    )
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -12120,10 +12739,14 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         def get_ledger_entries_sync(self, limit=500, offset=0):
@@ -12183,7 +12806,7 @@ def test_portfolio_live_holdings_splits_overnight_and_same_day_buy_pnl(monkeypat
 
     state = SimpleNamespace(
         db=SimpleNamespace(
-            get_latest_market_bar_before_date_sync=lambda symbol, trade_date: {
+            get_latest_market_bar_before_date_sync=lambda symbol, trade_date, *, instrument_type: {
                 "trade_date": "2026-07-09",
                 "close": 25.46,
             },
@@ -12217,6 +12840,7 @@ def test_portfolio_live_holdings_splits_overnight_and_same_day_buy_pnl(monkeypat
             "timestamp": "2026-07-10T14:57:03+08:00",
         },
         latest_price_value=24.6,
+        instrument_type="stock",
     )
 
     today_change, today_change_pct, baseline_price, baseline_timestamp, source = result
@@ -12308,7 +12932,7 @@ def test_portfolio_projections_reuse_one_daily_ledger_snapshot(monkeypatch):
     monkeypatch.setattr(
         portfolio_routes,
         "_current_valuation_snapshot",
-        lambda _state: valuation_snapshot,
+        lambda _state, *, now=None: valuation_snapshot,
     )
     monkeypatch.setattr(
         portfolio_routes,
@@ -12413,7 +13037,9 @@ def test_daily_performance_is_identical_across_holdings_curve_and_overview(
         captured_reason="deterministic_test",
         fetch_run_id="run-daily-performance",
     )
-    db.publish_current_valuation_snapshot_sync()
+    db.publish_current_valuation_snapshot_sync(
+        now=datetime(2026, 7, 12, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
 
     state = SimpleNamespace(
         config=SimpleNamespace(
@@ -12487,7 +13113,7 @@ def test_position_today_change_attributes_same_day_sell_net_proceeds():
 
     state = SimpleNamespace(
         db=SimpleNamespace(
-            get_latest_market_bar_before_date_sync=lambda symbol, trade_date: {
+            get_latest_market_bar_before_date_sync=lambda symbol, trade_date, *, instrument_type: {
                 "trade_date": "2026-07-09",
                 "close": 25.46,
             },
@@ -12515,6 +13141,7 @@ def test_position_today_change_attributes_same_day_sell_net_proceeds():
             "timestamp": "2026-07-10T14:57:03+08:00",
         },
         latest_price_value=24.6,
+        instrument_type="stock",
     )
 
     assert result[0] == pytest.approx(7380 + 2490 - 400 * 25.46)
@@ -12600,6 +13227,9 @@ def test_closed_same_day_sell_is_included_in_overview_daily_pnl(
         ),
         db=db,
     )
+    db.publish_current_valuation_snapshot_sync(
+        now=datetime(2026, 8, 17, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -12676,6 +13306,17 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
         async def get_total_deposits(self):
             return 0.0
 
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "600003",
+                    quantity=200.0,
+                    price=16.275,
+                    asset_class="stock",
+                    timestamp="2026-01-14T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def list_latest_quotes_sync(self):
             return [
                 {
@@ -12683,7 +13324,7 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
                     "asset_type": "stock",
                     "price": 26.3608,
                     "previous_close": 26.0,
-                    "previous_close_date": "2026-06-15",
+                    "previous_close_date": "2026-01-14",
                     "quote_timestamp": "2026-01-15T14:56:37+08:00",
                     "quote_source": "tushare_realtime_quote",
                     "provider_name": "tushare",
@@ -12713,6 +13354,13 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(
+            2026, 1, 15, 14, 57, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+    )
 
     response = asyncio.run(positions_route.endpoint())
 
@@ -12720,7 +13368,7 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
     assert response[0].today_change == pytest.approx(72.16)
     assert response[0].today_change_pct == pytest.approx(26.3608 / 26.0 - 1)
     assert response[0].baseline_price == pytest.approx(26.0)
-    assert response[0].baseline_timestamp == "2026-06-15"
+    assert response[0].baseline_timestamp == "2026-01-14"
     assert response[0].baseline_source == "previous_close"
 
 
@@ -12886,6 +13534,17 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
     )
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "600001",
+                    quantity=100.0,
+                    price=8.1234,
+                    asset_class="stock",
+                    timestamp="2026-06-03T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def list_latest_quotes_sync(self):
             return [
                 {
@@ -12905,10 +13564,14 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
         def get_latest_quotes_sync(self):
             return []
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -12938,6 +13601,11 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 4, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -12973,6 +13641,16 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
     )
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "600003",
+                    quantity=200.0,
+                    price=16.2345,
+                    timestamp="2026-06-16T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def list_latest_quotes_sync(self):
             return [
                 {
@@ -12993,6 +13671,8 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
             self,
             symbol: str,
             trade_date: str,
+            *,
+            instrument_type: str,
         ):
             assert symbol == "600003"
             assert trade_date == "2026-06-17"
@@ -13002,14 +13682,18 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
                 "source": "market_bars",
             }
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return {
                 "trade_date": "2026-01-15",
                 "close_price": 28.26,
                 "source": "reported_previous_close",
             }
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -13041,6 +13725,13 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(
+            2026, 6, 17, 14, 21, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+    )
 
     response = asyncio.run(live_holdings_route.endpoint())
     item = response.groups[0].items[0]
@@ -13076,6 +13767,16 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
     )
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "600001",
+                    quantity=100.0,
+                    price=8.1234,
+                    timestamp="2026-06-16T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def list_latest_quotes_sync(self):
             return [
                 {
@@ -13096,6 +13797,8 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
             self,
             symbol: str,
             trade_date: str,
+            *,
+            instrument_type: str,
         ):
             assert symbol == "600001"
             assert trade_date == "2026-06-17"
@@ -13109,6 +13812,8 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
             self,
             symbol: str,
             trade_date: str,
+            *,
+            instrument_type: str,
         ):
             assert symbol == "600001"
             assert trade_date == "2026-06-17"
@@ -13118,10 +13823,14 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
                 "source": "market_bars",
             }
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -13195,6 +13904,17 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
     )
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "012999",
+                    quantity=898.3130777502869,
+                    price=1.0019,
+                    asset_class="fund",
+                    timestamp="2026-06-16T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def list_latest_quotes_sync(self):
             return [
                 {
@@ -13217,6 +13937,8 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
             self,
             symbol: str,
             trade_date: str,
+            *,
+            instrument_type: str,
         ):
             assert symbol == "012999"
             assert trade_date == "2026-06-17"
@@ -13230,6 +13952,8 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
             self,
             symbol: str,
             trade_date: str,
+            *,
+            instrument_type: str,
         ):
             assert symbol == "012999"
             assert trade_date == "2026-06-17"
@@ -13239,10 +13963,14 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
                 "source": "market_bars",
             }
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -13317,6 +14045,17 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
     )
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "029999",
+                    quantity=442.3704,
+                    price=1.3563,
+                    asset_class="fund",
+                    timestamp="2026-06-16T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def list_latest_quotes_sync(self):
             return [
                 {
@@ -13337,6 +14076,8 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
             self,
             symbol: str,
             trade_date: str,
+            *,
+            instrument_type: str,
         ):
             assert symbol == "029999"
             assert trade_date == "2026-06-17"
@@ -13350,15 +14091,21 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
             self,
             symbol: str,
             trade_date: str,
+            *,
+            instrument_type: str,
         ):
             assert symbol == "029999"
             assert trade_date == "2026-06-17"
             return None
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -13401,7 +14148,12 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
     item = response.groups[0].items[0]
 
     assert item.latest_price == pytest.approx(1.9836)
-    assert item.today_change == pytest.approx(442.3704 * (1.9836 - 1.9651))
+    assert item.today_change is None
+    assert item.today_change_pct is None
+    assert item.market_value is None
+    assert item.since_buy_pnl is None
+    assert item.valuation_available is False
+    assert item.valuation_blockers == ["confirmed_nav_missing:029999"]
     assert item.quote_status == "stale"
     assert item.stale_reason == "confirmed_fund_nav_missing_estimate_only"
 
@@ -13454,8 +14206,8 @@ def test_portfolio_live_holdings_fails_closed_when_only_runtime_quote_exists(
         db=SimpleNamespace(
             list_latest_quotes_sync=lambda: [],
             get_latest_quotes_sync=lambda: [],
-            get_latest_daily_close_before_sync=lambda symbol, trade_date: None,
-            get_latest_quote_before_date_sync=lambda symbol, trade_date: None,
+            get_latest_daily_close_before_sync=lambda symbol, trade_date, *, instrument_type: None,
+            get_latest_quote_before_date_sync=lambda symbol, trade_date, *, instrument_type: None,
             get_total_deposits=lambda: 0.0,
         ),
     )
@@ -13502,6 +14254,17 @@ def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch)
     persisted: dict[str, object] = {}
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "159915",
+                    quantity=50.0,
+                    price=20.0,
+                    asset_class="etf",
+                    timestamp="2026-04-20T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def get_latest_quotes_sync(self):
             return [
                 {
@@ -13513,10 +14276,14 @@ def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch)
                 },
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return {
                 "symbol": "159915",
                 "asset_class": "etf",
@@ -13539,6 +14306,13 @@ def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch)
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(
+            2026, 4, 21, 14, 31, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+    )
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -13585,10 +14359,14 @@ def test_portfolio_live_holdings_marks_missing_baseline(monkeypatch):
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -13720,10 +14498,16 @@ def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch)
 
     response = asyncio.run(snapshot_route.endpoint())
 
-    assert response.positions[0].market_value == 1000.0
-    assert response.positions[0].unrealized_pnl == 0.0
+    assert response.positions[0].market_value is None
+    assert response.positions[0].unrealized_pnl is None
+    assert response.positions[0].valuation_available is False
+    assert response.positions[0].valuation_blockers == [
+        "valuation_baseline_missing:600519"
+    ]
     assert response.positions[0].quote_status == "stale"
     assert response.positions[0].quote_timestamp == "2026-04-22T15:00:00"
+    assert response.total_equity is None
+    assert response.valuation_status == "degraded"
     assert fake_state.scheduler.latest_quotes == {}
 
 
@@ -13838,9 +14622,14 @@ def test_portfolio_snapshot_does_not_fetch_missing_ledger_quote_in_request(monke
     assert fetched == []
     assert response.positions[0].symbol == "600002"
     assert response.positions[0].display_name == "示例材料"
-    assert response.positions[0].market_value == pytest.approx(1985.03)
+    assert response.positions[0].market_value is None
+    assert response.positions[0].unrealized_pnl is None
+    assert response.positions[0].valuation_available is False
     assert response.positions[0].quote_status == "missing"
     assert response.positions[0].quote_timestamp is None
+    assert response.total_equity is None
+    assert response.valuation_status == "blocked"
+    assert response.missing_price_symbols == ["600002"]
 
 
 def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
@@ -13874,6 +14663,16 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
     )
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "600519",
+                    quantity=100.0,
+                    price=10.0,
+                    timestamp="2026-04-21T10:00:00+08:00",
+                )
+            ][offset : offset + limit]
+
         def get_latest_quotes_sync(self):
             return [
                 {
@@ -13885,10 +14684,14 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
         async def get_total_deposits(self):
@@ -13981,10 +14784,14 @@ def test_portfolio_live_holdings_uses_dict_asset_mapping(monkeypatch):
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
     fake_state = SimpleNamespace(
@@ -14027,12 +14834,33 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
     )
 
     class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                _persisted_buy_entry(
+                    "012999",
+                    quantity=100.0,
+                    price=1.0,
+                    asset_class="fund",
+                    timestamp="2026-05-21T10:00:00+08:00",
+                    entry_id=1,
+                ),
+                _persisted_buy_entry(
+                    "600519",
+                    quantity=1.0,
+                    price=1500.0,
+                    timestamp="2026-05-21T10:01:00+08:00",
+                    entry_id=2,
+                ),
+            ][offset : offset + limit]
+
         def list_latest_quotes_sync(self):
             return [
                 {
                     "symbol": "012999",
                     "asset_type": "fund",
                     "price": 0.9477,
+                    "previous_close": 0.95,
+                    "previous_close_date": "2026-05-21",
                     "quote_timestamp": "2026-05-22",
                     "quote_source": "akshare",
                     "provider_name": "akshare",
@@ -14042,6 +14870,8 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
                     "symbol": "600519",
                     "asset_type": "stock",
                     "price": 1650.0,
+                    "previous_close": 1600.0,
+                    "previous_close_date": "2026-05-21",
                     "quote_timestamp": "2026-05-22T14:30:00+08:00",
                     "quote_source": "akshare",
                     "provider_name": "akshare",
@@ -14059,10 +14889,14 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
     fake_state = SimpleNamespace(
@@ -14248,6 +15082,8 @@ def test_portfolio_equity_curve_series_appends_current_valuation_point(
                     "price": 12.0,
                     "volume": 1000.0,
                     "timestamp": "2026-05-12T15:00:00+08:00",
+                    "previous_close": 11.0,
+                    "previous_close_date": "2026-05-08",
                 }
             ]
 
@@ -14372,7 +15208,9 @@ def test_portfolio_equity_curve_series_uses_daily_close_history(monkeypatch):
                 }
             ]
 
-        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+        def get_latest_daily_close_before_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             candidates = [
                 close
                 for close in self.daily_closes
@@ -14380,7 +15218,9 @@ def test_portfolio_equity_curve_series_uses_daily_close_history(monkeypatch):
             ]
             return candidates[-1] if candidates else None
 
-        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+        def get_latest_quote_before_date_sync(
+            self, symbol: str, trade_date: str, *, instrument_type: str
+        ):
             return None
 
     fake_position = SimpleNamespace(
@@ -14468,6 +15308,20 @@ def test_portfolio_equity_curve_series_1d_falls_back_when_intraday_source_blocks
             latest_quotes={},
         ),
         db=SimpleNamespace(
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                _persisted_cash_entry(
+                    100000.0,
+                    timestamp="2026-05-09T09:00:00+08:00",
+                    entry_id=1,
+                ),
+                _persisted_buy_entry(
+                    "600519",
+                    quantity=100.0,
+                    price=10.0,
+                    timestamp="2026-05-09T10:00:00+08:00",
+                    entry_id=2,
+                ),
+            ][offset : offset + limit],
             get_latest_quotes_sync=lambda: [
                 {
                     "symbol": "600519",
@@ -14478,7 +15332,7 @@ def test_portfolio_equity_curve_series_1d_falls_back_when_intraday_source_blocks
                     "previous_close": 10.0,
                     "previous_close_date": "2026-05-11",
                 }
-            ]
+            ],
         ),
     )
 

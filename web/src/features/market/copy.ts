@@ -116,6 +116,33 @@ export const marketCopy = {
       'This button performs an explicit ingestion run. It may contact the configured market-data source, records the batch, and does not change ledger, OMS, risk, or authority.',
     holdingEvidenceConfirmedNavRefresh:
       'Fund NAV uses a separate confirmation-only ingestion run. Estimates and previous-day NAV cannot clear review; every attempt is audited and cannot change trading authority.',
+    holdingEvidenceStockLane: 'Stock quote evidence',
+    holdingEvidenceFundLane: 'Fund NAV evidence',
+    holdingEvidenceLaneStatuses: {
+      not_applicable: 'No current holdings',
+      complete: 'Complete',
+      degraded: 'Needs confirmation',
+      missing: 'Missing',
+      blocked_identity: 'Identity blocked',
+    },
+    holdingEvidenceStockLaneDetail: (status: string) =>
+      status === 'complete'
+        ? 'Stock quote evidence is complete, so stock research that does not depend on account equity may continue. This does not authorize orders or pass account-level risk.'
+        : status === 'not_applicable'
+          ? 'No current stock holding needs quote review. Stock research that does not depend on account equity remains separate from fund NAV ingestion.'
+          : status === 'blocked_identity'
+            ? 'The stock holding lane cannot be verified until the canonical valuation identity is restored.'
+            : 'Stock holding quote evidence needs separate review before it can support stock-side interpretation.',
+    holdingEvidenceFundLaneDetail: (status: string) =>
+      status === 'complete'
+        ? 'Current fund holdings have confirmed NAV evidence.'
+        : status === 'not_applicable'
+          ? 'No current fund holding needs confirmed NAV evidence.'
+          : status === 'blocked_identity'
+            ? 'The fund holding lane cannot be verified until the canonical valuation identity is restored.'
+            : 'Confirmed fund NAV is still pending. Full-account authoritative valuation and risk remain blocked; ordinary quote refresh cannot clear this lane.',
+    holdingEvidenceLaneCoverage: (confirmed: number, total: number) =>
+      `${confirmed}/${total} current holdings confirmed`,
     holdingEvidenceSnapshot: 'Valuation snapshot',
     holdingEvidenceLedgerCutoff: 'Ledger cutoff',
     holdingEvidenceFingerprint: 'Review fingerprint',
@@ -345,7 +372,34 @@ export const marketCopy = {
     holdingEvidenceExplicitRefresh:
       '该按钮会显式采集行情：可能联系已配置的行情源并记录批次，但不会修改账本、订单状态、风控或任何权限。',
     holdingEvidenceConfirmedNavRefresh:
-      '基金净值使用独立的仅确认采集批次；估值与前一日净值不能清除复核，每次尝试均留存审计且不会改变交易权限。',
+      '基金净值使用独立的仅确认采集批次；估算与前一日净值不能清除复核，每次尝试均留存审计且不会改变交易权限。',
+    holdingEvidenceStockLane: '股票行情证据',
+    holdingEvidenceFundLane: '基金净值证据',
+    holdingEvidenceLaneStatuses: {
+      not_applicable: '当前无持仓',
+      complete: '完整',
+      degraded: '待确认',
+      missing: '缺失',
+      blocked_identity: '身份阻断',
+    },
+    holdingEvidenceStockLaneDetail: (status: string) =>
+      status === 'complete'
+        ? '股票行情证据完整，不依赖账户总权益的股票研究可以继续；这不代表可以生成订单或通过账户级风控。'
+        : status === 'not_applicable'
+          ? '当前没有股票持仓需要行情复核；不依赖账户总权益的股票研究仍与基金净值采集分离。'
+          : status === 'blocked_identity'
+            ? '恢复权威估值身份前，股票持仓证据无法完成核验。'
+            : '股票持仓行情证据需要单独复核，暂不能支持股票侧权威解读。',
+    holdingEvidenceFundLaneDetail: (status: string) =>
+      status === 'complete'
+        ? '当前基金持仓均已有确认净值证据。'
+        : status === 'not_applicable'
+          ? '当前没有基金持仓需要确认净值。'
+          : status === 'blocked_identity'
+            ? '恢复权威估值身份前，基金持仓证据无法完成核验。'
+            : '基金确认净值仍待处理；全账户权威估值与风控继续阻断，普通行情刷新不能解除该状态。',
+    holdingEvidenceLaneCoverage: (confirmed: number, total: number) =>
+      `${confirmed}/${total} 个当前持仓已确认`,
     holdingEvidenceSnapshot: '估值快照',
     holdingEvidenceLedgerCutoff: '账本截止',
     holdingEvidenceFingerprint: '复核指纹',

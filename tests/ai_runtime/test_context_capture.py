@@ -146,6 +146,104 @@ def _service(db_path, source, *, context_store=None):
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.trading_safety
+async def test_guarded_capture_crossing_deadline_performs_zero_writes(tmp_path) -> None:
+    blocked = False
+
+    class CrossingSource:
+        async def load(self, request: HumanContextCaptureRequest) -> CaptureSourceBatch:
+            nonlocal blocked
+            blocked = True
+            return _batch(request.evidence_types)
+
+    service = _service(tmp_path / "capture.db", CrossingSource())
+
+    def require_open() -> None:
+        if blocked:
+            raise RuntimeError("qualification_market_open_blackout")
+
+    with pytest.raises(RuntimeError, match="qualification_market_open_blackout"):
+        await service.capture(_request(), write_guard=require_open)
+
+    with sqlite3.connect(tmp_path / "capture.db") as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_context_capture_runs").fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_canonical_evidence").fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_context_snapshots").fetchone()[0] == 0
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.trading_safety
+async def test_guarded_capture_crossing_at_commit_rolls_back_all_writes(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "capture.db"
+    service = _service(db_path, FixtureCaptureSource(_batch(_request().evidence_types)))
+    checks = 0
+
+    def require_open() -> None:
+        nonlocal checks
+        checks += 1
+        if checks == 3:
+            raise RuntimeError("qualification_market_open_blackout")
+
+    with pytest.raises(RuntimeError, match="qualification_market_open_blackout"):
+        await service.capture(_request(), write_guard=require_open)
+
+    with sqlite3.connect(db_path) as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_context_capture_runs").fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_canonical_evidence").fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_context_snapshots").fetchone()[0] == 0
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.trading_safety
+async def test_guarded_capture_commits_once_and_reuses_exact_result(tmp_path) -> None:
+    db_path = tmp_path / "capture.db"
+    source = FixtureCaptureSource(_batch(_request().evidence_types))
+    service = _service(db_path, source)
+
+    first = await service.capture(_request(), write_guard=lambda: None)
+    second = await service.capture(_request(), write_guard=lambda: None)
+
+    assert first.reused is False
+    assert second.reused is True
+    assert second.run == first.run
+    assert second.context == first.context
+    assert second.records == first.records
+    with sqlite3.connect(db_path) as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_context_capture_runs").fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_canonical_evidence").fetchone()[0]
+            == 2
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_context_snapshots").fetchone()[0] == 1
+        )
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("overrides", "message"),
