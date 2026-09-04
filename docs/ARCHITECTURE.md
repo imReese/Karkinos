@@ -1,649 +1,189 @@
-# Karkinos Architecture
+# Karkinos 架构
 
-[中文](ARCHITECTURE.zh.md) | [Goal](KARKINOS_GOAL.md) | [Roadmap](ROADMAP.md) | [Controlled execution](CONTROLLED_EXECUTION_PLAN.md)
+本文只记录长期稳定的系统边界和 invariant。当前开发顺序属于 [PLAN.md](PLAN.md)，源码物理布局属于 [CODEBASE.md](CODEBASE.md)。
 
-## Architectural Principles
+## 1. 架构原则
 
-1. **Persisted facts before presentation.** API, Web, reports, alerts, and AI read canonical persisted projections rather than reconstructing financial truth independently.
-2. **Evidence before authority.** A signal, report, review, or approval is not
-   execution authority unless a dedicated gate explicitly grants a bounded
-   capability.
-3. **Fail closed.** Missing, stale, partial, ambiguous, conflicting, or drifted
-   evidence blocks the affected action.
-4. **Separate proposal from mutation.** Preview, review, approval, apply, and
-   reconciliation are distinct commands with distinct identities.
-5. **Idempotent external effects.** Broker submission, cancellation, evidence
-   ingestion, reconciliation, and ledger posting use canonical fingerprints and
-   persistent claims.
-6. **Human-supervised expansion.** Runtime authority can expire, pause, narrow,
-   or be revoked automatically; it cannot widen or renew itself.
+1. **Data integrity before freshness.** 时间语义、来源、身份和可重放性优先于“看起来更新”。
+2. **Persisted facts before authority.** Provider、模型和缓存不能直接成为账户、风险或交易事实。
+3. **Fail closed on the affected action.** 需要新鲜证据的动作必须阻断，但无关功能不应被连带打死。
+4. **Last-good reads survive failed writes.** 一个失败的 candidate publication 不能摧毁已经成功发布的可读快照。
+5. **One concept, one owner.** 估值、收益、费用、风险等核心概念只能有一个 canonical 计算所有者。
+6. **Replay over guesswork.** 生产故障和研究结果都必须能够用持久化输入确定性重放。
+7. **Human-supervised authority.** 权限可以自动暂停或收窄，不能自行续期、扩大或恢复。
 
-## System Layers
+## 2. 系统形态
+
+Karkinos 继续采用 **Python modular monolith + 隔离 worker**，而不是为了“专业感”拆成微服务。
 
 ```text
-Web UI / CLI
-    |
-FastAPI routes and application services
-    |
-Research | Decision | Risk | Operations | OMS | Reconciliation
-    |
-Canonical evidence, audit, ledger, and valuation stores
-    |
-Market providers | local files | model edge | broker edge
+React / TypeScript
+        |
+FastAPI API / Control Process
+        |
+Application Services
+        |
+Research | Portfolio | Decision | Risk | OMS | Reconciliation
+        |
+Persistence / Dataset Boundaries
+        |
+Market Providers | Model Provider | Broker Edge
+
+Background isolation:
+- Research Worker
+- Market-data worker / heavy ingestion worker（按需要逐步隔离）
 ```
 
-### Presentation
+API 负责读取、命令入口和控制面；provider-heavy、model-heavy 工作不得成为 API 可用性的单点故障。
 
-The React/Vite product UI and CLI expose operator workflows. Presentation code
-may format canonical values and compose navigation, but it does not own
-portfolio arithmetic, risk decisions, authority, or broker state.
+## 3. 两个数据平面
 
-### Application services
+### Market Data Plane
 
-FastAPI routes validate requests and delegate to application services.
-Application services own idempotency, transaction boundaries, orchestration,
-and response projection. GET paths are read-only: they do not initialize
-schema, refresh providers, resume workflows, or contact a broker implicitly.
+负责大量、可复现、point-in-time 的研究数据：
 
-### Domain
+```text
+universe
+OHLCV (1d / future 1m)
+adjustment factors
+suspension / limit state
+turnover / liquidity / market cap
+industry / membership
+fundamentals
+feature datasets
+```
 
-Core domains remain separate:
+这些数据是研究输入，不是交易权限。高容量历史数据应逐步采用适合分析的列式存储和内容指纹，而不是无限扩张 `app.db`。
+
+### Financial Control Plane
+
+负责小而强一致、可审计、需要事务语义的事实：
+
+```text
+canonical quote / close
+valuation publication
+ledger
+fees
+Account Truth
+risk decisions
+Decision
+OMS / fills
+reconciliation
+authority / runtime controls
+audit events
+```
+
+这里优先使用 SQLite 的事务、唯一约束、WAL、内容身份和 append-oriented audit。
+
+## 4. 当前持久化边界
+
+- `app.db`：authoritative financial/control facts、ledger、risk、OMS、runtime controls、audit。
+- `meta.db` / market storage：历史 market bars 和 dataset metadata。
+- 后续高容量 market/research datasets 迁移到 Parquet + DuckDB/Polars 属于 [PLAN.md](PLAN.md) 的演进，不要求重写 Financial Control Plane。
+- 任何 frozen research dataset 都必须有确定的内容 fingerprint 和 point-in-time 语义。
+
+## 5. Publication 与读取语义
+
+当前估值 publication 使用两个不同概念：
+
+```text
+valuation_snapshot_publication
+    = 最后一次成功、当前可读取的 canonical publication
+
+valuation_snapshot_publication_attempt
+    = 最近一次 publication attempt 的结果
+```
+
+正确状态机：
+
+```text
+candidate facts
+-> validate
+-> transaction
+   -> success: atomically publish new current
+   -> failure: rollback candidate facts + record failed attempt
+              current last-good remains unchanged
+```
+
+没有任何成功 publication 时，financial reads 继续 fail closed。
+
+已经有成功 publication 时，新写入失败可以让读取进入 `ready/stale/degraded`，但不能把上一份已验证快照直接变成全站 503。与此同时，依赖最新证据的 Decision/Risk/Execution 可以继续 `blocked`。
+
+## 6. Read availability 与 Action readiness
+
+二者必须分开：
+
+```text
+Read availability
+- ready
+- stale/degraded but explainable
+- unavailable
+
+Action readiness
+- ready
+- blocked by freshness / conflict / reconciliation / authority / risk
+```
+
+“页面能否查看已有事实”与“现在能否产生新的资金动作”不是同一个问题。
+
+## 7. Domain ownership
 
 | Domain | Owns |
 | --- | --- |
-| Market data | bars, quotes, cache/source health, snapshots, freshness |
-| Portfolio and ledger | cash, positions, lots, cost basis, financial events |
-| Research | strategies, experiments, evidence bundles, promotion readiness |
-| Decision | daily candidates, target weights, blockers, explanations |
-| Risk | pre-trade and runtime risk decisions, kill-switch state |
-| Operations | scheduled runs, paper/shadow, alerts, review tasks |
-| OMS | canonical order identity, lifecycle, transitions, fills |
-| Reconciliation | broker/account/order/fill agreement and review |
-| Controlled execution | bounded authority, budgets, sessions, submission gates |
-| AI research | evidence contexts, workflows, artifacts, reviews, memory lineage |
+| Market data | datasets、bars、quotes ingestion、source health、freshness |
+| Research / Alpha | frozen datasets、alpha definitions、experiments、OOS evidence |
+| Portfolio | target weights、positions projection、portfolio construction |
+| Ledger / Valuation | cash、lots、cost basis、financial events、canonical valuation |
+| Decision | account-bound daily actions、blockers、explanations |
+| Risk | deterministic pre-trade/runtime risk policy |
+| Execution | broker-neutral orders、fills、simulation semantics |
+| Reconciliation | broker/account/order/fill agreement and recovery |
+| Operations | scheduler、workers、alerts、readiness、runbooks |
+| AI research | evidence-bound hypotheses and critiques; never authority |
 
-### Evidence and persistence
+Presentation 可以格式化和组合 canonical values，但不能重新拥有这些计算。
 
-SQLite stores append-oriented financial, operational, execution, and AI audit
-facts. Canonical fingerprints bind inputs and make restart, duplicate handling,
-drift detection, and replay deterministic.
+## 8. Backtest / Shadow / Live 语义
 
-External providers are edges. Their runtime responses become evidence only
-after validation and persistence; they never become implicit authority.
+以下语义必须尽量共享实现，而不是各写一套：
 
-## Canonical Financial Identity
+- signal timing；
+- order timing；
+- T+1；
+- 100 股 lot；
+- 涨跌停 / 停牌；
+- fees / taxes；
+- slippage；
+- turnover；
+- position / liquidity limits；
+- risk gates。
 
-A valuation view binds:
+不同环境可以更换数据源和执行 adapter，但不能悄悄改变金融语义。
 
-- a valuation snapshot id and fingerprint;
-- confirmed quote/NAV observations and previous-close baselines;
-- a ledger cutoff and ledger fingerprint;
-- source, cache, freshness, and data-quality evidence;
-- explicit estimated or unavailable status where applicable.
+## 9. 语言与性能策略
 
-Holdings, Equity Curve, Overview, Decision, Account Truth, and AI evidence must
-refer to the same canonical identity when they claim to describe the same point
-in time. Historical reconstruction cannot use future prices or unrelated
-current quotes.
+- Python 继续作为 research、orchestration、API 和大部分 domain 的主语言。
+- TypeScript/React 继续负责 Web。
+- 不进行全量 Rust 重写。
+- 只有在 profiler/benchmark 证明 Python + NumPy/Arrow/Polars/DuckDB 无法满足明确 SLO 时，才把热路径下沉到 Rust/native kernel。
+- Rust 是可选 compute engine，不是新的产品架构中心。
 
-`karkinos.persisted_valuation.v4` keeps an intraday fund estimate as explicit
-non-authoritative evidence and marks it `confirmed_nav_missing` until same-day
-confirmed NAV is persisted. One snapshot identity exposes aggregate `status`
-for account equity and `valuation_lanes` for stock, fund, and represented other
-assets from the same quote set; an absent core lane is `not_applicable`. A fund
-delay therefore degrades its lane and aggregate valuation, not the stock lane.
-Provider-free work that does not consume account equity remains independent;
-account-bound candidate, capital, risk, and Decision Quality gates that use
-`total_equity` require aggregate completeness. Classification uses persisted facts only and no GET contacts a provider. Overview keeps the normalized research preview and canonical account recommendation as separate read lanes: research stays explicitly non-executable, while the account lane shows qualification blockers and only buy, sell, hold, rebalance, review-required, or first-class no-action from current account evidence. Research cannot clear an account blocker or masquerade as an account recommendation. Fund NAV delay leaves stock-only Formula discovery independent but blocks qualification, capital, portfolio-risk, and Decision consumers of aggregate `total_equity`.
+业务语义错误、时间身份错误和错误状态机不会因为换语言自动消失。
 
-`karkinos.current_holding_market_evidence_review.v1` projects those blockers for
-canonical non-zero holdings, including negative positions but excluding closed
-facts. Its aggregate result, per-asset lanes, and separate ordinary-quote versus
-confirmed-fund-NAV symbol scopes bind the same valuation/ledger identity and a
-deterministic fingerprint. Overview consumes only this report; Market exposes
-targeted ingestion commands. A read or acknowledgement cannot clear evidence,
-query a connector, write data, or mutate authority. Confirmed-NAV ingestion
-rejects estimates and previous-day NAV, binds caller request id to exact scope,
-and replays its persisted audit run idempotently; scope drift fails closed.
+## 10. 故障域
 
-The batch pre-trade risk boundary is fail-closed on that same identity. It
-requires a complete persisted valuation snapshot, a positive ledger cutoff,
-and complete persisted market evidence for every candidate before any risk
-decision is written. A rejected batch returns an explainable zero-write result;
-an accepted batch embeds the exact snapshot and cutoff in every persisted risk
-decision. Neither branch creates orders, submits to a broker, or writes the
-ledger.
+单个 provider、market refresh、research worker、scheduler task 或 candidate publication 的失败必须被限制在对应功能域，并暴露明确状态和安全下一步。
 
-## Core Flows
+生产 readiness 至少应能够分别表达：API、database、market ingestion、valuation reads、Decision readiness、execution authority，而不是只报告“进程活着”。
 
-### Research
+## 11. 架构变更规则
 
-```text
-strategy definition
--> frozen dataset snapshot
--> deterministic backtest
--> costs and OOS analysis
--> research evidence bundle
--> human review and promotion readiness
-```
-Strategy extensions use typed metadata and parameters; Web-triggered arbitrary code is outside the contract, and research cannot bypass risk, journal, paper/shadow, or manual-confirmation gates.
-`karkinos.market_universe_truth.v2` separates research membership from current holdings. After the latest officially verified close, a background ingestion edge persists one immutable, content-addressed full active A-share stock snapshot, excludes funds/ETFs and other unsupported asset classes, and freezes each verified trading day's complete provider cross-section together with an immutable ingestion receipt. A changed receipt, changed underlying row, missing verified date, incomplete latest cross-section, or insufficient full-market history fails closed. The research read path never contacts a provider: it reopens the exact snapshot and receipt-bound bars, hard-filters every active stock for missing/stale/short/invalid series and conservative 100-share lot/capital feasibility, then freezes an exact 40-stock panel before any model call. Panel order, full-directory screening counts, exclusions, capital binding, and evidence fingerprints are reproducible. Dataset quality is computed from the exact ordered frame that is content-hashed and consumed by the backtest; ingestion-source diagnostics remain separately bound for audit but cannot override the consumed-frame result, and any real consumed-frame duplicate, missing OHLCV field, non-monotonic timestamp, or unavailable content digest still fails closed. DeepSeek may propose signal logic only; provider-supplied position sizing is discarded and replaced locally with the fixed four-slot policy, while reviewed costs, lot rounding, portfolio risk, and authority remain owned by Karkinos. Ingestion and research create no strategy promotion, order, broker submission, ledger mutation, execution authority, or capital expansion.
+只有以下变化才更新本文：
 
-The optional after-close service admits one run per market date: persisted bars plus a fixed CNY 1,000,000 normalized-notional research context bound by versioned policy `karkinos.ai.normalized_research_notional.cny_1m.v1` -> a baseline/content-hashed dataset calculated with the canonical estimated-cost model -> atomic capped call claims and token-usage accounting -> DeepSeek Formula DSL revision -> local validation and canonical after-cost rolling OOS -> evidence critique -> fingerprinted parent feedback -> next revision -> persisted research-only candidates. Formula discovery neither reads a broker provider nor requires Account Truth, a valuation snapshot, or a ledger cutoff. A normalized candidate remains research-only until the separate provider-free account-qualification replay completes. That replay accepts only the latest fingerprint-valid normalized selection and content-addressed backup with exactly five unique candidates; it cross-checks the source comparison, Formula semantic, dataset, window, universe, canonical discovery cost model, and sequential lineage for the entire batch without rewriting any source artifact. It then reads the current canonical Account State and requires a complete aggregate valuation snapshot, a positive ledger cutoff with matching ledger fingerprint, reconciled Account Truth source/scope, and an active reviewed fee schedule whose scope is stock-only. Qualification initial cash is exactly `min(karkinos.ai.normalized_research_notional.cny_1m.v1, current reconciled total_equity)`. The reviewed baseline and all five candidates are replayed locally with the same frozen dataset, unchanged Formula semantics, same capital, and same reviewed fee calculator; DeepSeek and the broker are never contacted. The deterministic advancement gate and the predeclared lexicographic ranking over after-tax excess, mean/worst OOS excess, drawdown, turnover, and stable candidate identity produce either one qualification winner or a named no-selection. Qualification run, candidate, selection, and approval records form an append-only overlay bound to the original selection/backup plus Account State, valuation/ledger, Account Truth, fee, and replay fingerprints; source normalized artifacts remain immutable. Every enabled policy must authorize exactly five strictly sequential revisions and ten provider calls (one generation and one critique per round), with no Karkinos daily aggregate token budget. Provider per-request output and context-window limits remain technical constraints. Every DeepSeek outbound call is admitted by one versioned provider call-window policy: sends are prohibited on Beijing-time weekdays during `[09:00,12:00)` and `[14:00,18:00)`, and neither routes nor manual APIs have a force bypass. A complete after-close batch starts only with enough continuous off-peak runway to finish before 09:00 on the next working day; insufficient runway yields `deferred` without claiming a run/call or consuming provider quota. A claimed slot that fails before provider transport is classified as provider-free and does not consume the external-call ceiling. When corrected software re-arms such a run, every existing retry and citation-extension consumption moves atomically to the replacement identity, preserving the original authorization and ceiling instead of creating new authority. Prompt changes always use a new immutable hypothesis/critique role identity rather than rewriting a persisted role. A citation-contract failure after one original call and one authorized-retry call may receive one append-only owner extension only when raising the ceiling by exactly one restores exactly ten remaining calls for the original five rounds. The extension is bound to that exact zero-candidate failure and replacement run, cannot be repeated or generalized, and grants no strategy, order, broker, or capital authority. A legacy bounded-token or smaller enabled policy is retained for audit but blocks before evidence preparation or provider access until an owner explicitly saves the complete policy. Round two and later must bind the immediately preceding formula, canonical metric summary, advancement blockers, and critique. Alongside that parent bundle, only the normalized, privacy-minimized research context is exported; private account identifiers, absolute values, valuation/ledger identities, and broker facts never enter Formula discovery. Each hypothesis request derives only the deterministic four-or-five required evidence anchors from the exact exported JSON and exposes them as stable `cite_01`…`cite_05` IDs for performance, dataset, cost, normalized allocation, and parent lineage; unrelated nested evidence paths are never enumerated into the model-facing citation catalog. Every draft must return that exact ordered ID list with no omissions, additions, rewrites, or paths; local code resolves each ID back to its canonical path and rechecks path existence before persisting an artifact. An empty, oversized, unrepresentable, mismatched, unknown, or drifted catalog/path fails closed and cannot create a candidate. Original account-bound run validation evaluates Account Truth freshness at the frozen market date's authorized close time and persists that timestamp in its original research selection. The qualification overlay instead binds the current canonical Account State and current complete aggregate valuation/ledger identity while preserving the source Formula and frozen research dataset. Ordinary current-state views keep using wall-clock freshness. This prevents a weekend retry from misclassifying the preceding trading day's decision snapshot while still rejecting a missing, future-dated, stale-at-decision, drifted, or unreconciled snapshot. Only an exact human confirmation may approve the qualification winner, and it targets paper/shadow only; it cannot replace the production strategy, create an order, submit to a broker, write the ledger, or grant execution/capital authority. A subsequently human-promoted strategy becomes input to the next-session provider-free promoted-universe scan and independent Daily Decision, which still rechecks current market, Account Truth, aggregate valuation, reviewed fees, risk, paper/shadow, and reconciliation before returning an account action or first-class `NO-ACTION`. No complete passing set means no new-candidate winner and no new promotion; it leaves the current human-approved strategy unchanged and never itself decides a trading `NO-ACTION`.
+- 长期组件边界改变；
+- 数据 ownership 改变；
+- transaction / publication / replay invariant 改变；
+- 进程或故障域改变；
+- 语言边界或存储职责改变。
 
-When the fifth hypothesis alone times out after four complete persisted rounds, an owner may grant one append-only partial-resume extension only for that exact run. Admission recomputes the four-round session, draft, backtest, critique, candidate, parent-lineage, and completed-call fingerprint, requires the already consumed ceiling-13 extension plus exactly twelve real calls, and raises the ceiling only from 13 to 14. The existing unused slot and this one additional slot permit only a new deterministic fifth hypothesis call and its critique. The original failed call remains immutable; rounds one through four are loaded from canonical evidence rather than regenerated or re-backtested. Any evidence, input, count, status, or lineage drift fails closed. Consumption resumes the same run and grants no strategy promotion, order, broker, execution, or capital authority. DeepSeek strategy-research transport timeout is ten minutes; other provider timeouts are unchanged. A completed pre-full-market run that produced exactly five verified but ineligible candidates may not silently spend the standing daily allowance again. `karkinos.ai.corrected_panel_rearm_evidence.v1` permits one append-only owner authorization only when the current daily selection is a fingerprint-valid `no_selection`, the prior provider ceiling is fully consumed, and the replacement input binds `karkinos.market_universe_truth.v2`, one exact 40-stock `karkinos.research_panel_snapshot.v2`, complete receipt-bound history, and the current prepared-baseline fingerprint. The authorization adds exactly ten calls to the prior ceiling for one complete five-round replacement run; it is consumed atomically by the replacement input fingerprint and cannot promote a strategy, create an order, contact a broker, mutate the ledger, or expand capital. The old selection and backup remain current throughout the new run. Only after all five replacement rounds and the deterministic selection finish successfully does one transaction move the old bytes and fingerprints into superseded-evidence tables and publish the replacement as current; any provider, data, fingerprint, backup, or persistence failure leaves the old current evidence unchanged. If that exact corrected-panel replacement completes its first hypothesis and canonical local backtest but the first critique fails only because a model returned citation paths outside the bound contract, a separate one-shot authorization may raise the already consumed ceiling only from 24 to 25. Admission requires exactly 16 real calls for the market date, the original corrected-panel evidence fingerprint, unchanged baseline/valuation/ledger identities, one valid first-round draft and completed backtest, one immutable failed critique/provider call with `critique_citation_outside_binding`, and an exact checkpoint fingerprint. The resumed run reuses the persisted hypothesis and backtest, gives the critique a new authorization-bound idempotency key, then spends the remaining eight ordinary slots on rounds two through five. Critique prompts expose a small ordered `cite_01`... catalog; the provider must return that exact ID list and local code resolves it back to canonical paths. Any count, status, identity, lineage, citation, checkpoint, or current-input drift fails closed. This path adds exactly one provider call and no promotion, order, broker, ledger, execution, or capital authority.
-
-The daily selection and a privacy-minimized Formula DSL snapshot are persisted as immutable evidence; the JSON backup is atomically written under the local data directory, content-addressed, and rehashed on every status/approval read. It excludes broker rows, private account identifiers, credentials, and absolute Account Truth values. A missing, unreadable, identity-conflicting, or fingerprint-drifted backup blocks public candidate approval. Promotion readiness binds only the run/date/winner identity plus selection and backup fingerprints, never the private path. Every downstream promotion, paper/shadow, Decision, and order-generation read reopens the canonical local backup read-only and compares that current binding; missing legacy readiness, deletion, or post-approval drift blocks the strategy. Stable identities make replay idempotent; policy and Kill Switch are rechecked before stages. Absolute account values, quantities, prices, costs, valuation/ledger identifiers, credentials, trade plans, and broker capabilities are never exported; approval cannot mutate StrategyRegistry, production assignment, OMS, ledger, risk, or broker state. `karkinos.strategy_advancement_gate.v2` hashes the exact ordered timestamp/OHLCV rows, aligns candidate and reviewed-baseline OOS folds, runs a bounded locally bound Formula parameter grid, partitions frozen market states, and requires non-worsening drawdown/turnover, passing daily-bar capacity/liquidity, account-specific broker-reconciled fee/tax evidence, positive after-tax excess, and critique. It also requires a fingerprinted `research_account_capital_constraint`: the research selection must bind the same complete valuation snapshot and ledger cutoff as the captured canonical Account State, the fee review must still bind reconciled Account Truth, and `initial_cash` must not exceed current account equity. The artifact redacts current cash, positions, and equity; passing it grants no capital or execution authority. Unbound normalized selections remain research-only and fail the existing advancement, promotion, and downstream gates; they do not block provider-free normalized-notional preparation or DeepSeek Formula discovery. The built-in cost model is the canonical discovery estimate but cannot satisfy the account-specific fee gate. A caller-computed gate fingerprint is integrity evidence, not source authentication: direct generic promotion is therefore blocked, and only the persisted evidence-owned qualification approval path may advance a normalized candidate. The qualification overlay is the only service allowed to attach the current active stock-only reviewed fee reference and current canonical Account State to the verified source batch, replay baseline plus all candidates, and persist account-bound advancement/ranking evidence. Its winner still requires a non-empty human reviewer and the exact paper/shadow-only confirmation. The Web reads the canonical promotion state; pause/revoke requires an explicit reason plus the exact safety confirmation and preserves audit history, while re-entry requires a fresh review note plus the exact paper/shadow-only confirmation. Nested fingerprints are recomputed; reserved strategy promotion and every ticket re-resolve the exact candidate, source backup, qualification overlay, source backtests, critique, human approval, and paper-shadow state. Any non-AI legacy generic promotion state is explicitly ineligible as per-order evidence. Reconciliation persists exact-identity plan/paper/imported-actual quantities, prices, and costs; a reserved strategy's next batch stays blocked unless that comparison is a drift-free pass. Any gap produces named `research_blocked`/no-action evidence, and no gate, approval, ticket, or comparison grants execution or capital authority. Account-specific cost resolution is an append-only Account Truth sub-protocol: configured schedule -> provider-free component preview against the exact current persisted import -> fingerprint-bound human approval -> versioned `reviewed_account_fee_schedule` calculator. The review store contains safe terms, aggregate reconciliation results, dates, and source/scope fingerprints, but no broker rows, file names, or private account identifiers. Account qualification, account-bound promotion, and downstream ticket paths resolve that active reference, including exchange-specific terms and component rounding; normalized-notional discovery continues to use the canonical estimate. Critique remains research-only, while qualification, promotion, and tickets recheck the active account-specific review and the action date; revocation, source drift, tampering, or missing coverage fails closed downstream. GET is zero-write, and neither approval nor revocation touches StrategyRegistry, OMS, broker, or capital authority. `karkinos.account_truth.reviewed_fee_schedule_preview.v4` binds the explicit stock-only production strategy scope: ETF and fund trades remain Account Truth, valuation, and risk facts with visible excluded aggregates but cannot enter stock fee reconciliation, its notional envelope, research, promotion, Decision candidates, paper/shadow orders, tickets, or trial replay. Any non-stock or reviewed-asset-scope drift fails closed without changing broker, execution, or capital authority.
-### Daily decision
-
-```text
-portfolio + market + strategies + account evidence
--> candidate actions and target weights
--> batch construction and costs
--> risk gate
--> buy / sell / hold / rebalance / no-action / review-required
-```
-Every public action includes evidence and blockers. A no-action result is a first-class outcome, not an error or empty response. `karkinos.strategy_order_generation_gate.v1` makes order generation two-stage: current evidence-owned promotion and reviewed fees permit only `paper_shadow_required`; a manual ticket also requires the same-date persisted run to bind the exact action, fingerprint, simulated order, and `within_expectations` result. The write edge rechecks Account Truth, market, risk, Kill Switch, and strategy/shadow bindings; missing legacy promotion is never grandfathered. `karkinos.daily_decision_evidence_automation.v3` is the canonical no-caller-facts production run and resolves only a fully bound manual-ticket candidate or `no_action`; it directly requires same-market-date Account Truth promotion evidence and a current persisted closure for every prior non-simulation OMS order, including replay of any exact plan/paper/actual source. Its background caller is read-gated by the persisted official SSE calendar and an exclusive 09:35-09:45 Asia/Shanghai decision window, then atomically claims one separate fail-closed attempt record per market date before reading the plan. A stale plan, failure, interruption, or restart cannot reopen that automatic attempt. `karkinos.daily_candidate_trial.v2` reads the complete persisted run history and counts only verified-calendar days with one fingerprint and exact paper/shadow replay in the newest frozen strategy, reviewed-fee, and reviewed strategy-operating-constraint epoch; prior epochs are superseded rather than merged, including when an old binding returns. It separately projects the canonical current non-paper/shadow OMS population into a privacy-minimized plan/paper/actual or terminal-no-fill coverage summary and binds that summary fingerprint into the trial and human review. A new or changed real-order closure therefore invalidates the old review, while real orders are never counted toward or attributed to the 50 simulated-order sample. Its 20-day / 50-order threshold enables only a fingerprint-bound human GO/NO-GO review, never a ticket, execution/capital authority, or profitability claim. Automation Cockpit v4 keeps `karkinos.daily_candidate_runtime_status.v1` as a separate operational projection and adds `karkinos.daily_candidate_financial_preflight.v1`. Runtime status binds the unconditional service lifecycle to exact in-process task state but never claims financial readiness. The preflight is a zero-write, provider-free projection of current Decision/plan identity, same-date Account Truth and quotes, exact frozen strategy replay, active reviewed fee/date binding, safe automation policy, and prior-execution closure. Missing, drifted, stale, out-of-window, or unreconciled input produces named `no_action`; a pass permits only the canonical risk and paper/shadow attempt. It cannot create a ticket, mutate OMS/ledger, submit to a broker, change capital authority, or establish profitability, and the post-shadow production gate remains the only ticket-candidate authority. Separately, `karkinos.automatic_trading_control.v1` is a default-closed, maximum-12-hour runtime master gate persisted with compare-and-set and an audit event in one transaction. Session issuance, replacement, and per-order admission bind its exact revision, fingerprint, and disable lineage; Kill Switch remains higher priority, `manual_each_order` is unaffected, and the gate grants neither capital authority nor automatic broker submission.
-For a human-promoted Formula strategy, the daily run first performs a zero-write `karkinos.promoted_strategy_universe_scan.v1` preview over every buy-eligible stock in the exact receipt-bound universe while separately evaluating current stock holdings for exit signals; fund and ETF positions remain Account Truth facts but never enter either strategy lane. Signal evaluation observes only the previous verified close. The deterministic selection fingerprint is then used by `karkinos.daily_candidate_quote_freeze.v1` to refresh and persist only the selected new-buy symbols through the canonical quote-ingestion edge. Karkinos rebuilds Account Truth and repeats the full scan before writing signals. Only an identical selection with complete same-day quote evidence may create recommendation tasks. Quote failure, Kill Switch or automation-policy drift, Account Truth drift that changes selection, strategy-backup drift, receipt drift, or any other mismatch writes no recommendation task. A complete scan with no entry or exit signal is normal `completed_no_signal`, not a missing-strategy defect. The resulting trial read model persists the exact read-only ticket candidates, so a page reload does not erase an already produced production outcome. None of these stages creates an OMS order, contacts a broker, changes a ledger, promotes a strategy, or expands capital authority.
-`karkinos.daily_candidate_background_schedule.v3` derives a separate current-or-next reviewed window only from the same persisted, officially verified SSE calendar. Exact Shanghai timestamps are preparation evidence, not eligibility: the projection performs no provider contact or database write, cannot reopen an attempted date, retry or backfill a run, or change attempt, execution, or capital authority. On a verified trading day it separately exposes a once-only 08:45-09:35 preparation claim for persisted policy, same-day Account Truth, reviewed fees, human-promoted strategy, and prior execution closure. That privacy-minimized check defers current market and Decision/plan evidence, never retries or consumes the formal attempt/trial, and grants no order, broker, ledger, execution, capital, or profitability authority. A cross-year window requires a separately verified next-year snapshot; missing verification remains explicitly unavailable.
-The production gate and trial replay both verify that the final Decision, plan, and persisted run start are inside the reviewed window. Summary and per-intent quote timestamps must precede the Decision by no more than 300 seconds; Account Truth capture must also precede the Decision and its derived age must remain inside the reviewed maximum. `karkinos.daily_candidate_input_identity.v2` ignores only non-authoritative current-age counter drift while binding production blockers, sanitized risk-failure identity, frozen strategy replay, exact paper/shadow result, and prior-execution closure. The trial recomputes that identity and the derived quote and Account Truth ages, so same-day source or outcome drift creates conflict evidence instead of overwriting an earlier result. For each intent, the final Decision's canonical order-generation gate is also reduced to a fingerprinted safe binding shared by the daily snapshot and ticket: strategy advancement, reviewed fee schedule, comparison, human approval, frozen baseline/candidate dataset identities, persisted-only dataset replay, and a content-addressed operating-constraints artifact containing the reviewed hypothesis, risk impact, failure conditions, limitations, and anti-lookahead assumptions. The artifact explicitly carries no automatic enforcement, execution authority, or capital change; missing or drifted content fails closed, and its fingerprint is part of the forward-trial epoch. A separate privacy-minimized Account Truth binding shares only its source fingerprint, capture/derived-age limit, valuation snapshot, ledger cutoff, reconciliation, coverage, and non-authority boundaries; it contains no account identity or balances. Each atomically claimed background attempt also persists one bounded operator alert for NO-ACTION, read-only ticket review, interruption, or fail-closed failure; configured notification receives at most eight named NO-ACTION blockers and times out after ten seconds. Alert or notification failure is recorded only by sanitized status/error type and cannot reopen the attempt or affect OMS, broker, ledger, or capital authority. Any nested boundary or binding mismatch prevents ticket emission, and a latest excluded day prevents an otherwise mature trial from opening a GO review.
-
-### Paper/shadow operations
-
-```text
-daily plan
--> deterministic paper/shadow run
--> simulated OMS orders and fills
--> costs and divergence
--> operator review and alerts
-```
-
-Paper/shadow facts never become real fills or ledger mutations. Operations owns run identity, retry, status, limitations, and recovery tasks. `POST /api/trading/shadow-runs/daily` is a compatibility alias over canonical Decision -> Plan -> Paper and rejects caller-owned `base_equity`.
-
-### Account Truth and reconciliation
-
-```text
-candidate adapter release manifest
--> deterministic local conformance report
--> human accept / reject / revoke review
--> exact live collector deployment binding
--> explicit broker import or collector evidence
--> preview and validation
--> persisted broker facts
--> account/execution reconciliation
--> human review
--> optional separately confirmed ledger action
-```
-
-Raw provider facts retain source identity. Duplicate, sequence, account,
-quantity, and schema conflicts fail closed. `karkinos.account_truth.evidence_scope.v1` separates the observed event span from reviewed account, date-window, and asset-scope completeness; observed first/last rows alone never prove full coverage. An explicit owner action may append an exact-import, privacy-hashed account-reference review, and a later revocation or source drift blocks it again. `karkinos.account_truth.evidence_readiness.v2` combines that scope with the canonical score and sanitized incomplete-source follow-up without financial recomputation, provider contact, read-side writes, reconciliation eligibility, or execution/capital authority; missing or unreadable persisted evidence fails closed.
-
-A collector's own release-status field is not authority. Release acceptance
-first binds the latest passing deterministic conformance report to the exact
-manifest fingerprint. Live callback/poll ingestion then resolves the
-append-only adapter release review and binds collector,
-deployment fingerprint, provider, gateway, account alias, authorization,
-capability matrix, process boundaries, and rollback/privacy evidence at both
-prepare and commit. Missing, rejected, revoked, tampered, or drifted release
-evidence blocks ingestion. A newer conformance result, including a newer pass,
-requires a new human review; a newer failure invalidates the old eligibility.
-The local suite validates Karkinos contracts and does not claim a real adapter
-works. Acceptance neither registers an adapter nor grants broker-write or
-capital authority.
-
-Trading exposes the same decision as a default-collapsed signed journey: one dossier binds the exact manifest, latest conformance, current review,
-decision/reason/time, and short-lived approval. Its approval id enters the
-review fingerprint; drift fails closed, while reject/revoke remain safety-only
-and the journey cannot select, register, or contact a broker.
-
-Operations exposes the same persisted release, conformance, and collector
-bindings through `karkinos.broker_adapter_readiness.v1`. The projection opens
-the database read-only, never creates missing schema, never contacts a provider,
-and treats "no real provider selected" as neutral rather than unhealthy. It can
-surface drift or collector failure, but it cannot record a review, register an
-adapter, or grant execution or capital authority.
-
-Read-only soak promotion also binds recovery evidence to one exact connector.
-Unscoped, unrelated, or mixed-connector drills cannot satisfy another
-connector's dossier. For each drill type, the newest matching scoped result is
-authoritative; a later failure invalidates the earlier pass and changes the
-dossier fingerprint, so an old operator acceptance no longer matches.
-Trading projects that same persisted-only status as five operator-readable
-gates: qualified days, daily phases, recovery drills, Account Truth binding,
-and signed owner acceptance. Ambiguous connector identity fails closed, and the
-panel exposes no registration, promotion, submission, or cancellation action.
-
-### Controlled execution
-
-```text
-reviewed plan and OMS order
--> account/risk/paper-shadow/gateway/reconciliation gates
--> signed capital evaluation and per-order approval
--> one persistent controlled intent
--> one external effect
--> lifecycle query/callback evidence
--> reconciliation
--> explicitly confirmed posting
-```
-
-Strategy code cannot reach the gateway. A prepared, accepted-but-unreconciled,
-or unknown intent blocks a different order. Unknown outcomes are query-only and
-are never automatically resubmitted.
-
-Decision exposes a separately opened signed revocation journey for a persisted
-runtime session. The operator selects an allowlisted reason, reviews the exact
-session/reservation fingerprint, signs a three-minute Ed25519 challenge outside
-Karkinos, and confirms the one-way revocation. The command reuses the canonical
-runtime-authority transaction and cannot auto-resume, renew, widen, submit, or
-cancel. Revocation closes future runtime admission only; it never claims that an
-open broker order was cancelled, so lifecycle collection and reconciliation
-remain separate mandatory work.
-
-`karkinos.current_per_order_confirmation_dossier.v1` is the read-only operator
-entry boundary before any controlled intent exists. It selects only canonical
-`manually_confirmed` OMS orders, scans append-only capital evaluations newest
-first, binds the exact OMS order fingerprint, and requires exactly one valid
-same-strategy prior-batch reconciliation reference and one gateway-verification reference.
-It never falls back from a newer matching blocked evaluation to an older pass;
-missing, malformed, ambiguous, or bounded-scan-incomplete evidence remains
-blocked. The resolved references feed the existing canonical per-order dossier,
-whose v5 fingerprint also binds the newest persisted adapter release matching
-the exact evidence-connector, execution-gateway, and account scope. That release
-must still be human-accepted, conformance-clear, blocker-free, and attached to a
-recorded read-only collector run. Missing evidence, revocation, conformance or
-manifest drift, scope mismatch, and unsafe projection boundaries all fail
-closed and invalidate an earlier signature. V5 additionally treats the four
-OMS gateway-gate references as typed identities rather than labels: the exact
-Account Truth import, Decision action, risk decision, and paper/shadow run must
-resolve from persisted facts, appear in the same capital evaluation, and match
-the order symbol, side, strategy, quantity, and limit price where applicable.
-The paper/shadow run must contain exactly one clear simulated order for the same
-Decision action. A missing provider-free Account Truth projection, forged ref,
-or source drift is a review and hard-submission blocker. Before legacy manual-
-ticket preview/export/create or manual-execution preview/record, the latest signed
-per-order confirmation is re-resolved against current capital, Account Truth,
-Decision action, risk, paper/shadow, adapter, soak, gateway, and prior-batch
-reconciliation; confirmation, dossier, and four source fingerprints bind every result.
-Missing, blocked, or drifted sources fail closed; all previews stay provider-free,
-state-free, non-authorizing evidence, and Trading exposes no submit/cancel control.
-
-Automation Cockpit consumes that same candidate contract through a fail-closed
-application reader. It validates the source schema, count, truncation, and
-non-authorizing boundaries before projecting ready/blocked counts into Decision.
-Any source drift blocks the handoff; the only UI transition opens Trading and
-does not create a broker action or a second financial calculation.
-
-The explicit Automation alert scan consumes this same projection. It writes one
-idempotent warning per exact blocked candidate fingerprint, or one source-level
-warning when the source contract is untrusted; ready candidates are not alerts.
-Repeated scans and service restarts reuse the same alert, while Cockpit GET
-remains write-free. Alerting never contacts a provider or changes financial or
-execution state.
-
-A terminal rejected intent may be reviewed through
-`karkinos.controlled_broker_rejection_evidence.v1`. This read-only contract
-binds the canonical OMS order fingerprint, controlled intent, exact gateway,
-account, client-order and operator identities, and an allowlisted sanitized
-result. It distinguishes a local pre-gateway block from a definitive gateway
-rejection; missing or ambiguous evidence fails closed. Export re-runs preview
-and rejects drift. The artifact remains copy-only. A separate
-`karkinos.controlled_broker_rejection_review.v1` record is inserted under
-`BEGIN IMMEDIATE` only after rechecking the exact preview fingerprint. It binds
-one reviewer, disposition, evidence time, sanitized result fingerprint, and all
-submission identities; the submit intent is unique, so identical restart replay
-returns the original record while conflicting reviewers fail closed. The
-operator journey then closes as no-retry. Neither boundary can query or contact
-a provider, create/retry/cancel an order, mutate OMS/ledger/Account Truth/risk/
-kill switch/interlock, or change capital or execution authority. Any later order
-starts as a new Decision and must pass every gate again.
-
-`karkinos.controlled_execution_operator_view.v4` evaluates every bounded
-persisted controlled intent before selecting the operator's next action. The
-chronologically latest journey remains available for audit compatibility, but
-the primary attention journey is selected by fail-closed severity: unknown or
-prepared outcomes and open broker orders precede reconciliation, clearance,
-posting, Account Truth follow-up, and already closed rejection reviews. The
-compact attention queue makes older unfinished journeys visible even after a
-newer journey is recorded. Its GET path reads persisted facts only and cannot
-query a gateway, submit, cancel, post a ledger event, or change authority.
-The final `post_ledger_account_truth` stage consumes the canonical Account
-Truth promotion evidence rather than recomputing reconciliation. It closes a
-posted journey only when the gate passes, evidence is fresh, reconciliation is
-clear, no mismatch remains, and current-ledger coverage is `covered`. Immutable
-same-import posting lineage may satisfy that coverage; an append-only
-correction always requires evidence captured after the correction. Missing,
-partial, degraded, stale, or boundary-invalid evidence remains in the attention
-queue. This read-side closure changes no Account Truth, ledger, OMS, risk,
-kill-switch, broker, or capital-authority state.
-
-`karkinos.operations_today.v1` also derives one versioned attention item for each non-pass/non-skipped subsystem. The item fingerprints the source status,
-next action, and evidence-based resolution condition while excluding
-request-generated timestamps. A refresh with unchanged evidence reproduces the
-fingerprint; evidence-status drift changes it. Viewing or acknowledging an item never clears it. The same
-read-only payload may enter an explicit AI context capture, but it performs no
-provider contact or database write and grants no execution authority. Canonical broker-evidence and reconciliation-review repositories open existing SQLite read-only for queries: construction and GET/list never initialize or migrate schema, absent tables mean no evidence, partial/incompatible schema or invalid records fail closed without repair, and only explicit import/review commands own schema creation or migration. Reviewed incomplete CITIC history exports remain a separate privacy-minimized, non-canonical source store with the same read boundary, and `karkinos.account_truth.citic_source_follow_up.v1` projects only sanitized persisted metadata as an additional Operations attention item outside canonical health. `karkinos.account_truth.citic_history_xls_batch_assessment.v1` checks source-set duplicate and event-identity integrity in memory, but observed event months never establish reviewed query-window coverage; the assessment stays blocked, event-free, non-persisting, and ineligible for Account Truth or reconciliation. `karkinos.account_truth.citic_history_canonical_lineage_assessment.v1` separately compares the runtime XLS batch with the currently selected canonical import using exact financial semantics, broker-order identity, and event identity, then returns only sanitized counts and fingerprints. Semantic similarity without preserved identity is partial evidence rather than canonical provenance; even exact event lineage cannot prove query-window, settlement, snapshot, or full-account completeness. The comparison persists nothing, returns no event/source details, and cannot promote evidence or alter Account Truth, reconciliation, execution, or capital authority. `karkinos.account_truth.citic_source_query_window_review.v1` is a separate append-only, revocable source-level attestation bound to the current file and sanitized-preview fingerprints: it validates a maximum 31-day broker query window against recognized event dates, stores no source or transaction detail, and clears only the source query-window sub-requirement. It never proves canonical coverage, binds an account, promotes events, satisfies settlement/snapshot/reconciliation gates, contacts a provider, or grants execution/capital authority. Rejection closes only the source task; it does not satisfy Account Truth or change reconciliation, risk, execution, or capital authority. Configured-directory scans may expose only one sanitized `YYYY-MM` token derived from an unambiguous local `YYYYMM` filename token to help the owner identify an exact source. The hint is runtime-only, excluded from evidence fingerprints and persistence, never prefills or proves a query window, and an absent or ambiguous hint disables directory-mode source decisions so the owner must select the exact file in the browser. `karkinos.account_truth.citic_broker_soak_candidate.v1` separately proves that a history-trade preview is not a versioned connector snapshot, enumerates the missing read-only source contract and operational prerequisites, and remains permanently ineligible for soak without registering a connector, persisting soak evidence, contacting a broker, or changing execution/capital authority.
-`karkinos.account_truth.citic_source_scope_review.v2` binds the exact source/window and privacy-minimized account reference to account type, market, asset, account-value-band, business, filter, and result-completeness declarations. The value band is fingerprinted query-scope metadata only, never a balance fact, order limit, or capital authorization; legacy v1 rows remain readable but incomplete until append-only replacement. The review cannot prove canonical coverage, promote events, satisfy settlement/snapshot/reconciliation gates, contact a provider, or grant execution/capital authority. Account Truth readiness therefore adds `karkinos.account_truth.citic_source_resolution_stage.v1`, a read-only explanation that distinguishes missing query-window/source-scope attestations from the state where all legacy attestations are complete but separately reviewed canonical evidence or explicit rejection is still required; it never changes the underlying follow-up blocker or any financial gate. `karkinos.account_truth.citic_source_canonical_resolution.v1` separately records that one exact legacy source set is fully covered by a complete fingerprint-bound canonical Account Truth scope review. The append-only, idempotent, revocable record stores only sanitized source-set and review fingerprints, never marks trusted files rejected, and automatically reopens follow-up after missing, revoked, replaced, or drifted scope evidence; neither transition changes broker evidence, ledger, OMS, reconciliation, execution, or capital authority.
-Owner-enabled no-activity snapshot roll-forward separates exact daily snapshot identity from `karkinos.account_truth.source_fact_lineage.v1`, a privacy-minimized fingerprint over every non-derived normalized statement row. `karkinos.account_truth.source_fact_continuity.v1` turns that immutable import history into a materiality-aware daily data flywheel: superseded cash/position state rows and historical non-decision settlement metadata may refresh, while append-only chronological activity may extend the reviewed window. Every intermediate import is checked, and an existing economic activity row must remain present with the same type, time, instrument, quantity, price, amount, cost, cash impact, position impact, cost basis, and order identities. Removal, revision, back-dated addition, malformed evidence, or a temporary material divergence breaks continuity; returning to older bytes cannot hide it. `karkinos.account_truth.evidence_scope_review_binding.v1` stays rooted in the original reviewed source facts while current asset scope, current snapshot, reconciliation, promotion source, ledger cutoff, and daily ticket identity remain current-day gates. Reviewed-fee preview v4 may automatically revalidate newly appended stock trades only when every added observation reconciles to the same approved terms; it continues to enforce the originally reviewed notional envelope and cannot expand order or capital authority. ETF and fund facts remain in Account Truth, valuation, and risk but never enter the stock strategy or its fee envelope. Continuity is query-only, append-only-review-aware, explicitly revocable, and grants no broker, OMS, ledger, execution, strategy-promotion, or capital authority.
-The promotion evidence consumed by controlled execution also binds the sanitized CITIC follow-up fingerprint and reviewed query-window integrity: pending, truncated, unreadable, gapped, or overlapping source review can only downgrade clear to blocked, while completing or rejecting review never creates canonical account facts or independently opens execution.
-The `/operations` workbench is the read-side operator surface for this contract and for `karkinos.controlled_per_order_pilot_readiness.v1`, the optional real-pilot admission projection over persisted adapter, signed-soak, expiring-write-release, and controlled-order evidence.
-Its six fail-closed gates require safe source contracts, exactly one observing read-only release, matching signed soak, exactly one active `manual_each_order` write release, one coherent provider/gateway/account/connector scope, and no unresolved order journey or active session authority.
-Source failure, ambiguity, drift, truncation, or authorizing read-side flags block admission; a pass permits only the separate exact-order review and does not complete v1.8, replace per-order evidence, contact a provider, write the database, submit/cancel, mutate financial facts, or change capital authority.
-Contract-safe unmet optional prerequisites stay compact and neutral outside canonical Operations health, while a read-only or non-authority contract violation opens immediately as danger.
-The workbench validates top-level and attention-item non-authority flags before drill-down, shows source evidence, deterministic fingerprint, safe next action, and exact resolution condition, and has no mutation or broker capability.
-
-An open exact-identity lifecycle may be projected through
-`karkinos.manual_broker_cancellation_ticket.v1`. This provider-neutral boundary
-prepares a copyable human action package from the persisted controlled intent,
-OMS order fingerprint, broker/client order ids, and latest lifecycle
-observation. Export re-runs the preview and rejects a stale fingerprint. It
-does not register or call an adapter, issue a cancellation, mutate OMS/ledger,
-or change risk, kill switch, interlock, or capital authority. The operator must
-act in a separately reviewed broker interface; only a newer ingested lifecycle
-observation plus Account Truth/reconciliation evidence can prove cancellation.
-The generic broker-gateway live-cancel endpoint remains disabled, so this
-package is not an execution command or a claim of provider support.
-
-M2 explicit cancellation is a separate
-`karkinos.controlled_broker_cancellation.v1` command. It reuses the exact manual
-ticket identity, then additionally binds the current signed release, cached
-gateway-health fingerprint, and short-lived
-`cancel_exact_controlled_broker_order` proof. A dedicated SQLite
-`BEGIN IMMEDIATE` claim admits at most one external cancel effect for an intent;
-exact duplicate, concurrency, and restart replay cannot call cancel twice.
-`prepared`, `cancel_requested`, `cancel_rejected`, and
-`cancellation_unknown` are command-audit states, never canonical broker facts.
-The separately signed `karkinos.controlled_broker_cancellation_recovery.v1`
-waits deterministically and may only query the exact client order id; it cannot
-re-cancel. Neither gateway response mutates lifecycle, OMS, ledger, risk, kill
-switch, interlock, or capital authority. Only newer explicit lifecycle
-ingestion and reconciliation prove the outcome. The production factory remains
-default-closed without an explicitly reviewed gateway/release, and no real
-adapter support is implied.
-
-M2 execution-edge semantics have a separate offline contract:
-`karkinos.broker_execution_edge_manifest.v1` and
-`karkinos.broker_execution_edge_conformance_result.v1`. The fixed local suite
-exercises default-closed capability declaration, dry-run, exact and concurrent
-idempotent submission, timeout/unknown query-only recovery, restart, explicit
-cancel identity, duplicate cancel, partial-fill/cancel race, not-found, and
-disconnect behavior. It creates only append-only conformance evidence and
-cannot register an adapter or clear a real-provider gate. The suite validates
-the Karkinos harness, not a third-party implementation; real adapter acceptance
-still requires a separately approved runner, ADR/threat review, and deployment
-authorization.
-
-Enabling that edge requires a distinct
-`karkinos.controlled_broker_write_release.v1` capability release. Its signed
-dossier binds the exact provider/gateway/account scope to the newest strict
-execution-edge manifest and clear conformance result, the newest exact-scope accepted
-read-only adapter release, the exact signed soak-promotion acceptance, and
-seven owner-reviewed agreement, account-permission, reporting, acceptance-test,
-deployment, risk-control, and rollback references. A release lasts at most 12
-hours, permits only `manual_each_order`, and can be revoked once with a separate
-offline signature. Expiry, revocation, trusted-key rotation/disable, or any
-source drift makes resolution fail closed.
-
-Production submission and cancellation factories resolve only an active
-persisted release (unless an explicit test/integration provider is injected),
-then independently recheck their existing order-specific proof, gateway health,
-claim, risk, and lifecycle gates. The release is necessary but never sufficient:
-it registers no adapter, contacts no provider, creates no order, mutates no
-financial fact, and grants neither order nor capital authority. Status reads do
-not create release tables or refresh upstream evidence.
-
-Trading projects this boundary as a default-collapsed operator review. Opening it reads
-persisted status, validates a reviewed credential-free manifest and seven owner references,
-then reuses the three-minute offline-signature flow to issue or revoke; the browser blocks
-sensitive manifest keys before POST and exposes no submit, cancel, registration, or capital action.
-
-Reconciliation clearance uses
-`karkinos.controlled_submission_reconciliation_clearance.v3` as the canonical
-exact-terminal contract. A signed command may record a full fill, a no-fill
-cancel, or a partial-fill-then-cancel outcome. An open partial fill remains
-blocked. Filled quantity comes from independently persisted broker-statement
-and Account Truth evidence; cancelled quantity and terminal state bind the
-broker-neutral lifecycle observation. Partial-cancel cost totals must agree
-across both evidence sets. The clearance transaction records only actual fills,
-advances OMS through the matching terminal states, and releases the cross-order
-interlock. It never posts the production ledger, contacts a provider, issues a
-cancel, or grants submission/capital authority. A later lifecycle or collector
-drift invalidates the clearance and re-blocks the interlock.
-
-Reconciled posting is a separate
-`karkinos.controlled_submission_ledger_posting.v1` preview-confirm-apply
-contract. Its preview binds the cleared intent and OMS terminal state, exact
-broker/client order identities, lifecycle observation, statement rows, fills,
-fees/taxes/transfer fees, Account Truth identity, valuation snapshot, ledger
-cutoff/fingerprint, and a short-lived operator approval. The write transaction
-re-reads those facts and the canonical ledger identity under `BEGIN IMMEDIATE`;
-any drift rejects the whole batch. Each real fill produces one confirmed ledger
-event with immutable clearance/import lineage, partial-cancel posts only actual
-fills, and no-fill cancel produces an applied zero-entry posting. The posting
-record and all ledger events commit together and are unique by posting,
-clearance, intent, order, fill, and settlement evidence. History cannot be
-deleted. Posting never contacts a provider and has no submit, cancel, strategy,
-AI, risk-decision, kill-switch, or capital-authority capability.
-
-Corrections use the separate
-`karkinos.controlled_submission_ledger_correction.v1` contract. The request
-contains only the immutable posting id, an allowlisted reason, and operator
-identity; it cannot supply cash, quantity, cost, fee, or P/L values. Preview
-replays the canonical ledger twice—once with every fact and once excluding only
-the exact original posting entry ids—and derives the compensating cash and full
-position-accounting state from that difference. It binds the original entry
-fingerprint, Account Truth import and review, valuation snapshot, ledger cutoff
-and fingerprint, derived plan, and a new short-lived operator signature. Apply
-repeats the derivation under `BEGIN IMMEDIATE` and appends exactly one protected
-`controlled_projection_correction` event plus its immutable correction record.
-The original trades, fees, and posting record remain queryable. Zero-entry
-postings have no financial fact to correct; an invalid replay, dependent trade,
-identity drift, duplicate conflicting request, or tampered before-state fails
-closed. After apply, Ledger, Holdings, Allocation, Equity, Overview, Cockpit,
-and Account State read the same canonical projection and snapshot identity.
-Account Truth deliberately becomes stale until newer broker evidence covers the
-correction. The correction boundary cannot touch OMS, provider, submit/cancel,
-risk, kill switch, strategy/AI, or capital authority.
-
-Account Truth may permit the pre-posting clearance mismatch only when every
-non-pass reconciliation item is mathematically identical to that single
-controlled order's unposted cash, position, gross, net, fee, tax, transfer-fee,
-and cost-basis delta. Missing snapshots or any unrelated delta still block. On
-posting, ledger-coverage logic recognizes only ledger rows whose immutable
-posting lineage points to the same broker import; any unrelated later ledger
-fact makes the evidence stale. The post-apply result publishes a new valuation
-snapshot. The operator journey then consumes canonical Account Truth evidence:
-exact same-import posting lineage may already reconcile, while correction or
-unrelated later-ledger drift requires a newer complete import. Any non-pass or
-partial result reports manual review required rather than silently claiming
-success.
-
-### Evidence-bound strategy contribution
-
-`karkinos.account_strategy_contribution.v2` is the canonical account-strategy
-contribution projection. A strategy-linked fill is eligible only after exactly
-one production-ledger trade entry binds the same fill id, symbol, asset class,
-direction, quantity, price, and commission. Linked-but-unposted fills,
-ambiguous entries, identity mismatches, or sells whose strategy-owned inventory
-origin cannot be replayed block contribution instead of producing estimated
-P/L.
-
-Open strategy inventory is valued only from the exact persisted valuation
-snapshot named by the report. The projection binds snapshot id, valuation
-as-of, ledger cutoff/fingerprint, quote-set fingerprint, fill and ledger-entry
-references, and a contribution fingerprint. Missing, stale, estimated, invalid,
-or drifted evidence makes all contribution amounts unavailable. Actual fill
-price already contains execution slippage, so slippage is disclosed but is not
-deducted a second time; fees and taxes come from the posted ledger fact.
-
-The projection is read-only: it contacts no provider, performs no database
-write, and grants no OMS, broker, risk, kill-switch, execution, or capital
-authority. An assigned strategy with no linked or unattributed fills has no
-contribution due and therefore does not create a circular Decision blocker.
-Once a fill exists, incomplete ledger, valuation, or lineage evidence fails
-closed and supplies one explicit manual next action to Overview, Decision,
-Operations, and Strategy Lab.
-
-An operator may explicitly freeze this projection for AI-assisted outcome
-review through `strategy_contribution.read`. The capture request names the
-exact current `strategy_id`; the adapter reuses the canonical report, wraps it
-in the capture valuation/ledger identity, and rejects assignment or identity
-drift. Only a fully bound contribution is authoritative. No-fill, missing, or
-unreconciled results remain degraded or blocked evidence, and the capture
-performs no provider call, financial recomputation, or authority mutation.
-
-### Evidence-bound post-decision review and learning queue
-
-`karkinos.decision_outcome_review.v1` is the canonical human disposition of one persisted signal outcome. Preview binds the exact signal/action/risk chain,
-signal-specific order/fill references, and symbol-scoped canonical contribution.
-Its target fingerprint includes valuation snapshot, ledger cutoff, contribution,
-and execution evidence; operator-supplied P/L is rejected and never recalculated.
-
-Recording requires an idempotency key, exact preview fingerprint, allowlisted
-human decision/outcome, reviewer, note, and explicit no-authority confirmation.
-Acted conclusions require linked fills and fully bound contribution; risk-blocked
-or unexecuted signals retain process outcomes. Any source drift rejects a new
-confirmation and makes a prior review non-current without deleting it.
-
-The stored review, event hash chain, and shared signal-journal event are appended
-in one transaction. Replay verifies the chain plus exact request fingerprint,
-target identity, review identity, signal, reviewer, decision, outcome, note, and
-timestamp bindings. Corrupt JSON or row/event mismatch fails closed. Legacy
-`signal_reviews` remain historical evidence, not the canonical write contract.
-
-`karkinos.strategy_learning_review.v1` is a read-only projection of the latest
-persisted human review per signal; unreviewed signals are explicitly outside its
-classification. Every read replays that review and rebuilds the current canonical
-target. Audit failure becomes a critical integrity repair; target drift requires
-re-preview; unsupported evidence creates only a copyable question for separately
-human-started capture and research. No private review note enters the queue.
-
-The queue contacts no provider, writes no database, recalculates no financial fact, invokes no AI, creates no memory, changes no strategy, and grants no OMS,
-broker, execution, or capital authority.
-
-### Decision Quality Score evidence
-
-`karkinos.decision_quality_target.v1` is the canonical daily process-quality
-projection. It reuses the current Decision payload and evaluates five fixed
-dimensions: persisted valuation and Account Truth completeness, deterministic
-risk checks, benchmark-aware backtest evidence, signal journaling, and stable
-post-decision review identity. A risk-rejected decision may qualify when the
-check is complete; benchmark awareness requires an explicit benchmark but does
-not require benchmark outperformance. A no-action day records risk and
-benchmark as not applicable instead of inventing evidence.
-
-The diagnostic percentage is the number of satisfied dimensions out of five;
-the daily North Star result remains binary `qualified` or `blocked`. An
-operator must explicitly append a `karkinos.decision_quality_capture.v1`
-against the exact target fingerprint. Captures are idempotent, restart-safe,
-and protected by a per-capture event hash chain. The longitudinal report uses
-the latest valid capture for each decision date and labels its coverage as
-explicitly captured days only; uncaptured days are never silently counted.
-
-GET projection and replay are provider-free and database-write-free. Capture
-writes audit evidence only and cannot invoke AI, recalculate financial facts,
-modify risk decisions, OMS, orders, fills, ledger, Account Truth, kill switch,
-broker submit/cancel, model memory, or capital authority. The score measures
-decision-process evidence, not investment return, advice, or permission.
-
-### AI research
-
-```text
-explicit evidence capture
--> immutable context
--> human-created research task
--> permission-checked read-only tools
--> claim / debate / report
--> human review
--> optional revocable historical memory
-```
-
-Provider, model, role, prompt, workflow, tool, evidence, artifact, review, and
-memory identities remain separate. Every model stage cites current evidence;
-historical memory is labelled non-current. External calls receive no provider
-tools or trading authority, and raw reasoning or credentials are not persisted.
-
-The evidence-bound formula research vertical is narrower still:
-
-```text
-saved canonical backtest and exact dataset snapshot
--> human-confirmed hypothesis export
--> allowlisted Formula DSL validation
--> human-selected canonical backtest with next-bar semantics
--> optional separately confirmed evidence critique
--> human accept / revise / reject disposition
-```
-
-The Formula DSL is a JSON AST over persisted OHLCV fields with bounded
-lookbacks and windows. Arbitrary code, unknown operators, and mutated
-universe/window/frequency/cost inputs are rejected. The restricted adapter
-reuses the exact saved bars and canonical BacktestEngine; it cannot register a
-production strategy, create a Decision or trading plan, or reach OMS, ledger,
-risk, kill-switch, broker, capital, or authority state.
-
-## Authority Boundaries
-
-| Capability | Research/strategy | AI | Operator | Controlled runtime |
-| --- | ---: | ---: | ---: | ---: |
-| Read persisted evidence | scoped | scoped | yes | scoped |
-| Propose target weights or plans | yes | draft only | yes | no |
-| Decide risk | no | no | policy/review | deterministic gate |
-| Mutate ledger | no | no | separately confirmed | no |
-| Issue capital authority | no | no | signed decision | no |
-| Submit one broker order | no | no | final approval | only inside exact gate |
-| Cancel a broker order | no | no | separate approval | only inside exact gate |
-| Widen or renew authority | no | no | new decision | never |
-
-The execution gateway and read-only evidence connector are distinct identities.
-They may not silently share permissions. Production registers neither a write
-adapter nor release provider by default.
-
-## Controlled Authority Model
-
-Effective authority is the minimum of all applicable constraints:
-
-```text
-operator authorization
-account and strategy policy
-symbol and liquidity limits
-capital, cash, turnover, loss, and drawdown budgets
-order value and order-rate limits
-fresh account, market, gateway, and reconciliation evidence
-kill-switch and operational health
-```
-
-Reservations and rate admissions are serialized. Runtime sessions are signed,
-short-lived, token-authenticated, and one-way pausable. Recovery creates a new
-equal-or-narrower session rather than resuming the old one in place.
-
-## Failure Semantics
-
-- **Rejected:** the provider definitively rejected the command; recovery may
-  release the interlock after evidence is persisted.
-- **Unknown:** the external effect may have happened; query by the same client
-  identity and never resubmit automatically.
-- **Partial:** preserve exact fills and remaining quantity; do not normalize it
-  into success or failure.
-- **Drifted:** a source or fingerprint changed after review; invalidate the
-  derived eligibility and require a new review.
-- **Paused:** a hard gate failed; later clear evidence does not resume the same
-  session.
-
-Alerts and operator views are derived from persisted facts. They may identify a
-problem and a safe next action, but they cannot refresh a provider or mutate
-authority as a read side effect.
-
-## Deployment and Privacy
-
-- The core application is local-first and uses SQLite for durable state.
-- Broker and external-model adapters remain replaceable edge components.
-- Credentials are supplied to the relevant edge at runtime and are never
-  stored in canonical financial or audit tables.
-- Real account exports, runtime databases, logs, screenshots, and secrets stay
-  outside source control.
-- Adapter release, capability, deployment, authorization, health, and rollback
-  evidence is explicit and versioned.
-
-## Architectural Change Rule
-
-Update this file only when a durable component, data flow, authority boundary, or invariant changes. Version progress,
-test counts, endpoint notes, and completed phase diaries belong in [IMPLEMENTATION_LOG.md](IMPLEMENTATION_LOG.md) or Git history.
+版本进度、测试数量、单次事故和完成日志不写进本文。
