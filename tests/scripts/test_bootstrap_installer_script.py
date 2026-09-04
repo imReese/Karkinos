@@ -289,6 +289,57 @@ def test_installer_verifies_stable_assets_then_delegates_to_packaged_controller(
     assert list(temp_parent.iterdir()) == []
 
 
+def test_installer_managed_transition_delegates_to_target_controller(
+    tmp_path: Path,
+) -> None:
+    installer, arguments, env, temp_parent, _gh_calls, controller_calls = _fixture(
+        tmp_path
+    )
+    arguments = _remove_argument(arguments, "--legacy-workdir")
+    arguments = _remove_argument(arguments, "--legacy-plist")
+    arguments = _replace_argument(arguments, "--confirm", f"UPDATE {TAG}")
+    managed_home = Path(arguments[arguments.index("--home") + 1])
+    managed_home.mkdir()
+
+    result = _run(installer, arguments, env)
+
+    assert result.returncode == 0, result.stderr
+    controller_lines = controller_calls.read_text(encoding="utf-8").splitlines()
+    assert controller_lines == [
+        f"home-env={managed_home}",
+        "arg=--home",
+        f"arg={managed_home}",
+        "arg=update",
+        "arg=--tag",
+        f"arg={TAG}",
+        "arg=--confirm",
+        f"arg=UPDATE {TAG}",
+        "arg=--release-archive",
+        controller_lines[-1],
+    ]
+    assert Path(controller_lines[-1].removeprefix("arg=")).name == (
+        f"karkinos-{VERSION}-macos-arm64.tar.gz"
+    )
+    assert list(temp_parent.iterdir()) == []
+
+
+def test_installer_rejects_partial_legacy_identity_before_network(
+    tmp_path: Path,
+) -> None:
+    installer, arguments, env, temp_parent, gh_calls, controller_calls = _fixture(
+        tmp_path
+    )
+    arguments = _remove_argument(arguments, "--legacy-plist")
+
+    result = _run(installer, arguments, env)
+
+    assert result.returncode != 0
+    assert "must be provided together" in result.stderr
+    assert not gh_calls.exists()
+    assert not controller_calls.exists()
+    assert list(temp_parent.iterdir()) == []
+
+
 def test_installer_forwards_one_explicit_service_port(tmp_path: Path) -> None:
     installer, arguments, env, temp_parent, _gh_calls, controller_calls = _fixture(
         tmp_path

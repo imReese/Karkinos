@@ -408,6 +408,54 @@ def test_native_manifest_rejects_a_newer_release_control_protocol(
         release_artifact.validate_manifest(root)
 
 
+def test_v2_controller_can_validate_v1_rollback_but_not_stage_it_as_v2(
+    tmp_path: Path,
+) -> None:
+    root = _native_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
+    manifest_path = root / "release.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["release_control_protocol"] = 1
+    manifest_path.write_bytes(release_artifact.canonical_json(manifest))
+
+    with pytest.raises(ValueError, match="release_manifest_control_protocol_mismatch"):
+        release_artifact.validate_manifest(root)
+    assert (
+        release_artifact.validate_manifest(
+            root,
+            expected_control_protocol=None,
+        )["release_control_protocol"]
+        == 1
+    )
+
+
+@pytest.mark.parametrize("launcher", ("karkinos", "karkinosctl"))
+def test_generated_launchers_reject_control_protocol_downgrade(
+    tmp_path: Path,
+    launcher: str,
+) -> None:
+    release = _generated_launcher_tree(tmp_path / f"Karkinos-{_VERSION}-macos-arm64")
+    manifest_path = release / "release.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["release_control_protocol"] = 1
+    manifest_path.write_bytes(release_artifact.canonical_json(manifest))
+    environment = _launcher_environment(tmp_path, tmp_path / "unused.json")
+    command = [str(release / "bin" / launcher)]
+    if launcher == "karkinosctl":
+        command.append("--help")
+
+    result = subprocess.run(
+        command,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 78
+    assert "payload integrity validation failed" in result.stderr
+
+
 @pytest.mark.parametrize("relative_name", release_artifact.REQUIRED_RUNTIME_FILES)
 def test_native_manifest_rejects_missing_required_runtime_file(
     tmp_path: Path, relative_name: str

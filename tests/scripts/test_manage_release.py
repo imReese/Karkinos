@@ -1231,6 +1231,47 @@ def test_service_manager_receives_explicit_home_and_release_lock_capability(
     assert (home / ".release.lock").read_text(encoding="utf-8") == ""
 
 
+def test_service_health_requires_exact_supervised_worker_after_http_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "runtime"
+    manager = tmp_path / "manage-service"
+    manager.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    manager.chmod(0o755)
+    release = _release(home, _SHA_A)
+    manifest = manage_release._manifest_for(release)
+    supervisor_ready = {"value": False}
+    checks: list[tuple[Path, Path, int]] = []
+
+    monkeypatch.setattr(
+        manage_release,
+        "_wait_for_service_identity",
+        lambda *_args, **_kwargs: True,
+    )
+
+    def service_manager_ready(
+        actual_home: Path, actual_manager: Path, *, port: int
+    ) -> bool:
+        checks.append((actual_home, actual_manager, port))
+        return supervisor_ready["value"]
+
+    monkeypatch.setattr(
+        manage_release,
+        "_service_manager_ready",
+        service_manager_ready,
+    )
+    hooks = manage_release._service_manager_hooks(home, manager, port=8123)
+
+    with manage_release._lock(home):
+        assert hooks.health(release, manifest, 5) is False
+        supervisor_ready["value"] = True
+        assert hooks.health(release, manifest, 5) is True
+    assert checks == [
+        (home.absolute(), manager.absolute(), 8123),
+        (home.absolute(), manager.absolute(), 8123),
+    ]
+
+
 def test_persisted_service_port_is_reused_and_mismatches_fail_closed(
     tmp_path: Path,
 ) -> None:
@@ -1591,6 +1632,10 @@ def test_candidate_run_uses_disposable_state_without_switching_pointers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     home = tmp_path / "runtime"
+    user_home = tmp_path / "user-home"
+    user_launch_agents = user_home / "Library" / "LaunchAgents"
+    user_launch_agents.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(user_home))
     current = _release(home, _SHA_A)
     _candidate(home, _SHA_D)
     _point(home, "current", current)
@@ -1644,6 +1689,11 @@ def test_candidate_run_uses_disposable_state_without_switching_pointers(
     assert candidate_cwd.name == "app"
     assert candidate_cwd.parent != home / "releases" / f".candidate-{_SHA_D}"
     assert observed["port"] == "18000"
+    command = observed["command"]
+    assert isinstance(command, list)
+    assert command[1:] == ["--host", "127.0.0.1", "--port", "18000"]
+    assert "--research-worker" not in command
+    assert list(user_launch_agents.iterdir()) == []
     assert not Path(observed["home"]).exists()
     assert not candidate_cwd.exists()
     assert (home / "releases" / f".candidate-{_SHA_D}").is_dir()
@@ -1732,6 +1782,7 @@ def test_public_workflow_parsers_expose_candidate_update_and_bootstrap() -> None
         120,
     )
     assert update_args.service_port is None
+    assert update_args.release_archive is None
     assert update_args.service_manager == expected_service_manager
     assert (
         bootstrap_args.command,
@@ -1893,8 +1944,9 @@ def test_public_update_wires_verified_sha_to_transactional_deploy(
         tag: str,
         confirmation: str,
         health_timeout: float,
+        local_archive: Path | None,
     ) -> object:
-        events.append(("workflow", tag, confirmation, health_timeout))
+        events.append(("workflow", tag, confirmation, health_timeout, local_archive))
         callbacks.preflight()
         callbacks.stage(archive, _SHA_D)
         return callbacks.deploy(_SHA_D, f"PROMOTE {_SHA_D}", health_timeout)
@@ -1913,13 +1965,15 @@ def test_public_update_wires_verified_sha_to_transactional_deploy(
             "/service-manager",
             "--service-port",
             "8123",
+            "--release-archive",
+            str(archive),
         ]
     )
 
     manage_release.update(home, args)
 
     assert events == [
-        ("workflow", "v0.3.2", "UPDATE v0.3.2", 17),
+        ("workflow", "v0.3.2", "UPDATE v0.3.2", 17, archive),
         ("service", home, Path("/service-manager"), 8123),
         ("stage", home, archive, _SHA_D),
         ("deploy", home, _SHA_D, f"PROMOTE {_SHA_D}", 17, service_hooks),
@@ -1928,6 +1982,63 @@ def test_public_update_wires_verified_sha_to_transactional_deploy(
         "status": "promoted",
         "current": _SHA_D,
     }
+
+
+def test_target_controller_update_defaults_to_its_v2_service_manager(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _native_release(tmp_path / "target-release", _SHA_D)
+    monkeypatch.setattr(manage_release, "_REPOSITORY_ROOT", target / "app")
+
+    args = manage_release._parser().parse_args(
+        ["update", "--tag", "v0.3.1", "--confirm", "UPDATE v0.3.1"]
+    )
+
+    assert args.service_manager == str(
+        target / "app/scripts/service/manage_launch_agent.sh"
+    )
+
+
+def test_v2_activation_rolls_back_to_v1_on_target_health_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "runtime"
+    old = _release(home, _SHA_A)
+    old_manifest_path = old / "release.json"
+    old_manifest = json.loads(old_manifest_path.read_text(encoding="utf-8"))
+    old_manifest["release_control_protocol"] = 1
+    old_manifest_path.write_bytes(release_artifact.canonical_json(old_manifest))
+    _point(home, "current", old)
+    _candidate(home, _SHA_D)
+    monkeypatch.setattr(manage_release, "_probe_release", lambda *args: None)
+    monkeypatch.setattr(
+        manage_release, "_probe_state_compatibility", lambda *args: None
+    )
+    service = _ServiceRecorder(iter((False, True, True)))
+
+    with pytest.raises(ValueError, match="release_activation_failed_rolled_back"):
+        manage_release.deploy_release(
+            home,
+            commit_sha=_SHA_D,
+            confirmation=f"PROMOTE {_SHA_D}",
+            health_timeout=5,
+            hooks=service.hooks(),
+        )
+
+    assert _pointer_sha(home, "current") == _SHA_A
+    assert _pointer_sha(home, "previous") is None
+    assert not (home / ".release-transaction.json").exists()
+    assert service.events == [
+        "stop",
+        "start",
+        ("health", _SHA_D, f"sha-{_SHA_D}", 5),
+        "stop",
+        "start",
+        ("health", _SHA_A, f"sha-{_SHA_A}", 5),
+        ("health", _SHA_A, f"sha-{_SHA_A}", 5),
+    ]
 
 
 def test_public_update_without_current_stops_before_remote_fetch(

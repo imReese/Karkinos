@@ -712,7 +712,14 @@ def _manifest_for(path: Path, *, expected_sha: str | None = None) -> dict[str, o
         if expected_sha is not None and expected_sha != directory_sha:
             raise ValueError("release_directory_identity_mismatch")
         expected_sha = directory_sha
-    return validate_manifest(path, expected_commit_sha=expected_sha)
+    # A protocol-2 controller must be able to inspect and restore its validated
+    # protocol-1 rollback source.  All archive and package-launcher validation
+    # remains exact-current by default; this is the sole compatibility seam.
+    return validate_manifest(
+        path,
+        expected_commit_sha=expected_sha,
+        expected_control_protocol=None,
+    )
 
 
 def _read_pointer(path: Path) -> Path | None:
@@ -1593,7 +1600,7 @@ def _service_manager_hooks(
             expected_scheduler_activation_guarded,
             minimum_completed_iterations,
         ) = _service_health_expectations(managed_home)
-        return _wait_for_service_identity(
+        identity_ready = _wait_for_service_identity(
             release,
             manifest,
             timeout,
@@ -1603,6 +1610,18 @@ def _service_manager_hooks(
                 expected_scheduler_activation_guarded
             ),
             minimum_completed_iterations=minimum_completed_iterations,
+        )
+        if not identity_ready:
+            return False
+        # HTTP identity and scheduler readiness are necessary but not enough:
+        # the service manager also binds the isolated worker process to the
+        # exact physical release selected by ``current``.  Re-check it on both
+        # transactional health passes so a worker that exits after install
+        # forces the complete API+worker activation to roll back.
+        return _service_manager_ready(
+            managed_home,
+            manager,
+            port=configured_port,
         )
 
     return ReleaseServiceHooks(
@@ -1839,12 +1858,13 @@ def _extract_archive_manifest(
     expected_sha: str,
     expected_architecture: str,
 ) -> dict[str, object]:
-    from tools.release_artifact import validate_archive
+    from tools.release_artifact import RELEASE_CONTROL_PROTOCOL, validate_archive
 
     return validate_archive(
         archive,
         expected_commit_sha=expected_sha,
         expected_architecture=expected_architecture,
+        expected_control_protocol=RELEASE_CONTROL_PROTOCOL,
     )
 
 
@@ -2902,6 +2922,9 @@ def update(home: Path, args: argparse.Namespace) -> None:
         tag=args.tag,
         confirmation=args.confirm,
         health_timeout=args.health_timeout,
+        local_archive=(
+            Path(args.release_archive) if args.release_archive is not None else None
+        ),
     )
     if not isinstance(result, dict):
         raise ValueError("release_update_result_invalid")
@@ -3294,6 +3317,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     update_parser.add_argument("--service-manager", default=default_service_manager)
     update_parser.add_argument("--service-port", type=int)
+    update_parser.add_argument("--release-archive", help=argparse.SUPPRESS)
     bootstrap_parser = sub.add_parser(
         "bootstrap", help="one-time migration from the validated legacy service"
     )

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Standalone, source-checkout-free entrypoint for the one-time legacy handoff.
+# Standalone, source-checkout-free entrypoint for bootstrap and protocol handoff.
 # Distribute this file as a stable, attested GitHub Release asset before use.
 
 set -euo pipefail
@@ -19,6 +19,7 @@ LEGACY_PLIST=""
 CONFIRMATION=""
 SERVICE_PORT=""
 HEALTH_TIMEOUT=""
+INSTALL_MODE=""
 KARKINOS_HOME_PATH="${KARKINOS_HOME:-${DEFAULT_HOME}}"
 TEMP_ROOT=""
 TEMP_PARENT=""
@@ -31,6 +32,16 @@ die() {
 usage() {
 	cat <<'EOF'
 Usage:
+	# Managed release-control protocol transition (for example v0.3.6):
+	bootstrap_installer.sh \
+	    --tag vX.Y.Z \
+	    --confirm "UPDATE vX.Y.Z" \
+	    [--architecture arm64|x86_64] \
+	    [--service-port 1..65535] \
+	    [--health-timeout 1..3600] \
+	    [--home "/absolute/runtime/path"]
+
+	# One-time legacy source-service handoff:
 	bootstrap_installer.sh \
 	    --tag vX.Y.Z \
 	    --legacy-workdir /absolute/path/to/Karkinos \
@@ -43,9 +54,10 @@ Usage:
 
 This installer downloads one published stable macOS release, verifies its
 checksum and GitHub stable-release attestation, extracts it in a disposable
-private directory, and delegates the one-time handoff plus complete release
-verification to the packaged bin/karkinosctl. It does not build or execute code
-from a source checkout.
+private directory, and delegates activation to that target package's
+bin/karkinosctl. Omit both legacy options for a managed protocol transition; or
+provide both for the one-time source-service handoff. It does not build or
+execute code from a source checkout.
 EOF
 }
 
@@ -185,9 +197,14 @@ while (($# > 0)); do
 done
 
 ((TAG_SET == 1)) || die "--tag is required."
-((WORKDIR_SET == 1)) || die "--legacy-workdir is required."
-((PLIST_SET == 1)) || die "--legacy-plist is required."
 ((CONFIRM_SET == 1)) || die "--confirm is required."
+((WORKDIR_SET == PLIST_SET)) ||
+	die "--legacy-workdir and --legacy-plist must be provided together."
+if ((WORKDIR_SET == 1)); then
+	INSTALL_MODE="bootstrap"
+else
+	INSTALL_MODE="managed-update"
+fi
 
 [[ "$(uname -s)" == "Darwin" ]] || die "bootstrap is supported only on macOS."
 case "$(uname -m)" in
@@ -205,8 +222,13 @@ else
 fi
 [[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
 	die "--tag must be a stable SemVer tag such as v0.3.2."
-[[ "${CONFIRMATION}" == "BOOTSTRAP ${TAG}" ]] ||
-	die "--confirm must equal: BOOTSTRAP ${TAG}"
+if [[ "${INSTALL_MODE}" == "bootstrap" ]]; then
+	[[ "${CONFIRMATION}" == "BOOTSTRAP ${TAG}" ]] ||
+		die "--confirm must equal: BOOTSTRAP ${TAG}"
+else
+	[[ "${CONFIRMATION}" == "UPDATE ${TAG}" ]] ||
+		die "--confirm must equal: UPDATE ${TAG}"
+fi
 if ((SERVICE_PORT_SET == 1)); then
 	[[ "${SERVICE_PORT}" =~ ^[1-9][0-9]{0,4}$ ]] ||
 		die "--service-port must be an integer from 1 through 65535."
@@ -219,21 +241,28 @@ if ((HEALTH_TIMEOUT_SET == 1)); then
 	((HEALTH_TIMEOUT <= 3600)) ||
 		die "--health-timeout must be an integer from 1 through 3600 seconds."
 fi
-require_absolute_path "${LEGACY_WORKDIR}" "--legacy-workdir"
-require_absolute_path "${LEGACY_PLIST}" "--legacy-plist"
 require_absolute_path "${KARKINOS_HOME_PATH}" "--home"
-[[ "${LEGACY_WORKDIR}" != "/" ]] || die "--legacy-workdir must not be the filesystem root."
 [[ "${KARKINOS_HOME_PATH}" != "/" ]] || die "--home must not be the filesystem root."
-require_no_symlink_ancestors "${LEGACY_WORKDIR}"
-require_no_symlink_ancestors "${LEGACY_PLIST}"
 require_no_symlink_ancestors "${KARKINOS_HOME_PATH}"
-[[ -d "${LEGACY_WORKDIR}" && ! -L "${LEGACY_WORKDIR}" ]] ||
-	die "--legacy-workdir must be an existing ordinary directory."
-[[ -f "${LEGACY_PLIST}" && ! -L "${LEGACY_PLIST}" ]] ||
-	die "--legacy-plist must be an existing ordinary file."
+if [[ "${INSTALL_MODE}" == "bootstrap" ]]; then
+	require_absolute_path "${LEGACY_WORKDIR}" "--legacy-workdir"
+	require_absolute_path "${LEGACY_PLIST}" "--legacy-plist"
+	[[ "${LEGACY_WORKDIR}" != "/" ]] ||
+		die "--legacy-workdir must not be the filesystem root."
+	require_no_symlink_ancestors "${LEGACY_WORKDIR}"
+	require_no_symlink_ancestors "${LEGACY_PLIST}"
+	[[ -d "${LEGACY_WORKDIR}" && ! -L "${LEGACY_WORKDIR}" ]] ||
+		die "--legacy-workdir must be an existing ordinary directory."
+	[[ -f "${LEGACY_PLIST}" && ! -L "${LEGACY_PLIST}" ]] ||
+		die "--legacy-plist must be an existing ordinary file."
+fi
 if [[ -e "${KARKINOS_HOME_PATH}" || -L "${KARKINOS_HOME_PATH}" ]]; then
 	[[ -d "${KARKINOS_HOME_PATH}" && ! -L "${KARKINOS_HOME_PATH}" ]] ||
 		die "--home must be an ordinary directory when it already exists."
+fi
+if [[ "${INSTALL_MODE}" == "managed-update" ]]; then
+	[[ -d "${KARKINOS_HOME_PATH}" && ! -L "${KARKINOS_HOME_PATH}" ]] ||
+		die "--home must contain an existing managed runtime for UPDATE."
 fi
 
 command -v gh >/dev/null 2>&1 || die "gh is required."
@@ -400,15 +429,25 @@ CONTROLLER="${RELEASE_ROOT}/bin/karkinosctl"
 [[ -z "$(find "${RELEASE_ROOT}" ! -type d ! -type f -print -quit)" ]] ||
 	die "extracted release contains a special file."
 
-CONTROLLER_ARGUMENTS=(
-	--home "${KARKINOS_HOME_PATH}"
-	bootstrap
-	--tag "${TAG}"
-	--legacy-workdir "${LEGACY_WORKDIR}"
-	--legacy-plist "${LEGACY_PLIST}"
-	--confirm "${CONFIRMATION}"
-	--release-archive "${ARCHIVE_PATH}"
-)
+if [[ "${INSTALL_MODE}" == "bootstrap" ]]; then
+	CONTROLLER_ARGUMENTS=(
+		--home "${KARKINOS_HOME_PATH}"
+		bootstrap
+		--tag "${TAG}"
+		--legacy-workdir "${LEGACY_WORKDIR}"
+		--legacy-plist "${LEGACY_PLIST}"
+		--confirm "${CONFIRMATION}"
+		--release-archive "${ARCHIVE_PATH}"
+	)
+else
+	CONTROLLER_ARGUMENTS=(
+		--home "${KARKINOS_HOME_PATH}"
+		update
+		--tag "${TAG}"
+		--confirm "${CONFIRMATION}"
+		--release-archive "${ARCHIVE_PATH}"
+	)
+fi
 if ((SERVICE_PORT_SET == 1)); then
 	CONTROLLER_ARGUMENTS+=(--service-port "${SERVICE_PORT}")
 fi

@@ -21,7 +21,7 @@ and `server`.
 | Command | Purpose | Boundary |
 | --- | --- | --- |
 | `./scripts/start_server.sh` or `./scripts/start_server.sh dev` | Start the current source tree: reloadable backend on `127.0.0.1:8001` plus Vite on `127.0.0.1:5173`. | Isolated from stable production on port 8000. Writes only source-worktree PID/log state and may install missing frontend dependencies. |
-| `./scripts/start_server.sh prod` | Start the supervised immutable release already selected by `~/Library/Application Support/Karkinos/current`. | Never builds from the checkout, copies source into a release, updates `current`, or falls back to source execution. It fails closed when no valid packaged controller exists. |
+| `./scripts/start_server.sh prod` | Start the supervised API and isolated research worker from the immutable release already selected by `~/Library/Application Support/Karkinos/current`. | Never builds from the checkout, copies source into a release, updates `current`, or falls back to source execution. It requires both processes to belong to the exact current release and fails closed when either is unavailable. |
 | `./scripts/stop_server.sh` or `./scripts/stop_server.sh dev` | Stop only the exact tracked development processes. | Symmetric with the default development start and never touches production. |
 | `./scripts/stop_server.sh prod` | Stop only the exact supervised production service. | Uses the packaged controller and persisted service port; it does not kill unknown listeners or sweep ports. |
 | `./scripts/stop_server.sh all` | Explicitly stop both development and production. | Validates recorded PID, process command, and start identity for every target. |
@@ -39,6 +39,11 @@ switch. Its liveness is required before startup succeeds. Automatic trading is
 a different, default-off runtime gate on the Trading page; an operator can open
 or close it without restarting the service. That gate grants no capital or
 broker authority by itself, and automatic broker submission is not implemented.
+The API scheduler performs provider-free qualification and durable research-job
+enqueue only. A separate `com.karkinos.research-worker` LaunchAgent claims the
+jobs and owns automatic provider access. Stable activation checks both agents;
+candidate probes run only the API against disposable state and never install
+either LaunchAgent.
 
 Set `KARKINOS_LOG_MAX_BYTES` to a positive byte count to change the default
 20 MiB development-log archive threshold. Archives remain under `logs/`; the
@@ -146,14 +151,25 @@ completed loop iteration or initialized-idle pass before committing. A failed
 post-guard iteration therefore rolls back instead of being discovered after
 the journal has already been cleared.
 
-`v0.3.2` is the activation-protocol floor for this managed updater. Native
-manifests bind `release_control_protocol=1`; an installed controller accepts
-only that exact protocol. Use `v0.3.4` or newer for the one-time legacy
-bootstrap so the controller reuses the installer's downloaded archive and
-authenticated GitHub session. A future activation-protocol change must bump the
-value and ship an explicit target-controller handoff/bootstrap path, so an
-older updater fails closed instead of silently applying newer bytes with
-obsolete transaction semantics.
+`v0.3.2` is the activation-protocol floor for this managed updater. Releases
+through `v0.3.6` bind `release_control_protocol=1`; two-process releases bind
+`release_control_protocol=2`. An installed protocol-1 controller rejects a
+protocol-2 target before activation. For that first transition, obtain the
+target tag's attested standalone installer and let the target controller own
+the update in the same explicit operation:
+
+```bash
+TAG=vX.Y.Z
+"$BOOTSTRAP_DOWNLOAD_DIR/bootstrap_installer.sh" \
+  --tag "$TAG" \
+  --confirm "UPDATE $TAG"
+```
+
+The protocol-2 manager accepts a validated protocol-1 installed release only
+as the rollback source, while requiring protocol 2 for the newly staged target.
+It therefore installs and proves both the API and research worker on success,
+but can restore the old single-process release if activation fails. Later
+protocol-2 updates use the normal `karkinosctl update` command above.
 An activation failure restores the saved mutable state and old pointers before
 restarting the old release. If recovery itself is inconclusive, the durable
 journal is retained and later mutations fail closed for explicit recovery.
@@ -182,16 +198,16 @@ Inspect `previous` with `status`, then roll back with its exact SHA:
   --confirm "ROLLBACK <previous-40-hex-commit>"
 ```
 
-### One-time migration from the legacy source service
+### Standalone migration entry points
 
-When production still uses the old source-based LaunchAgent and has no managed
-`current`/`previous`, obtain and externally verify the stable Release asset
-`bootstrap_installer.sh`. Its tracked source is
+For either the protocol transition above or an old source-based service with no
+managed `current`/`previous`, obtain and externally verify the target stable
+Release asset `bootstrap_installer.sh`. Its tracked source is
 `scripts/release/bootstrap_installer.sh`; obtain and verify the published copy
 as described in
 [`scripts/release/BOOTSTRAP_INSTALLER.md`](release/BOOTSTRAP_INSTALLER.md).
-Then run the one-time handoff without executing release tooling from the source
-checkout:
+For a source-based service, run the one-time handoff without executing release
+tooling from the source checkout:
 
 ```bash
 TAG=v0.3.6
@@ -228,7 +244,8 @@ success.
 
 ### Internal release and service mechanics
 
-`scripts/service/manage_launch_agent.sh` is the locked service-manager backend.
+`scripts/service/manage_launch_agent.sh` is the locked two-process
+service-manager backend.
 Do not call its `install`, `restart`, or `uninstall` mutations directly; use
 `./scripts/start_server.sh prod`, `./scripts/stop_server.sh prod`, or the packaged
 controller so release locking and exact identity checks cannot be bypassed.

@@ -266,6 +266,7 @@ def run_stable_update_workflow(
     repository: str = DEFAULT_REPOSITORY,
     environment: Mapping[str, str] | None = None,
     gh_auth_runner: GhAuthRunner = subprocess.run,
+    local_archive: Path | None = None,
     temporary_parent: Path | None = None,
 ) -> WorkflowResult:
     """Fetch an exact stable tag and deploy its attested commit SHA."""
@@ -294,6 +295,7 @@ def run_stable_update_workflow(
                 tag=tag,
                 output_dir=output_dir,
                 token=token,
+                local_archive=local_archive,
             )
         except Exception:
             raise ValueError("release_update_stable_fetch_failed") from None
