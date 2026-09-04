@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
@@ -50,11 +50,31 @@ def build_quote_ingestion_command(
         or ""
     ).strip()
     previous_close = _optional_float(snapshot.get("previous_close"))
-    previous_close_date = str(snapshot.get("previous_close_date") or "").strip()
+    reported_previous_close_date = str(
+        snapshot.get("previous_close_date") or ""
+    ).strip()
+    previous_close_date = _validated_previous_close_date(
+        reported_previous_close_date,
+        quote_timestamp=timestamp,
+    )
     if daily_close_price is None and previous_close is not None and previous_close_date:
         daily_close_price = previous_close
         daily_close_date = previous_close_date
         daily_close_source = "reported_previous_close"
+    metadata = {
+        "source": snapshot.get("source"),
+        "quote_source": quote_source,
+        "display_name": display_name or None,
+    }
+    if reported_previous_close_date and previous_close_date is None:
+        metadata.update(
+            {
+                "discarded_previous_close_date": reported_previous_close_date,
+                "discarded_previous_close_date_reason": (
+                    "not_strictly_before_quote_trade_date"
+                ),
+            }
+        )
     return QuoteIngestionCommand(
         symbol=symbol,
         asset_type=asset_type,
@@ -62,7 +82,7 @@ def build_quote_ingestion_command(
         quote_timestamp=timestamp,
         volume=_optional_float(snapshot.get("volume")),
         previous_close=previous_close,
-        previous_close_date=previous_close_date or None,
+        previous_close_date=previous_close_date,
         change=_optional_float(snapshot.get("change")),
         change_percent=_optional_float(
             snapshot.get("change_percent") or snapshot.get("pct_chg")
@@ -84,11 +104,7 @@ def build_quote_ingestion_command(
         exchange=_optional_text(snapshot.get("exchange")),
         market=_optional_text(snapshot.get("market")),
         source=_optional_text(snapshot.get("source")) or quote_source,
-        metadata={
-            "source": snapshot.get("source"),
-            "quote_source": quote_source,
-            "display_name": display_name or None,
-        },
+        metadata=metadata,
         daily_close_price=daily_close_price,
         daily_close_date=daily_close_date,
         daily_close_source=daily_close_source,
@@ -104,15 +120,52 @@ def persist_quote_ingestion(
     return database.persist_quote_ingestion_sync(command)
 
 
-def _optional_float(value: object) -> float | None:
+def _optional_float(value) -> float | None:
     if value in {None, ""}:
         return None
     return float(value)
 
 
-def _optional_text(value: object) -> str | None:
+def _optional_text(value) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _validated_previous_close_date(
+    value: str,
+    *,
+    quote_timestamp: str,
+) -> str | None:
+    """Keep a PRE_CLOSE date only when it owns an earlier Shanghai session.
+
+    Some realtime providers label PRE_CLOSE beside the current quote date even
+    though the value belongs to the preceding trading session. Treating that
+    request date as authoritative used to materialize yesterday's price as
+    today's daily close and later conflicted with verified post-close bars.
+    """
+
+    if not value:
+        return None
+    previous_date = _shanghai_date(value)
+    quote_date = _shanghai_date(quote_timestamp)
+    if previous_date is None or quote_date is None or previous_date >= quote_date:
+        return None
+    return previous_date.isoformat()
+
+
+def _shanghai_date(value: str) -> date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_SHANGHAI_TZ)
+    else:
+        parsed = parsed.astimezone(_SHANGHAI_TZ)
+    return parsed.date()
 
 
 def _normalize_quote_timestamp(value: str, *, captured_at: str) -> str:
