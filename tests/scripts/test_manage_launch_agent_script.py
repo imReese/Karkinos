@@ -22,7 +22,9 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-def _native_current(home: Path) -> dict[str, object]:
+def _native_current(
+    home: Path, *, release_control_protocol: int | None = None
+) -> dict[str, object]:
     release = home / "releases" / f"sha-{SHA}"
     (release / "bin").mkdir(parents=True)
     _write_executable(release / "bin" / "karkinos", "#!/bin/sh\nexit 0\n")
@@ -39,7 +41,11 @@ def _native_current(home: Path) -> dict[str, object]:
     manifest: dict[str, object] = {
         "schema_version": release_artifact.NATIVE_ARTIFACT_SCHEMA,
         "artifact_kind": "macos-native",
-        "release_control_protocol": release_artifact.RELEASE_CONTROL_PROTOCOL,
+        "release_control_protocol": (
+            release_artifact.RELEASE_CONTROL_PROTOCOL
+            if release_control_protocol is None
+            else release_control_protocol
+        ),
         "version": VERSION,
         "commit_sha": SHA,
         "architecture": "arm64",
@@ -62,12 +68,15 @@ def _fake_launch_agent_repo(
     *,
     with_current: bool = True,
     loaded: bool = False,
+    worker_loaded: bool | None = None,
     karkinos_home: Path | None = None,
+    release_control_protocol: int | None = None,
 ) -> tuple[Path, dict[str, str], Path, dict[str, object] | None]:
     repo = tmp_path / "repo"
     scripts = repo / "scripts" / "service"
     fake_bin = tmp_path / "bin"
     state_file = tmp_path / "launchd-loaded"
+    worker_state_file = tmp_path / "research-worker-loaded"
     calls = tmp_path / "calls.log"
     user_home = tmp_path / "home"
     native_home = (
@@ -78,21 +87,52 @@ def _fake_launch_agent_repo(
     plist = (
         user_home / "Library" / "LaunchAgents" / "com.karkinos.daily-candidate.plist"
     )
+    worker_plist = (
+        user_home / "Library" / "LaunchAgents" / "com.karkinos.research-worker.plist"
+    )
     scripts.mkdir(parents=True)
     fake_bin.mkdir()
     shutil.copy2(SCRIPT, scripts / SCRIPT.name)
-    manifest = _native_current(native_home) if with_current else None
+    manifest = (
+        _native_current(
+            native_home,
+            release_control_protocol=release_control_protocol,
+        )
+        if with_current
+        else None
+    )
     native_home.mkdir(parents=True, exist_ok=True)
     lock_nonce = "d" * 32
     (native_home / ".release.lock").write_text(
         f"{os.getpid()} {lock_nonce}\n", encoding="utf-8"
     )
+    effective_worker_loaded = loaded if worker_loaded is None else worker_loaded
+    if loaded or effective_worker_loaded:
+        plist.parent.mkdir(parents=True)
     if loaded:
         state_file.touch()
-        plist.parent.mkdir(parents=True)
         plist.write_text("fixture\n", encoding="utf-8")
+    if effective_worker_loaded:
+        worker_state_file.touch()
+        worker_plist.write_text(
+            "<string>com.karkinos.research-worker</string>\n"
+            "<string>current/bin/karkinos</string>\n"
+            "<string>--research-worker</string>\n",
+            encoding="utf-8",
+        )
 
     _write_executable(fake_bin / "uname", "#!/usr/bin/env bash\necho Darwin\n")
+    _write_executable(
+        fake_bin / "ps",
+        "#!/usr/bin/env bash\n"
+        "set -eu\n"
+        'if [[ -n "${KARKINOS_TEST_WORKER_COMMAND:-}" ]]; then\n'
+        "  printf '%s\\n' \"${KARKINOS_TEST_WORKER_COMMAND}\"\n"
+        "  exit 0\n"
+        "fi\n"
+        "printf '%s\\n' \"${KARKINOS_HOME}/releases/sha-${KARKINOS_TEST_HEALTH_SHA}/"
+        'runtime/bin/python3.12 -B -s -P -m server --research-worker"\n',
+    )
     _write_executable(fake_bin / "plutil", "#!/usr/bin/env bash\nexit 0\n")
     _write_executable(
         fake_bin / "uv",
@@ -144,12 +184,19 @@ def _fake_launch_agent_repo(
         "#!/usr/bin/env bash\n"
         "set -eu\n"
         f'printf "launchctl %s\\n" "$*" >>"{calls}"\n'
-        f'state="{state_file}"\n'
+        f'server_state="{state_file}"\n'
+        f'worker_state="{worker_state_file}"\n'
+        'state="${server_state}"\n'
+        'default_pid="4242"\n'
+        'if [[ "$*" == *"research-worker"* ]]; then\n'
+        '  state="${worker_state}"\n'
+        '  default_pid="4343"\n'
+        "fi\n"
         'case "${1:-}" in\n'
         "  print)\n"
         '    [[ -f "${state}" ]] || exit 113\n'
         "    printf '%s\\n' 'state = running' 'runs = 1' "
-        '"pid = ${KARKINOS_TEST_LAUNCHD_PID:-4242}"\n'
+        '"pid = ${KARKINOS_TEST_LAUNCHD_PID:-${default_pid}}"\n'
         "    ;;\n"
         "  bootstrap)\n"
         '    touch "${state}"\n'
@@ -201,6 +248,15 @@ def _plist(env: dict[str, str]) -> Path:
     )
 
 
+def _worker_plist(env: dict[str, str]) -> Path:
+    return (
+        Path(env["HOME"])
+        / "Library"
+        / "LaunchAgents"
+        / "com.karkinos.research-worker.plist"
+    )
+
+
 def test_launch_agent_is_native_only_and_checks_exact_runtime_identity():
     script = SCRIPT.read_text(encoding="utf-8")
 
@@ -223,6 +279,8 @@ def test_launch_agent_is_native_only_and_checks_exact_runtime_identity():
     assert '"authorizes_execution":false' in script
     assert "PYTHONDONTWRITEBYTECODE" in script
     assert "source fallback is forbidden" in script
+    assert 'WORKER_LABEL="com.karkinos.research-worker"' in script
+    assert "<string>--research-worker</string>" in script
 
 
 def test_launch_agent_is_user_scoped_reversible_and_restart_is_explicit():
@@ -266,6 +324,21 @@ def test_print_plist_uses_exact_current_and_is_write_free(tmp_path: Path):
     assert "<key>PYTHONDONTWRITEBYTECODE</key><string>1</string>" in result.stdout
     assert not _plist(env).exists()
     assert not (tmp_path / "unexpected-uv").exists()
+
+
+def test_print_worker_plist_is_separate_and_write_free(tmp_path: Path):
+    repo, env, _, _ = _fake_launch_agent_repo(tmp_path)
+    env.pop("KARKINOS_RELEASE_LOCK_OWNER_PID")
+    env.pop("KARKINOS_RELEASE_LOCK_NONCE")
+
+    result = _run(repo, env, "print-worker-plist")
+
+    assert result.returncode == 0, result.stderr
+    assert "com.karkinos.research-worker" in result.stdout
+    assert "<string>--research-worker</string>" in result.stdout
+    assert "<string>--host</string>" not in result.stdout
+    assert "launch-agent-research-worker.log" in result.stdout
+    assert not _worker_plist(env).exists()
 
 
 def test_install_fails_closed_without_immutable_current(tmp_path: Path):
@@ -333,19 +406,27 @@ def test_install_and_uninstall_use_exact_current_release(tmp_path: Path):
 
     assert installed.returncode == 0, installed.stderr
     assert _plist(env).is_file()
+    assert _worker_plist(env).is_file()
     assert (tmp_path / "launchd-loaded").is_file()
+    assert (tmp_path / "research-worker-loaded").is_file()
     assert f"exact current release {SHA}" in installed.stdout
     assert "launchd owns the listener, live scheduler initialized" in installed.stdout
     assert "Financial readiness: not claimed" in installed.stdout
     plist_source = _plist(env).read_text(encoding="utf-8")
     assert f"current/bin/karkinos</string>" in plist_source
     assert "uv</string>" not in plist_source
+    worker_plist_source = _worker_plist(env).read_text(encoding="utf-8")
+    assert "com.karkinos.research-worker" in worker_plist_source
+    assert "<string>--research-worker</string>" in worker_plist_source
+    assert "<string>--host</string>" not in worker_plist_source
 
     uninstalled = _run(repo, env, "uninstall")
 
     assert uninstalled.returncode == 0, uninstalled.stderr
     assert not _plist(env).exists()
+    assert not _worker_plist(env).exists()
     assert not (tmp_path / "launchd-loaded").exists()
+    assert not (tmp_path / "research-worker-loaded").exists()
     assert "Runtime data and logs were not deleted" in uninstalled.stdout
     recorded_calls = calls.read_text(encoding="utf-8")
     assert "launchctl bootstrap gui/" in recorded_calls
@@ -493,6 +574,47 @@ def test_install_fails_closed_when_listener_is_not_the_launchd_process(
     assert "launchctl bootout gui/" in recorded_calls
 
 
+def test_install_rolls_back_both_jobs_when_worker_is_not_exact_current_release(
+    tmp_path: Path,
+):
+    repo, env, calls, _ = _fake_launch_agent_repo(tmp_path)
+    env["KARKINOS_TEST_WORKER_COMMAND"] = (
+        "/tmp/old/runtime/bin/python3.12 -m server --research-worker"
+    )
+
+    result = _run(repo, env, "install")
+
+    assert result.returncode == 1
+    assert "service readiness did not become ready" in result.stderr
+    assert not _plist(env).exists()
+    assert not _worker_plist(env).exists()
+    assert not (tmp_path / "launchd-loaded").exists()
+    assert not (tmp_path / "research-worker-loaded").exists()
+    recorded_calls = calls.read_text(encoding="utf-8")
+    assert "com.karkinos.research-worker" in recorded_calls
+    assert "com.karkinos.daily-candidate" in recorded_calls
+
+
+def test_install_preserves_both_plists_when_bootout_leaves_loaded_jobs(
+    tmp_path: Path,
+) -> None:
+    repo, env, _, _ = _fake_launch_agent_repo(tmp_path)
+    env["KARKINOS_TEST_WORKER_COMMAND"] = (
+        "/tmp/old/runtime/bin/python3.12 -m server --research-worker"
+    )
+    env["KARKINOS_TEST_BOOTOUT_PRESERVES_LABEL"] = "1"
+    env["KARKINOS_LAUNCH_AGENT_UNLOAD_TIMEOUT_SECONDS"] = "1"
+
+    result = _run(repo, env, "install")
+
+    assert result.returncode == 1
+    assert "plist files were preserved for recovery" in result.stderr
+    assert _plist(env).is_file()
+    assert _worker_plist(env).is_file()
+    assert (tmp_path / "launchd-loaded").is_file()
+    assert (tmp_path / "research-worker-loaded").is_file()
+
+
 def test_install_requires_and_accepts_guarded_readiness_during_transaction(
     tmp_path: Path,
 ):
@@ -529,6 +651,49 @@ def test_install_does_not_replace_loaded_service_but_restart_does(tmp_path: Path
     assert restart_calls.index("bootout") < restart_calls.index("bootstrap")
     assert _plist(env).is_file()
     assert (tmp_path / "launchd-loaded").is_file()
+    assert (tmp_path / "research-worker-loaded").is_file()
+
+
+def test_install_upgrades_legacy_single_agent_without_replacing_api(tmp_path: Path):
+    repo, env, calls, _ = _fake_launch_agent_repo(
+        tmp_path,
+        loaded=True,
+        worker_loaded=False,
+    )
+
+    result = _run(repo, env, "install")
+
+    assert result.returncode == 0, result.stderr
+    assert "alongside the existing exact-current API service" in result.stdout
+    assert _plist(env).is_file()
+    assert _worker_plist(env).is_file()
+    assert (tmp_path / "launchd-loaded").is_file()
+    assert (tmp_path / "research-worker-loaded").is_file()
+    recorded_calls = calls.read_text(encoding="utf-8")
+    assert "bootstrap gui/" in recorded_calls
+    assert "com.karkinos.research-worker.plist" in recorded_calls
+    assert "bootout gui/" not in recorded_calls
+
+
+def test_v2_manager_can_restore_v1_single_agent_without_starting_worker(
+    tmp_path: Path,
+) -> None:
+    repo, env, calls, _ = _fake_launch_agent_repo(
+        tmp_path,
+        release_control_protocol=1,
+    )
+
+    result = _run(repo, env, "install")
+
+    assert result.returncode == 0, result.stderr
+    assert "legacy release protocol 1" in result.stdout
+    assert _plist(env).is_file()
+    assert not _worker_plist(env).exists()
+    assert (tmp_path / "launchd-loaded").is_file()
+    assert not (tmp_path / "research-worker-loaded").exists()
+    recorded_calls = calls.read_text(encoding="utf-8")
+    assert "com.karkinos.daily-candidate.plist" in recorded_calls
+    assert "com.karkinos.research-worker.plist" not in recorded_calls
 
 
 def test_install_preserves_existing_listener_without_bootstrap(tmp_path: Path):

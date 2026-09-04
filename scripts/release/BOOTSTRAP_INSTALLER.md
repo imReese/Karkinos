@@ -1,10 +1,16 @@
-# Source-checkout-free macOS bootstrap
+# Source-checkout-free macOS bootstrap and protocol transition
 
-`scripts/release/bootstrap_installer.sh` is the one-time user entry point for
-migrating an existing source-based Karkinos service to managed stable releases.
-It never builds the application and never executes Python or shell code from the
-legacy checkout. The legacy worktree and plist are inputs to the packaged
-controller's migration checks only.
+`scripts/release/bootstrap_installer.sh` is the user entry point for both:
+
+- migrating an existing source-based Karkinos service to managed stable
+  releases; and
+- moving an existing managed service across a release-control protocol change
+  that its installed controller must reject.
+
+It never builds the application and never executes Python or shell code from a
+legacy checkout. In both modes it delegates activation to the verified target
+package's controller, so the target's transaction, process-readiness, and
+rollback rules govern the change.
 
 Do not use this entry point for a tag whose GitHub Release does not contain an
 attested `bootstrap_installer.sh` asset. Publishing and attesting that asset is a
@@ -42,7 +48,31 @@ Verifying the installer before executing it is the initial trust boundary.
 Self-verification inside a script would not protect against a modified script
 whose verification code had also been removed.
 
-## Run the one-time handoff
+## Run a managed protocol transition
+
+For example, releases through `v0.3.6` use the single-process protocol 1. The
+first two-process release uses protocol 2, so `v0.3.6` must not activate it with
+the old controller. Run the target tag's standalone installer without either
+legacy option:
+
+```bash
+"$BOOTSTRAP_DOWNLOAD_DIR/bootstrap_installer.sh" \
+  --tag "$TAG" \
+  --confirm "UPDATE $TAG"
+```
+
+The installer validates and extracts the target package, then invokes that
+package's `bin/karkinosctl update`. The target controller independently verifies
+the stable release and performs the journaled update. A protocol-2 target must
+prove both its exact API and research-worker LaunchAgents; on failure it rolls
+back the API and accepts the old release's missing worker only when the restored
+manifest is protocol 1. The transition needs no second `start` command.
+
+This mode requires an existing managed runtime under `--home` (or the default
+Karkinos application-support directory). `--service-port` and
+`--health-timeout` remain optional and are forwarded to the target controller.
+
+## Run the one-time source-service handoff
 
 Pass the exact existing checkout and LaunchAgent plist. The installer selects
 `arm64` on Apple Silicon and `x86_64` on Intel automatically:
@@ -71,8 +101,9 @@ to the packaged bootstrap controller. It then:
    attestation against both the exact tag ref and commit before executing it;
 5. rechecks the remote release and tag identities;
 6. rejects unsafe archive entries, extracts into a private temporary directory,
-   and invokes only the archive's `bin/karkinosctl bootstrap`, handing it the
-   same downloaded archive rather than downloading the large payload again;
+   and invokes only the archive's `bin/karkinosctl`: `bootstrap` receives the
+   already-downloaded archive, while a managed protocol transition invokes
+   `update` so the target controller owns the full update verification;
 7. removes the temporary download and extraction directory on success or
    failure.
 

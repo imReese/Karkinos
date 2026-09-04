@@ -13,7 +13,8 @@ from typing import Iterable
 
 MANIFEST_NAME = "release.json"
 NATIVE_ARTIFACT_SCHEMA = "karkinos.native_release.v1"
-RELEASE_CONTROL_PROTOCOL = 1
+RELEASE_CONTROL_PROTOCOL = 2
+SUPPORTED_RELEASE_CONTROL_PROTOCOLS = (1, RELEASE_CONTROL_PROTOCOL)
 REQUIRED_RUNTIME_FILES = (
     "app/server/__init__.py",
     "app/server/__main__.py",
@@ -131,6 +132,7 @@ def validate_archive(
     expected_commit_sha: str | None = None,
     expected_architecture: str | None = None,
     expected_version: str | None = None,
+    expected_control_protocol: int | None = RELEASE_CONTROL_PROTOCOL,
 ) -> dict[str, object]:
     """Validate a native archive without trusting archive-provided links."""
     if not archive.is_file() or archive.is_symlink():
@@ -192,6 +194,7 @@ def validate_archive(
                 expected_commit_sha=expected_commit_sha,
                 expected_architecture=expected_architecture,
                 expected_version=expected_version,
+                expected_control_protocol=expected_control_protocol,
             )
 
 
@@ -215,6 +218,7 @@ def validate_manifest(
     expected_commit_sha: str | None = None,
     expected_architecture: str | None = None,
     expected_version: str | None = None,
+    expected_control_protocol: int | None = RELEASE_CONTROL_PROTOCOL,
 ) -> dict[str, object]:
     """Validate identity, layout, and content fingerprint of a package."""
     if not root.is_dir() or root.is_symlink():
@@ -224,8 +228,14 @@ def validate_manifest(
         raise ValueError("release_manifest_schema_unsupported")
     if manifest.get("artifact_kind") != "macos-native":
         raise ValueError("release_manifest_artifact_kind_invalid")
-    if manifest.get("release_control_protocol") != RELEASE_CONTROL_PROTOCOL:
+    control_protocol = manifest.get("release_control_protocol")
+    if control_protocol not in SUPPORTED_RELEASE_CONTROL_PROTOCOLS:
         raise ValueError("release_manifest_control_protocol_unsupported")
+    if (
+        expected_control_protocol is not None
+        and control_protocol != expected_control_protocol
+    ):
+        raise ValueError("release_manifest_control_protocol_mismatch")
 
     commit_sha = manifest.get("commit_sha")
     if (

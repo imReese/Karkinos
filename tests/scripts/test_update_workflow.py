@@ -345,6 +345,7 @@ def test_stable_fetches_exact_tag_then_stages_and_deploys_proven_sha(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     events: list[tuple[object, ...]] = []
+    local_archive = tmp_path / "installer-download.tar.gz"
 
     def auth_runner(
         command: list[str], **_kwargs: object
@@ -358,6 +359,7 @@ def test_stable_fetches_exact_tag_then_stages_and_deploys_proven_sha(
             "tag": _TAG,
             "output_dir": kwargs["output_dir"],
             "token": _TOKEN,
+            "local_archive": local_archive,
         }
         events.append(("fetch", _TAG))
         output_dir = kwargs["output_dir"]
@@ -372,6 +374,7 @@ def test_stable_fetches_exact_tag_then_stages_and_deploys_proven_sha(
         health_timeout=12,
         environment={},
         gh_auth_runner=auth_runner,
+        local_archive=local_archive,
         temporary_parent=tmp_path,
     )
 
