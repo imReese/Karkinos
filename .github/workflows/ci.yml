@@ -133,7 +133,26 @@ jobs:
             --progress-spinner=off
 
       - name: Audit npm production dependencies
-        run: npm --prefix web audit --omit=dev --audit-level=moderate
+        run: |
+          audit_log="${RUNNER_TEMP}/npm-audit.log"
+          for attempt in 1 2 3; do
+            if npm --prefix web audit --omit=dev --audit-level=moderate \
+              --fetch-timeout=60000 --fetch-retries=0 >"${audit_log}" 2>&1; then
+              cat "${audit_log}"
+              exit 0
+            fi
+
+            cat "${audit_log}"
+            if ! grep -Eq \
+              'audit endpoint returned an error|network timeout|503 Service Unavailable|ECONNRESET|ETIMEDOUT|EAI_AGAIN' \
+              "${audit_log}"; then
+              exit 1
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
 
   trading-safety:
     name: Trading safety invariants
