@@ -1,116 +1,85 @@
 # Karkinos Codebase Guide
 
-[Product architecture](ARCHITECTURE.md) | [Goal](KARKINOS_GOAL.md) |
-[Roadmap](ROADMAP.md) | [Contributing](../CONTRIBUTING.md)
+[文档入口](README.md) | [目标](GOAL.md) | [架构](ARCHITECTURE.md) | [当前计划](PLAN.md)
 
-This guide describes the physical source layout and dependency rules used to
-evolve Karkinos as a modular monolith. Product invariants and authority
-boundaries remain owned by `ARCHITECTURE.md`; this file owns contributor-facing
-code organization.
+Karkinos 保持 **Python modular monolith**。目录拆分服务于 ownership，不服务于“看起来像微服务”。
 
-## Dependency Direction
+## Package ownership
 
-The left-hand package may import only the listed internal packages:
-
-| Package | Allowed internal dependencies |
+| Location | Owns |
 | --- | --- |
-| `core` | none |
-| `domain` | `core` |
-| `data` | `core`, `domain` |
-| `strategy` | `core`, `data` |
-| `risk` | `core`, `domain` |
-| `execution` | `core` |
-| `account_truth` | none |
-| `notification` | none |
-| `backtest` | `core`, `data`, `domain`, `execution`, `risk`, `strategy` |
+| `core/` | clocks、events、基础类型 |
+| `domain/` | canonical portfolio / instrument rules |
+| `data/` | market-data contracts、providers、ingestion、replay |
+| `strategy/` | legacy strategy definitions and extension registry |
+| `backtest/` | deterministic backtest engine |
+| `risk/` | deterministic risk policy |
+| `execution/` | broker-neutral execution contracts / simulation |
+| `account_truth/` | broker evidence and reconciliation contracts |
+| `analytics/` | research/acceptance analysis, never account authority |
+| `server/routes/` | HTTP validation and response mapping |
+| `server/services/` | application use cases and orchestration |
+| `server/persistence/` | SQLite repositories, migrations, units of work |
+| `server/projections/` | canonical read projections, no side effects |
+| `server/app.py` | process composition and lifecycle |
+| `web/src/app/` | router, providers, shell |
+| `web/src/features/` | feature pages, queries, commands, local UI |
+| `web/src/shared/` | feature-neutral UI / API infrastructure |
 
-`server` composes the application and may depend on the packages above.
-`server` and `analytics` boundaries are being migrated incrementally and are
-not covered by this table.
+未来的 `alpha/`、portfolio-construction 和 columnar dataset modules 应按上述 ownership 原则新增，不塞进 `server/routes` 或 generic `utils`。
 
-`tools/check_python_architecture.py` is the executable source of truth for the
-protected package edges. A diagram or directory name never overrides that
-check.
+## Dependency direction
 
-## Python Ownership
-
-| Location | Owns | Must not own |
-| --- | --- | --- |
-| `core/` | clocks, events, foundational types | Web, persistence, provider, or broker behavior |
-| `domain/` | canonical portfolio and instrument rules | HTTP or database orchestration |
-| `data/` | market-data contracts, ingestion, replay, providers | account authority or presentation |
-| `strategy/` | signal definitions and safe extension registry | broker access or execution authority |
-| `risk/` | deterministic risk policy | order submission |
-| `execution/` | broker-neutral execution contracts and simulation | strategy selection or capital authority |
-| `backtest/` | canonical deterministic backtest engine | HTTP presentation |
-| `account_truth/` | broker-evidence ingestion and reconciliation contracts | silent production-ledger mutation |
-| `analytics/` | evidence analysis and acceptance reporting | authoritative account facts |
-| `server/routes/` | HTTP validation, dependency lookup, error mapping, response models | reusable financial calculation or persistence |
-| `server/services/` | application use cases, orchestration, transaction intent | FastAPI route imports |
-| `server/persistence/` | bounded SQLite repositories and schema migrations | provider calls or business authority |
-| `server/projections/` | canonical read projections | external side effects |
-| `server/app.py` | process composition and lifecycle | business calculations or route-private helpers |
-
-`AppDatabase` remains a compatibility facade while repositories are extracted.
-New single-context persistence belongs in `server/persistence/`. Cross-context
-atomic flows such as controlled submission, reconciliation, posting, and
-correction stay on one SQLite connection until a tested unit-of-work boundary
-can preserve their exact idempotency and rollback semantics.
-Existing route-to-route imports are migration debt captured by an exact
-no-new-edge ratchet in `tests/test_server_import_boundaries.py`. New reusable
-behavior belongs behind a service or another public application contract.
-
-## Web Ownership
+基础包不能依赖 Web/FastAPI/persistence：
 
 ```text
-web/src/app/       providers, router, shell, process-level composition
-web/src/features/  domain queries, commands, pages, and local components
-web/src/shared/    feature-neutral UI, formatting, and API infrastructure
+core
+  ^
+domain
+  ^
+data / risk / execution
+  ^
+strategy / backtest / alpha
+  ^
+server application composition
 ```
 
-The router loads route pages; it does not implement them. A feature may depend
-on shared code, but shared code must not depend on `app` or a feature. Cross-
-feature workflow composition belongs in a route page or an explicit public
-presentation contract, not a deep import into another feature's internals.
-`web/src/architecture/import-boundaries.test.ts` ratchets these rules as the
-incremental migration proceeds.
+实际受保护边界由 `tools/check_python_architecture.py` 和对应 tests 执行。文档图不能覆盖可执行规则。
 
-## Refactoring Rules
+## AppDatabase
 
-1. Establish characterization tests before moving behavior.
-2. Move logic before redesigning it; avoid mixing structural and semantic
-   changes in the same slice.
-3. Keep compatibility facades until direct callers and tests have migrated.
-4. Add an executable dependency rule for each newly established boundary.
-5. Prefer a bounded repository or named application service over generic
-   `utils`, `helpers`, or catch-all modules.
-6. Keep tests near the level they prove: route tests for HTTP contracts,
-   service tests for use-case semantics, repository tests for SQL and atomicity,
-   and acceptance tests for cross-surface invariants.
-7. Treat file size as a review signal, not an automatic reason to create more
-   layers. Split by ownership and change reason.
+`AppDatabase` 目前仍是 compatibility facade。新 persistence 应优先进入命名清晰的 repository/UoW；旧调用方逐步迁移后再让 facade 变薄。
 
-A structural refactor must not silently change API fields, database schema,
-fingerprint bytes, ordering, idempotency keys, financial formulas, provider
-contact, broker capability, GET write behavior, or human authority. Any such
-change needs a separately stated semantic design and deterministic validation.
+不要一次性删除 `AppDatabase` 或大搬目录。跨 context 的原子流程必须在新的 unit-of-work 能证明同样 idempotency/rollback 语义后再迁移。
 
-## Migration Order
+## Market Data / Financial Control
 
-The preferred sequence for remaining architecture debt is:
+代码组织应逐步反映 [ARCHITECTURE.md](ARCHITECTURE.md) 的双平面：
 
-1. make composition roots thin and enforce route/page boundaries;
-2. extract bounded repositories behind compatibility facades;
-3. move route-owned use cases into typed application services;
-4. remove route-to-route imports through public service contracts;
-5. introduce a typed application container while retaining the legacy state
-   bridge for unmigrated callers;
-6. split large feature APIs, presentation mappings, copy catalogs, and tests by
-   workflow; and
-7. expand static typing and dependency checks only after each migrated slice is
-   clean.
+- 高容量历史/研究 dataset 属于 Market Data Plane；
+- ledger、valuation、risk、OMS、authority 和 audit 属于 Financial Control Plane。
 
-The real-provider adapter, broker soak, and controlled-pilot evidence in the
-roadmap are product release gates. A code-organization refactor cannot satisfy
-or waive them. The GitHub Actions Code CI gate covers repository checks only;
-it is necessary, but not sufficient, release evidence.
+不要为了方便把新的大规模时间序列继续塞进 `app.db`。
+
+## Process boundaries
+
+API、research worker 和未来 heavy market-ingestion worker 可以是独立进程，但仍属于同一个产品和代码库。
+
+只有外部故障域、资源隔离或生命周期确实要求时才增加进程；不要为每个 domain 建服务。
+
+## Refactoring rules
+
+1. 结构变化前先写 characterization/replay tests。
+2. 先移动 ownership，再改语义；不要在同一个 slice 同时重构和改金融公式。
+3. 新代码依赖窄接口，不依赖 God facade。
+4. 一个边界稳定后加 executable dependency rule。
+5. 禁止新的 `utils.py` / `helpers.py` catch-all。
+6. route 不拥有可复用金融计算；projection 不做外部 side effect。
+7. 数据库 schema、fingerprint bytes、ordering、idempotency keys 和 API fields 的变化必须单独说明。
+8. 不因为文件大就自动加层；按 change reason 和 ownership 拆。
+
+## Language policy
+
+Python 保持主语言。性能问题先用 profiling、NumPy/Arrow/Polars/DuckDB 解决；只有有明确 benchmark/SLO 证据时才下沉 Rust/native kernel。
+
+不接受“重写语言”作为修复业务状态机、时间语义或数据 ownership 问题的替代方案。

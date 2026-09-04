@@ -1,84 +1,83 @@
 # Karkinos AI Collaboration Policy
 
-This document is the repository-level source of truth for AI-assisted work. It
-is tool-neutral and applies equally to implementation, review, diagnosis, and
-documentation changes.
+This is the repository-level source of truth for AI-assisted implementation,
+review, diagnosis, and documentation work.
 
-## Product boundary
+## Required context
 
-Karkinos is a China-market personal quant research and trading platform, not a
-toy backtester. Prioritize:
+Start with `docs/README.md`. Read only the canonical document needed for the
+task:
 
-1. Data integrity and reproducible datasets.
-2. After-cost backtest credibility.
-3. Mandatory pre-trade risk gates.
-4. Signal journals and auditable evidence.
-5. Portfolio action queues and safe human next steps.
-6. Paper/shadow operation before live-like workflows.
-7. Explicit strategy promotion and rollback paths.
+- product intent and hard boundaries: `docs/GOAL.md`;
+- data ownership, financial semantics, reliability, persistence, execution:
+  `docs/ARCHITECTURE.md`;
+- current priorities and sequencing: `docs/PLAN.md`;
+- package ownership and refactoring: `docs/CODEBASE.md`;
+- current user behavior and commands: `README.md` and `scripts/README.md`.
 
-Real-money automatic trading must never become the default. Live-like actions
-require explicit human confirmation and bounded, revocable authority.
+Historical roadmap/design files are not sources of current product intent.
 
-## Source routing
+## Current engineering priority
 
-Before changing code, read `docs/KARKINOS_GOAL.md` and the relevant sections of
-`README.md`. Then load only the task-specific source of truth:
+Until the Reliability Gate in `docs/PLAN.md` is complete, prioritize:
 
-- Account, valuation, PnL, market data, risk, paper/shadow, reconciliation, or
-  execution: `docs/ARCHITECTURE.md`, especially Architectural Principles,
-  Canonical Financial Identity, and Failure Semantics.
-- Product UI, information hierarchy, or interaction behavior: `design.md`.
-- Milestones and sequencing: `docs/ROADMAP.md`.
-- AI-assisted strategy research protocol, validation, provider isolation, and
-  acceptance: `docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md`.
-- Controlled execution: `docs/CONTROLLED_EXECUTION_PLAN.md`.
-- Chinese documentation or localization: `docs/README.zh.md` and the linked
-  translated page.
+1. production reliability and replayable failure recovery;
+2. point-in-time market data;
+3. Alpha research and validation;
+4. portfolio construction and realistic costs;
+5. execution simulation / paper / shadow;
+6. attribution and edge-degradation detection;
+7. only then broader controlled-capital work.
 
-Do not treat deleted, closed, or superseded issue discussions as project goals.
+Do not expand broker write authority, AI autonomy, or unrelated product surface
+at the expense of this sequence.
 
 ## Financial data integrity
 
-Accuracy, provenance, deterministic replay, and fail-closed behavior take
-precedence over freshness or UI convenience.
-
-For account, valuation, PnL, market data, risk, paper/shadow, reconciliation,
-and execution workflows:
-
-1. Persisted facts are authoritative. Runtime caches and provider responses are
-   ingestion inputs, never authoritative account facts.
-2. Read/query endpoints must not contact providers or silently refresh facts.
-   Refresh is an explicit ingestion command with an auditable run id.
-3. Derived results must bind an explicit market-data snapshot or as-of time and
-   a ledger cutoff so they can be deterministically replayed.
-4. One financial concept must have one canonical implementation. Other
-   surfaces may project it but must not independently recalculate it.
-5. Asset, symbol, fee, event-flow, residual, and account-level changes must
-   reconcile through deterministic cross-surface tests.
-6. Missing, stale, estimated, partial-batch, conflicting, or unreconciled
-   evidence must remain explicit and block authoritative results.
-7. Provisional in-memory telemetry must not enter risk gates, account truth,
-   performance evidence, or execution authority until persisted and validated.
+- Persisted, validated facts are authoritative; provider responses and runtime
+  caches are inputs.
+- GET/read paths do not contact providers or silently mutate facts.
+- Derived results bind explicit dataset/snapshot identity and, when account
+  bound, ledger cutoff/fingerprint.
+- One financial concept has one canonical owner.
+- Missing, stale, estimated, partial, conflicting, or unreconciled evidence is
+  explicit.
+- Fail closed on the affected action; do not turn an unrelated writer failure
+  into an avoidable whole-product outage.
+- A failed candidate publication must not destroy a verified last-good read
+  pointer.
 
 ## Human authority and safety
 
 - AI output, research results, reviews, and UI actions do not grant trading or
   capital authority.
-- Strategy and research code must not call a broker directly.
-- Missing approval, stale evidence, or uncertain execution state fails closed.
+- Strategy/research code must not call a broker directly.
+- Real-money submission remains default-off and human-supervised.
 - Broker credentials, account identifiers, private exports, screenshots,
-  runtime databases, and secrets must not enter source control.
+  runtime databases, and secrets never enter source control.
 - Destructive or authority-expanding actions require explicit owner direction.
 
 ## Engineering and validation
 
-- Preserve unrelated and uncommitted workspace changes.
-- Keep one canonical implementation for each financial concept.
-- Record assumptions and risk impact for trading-related changes.
+- Diagnose from source and persisted evidence before changing behavior.
+- Preserve unrelated workspace changes.
 - Add deterministic tests for affected invariants and direct consumers.
-- State validation boundaries honestly; static, unit, stub, or local checks are
-  not evidence of production-provider, broker, remote, or real-money behavior.
-- Before committing, inspect both staged and unstaged changes, run relevant
-  tests, and confirm no credentials or private account data are included.
-- Commit, push, publish, or open a pull request only when the owner requests it.
+- For production-state bugs, prefer replay/characterization fixtures over only
+  isolated unit tests.
+- State what was actually validated; local CI is not evidence of a real broker
+  or production provider.
+- Inspect staged/unstaged changes before commit and confirm no private data is
+  included.
+
+## Documentation discipline
+
+- Do not create a new top-level roadmap, implementation log, architecture,
+  profit plan, or AI master design.
+- Update `GOAL.md`, `ARCHITECTURE.md`, `PLAN.md`, or `CODEBASE.md` according to
+  ownership.
+- Put narrow, durable decisions in ADRs or code contracts/tests.
+- Implementation history belongs in Git commits, PRs, and Releases.
+- Compatibility stub documents must remain short and must not regain product
+  content.
+
+Commit, push, publish, or open a pull request only when the owner requests it.

@@ -1,4 +1,4 @@
-"""Check stable documentation ownership without parsing prose as product state."""
+"""Keep Karkinos documentation small, canonical, and link-safe."""
 
 from __future__ import annotations
 
@@ -8,56 +8,54 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 CORE_DOC_BUDGETS = {
-    "README.md": 250,
-    "docs/README.zh.md": 180,
-    "docs/README.en.md": 180,
-    "docs/KARKINOS_GOAL.md": 180,
-    "docs/KARKINOS_GOAL.zh.md": 180,
-    "docs/ROADMAP.md": 260,
-    "docs/ROADMAP.zh.md": 240,
-    "docs/ARCHITECTURE.md": 650,
-    "docs/ARCHITECTURE.zh.md": 650,
-    "docs/IMPLEMENTATION_LOG.md": 400,
-    "docs/IMPLEMENTATION_LOG.zh.md": 400,
-    "docs/CONTROLLED_EXECUTION_PLAN.md": 350,
-    "docs/CONTROLLED_EXECUTION_PLAN.zh.md": 350,
-    "docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md": 2200,
+    "README.md": 180,
+    "docs/README.md": 120,
+    "docs/GOAL.md": 140,
+    "docs/ARCHITECTURE.md": 240,
+    "docs/PLAN.md": 320,
+    "docs/CODEBASE.md": 180,
+    "AI_COLLABORATION.md": 180,
+    "AGENTS.md": 80,
+    "CLAUDE.md": 80,
 }
 
-LANGUAGE_PAIRS = (
-    ("docs/README.zh.md", "docs/README.en.md"),
-    ("docs/KARKINOS_GOAL.zh.md", "docs/KARKINOS_GOAL.md"),
-    ("docs/ROADMAP.zh.md", "docs/ROADMAP.md"),
-    ("docs/ARCHITECTURE.zh.md", "docs/ARCHITECTURE.md"),
-    ("docs/config-reference.zh.md", "docs/config-reference.en.md"),
-    ("docs/account-truth-import.zh.md", "docs/account-truth-import.en.md"),
-    ("docs/return-accounting.zh.md", "docs/return-accounting.en.md"),
-    (
-        "docs/broker-order-lifecycle-ingestion.zh.md",
-        "docs/broker-order-lifecycle-ingestion.en.md",
-    ),
-    (
-        "docs/CONTROLLED_EXECUTION_PLAN.zh.md",
-        "docs/CONTROLLED_EXECUTION_PLAN.md",
-    ),
-    ("docs/IMPLEMENTATION_LOG.zh.md", "docs/IMPLEMENTATION_LOG.md"),
-    ("docs/BENCHMARKS.zh.md", "docs/BENCHMARKS.md"),
+COMPATIBILITY_STUB_BUDGETS = {
+    "docs/README.zh.md": 12,
+    "docs/README.en.md": 12,
+    "docs/KARKINOS_GOAL.md": 12,
+    "docs/KARKINOS_GOAL.zh.md": 12,
+    "docs/ROADMAP.md": 12,
+    "docs/ROADMAP.zh.md": 12,
+    "docs/ARCHITECTURE.zh.md": 12,
+    "docs/IMPLEMENTATION_LOG.md": 12,
+    "docs/IMPLEMENTATION_LOG.zh.md": 12,
+    "docs/CONTROLLED_EXECUTION_PLAN.md": 12,
+    "docs/CONTROLLED_EXECUTION_PLAN.zh.md": 12,
+}
+
+REMOVED_TOP_LEVEL_DOCS = (
+    "docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md",
+    "docs/BENCHMARKS.md",
+    "docs/BENCHMARKS.zh.md",
+    "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md",
+    "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md",
+    "docs/PROFIT_ENGINE_PLAN.zh.md",
 )
 
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 
 
-def _check_core_doc(path_text: str, line_budget: int) -> list[str]:
+def _check_document(path_text: str, line_budget: int) -> list[str]:
     path = REPO_ROOT / path_text
     if not path.is_file():
-        return [f"missing core document: {path_text}"]
+        return [f"missing documentation file: {path_text}"]
 
     text = path.read_text(encoding="utf-8")
     errors: list[str] = []
     line_count = len(text.splitlines())
     if line_count > line_budget:
         errors.append(
-            f"{path_text} has {line_count} lines; ownership budget is " f"{line_budget}"
+            f"{path_text} has {line_count} lines; documentation budget is {line_budget}"
         )
 
     for raw_target in MARKDOWN_LINK.findall(text):
@@ -77,46 +75,35 @@ def _check_core_doc(path_text: str, line_budget: int) -> list[str]:
     return errors
 
 
-def _check_tests_do_not_parse_roadmap() -> list[str]:
+def _check_removed_docs_stay_removed() -> list[str]:
+    return [
+        f"superseded top-level document returned: {path_text}"
+        for path_text in REMOVED_TOP_LEVEL_DOCS
+        if (REPO_ROOT / path_text).exists()
+    ]
+
+
+def _check_tests_do_not_parse_plan() -> list[str]:
     errors: list[str] = []
     tests_root = REPO_ROOT / "tests"
     for path in tests_root.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
-        if "docs/ROADMAP.md" in text and "read_text" in text:
+        if "docs/PLAN.md" in text and "read_text" in text:
             errors.append(
-                f"{path.relative_to(REPO_ROOT)} parses ROADMAP prose; "
-                "use the acceptance registry instead"
+                f"{path.relative_to(REPO_ROOT)} parses PLAN prose; use executable "
+                "acceptance contracts instead"
             )
-    return errors
-
-
-def _check_language_pairs() -> list[str]:
-    errors: list[str] = []
-    for zh_path_text, en_path_text in LANGUAGE_PAIRS:
-        zh_path = REPO_ROOT / zh_path_text
-        en_path = REPO_ROOT / en_path_text
-        for path in (zh_path, en_path):
-            if not path.is_file():
-                errors.append(
-                    f"missing documentation language pair: {path.relative_to(REPO_ROOT)}"
-                )
-        if not zh_path.is_file() or not en_path.is_file():
-            continue
-        zh_text = zh_path.read_text(encoding="utf-8")
-        en_text = en_path.read_text(encoding="utf-8")
-        if en_path.name not in zh_text:
-            errors.append(f"{zh_path_text} does not link to {en_path.name}")
-        if zh_path.name not in en_text:
-            errors.append(f"{en_path_text} does not link to {zh_path.name}")
     return errors
 
 
 def main() -> int:
     errors: list[str] = []
     for path_text, line_budget in CORE_DOC_BUDGETS.items():
-        errors.extend(_check_core_doc(path_text, line_budget))
-    errors.extend(_check_language_pairs())
-    errors.extend(_check_tests_do_not_parse_roadmap())
+        errors.extend(_check_document(path_text, line_budget))
+    for path_text, line_budget in COMPATIBILITY_STUB_BUDGETS.items():
+        errors.extend(_check_document(path_text, line_budget))
+    errors.extend(_check_removed_docs_stay_removed())
+    errors.extend(_check_tests_do_not_parse_plan())
 
     if errors:
         print("Documentation health check failed:")
@@ -125,8 +112,8 @@ def main() -> int:
         return 1
 
     print(
-        "Documentation health check passed: core ownership budgets, local "
-        "links, language pairs, and roadmap/test separation are valid."
+        "Documentation health check passed: canonical docs are small, compatibility "
+        "stubs stay small, local links resolve, and superseded master docs stay removed."
     )
     return 0
 
