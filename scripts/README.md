@@ -159,7 +159,7 @@ target tag's attested standalone installer and let the target controller own
 the update in the same explicit operation:
 
 ```bash
-TAG=vX.Y.Z
+TAG=v0.3.7
 "$BOOTSTRAP_DOWNLOAD_DIR/bootstrap_installer.sh" \
   --tag "$TAG" \
   --confirm "UPDATE $TAG"

@@ -32,7 +32,7 @@ die() {
 usage() {
 	cat <<'EOF'
 Usage:
-	# Managed release-control protocol transition (for example v0.3.6):
+	# Managed release-control protocol transition (first required for v0.3.7):
 	bootstrap_installer.sh \
 	    --tag vX.Y.Z \
 	    --confirm "UPDATE vX.Y.Z" \
