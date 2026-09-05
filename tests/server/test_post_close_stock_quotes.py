@@ -244,3 +244,50 @@ def test_same_timestamp_trusted_equivalent_requires_live_provider_status(
     assert result.published is False
     assert result.error_message == "current_quote_conflicts_with_verified_close"
     assert database.list_quote_fetch_runs(trigger="post_close_market_bar") == []
+
+
+def test_partial_promotion_binds_only_the_requested_candidate_symbols(tmp_path):
+    import sqlite3
+
+    from server.persistence.valuation_publication_recovery import quote_run_scope
+
+    database = _database(tmp_path)
+    refs = _install_verified_calendar(database)
+    store = DataStore(tmp_path / "market-data")
+    store.ingest_market_daily_batch(
+        trade_date=_TRADE_DATE.isoformat(),
+        provider_name="akshare",
+        bars=pd.DataFrame(
+            [
+                {
+                    "symbol": symbol,
+                    "timestamp": f"{_TRADE_DATE.isoformat()}T00:00:00",
+                    "open": 11.0,
+                    "high": 11.0,
+                    "low": 11.0,
+                    "close": 11.0,
+                    "volume": 1000.0,
+                }
+                for symbol in ("600001", "600002")
+            ]
+        ),
+    )
+    initial = _publish(
+        database, store, provider_name="akshare", calendar_evidence_refs=refs
+    )
+    assert initial.published
+    result = publish_post_close_stock_quotes(
+        database,
+        store,
+        [*_WATCHLIST, (Symbol("600002"), AssetClass.STOCK)],
+        provider_name="akshare",
+        trade_date=_TRADE_DATE,
+        calendar_evidence_refs=refs,
+        captured_at=_CAPTURED_AT,
+    )
+    assert result.published and result.run_id != initial.run_id
+    assert database.get_quote_fetch_run(result.run_id)["symbol_count"] == 1
+    with sqlite3.connect(database.path) as conn:
+        assert quote_run_scope(conn, result.run_id, require_exact=True) == [
+            ["stock", "600002"]
+        ]

@@ -1183,6 +1183,7 @@ def test_successful_quote_run_publishes_replayable_snapshot(tmp_path):
         asset_type="stock",
         symbol_count=1,
         status="running",
+        metadata={"requested_symbols": ["600001"]},
     )
     _record_holding(db, "600001")
     db.persist_quote_ingestion_sync(

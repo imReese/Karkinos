@@ -108,7 +108,7 @@ class QuoteIngestionUnitOfWorkMixin:
                     raise RuntimeError(
                         "staged quote count does not match successful quote count"
                     )
-                expected = quote_run_scope(conn, run_id)
+                expected = quote_run_scope(conn, run_id, require_exact=True)
                 actual = {
                     (key.instrument_type.value, key.symbol)
                     for command in staged
@@ -116,7 +116,7 @@ class QuoteIngestionUnitOfWorkMixin:
                         InstrumentKey.from_values(command.symbol, command.asset_type)
                     ]
                 }
-                if expected is not None and actual != {tuple(key) for key in expected}:
+                if actual != {tuple(key) for key in expected}:
                     raise ValueError("quote publication requested scope mismatch")
                 close_binding = _daily_close_batch_binding(
                     conn, staged, run_id=run_id, scope=expected
@@ -133,6 +133,15 @@ class QuoteIngestionUnitOfWorkMixin:
                 metadata_value = _metadata_dict(metadata)
                 metadata_value.update(
                     {
+                        "quote_publication_completion_fingerprint": quote_completion_fingerprint(
+                            finished_at=finished_at,
+                            status=status,
+                            success_count=success_count,
+                            failure_count=failure_count,
+                            cache_hit_count=cache_hit_count,
+                            error_message=error_message,
+                            metadata=metadata,
+                        ),
                         "valuation_snapshot_id": valuation_snapshot["snapshot_id"],
                         "valuation_snapshot_status": valuation_snapshot["status"],
                     }
@@ -642,6 +651,16 @@ def _finish_quote_run(
     error_message: str | None,
     metadata: dict[str, Any] | str | None,
 ) -> dict[str, Any]:
+    metadata = quote_run_completion_metadata(
+        run,
+        metadata=metadata,
+        finished_at=finished_at,
+        status=status,
+        success_count=success_count,
+        failure_count=failure_count,
+        cache_hit_count=cache_hit_count,
+        error_message=error_message,
+    )
     metadata_json = serialize_metadata_json(metadata)
     conn.execute(
         """
@@ -697,6 +716,26 @@ def quote_completion_fingerprint(**completion: Any) -> str:
     payload = metadata_payload_value(completion.get("metadata"))
     completion["metadata"] = payload if payload is not None else {}
     return stable_json_fingerprint(completion)
+
+
+def quote_run_completion_metadata(run, **completion):
+    requested = _metadata_dict(run["metadata_json"])
+    identity = {
+        key: requested[key]
+        for key in ("requested_symbols", "instrument_types")
+        if key in requested
+    }
+    if not identity:
+        return completion["metadata"]
+    metadata = _metadata_dict(completion["metadata"])
+    return {
+        **metadata,
+        **identity,
+        "quote_publication_completion_fingerprint": metadata.get(
+            "quote_publication_completion_fingerprint",
+            quote_completion_fingerprint(**completion),
+        ),
+    }
 
 
 def _metadata_dict(value: dict[str, Any] | str | None) -> dict[str, Any]:

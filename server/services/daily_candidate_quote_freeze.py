@@ -101,7 +101,12 @@ class DailyCandidateQuoteFreezeService:
                 asset_type=AssetClass.STOCK.value,
                 symbol_count=len(symbols),
                 status="running",
-                metadata={**base, "run_id": run_id},
+                metadata={
+                    **base,
+                    "run_id": run_id,
+                    "requested_symbols": symbols,
+                    "instrument_types": ["stock"] * len(symbols),
+                },
             )
 
         raw_results: list[dict[str, Any]] = []

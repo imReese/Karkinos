@@ -11,6 +11,7 @@ from server.contracts.http.market import (
 from server.models import (
     QuoteFetchRunResponse,
 )
+from server.services.market_refresh_identity import instrument_type_for_refresh
 from server.services.market_views.health_inputs import (
     configured_provider_name,
 )
@@ -38,10 +39,25 @@ def create_manual_quote_fetch_run(
     started_at: str,
     requested_symbols: list[str],
     asset_type: str | None,
+    asset_class_by_symbol: dict[str, AssetClass] | None = None,
 ) -> None:
     db = getattr(state, "db", None)
     if db is None or not hasattr(db, "create_quote_fetch_run"):
         return
+    instrument_types = []
+    for symbol in requested_symbols:
+        raw_identity = (
+            asset_class_by_symbol.get(symbol, AssetClass.STOCK)
+            if asset_class_by_symbol is not None
+            else asset_type
+        )
+        try:
+            instrument_types.append(
+                instrument_type_for_refresh(state, symbol, raw_identity).value
+            )
+        except ValueError:
+            # Retain the unresolved request; returned provider rows cannot define it.
+            instrument_types.append(None)
     db.create_quote_fetch_run(
         run_id=run_id,
         started_at=started_at,
@@ -52,6 +68,7 @@ def create_manual_quote_fetch_run(
         status="running",
         metadata={
             "requested_symbols": requested_symbols,
+            "instrument_types": instrument_types,
         },
     )
 

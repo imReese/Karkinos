@@ -15,6 +15,7 @@ from server.persistence.database_serialization import (
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_facts_quote_ingestion_uow import (
     quote_completion_fingerprint,
+    quote_run_completion_metadata,
 )
 from server.persistence.financial_facts_valuation import (
     record_valuation_publication_failure_on_connection,
@@ -153,8 +154,6 @@ class QuoteFetchRunRepositoryMixin:
                 # Unconfirmed publication stays fenced; do not manufacture a terminal
                 # result after a lock/commit failure in a separate transaction.
                 raise
-        metadata_json = serialize_metadata_json(metadata)
-        metadata_payload = metadata_payload_value(metadata)
         with sqlite3.connect(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
@@ -184,6 +183,18 @@ class QuoteFetchRunRepositoryMixin:
                     return replay
                 raise ValueError("quote fetch run completion conflict")
             assert_quote_publication_not_started(conn, run_id)
+            metadata = quote_run_completion_metadata(
+                current,
+                metadata=metadata,
+                finished_at=finished_at,
+                status=status,
+                success_count=success_count,
+                failure_count=failure_count,
+                cache_hit_count=cache_hit_count,
+                error_message=error_message,
+            )
+            metadata_json = serialize_metadata_json(metadata)
+            metadata_payload = metadata_payload_value(metadata)
             _block_valuation_publication(
                 conn,
                 run_id=run_id,
@@ -363,7 +374,7 @@ def _terminal_completion_replay_for_row(
 ) -> dict[str, Any] | None:
     recorded = metadata_payload_value(row["metadata_json"])
     if (
-        row["status"] == "failed"
+        row["status"] != "running"
         and isinstance(recorded, dict)
         and recorded.get("quote_publication_completion_fingerprint")
         == quote_completion_fingerprint(

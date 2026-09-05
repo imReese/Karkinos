@@ -823,6 +823,7 @@ def test_scheduler_does_not_send_intraday_fund_estimates_to_strategy(
             (Symbol("019999"), AssetClass.FUND),
         ],
         events=[stock_event, fund_event],
+        instruments={Symbol("019999"): make_open_end_fund("019999", "示例成长混合C")},
         snapshots={
             ("600519", AssetClass.STOCK): {
                 "timestamp": "2026-06-12T10:00:00+08:00",

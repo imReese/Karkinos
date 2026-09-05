@@ -56,6 +56,9 @@ class SchedulerQuoteRunMixin:
                     )
                 )
             metadata["instrument_types"] = instrument_types
+            metadata["requested_symbols"] = [
+                str(symbol) for symbol, _ in self._watchlist
+            ]
             self._db.create_quote_fetch_run(
                 run_id=run_id,
                 started_at=started_at,
