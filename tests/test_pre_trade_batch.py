@@ -589,6 +589,70 @@ def test_final_risk_transaction_rejects_intent_instrument_type_drift(
     _assert_no_risk_batch_writes(db)
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"requested_symbols": ["510300"], "instrument_types": ["fund"]},
+        {"requested_symbols": ["510300"], "asset_types": ["FUND"]},
+        {"requested_symbols": ["510300"], "asset_types": [" fund "]},
+    ],
+)
+def test_final_etf_risk_does_not_miss_an_unresolved_broad_fund_request(
+    tmp_path, metadata
+):
+    from server.contracts.quote_ingestion import QuoteIngestionCommand
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(
+        db,
+        source_signal_id=1,
+        symbol="510300",
+        target_weight=0.01,
+        price=10,
+        asset_class="etf",
+    )
+    evidence = _persisted_evidence_binding(db)
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    db.create_quote_fetch_run(
+        run_id="broad-fund-failure",
+        started_at="2026-07-02T10:00:00+08:00",
+        trigger="replay",
+        status="running",
+        asset_type="fund",
+        symbol_count=1,
+        metadata=metadata,
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="510300",
+            asset_type="etf",
+            price=11,
+            quote_timestamp="2026-07-02T10:00:00+08:00",
+            fetch_run_id="broad-fund-failure",
+        )
+    )
+    assert (
+        db.finish_quote_fetch_run(
+            run_id="broad-fund-failure",
+            finished_at="2026-07-02T10:01:00+08:00",
+            status="success",
+            success_count=1,
+        )["status"]
+        == "failed"
+    )
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") == publication
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(_context(cash="100000")),
+        policy=PreTradePolicy(execution_mode="manual"),
+        evidence_binding=evidence,
+    )
+    assert result["status"] == "blocked_by_evidence_drift"
+    assert {"code": "valuation_publication_recovery_required"} in result["blockers"]
+    _assert_no_risk_batch_writes(db)
+
+
 def test_batch_pre_trade_risk_rolls_back_whole_batch_on_valuation_drift(
     tmp_path,
 ) -> None:

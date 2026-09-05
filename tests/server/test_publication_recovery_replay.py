@@ -585,6 +585,97 @@ def test_manual_mixed_request_preserves_exact_identity_through_completion(tmp_pa
         assert affected_publications(conn, set(zip(kinds, symbols, strict=True))) == []
 
 
+@pytest.mark.parametrize("field", ["instrument_types", "asset_types", "asset_type"])
+@pytest.mark.parametrize("kind", ["fund", "FUND", " fund "])
+def test_broad_fund_request_keeps_pending_and_failed_scope_unknown(
+    tmp_path, monkeypatch, field, kind
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    metadata = {"requested_symbols": ["510300"]}
+    if field != "asset_type":
+        metadata[field] = [kind]
+    db.create_quote_fetch_run(
+        run_id="broad-fund",
+        started_at=NOW.isoformat(),
+        trigger="replay",
+        status="running",
+        asset_type=kind if field == "asset_type" else "fund",
+        symbol_count=1,
+        metadata=metadata,
+    )
+    db.persist_quote_ingestion_sync(
+        replace(_quote("510300", "broad-fund"), asset_type="etf")
+    )
+    connect = sqlite3.connect
+    pending = []
+
+    class Connection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            result = super().execute(sql, *args, **kwargs)
+            if sql == "SAVEPOINT quote_candidate":
+                with connect(db.path) as other:
+                    from server.persistence.valuation_publication_recovery import (
+                        unresolved_publications,
+                    )
+
+                    pending.extend(unresolved_publications(other))
+            return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            sqlite3,
+            "connect",
+            lambda *a, **kw: connect(*a, **{**kw, "factory": Connection}),
+        )
+        assert _finish(db, "broad-fund")["status"] == "failed"
+    assert len(pending) == 1 and pending[0]["status"] == "pending"
+    assert pending[0]["scope"] is None
+    with connect(db.path) as conn:
+        failure = affected_publications(conn, {("etf", "510300")})[0]
+        assert failure["scope"] is None
+        assert failure["error_type"] == (
+            "InvalidQuoteRunScope"
+            if field == "instrument_types"
+            else "QuoteRunScopeUnavailable"
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM quote_snapshots WHERE fetch_run_id='broad-fund'"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_canonical_same_symbol_namespaces_publish_without_collapsing_identity(tmp_path):
+    from server.persistence.valuation_publication_recovery import quote_run_scope
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    kinds = ["stock", "etf", "open_end_fund"]
+    db.create_quote_fetch_run(
+        run_id="same-symbol",
+        started_at=NOW.isoformat(),
+        trigger="replay",
+        status="running",
+        asset_type="mixed",
+        symbol_count=3,
+        metadata={"requested_symbols": ["000001"] * 3, "instrument_types": kinds},
+    )
+    for kind in kinds:
+        db.persist_quote_ingestion_sync(
+            replace(_quote("000001", "same-symbol"), asset_type=kind)
+        )
+    first = _finish(db, "same-symbol", success=3)
+    assert first["status"] == "success"
+    assert _finish(db, "same-symbol", success=3) == first
+    with sqlite3.connect(db.path) as conn:
+        assert quote_run_scope(conn, "same-symbol", require_exact=True) == [
+            [kind, "000001"] for kind in sorted(kinds)
+        ]
+        assert affected_publications(conn, {(kind, "000001") for kind in kinds}) == []
+
+
 @pytest.mark.parametrize(
     "variant", ["realtime", "wrong_session", "other_provider", "old_materialization"]
 )
