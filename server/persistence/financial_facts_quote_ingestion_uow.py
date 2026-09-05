@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from datetime import timezone
 from typing import Any
@@ -16,17 +17,30 @@ from server.contracts.quote_ingestion import (
     validate_quote_authority_time,
 )
 from server.persistence.database_normalization import stable_json_fingerprint
-from server.persistence.database_serialization import serialize_metadata_json
+from server.persistence.database_serialization import (
+    metadata_payload_value,
+    serialize_metadata_json,
+)
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_fact_event_payloads import (
     latest_quote_event_payload,
     quote_instant_storage_key,
     quote_observation_rank,
 )
+from server.persistence.financial_facts_valuation import (
+    record_valuation_publication_failure_on_connection,
+)
 from server.persistence.quote_current_materialization import (
     advance_quote_snapshot_checkpoint_on_connection,
 )
-from server.persistence.valuation_publication_recovery import quote_run_scope
+from server.persistence.valuation_publication_recovery import (
+    assert_quote_publication_not_started,
+    begin_quote_publication,
+    complete_quote_publication,
+    quote_run_scope,
+)
+
+logger = logging.getLogger("server.persistence.financial_facts")
 
 
 class QuoteIngestionUnitOfWorkMixin:
@@ -80,52 +94,106 @@ class QuoteIngestionUnitOfWorkMixin:
         with sqlite3.connect(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
+            _require_running_quote_run(conn, run_id)
+            attempt_ref = begin_quote_publication(conn, run_id=run_id, updated_at=now)
+            conn.commit()
+
+            # The durable pending fence survives a crash or a failed terminal commit.
+            conn.execute("BEGIN IMMEDIATE")
             run = _require_running_quote_run(conn, run_id)
-            staged = _load_staged_quotes(conn, run_id)
-            if len(staged) != success_count or len(staged) != run["symbol_count"]:
-                raise RuntimeError(
-                    "staged quote count does not match successful quote count"
-                )
-            expected = quote_run_scope(conn, run_id)
-            actual = {
-                (key.instrument_type.value, key.symbol)
-                for command in staged
-                for key in [
-                    InstrumentKey.from_values(command.symbol, command.asset_type)
-                ]
-            }
-            if expected is not None and actual != {tuple(key) for key in expected}:
-                raise ValueError("quote publication requested scope mismatch")
-            close_binding = _daily_close_batch_binding(
-                conn, staged, run_id=run_id, scope=expected
-            )
+            conn.execute("SAVEPOINT quote_candidate")
             try:
-                for command in staged:
-                    _materialize_quote(conn, command, materialized_at=now)
-            except DailyCloseEvidenceConflict as exc:
-                raise DailyCloseEvidenceConflict(close_binding) from exc
-            valuation_snapshot = self._valuation_transaction_writer(
-                conn,
-                quote_fetch_run_id=run_id,
-            )
-            metadata_value = _metadata_dict(metadata)
-            metadata_value.update(
-                {
-                    "valuation_snapshot_id": valuation_snapshot["snapshot_id"],
-                    "valuation_snapshot_status": valuation_snapshot["status"],
+                staged = _load_staged_quotes(conn, run_id)
+                if len(staged) != success_count or len(staged) != run["symbol_count"]:
+                    raise RuntimeError(
+                        "staged quote count does not match successful quote count"
+                    )
+                expected = quote_run_scope(conn, run_id)
+                actual = {
+                    (key.instrument_type.value, key.symbol)
+                    for command in staged
+                    for key in [
+                        InstrumentKey.from_values(command.symbol, command.asset_type)
+                    ]
                 }
-            )
-            row = _finish_quote_run(
-                conn,
-                run=run,
-                finished_at=finished_at,
-                status=status,
-                success_count=success_count,
-                failure_count=failure_count,
-                cache_hit_count=cache_hit_count,
-                error_message=error_message,
-                metadata=metadata_value,
-            )
+                if expected is not None and actual != {tuple(key) for key in expected}:
+                    raise ValueError("quote publication requested scope mismatch")
+                close_binding = _daily_close_batch_binding(
+                    conn, staged, run_id=run_id, scope=expected
+                )
+                try:
+                    for command in staged:
+                        _materialize_quote(conn, command, materialized_at=now)
+                except DailyCloseEvidenceConflict as exc:
+                    raise DailyCloseEvidenceConflict(close_binding) from exc
+                valuation_snapshot = self._valuation_transaction_writer(
+                    conn,
+                    quote_fetch_run_id=run_id,
+                )
+                metadata_value = _metadata_dict(metadata)
+                metadata_value.update(
+                    {
+                        "valuation_snapshot_id": valuation_snapshot["snapshot_id"],
+                        "valuation_snapshot_status": valuation_snapshot["status"],
+                    }
+                )
+                row = _finish_quote_run(
+                    conn,
+                    run=run,
+                    finished_at=finished_at,
+                    status=status,
+                    success_count=success_count,
+                    failure_count=failure_count,
+                    cache_hit_count=cache_hit_count,
+                    error_message=error_message,
+                    metadata=metadata_value,
+                )
+                complete_quote_publication(
+                    conn, attempt_ref=attempt_ref, updated_at=finished_at
+                )
+                conn.execute("RELEASE quote_candidate")
+            except Exception as exc:
+                conn.execute("ROLLBACK TO quote_candidate")
+                conn.execute("RELEASE quote_candidate")
+                logger.exception(
+                    "Failed to publish valuation snapshot for quote run %s", run_id
+                )
+                record_valuation_publication_failure_on_connection(
+                    conn,
+                    updated_at=finished_at,
+                    reason="quote_batch_publication_failed",
+                    error_type=type(exc).__name__,
+                    quote_fetch_run_id=run_id,
+                    quote_fetch_run_status="failed",
+                    daily_close_conflict=(
+                        exc.binding
+                        if isinstance(exc, DailyCloseEvidenceConflict)
+                        else None
+                    ),
+                )
+                row = _finish_quote_run(
+                    conn,
+                    run=run,
+                    finished_at=finished_at,
+                    status="failed",
+                    success_count=success_count,
+                    failure_count=failure_count,
+                    cache_hit_count=cache_hit_count,
+                    error_message=f"valuation snapshot publication failed: {type(exc).__name__}",
+                    metadata={
+                        **_metadata_dict(metadata),
+                        "valuation_snapshot_publication": "failed",
+                        "quote_publication_completion_fingerprint": quote_completion_fingerprint(
+                            finished_at=finished_at,
+                            status=status,
+                            success_count=success_count,
+                            failure_count=failure_count,
+                            cache_hit_count=cache_hit_count,
+                            error_message=error_message,
+                            metadata=metadata,
+                        ),
+                    },
+                )
             conn.commit()
             return row
 
@@ -138,6 +206,7 @@ def _stage_quote(
 ) -> dict[str, Any]:
     run_id = str(command.fetch_run_id or "")
     _require_running_quote_run(conn, run_id)
+    assert_quote_publication_not_started(conn, run_id)
     payload = command.to_dict()
     payload_json = serialize_metadata_json(payload) or "{}"
     fingerprint = stable_json_fingerprint(payload)
@@ -622,6 +691,12 @@ def _finish_quote_run(
         },
     )
     return dict(row)
+
+
+def quote_completion_fingerprint(**completion: Any) -> str:
+    payload = metadata_payload_value(completion.get("metadata"))
+    completion["metadata"] = payload if payload is not None else {}
+    return stable_json_fingerprint(completion)
 
 
 def _metadata_dict(value: dict[str, Any] | str | None) -> dict[str, Any]:

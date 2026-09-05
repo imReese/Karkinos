@@ -77,7 +77,7 @@ def _finish(
     )
 
 
-def _close_incident(db, symbols=("600001", "600002")):
+def _stage_close_conflict(db, symbols=("600001", "600002")):
     for symbol in symbols:
         db.persist_quote_ingestion_sync(_quote(symbol))
     _run(db, "bound-close-conflict", list(symbols))
@@ -90,11 +90,198 @@ def _close_incident(db, symbols=("600001", "600002")):
                 daily_close_price=11,
             )
         )
+    return "bound-close-conflict"
+
+
+def _close_incident(db, symbols=("600001", "600002")):
+    _stage_close_conflict(db, symbols)
     assert (
         _finish(db, "bound-close-conflict", success=len(symbols))["status"] == "failed"
     )
     with sqlite3.connect(db.path) as conn:
         return affected_publications(conn, {("stock", symbols[0])})[0]
+
+
+def _assert_pending_after_interruption(db, before):
+    for _ in range(2):
+        db = AppDatabase(db.path)
+        db.init_sync()
+        db.publish_current_valuation_snapshot_sync()
+        assert db.get_latest_quote_sync("600001", "stock")["price"] == 10.5
+        with sqlite3.connect(db.path) as conn:
+            pending = affected_publications(conn, {("stock", "600001")})
+            assert len(pending) == 1
+            assert pending[0]["status"] == "pending"
+            assert pending[0]["reason"] == "quote_batch_publication_incomplete"
+            assert pending[0]["scope"] == [["stock", "600001"]]
+            assert not affected_publications(conn, {("stock", "600002")})
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM quote_snapshots WHERE fetch_run_id='bound-close-conflict'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM quote_ingestion_items WHERE run_id='bound-close-conflict'"
+                ).fetchone()[0]
+                == 1
+            )
+        guard = db.capture_pre_trade_risk_guard_sync(
+            tasks=[
+                {
+                    "symbol": "600001",
+                    "asset_class": "stock",
+                }
+            ]
+        )
+        assert {"code": "valuation_publication_recovery_required"} in guard["blockers"]
+        assert (
+            db.get_runtime_control_sync("valuation_snapshot_publication")["snapshot_id"]
+            == before["snapshot_id"]
+        )
+    assert db.get_quote_fetch_run("bound-close-conflict")["finished_at"] is None
+    with pytest.raises(RuntimeError, match="already unresolved"):
+        _finish(db, "bound-close-conflict")
+    with pytest.raises(RuntimeError, match="already unresolved"):
+        db.persist_quote_ingestion_sync(_quote(run="bound-close-conflict"))
+
+
+@pytest.mark.parametrize(
+    "point", ["pending_committed", "candidate_rolled_back", "terminal_commit"]
+)
+def test_hard_kill_leaves_a_durable_publication_fence(tmp_path, point):
+    import selectors
+    import subprocess
+    import sys
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _stage_close_conflict(db, ("600001",))
+    before = db.get_runtime_control_sync("valuation_snapshot_publication")
+    with sqlite3.connect(db.path) as conn:
+        assert affected_publications(conn, {("stock", "600001")}) == []
+    code = """
+import sqlite3, sys
+from server.db import AppDatabase
+db = AppDatabase(sys.argv[1])
+point = sys.argv[2]
+connect = sqlite3.connect
+def pause():
+    print("publication-paused", flush=True)
+    sys.stdin.readline()
+class Connection(sqlite3.Connection):
+    commits = 0
+    def commit(self):
+        self.commits += 1
+        if self.commits == 2 and point == "terminal_commit":
+            pause()
+        result = super().commit()
+        if self.commits == 1 and point == "pending_committed":
+            pause()
+        return result
+    def execute(self, sql, *args, **kwargs):
+        result = super().execute(sql, *args, **kwargs)
+        if sql.startswith("ROLLBACK TO ") and point == "candidate_rolled_back":
+            pause()
+        return result
+sqlite3.connect = lambda *a, **kw: connect(*a, **{**kw, "factory": Connection})
+db.finish_quote_fetch_run(run_id="bound-close-conflict", finished_at="2026-09-04T15:03:00+08:00", status="success", success_count=1)
+"""
+    child = subprocess.Popen(
+        [sys.executable, "-c", code, str(db.path), point],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stdout, selectors.EVENT_READ)
+            assert selector.select(
+                timeout=10
+            ), "publication did not reach the crash point"
+        assert child.stdout.readline().strip() == "publication-paused"
+        with sqlite3.connect(db.path) as conn:
+            assert (
+                affected_publications(conn, {("stock", "600001")})[0]["status"]
+                == "pending"
+            )
+        child.kill()
+        assert child.wait(timeout=5) < 0
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=5)
+        child.stdin.close()
+        child.stdout.close()
+    _assert_pending_after_interruption(db, before)
+
+
+@pytest.mark.parametrize(
+    "point", ["failure_record", "terminal_commit", "publication_lock"]
+)
+def test_terminal_write_failure_preserves_pending_and_rolls_back_candidates(
+    tmp_path, monkeypatch, point
+):
+    import server.persistence.financial_facts_quote_ingestion_uow as publication
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _stage_close_conflict(db, ("600001",))
+    before = db.get_runtime_control_sync("valuation_snapshot_publication")
+    connect = sqlite3.connect
+    locker = connect(db.path)
+
+    def fail(*args, **kwargs):
+        raise sqlite3.OperationalError("injected terminal write failure")
+
+    class Connection(sqlite3.Connection):
+        commits = 0
+
+        def commit(self):
+            self.commits += 1
+            if self.commits == 2 and point == "terminal_commit":
+                fail()
+            result = super().commit()
+            if self.commits == 1 and point == "publication_lock":
+                locker.execute("BEGIN IMMEDIATE")
+            return result
+
+    with monkeypatch.context() as patch:
+        if point == "failure_record":
+            patch.setattr(
+                publication, "record_valuation_publication_failure_on_connection", fail
+            )
+        else:
+            patch.setattr(
+                sqlite3,
+                "connect",
+                lambda *a, **kw: connect(*a, **{**kw, "factory": Connection}),
+            )
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                _finish(db, "bound-close-conflict")
+        finally:
+            locker.rollback()
+            locker.close()
+    _assert_pending_after_interruption(db, before)
+
+
+def test_failed_publication_completion_retry_does_not_duplicate_incident(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    incident = _close_incident(db, ("600001",))
+    completed = db.get_quote_fetch_run("bound-close-conflict")
+    assert _finish(db, "bound-close-conflict") == completed
+    with sqlite3.connect(db.path) as conn:
+        assert affected_publications(conn, {("stock", "600001")}) == [incident]
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM event_log WHERE event_type='task_run.completed' AND entity_id='bound-close-conflict'"
+            ).fetchone()[0]
+            == 1
+        )
 
 
 def test_close_failure_captures_entire_batch_before_rollback(tmp_path):

@@ -141,6 +141,50 @@ def record_publication_recovery(
     _save(conn, failures, updated_at)
 
 
+def assert_quote_publication_not_started(conn: sqlite3.Connection, run_id: str) -> None:
+    if any(
+        item.get("quote_fetch_run_id") == run_id
+        for item in unresolved_publications(conn)
+    ):
+        raise RuntimeError("quote publication already unresolved")
+
+
+def begin_quote_publication(
+    conn: sqlite3.Connection, *, run_id: str, updated_at: str
+) -> str:
+    """Persist a scope fence before any candidate fact can be materialized."""
+    assert_quote_publication_not_started(conn, run_id)
+    pending = {
+        "status": "pending",
+        "reason": "quote_batch_publication_incomplete",
+        "quote_fetch_run_id": run_id,
+        "scope": quote_run_scope(conn, run_id),
+        "started_at": updated_at,
+    }
+    ref = publication_incident_ref(pending)
+    _save(
+        conn,
+        [*unresolved_publications(conn), {**pending, "incident_ref": ref}],
+        updated_at,
+    )
+    return ref
+
+
+def complete_quote_publication(
+    conn: sqlite3.Connection, *, attempt_ref: str, updated_at: str
+) -> None:
+    """Only the transaction that began this attempt may commit its success."""
+    failures = unresolved_publications(conn)
+    pending = [item for item in failures if item.get("incident_ref") == attempt_ref]
+    if len(pending) != 1 or pending[0].get("status") != "pending":
+        raise RuntimeError("quote publication attempt identity drift")
+    _save(
+        conn,
+        [item for item in failures if item.get("incident_ref") != attempt_ref],
+        updated_at,
+    )
+
+
 def publication_incident_ref(incident: dict[str, Any]) -> str:
     return "sha256:" + stable_json_fingerprint(
         {key: value for key, value in incident.items() if key != "incident_ref"}

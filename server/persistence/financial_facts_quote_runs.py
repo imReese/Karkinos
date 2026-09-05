@@ -2,24 +2,26 @@
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 from typing import Any
 
 from server.contracts.quote_ingestion import (
     PUBLISHED_QUOTE_RUN_STATUSES,
-    DailyCloseEvidenceConflict,
 )
 from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
 )
 from server.persistence.event_log import insert_event_sync
+from server.persistence.financial_facts_quote_ingestion_uow import (
+    quote_completion_fingerprint,
+)
 from server.persistence.financial_facts_valuation import (
     record_valuation_publication_failure_on_connection,
 )
-
-logger = logging.getLogger("server.persistence.financial_facts")
+from server.persistence.valuation_publication_recovery import (
+    assert_quote_publication_not_started,
+)
 
 
 class QuoteFetchRunRepositoryMixin:
@@ -118,7 +120,6 @@ class QuoteFetchRunRepositoryMixin:
         if replay is not None:
             return replay
 
-        publication_failure: Exception | None = None
         if (
             success_count > 0
             and failure_count == 0
@@ -135,7 +136,7 @@ class QuoteFetchRunRepositoryMixin:
                     error_message=error_message,
                     metadata=metadata,
                 )
-            except Exception as exc:
+            except Exception:
                 replay = _terminal_completion_replay(
                     self._path,
                     run_id=run_id,
@@ -149,20 +150,9 @@ class QuoteFetchRunRepositoryMixin:
                 )
                 if replay is not None:
                     return replay
-                logger.exception(
-                    "Failed to publish valuation snapshot for quote run %s", run_id
-                )
-                publication_failure = exc
-                status = "failed"
-                error_message = (
-                    f"valuation snapshot publication failed: {type(exc).__name__}"
-                )
-                metadata_value = metadata_payload_value(metadata)
-                if isinstance(metadata_value, dict):
-                    metadata = {
-                        **metadata_value,
-                        "valuation_snapshot_publication": "failed",
-                    }
+                # Unconfirmed publication stays fenced; do not manufacture a terminal
+                # result after a lock/commit failure in a separate transaction.
+                raise
         metadata_json = serialize_metadata_json(metadata)
         metadata_payload = metadata_payload_value(metadata)
         with sqlite3.connect(self._path, timeout=2) as conn:
@@ -193,12 +183,12 @@ class QuoteFetchRunRepositoryMixin:
                     conn.rollback()
                     return replay
                 raise ValueError("quote fetch run completion conflict")
+            assert_quote_publication_not_started(conn, run_id)
             _block_valuation_publication(
                 conn,
                 run_id=run_id,
                 run_status=status,
                 updated_at=finished_at,
-                publication_failure=publication_failure,
             )
             if metadata_json is None:
                 conn.execute(
@@ -371,6 +361,22 @@ def _terminal_completion_replay_for_row(
     error_message: str | None,
     metadata: dict[str, Any] | str | None,
 ) -> dict[str, Any] | None:
+    recorded = metadata_payload_value(row["metadata_json"])
+    if (
+        row["status"] == "failed"
+        and isinstance(recorded, dict)
+        and recorded.get("quote_publication_completion_fingerprint")
+        == quote_completion_fingerprint(
+            finished_at=finished_at,
+            status=status,
+            success_count=success_count,
+            failure_count=failure_count,
+            cache_hit_count=cache_hit_count,
+            error_message=error_message,
+            metadata=metadata,
+        )
+    ):
+        return dict(row)
     expected = (
         finished_at,
         status,
@@ -411,29 +417,13 @@ def _block_valuation_publication(
     run_id: str,
     run_status: str,
     updated_at: str,
-    publication_failure: Exception | None,
 ) -> None:
-    reason = (
-        "quote_batch_publication_failed"
-        if publication_failure is not None
-        else "quote_fetch_run_not_fully_successful"
-    )
     record_valuation_publication_failure_on_connection(
         conn,
         updated_at=updated_at,
-        reason=reason,
-        error_type=(
-            type(publication_failure).__name__
-            if publication_failure is not None
-            else None
-        ),
+        reason="quote_fetch_run_not_fully_successful",
         quote_fetch_run_id=run_id,
         quote_fetch_run_status=run_status,
-        daily_close_conflict=(
-            publication_failure.binding
-            if isinstance(publication_failure, DailyCloseEvidenceConflict)
-            else None
-        ),
     )
 
 
