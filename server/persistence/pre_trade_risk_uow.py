@@ -16,6 +16,7 @@ from server.persistence.event_log import insert_event_sync
 from server.persistence.quote_current_materialization import (
     assert_quote_current_materialization_on_connection,
 )
+from server.persistence.valuation_publication_recovery import affected_publications
 
 _ACTION_COLUMNS = (
     "id",
@@ -71,7 +72,14 @@ class PreTradeRiskUnitOfWork:
             else:
                 quote_revision = materialization.revision
 
-            valuation = _published_valuation_identity(conn, blockers=blockers)
+            valuation = _published_valuation_identity(
+                conn,
+                blockers=blockers,
+                instruments={
+                    (str(task.get("asset_class") or ""), str(task.get("symbol") or ""))
+                    for task in tasks
+                },
+            )
             for task in tasks:
                 binding = _capture_action_binding(conn, task, blockers=blockers)
                 if binding is not None:
@@ -182,7 +190,27 @@ def _final_validation_blockers(
         writes=writes,
         blockers=blockers,
     )
-    _validate_valuation(conn, evidence_binding=evidence_binding, blockers=blockers)
+    # Action rows are the immutable target identity already bound above. Do not
+    # let intent metadata choose a different failure scope at the final fence.
+    instruments = (
+        {
+            (str(row["asset_class"]), str(row["symbol"]))
+            for binding in evidence_binding.get("action_task_bindings", [])
+            if isinstance(binding, Mapping)
+            for row in conn.execute(
+                "SELECT asset_class, symbol FROM action_tasks WHERE id=?",
+                (binding.get("action_id"),),
+            )
+        }
+        if isinstance(evidence_binding.get("action_task_bindings"), list)
+        else set()
+    )
+    _validate_valuation(
+        conn,
+        evidence_binding=evidence_binding,
+        blockers=blockers,
+        instruments=instruments,
+    )
     _validate_quote_revision(
         conn,
         expected=evidence_binding.get("quote_current_revision"),
@@ -307,6 +335,7 @@ def _validate_valuation(
     *,
     evidence_binding: Mapping[str, Any],
     blockers: list[dict[str, Any]],
+    instruments: set[tuple[str, str]],
 ) -> None:
     expected_snapshot_id = str(
         evidence_binding.get("valuation_snapshot_id") or ""
@@ -321,7 +350,9 @@ def _validate_valuation(
         blockers.append({"code": "valuation_publication_binding_missing"})
         return
     current_blockers: list[dict[str, Any]] = []
-    current = _published_valuation_identity(conn, blockers=current_blockers)
+    current = _published_valuation_identity(
+        conn, blockers=current_blockers, instruments=instruments
+    )
     if current_blockers:
         blockers.extend(current_blockers)
         return
@@ -477,6 +508,7 @@ def _published_valuation_identity(
     conn: sqlite3.Connection,
     *,
     blockers: list[dict[str, Any]],
+    instruments: set[tuple[str, str]],
 ) -> dict[str, Any]:
     control = conn.execute("""
         SELECT value_json FROM runtime_controls
@@ -500,7 +532,7 @@ def _published_valuation_identity(
         return {}
     row = conn.execute(
         """
-        SELECT snapshot_id, ledger_cutoff_id, status
+        SELECT snapshot_id, ledger_cutoff_id, status, quotes_json
         FROM valuation_snapshots WHERE snapshot_id = ? LIMIT 1
         """,
         (snapshot_id,),
@@ -508,6 +540,15 @@ def _published_valuation_identity(
     if row is None:
         blockers.append({"code": "valuation_publication_snapshot_missing"})
         return {}
+    try:
+        quotes = json.loads(row["quotes_json"])
+        scope = instruments | {
+            (quote["asset_type"], quote["symbol"]) for quote in quotes
+        }
+        if affected_publications(conn, scope):
+            blockers.append({"code": "valuation_publication_recovery_required"})
+    except (ValueError, TypeError, KeyError, sqlite3.Error):
+        blockers.append({"code": "valuation_publication_recovery_unavailable"})
     return {
         "valuation_snapshot_id": str(row["snapshot_id"]),
         "ledger_cutoff_id": int(row["ledger_cutoff_id"] or 0),

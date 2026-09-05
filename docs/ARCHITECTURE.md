@@ -182,6 +182,8 @@ Parquet/Arrow 是未来大规模市场与研究数据的 primary bulk representa
 
 当前 `meta.db + SQLite market_bars + Parquet mirror` 通过迁移逐步演进，不做一次性格式重写。
 
+首个日频 catalog adapter 是 `data.dataset_catalog`。当前兼容目录仍使用原有 `app.db`；新增 `catalog/catalog.db` 和 `lake/daily/<content-digest>.parquet`。不自动迁移现有行情数据库或重写其历史。
+
 ## 6. 统一时间模型
 
 任何外部金融数据至少区分：
@@ -223,6 +225,10 @@ raw/staged input
 ```
 
 任何 correction/revision 产生新的 generation；不能静默改写已被 experiment 引用的 bytes。
+
+首版 daily bundle 同时绑定逐 session 的 typed universe membership 与完整 bars，校验上市/退市区间、停牌一致性、OHLC、三种时间及 availability evidence ref。证据来源由输入提供，manifest 明确标记 `provider_coverage_verified=false`；结构校验通过不足以打开 Alpha gate。该版本拒绝重复 instrument/session 和未知字段，修订发布为独立 DatasetRef，旧引用读取原始字节。
+
+首版不在单个 generation 内重建多版本历史。`read_as_of` 联合检查 universe/daily 的可用时间；只要该 generation 有尚未可用的记录就拒绝，调用方必须绑定合适的更早 generation。采集时间允许晚于历史 cutoff，但不能晚于 publication 时间。
 
 最小 `DatasetRef` 必须能绑定：
 

@@ -33,7 +33,9 @@ A. Reliability
 - current publication 与 latest attempt 分离；
 - failed candidate publication 回滚但不覆盖 last-good。
 
-下一步：删除 read-side 对未知 `previous_close_date` 的猜测。
+Read-side 已删除对未知 `previous_close_date` 的猜测。未解决的发布失败按持久化请求的 typed instrument 范围保留；启动、账本重算及任何普通刷新均不能清除它。同标的的新报价不证明旧交易日的收盘冲突已修复。事实级修复收据和 resolver 尚未实现，在此之前 incident 保持 unresolved。风险批次按已绑定 action 身份在最终写事务内再次校验。
+
+只读 `preview_daily_close_recovery` 已能绑定未来冲突 incident、完整 staged batch、显式 v2 日线回执与当前 close；回执整批重放复用 market owner，并在同一只读连接固定 meta 证据和 app 状态。它不声称跨库原子 publication generation。当前 close 存储缺少旧 normalization observation 的可重放绑定，即使候选证据通过也返回 `prior_evidence_disposition_unproven`；尚无可执行的 `eligible_to_resolve` 分支。旧 incident 不猜补，价格相等及普通成功 publication 不构成旧争议处置依据。下一步须补齐来源证据契约并完成规则审查，之后才进入 resolver。
 
 ### A2. Read availability / Action readiness
 
@@ -52,6 +54,8 @@ execution authority
 ```
 
 每项都有 `status / as_of / last_success / latest_attempt / blockers / safe_next_action`。
+
+`GET /api/health/readiness` 已提供一次只读数据库事务上的基础投影。它区分进程 heartbeat、行情发布故障和持仓估值可读性；Decision/Risk 仍要求精确候选和账户 gate，Execution Authority 返回 `not_evaluated`，不能据此授予权限。Overview/Portfolio 将状态绑定到当前展示的 snapshot id，展示 last-good 时间和最近失败。
 
 Overview/Portfolio 允许解释性 stale/degraded read；Decision/Risk/Execution 对 fresh evidence 继续 blocked。
 
@@ -84,6 +88,8 @@ migrate
 ```
 
 不可证明的旧金融事实只记录 blocker，不自动“修正”。
+
+受管 macOS `candidate` 路径在有 `data/app.db` 时先执行隔离副本 gate：SQLite backup、写入前验证副本身份、迁移、受 release guard 保护的应用 lifespan/ASGI 读取、账本和未解决 incident 不变量、GET 零写入、JobRun roundtrip、第二个候选进程启动，以及恢复原始副本后的旧版本 `--check-state`。受管入口对进程树施加 OS 网络拒绝；普通工具调用默认只提供 Python socket 检测并显式报告隔离未验证。旧版 preflight 不是 rollback start/read/stop 验收；TCP/LaunchAgent/background readiness 和跨存储一致性仍未验证，报告不授予 release eligibility。
 
 **Phase A Exit:** 当前 production 能通过受支持的 release path 升级；单个 writer/provider 故障不再导致无解释全站不可用；真实事故 replay 进入 CI。
 
@@ -119,6 +125,8 @@ error
 
 先复用当前 research-worker 的 claim/lease 思路，再覆盖 market/calendar/universe/decision-evidence 等任务。
 
+通用 `JobRun/JobStore` 和 SQLite 租约已实现，schema migration 13 添加 `job_runs`。日历任务首先接入：输入指纹幂等、有限重试、过期接管、heartbeat 和 result ref；calendar publication 在同一写事务内校验 owner/attempt/expiry。
+
 ### B3. API 与 worker 故障域拆分
 
 目标进程：
@@ -131,9 +139,13 @@ karkinos-research-worker
 
 API 不再直接运行 provider-heavy polling 或长期业务 loop。真实 broker write 未来才引入独立 execution boundary。
 
+第一条迁移是 `python -m server --data-worker` 的日历采集。标准 Python/打包入口监督独立子进程退出重启；首次 spawn 失败允许 API 降级启动，父进程死亡管道终止旧 worker。采集有执行期限，续租失败和激活开始会终止该 worker；最终日历事务校验 lease 和 release guard。已发布但未完成 job 的接管复用持久化日历收据。API lifespan 不再运行此 provider loop。Market universe、decision evidence 和 live monitoring 仍留在原进程，B3 exit 尚未完成。
+
 ### B4. Dataset catalog seam
 
 新增 immutable dataset/artifact manifest contract。新 bulk dataset 不再以 SQLite row store 为第一设计目标。
+
+`data.dataset_catalog` 已提供日频 universe/daily 的内容寻址 Parquet、SQLite manifest/catalog、固定 schema 和 `DatasetRef` 显式读取；修订生成新 identity，读取校验字节 digest。`read_as_of` 要求两个 partition 的整个 generation 当时均已可用，否则拒绝并要求绑定更早的完整 generation，不把过滤后的缺行当成完整面板。它校验调用方提交的证据结构，不证明 provider 的历史覆盖或 availability 声明真实。
 
 ### B5. Ownership cleanup ratchet
 
@@ -422,15 +434,15 @@ one unresolved intent at a time
 
 ## 接下来 10 个实施切片
 
-1. 删除 read-side `previous_close_date` 猜测并补 replay。
-2. 建统一 System Readiness projection。
-3. Overview/Portfolio 展示 last-good `as_of` + latest attempt failure。
-4. 加 PRE_CLOSE/official-close 生产事件 replay fixture。
-5. 加 DB lock / partial batch / restart replay fixture。
-6. Candidate 对 production state clone 做 migration/read/rollback gate。
-7. 定义 durable `JobRun` contract，先迁移一个后台 loop。
-8. 抽出 API background-work boundary，确定 `karkinos-worker` entrypoint。
-9. 定义 `DatasetRef/DatasetManifest` contract 和 catalog seam。
-10. 用新的 contract 发布第一份 PIT historical-universe/daily dataset。
+1. 已实现：删除 read-side `previous_close_date` 猜测并补 replay。
+2. 已实现基础投影：System Readiness；精确业务 gate 仍由各自 owner 评估。
+3. 已实现：Overview/Portfolio 展示 last-good `as_of` + latest attempt failure。
+4. 已加入：PRE_CLOSE/official-close 事故形态的确定性 SQLite replay；不包含私人生产导出。
+5. 已加入：DB lock / partial batch / restart replay 和受影响标的范围测试。
+6. 已接入 candidate 状态副本 gate；真实打包产物和生产服务生命周期验收仍是 release gate。
+7. 已实现：durable `JobRun` contract，日历 loop 首先接入。
+8. 已实现首条进程边界：`--data-worker`；其余 provider-heavy loops 待逐条迁移。
+9. 已实现：`DatasetRef/DatasetManifest` contract 和 catalog seam。
+10. 发布入口和确定性样本验证已实现；第一份真实 PIT historical-universe/daily dataset 的来源、可用时间和覆盖核验仍未完成。
 
 第 10 步完成后，再开始 Alpha domain 实现。

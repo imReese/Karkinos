@@ -298,53 +298,65 @@ class MarketDailyIngestionMixin:
         conn: sqlite3.Connection,
         receipt: dict[str, object],
     ) -> bool:
-        schema_version = str(receipt.get("schema_version") or "")
-        if not is_supported_stock_receipt_identity(receipt):
-            return False
-        symbols = receipt.get("symbols")
-        if not isinstance(symbols, list) or not symbols:
-            return False
-        if schema_version == "karkinos.market_daily_ingestion_receipt.v2":
-            storage_table = "market_bars_v2"
-            identity_filter = "instrument_type = 'stock' AND"
-        else:
-            storage_table = "market_bars"
-            identity_filter = ""
-        rows = conn.execute(
-            f"""
-            SELECT symbol, timestamp, open, high, low, close, volume, amount
-            FROM {storage_table}
-            WHERE {identity_filter} frequency = '1d'
-              AND substr(timestamp, 1, 10) = ?
-            ORDER BY symbol
-            """,
-            (str(receipt.get("trade_date") or ""),),
-        ).fetchall()
-        wanted = set(str(symbol) for symbol in symbols)
-        records = [tuple(row) for row in rows if str(row[0]) in wanted]
-        if len(records) != len(symbols):
-            return False
-        expected_dataset_fingerprint = _market_daily_records_fingerprint(
-            trade_date=str(receipt.get("trade_date") or ""),
-            provider_name=str(receipt.get("provider_name") or ""),
-            records=records,
-        )
-        if receipt.get("dataset_fingerprint") != expected_dataset_fingerprint:
-            return False
-        core = dict(receipt)
-        stored_fingerprint = core.pop("receipt_fingerprint", None)
-        return (
-            stored_fingerprint
-            == "sha256:"
-            + hashlib.sha256(
-                json.dumps(
-                    core,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
-        )
+        return verify_market_daily_receipt_on_connection(conn, receipt)
+
+
+def verify_market_daily_receipt_on_connection(
+    conn: sqlite3.Connection,
+    receipt: dict[str, object],
+    *,
+    schema: str = "main",
+) -> bool:
+    """Replay a receipt on the caller's existing read or publication transaction."""
+    if schema not in {"main", "market_meta"}:
+        raise ValueError("market_daily_receipt_schema_invalid")
+    schema_version = str(receipt.get("schema_version") or "")
+    if not is_supported_stock_receipt_identity(receipt):
+        return False
+    symbols = receipt.get("symbols")
+    if not isinstance(symbols, list) or not symbols:
+        return False
+    if schema_version == "karkinos.market_daily_ingestion_receipt.v2":
+        storage_table = "market_bars_v2"
+        identity_filter = "instrument_type = 'stock' AND"
+    else:
+        storage_table = "market_bars"
+        identity_filter = ""
+    rows = conn.execute(
+        f"""
+        SELECT symbol, timestamp, open, high, low, close, volume, amount
+        FROM {schema}.{storage_table}
+        WHERE {identity_filter} frequency = '1d'
+          AND substr(timestamp, 1, 10) = ?
+        ORDER BY symbol
+        """,
+        (str(receipt.get("trade_date") or ""),),
+    ).fetchall()
+    wanted = set(str(symbol) for symbol in symbols)
+    records = [tuple(row) for row in rows if str(row[0]) in wanted]
+    if len(records) != len(symbols):
+        return False
+    expected_dataset_fingerprint = _market_daily_records_fingerprint(
+        trade_date=str(receipt.get("trade_date") or ""),
+        provider_name=str(receipt.get("provider_name") or ""),
+        records=records,
+    )
+    if receipt.get("dataset_fingerprint") != expected_dataset_fingerprint:
+        return False
+    core = dict(receipt)
+    stored_fingerprint = core.pop("receipt_fingerprint", None)
+    return (
+        stored_fingerprint
+        == "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                core,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    )
 
 
 def _nullable_float(value) -> float | None:

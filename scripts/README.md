@@ -39,11 +39,27 @@ switch. Its liveness is required before startup succeeds. Automatic trading is
 a different, default-off runtime gate on the Trading page; an operator can open
 or close it without restarting the service. That gate grants no capital or
 broker authority by itself, and automatic broker submission is not implemented.
-The API scheduler performs provider-free qualification and durable research-job
-enqueue only. A separate `com.karkinos.research-worker` LaunchAgent claims the
-jobs and owns automatic provider access. Stable activation checks both agents;
-candidate probes run only the API against disposable state and never install
-either LaunchAgent.
+For AI research, the API scheduler performs provider-free qualification and
+durable enqueue only. A separate `com.karkinos.research-worker` LaunchAgent owns
+automatic AI provider access. Stable activation checks both agents. The standard
+server entrypoint also supervises a separate `--data-worker` child for calendar
+ingestion when calendar auto-sync is enabled; an exited child is restarted.
+Initial spawn failure leaves the API available and retries in the supervisor.
+An inherited lifetime pipe terminates the child after abrupt parent death. Calendar
+execution has a 120-second deadline; lease loss or release activation ends the
+worker, and the final publication transaction rejects stale or guarded writes.
+Calendar jobs use persisted owner/attempt/expiry fencing at publication. Other
+market polling loops are still hosted by the API. Neither readiness nor worker
+heartbeat grants trading authority. Candidate runs never install LaunchAgents;
+the state replay probe suppresses provider work using the release guard.
+
+`GET /api/health` remains liveness only. `GET /api/health/readiness` reads persisted
+worker heartbeats and publication state; a readable last-good valuation can coexist
+with an unresolved refresh failure. Exact decision/risk/human authority gates must
+still be evaluated for the requested action.
+This projection covers account valuation inputs, not research dataset readiness.
+Refresh success does not resolve old publication incidents: a fact-bound repair
+receipt/resolver remains required and is not implemented in this slice.
 
 Set `KARKINOS_LOG_MAX_BYTES` to a positive byte count to change the default
 20 MiB development-log archive threshold. Archives remain under `logs/`; the
@@ -93,6 +109,26 @@ exact HTTP release identity, scheduler state, and any retained recovery journal;
 it does not claim financial readiness.
 
 ### Test an exact candidate without a tag
+
+When managed `data/app.db` exists, the candidate runner first checks a disposable
+SQLite-consistent state copy with the candidate's `--replay-state` entrypoint.
+It exercises migrations, guarded application startup/read/shutdown, durable jobs,
+a second candidate process, and the previous release's state checker on a restored
+baseline. The managed macOS candidate entry denies network access for the process
+tree with `sandbox-exec`; Python socket hooks also detect attempts. A direct gate
+call without OS isolation explicitly reports `network_isolation=not_checked`.
+Failed checks stop the candidate; the
+production files and pointers are not replaced. The read probe uses ASGI in process;
+TCP, launchd, and live worker readiness remain separate release checks. A live
+backup is consistent per SQLite database, not a coordinated cross-store snapshot.
+Ledger identity, unresolved incidents, response snapshot/cutoff identity and
+zero app.db writes during GET are asserted. The old release's restored-baseline
+preflight does not prove rollback startup/read/shutdown; `release_eligible=false`
+keeps this component check separate from full release acceptance.
+The historical `data/backups/` archive is excluded from this runtime-state probe.
+For a closed WAL database that cannot be opened read-only without sidecars, the
+probe copies it only while no WAL/journal exists and file identity, size and
+timestamps remain unchanged, then verifies SQLite integrity in the copy.
 
 Before the first stable bootstrap there is no packaged `current` controller.
 From the repository checkout, the supported pre-bootstrap candidate entry is:
@@ -288,6 +324,26 @@ uv run python scripts/data/configure_data_source.py \
 
 These commands maintain or verify historical bars. They do not start the live
 quote scheduler.
+
+To publish an explicitly prepared PIT daily bundle into a selected local catalog:
+
+```bash
+uv run python -m data.dataset_publish --input /path/to/bundle.json --data-dir /path/to/research-data
+```
+
+The JSON contains `universe`, `daily`, `cutoff`, and `expected_sessions`. Both row
+types require `symbol`, `instrument_type`, `session_date`, `event_time`,
+`available_at`, `captured_at`, `source_revision`, `availability_evidence_ref`, and
+boolean `suspended`. Universe rows additionally require `membership_status=member`,
+`listed_on`, and optional `delisted_on`. Daily rows require `open/high/low/close`,
+`volume`, `amount`, and `adjustment_factor`. Timestamps include timezones; the daily
+and historical membership keys must cover the exact supplied sessions and symbols.
+Unknown fields, duplicates, invalid prices, or availability after cutoff reject
+the candidate without replacing the current manifest. Published Parquet bytes are
+content addressed; use the printed `DatasetRef` with `DatasetCatalog.read` or
+`read_as_of` for explicit replay. The publisher never fetches or estimates missing
+source evidence. Its `provider_coverage_verified=false` quality marker means real
+historical coverage and availability provenance still require separate review.
 
 ## Broker evidence and compatibility
 

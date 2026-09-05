@@ -164,9 +164,6 @@ async def lifespan(app: FastAPI):
     from server.services.decision_application import (
         run_batch_pre_trade_risk_for_state,
     )
-    from server.services.market_calendar_automation import (
-        run_market_calendar_automation_loop,
-    )
     from server.services.market_refresh import refresh_one_quote
     from server.services.market_universe_automation import (
         run_market_universe_automation_loop,
@@ -284,7 +281,6 @@ async def lifespan(app: FastAPI):
     # 启动事件转发任务
     forward_task = asyncio.create_task(_forward_events(bridge, hub))
     broker_statement_collector_task: asyncio.Task[None] | None = None
-    market_calendar_task: asyncio.Task[None] | None = None
     market_universe_task: asyncio.Task[None] | None = None
     decision_evidence_task: asyncio.Task[None] | None = None
     state.daily_decision_evidence_task = None
@@ -332,11 +328,6 @@ async def lifespan(app: FastAPI):
         name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
     )
     state.daily_decision_evidence_task = decision_evidence_task
-    if config.market_calendar_auto_sync:
-        market_calendar_task = asyncio.create_task(
-            run_market_calendar_automation_loop(db=db, config=config),
-            name="market-calendar-automation",
-        )
 
     logger.info("Karkinos Server started")
 
@@ -357,12 +348,6 @@ async def lifespan(app: FastAPI):
             pass
         finally:
             state.daily_decision_evidence_task = None
-    if market_calendar_task is not None:
-        market_calendar_task.cancel()
-        try:
-            await market_calendar_task
-        except asyncio.CancelledError:
-            pass
     if market_universe_task is not None:
         market_universe_task.cancel()
         try:

@@ -25,6 +25,14 @@ export const sharedCopy = {
       valuationSnapshot: 'Valuation snapshot',
       ledgerCutoff: 'Ledger cutoff',
       valuationAsOf: 'Valuation as of',
+      publicationAttempt: 'Latest refresh attempt',
+      publicationChecking: 'Checking the latest publication status.',
+      publicationUnavailable:
+        'Refresh status is unavailable. Recheck action requirements when the service recovers.',
+      publicationFailed:
+        'The latest refresh failed. This view uses the last published valuation. Related actions still require verified evidence.',
+      publicationDegraded:
+        'Valuation evidence is degraded or a relevant refresh failure remains unresolved. Related actions still require verified evidence.',
       valuationStatus: 'Valuation status',
       reviewFingerprint: 'Review fingerprint',
       captureIdentity: 'Capture reference',
@@ -196,6 +204,13 @@ export const sharedCopy = {
       valuationSnapshot: '估值快照',
       ledgerCutoff: '账本截止',
       valuationAsOf: '估值时间',
+      publicationAttempt: '最近刷新尝试',
+      publicationChecking: '正在核对最新发布状态。',
+      publicationUnavailable: '刷新状态暂不可用，请在恢复后重新检查操作条件。',
+      publicationFailed:
+        '最新刷新失败，当前显示上一份已发布估值。相关操作仍需补齐证据。',
+      publicationDegraded:
+        '估值证据已降级，或仍有相关的刷新失败尚未解决。相关操作仍需补齐证据。',
       valuationStatus: '估值状态',
       reviewFingerprint: '复核指纹',
       captureIdentity: '采集标识',

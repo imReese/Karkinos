@@ -27,6 +27,21 @@ SERVICE_HEALTH_SCHEMA_VERSION = "karkinos.service_health.v1"
 def create_router() -> APIRouter:
     router = APIRouter(prefix="/api/health", tags=["service-health"])
 
+    @router.get("/readiness")
+    def get_system_readiness() -> dict[str, object]:
+        from server.dependencies import get_app_state
+        from server.projections.system_readiness import build_system_readiness
+
+        state = get_app_state()
+        database = getattr(state, "db", None)
+        return build_system_readiness(
+            getattr(database, "path", None),
+            api_observed=True,
+            data_worker_enabled=getattr(
+                state.config, "market_calendar_auto_sync", None
+            ),
+        )
+
     @router.get("")
     async def get_service_health() -> dict[str, object]:
         return {

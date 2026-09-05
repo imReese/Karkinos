@@ -136,6 +136,55 @@ def test_market_calendar_automation_persists_verified_calendar_once_per_day(
     assert payload["official_verification_status"] == "verified"
 
 
+def test_calendar_job_recovers_publication_receipt_after_process_dies_before_finish(
+    tmp_path, monkeypatch
+):
+    import asyncio
+    from datetime import timezone
+
+    from server.persistence.jobs import SQLiteJobStore
+    from server.workers.data_worker import execute_calendar_job
+
+    db = AppDatabase(tmp_path / "calendar.db")
+    db.init_sync()
+    now = datetime.now(timezone.utc)
+    old = now - timedelta(seconds=61)
+    scheduled = "2026-07-27T12:00:00+08:00"
+    store = SQLiteJobStore(db.path)
+    store.enqueue("market_calendar_sync", {"scheduled_at": scheduled}, now=old)
+    first = store.claim("market_calendar_sync", "old-worker", now=old)
+    provider = _Provider(_snapshot())
+    notice = _NoticeProvider(_notice())
+    service = MarketCalendarAutomationService(
+        db=db,
+        config=SimpleNamespace(data_source="akshare", tushare_token=""),
+        provider_factory=lambda *a, **kw: provider,
+        official_notice_provider=notice,
+        job_lease=first.lease,
+    )
+    # Publish under the first lease, then omit JobStore.finish to model a crash.
+    monkeypatch.setattr(db._market_calendar_publication, "_now", lambda tz=None: old)
+    service.run_due(now=datetime.fromisoformat(scheduled))
+    second = store.claim("market_calendar_sync", "new-worker", now=now)
+    assert second.attempt == 2
+    replay = MarketCalendarAutomationService(
+        db=db,
+        config=SimpleNamespace(data_source="akshare", tushare_token=""),
+        provider_factory=lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("replay must use receipt")
+        ),
+        official_notice_provider=notice,
+        job_lease=second.lease,
+    )
+    asyncio.run(execute_calendar_job(store, second, replay))
+    result = store.enqueue("market_calendar_sync", {"scheduled_at": scheduled}, now=now)
+    assert result.status == "succeeded"
+    assert (
+        result.result_ref == "automation_runs:market_calendar_sync:SSE:2026:2026-07-27"
+    )
+    assert provider.calls == notice.calls == 1
+
+
 def test_market_calendar_automation_fails_closed_on_cross_check_mismatch(
     tmp_path,
 ) -> None:

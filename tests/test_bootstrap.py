@@ -1419,6 +1419,8 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
 
 
 def test_server_main_reload_does_not_forward_removed_live_override(monkeypatch):
+    from contextlib import nullcontext
+
     from server import __main__ as server_main
 
     captured = {}
@@ -1448,6 +1450,10 @@ def test_server_main_reload_does_not_forward_removed_live_override(monkeypatch):
     )
     monkeypatch.delenv("KARKINOS_LIVE_AUTO_START", raising=False)
     monkeypatch.setattr("uvicorn.run", fake_run)
+    monkeypatch.setattr(
+        "server.workers.supervisor.supervised_data_worker",
+        lambda **kwargs: nullcontext(),
+    )
 
     server_main.main()
 

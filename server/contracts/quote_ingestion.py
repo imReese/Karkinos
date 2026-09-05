@@ -36,6 +36,14 @@ _QUOTE_AUTHORITY_FIELDS: tuple[tuple[str, tuple[str, ...], bool], ...] = (
 )
 
 
+class DailyCloseEvidenceConflict(ValueError):
+    """Carry the failed transaction's fact bindings across its rollback."""
+
+    def __init__(self, binding: dict[str, Any] | None = None) -> None:
+        super().__init__("daily close evidence conflict")
+        self.binding = binding
+
+
 @dataclass(frozen=True, slots=True)
 class QuoteIngestionCommand:
     symbol: str

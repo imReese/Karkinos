@@ -43,6 +43,16 @@ def main() -> None:
         action="store_true",
         help="启动独立、受管的 AI 收盘后研究 worker（不启动 HTTP 服务）",
     )
+    validation_mode.add_argument(
+        "--data-worker",
+        action="store_true",
+        help="启动独立数据 worker（不启动 HTTP 服务）",
+    )
+    validation_mode.add_argument(
+        "--replay-state",
+        action="store_true",
+        help="在一次性状态副本上验证迁移、读取、任务和重启",
+    )
     args = parser.parse_args()
 
     from server.bootstrap import (
@@ -71,6 +81,33 @@ def main() -> None:
         preflight_persistent_state()
         print("Karkinos persisted state compatible")
         return
+    if args.replay_state:
+        if os.environ.get("KARKINOS_STATE_CLONE") != "1":
+            parser.error("--replay-state requires an explicitly isolated state clone")
+        import json
+
+        from server.state_replay import replay_persistent_state
+
+        def replay_app_factory():
+            from server.app import create_app
+
+            return create_app()
+
+        print(json.dumps(replay_persistent_state(replay_app_factory), sort_keys=True))
+        return
+    if args.data_worker:
+        if args.host is not None or args.port is not None or args.reload:
+            parser.error(
+                "--data-worker cannot be combined with --host, --port, or --reload"
+            )
+        import asyncio
+
+        from server.workers.data_worker import run_data_worker
+        from server.workers.supervisor import watch_supervisor_lifetime
+
+        watch_supervisor_lifetime()
+        asyncio.run(run_data_worker(config))
+        return
     if args.research_worker:
         if args.host is not None or args.port is not None or args.reload:
             parser.error(
@@ -91,6 +128,7 @@ def main() -> None:
     import uvicorn
 
     from server.app import create_app
+    from server.workers.supervisor import supervised_data_worker
 
     if reload:
         # Reload starts a child process, so forward only explicit CLI values.
@@ -102,14 +140,17 @@ def main() -> None:
         previous = {name: os.environ.get(name) for name in forwarded}
         os.environ.update(forwarded)
         try:
-            uvicorn.run(
-                "server.app:create_app",
-                host=host,
-                port=port,
-                reload=True,
-                reload_excludes=args.reload_exclude or None,
-                factory=True,
-            )
+            with supervised_data_worker(
+                enabled=config.market_calendar_auto_sync, env_file=args.env_file
+            ):
+                uvicorn.run(
+                    "server.app:create_app",
+                    host=host,
+                    port=port,
+                    reload=True,
+                    reload_excludes=args.reload_exclude or None,
+                    factory=True,
+                )
         finally:
             for name, value in previous.items():
                 if value is None:
@@ -118,12 +159,15 @@ def main() -> None:
                     os.environ[name] = value
         return
 
-    uvicorn.run(
-        create_app(config_overrides=config_overrides, runtime_config=config),
-        host=host,
-        port=port,
-        reload=False,
-    )
+    with supervised_data_worker(
+        enabled=config.market_calendar_auto_sync, env_file=args.env_file
+    ):
+        uvicorn.run(
+            create_app(config_overrides=config_overrides, runtime_config=config),
+            host=host,
+            port=port,
+            reload=False,
+        )
 
 
 if __name__ == "__main__":

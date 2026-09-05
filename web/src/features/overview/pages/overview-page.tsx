@@ -1,4 +1,5 @@
 import { createLazyRoute } from '@tanstack/react-router';
+import { PublicationStatus } from '../../../shared/portfolio-evidence/publication-status';
 
 import { WorkspaceHeader } from '../../../shared/ui/workbench';
 import { OverviewLoadingWorkspace } from '../components/overview-loading-workspace';
@@ -15,6 +16,10 @@ export function OverviewPage() {
         eyebrow={copy.overview.kicker}
         title={copy.overview.title}
         description={copy.overview.subtitle}
+      />
+      <PublicationStatus
+        snapshotId={queries.snapshot.data?.valuation_snapshot_id}
+        asOf={queries.snapshot.data?.valuation_as_of}
       />
       {controller.isInitialOverviewLoad ? (
         <OverviewLoadingWorkspace

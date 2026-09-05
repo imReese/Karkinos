@@ -392,6 +392,79 @@ def test_batch_pre_trade_risk_rolls_back_whole_batch_on_quote_drift(tmp_path) ->
     _assert_no_risk_batch_writes(db)
 
 
+def test_final_risk_transaction_observes_failure_after_capture_without_quote_drift(
+    tmp_path,
+):
+    from server.persistence.financial_facts_valuation import (
+        record_valuation_publication_failure_on_connection,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(db, source_signal_id=1, symbol="600001", target_weight=0.01, price=10)
+    evidence = _persisted_evidence_binding(db)
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    db.create_quote_fetch_run(
+        run_id="late-failure",
+        started_at="2026-07-02T10:00:00+08:00",
+        trigger="replay",
+        status="running",
+        asset_type="stock",
+        symbol_count=1,
+        metadata={"symbols": ["600001"]},
+    )
+    with sqlite3.connect(db.path) as other:
+        other.row_factory = sqlite3.Row
+        other.execute("BEGIN IMMEDIATE")
+        record_valuation_publication_failure_on_connection(
+            other,
+            updated_at="2026-07-02T10:01:00+08:00",
+            reason="close_conflict",
+            quote_fetch_run_id="late-failure",
+        )
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") == publication
+    assert (
+        db.capture_pre_trade_risk_guard_sync(tasks=[])["quote_current_revision"]
+        == evidence["quote_current_revision"]
+    )
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(_context(cash="100000")),
+        policy=PreTradePolicy(execution_mode="manual"),
+        evidence_binding=evidence,
+    )
+    assert result["status"] == "blocked_by_evidence_drift"
+    assert {"code": "valuation_publication_recovery_required"} in result["blockers"]
+    _assert_no_risk_batch_writes(db)
+
+
+def test_final_risk_transaction_rejects_intent_instrument_type_drift(
+    tmp_path, monkeypatch
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(db, source_signal_id=1, symbol="600001", target_weight=0.01, price=10)
+    evidence = _persisted_evidence_binding(db)
+    commit = db.commit_pre_trade_risk_batch_sync
+
+    def drift(*, writes, evidence_binding):
+        writes[0][0].metadata["instrument_type"] = "etf"
+        return commit(writes=writes, evidence_binding=evidence_binding)
+
+    monkeypatch.setattr(db, "commit_pre_trade_risk_batch_sync", drift)
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(_context(cash="100000")),
+        policy=PreTradePolicy(execution_mode="manual"),
+        evidence_binding=evidence,
+    )
+    assert result["status"] == "blocked_by_evidence_drift"
+    assert "risk_batch_action_intent_drift" in {
+        item["code"] for item in result["blockers"]
+    }
+    _assert_no_risk_batch_writes(db)
+
+
 def test_batch_pre_trade_risk_rolls_back_whole_batch_on_valuation_drift(
     tmp_path,
 ) -> None:

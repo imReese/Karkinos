@@ -2770,6 +2770,23 @@ def run_candidate(
         ):
             raise ValueError("release_entrypoint_unusable")
         try:
+            state_gate = None
+            if (home / "data" / "app.db").is_file():
+                from tools.state_clone_gate import run_state_clone_gate
+
+                previous_release = _read_pointer(home / "current")
+                state_gate = run_state_clone_gate(
+                    source_data=home / "data",
+                    candidate_command=[str(entrypoint)],
+                    candidate_cwd=execution_release / "app",
+                    rollback_command=(
+                        [str(previous_release / "bin" / "karkinos")]
+                        if previous_release
+                        else None
+                    ),
+                    rollback_cwd=previous_release / "app" if previous_release else None,
+                    network_isolation=True,
+                )
             isolated_home = runtime / "home"
             for path in (
                 isolated_home,
@@ -2820,6 +2837,7 @@ def run_candidate(
             _make_release_tree_removable(execution_release)
         return {
             "status": "candidate_exited",
+            "state_clone_gate": state_gate,
             "commit_sha": commit_sha,
             "port": port,
             "returncode": int(result.returncode),
