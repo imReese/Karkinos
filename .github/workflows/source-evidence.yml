@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   source:
-    name: Export exact tracked source
+    name: Export isolated verification dependencies
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -20,45 +20,27 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Archive tracked files only
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          mkdir -p "${RUNNER_TEMP}/source-evidence"
-          git archive --format=tar HEAD | gzip -n > "${RUNNER_TEMP}/source-evidence/source.tar.gz"
-          git rev-parse HEAD > "${RUNNER_TEMP}/source-evidence/commit.txt"
-          cd "${RUNNER_TEMP}/source-evidence"
-          sha256sum source.tar.gz > SHA256SUMS
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.20.0"
 
-      - name: Upload source evidence
+      - name: Download locked frontend dependencies
+        run: |
+          npm ci --prefix web --ignore-scripts
+          mkdir -p "${RUNNER_TEMP}/verification"
+          tar -C web -czf "${RUNNER_TEMP}/verification/node_modules.tar.gz" node_modules
+          cd "${RUNNER_TEMP}/verification"
+          sha256sum node_modules.tar.gz > SHA256SUMS
+
+      - name: Download provider module for offline tests
+        run: |
+          python -m pip download --no-deps --only-binary=:all: --dest "${RUNNER_TEMP}/verification" akshare
+
+      - name: Upload verification dependencies
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: source-${{ github.sha }}
-          path: ${{ runner.temp }}/source-evidence/
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Set up offline verification interpreter
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-
-      - name: Download verification wheels
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip download --only-binary=:all: \
-            --dest "${RUNNER_TEMP}/verification-wheels" \
-            aiosqlite==0.22.1 pyarrow==25.0.1 xlrd==2.0.2 \
-            black==26.5.1 isort==9.0.1 ruff==0.16.5 pytest-xdist==3.8.0
-          cd "${RUNNER_TEMP}/verification-wheels"
-          sha256sum ./*.whl > SHA256SUMS
-
-      - name: Upload verification wheels
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: offline-verification-wheels
-          path: ${{ runner.temp }}/verification-wheels/
+          name: offline-frontend-provider-dependencies
+          path: ${{ runner.temp }}/verification/
           if-no-files-found: error
           retention-days: 1
