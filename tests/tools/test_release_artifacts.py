@@ -88,6 +88,23 @@ def _native_tree(
     return root
 
 
+def test_native_state_gate_rejects_wrong_artifact_and_modified_bytes(tmp_path):
+    import platform
+
+    from tools.state_clone_gate import _native_identity
+
+    root = _native_tree(tmp_path / "native", architecture=platform.machine())
+    command = [str(root / "bin" / "karkinos")]
+    assert _native_identity(command, root / "app", _SHA)["commit_sha"] == _SHA
+    with pytest.raises(ValueError, match="commit_sha_mismatch"):
+        _native_identity(command, root / "app", "b" * 40)
+    with pytest.raises(ValueError, match="native_entrypoint_required"):
+        _native_identity([sys.executable, "-m", "server"], root / "app", _SHA)
+    (root / "app" / "server" / "app.py").write_text("raise SystemExit(0)\n")
+    with pytest.raises(ValueError, match="file_checksum_mismatch"):
+        _native_identity(command, root / "app", _SHA)
+
+
 def _archive(
     path: Path, root: Path, members: list[tuple[tarfile.TarInfo, bytes]] | None = None
 ) -> Path:

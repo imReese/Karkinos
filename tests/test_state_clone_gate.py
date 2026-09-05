@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import socket
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -216,3 +218,207 @@ def test_quiescent_copy_rejects_a_concurrent_change(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.state_clone_gate.shutil.copyfile", mutate_after_copy)
     with pytest.raises(ValueError, match="changed_during_copy"):
         _quiescent_database_copy(source, tmp_path / "copy.db")
+
+
+def test_native_tcp_gate_rejects_an_already_listening_port():
+    from tools.state_clone_gate import _tcp_port
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        with pytest.raises(ValueError, match="port_unavailable"):
+            _tcp_port(listener.getsockname()[1])
+
+
+@pytest.mark.parametrize(
+    "output,owned", [("p42\nf16\n", True), ("p43\nf16\n", False), ("f16\n", False)]
+)
+def test_listener_identity_parses_lsof_process_records(monkeypatch, output, owned):
+    from tools.state_clone_gate import _listener_owned_by
+
+    monkeypatch.setattr(
+        "tools.state_clone_gate.subprocess.run",
+        lambda *a, **kw: subprocess.CompletedProcess(a[0], 0, output, ""),
+    )
+    assert _listener_owned_by(42, 12345) is owned
+
+
+@pytest.mark.parametrize(
+    "worker_pid,group,status,expected",
+    [
+        (43, 42, "ready", 43),
+        (42, 42, "ready", None),
+        (43, 41, "ready", None),
+        (43, 42, "stopped", None),
+    ],
+)
+def test_native_worker_identity_requires_a_distinct_ready_group_member(
+    tmp_path, monkeypatch, worker_pid, group, status, expected
+):
+    from tools.state_clone_gate import _native_worker_pid
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            "INSERT INTO runtime_controls(key, value_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (
+                "data_worker_heartbeat",
+                json.dumps(
+                    {"owner": f"data-worker:{worker_pid}:fixture", "status": status}
+                ),
+            ),
+        )
+    monkeypatch.setattr("tools.state_clone_gate.os.getpgid", lambda pid: group)
+    assert _native_worker_pid(tmp_path, 42) == expected
+
+
+@pytest.mark.parametrize("variant", ["snapshot", "cutoff", "database_drift"])
+def test_tcp_reads_require_the_current_database_financial_identity(
+    tmp_path, monkeypatch, variant
+):
+    from tools.state_clone_gate import _tcp_financial_read_identity
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    publication = db.publish_current_valuation_snapshot_sync()
+    calls = []
+
+    def response(port, endpoint):
+        calls.append(endpoint)
+        result = {
+            "valuation_snapshot_id": publication["snapshot_id"],
+            "ledger_cutoff_id": publication["ledger_cutoff_id"],
+        }
+        if variant == "snapshot":
+            result["valuation_snapshot_id"] = "wrong"
+        elif variant == "cutoff":
+            result["ledger_cutoff_id"] += 1
+        elif len(calls) == 2:
+            with sqlite3.connect(db.path) as other:
+                other.execute(
+                    "UPDATE runtime_controls SET value_json='{}' WHERE key='valuation_snapshot_publication'"
+                )
+        return result
+
+    monkeypatch.setattr("tools.state_clone_gate._tcp_json", response)
+    with pytest.raises(ValueError, match="financial_identity_(mismatch|drift)"):
+        _tcp_financial_read_identity(tmp_path, 12345)
+
+
+@pytest.mark.parametrize(
+    "variant,reason",
+    [
+        ("listener", "health_identity_failed"),
+        ("listener_gone", "health_identity_failed"),
+        ("descendant", "descendant_survived"),
+        ("stop_exit", "stop_failed"),
+    ],
+)
+def test_native_tcp_gate_cannot_pass_wrong_listener_or_incomplete_stop(
+    tmp_path, monkeypatch, variant, reason
+):
+    from tools import state_clone_gate as gate
+
+    cleanup = []
+
+    class Process:
+        pid = 123456
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            cleanup.append("terminate")
+
+        def wait(self, timeout=None):
+            cleanup.append("wait")
+            return 1 if variant == "stop_exit" else 0
+
+    monkeypatch.setattr(gate, "_tcp_port", lambda port=None: 12345)
+    monkeypatch.setattr(gate, "_tcp_isolation_command", lambda port: [])
+    monkeypatch.setattr(gate, "_verify_native_network_isolation", lambda *a: None)
+    monkeypatch.setattr(gate.subprocess, "Popen", lambda *a, **kw: Process())
+    monkeypatch.setattr(gate, "_tcp_json", lambda *a: {})
+    monkeypatch.setattr(
+        "scripts.release.manage_release._health_payload_matches", lambda *a, **kw: True
+    )
+    monkeypatch.setattr(
+        gate, "_listener_owned_by", lambda *a: not variant.startswith("listener")
+    )
+    monkeypatch.setattr(gate, "_tcp_financial_read_identity", lambda *a: {})
+    monkeypatch.setattr(gate, "_process_group_exists", lambda pid: True)
+    monkeypatch.setattr(gate, "_wait_process_group_exit", lambda pid: False)
+
+    def kill_group(*args):
+        cleanup.append("kill_group")
+        if variant == "listener_gone":
+            raise ProcessLookupError
+
+    monkeypatch.setattr(gate.os, "killpg", kill_group)
+    with pytest.raises(ValueError, match=reason):
+        gate._native_tcp_probe(
+            ["fixture"],
+            tmp_path,
+            {"KARKINOS_DATA_DIR": str(tmp_path)},
+            {},
+            timeout=0.01,
+        )
+    assert cleanup[-2:] == ["kill_group", "wait"]
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS network isolation")
+def test_tcp_isolation_allows_only_the_test_listener_including_descendants():
+    from tools.state_clone_gate import _tcp_isolation_command, _tcp_port
+
+    port = _tcp_port()
+    denied = "import socket\nfor address in [('127.0.0.1',1),('198.51.100.1',443)]:\n try: socket.create_connection(address,timeout=1)\n except PermissionError: pass\n else: raise AssertionError('connection unexpectedly allowed')"
+    code = f"import socket,subprocess,sys; subprocess.run([sys.executable,'-c',{denied!r}],check=True); s=socket.socket(); s.bind(('127.0.0.1',{port})); s.listen(); print('listening',flush=True); s.settimeout(5); c,_=s.accept(); c.sendall(b'ok'); c.close(); s.close()"
+    child = subprocess.Popen(
+        [*_tcp_isolation_command(port), sys.executable, "-c", code],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        import selectors
+
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stdout, selectors.EVENT_READ)
+            assert selector.select(10)
+        assert child.stdout.readline().strip() == "listening"
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
+            assert client.recv(2) == b"ok"
+        assert child.wait(timeout=5) == 0
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS network isolation")
+def test_native_network_preflight_does_not_create_python_bytecode(tmp_path):
+    import os
+    import shlex
+
+    from tools.state_clone_gate import (
+        _tcp_isolation_command,
+        _tcp_port,
+        _verify_native_network_isolation,
+    )
+
+    runtime = tmp_path / "runtime/bin/python3.12"
+    runtime.parent.mkdir(parents=True)
+    cache = tmp_path / "unexpected-bytecode"
+    # Redirect standard-library cache writes to a fresh directory so the test
+    # does not depend on whether the host already has compiled Python modules.
+    runtime.write_text(
+        f'#!/bin/sh\nexec {shlex.quote(sys.executable)} -X {shlex.quote("pycache_prefix=" + str(cache))} "$@"\n'
+    )
+    runtime.chmod(0o755)
+    cwd = tmp_path / "app"
+    cwd.mkdir()
+    _verify_native_network_isolation(
+        _tcp_isolation_command(_tcp_port()), cwd, dict(os.environ)
+    )
+    assert not cache.exists()
