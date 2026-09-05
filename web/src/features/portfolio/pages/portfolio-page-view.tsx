@@ -2,6 +2,7 @@ import {
   formatCurrency as formatCurrencyValue,
   formatTimestamp,
 } from '../../../shared/format';
+import { PublicationStatus } from '../../../shared/portfolio-evidence/publication-status';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import {
   EvidenceIdentityDisclosure,
@@ -77,6 +78,10 @@ export function PortfolioPageView({
         }
       />
 
+      <PublicationStatus
+        snapshotId={snapshot.data?.valuation_snapshot_id}
+        asOf={snapshot.data?.valuation_as_of}
+      />
       <div data-testid="portfolio-summary-strip">
         {snapshot.data ? (
           <MetricStrip

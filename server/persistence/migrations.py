@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import server.persistence.migration_schema_contracts as _schema_contracts
+from server.persistence.jobs import JOB_SCHEMA
 from server.persistence.legacy_trade_migration_preflight import (
     run_pending_legacy_trade_migration_preflight,
 )
@@ -465,6 +466,7 @@ _MIGRATIONS = (
         ),
     ),
     build_market_identity_schema_migration(SchemaMigration),
+    SchemaMigration(version=13, name="durable_background_jobs", statements=JOB_SCHEMA),
 )
 
 CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version

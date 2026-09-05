@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from server.contracts.jobs import JobLease
+
 _VERIFICATION_STATUSES = frozenset({"unverified", "needs_review", "verified"})
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -63,6 +65,7 @@ class MarketCalendarAutomationPublication:
     run: dict[str, Any]
     snapshot: dict[str, Any] | None = None
     verification: MarketCalendarVerificationCommand | None = None
+    job_lease: JobLease | None = None
 
     def __post_init__(self) -> None:
         if not str(self.run.get("run_id") or "").strip():

@@ -53,10 +53,7 @@ def test_scripts_top_level_contains_only_daily_user_entrypoints() -> None:
 
 
 def test_production_runbooks_use_explicit_prod_stop() -> None:
-    for path in (
-        Path("docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md"),
-        Path("docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md"),
-    ):
+    for path in (Path("scripts/README.md"),):
         runbook = path.read_text(encoding="utf-8")
 
         assert "`./scripts/stop_server.sh prod`" in runbook

@@ -14,6 +14,7 @@ from data.market_calendar import (
     build_market_calendar_provider,
     verify_official_market_calendar,
 )
+from server.contracts.jobs import JobLease
 from server.contracts.market_calendar import (
     MarketCalendarAutomationPublication,
     MarketCalendarVerificationCommand,
@@ -47,8 +48,10 @@ class MarketCalendarAutomationService:
         config: Any,
         provider_factory: Callable[..., Any] = build_market_calendar_provider,
         official_notice_provider: Any | None = None,
+        job_lease: JobLease | None = None,
     ) -> None:
         self._db = db
+        self._job_lease = job_lease
         self._config = config
         self._provider_factory = provider_factory
         self._official_notice_provider = (
@@ -148,6 +151,7 @@ class MarketCalendarAutomationService:
                     run=run,
                     snapshot=snapshot_payload,
                     verification=verification_command,
+                    job_lease=self._job_lease,
                 )
             )
             return publication["run"]
@@ -179,16 +183,19 @@ class MarketCalendarAutomationService:
         source_ref: str | None,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        return self._db.upsert_automation_run_sync(
-            self._run_record(
-                run_id=run_id,
-                run_date=run_date,
-                status=status,
-                now=now,
-                source_ref=source_ref,
-                payload=payload,
-            )
+        run = self._run_record(
+            run_id=run_id,
+            run_date=run_date,
+            status=status,
+            now=now,
+            source_ref=source_ref,
+            payload=payload,
         )
+        if self._job_lease is not None:
+            return self._db.publish_market_calendar_automation_sync(
+                MarketCalendarAutomationPublication(run=run, job_lease=self._job_lease)
+            )["run"]
+        return self._db.upsert_automation_run_sync(run)
 
     @staticmethod
     def _run_record(

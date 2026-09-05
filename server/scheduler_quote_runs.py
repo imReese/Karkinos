@@ -9,7 +9,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from core.events import MarketEvent
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, InstrumentType, Symbol
 from server.scheduler_contracts import SchedulerConfig, SchedulerDatabase, SchedulerFeed
 from server.scheduler_values import (
     provider_status_for_quote_run,
@@ -41,6 +41,21 @@ class SchedulerQuoteRunMixin:
             logger.error("Scheduler database is required to create quote fetch runs")
             return False
         try:
+            metadata = quote_fetch_started_metadata(self._config, self._watchlist)
+            instrument_types = []
+            for symbol, asset_class in self._watchlist:
+                instrument = getattr(self, "_instruments", {}).get(symbol)
+                kind = getattr(instrument, "instrument_type", None)
+                instrument_types.append(
+                    kind.value
+                    if isinstance(kind, InstrumentType)
+                    else (
+                        asset_class.value
+                        if asset_class is not AssetClass.FUND
+                        else None
+                    )
+                )
+            metadata["instrument_types"] = instrument_types
             self._db.create_quote_fetch_run(
                 run_id=run_id,
                 started_at=started_at,
@@ -49,10 +64,7 @@ class SchedulerQuoteRunMixin:
                 asset_type=quote_fetch_asset_type(self._watchlist),
                 symbol_count=len(self._watchlist),
                 status="running",
-                metadata=quote_fetch_started_metadata(
-                    self._config,
-                    self._watchlist,
-                ),
+                metadata=metadata,
             )
         except Exception:
             logger.warning("Failed to create scheduler quote fetch run", exc_info=True)

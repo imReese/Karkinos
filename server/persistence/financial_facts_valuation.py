@@ -11,6 +11,10 @@ from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
 )
+from server.persistence.valuation_publication_recovery import (
+    preserve_publication_recovery,
+    record_publication_recovery,
+)
 from server.valuation_snapshot_contract import validate_valuation_snapshot
 
 logger = logging.getLogger("server.persistence.financial_facts")
@@ -125,6 +129,7 @@ def record_valuation_publication_failure_on_connection(
     error_type: str | None = None,
     quote_fetch_run_id: str | None = None,
     quote_fetch_run_status: str | None = None,
+    daily_close_conflict: dict[str, Any] | None = None,
 ) -> None:
     """Record a failed attempt without destroying a verified current publication.
 
@@ -144,7 +149,10 @@ def record_valuation_publication_failure_on_connection(
         failure["quote_fetch_run_id"] = quote_fetch_run_id
     if quote_fetch_run_status:
         failure["quote_fetch_run_status"] = quote_fetch_run_status
+    if daily_close_conflict is not None:
+        failure["daily_close_conflict"] = daily_close_conflict
 
+    record_publication_recovery(conn, failure, updated_at=updated_at)
     _upsert_runtime_control_on_connection(
         conn,
         key=VALUATION_PUBLICATION_ATTEMPT_CONTROL_KEY,
@@ -177,6 +185,10 @@ def publish_valuation_control_on_connection(
         "as_of": payload["as_of"],
         "quote_fetch_run_id": quote_fetch_run_id,
     }
+    preserve_publication_recovery(
+        conn,
+        updated_at=updated_at,
+    )
     _upsert_runtime_control_on_connection(
         conn,
         key=VALUATION_PUBLICATION_CONTROL_KEY,

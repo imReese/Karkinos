@@ -91,6 +91,12 @@ ops coordinates jobs but does not own financial formulas
 | `notification/` | 归 Operations adapter |
 | `AppDatabase` | compatibility facade，逐步让 callers 改用窄 ports |
 
+当前新增接口的 owner：`data/dataset_catalog.py` 持有 DatasetRef/Manifest 和
+Parquet/catalog 发布读取；`server/contracts/jobs.py` 持有 JobRun/JobStore，
+`server/persistence/jobs.py` 持有 SQLite 租约事务；`server/workers/data_worker.py`
+持有首条日历任务消费边界。`server/projections/system_readiness.py` 只投影运行证据，
+不能代替 decision/risk/execution authority 的业务 gate。
+
 ## 5. Persistence 规则
 
 - Financial transaction 必须在一个明确 UnitOfWork 内原子完成。

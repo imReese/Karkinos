@@ -6,7 +6,10 @@ import logging
 import sqlite3
 from typing import Any
 
-from server.contracts.quote_ingestion import PUBLISHED_QUOTE_RUN_STATUSES
+from server.contracts.quote_ingestion import (
+    PUBLISHED_QUOTE_RUN_STATUSES,
+    DailyCloseEvidenceConflict,
+)
 from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
@@ -426,6 +429,11 @@ def _block_valuation_publication(
         ),
         quote_fetch_run_id=run_id,
         quote_fetch_run_status=run_status,
+        daily_close_conflict=(
+            publication_failure.binding
+            if isinstance(publication_failure, DailyCloseEvidenceConflict)
+            else None
+        ),
     )
 
 

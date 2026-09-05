@@ -550,8 +550,8 @@ def _operations_runbook_criteria_part_3() -> tuple[AcceptanceCriterion, ...]:
                 "separates exact background-task liveness from a zero-write "
                 "financial preflight that can open only risk plus "
                 "paper/shadow; it also shows current real-order closure "
-                "separately from the simulated sample, and bilingual runbooks define daily "
-                "operation and fail-closed recovery."
+                "separately from the simulated sample; scripts/README.md defines supported "
+                "operator commands and docs/ARCHITECTURE.md defines fail-closed recovery."
             ),
             evidence_paths=(
                 "server/services/daily_candidate_runtime_status.py",
@@ -564,8 +564,8 @@ def _operations_runbook_criteria_part_3() -> tuple[AcceptanceCriterion, ...]:
                 "web/src/features/decision/components/daily-candidate-trial-panel.tsx",
                 "web/src/features/decision/components/decision-cockpit-page.test.tsx",
                 "web/src/features/operations/api.ts",
-                "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md",
-                "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md",
+                "scripts/README.md",
+                "docs/ARCHITECTURE.md",
             ),
             validation_commands=(
                 "uv run python -m pytest tests/test_daily_candidate_runtime_status.py tests/test_daily_decision_evidence_automation.py tests/test_automation_cockpit.py tests/server/test_automation_routes.py",
@@ -593,8 +593,7 @@ def _operations_runbook_criteria_part_3() -> tuple[AcceptanceCriterion, ...]:
                 "tests/test_daily_candidate_production_readiness.py",
                 "tests/test_daily_candidate_production_readiness_cli.py",
                 "scripts/README.md",
-                "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md",
-                "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md",
+                "docs/ARCHITECTURE.md",
             ),
             validation_commands=(
                 "uv run pytest tests/test_daily_candidate_production_readiness.py tests/test_daily_candidate_production_readiness_cli.py",

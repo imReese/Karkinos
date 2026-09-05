@@ -7,8 +7,10 @@ import sqlite3
 from datetime import timezone
 from typing import Any
 
+from core.types import InstrumentKey
 from server.contracts.quote_ingestion import (
     PUBLISHED_QUOTE_RUN_STATUSES,
+    DailyCloseEvidenceConflict,
     QuoteIngestionCommand,
     quote_authority_conflict_fields,
     validate_quote_authority_time,
@@ -24,6 +26,7 @@ from server.persistence.financial_fact_event_payloads import (
 from server.persistence.quote_current_materialization import (
     advance_quote_snapshot_checkpoint_on_connection,
 )
+from server.persistence.valuation_publication_recovery import quote_run_scope
 
 
 class QuoteIngestionUnitOfWorkMixin:
@@ -79,12 +82,28 @@ class QuoteIngestionUnitOfWorkMixin:
             conn.execute("BEGIN IMMEDIATE")
             run = _require_running_quote_run(conn, run_id)
             staged = _load_staged_quotes(conn, run_id)
-            if len(staged) != success_count:
+            if len(staged) != success_count or len(staged) != run["symbol_count"]:
                 raise RuntimeError(
                     "staged quote count does not match successful quote count"
                 )
-            for command in staged:
-                _materialize_quote(conn, command, materialized_at=now)
+            expected = quote_run_scope(conn, run_id)
+            actual = {
+                (key.instrument_type.value, key.symbol)
+                for command in staged
+                for key in [
+                    InstrumentKey.from_values(command.symbol, command.asset_type)
+                ]
+            }
+            if expected is not None and actual != {tuple(key) for key in expected}:
+                raise ValueError("quote publication requested scope mismatch")
+            close_binding = _daily_close_batch_binding(
+                conn, staged, run_id=run_id, scope=expected
+            )
+            try:
+                for command in staged:
+                    _materialize_quote(conn, command, materialized_at=now)
+            except DailyCloseEvidenceConflict as exc:
+                raise DailyCloseEvidenceConflict(close_binding) from exc
             valuation_snapshot = self._valuation_transaction_writer(
                 conn,
                 quote_fetch_run_id=run_id,
@@ -387,26 +406,10 @@ def _materialize_daily_close(
 ) -> None:
     if command.daily_close_price is None or command.daily_close_date is None:
         return
-    existing = conn.execute(
-        """
-        SELECT instrument_type, close_price, source
-        FROM daily_close_snapshots_v2
-        WHERE symbol = ? AND instrument_type = ? AND trade_date = ?
-        LIMIT 1
-        """,
-        (command.symbol, command.asset_type, command.daily_close_date),
-    ).fetchone()
+    existing = _existing_daily_close(conn, command)
     if existing is not None:
-        if (
-            float(existing["close_price"]) != float(command.daily_close_price)
-            or not _same_instrument_identity(
-                str(existing["instrument_type"]),
-                command.asset_type,
-            )
-            or str(existing["source"])
-            != (command.daily_close_source or "reported_previous_close")
-        ):
-            raise ValueError("daily close evidence conflict")
+        if _daily_close_conflicts(existing, command):
+            raise DailyCloseEvidenceConflict()
         return
     conn.execute(
         """
@@ -430,6 +433,70 @@ def _materialize_daily_close(
             command.identity_provenance,
         ),
     )
+
+
+def _existing_daily_close(conn: sqlite3.Connection, command: QuoteIngestionCommand):
+    return conn.execute(
+        """
+        SELECT *
+        FROM daily_close_snapshots_v2
+        WHERE symbol = ? AND instrument_type = ? AND trade_date = ?
+        LIMIT 1
+        """,
+        (command.symbol, command.asset_type, command.daily_close_date),
+    ).fetchone()
+
+
+def _daily_close_conflicts(existing, command: QuoteIngestionCommand) -> bool:
+    return (
+        float(existing["close_price"]) != float(command.daily_close_price)
+        or not _same_instrument_identity(
+            str(existing["instrument_type"]),
+            command.asset_type,
+        )
+        or str(existing["source"])
+        != (command.daily_close_source or "reported_previous_close")
+    )
+
+
+def _daily_close_batch_binding(conn, staged, *, run_id, scope) -> dict[str, Any]:
+    required_facts = []
+    manifest = []
+    for command in staged:
+        fingerprint = stable_json_fingerprint(command.to_dict())
+        manifest.append(
+            {
+                "symbol": command.symbol,
+                "instrument_type": command.asset_type,
+                "payload_fingerprint": fingerprint,
+            }
+        )
+        if command.daily_close_date is None:
+            continue
+        existing = _existing_daily_close(conn, command)
+        required_facts.append(
+            {
+                "fact_kind": "daily_close",
+                "symbol": command.symbol,
+                "instrument_type": command.asset_type,
+                "session": command.daily_close_date,
+                "candidate": {
+                    "close_price": command.daily_close_price,
+                    "source": command.daily_close_source or "reported_previous_close",
+                    "payload_fingerprint": fingerprint,
+                },
+                "existing": dict(existing) if existing is not None else None,
+                "conflicting": existing is not None
+                and _daily_close_conflicts(existing, command),
+            }
+        )
+    return {
+        "schema_version": "karkinos.daily_close_conflict.v1",
+        "run_id": run_id,
+        "requested_scope": scope,
+        "staged_items": manifest,
+        "required_facts": required_facts,
+    }
 
 
 def _quote_identity_aliases(instrument_type: str) -> tuple[str, ...]:
