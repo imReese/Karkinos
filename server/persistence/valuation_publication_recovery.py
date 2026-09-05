@@ -6,7 +6,7 @@ import json
 import sqlite3
 from typing import Any
 
-from core.types import InstrumentKey
+from core.types import InstrumentKey, InstrumentType
 from server.persistence.database_normalization import stable_json_fingerprint
 
 RECOVERY_KEY = "valuation_publication_recovery"
@@ -89,8 +89,15 @@ def _requested_scope(run) -> list[list[str]]:
         raise InvalidQuoteRunScope(
             "quote publication requested instrument types invalid"
         )
-    if "instrument_types" not in metadata and "fund" in asset_types:
-        # The legacy fund class groups ETF and open-end funds.
+    if "instrument_types" in metadata:
+        if any(
+            kind not in {item.value for item in InstrumentType} for kind in asset_types
+        ):
+            raise InvalidQuoteRunScope(
+                "quote publication requires canonical instrument types"
+            )
+    elif any(kind.strip().lower() == "fund" for kind in asset_types):
+        # Broad fund identity cannot establish an ETF or open-end-fund request.
         raise QuoteRunScopeUnavailable(
             "quote publication requested fund identity unavailable"
         )
