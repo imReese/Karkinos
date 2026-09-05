@@ -1,319 +1,436 @@
-# Karkinos 实施计划
+# Karkinos 最终形态实施计划
 
-本文是唯一当前计划。不要再创建第二份 roadmap、Profit Plan 或实现日志。
+本文是唯一当前实施计划。所有研发都从 [GOAL.md](GOAL.md) 与 [ARCHITECTURE.md](ARCHITECTURE.md) 导出，不再创建平行 roadmap。
 
-## North Star
+## 总原则
+
+研发顺序固定为：
 
 ```text
-raw market data
--> point-in-time datasets
--> alpha discovery
--> alpha validation
--> alpha combination
--> portfolio construction
--> realistic execution simulation
--> paper/shadow
--> attribution
--> controlled capital
+A. Reliability
+-> B. Architecture Seams
+-> C. Point-in-time Data
+-> D. Research / Alpha
+-> E. Portfolio / Simulation
+-> F. Shadow / Attribution
+-> G. Controlled Capital
 ```
 
-目标不是承诺盈利，而是工程化地提高发现、验证、部署和淘汰正期望 edge 的能力。
-
-## 当前优先级
-
-现在只做 **Phase A — Reliability Gate**。Phase A 没通过之前，不扩大 broker 写权限，不继续扩 AI 自动化，也不为了分钟数据或新页面绕开稳定性工作。
+每个 Phase 必须有可执行 exit gate。没有通过前置 gate，不用新页面、AI 自动化或 broker 功能绕过它。
 
 ---
 
 ## Phase A — Reliability Gate
 
-### A1. Market fact 时间语义与 last-good publication
+目标：先让当前系统在真实状态下可预测地失败、降级和恢复。
 
-状态：核心修复已落到 `main`，待随稳定 release 进入 production。
+### A1. 时间语义与 last-good publication
 
-已经做：
+已完成核心修复：
 
-- `PRE_CLOSE` 只有在能证明属于严格更早 market session 时才可物化为 daily close。
-- verified same-day close 继续作为独立 authoritative evidence。
-- `valuation_snapshot_publication` 与 `valuation_snapshot_publication_attempt` 分离。
-- failed candidate publication 回滚并记录 incident，不再覆盖已有 ready publication。
+- `PRE_CLOSE` 只有能证明属于严格更早 session 时才可物化为 daily close；
+- verified same-day close 独立成为 authoritative evidence；
+- current publication 与 latest attempt 分离；
+- failed candidate publication 回滚但不覆盖 last-good。
 
-还要做：删除 read-side 对未知 `previous_close_date` 的猜测，确保显示层也不重新制造错误时间身份。
+下一步：删除 read-side 对未知 `previous_close_date` 的猜测。
 
-**Exit gate:** 今天已经复现过的 PRE_CLOSE/official-close 冲突不能再次污染 canonical close；失败 publication 后 last-good portfolio read 仍可重放。
+### A2. Read availability / Action readiness
 
-### A2. Read availability / Action readiness 分离
-
-实现统一 readiness projection：
+建立统一 readiness projection：
 
 ```text
-API                  ready/degraded/down
-database             ready/degraded/down
-market ingestion     ready/degraded/failed
-valuation read       ready/stale/unavailable
-decision             ready/blocked
-risk                 ready/blocked
-execution authority  disabled/ready/blocked
+api
+database
+background worker
+research worker
+market data
+valuation read
+decision
+risk
+execution authority
 ```
 
-Overview/Portfolio 可以明确显示上一份已验证快照及其 `as_of`，而 Decision/Risk/Execution 对最新证据继续 fail closed。
+每项都有 `status / as_of / last_success / latest_attempt / blockers / safe_next_action`。
 
-**Exit gate:** 一个 market refresh 失败不能无解释地让 Overview/Portfolio 全部 503；UI 必须展示数据时间和 blocker。
+Overview/Portfolio 允许解释性 stale/degraded read；Decision/Risk/Execution 对 fresh evidence 继续 blocked。
 
-### A3. Writer / Reader 故障域隔离
+### A3. Production-state replay
 
-- provider-heavy ingestion 不在 GET 路径执行；
-- research worker、market ingestion、API 生命周期独立观测；
-- candidate writer 只能原子替换 current publication；
-- failed writer 不修改 last-good pointer；
-- retry 必须幂等，不允许“为了恢复”直接改数据库 marker。
+第一批 fixture 固化真实事故：
 
-**Exit gate:** provider timeout、worker crash、partial batch 和 publication exception 都只影响对应域。
-
-### A4. Production-state Replay Suite
-
-建立匿名化真实事件 fixtures，不只做小单元测试：
-
-- realtime PRE_CLOSE -> 15:00 verified close；
-- same-instant conflict；
-- out-of-order quote；
-- market holiday / weekend；
+- realtime PRE_CLOSE -> verified close；
+- same-instant conflict / out-of-order quote；
+- holiday/weekend；
 - provider timeout / partial batch；
 - DB lock；
-- crash between stage and commit；
+- crash between stage/commit；
 - restart during recovery；
-- failed post-close publication after a complete snapshot；
-- migration from the previous stable production schema。
+- complete snapshot 后的新 publication 失败；
+- previous stable schema -> current candidate migration。
 
-每个 fixture 都验证最终 read state、action readiness、audit 和幂等性。
+### A4. Release/state-clone gate
 
-**Exit gate:** release candidate 必须通过生产状态 replay，而不仅是 fresh test DB。
-
-### A5. Release / Migration Reliability
-
-- candidate 在 disposable state 上验证；
-- stable activation 在真实 mutable-state clone 上做 schema/state preflight；
-- migration 不得“修正”无法证明的历史金融事实；
-- activation failure 自动回滚 pointer 和 mutable state；
-- production status 显示 exact release identity 与 recovery state。
-
-**Exit gate:** 从当前 stable 的真实 state clone 升级、启动、读取、回滚均确定性通过。
-
-### Phase A 完成条件
-
-满足以下条件后才进入 Phase B：
-
-- 无单一 market/research provider 故障可导致无解释全站不可用；
-- last-good reads 与 latest action readiness 完全分离；
-- 真实事故 fixture 进入 CI；
-- 当前 production 可以通过受支持 release path 升级到包含这些修复的 stable release。
-
----
-
-## Phase B — Point-in-time Market Data Fabric
-
-先做日频，再决定 full-market 1m。
-
-### B1. Historical universe
-
-保存每个交易日真实可交易 universe，而不是用今天的股票列表回放历史。处理上市、退市、停牌、ST/板块和历史成分变化。
-
-### B2. Canonical daily dataset
-
-统一：
-
-- raw OHLCV；
-- adjustment factors；
-- previous close / official close；
-- limit state；
-- turnover / amount / liquidity；
-- market cap；
-- industry membership；
-- source and revision identity。
-
-### B3. Point-in-time fundamentals
-
-财务特征使用真实可用日期/公告日期，不按报告期日期偷看未来。
-
-### B4. Dataset storage
-
-高容量历史/研究数据迁移到：
+Candidate 必须在 production mutable-state clone 上证明：
 
 ```text
-Parquet / Arrow
-+ DuckDB / Polars
-+ content fingerprint
+migrate
+-> start
+-> read
+-> background readiness
+-> stop
+-> restart
+-> rollback
 ```
 
-SQLite 保留 Financial Control Plane，不成为大规模量化数据湖。
+不可证明的旧金融事实只记录 blocker，不自动“修正”。
 
-### B5. Dataset snapshot contract
-
-每次研究绑定 exact universe、date range、columns、source revisions、row hash 和 quality report。
-
-### B6. Data quality acceptance
-
-检测 missing bars、duplicates、non-monotonic timestamps、future data、identity conflicts、survivorship leak 和 adjustment drift。
-
-**Phase B Exit gate:** 任意日频研究结果可以从同一 snapshot identity 完整重放，且不存在已知 survivorship/future leak。
+**Phase A Exit:** 当前 production 能通过受支持的 release path 升级；单个 writer/provider 故障不再导致无解释全站不可用；真实事故 replay 进入 CI。
 
 ---
 
-## Phase C — Alpha Factory
+## Phase B — Architecture Seams
 
-### C1. Alpha 作为一等 domain
+目标：在不 big-bang 重写的前提下建立最终架构需要的接口和故障域。
 
-Alpha 输出优先是 cross-sectional score / expected return，而不是 BUY/SELL。
+### B1. Application container / narrow ports
 
-每个 Alpha 保存：definition、inputs、dataset identity、parameters、version、author、created_at。
+- 保留 `AppDatabase` compatibility facade；
+- 新服务通过 typed container 注入窄 repository/query/command ports；
+- 禁止新 route-to-route、service locator 和 God facade 依赖；
+- server composition root 只做 wiring。
 
-### C2. Standard diagnostics
+### B2. Durable background jobs
 
-自动计算：
+把匿名/常驻后台循环收敛到通用 job contract：
+
+```text
+job_id
+kind
+input_fingerprint
+status
+attempt
+lease_owner
+lease_expires_at
+heartbeat_at
+result_ref
+error
+```
+
+先复用当前 research-worker 的 claim/lease 思路，再覆盖 market/calendar/universe/decision-evidence 等任务。
+
+### B3. API 与 worker 故障域拆分
+
+目标进程：
+
+```text
+karkinos-api
+karkinos-worker
+karkinos-research-worker
+```
+
+API 不再直接运行 provider-heavy polling 或长期业务 loop。真实 broker write 未来才引入独立 execution boundary。
+
+### B4. Dataset catalog seam
+
+新增 immutable dataset/artifact manifest contract。新 bulk dataset 不再以 SQLite row store 为第一设计目标。
+
+### B5. Ownership cleanup ratchet
+
+先加规则，不先搬完所有代码：
+
+- `analytics` 中 research analytics 与 acceptance/release tooling 分开 ownership；
+- `server/services` 按 bounded context 收敛；
+- `domain` 不再吸收新的跨域对象；
+- `strategy` 标记为 legacy compatibility；
+- architecture checker 逐步覆盖新 boundary。
+
+**Phase B Exit:** provider-heavy background work 不再以 API process 为主要宿主；新研发可以只通过 narrow ports + durable jobs + dataset refs 接入。
+
+---
+
+## Phase C — Point-in-time Data Fabric
+
+目标：得到真正可用于盈利研究的数据地基。
+
+### C1. Canonical time model
+
+为 market/fundamental/universe 数据统一：
+
+```text
+event_time
+available_at
+captured_at
+session_date / revision
+```
+
+### C2. Historical universe
+
+保存每个交易日真实可研究/可交易 universe，覆盖上市、退市、停牌、ST/板块和成分变化。
+
+### C3. Daily market dataset
+
+至少包括：
+
+- raw OHLCV / amount / volume；
+- adjustment factor；
+- official / previous close；
+- suspension / limit state；
+- liquidity / turnover / market cap；
+- industry membership；
+- provider/revision identity。
+
+### C4. Point-in-time fundamentals
+
+财务特征按真实公告/可用时间进入研究，不按报告期偷看未来。
+
+### C5. Parquet-primary lake
+
+新数据写入：
+
+```text
+immutable Parquet/Arrow
++ catalog manifest
++ DuckDB/Polars query/compute
+```
+
+当前 SQLite market-bar 读取保持兼容，逐步迁移，不双重声称 authority。
+
+### C6. Dataset snapshot + quality
+
+Snapshot 绑定 exact universe、time range、columns、source revisions、PIT policy、content hash 和 diagnostics。
+
+检测：missing、duplicate、non-monotonic、future leak、identity conflict、survivorship leak、adjustment drift。
+
+**Phase C Exit:** 任意日频研究可以只凭 DatasetRef 重放，且不存在已知 future/survivorship leak。
+
+---
+
+## Phase D — Research / Alpha Platform
+
+目标：把 Karkinos 从“策略执行器”升级为 Alpha Factory。
+
+### D1. Experiment Recorder
+
+每个 experiment 持久化：
+
+```text
+ExperimentRun
+DatasetRef
+FeatureSetRef
+AlphaSpec / ModelSpec
+parameters / seed / code identity
+ForecastSet
+metrics
+artifacts
+```
+
+### D2. Alpha first-class
+
+Alpha 输出 cross-sectional score / expected return，不直接输出 BUY/SELL。
+
+每个 Alpha 自动产生：
 
 - IC / RankIC / ICIR；
 - 1/5/10/20d decay；
 - quantile spread；
-- turnover；
-- cost sensitivity；
-- coverage；
-- industry/size/beta exposure；
-- regime stability；
-- capacity proxy。
+- coverage / turnover；
+- cost sensitivity / capacity proxy；
+- industry / size / beta exposure；
+- regime stability。
 
-### C3. Baseline alpha library
+### D3. Baseline library
 
-先建立 20–50 个简单、可解释、可复现 baseline：momentum、reversal、volatility、volume/price、liquidity、quality、value、growth 等。
+先做 20–50 个简单、可解释 baseline：momentum、reversal、volatility、volume/price、liquidity、quality、value、growth 等。
 
-简单 Alpha 是 benchmark，不允许为了复杂模型删除它们。
+简单基线永久保留，作为复杂模型 benchmark。
 
-### C4. Alpha correlation / redundancy
+### D4. Correlation / redundancy
 
-计算 alpha-alpha correlation、conditional correlation 和 marginal contribution，避免堆叠同一个风险因子的不同名字。
+计算 alpha-alpha correlation、conditional correlation、marginal contribution，避免同一风险暴露换名字重复入库。
 
-### C5. Validation discipline
+### D5. Validation discipline
 
-时间切分、rolling OOS、walk-forward、regime split、parameter sensitivity、multiple-testing awareness 均成为标准产物。
+标准化 train/valid/test、rolling OOS、walk-forward、regime split、parameter sensitivity、multiple-testing awareness、sealed holdout。
 
-### C6. ML escalation
+### D6. ML / AI escalation
 
-只有当 simple baselines 和数据质量稳定后，再引入 tree/GBDT、MLP/temporal、ensemble。复杂模型必须在同一 OOS/cost framework 中赢过简单基线。
+只有 baseline 和数据质量稳定后才进入 GBDT/MLP/temporal/ensemble。AI 改为 Research API client：提出假设、组合实验、解释结果；不能拥有独立 canonical backtest/metric pipeline。
 
-**Phase C Exit gate:** 至少一个 alpha ensemble 在多个 OOS 窗口、真实成本敏感性和风险暴露约束下仍有稳定统计证据。
+**Phase D Exit:** 至少一个 Alpha ensemble 在多个 OOS 窗口、真实成本敏感性与风险暴露约束下仍有稳定统计证据。
 
 ---
 
-## Phase D — Portfolio Construction
+## Phase E — Portfolio / Simulation
 
-### D1. Baselines
+目标：把预测转化为真实可执行、可解释的组合，而不是直接 BUY/SELL。
 
-实现并长期保留：Top-N Equal Weight、Rank Weight。
+### E1. Forecast -> PortfolioTarget
 
-### D2. Risk model
-
-至少覆盖 market beta、industry、size、volatility 和 concentration；后续再扩展 factor covariance。
-
-### D3. Cost model
-
-统一佣金、最低佣金、印花税、过户/交易费用、spread/slippage、turnover 和 liquidity participation。
-
-### D4. Optimizer
-
-目标形式：
+实现：
 
 ```text
-expected alpha
-- risk penalty
-- transaction cost
-- turnover penalty
+ForecastSet
+-> ensemble
+-> exposure/risk model
+-> cost model
+-> PortfolioTarget
 ```
 
-约束包括单股、行业、流动性、lot size、cash、T+1、涨跌停和停牌。
+### E2. Baseline constructors
 
-### D5. Portfolio attribution before deployment
+长期保留 Top-N Equal Weight、Rank Weight。
 
-解释目标权重来自哪些 Alpha、风险约束和成本取舍。
+### E3. Risk / cost model
 
-**Phase D Exit gate:** 复杂 optimizer 必须在 OOS after-cost 结果上稳定优于或明确补充 simple baselines；否则使用简单方案。
+至少覆盖：
+
+- market beta / industry / size / volatility / concentration；
+- commission / min commission / taxes / transfer fees；
+- turnover / spread / slippage；
+- liquidity participation / capacity。
+
+### E4. Rebalance planner
+
+`PortfolioTarget -> RebalancePlan` 处理 cash、100-share lot、T+1、停牌、涨跌停、最小交易金额等。
+
+### E5. Unified simulation semantics
+
+逐步把现有 backtest compatibility glue 收敛为：
+
+```text
+RebalancePlan
+-> OrderIntent
+-> PreTradeRisk
+-> Order
+-> ExecutionModel
+-> Fill
+-> Accounting
+```
+
+Paper、shadow、未来 live 使用同一 order/fill lifecycle contract。
+
+### E6. Optimizer
+
+复杂 optimizer 只有在 after-cost OOS 明确优于/补充简单 baseline 时才进入默认路径。
+
+**Phase E Exit:** 组合构建、风险、费用、成交和 accounting 在 backtest/paper/shadow 中共享可验证语义；不存在 paper/live 各自一套核心 OMS 状态。
 
 ---
 
-## Phase E — Execution Simulation and Shadow
+## Phase F — Shadow / Attribution
 
-### E1. Shared execution semantics
+目标：证明研究 edge 能穿过真实时间和执行摩擦。
 
-Backtest、paper、shadow、未来 live 共用 T+1、lot、fees、limits、suspension、order timing 和 fills 语义。
+### F1. Daily shadow freeze
 
-### E2. Fill/slippage simulator
+每日冻结：
 
-支持 open/close/VWAP-like assumptions、volume participation、partial fill 和 no-fill。
+```text
+Dataset/Forecast identity
+PortfolioTarget
+expected return/risk/cost
+RebalancePlan
+```
 
-### E3. Target -> order planner
+之后只观察真实未来，不回填改写预测。
 
-从 target weights 生成可解释、可重放的 order plan；不直接授予 broker 权限。
+### F2. Realized execution diagnostics
 
-### E4. Shadow operation
+对比 expected vs realized：
 
-每日冻结 target portfolio、expected return、expected risk、expected cost 和 planned orders，再观察真实后续价格和可成交性。
+- tradability / fill；
+- slippage；
+- turnover；
+- fees；
+- return；
+- exposure drift。
 
-### E5. 1m data decision
+### F3. PnL attribution
 
-只有日频 Alpha/portfolio 闭环需要更细 execution evidence 时，才建设 full-market 1m。不要因为 TSP 有 1m 就把它当先决条件。
+至少拆分：
 
-**Phase E Exit gate:** shadow 的 realized slippage、turnover、fills 和 returns 可以与 backtest assumptions 定量比较。
+```text
+market
+industry/style
+alpha/model
+portfolio construction
+execution cost
+unexplained residual
+```
 
----
+### F4. Alpha health
 
-## Phase F — Attribution, Decay and Controlled Capital
-
-### F1. PnL attribution
-
-拆分 market、industry、size/style、alpha、execution cost 和 unexplained residual。
-
-### F2. Research vs shadow monitoring
-
-持续比较 research IC / turnover / cost 与 shadow realized values。
-
-### F3. Alpha health state
+统一状态：
 
 ```text
 healthy -> warning -> degraded -> quarantine -> retired
 ```
 
-状态由确定性规则和人工复核驱动，AI 可以解释但不能自行扩大资本。
+状态由 deterministic evidence + human review 驱动；AI 只能解释。
 
-### F4. Strategy/ensemble lifecycle
+### F5. 1m data decision
 
-promotion、rollback、replacement 和 retirement 都绑定 exact research/shadow evidence。
+只有当日频闭环显示 execution evidence 是主要误差来源时，再建设 full-market 1m；不把分钟数据当 Alpha Factory 的前置条件。
 
-### F5. Controlled capital pilot
-
-只有在完整 replay、shadow、cost、attribution 和 reconciliation evidence 足够时，才允许极小资本、逐单人工确认的 pilot。
-
-Broker 写路径不是盈利来源，也不是前几个 Phase 的主任务。
-
-**Phase F Exit gate:** 系统能回答“赚/亏来自哪里、edge 是否还存在、继续使用它需要哪些证据”，再讨论扩大资本。
+**Phase F Exit:** 系统可以回答“研究预期为什么变成了实际收益/亏损”和“edge 是否仍存在”。
 
 ---
 
-## 明确推迟
+## Phase G — Controlled Capital
 
-在前置 Phase 未通过前，不优先做：
+目标：在前述证据成熟后，以最小资本验证真实执行，而不是把 broker 接入当研发终点。
 
-- 新的 broker write adapter；
-- session-bounded 自动真钱交易；
-- 大范围 AI 自动化；
+前置条件：
+
+- Reliability replay 全绿；
+- PIT data / Experiment / Portfolio / Simulation 可重放；
+- 足够长的 shadow 证据；
+- 成本与归因可解释；
+- Account Truth / reconciliation 无关键缺口；
+- broker adapter 有独立 conformance/recovery 证据。
+
+首个模式仍为：
+
+```text
+small capital
+one account
+allowlisted symbols/strategy
+manual_each_order
+one unresolved intent at a time
+```
+
+未知 outcome 不自动重提；每个 fill 必须进入 reconciliation/accounting。
+
+扩大资本是新的人工 review，不由模型、策略或历史收益自动触发。
+
+---
+
+## 冻结与推迟
+
+在对应前置 gate 完成前，不优先扩展：
+
+- broker write adapter / session-bounded auto trading；
+- 当前庞大的 broker/Account Truth 边界新功能；
+- 当前 bespoke AI shadow-research workflow；
 - full-market tick；
-- 为了架构审美的全量 Rust 重写；
-- 社区策略市场、多账户机构 OMS；
-- 与 Profit Engine 无关的新页面堆叠。
+- 微服务/Kafka/Redis/Celery；
+- 全量 Rust 重写；
+- 与 Data -> Alpha -> Portfolio -> Shadow 无关的新页面。
 
-## 最近的实施顺序
+已有安全/券商代码保留、测试继续跑，但进入 maintenance/frozen 状态。
 
-1. 完成 A1 后续 read-side 时间语义清理。
-2. 实现 A2 readiness state model，并让 Overview 展示 last-good `as_of` 和最新失败原因。
-3. 建立 A4 第一批真实事故 replay fixtures。
-4. 做 A5 当前 stable -> candidate 的 state-clone migration/rollback 验证。
-5. 发布包含 Reliability Gate 核心修复的新 stable release 并升级 production。
-6. 开始 B1/B2：historical universe + canonical daily dataset。
-7. 进入 Alpha Factory 前再做一次有限 architecture review；不进行语言重写。
+## 接下来 10 个实施切片
+
+1. 删除 read-side `previous_close_date` 猜测并补 replay。
+2. 建统一 System Readiness projection。
+3. Overview/Portfolio 展示 last-good `as_of` + latest attempt failure。
+4. 加 PRE_CLOSE/official-close 生产事件 replay fixture。
+5. 加 DB lock / partial batch / restart replay fixture。
+6. Candidate 对 production state clone 做 migration/read/rollback gate。
+7. 定义 durable `JobRun` contract，先迁移一个后台 loop。
+8. 抽出 API background-work boundary，确定 `karkinos-worker` entrypoint。
+9. 定义 `DatasetRef/DatasetManifest` contract 和 catalog seam。
+10. 用新的 contract 发布第一份 PIT historical-universe/daily dataset。
+
+第 10 步完成后，再开始 Alpha domain 实现。

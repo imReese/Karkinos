@@ -1,85 +1,169 @@
 # Karkinos Codebase Guide
 
-[文档入口](README.md) | [目标](GOAL.md) | [架构](ARCHITECTURE.md) | [当前计划](PLAN.md)
+[文档入口](README.md) | [目标](GOAL.md) | [目标架构](ARCHITECTURE.md) | [实施计划](PLAN.md)
 
-Karkinos 保持 **Python modular monolith**。目录拆分服务于 ownership，不服务于“看起来像微服务”。
+本文回答两个问题：当前代码的结构性债务在哪里，以及如何在不 big-bang rewrite 的前提下迁移到目标架构。
 
-## Package ownership
+## 1. 当前代码审计
 
-| Location | Owns |
+值得保留的基础：
+
+- `core/` 已有 clock/event/types 基础；
+- `data/` 已有 typed market identity、calendar、replay、daily ingestion；
+- `analytics/` 已有 dataset snapshot、PIT membership、OOS、multiple testing、holdout 等研究资产；
+- `backtest/` 已是 event-driven simulation 雏形；
+- `execution/` 已有 commission/slippage/paper evidence；
+- Financial facts、valuation publication、ledger、risk、reconciliation 已有大量事务/幂等测试；
+- immutable release + research worker 已证明少量多进程运行是可行的。
+
+主要结构性债务：
+
+1. `server/services/` 过于扁平，正在成为“所有 use case 的默认目录”。
+2. API lifespan 仍直接启动多个 scheduler/automation/background loop，故障域过大。
+3. `data/store.py` 把 SQLite market bars 当 primary store，同时写 Parquet mirror；不适合未来全市场研究数据规模。
+4. `analytics/` 混合 research analytics 与 release/acceptance governance。
+5. `strategy/` 把 signal/strategy 放在研究中心，而目标架构需要 Alpha/Forecast/Portfolio 分层。
+6. `backtest` 仍有默认批准 risk 的 compatibility glue，和真实 order path 语义未完全统一。
+7. Paper OMS、broker lifecycle、server OMS/persistence 存在多套状态模型的风险。
+8. `account_truth/` 与 broker-controlled-execution 代码规模已经远超当前 edge research 主线，应冻结扩张。
+9. `domain/` 同时容纳 bar/fill/order/portfolio/position，容易继续成为 generic dumping ground。
+10. `AppDatabase` 仍是广泛 compatibility facade。
+11. `tools/check_python_architecture.py` 只保护部分 package，`server`/`analytics` 仍缺目标 DAG 约束。
+
+## 2. 目标 bounded contexts
+
+最终 conceptual ownership：
+
+| Target context | Owns |
 | --- | --- |
-| `core/` | clocks、events、基础类型 |
-| `domain/` | canonical portfolio / instrument rules |
-| `data/` | market-data contracts、providers、ingestion、replay |
-| `strategy/` | legacy strategy definitions and extension registry |
-| `backtest/` | deterministic backtest engine |
-| `risk/` | deterministic risk policy |
-| `execution/` | broker-neutral execution contracts / simulation |
-| `account_truth/` | broker evidence and reconciliation contracts |
-| `analytics/` | research/acceptance analysis, never account authority |
-| `server/routes/` | HTTP validation and response mapping |
-| `server/services/` | application use cases and orchestration |
-| `server/persistence/` | SQLite repositories, migrations, units of work |
-| `server/projections/` | canonical read projections, no side effects |
-| `server/app.py` | process composition and lifecycle |
-| `web/src/app/` | router, providers, shell |
-| `web/src/features/` | feature pages, queries, commands, local UI |
-| `web/src/shared/` | feature-neutral UI / API infrastructure |
+| `core` | ids、clock、events、shared value primitives |
+| `market` | calendar、instrument reference、provider normalization、PIT datasets |
+| `research` | features、Alpha/Model specs、experiments、forecasts、diagnostics |
+| `portfolio` | ensemble、risk/exposure model、construction、target、rebalance plan |
+| `accounting` | ledger、lots、positions、valuation、PnL、fees、Account Truth/reconciliation |
+| `execution` | order/fill contracts、OMS lifecycle、sim/paper/broker adapters |
+| `risk` | pre-trade/runtime authorization policy |
+| `simulation` | deterministic backtest/replay using shared market/portfolio/execution/accounting semantics |
+| `ops` | jobs、leases、scheduler、readiness、incidents、release/runtime state |
+| `ai` | research assistants over explicit research ports; never authority |
+| `app` | commands、queries、use-case orchestration、API composition |
+| `adapters` | external market/model/broker/file implementations |
+| `web` | presentation only |
 
-未来的 `alpha/`、portfolio-construction 和 columnar dataset modules 应按上述 ownership 原则新增，不塞进 `server/routes` 或 generic `utils`。
+这些是 ownership 目标，不要求立刻创建全部目录。
 
-## Dependency direction
+## 3. 目标依赖方向
 
-基础包不能依赖 Web/FastAPI/persistence：
+业务层不依赖 FastAPI/React/SQLite implementation：
 
 ```text
 core
-  ^
-domain
-  ^
-data / risk / execution
-  ^
-strategy / backtest / alpha
-  ^
-server application composition
+├── market
+├── accounting
+└── execution contracts
+
+market -> research -> portfolio
+accounting + market + portfolio + execution contracts -> risk
+research + portfolio + accounting + execution + risk -> simulation
+research -> ai
+all domain contexts -> app composition
+ports <- adapters
+ops coordinates jobs but does not own financial formulas
 ```
 
-实际受保护边界由 `tools/check_python_architecture.py` 和对应 tests 执行。文档图不能覆盖可执行规则。
+外层可以依赖内层；反向依赖通过 Protocol/port 实现。
 
-## AppDatabase
+## 4. 当前 -> 目标映射
 
-`AppDatabase` 目前仍是 compatibility facade。新 persistence 应优先进入命名清晰的 repository/UoW；旧调用方逐步迁移后再让 facade 变薄。
+| Current | Migration direction |
+| --- | --- |
+| `data/` | 逐步成为 `market`，先引入 DatasetCatalog/Parquet-primary seam |
+| `analytics/` research files | 迁入 `research` ownership |
+| `analytics/acceptance*` | 迁到 `quality/acceptance` 或 `tools/acceptance`，不得污染 research API |
+| `strategy/` | compatibility；新 Alpha/Forecast 不再放这里 |
+| `backtest/` | 演进为 `simulation` |
+| `domain/portfolio*` | 拆向 `portfolio` / `accounting` owning context |
+| `execution/` | 保留并统一 Order/Fill lifecycle |
+| `account_truth/` | 收敛到 accounting/reconciliation + broker adapters；暂不扩功能 |
+| `server/persistence/` | 继续作为迁移期 implementation；按 owning context 暴露窄 repository/UoW |
+| `server/services/` | 新代码按 context 组织，不再增加无分类平铺文件 |
+| `server/projections/` | 继续保持 provider-free read model，再逐步迁到 app/query ownership |
+| `notification/` | 归 Operations adapter |
+| `AppDatabase` | compatibility facade，逐步让 callers 改用窄 ports |
 
-不要一次性删除 `AppDatabase` 或大搬目录。跨 context 的原子流程必须在新的 unit-of-work 能证明同样 idempotency/rollback 语义后再迁移。
+## 5. Persistence 规则
 
-## Market Data / Financial Control
+- Financial transaction 必须在一个明确 UnitOfWork 内原子完成。
+- 新 repository 不返回“万能 dict”作为长期公共 API；在 boundary 稳定后使用 typed value/result。
+- Dataset bytes 不进入 `app.db`。
+- Dataset/artifact 用 immutable content ID；catalog 只保存 manifest/pointer。
+- 跨 lake/catalog/control 不实现分布式 transaction；先写 immutable artifact，再 publish reference。
+- Schema/fingerprint/idempotency 的任何变化都必须有 migration/replay test。
 
-代码组织应逐步反映 [ARCHITECTURE.md](ARCHITECTURE.md) 的双平面：
+## 6. Application / process 规则
 
-- 高容量历史/研究 dataset 属于 Market Data Plane；
-- ledger、valuation、risk、OMS、authority 和 audit 属于 Financial Control Plane。
+- Route 只做 HTTP validation、auth/context、response mapping。
+- Use case 进入 app/service context，不允许 route-to-route import。
+- Query provider-free / zero-write。
+- Command typed / idempotent。
+- 长期 background work 进入 durable JobRun，不在 API lifespan 里无身份运行。
+- Worker 通过 durable state 协作，不共享 in-memory truth。
 
-不要为了方便把新的大规模时间序列继续塞进 `app.db`。
+## 7. Simulation / trading 规则
 
-## Process boundaries
+新功能不得继续强化 `Signal -> Order` 的直接耦合。
 
-API、research worker 和未来 heavy market-ingestion worker 可以是独立进程，但仍属于同一个产品和代码库。
+目标链：
 
-只有外部故障域、资源隔离或生命周期确实要求时才增加进程；不要为每个 domain 建服务。
+```text
+Forecast
+-> PortfolioTarget
+-> RebalancePlan
+-> OrderIntent
+-> RiskDecision
+-> Order
+-> Fill
+-> Accounting
+```
 
-## Refactoring rules
+Paper/live 不再各自发明 OMS 状态。Adapter 只翻译外部协议，canonical lifecycle 属于 `execution`。
 
-1. 结构变化前先写 characterization/replay tests。
-2. 先移动 ownership，再改语义；不要在同一个 slice 同时重构和改金融公式。
-3. 新代码依赖窄接口，不依赖 God facade。
-4. 一个边界稳定后加 executable dependency rule。
-5. 禁止新的 `utils.py` / `helpers.py` catch-all。
-6. route 不拥有可复用金融计算；projection 不做外部 side effect。
-7. 数据库 schema、fingerprint bytes、ordering、idempotency keys 和 API fields 的变化必须单独说明。
-8. 不因为文件大就自动加层；按 change reason 和 ownership 拆。
+## 8. 重构规则
 
-## Language policy
+1. 先写 characterization/replay test，再移动代码。
+2. Structural move 与金融语义 change 分 PR。
+3. 新代码依赖 narrow port，不依赖 God facade。
+4. 先新增 target module + compatibility adapter，再迁 caller，最后删除旧实现。
+5. 不做大规模 import-only rename PR。
+6. 禁止新的 generic `utils.py` / `helpers.py`。
+7. 每稳定一个 context，就把依赖方向加入 executable architecture check。
+8. Broker/AI legacy code可维护修 bug，但在 PLAN 解冻前不继续扩 architecture surface。
 
-Python 保持主语言。性能问题先用 profiling、NumPy/Arrow/Polars/DuckDB 解决；只有有明确 benchmark/SLO 证据时才下沉 Rust/native kernel。
+## 9. 语言策略
 
-不接受“重写语言”作为修复业务状态机、时间语义或数据 ownership 问题的替代方案。
+Python 保持主语言；TypeScript/React 保持 Web。
+
+优先顺序：
+
+```text
+better semantics
+-> vectorized Python
+-> Arrow / Polars / DuckDB
+-> profiling
+-> native/Rust only for measured hot paths
+```
+
+Rust 未来最多作为 simulation/optimizer/data kernel，不成为新的 orchestration 层。
+
+## 10. 完成 Architecture Migration 的定义
+
+不是“目录都换了名字”，而是：
+
+- API 不再承载 provider-heavy/background 业务；
+- 新 research 只依赖 DatasetRef/Experiment contracts；
+- bulk market data 不再以 SQLite row store 为主；
+- Alpha、Portfolio、Order、Accounting 是独立 ownership；
+- paper/backtest/live 共享 execution/accounting semantics；
+- `AppDatabase` 只剩 compatibility 或很薄的 composition facade；
+- executable dependency rules覆盖主要 contexts；
+- production replay 能证明迁移未改变金融语义。

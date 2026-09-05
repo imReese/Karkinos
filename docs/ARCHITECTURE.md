@@ -1,189 +1,377 @@
 # Karkinos 架构
 
-本文只记录长期稳定的系统边界和 invariant。当前开发顺序属于 [PLAN.md](PLAN.md)，源码物理布局属于 [CODEBASE.md](CODEBASE.md)。
+本文定义 Karkinos 的**目标架构**和迁移期间必须保持的 invariant。它不是当前代码树的逐文件说明。实施顺序见 [PLAN.md](PLAN.md)，当前目录映射见 [CODEBASE.md](CODEBASE.md)。
 
-## 1. 架构原则
+## 1. 架构结论
 
-1. **Data integrity before freshness.** 时间语义、来源、身份和可重放性优先于“看起来更新”。
-2. **Persisted facts before authority.** Provider、模型和缓存不能直接成为账户、风险或交易事实。
-3. **Fail closed on the affected action.** 需要新鲜证据的动作必须阻断，但无关功能不应被连带打死。
-4. **Last-good reads survive failed writes.** 一个失败的 candidate publication 不能摧毁已经成功发布的可读快照。
-5. **One concept, one owner.** 估值、收益、费用、风险等核心概念只能有一个 canonical 计算所有者。
-6. **Replay over guesswork.** 生产故障和研究结果都必须能够用持久化输入确定性重放。
-7. **Human-supervised authority.** 权限可以自动暂停或收窄，不能自行续期、扩大或恢复。
+Karkinos 的最终形态是一个 **single-node、local-first、Python-first 的量化研究与投资系统**。
 
-## 2. 系统形态
-
-Karkinos 继续采用 **Python modular monolith + 隔离 worker**，而不是为了“专业感”拆成微服务。
+不采用“大而全微服务”作为目标。目标运行时由少量受监督进程组成，核心数据通过持久化契约连接：
 
 ```text
-React / TypeScript
-        |
-FastAPI API / Control Process
-        |
-Application Services
-        |
-Research | Portfolio | Decision | Risk | OMS | Reconciliation
-        |
-Persistence / Dataset Boundaries
-        |
-Market Providers | Model Provider | Broker Edge
-
-Background isolation:
-- Research Worker
-- Market-data worker / heavy ingestion worker（按需要逐步隔离）
+Web
+ |
+API / Query / Command
+ |
++-------------------+--------------------+
+|                   |                    |
+Data/Operations     Research Worker      Execution Worker (later)
+Worker              (heavy/model work)   (broker edge only)
+|                   |                    |
++-------------------+--------------------+
+                    |
+          Persistent contracts
 ```
 
-API 负责读取、命令入口和控制面；provider-heavy、model-heavy 工作不得成为 API 可用性的单点故障。
-
-## 3. 两个数据平面
-
-### Market Data Plane
-
-负责大量、可复现、point-in-time 的研究数据：
+系统按三种职责组织，而不是按页面组织：
 
 ```text
-universe
-OHLCV (1d / future 1m)
+Research & Data Plane
+Financial / Trading Control Plane
+Operations Plane
+```
+
+## 2. 核心原则
+
+1. **Point-in-time before prediction.** 没有正确时间语义的数据不能进入 Alpha 研究。
+2. **Immutable inputs before reproducibility.** 研究和发布都绑定内容身份，不依赖“当前目录里刚好是什么”。
+3. **Persisted facts before authority.** Provider、模型、缓存和 UI 都不能直接成为账户或交易事实。
+4. **One concept, one owner.** 一个金融概念只能有一个 canonical 计算所有者。
+5. **Fail closed on the affected action.** 不确定性阻断受影响动作，不扩大成无关功能的全局故障。
+6. **Last-good survives failed attempts.** 最新失败不能摧毁上一份已验证、仍可重放的状态。
+7. **Replay over repair-by-guessing.** 生产事故和研究结果都从持久化输入重放，不靠手工改 marker。
+8. **Research/live semantic parity where it matters.** 成本、成交、T+1、lot、停牌和风险语义不能各写一套。
+9. **Human-supervised capital.** 权限不能自行扩张。
+10. **Optimize only measured bottlenecks.** 先修 ownership/语义，再谈 Rust 或分布式系统。
+
+## 3. 三个 Plane
+
+### 3.1 Research & Data Plane
+
+负责可批量分析、可重放、point-in-time 的研究材料：
+
+```text
+market calendar
+historical universe
+OHLCV / 1d / later 1m
 adjustment factors
-suspension / limit state
+limit / suspension state
 turnover / liquidity / market cap
 industry / membership
 fundamentals
-feature datasets
+features
+alpha outputs
+model forecasts
+experiment artifacts
 ```
 
-这些数据是研究输入，不是交易权限。高容量历史数据应逐步采用适合分析的列式存储和内容指纹，而不是无限扩张 `app.db`。
+它回答“当时能知道什么”和“这个研究输入到底是什么”，不拥有账户权限。
 
-### Financial Control Plane
+### 3.2 Financial / Trading Control Plane
 
-负责小而强一致、可审计、需要事务语义的事实：
+负责小而强一致、需要事务和审计的事实：
 
 ```text
 canonical quote / close
+ledger / lots / cash
 valuation publication
-ledger
 fees
 Account Truth
+portfolio/account state
 risk decisions
-Decision
-OMS / fills
+orders / fills / OMS
 reconciliation
 authority / runtime controls
 audit events
 ```
 
-这里优先使用 SQLite 的事务、唯一约束、WAL、内容身份和 append-oriented audit。
+这里的事实可以引用 Research/Data Plane 的 immutable identity，但不能依赖可变文件路径或 provider 当前返回值。
 
-## 4. 当前持久化边界
+### 3.3 Operations Plane
 
-- `app.db`：authoritative financial/control facts、ledger、risk、OMS、runtime controls、audit。
-- `meta.db` / market storage：历史 market bars 和 dataset metadata。
-- 后续高容量 market/research datasets 迁移到 Parquet + DuckDB/Polars 属于 [PLAN.md](PLAN.md) 的演进，不要求重写 Financial Control Plane。
-- 任何 frozen research dataset 都必须有确定的内容 fingerprint 和 point-in-time 语义。
-
-## 5. Publication 与读取语义
-
-当前估值 publication 使用两个不同概念：
+负责系统运行，而不是金融计算：
 
 ```text
-valuation_snapshot_publication
-    = 最后一次成功、当前可读取的 canonical publication
-
-valuation_snapshot_publication_attempt
-    = 最近一次 publication attempt 的结果
+durable jobs
+schedules
+leases / heartbeats
+retry / backoff
+last success / latest attempt
+worker readiness
+incidents
+release identity
+activation / rollback state
 ```
 
-正确状态机：
+后台工作必须有持久 run identity；API 进程不再是匿名 `asyncio.create_task()` 的总宿主。
+
+## 4. 目标运行时拓扑
+
+### API process
+
+只负责：
+
+- provider-free queries；
+- 显式 commands；
+- request validation / response projection；
+- WebSocket/status；
+- 将异步工作写入 durable job queue。
+
+API 不应承担长期 provider polling、全市场 ingestion、模型调用或重研究任务。
+
+### Data / Operations worker
+
+负责：
+
+- scheduler；
+- market calendar / universe / quote / bar ingestion；
+- dataset publication；
+- provider retry/backoff；
+- provider-free scheduled operational jobs。
+
+单个 provider timeout 或 ingestion crash 最多让该 worker/domain degraded，不能拖垮 API。
+
+### Research worker
+
+负责：
+
+- feature/Alpha/Model experiments；
+- OOS / sweep / diagnostics；
+- AI-assisted hypothesis/critique；
+- content-addressed artifact publication。
+
+Research worker 没有账户、资本或 broker authority。
+
+### Execution worker
+
+真实 broker 接入前不存在生产写权限。未来启用时，它是独立、default-off 的 adapter boundary，只消费已经通过 account/risk/operator gates 的 exact order identity。
+
+## 5. 存储拓扑
+
+目标数据目录：
 
 ```text
-candidate facts
--> validate
--> transaction
-   -> success: atomically publish new current
-   -> failure: rollback candidate facts + record failed attempt
-              current last-good remains unchanged
+data/
+  control/
+    app.db
+  catalog/
+    catalog.db
+  lake/
+    market/daily/...
+    market/1m/...
+    universe/...
+    fundamentals/...
+    features/...
+  artifacts/
+    experiments/<content-id>/
+    models/<content-id>/
+    reports/<content-id>/
 ```
 
-没有任何成功 publication 时，financial reads 继续 fail closed。
+### `app.db`
 
-已经有成功 publication 时，新写入失败可以让读取进入 `ready/stale/degraded`，但不能把上一份已验证快照直接变成全站 503。与此同时，依赖最新证据的 Decision/Risk/Execution 可以继续 `blocked`。
+Financial/Trading Control + Operations 的 authoritative transactional facts。继续使用 SQLite/WAL、唯一约束、事务、append-oriented audit。
 
-## 6. Read availability 与 Action readiness
+### `catalog.db`
 
-二者必须分开：
+只保存 dataset/artifact manifest、revision lineage、schema、quality report、publication pointer 和小型索引。可从 immutable artifacts 校验，不保存大规模 bars。
+
+### `lake/`
+
+Parquet/Arrow 是未来大规模市场与研究数据的 primary bulk representation。DuckDB 是 query engine，Polars/NumPy 是 compute engine；它们都不是 financial authority。
+
+当前 `meta.db + SQLite market_bars + Parquet mirror` 通过迁移逐步演进，不做一次性格式重写。
+
+## 6. 统一时间模型
+
+任何外部金融数据至少区分：
 
 ```text
-Read availability
-- ready
-- stale/degraded but explainable
-- unavailable
-
-Action readiness
-- ready
-- blocked by freshness / conflict / reconciliation / authority / risk
+event_time / market_time
+available_at
+captured_at
 ```
 
-“页面能否查看已有事实”与“现在能否产生新的资金动作”不是同一个问题。
+必要时再记录：
 
-## 7. Domain ownership
+```text
+session_date
+source_revision
+published_at
+```
 
-| Domain | Owns |
-| --- | --- |
-| Market data | datasets、bars、quotes ingestion、source health、freshness |
-| Research / Alpha | frozen datasets、alpha definitions、experiments、OOS evidence |
-| Portfolio | target weights、positions projection、portfolio construction |
-| Ledger / Valuation | cash、lots、cost basis、financial events、canonical valuation |
-| Decision | account-bound daily actions、blockers、explanations |
-| Risk | deterministic pre-trade/runtime risk policy |
-| Execution | broker-neutral orders、fills、simulation semantics |
-| Reconciliation | broker/account/order/fill agreement and recovery |
-| Operations | scheduler、workers、alerts、readiness、runbooks |
-| AI research | evidence-bound hypotheses and critiques; never authority |
+语义：
 
-Presentation 可以格式化和组合 canonical values，但不能重新拥有这些计算。
+- `event_time`：事实属于市场的哪个时点；
+- `available_at`：研究者最早何时可以合法知道；
+- `captured_at`：Karkinos 何时取得；
+- `published_at`：Karkinos 何时把它提升为某个 canonical/dataset generation。
 
-## 8. Backtest / Shadow / Live 语义
+`PRE_CLOSE`、财报期末、公告日、复权和 universe membership 都必须按这套模型处理，禁止用 request date 猜事实归属。
 
-以下语义必须尽量共享实现，而不是各写一套：
+## 7. Dataset publication contract
 
-- signal timing；
-- order timing；
-- T+1；
-- 100 股 lot；
-- 涨跌停 / 停牌；
-- fees / taxes；
-- slippage；
-- turnover；
-- position / liquidity limits；
-- risk gates。
+Dataset 采用 candidate -> validate -> publish：
 
-不同环境可以更换数据源和执行 adapter，但不能悄悄改变金融语义。
+```text
+raw/staged input
+-> normalize
+-> validate PIT / identity / schema / quality
+-> write immutable partition/artifact
+-> compute content digest
+-> publish manifest
+```
 
-## 9. 语言与性能策略
+任何 correction/revision 产生新的 generation；不能静默改写已被 experiment 引用的 bytes。
 
-- Python 继续作为 research、orchestration、API 和大部分 domain 的主语言。
-- TypeScript/React 继续负责 Web。
-- 不进行全量 Rust 重写。
-- 只有在 profiler/benchmark 证明 Python + NumPy/Arrow/Polars/DuckDB 无法满足明确 SLO 时，才把热路径下沉到 Rust/native kernel。
-- Rust 是可选 compute engine，不是新的产品架构中心。
+最小 `DatasetRef` 必须能绑定：
 
-业务语义错误、时间身份错误和错误状态机不会因为换语言自动消失。
+- dataset kind / schema version；
+- universe identity；
+- time range / frequency；
+- source revisions；
+- PIT policy；
+- row/partition counts；
+- content digest；
+- quality report；
+- created/published time。
 
-## 10. 故障域
+## 8. Research domain
 
-单个 provider、market refresh、research worker、scheduler task 或 candidate publication 的失败必须被限制在对应功能域，并暴露明确状态和安全下一步。
+研究链路是一等系统，不挂在 HTTP route 或 AI workflow 下：
 
-生产 readiness 至少应能够分别表达：API、database、market ingestion、valuation reads、Decision readiness、execution authority，而不是只报告“进程活着”。
+```text
+DatasetRef
+-> FeatureSet
+-> AlphaSpec / ModelSpec
+-> ExperimentRun
+-> ForecastSet
+-> Diagnostics
+```
 
-## 11. 架构变更规则
+核心对象：
 
-只有以下变化才更新本文：
+- `FeatureSpec` / `FeatureSetRef`
+- `AlphaSpec`
+- `ModelSpec`
+- `ExperimentRun`
+- `ForecastSet`
+- `ResearchArtifactRef`
 
-- 长期组件边界改变；
-- 数据 ownership 改变；
-- transaction / publication / replay invariant 改变；
-- 进程或故障域改变；
-- 语言边界或存储职责改变。
+每个 experiment 保存 exact input refs、代码/release identity、参数、seed、结果和 artifacts。
 
-版本进度、测试数量、单次事故和完成日志不写进本文。
+`strategy/` 逐步变为 compatibility layer。最终 “Strategy/Deployment” 是 Alpha/Model + Portfolio Policy + Execution Policy 的组合，不是一个直接发 BUY/SELL 的黑盒。
+
+AI 只通过 Research ports 提出 `AlphaSpec`、实验配置或 critique；它不计算 canonical metrics，也不直接进入 Order path。
+
+## 9. Portfolio domain
+
+Alpha/Model 输出先形成 Forecast，再进入组合构建：
+
+```text
+ForecastSet
+-> Alpha ensemble
+-> risk/exposure model
+-> cost model
+-> PortfolioTarget
+-> RebalancePlan
+```
+
+核心输出是 target weights + constraints + reasons，而不是直接订单。
+
+长期保留简单 baseline（Top-N equal weight、rank weight），复杂 optimizer 必须在同一 OOS/after-cost framework 中证明增量价值。
+
+## 10. Simulation / Execution / Accounting
+
+研究计算允许向量化；**成交与账户状态**采用统一事件/时间语义。
+
+```text
+RebalancePlan
+-> OrderIntent
+-> PreTradeRisk
+-> Order
+-> ExecutionAdapter
+-> Fill
+-> Accounting
+-> Reconciliation
+```
+
+Backtest、paper、shadow、live 的区别主要是 clock/data/execution adapter，不是四套金融规则。
+
+目标是一个 canonical order lifecycle。Paper broker、simulator、未来 broker adapter 都投影到同一 Order/Fill 状态模型，避免 paper OMS、broker lifecycle 和 persistence 各维护一套状态真相。
+
+Backtest 不能长期依赖“默认批准风险”的兼容胶水；同一风险/订单约束必须能在 simulation 中真实执行。
+
+## 11. Financial publication 与读取
+
+所有 current pointer 使用同一模式：
+
+```text
+last_successful_publication
+latest_attempt
+```
+
+成功时原子替换 current；失败时记录 attempt/incident，candidate 回滚，last-good 不动。
+
+Read availability 与 Action readiness 永远分离：
+
+```text
+read: ready | stale/degraded | unavailable
+action: ready | blocked
+```
+
+Portfolio/Overview 可以展示 last-good 的 `as_of` 与最新失败原因；Decision/Risk/Execution 对 fresh evidence 继续 fail closed。
+
+## 12. Commands、Queries 与 side effects
+
+- Query：provider-free、zero-write、只读 canonical state。
+- Command：显式、typed、idempotent，写事务或 enqueue durable job。
+- Background job：有 run id、claim/lease、attempt、heartbeat、result、error 和 replay identity。
+- External side effect：先持久 claim，再调用外部系统；使用 client/idempotency identity；unknown outcome 只查询恢复，不盲目重试；最终由 reconciliation 关闭。
+
+跨 SQLite 与 Parquet 不追求分布式事务；通过 immutable content ID + publish pointer 组合一致性。
+
+## 13. Operations / readiness
+
+每个 subsystem 至少公开：
+
+```text
+status
+last_success
+latest_attempt
+as_of
+freshness
+blockers
+safe_next_action
+```
+
+最低运行状态包括 API、DB、data worker、research worker、market datasets、valuation reads、Decision readiness、execution authority。
+
+`process alive` 不是 product ready。
+
+## 14. 依赖与语言
+
+Python 继续负责 research、domain、orchestration、API；TypeScript/React 负责 Web。
+
+性能路线：
+
+```text
+correct ownership/semantics
+-> vectorize with NumPy/Polars
+-> Arrow/Parquet/DuckDB
+-> profile/benchmark
+-> only then Rust/native hot path
+```
+
+如未来 simulation、optimizer 或数据 kernel 有明确 SLO 且 Python/columnar stack 无法满足，可用 Rust + Arrow/PyO3 下沉。Rust 不承担 product orchestration，也不用于“修复”业务状态机错误。
+
+## 15. 迁移原则
+
+- 不做 big-bang rewrite。
+- 不先大搬目录再补行为测试。
+- 先建立新 boundary，再让旧 facade/adapter 逐步委托进去。
+- 每次迁移先有 characterization/replay tests，再移动 ownership，最后删除 compatibility。
+- 当前 broker/controlled-execution 安全工作保留但冻结扩张，直到 Data -> Alpha -> Portfolio -> Shadow 主链成熟。
+- 当前 immutable release/rollback 体系继续保留并作为 Operations Plane 基础。
+
+架构参考可以借鉴 Qlib 的 Dataset/Experiment、LEAN 的可替换 data/transaction handler、NautilusTrader 的 research/live 执行语义一致性、vn.py 的 gateway/OMS 边界，以及本地 A 股工具的列式数据实践；Karkinos 不直接绑定或复制其中任何框架。
