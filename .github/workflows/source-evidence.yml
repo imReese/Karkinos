@@ -3,6 +3,7 @@ name: Source evidence
 on:
   push:
     branches: [main]
+    paths: [.github/workflows/source-evidence.yml]
   workflow_dispatch:
 
 permissions:
@@ -12,7 +13,7 @@ jobs:
   source:
     name: Export exact tracked source
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,3 +38,27 @@ jobs:
           path: ${{ runner.temp }}/source-evidence/
           if-no-files-found: error
           retention-days: 7
+
+      - name: Set up offline verification interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Download verification wheels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip download --only-binary=:all: \
+            --dest "${RUNNER_TEMP}/verification-wheels" \
+            aiosqlite==0.22.1 pyarrow==25.0.1 xlrd==2.0.2 \
+            black==26.5.1 isort==9.0.1 ruff==0.16.5 pytest-xdist==3.8.0
+          cd "${RUNNER_TEMP}/verification-wheels"
+          sha256sum ./*.whl > SHA256SUMS
+
+      - name: Upload verification wheels
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: offline-verification-wheels
+          path: ${{ runner.temp }}/verification-wheels/
+          if-no-files-found: error
+          retention-days: 1
