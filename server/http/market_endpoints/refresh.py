@@ -94,6 +94,7 @@ def create_router(dependencies: RefreshEndpointDependencies) -> APIRouter:
                 requested_symbols,
                 asset_class_by_symbol,
             ),
+            asset_class_by_symbol=asset_class_by_symbol,
         )
 
         results = await asyncio.gather(

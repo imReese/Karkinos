@@ -465,6 +465,50 @@ def test_same_count_wrong_symbols_cannot_publish_or_redefine_failure_scope(tmp_p
         assert not affected_publications(conn, {("stock", "600003")})
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"requested_symbols": ["600001", "600002"], "instrument_types": ["stock"]},
+        {"requested_symbols": ["600001", "600001"]},
+        {"requested_symbols": ["600001", "600002", "600002"]},
+        {
+            "requested_symbols": ["600001", "600002"],
+            "instrument_types": ["stock", None],
+        },
+        {"requested_symbols": None, "symbols": ["600001", "600002"]},
+        "{broken-json",
+        "[]",
+        {},
+    ],
+)
+def test_unverifiable_request_identity_cannot_publish(tmp_path, metadata):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.persist_quote_ingestion_sync(_quote())
+    before = db.get_runtime_control_sync("valuation_snapshot_publication")
+    db.create_quote_fetch_run(
+        run_id="invalid-request",
+        started_at=NOW.isoformat(),
+        trigger="replay",
+        status="running",
+        asset_type="stock",
+        symbol_count=2,
+        metadata=metadata,
+    )
+    for symbol in ("600001", "600003"):
+        db.persist_quote_ingestion_sync(_quote(symbol, "invalid-request"))
+    assert _finish(db, "invalid-request", success=2)["status"] == "failed"
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") == before
+    with sqlite3.connect(db.path) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM quote_snapshots WHERE fetch_run_id='invalid-request'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert affected_publications(conn, {("stock", "600002")})[0]["scope"] is None
+
+
 def test_partial_mixed_run_retains_exact_typed_request_scope(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -485,6 +529,60 @@ def test_partial_mixed_run_retains_exact_typed_request_scope(tmp_path):
         assert affected_publications(conn, {("open_end_fund", "000001")})
         assert affected_publications(conn, {("etf", "510300")})
         assert not affected_publications(conn, {("stock", "000001")})
+
+
+def test_manual_mixed_request_preserves_exact_identity_through_completion(tmp_path):
+    from core.types import AssetClass
+    from server.persistence.valuation_publication_recovery import quote_run_scope
+    from server.services.market_views.fetch_runs import create_manual_quote_fetch_run
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    symbols = ["600001", "510300", "000001"]
+    kinds = ["stock", "etf", "open_end_fund"]
+    state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(
+            data_source="fixture",
+            assets=[
+                {"symbol": symbol, "instrument_type": kind}
+                for symbol, kind in zip(symbols, kinds, strict=True)
+            ],
+        ),
+    )
+    create_manual_quote_fetch_run(
+        state,
+        run_id="manual-mixed",
+        started_at=NOW.isoformat(),
+        requested_symbols=symbols,
+        asset_type="mixed",
+        asset_class_by_symbol={
+            "600001": AssetClass.STOCK,
+            "510300": AssetClass.FUND,
+            "000001": AssetClass.FUND,
+        },
+    )
+    for symbol, kind in zip(symbols, kinds, strict=True):
+        db.persist_quote_ingestion_sync(
+            replace(_quote(symbol, "manual-mixed"), asset_type=kind)
+        )
+    completion = dict(
+        run_id="manual-mixed",
+        finished_at=NOW.isoformat(),
+        status="success",
+        success_count=3,
+        metadata={"requested_symbols": ["wrong"], "instrument_types": ["stock"]},
+    )
+    result = db.finish_quote_fetch_run(**completion)
+    assert result["status"] == "success"
+    assert db.finish_quote_fetch_run(**completion) == result
+    with sqlite3.connect(db.path) as conn:
+        assert quote_run_scope(conn, "manual-mixed", require_exact=True) == [
+            ["etf", "510300"],
+            ["open_end_fund", "000001"],
+            ["stock", "600001"],
+        ]
+        assert affected_publications(conn, set(zip(kinds, symbols, strict=True))) == []
 
 
 @pytest.mark.parametrize(

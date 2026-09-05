@@ -55,6 +55,7 @@ def _create_run(db: AppDatabase, run_id: str) -> None:
         provider="fixture",
         asset_type="stock",
         symbol_count=1,
+        metadata={"requested_symbols": ["FAIL"]},
     )
 
 

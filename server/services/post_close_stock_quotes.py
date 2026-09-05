@@ -269,6 +269,8 @@ def publish_post_close_stock_quotes(
         "target_trade_date": trade_date_text,
         "symbols": list(symbols),
         "promoted_symbols": list(promote_symbols),
+        "requested_symbols": list(promote_symbols),
+        "instrument_types": ["stock"] * len(promote_symbols),
         "input_fingerprint": input_fingerprint,
         "receipt_fingerprint": receipt["receipt_fingerprint"],
         "market_dataset_fingerprint": receipt["dataset_fingerprint"],

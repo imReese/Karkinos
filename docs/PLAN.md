@@ -35,9 +35,11 @@ A. Reliability
 
 Read-side 已删除对未知 `previous_close_date` 的猜测。未解决的发布失败按持久化请求的 typed instrument 范围保留；启动、账本重算及任何普通刷新均不能清除它。同标的的新报价不证明旧交易日的收盘冲突已修复。事实级修复收据和 resolver 尚未实现，在此之前 incident 保持 unresolved。风险批次按已绑定 action 身份在最终写事务内再次校验。
 
+新 publication 必须证明精确的 requested typed scope；缺失历史 scope 与无效显式身份分别保留错误原因，均不能绕过发布校验。所有新调用方在创建 run 时绑定身份，完成 metadata 不得改写请求。
+
 Quote publication 在候选物化前持久化 pending fence；采集阶段不产生该记录。候选异常通过 SAVEPOINT 回滚，incident 与 run 终态在仍持有写锁的外层事务中提交。开始发布后进程中断、落盘或提交失败会保留 pending，重启与普通 valuation 成功均不能消除它，也不能再次采集或重试发布同一 run 来猜测结果。正常成功只在同一事实提交事务中移除本次 pending，不清除历史 incident。
 
-只读 `preview_daily_close_recovery` 已能绑定未来冲突 incident、完整 staged batch、显式 v2 日线回执与当前 close；回执整批重放复用 market owner，并在同一只读连接固定 meta 证据和 app 状态。它不声称跨库原子 publication generation。当前 close 存储缺少旧 normalization observation 的可重放绑定，即使候选证据通过也返回 `prior_evidence_disposition_unproven`；尚无可执行的 `eligible_to_resolve` 分支。旧 incident 不猜补，价格相等及普通成功 publication 不构成旧争议处置依据。下一步须补齐来源证据契约并完成规则审查，之后才进入 resolver。
+只读 `preview_daily_close_recovery` 已能绑定未来冲突 incident、完整 staged batch、显式 v2 日线回执与当前 close；回执整批重放复用 market owner，并在同一只读连接固定 meta 证据和 app 状态。它不声称跨库原子 publication generation。当前 close 存储缺少旧 normalization observation 的可重放绑定，即使候选证据通过也返回 `prior_evidence_disposition_unproven`；尚无可执行的 `eligible_to_resolve` 分支。旧 incident 不猜补，价格相等及普通成功 publication 不构成旧争议处置依据。来源证据契约与规则审查完成后才可进入 resolver；现有 receipt 只冻结回执内容，其他 writer 仍可能改动引用的 bars，因此必须每次重放校验。当前优先完成 A4 的真实打包产物运行 gate，再推进未来 normalization 来源绑定，不给 legacy incident 猜补历史。
 
 ### A2. Read availability / Action readiness
 

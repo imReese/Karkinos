@@ -32,46 +32,77 @@ def _control(conn: sqlite3.Connection, key: str) -> dict[str, Any] | None:
     return value
 
 
+class QuoteRunScopeUnavailable(ValueError):
+    """Legacy audit metadata cannot establish an exact requested scope."""
+
+
+class InvalidQuoteRunScope(ValueError):
+    """An explicit request identity is malformed or internally inconsistent."""
+
+
 def quote_run_scope(
-    conn: sqlite3.Connection, run_id: str | None
+    conn: sqlite3.Connection, run_id: str | None, *, require_exact: bool = False
 ) -> list[list[str]] | None:
-    """Read the requested typed scope; staged results cannot redefine a request."""
-    if not run_id:
-        return None
+    """Unknown historical scope blocks reads; every new publication requires proof."""
     run = conn.execute(
         "SELECT asset_type, symbol_count, metadata_json FROM main.quote_fetch_runs "
         "WHERE run_id = ?",
         (run_id,),
     ).fetchone()
-    if run is None:
+    try:
+        return _requested_scope(run)
+    except (QuoteRunScopeUnavailable, InvalidQuoteRunScope):
+        if require_exact:
+            raise
         return None
+
+
+def _requested_scope(run) -> list[list[str]]:
+    if run is None:
+        raise QuoteRunScopeUnavailable("quote publication requested scope unavailable")
     try:
         metadata = json.loads(run[2] or "{}")
-    except (ValueError, TypeError):
-        return None
+    except (ValueError, TypeError) as exc:
+        raise InvalidQuoteRunScope(
+            "quote publication request metadata invalid"
+        ) from exc
     if not isinstance(metadata, dict):
-        return None
-    symbols = metadata.get("requested_symbols", metadata.get("symbols", []))
-    if not isinstance(symbols, list) or any(
-        not isinstance(s, str) or not s.strip() for s in symbols
+        raise InvalidQuoteRunScope("quote publication request metadata invalid")
+    if not {"requested_symbols", "symbols"}.intersection(metadata):
+        raise QuoteRunScopeUnavailable("quote publication requested scope unavailable")
+    symbols = metadata.get("requested_symbols", metadata.get("symbols"))
+    if (
+        not isinstance(symbols, list)
+        or len(symbols) != run[1]
+        or not symbols
+        or any(not isinstance(s, str) or not s.strip() for s in symbols)
     ):
-        return None
+        raise InvalidQuoteRunScope("quote publication requested symbols invalid")
     asset_types = metadata.get(
         "instrument_types", metadata.get("asset_types", [run[0]] * len(symbols))
     )
-    if not isinstance(asset_types, list) or len(asset_types) != len(symbols):
-        return None
+    if (
+        not isinstance(asset_types, list)
+        or len(asset_types) != len(symbols)
+        or any(not isinstance(kind, str) or not kind.strip() for kind in asset_types)
+    ):
+        raise InvalidQuoteRunScope(
+            "quote publication requested instrument types invalid"
+        )
     if "instrument_types" not in metadata and "fund" in asset_types:
-        # Legacy AssetClass.FUND groups ETF and open-end funds. It cannot
-        # establish the exact instrument namespace for an incident.
-        return None
+        # The legacy fund class groups ETF and open-end funds.
+        raise QuoteRunScopeUnavailable(
+            "quote publication requested fund identity unavailable"
+        )
     try:
         scope = _instrument_scope(zip(asset_types, symbols, strict=True))
-    except (TypeError, ValueError):
-        return None
-    return (
-        [list(key) for key in sorted(scope)] if scope and len(scope) == run[1] else None
-    )
+    except (TypeError, ValueError) as exc:
+        raise InvalidQuoteRunScope(
+            "quote publication requested identity invalid"
+        ) from exc
+    if len(scope) != len(symbols):
+        raise InvalidQuoteRunScope("quote publication requested identities duplicated")
+    return [list(key) for key in sorted(scope)]
 
 
 def unresolved_publications(conn: sqlite3.Connection) -> list[dict[str, Any]]:

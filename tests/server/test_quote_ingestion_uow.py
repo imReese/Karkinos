@@ -54,7 +54,7 @@ def _command(
     )
 
 
-def _create_run(db: AppDatabase, run_id: str) -> None:
+def _create_run(db: AppDatabase, run_id: str, *, symbol="600001") -> None:
     db.create_quote_fetch_run(
         run_id=run_id,
         started_at="2026-08-26T10:00:00+08:00",
@@ -63,6 +63,7 @@ def _create_run(db: AppDatabase, run_id: str) -> None:
         provider="fixture",
         asset_type="stock",
         symbol_count=1,
+        metadata={"requested_symbols": [symbol]},
     )
 
 
@@ -612,7 +613,7 @@ def test_quote_publication_fault_rolls_back_every_authoritative_fact(tmp_path) -
     db.init_sync()
     run_id = "quote-run-fault-rollback"
     command = _command(symbol="FAIL", run_id=run_id)
-    _create_run(db, run_id)
+    _create_run(db, run_id, symbol="FAIL")
     db.persist_quote_ingestion_sync(command)
     before = {
         table: _table_count(db.path, table)
@@ -656,6 +657,7 @@ def test_quote_publication_fault_rolls_back_every_authoritative_fact(tmp_path) -
     assert publication is not None
     assert publication["status"] == "failed"
     assert publication["quote_fetch_run_id"] == run_id
+    assert publication["error_type"] == "IntegrityError"
     assert _table_count(db.path, "quote_ingestion_items") == 1
 
 
