@@ -336,6 +336,7 @@ def test_native_tcp_gate_cannot_pass_wrong_listener_or_incomplete_stop(
             return 1 if variant == "stop_exit" else 0
 
     monkeypatch.setattr(gate, "_tcp_port", lambda port=None: 12345)
+    monkeypatch.setattr(gate, "_assert_native_identity", lambda *a: None)
     monkeypatch.setattr(gate, "_tcp_isolation_command", lambda port: [])
     monkeypatch.setattr(gate, "_verify_native_network_isolation", lambda *a: None)
     monkeypatch.setattr(gate.subprocess, "Popen", lambda *a, **kw: Process())

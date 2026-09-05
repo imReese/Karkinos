@@ -165,7 +165,9 @@ def run_state_clone_gate(
             PYTHONDONTWRITEBYTECODE="1",
         )
 
-        def run(command, cwd):
+        def run(command, cwd, identity=None):
+            if identity is not None:
+                _assert_native_identity([command[0]], cwd, identity)
             process = subprocess.Popen(
                 [*isolation_command, *command],
                 cwd=cwd,
@@ -196,9 +198,11 @@ def run_state_clone_gate(
                     output=result.stdout,
                     stderr=result.stderr,
                 )
+            if identity is not None:
+                _assert_native_identity([command[0]], cwd, identity)
             return result
 
-        result = run([*candidate_command, "--replay-state"], candidate_cwd)
+        result = run([*candidate_command, "--replay-state"], candidate_cwd, native)
         report = json.loads(result.stdout)
         if (
             report.get("schema_version") != "karkinos.state_clone_replay.v1"
@@ -206,7 +210,7 @@ def run_state_clone_gate(
         ):
             raise ValueError("state_clone_report_invalid")
         restarted = json.loads(
-            run([*candidate_command, "--replay-state"], candidate_cwd).stdout
+            run([*candidate_command, "--replay-state"], candidate_cwd, native).stdout
         )
         if (
             restarted.get("schema_version") != report["schema_version"]
@@ -228,7 +232,11 @@ def run_state_clone_gate(
             restored = root / "restored"
             clone_state(baseline, restored)
             environment["KARKINOS_DATA_DIR"] = str(restored)
-            run([*rollback_command, "--check-state"], rollback_cwd or candidate_cwd)
+            run(
+                [*rollback_command, "--check-state"],
+                rollback_cwd or candidate_cwd,
+                previous_native,
+            )
             report["restored_baseline_preflight"] = "passed"
             if previous_native is not None:
                 report["native_tcp"]["rollback"] = _native_tcp_probe(
@@ -253,10 +261,10 @@ def run_state_clone_gate(
         )
         report["release_eligible"] = False
         if native is not None:
-            _native_identity(candidate_command, candidate_cwd, candidate_sha)
+            _assert_native_identity(candidate_command, candidate_cwd, native)
             if previous_native is not None:
-                _native_identity(
-                    rollback_command, rollback_cwd or candidate_cwd, rollback_sha
+                _assert_native_identity(
+                    rollback_command, rollback_cwd or candidate_cwd, previous_native
                 )
             report["native_payload_integrity_after_run"] = "passed"
         return report
@@ -281,6 +289,12 @@ def _native_identity(command: list[str], cwd: Path, sha: str) -> dict:
         expected_architecture=platform.machine(),
         expected_control_protocol=None,
     )
+
+
+def _assert_native_identity(command: list[str], cwd: Path, expected: dict) -> None:
+    current = _native_identity(command, cwd, expected["commit_sha"])
+    if current != expected:
+        raise ValueError("state_clone_native_identity_changed")
 
 
 def _tcp_port(requested: int | None = None) -> int:
@@ -423,9 +437,11 @@ def _tcp_financial_read_identity(data: Path, port: int) -> dict:
 def _native_tcp_probe(command, cwd, environment, manifest, *, timeout, port=None):
     from scripts.release.manage_release import _health_payload_matches
 
+    _assert_native_identity(command, cwd, manifest)
     port = _tcp_port(port)
     isolation = _tcp_isolation_command(port)
     _verify_native_network_isolation(isolation, cwd, environment)
+    _assert_native_identity(command, cwd, manifest)
     data = Path(environment["KARKINOS_DATA_DIR"])
     requires_worker = (cwd / "server/workers/supervisor.py").is_file()
     worker_pid = None
@@ -477,6 +493,7 @@ def _native_tcp_probe(command, cwd, environment, manifest, *, timeout, port=None
             if not _wait_process_group_exit(process.pid):
                 raise ValueError("state_clone_tcp_descendant_survived")
             _tcp_port(port)
+            _assert_native_identity(command, cwd, manifest)
             return {
                 "commit_sha": manifest["commit_sha"],
                 "payload_fingerprint": manifest["payload_fingerprint"],

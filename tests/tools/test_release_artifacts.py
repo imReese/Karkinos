@@ -105,6 +105,103 @@ def test_native_state_gate_rejects_wrong_artifact_and_modified_bytes(tmp_path):
         _native_identity(command, root / "app", _SHA)
 
 
+@pytest.mark.parametrize("change", ["payload", "version"])
+def test_native_identity_compares_the_original_validated_manifest(tmp_path, change):
+    import platform
+
+    from tools.state_clone_gate import _assert_native_identity, _native_identity
+
+    root = _native_tree(tmp_path / "native", architecture=platform.machine())
+    command, cwd = [str(root / "bin/karkinos")], root / "app"
+    original = _native_identity(command, cwd, _SHA)
+    _assert_native_identity(command, cwd, original)
+    updated = release_artifact.read_manifest(root)
+    if change == "payload":
+        (root / "app/server/app.py").write_text("# Same source, different build\n")
+        updated["file_checksums"] = release_artifact.payload_checksums(root)
+        updated["payload_fingerprint"] = release_artifact.payload_fingerprint(root)
+    else:
+        updated["version"] = "0.0.1"
+    (root / "release.json").write_bytes(release_artifact.canonical_json(updated))
+    assert _native_identity(command, cwd, _SHA) == updated
+    with pytest.raises(ValueError, match="native_identity_changed"):
+        _assert_native_identity(command, cwd, original)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="native gate requires macOS")
+@pytest.mark.parametrize("replacement", [None, "candidate", "rollback"])
+def test_native_gate_binds_the_original_manifest_through_completion(
+    tmp_path, monkeypatch, replacement
+):
+    import platform
+
+    from tools import state_clone_gate as gate
+
+    artifacts = {
+        name: _native_tree(
+            tmp_path / name, commit_sha=sha, architecture=platform.machine()
+        )
+        for name, sha in (("candidate", _SHA), ("rollback", "b" * 40))
+    }
+    source = tmp_path / "source"
+    source.mkdir()
+
+    class Process:
+        pid = 123456
+        returncode = 0
+
+        def communicate(self, timeout):
+            return (
+                json.dumps(
+                    {
+                        "schema_version": "karkinos.state_clone_replay.v1",
+                        "status": "passed",
+                    }
+                ),
+                "",
+            )
+
+        def wait(self):
+            return 0
+
+    def probe(command, cwd, environment, manifest, **kwargs):
+        if replacement and cwd == artifacts["rollback"] / "app":
+            root = artifacts[replacement]
+            (root / "app/server/app.py").write_text("# Another valid build\n")
+            updated = release_artifact.read_manifest(root)
+            updated["file_checksums"] = release_artifact.payload_checksums(root)
+            updated["payload_fingerprint"] = release_artifact.payload_fingerprint(root)
+            (root / "release.json").write_bytes(
+                release_artifact.canonical_json(updated)
+            )
+            # The replacement is internally valid and keeps the original SHA.
+            release_artifact.validate_manifest(root)
+        return {"financial_read_identity": {"valuation_snapshot_id": "fixture"}}
+
+    # Stub lifecycle work so this test isolates manifest continuity, not TCP.
+    monkeypatch.setattr(gate.subprocess, "Popen", lambda *a, **kw: Process())
+    monkeypatch.setattr(gate.os, "killpg", lambda *a: None)
+    monkeypatch.setattr(gate, "_native_tcp_probe", probe)
+
+    def run():
+        return gate.run_state_clone_gate(
+            source_data=source,
+            candidate_command=[str(artifacts["candidate"] / "bin/karkinos")],
+            candidate_cwd=artifacts["candidate"] / "app",
+            candidate_sha=_SHA,
+            rollback_command=[str(artifacts["rollback"] / "bin/karkinos")],
+            rollback_cwd=artifacts["rollback"] / "app",
+            rollback_sha="b" * 40,
+            network_isolation=True,
+        )
+
+    if replacement:
+        with pytest.raises(ValueError, match="native_identity_changed"):
+            run()
+    else:
+        assert run()["native_payload_integrity_after_run"] == "passed"
+
+
 def _archive(
     path: Path, root: Path, members: list[tuple[tarfile.TarInfo, bytes]] | None = None
 ) -> Path:
