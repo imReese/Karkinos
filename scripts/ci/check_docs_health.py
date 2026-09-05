@@ -32,6 +32,32 @@ COMPATIBILITY_STUB_BUDGETS = {
     "docs/IMPLEMENTATION_LOG.zh.md": 12,
     "docs/CONTROLLED_EXECUTION_PLAN.md": 12,
     "docs/CONTROLLED_EXECUTION_PLAN.zh.md": 12,
+    "docs/config-reference.en.md": 12,
+    "docs/return-accounting.en.md": 12,
+    "docs/account-truth-import.en.md": 12,
+    "docs/strategy/README.en.md": 12,
+}
+
+MAINTENANCE_DOC_BUDGETS = {
+    "docs/account-truth-import.zh.md": 100,
+    "docs/strategy/README.zh.md": 100,
+}
+
+FROZEN_REFERENCE_STUB_BUDGETS = {
+    "docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md": 14,
+    "docs/broker-adapter-conformance.en.md": 14,
+    "docs/broker-adapter-conformance.zh.md": 14,
+    "docs/broker-adapter-release-review.en.md": 14,
+    "docs/broker-adapter-release-review.zh.md": 14,
+    "docs/broker-execution-edge-conformance.en.md": 14,
+    "docs/broker-execution-edge-conformance.zh.md": 14,
+    "docs/broker-order-lifecycle-ingestion.en.md": 14,
+    "docs/broker-order-lifecycle-ingestion.zh.md": 14,
+    "docs/controlled-broker-cancellation.en.md": 14,
+    "docs/controlled-broker-cancellation.zh.md": 14,
+    "docs/operator-approval-signing.md": 14,
+    "docs/operator-approval-signing.zh.md": 14,
+    "docs/qmt-order-lifecycle-import.zh.md": 14,
 }
 
 REMOVED_TOP_LEVEL_DOCS = (
@@ -99,9 +125,13 @@ def _check_tests_do_not_parse_plan() -> list[str]:
 
 def main() -> int:
     errors: list[str] = []
-    for path_text, line_budget in CORE_DOC_BUDGETS.items():
-        errors.extend(_check_document(path_text, line_budget))
-    for path_text, line_budget in COMPATIBILITY_STUB_BUDGETS.items():
+    budgets = {
+        **CORE_DOC_BUDGETS,
+        **COMPATIBILITY_STUB_BUDGETS,
+        **MAINTENANCE_DOC_BUDGETS,
+        **FROZEN_REFERENCE_STUB_BUDGETS,
+    }
+    for path_text, line_budget in budgets.items():
         errors.extend(_check_document(path_text, line_budget))
     errors.extend(_check_removed_docs_stay_removed())
     errors.extend(_check_tests_do_not_parse_plan())
@@ -113,8 +143,9 @@ def main() -> int:
         return 1
 
     print(
-        "Documentation health check passed: canonical docs are small, compatibility "
-        "stubs stay small, local links resolve, and superseded master docs stay removed."
+        "Documentation health check passed: canonical docs are bounded, frozen "
+        "references stay small, local links resolve, and superseded master docs "
+        "stay removed."
     )
     return 0
 

@@ -1,377 +1,63 @@
-# Karkinos 策略入门说明
+# Karkinos Strategy 兼容说明
 
-[English](README.en.md) | [返回中文文档](../README.zh.md)
+> Status: legacy compatibility. 新的研究能力按 [ARCHITECTURE.md](../ARCHITECTURE.md) 的 `Dataset -> Alpha/Model -> Forecast -> Portfolio` 架构研发。
 
-本文解释 Karkinos 内置回测策略的基本思想、当前实现口径和审计边界。
-这些策略是研究基线和可审计策略模板，不是投资建议、收益承诺或自动交易授权。
+当前 `strategy/` 仍是已实现 backtest/runtime 的兼容层，不会立即删除。
 
-## 如何阅读策略
+## 当前内置基线
 
-一个策略在 Karkinos 中通常包含四层含义：
+代码中保留的 built-in strategies 包括：
 
-- **市场假设**：策略相信市场在某种条件下更可能延续趋势、回到均值，或需要纪律性再平衡。
-- **信号规则**：策略在什么条件下发出目标权重信号。
-- **参数**：控制观察窗口、阈值或目标配置的数值。
-- **证据要求**：回测结果需要 after-cost、OOS、风控、paper/shadow 和账户事实证据共同支持，不能只看收益率。
+- `dual_ma`
+- `monthly_rebalance`
+- `bollinger`
+- `rsi`
+- `donchian_breakout`
+- `time_series_momentum`
+- `volatility_target_trend`
+- `pairs_ratio_mean_reversion`
 
-Karkinos 策略输出的是目标权重，例如 `1.0` 表示目标持有该标的，`0.0` 表示目标清空该标的。实际股数、费用、滑点、T+1、风控和人工确认由后续链路处理。
+它们用于 regression、研究基线和现有 UI/runtime 兼容，不代表经过实盘验证的 Alpha。
 
-## 自定义策略放在哪里
+## 当前扩展契约
 
-私有研究策略放在 `strategy/extensions/`，或放在
-`KARKINOS_STRATEGY_EXTENSION_DIR` 指向的本地目录。仓库只提交经过脱敏的模板；
-真实账户信息、券商导出、日志、截图、策略私有参数和凭证不要提交到 git。
+私有兼容策略可以继续放在 `strategy/extensions/`，或使用 `KARKINOS_STRATEGY_EXTENSION_DIR`。
 
-一个可发现的自定义策略通常包含两类文件：
+现有 manifest 使用 `karkinos.strategy.v1`，声明 strategy id、class path、typed parameters、asset/frequency scope 和验证信息。该 schema version 不是产品 roadmap 版本。
 
-- Python 策略脚本，例如从 `strategy/extensions/template.py.example` 复制出的
-  本地 `my_strategy.py`。
-- 策略 manifest，例如从
-  `strategy/extensions/template.strategy.json.example` 复制出的
-  `my_strategy.strategy.json`，其中声明 `strategy_id`、`display_name`、
-  `class_path`、typed 参数 schema、资产范围、频率和验证要求。
+现有 Strategy 输出通常是 signal/target-weight 语义；后续仍经过 backtest、cost、risk、paper/shadow 和 human gate。
 
-manifest 使用 `karkinos.strategy.v1` schema。`class_path` 可以指向
-`my_strategy:MyStrategy` 这样的本地类；系统在发现阶段校验 metadata，在研究回测
-真正实例化策略时才加载类。
+## 不再扩大的抽象
 
-自定义策略和内置策略共享同一个 registry 与参数 schema contract。它们不能声明
-live trading、broker submission、自动交易或真钱执行能力。策略输出仍是研究证据，
-必须继续经过 after-cost、OOS、数据质量、风控、账户事实、paper/shadow 和人工确认
-链路。
+新研究功能不继续把下面内容塞进 Strategy class：
 
-## 双均线策略
+```text
+feature engineering
+alpha diagnostics
+model training
+portfolio optimization
+execution simulation
+capital authority
+```
 
-内部 ID：`dual_ma`
+这些能力分别由 Research、Portfolio、Simulation/Execution 和 Financial Control contexts 拥有。
 
-英文名：Dual Moving Average
+## 迁移方向
 
-### 核心思想
+```text
+Legacy Strategy
+     |
+     +-> extract signal logic -> AlphaSpec / ModelSpec
+     +-> output               -> ForecastSet
+     +-> sizing               -> Portfolio policy
+     +-> trade planning       -> RebalancePlan
+     +-> execution            -> shared simulation/execution
+```
 
-双均线策略是一个透明的趋势跟随基线。它用较短周期均线代表近期价格趋势，用较长周期均线代表较慢的背景趋势。
+旧 Strategy 在迁移完成前继续通过 compatibility adapter 运行；不要为了目录整洁一次性重写现有策略。
 
-如果短期均线上穿长期均线，策略认为近期趋势转强；如果短期均线下穿长期均线，策略认为趋势转弱。
+## 验收原则
 
-### 当前实现
+Strategy/Alpha 的价值不能用单次回测总收益判断。新的研究 gate 统一使用 point-in-time dataset、rolling OOS、after-cost、exposure、turnover、capacity 和 shadow evidence。
 
-Karkinos 当前实现如下：
-
-- 收集每个标的的收盘价。
-- 至少有 `long_period` 根 K 线后才开始判断。
-- 计算短期均线和长期均线。
-- 短期均线从下方变为高于长期均线时，发出目标权重 `1.0` 的买入信号。
-- 短期均线从上方变为低于长期均线时，发出目标权重 `0.0` 的卖出信号。
-
-### 主要参数
-
-| 参数 | 含义 | 默认值 |
-| --- | --- | --- |
-| `short_period` | 短期均线窗口，单位是交易 K 线数量 | 5 |
-| `long_period` | 长期均线窗口，单位是交易 K 线数量 | 20 |
-
-### 适合检验的问题
-
-- 标的是否存在足够持久的趋势。
-- 趋势信号在扣除手续费、滑点和调仓成本后是否仍有研究价值。
-- 参数变化后，结果是否稳定，而不是只在某组参数上表现好。
-
-### 常见失效场景
-
-- 震荡市中容易频繁金叉/死叉，导致来回交易和成本侵蚀。
-- 急跌或跳空时，均线信号可能滞后。
-- 单标的趋势策略容易受到个股事件和流动性冲击影响。
-
-### Karkinos 审计重点
-
-双均线策略必须结合 after-cost、OOS、最大回撤、交易次数、手续费、滑点和风控阻断记录一起看。它只能作为趋势跟随基线，不代表策略已经适合实盘。
-
-## 月度再平衡
-
-内部 ID：`monthly_rebalance`
-
-英文名：Monthly Rebalance
-
-### 核心思想
-
-月度再平衡不是预测明天涨跌，而是用固定周期把组合拉回预设目标权重。它更像资产配置纪律，而不是短线交易信号。
-
-如果某类资产涨得多，权重可能高于目标；如果某类资产跌得多，权重可能低于目标。再平衡通过定期调整，把组合重新接近目标配置。
-
-### 当前实现
-
-Karkinos 当前实现如下：
-
-- 对每个标的记录上一次发出再平衡信号的月份。
-- 当新的交易 K 线进入一个新月份时，读取该标的的目标权重。
-- 发出对应目标权重信号。
-- 如果某个标的没有配置目标权重，则目标权重默认为 `0.0`。
-
-### 主要参数
-
-| 参数 | 含义 | 默认值 |
-| --- | --- | --- |
-| `target_weights` | 按标的配置的目标权重字典，权重用 0-1 小数表示 | 空 |
-
-### 适合检验的问题
-
-- 固定资产配置在历史区间中的回撤、波动和再平衡成本。
-- 组合是否因为再平衡而降低集中度或回撤。
-- 目标权重是否对不同市场阶段过于敏感。
-
-### 常见失效场景
-
-- 如果目标权重本身不合理，再平衡只会稳定地执行错误配置。
-- 横跨不同资产的数据频率、交易日历和费用模型不一致时，结果可能被污染。
-- 再平衡过于频繁会增加成本，过于稀疏又可能失去纪律性。
-
-### Karkinos 审计重点
-
-月度再平衡需要重点看资产类别、目标权重、交易成本、换手率、回撤和组合漂移。它不应该被解读为预测信号，而是配置规则的历史验证。
-
-## 布林带均值回归
-
-内部 ID：`bollinger`
-
-英文名：Bollinger Mean Reversion
-
-### 核心思想
-
-布林带用一段时间的均线作为中轨，用价格波动标准差生成上轨和下轨。均值回归版本的假设是：价格短期偏离均值过远后，可能回到中轨附近。
-
-在 Karkinos 当前实现中，价格跌到下轨或更低时视为偏离过大，价格回到中轨时退出。
-
-### 当前实现
-
-Karkinos 当前实现如下：
-
-- 收集每个标的收盘价。
-- 至少有 `bb_period` 根 K 线后才开始计算。
-- 使用最近 `bb_period` 根收盘价计算均线和标准差。
-- 中轨为均线。
-- 上轨为 `均线 + num_std * 标准差`。
-- 下轨为 `均线 - num_std * 标准差`。
-- 未持有时，价格小于等于下轨，发出目标权重 `1.0` 的买入信号。
-- 持有后，价格大于等于中轨，发出目标权重 `0.0` 的卖出信号。
-
-### 主要参数
-
-| 参数 | 含义 | 默认值 |
-| --- | --- | --- |
-| `bb_period` | 布林带观察窗口，单位是交易 K 线数量 | 20 |
-| `num_std` | 上下轨距离中轨的标准差倍数 | 2.0 |
-
-### 适合检验的问题
-
-- 标的是否存在短期过度反应后回归均值的特征。
-- 下轨买入、中轨退出是否能覆盖费用和滑点。
-- 在趋势下跌阶段，均值回归是否会持续接住下跌。
-
-### 常见失效场景
-
-- 强趋势下跌时，价格可能沿下轨继续走弱，均值回归信号会较危险。
-- 波动突然扩大时，历史标准差可能不能代表当前风险。
-- 低流动性标的的价格跳变可能制造虚假的下轨触发。
-
-### Karkinos 审计重点
-
-布林带策略必须看最大回撤、连续亏损、持仓时间、成交成本和风控阻断。尤其要检查下跌趋势中的表现，不能只看某次反弹是否成功。
-
-## RSI 动量/反转
-
-内部 ID：`rsi`
-
-英文名：RSI Mean Reversion
-
-### 核心思想
-
-RSI 是相对强弱指标，用最近一段时间上涨和下跌幅度的平滑结果衡量价格动量。常见解释是：RSI 较低代表可能超卖，RSI 较高代表可能超买。
-
-Karkinos 当前实现更接近 RSI 反转/均值回归：RSI 从超卖区回升时买入，从超买区回落时卖出。
-
-### 当前实现
-
-Karkinos 当前实现如下：
-
-- 使用 Wilder 平滑法计算 RSI。
-- 至少需要 `rsi_period + 1` 个价格点。
-- RSI 从低于 `oversold` 上穿到大于等于 `oversold` 时，发出目标权重 `1.0` 的买入信号。
-- RSI 从高于 `overbought` 下穿到小于等于 `overbought` 时，发出目标权重 `0.0` 的卖出信号。
-
-### 主要参数
-
-| 参数 | 含义 | 默认值 |
-| --- | --- | --- |
-| `rsi_period` | RSI 平滑窗口，单位是交易 K 线数量 | 14 |
-| `oversold` | 超卖阈值；上穿该阈值触发买入信号 | 30 |
-| `overbought` | 超买阈值；下穿该阈值触发卖出信号 | 70 |
-
-### 适合检验的问题
-
-- 标的是否存在短期过度下跌后的反弹特征。
-- RSI 阈值是否稳定，还是只适配了某一段历史。
-- RSI 信号和趋势过滤、风控规则结合后是否更稳健。
-
-### 常见失效场景
-
-- 强趋势行情中，RSI 可以长期处在高位或低位，过早反向交易会带来风险。
-- 参数过短可能噪声大，参数过长可能信号滞后。
-- 只依赖 RSI 容易忽视基本面、流动性和重大事件冲击。
-
-### Karkinos 审计重点
-
-RSI 策略需要重点查看 OOS、参数敏感性、最大回撤、胜率之外的盈亏分布，以及风险闸门是否能挡住连续下跌中的错误信号。
-
-## 时间序列动量
-
-内部 ID：`time_series_momentum`
-
-英文名：Time Series Momentum
-
-### 核心思想
-
-时间序列动量检验的是同一标的自身过去一段收益是否会延续。它参考
-[Time Series Momentum](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2089463)
-这类研究，但 Karkinos 当前实现是长仓版本：趋势为正时持有，趋势转弱时退回现金，不使用杠杆、期货做空或跨资产多空组合。
-
-### 当前实现
-
-- 收集每个标的收盘价。
-- 至少有 `lookback_period + 1` 个价格点后开始计算。
-- 计算当前价格相对 `lookback_period` 根 K 线前价格的收益。
-- 收益大于 `min_return` 时，发出 `target_weight` 的目标权重。
-- 收益小于等于 `exit_return` 时，发出目标权重 `0.0`。
-
-### 主要参数
-
-| 参数 | 含义 | 默认值 |
-| --- | --- | --- |
-| `lookback_period` | 动量收益回看窗口 | 126 |
-| `min_return` | 入场所需最小回看收益 | 0.0 |
-| `exit_return` | 退出阈值 | 0.0 |
-| `target_weight` | 趋势有效时的目标长仓权重 | 1.0 |
-
-### Karkinos 审计重点
-
-重点看不同回看窗口下的 OOS 稳定性、趋势反转后的回撤、换手率、扣费后收益，以及是否只是吃到了某一段单边行情。
-
-## Donchian 通道突破
-
-内部 ID：`donchian_breakout`
-
-英文名：Donchian Channel Breakout
-
-### 核心思想
-
-通道突破是经典趋势跟踪规则：价格突破过去一段时间高点，代表趋势可能增强；跌破过去一段时间低点，代表趋势可能失败。它是常用的 Turtle/通道突破类基线。
-
-### 当前实现
-
-- 使用历史最高价形成入场通道，使用历史最低价形成退出通道。
-- 当前收盘价高于过去 `entry_window` 根 K 线的最高价时，发出 `target_weight`。
-- 持有后，当前收盘价低于过去 `exit_window` 根 K 线的最低价时，发出 `0.0`。
-- 当前 K 线不会参与自己的通道计算，避免显式前视。
-
-### 主要参数
-
-| 参数 | 含义 | 默认值 |
-| --- | --- | --- |
-| `entry_window` | 入场前高通道窗口 | 55 |
-| `exit_window` | 退出前低通道窗口 | 20 |
-| `target_weight` | 突破后的目标长仓权重 | 1.0 |
-
-### Karkinos 审计重点
-
-重点看震荡市假突破、连续止损、换手成本和滑点。`exit_window` 必须小于 `entry_window`，否则入场/退出逻辑会变得拧巴。
-
-## 波动率目标趋势
-
-内部 ID：`volatility_target_trend`
-
-英文名：Volatility Target Trend
-
-### 核心思想
-
-该策略先用回看收益判断趋势，再用最近收益波动率缩放目标权重。它借鉴趋势跟踪和 volatility targeting 的常见实务：趋势为正但波动很高时降低仓位，趋势为负时退回现金。
-
-### 当前实现
-
-- 计算 `lookback_period` 回看收益。
-- 计算 `volatility_window` 内日收益的年化已实现波动率。
-- 回看收益大于 `min_momentum` 时，目标权重为
-  `target_annual_volatility / realized_volatility`，并受 `max_weight` 限制。
-- 回看收益不满足条件时，目标权重为 `0.0`。
-- 目标权重变化至少达到 `rebalance_threshold` 才发出新信号。
-
-### 主要参数
-
-| 参数 | 含义 | 默认值 |
-| --- | --- | --- |
-| `lookback_period` | 趋势回看窗口 | 126 |
-| `volatility_window` | 已实现波动率窗口 | 20 |
-| `target_annual_volatility` | 目标年化波动率 | 0.15 |
-| `max_weight` | 长仓最大权重 | 1.0 |
-| `min_momentum` | 持有风险暴露所需最小收益 | 0.0 |
-| `rebalance_threshold` | 发出新信号所需最小权重变化 | 0.05 |
-
-### Karkinos 审计重点
-
-重点看波动率估计在极端行情下是否滞后、降仓是否真的降低回撤、再平衡是否过于频繁，以及扣费后是否仍有价值。
-
-## 配对比值均值回归
-
-内部 ID：`pairs_ratio_mean_reversion`
-
-英文名：Pairs Ratio Mean Reversion
-
-### 核心思想
-
-配对交易常见论文原型可参考
-[Pairs Trading: Performance of a Relative-Value Arbitrage Rule](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=141615)。
-原始研究通常是多空相对价值；Karkinos 当前目标权重是 0-1，因此实现为长仓轮动版：A/B 比值显著偏低时持有 A，显著偏高时持有 B，回归后恢复双腿中性权重。
-
-### 当前实现
-
-- 使用 `symbol_a` 和 `symbol_b` 两只标的；留空时默认使用本次运行前两只标的。
-- 每个交易日两只标的都有价格后，记录 A/B 比值。
-- 使用最近 `lookback_period` 个比值计算 z-score。
-- z-score 小于等于 `-entry_z` 时，A 相对便宜，A 目标为 `pair_weight`、B 目标为 `0.0`。
-- z-score 大于等于 `entry_z` 时，B 相对便宜，A 目标为 `0.0`、B 目标为 `pair_weight`。
-- z-score 回到 `exit_z` 以内时，两腿恢复到 `neutral_weight`。
-
-### 主要参数
-
-| 参数 | 含义 | 默认值 |
-| --- | --- | --- |
-| `symbol_a` | 配对第一腿 | 空 |
-| `symbol_b` | 配对第二腿 | 空 |
-| `lookback_period` | 比值 z-score 回看窗口 | 60 |
-| `entry_z` | 入场偏离阈值 | 2.0 |
-| `exit_z` | 回归退出阈值 | 0.5 |
-| `pair_weight` | 便宜一腿的目标权重 | 1.0 |
-| `neutral_weight` | 回归后每腿的中性权重 | 0.5 |
-
-### Karkinos 审计重点
-
-重点看配对选择是否有经济含义、共同运动关系是否稳定、单边长仓轮动是否会暴露市场 beta、交易成本是否吃掉价差，以及停牌/涨跌停/流动性约束是否会破坏退出。
-
-## 内置策略的对比
-
-| 策略 | 主要假设 | 当前信号风格 | 更适合检验 |
-| --- | --- | --- | --- |
-| 双均线 | 趋势会延续 | 趋势跟随 | 趋势持续性、成本后表现 |
-| 月度再平衡 | 资产配置需要纪律 | 定期目标权重 | 组合漂移、配置回撤、换手成本 |
-| 布林带 | 短期偏离后回到均值 | 均值回归 | 过度反应、反弹、下跌风险 |
-| RSI | 超买/超卖后可能反转 | 反转/均值回归 | 反转阈值、参数稳定性 |
-| 时间序列动量 | 自身趋势可能延续 | 长仓趋势/现金切换 | 回看收益稳定性、趋势反转风险 |
-| Donchian 通道突破 | 突破前高可能延续 | 通道突破趋势跟随 | 假突破、换手和止损质量 |
-| 波动率目标趋势 | 趋势有效时按风险调仓 | 风险缩放趋势跟随 | 降波动、降回撤和成本后表现 |
-| 配对比值均值回归 | 相近标的价差可能回归 | 长仓相对价值轮动 | 配对稳定性、价差回归和成本 |
-
-## 安全边界
-
-- 这些策略是研究与审计样例，不构成投资建议。
-- 回测收益不代表未来收益。
-- 单次回测不能证明策略有效。
-- Karkinos 不会因为策略通过回测就默认自动下单。
-- live-like 流程必须保留人工确认和风险闸门。
-- 在使用真实账户事实、券商证据或个人交易流水时，应避免把私有数据提交到仓库。
+需要了解当前实现参数时直接查看 `strategy/builtins/` 和对应测试；不再在本文复制每个策略几十行说明。
