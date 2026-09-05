@@ -70,6 +70,7 @@ RELEASE_CONTROL_FILES = (
     "tools/release_artifact.py",
     "tools/release_candidate.py",
     "tools/release_fetch.py",
+    "tools/state_clone_gate.py",
 )
 
 MANAGED_PYTHON_VERSION = "3.12.13"

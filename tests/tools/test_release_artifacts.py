@@ -177,6 +177,29 @@ def _launcher_environment(tmp_path: Path, capture: Path) -> dict[str, str]:
     return environment
 
 
+def test_packaged_controller_can_import_its_state_clone_gate(tmp_path: Path) -> None:
+    packaged = tmp_path / "packaged-app"
+    _copy_release_control_plane(Path(__file__).resolve().parents[2], packaged)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import pathlib, sys; "
+            "sys.path.insert(0, sys.argv[1]); "
+            "from scripts.release import manage_release; "
+            "from tools import state_clone_gate; "
+            "assert pathlib.Path(state_clone_gate.__file__).is_relative_to(sys.argv[1])",
+            str(packaged),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_release_control_plane_copies_all_and_only_git_tracked_sources(
     tmp_path: Path,
 ) -> None:
