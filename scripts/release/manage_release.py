@@ -2786,6 +2786,12 @@ def run_candidate(
                     ),
                     rollback_cwd=previous_release / "app" if previous_release else None,
                     network_isolation=True,
+                    candidate_sha=commit_sha,
+                    rollback_sha=(
+                        str(_manifest_for(previous_release)["commit_sha"])
+                        if previous_release
+                        else None
+                    ),
                 )
             isolated_home = runtime / "home"
             for path in (
