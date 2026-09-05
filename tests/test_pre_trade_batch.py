@@ -438,6 +438,130 @@ def test_final_risk_transaction_observes_failure_after_capture_without_quote_dri
     _assert_no_risk_batch_writes(db)
 
 
+def test_final_risk_cannot_enter_between_candidate_rollback_and_failure_commit(
+    tmp_path, monkeypatch
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, current_thread
+
+    from server.contracts.quote_ingestion import (
+        DailyCloseEvidenceConflict,
+        QuoteIngestionCommand,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(db, source_signal_id=1, symbol="600001", target_weight=0.01, price=10)
+    evidence = _persisted_evidence_binding(db)
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    db.save_daily_close_snapshot_sync(
+        symbol="600001",
+        asset_class="stock",
+        trade_date="2026-07-01",
+        close_price=9,
+        source="market_bar_close",
+    )
+    db.create_quote_fetch_run(
+        run_id="rollback-window",
+        started_at="2026-07-02T10:00:00+08:00",
+        trigger="replay",
+        status="running",
+        asset_type="stock",
+        symbol_count=1,
+        metadata={"requested_symbols": ["600001"]},
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="600001",
+            asset_type="stock",
+            price=11,
+            quote_timestamp="2026-07-02T10:00:00+08:00",
+            captured_at="2026-07-02T10:00:01+08:00",
+            quote_source="fixture",
+            provider_name="fixture",
+            provider_status="live",
+            quote_status="live",
+            captured_reason="replay",
+            fetch_run_id="rollback-window",
+            daily_close_price=10,
+            daily_close_date="2026-07-01",
+            daily_close_source="market_bar_close",
+        )
+    )
+    connect = sqlite3.connect
+    owner = current_thread()
+    rollback_seen = []
+    risk_entered = Event()
+    risk_futures = []
+
+    def try_risk():
+        return run_pre_trade_risk_batch(
+            db=db,
+            context_provider=StaticContextProvider(_context(cash="100000")),
+            policy=PreTradePolicy(execution_mode="manual"),
+            evidence_binding=evidence,
+        )
+
+    def after_candidate_rollback():
+        assert not rollback_seen
+        with connect(db.path, timeout=0) as other:
+            assert (
+                other.execute(
+                    "SELECT COUNT(*) FROM quote_snapshots WHERE fetch_run_id='rollback-window'"
+                ).fetchone()[0]
+                == 0
+            )
+            try:
+                other.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError as exc:
+                assert "locked" in str(exc)
+                lock_retained = True
+            else:
+                lock_retained = False
+                other.rollback()
+        rollback_seen.append(lock_retained)
+        risk_futures.append(pool.submit(try_risk))
+        assert risk_entered.wait(5)
+        if not lock_retained:
+            # Expose the original gap deterministically before failure persistence.
+            risk_futures[0].result(timeout=5)
+
+    class ObservedConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if current_thread() is not owner and sql == "BEGIN IMMEDIATE":
+                risk_entered.set()
+            result = super().execute(sql, *args, **kwargs)
+            if current_thread() is owner and sql.startswith("ROLLBACK TO "):
+                after_candidate_rollback()
+            return result
+
+        def __exit__(self, exc_type, exc, tb):
+            result = super().__exit__(exc_type, exc, tb)
+            if current_thread() is owner and exc_type is DailyCloseEvidenceConflict:
+                after_candidate_rollback()
+            return result
+
+    monkeypatch.setattr(
+        sqlite3,
+        "connect",
+        lambda *a, **kw: connect(*a, **{**kw, "factory": ObservedConnection}),
+    )
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        result = db.finish_quote_fetch_run(
+            run_id="rollback-window",
+            finished_at="2026-07-02T10:01:00+08:00",
+            status="success",
+            success_count=1,
+        )
+        assert result["status"] == "failed"
+        risk = risk_futures[0].result(timeout=5)
+    assert rollback_seen == [True]
+    assert risk["status"] == "blocked_by_evidence_drift"
+    assert {"code": "valuation_publication_recovery_required"} in risk["blockers"]
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") == publication
+    _assert_no_risk_batch_writes(db)
+
+
 def test_final_risk_transaction_rejects_intent_instrument_type_drift(
     tmp_path, monkeypatch
 ):
