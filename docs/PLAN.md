@@ -71,7 +71,7 @@ Overview/Portfolio 允许解释性 stale/degraded read；Decision/Risk/Execution
 - same-instant conflict / out-of-order quote；
 - holiday/weekend；
 - provider timeout / partial batch；
-- DB lock；
+- DB lock（同库 API/data/research 初始化串行、持锁进程退出后的重新校验，以及 heartbeat 与迁移的实际 SQLite 超时边界）；
 - crash between stage/commit；
 - restart during recovery；
 - complete snapshot 后的新 publication 失败；
@@ -92,6 +92,8 @@ migrate
 ```
 
 不可证明的旧金融事实只记录 blocker，不自动“修正”。
+
+原始 baseline 的独立副本必须先进入真实 native entrypoint，完成首次启动、读取、退出和再次启动，不能先由 ASGI/preflight 迁移这份副本。该分支检查账本、修正记录、未解决 incident 和 last-good publication 不变；有历史修正时，Overview/Risk 的业绩 blocker 必须保留。schema/派生状态迁移允许改变副本，不把整库字节不变当成迁移要求。初始化协调归 canonical persistence initializer 所有，内核锁随进程退出释放，等待后重新校验 schema；不放宽 checksum、迁移事务或 SQLite writer 超时。
 
 受管 macOS `candidate` 路径在有 `data/app.db` 时先执行隔离副本 gate：SQLite backup、写入前验证副本身份、迁移、受 release guard 保护的应用 lifespan/ASGI 读取、账本和未解决 incident 不变量、GET 零写入、JobRun roundtrip、第二个候选进程启动，以及恢复原始副本后的旧版本 `--check-state`。ASGI 回放对进程树施加 OS 网络拒绝；普通工具调用默认只提供 Python socket 检测并显式报告隔离未验证。受管 candidate 另以固定 SHA 和 payload fingerprint 校验真实产物，执行独立端口的 TCP health/金融读取、stop、第二次进程启动，以及固定旧产物在 restored baseline 上的 start/read/stop。监听者必须是本次子进程；有独立 calendar worker 的产物须观察同组 worker，退出后 listener 与进程组均不得残留。TCP 使用仅允许本机测试监听端口的 OS profile，实际打包 Python 的后代进程验证其他连接被拒绝；每次执行前后及汇总前重新校验产物内容，并与最初验证的完整 manifest 比较；同 SHA 的自洽产物替换也必须拒绝。旧版 preflight 与真实 rollback 分别记录。ASGI 的 GET 零写入不扩展为 TCP 期间整个 app.db 零写入声明，后者仍有 worker heartbeat。LaunchAgent、跨存储一致性和 promotion evidence binding 仍为 not_checked；报告不授予 release eligibility。
 
