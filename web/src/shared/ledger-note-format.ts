@@ -5,6 +5,7 @@ import {
   escapeRegExp,
   finiteNumber,
   isCashLedgerEntry,
+  isLedgerCorrection,
   normalizeLedgerKind,
 } from './ledger-format-values';
 
@@ -45,6 +46,11 @@ export function formatLedgerPublicNote(
   entry: PublicLedgerEntry,
   locale: Locale = 'en',
 ) {
+  if (isLedgerCorrection(entry)) {
+    return locale === 'zh'
+      ? '抵消历史重复记账；非新增买卖、非入金或收益。'
+      : 'Offsets historical duplicate entries; not a new trade, deposit, or return.';
+  }
   const instrumentName = resolveLedgerInstrumentName(entry).trim();
   const segments = readableLedgerNoteSegments(entry.note)
     .map((segment) => stripLedgerNotePrefix(segment).trim())

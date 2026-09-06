@@ -1,3 +1,4 @@
+import { isLedgerCorrection } from '../../../shared/ledger-format-values';
 import type { LedgerEntry } from '../api';
 
 export type LedgerEntryCategory =
@@ -36,6 +37,7 @@ export const LEDGER_SUBCATEGORIES_BY_CATEGORY: Partial<
   adjustment: ['stock', 'fund', 'cashAccount', 'otherAsset'],
 };
 export function classifyLedgerEntry(entry: LedgerEntry): LedgerEntryCategory {
+  if (isLedgerCorrection(entry)) return 'adjustment';
   const entryType = entry.entry_type.toLowerCase();
   const assetClass = entry.asset_class.toLowerCase();
   const direction = entry.direction?.toLowerCase() ?? '';

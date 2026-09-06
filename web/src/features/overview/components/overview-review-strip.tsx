@@ -1,3 +1,7 @@
+import {
+  LedgerCorrectionDetails,
+  LedgerEntryTime,
+} from '../../../shared/ledger-correction-details';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   formatPrice,
@@ -212,13 +216,14 @@ function DashboardLedger({
                       {presentation.title}
                     </div>
                     <div className="app-muted mt-1 text-xs">
-                      {formatTimestamp(entry.timestamp)}
+                      <LedgerEntryTime entry={entry} locale={locale} />
                     </div>
                     <div className="app-muted mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs">
                       {presentation.details.map((detail) => (
                         <span key={detail}>{detail}</span>
                       ))}
                     </div>
+                    <LedgerCorrectionDetails entry={entry} locale={locale} />
                     {presentation.publicNote ? (
                       <div className="app-muted mt-2 break-words text-xs leading-5">
                         {presentation.publicNote}

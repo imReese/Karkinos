@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import type { PublicLedgerEntry } from '../../shared/ledger-format-contracts';
 import { apiClient, postJson } from '../../shared/api/client';
 import { visiblePersistedProjectionRefetchInterval } from '../../shared/api/query-policy';
 
-export type LedgerEntry = {
+export type LedgerEntry = PublicLedgerEntry & {
   id: number;
   entry_type: string;
   timestamp: string;

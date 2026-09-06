@@ -20,6 +20,14 @@ export type PublicLedgerEntry = {
   source?: string | null;
   source_ref?: string | null;
   created_at?: string | null;
+  entry_fingerprint?: string;
+  correction_payload?: Record<string, unknown> | null;
+  correction_evidence?: {
+    status: 'verified' | 'unverified';
+    entry_fingerprint: string;
+    blockers: string[];
+    related_entries: (PublicLedgerEntry & { role: 'original' | 'retained' })[];
+  } | null;
 };
 
 export type LedgerSummaryKind =
@@ -30,6 +38,7 @@ export type LedgerSummaryKind =
   | 'cash_interest'
   | 'dividend'
   | 'manual_adjustment'
+  | 'historical_correction'
   | 'other';
 
 export type LedgerEntrySummary = {

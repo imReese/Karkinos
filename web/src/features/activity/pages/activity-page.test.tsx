@@ -1,3 +1,5 @@
+import '@testing-library/jest-dom/vitest';
+import { correctionFixture } from '../../../shared/ledger-correction-fixture';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   fireEvent,
@@ -603,4 +605,17 @@ test('keeps financial direction colors separate from system state colors', async
   expect(debitAmount.className).toContain('var(--app-pnl-negative)');
   expect(creditAmount.className).not.toContain('var(--app-success)');
   expect(debitAmount.className).not.toContain('var(--app-danger)');
+});
+
+test('explains historical corrections with recorded time and referenced entries', async () => {
+  renderActivityPage('zh', [correctionFixture]);
+  expect(await screen.findByText('历史重复记账修正')).toBeTruthy();
+  expect(screen.getByText(/记录于/)).toHaveTextContent('02/20');
+  expect(screen.getByText(/账本生效于/)).toHaveTextContent('02/10');
+  fireEvent.click(screen.getByText('查看修正依据'));
+  expect(screen.getByText('重复原流水 #101')).toBeVisible();
+  expect(screen.getByText('保留流水 #102')).toBeVisible();
+  expect(screen.getByText(/账面份额修正/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '交易 1 条' }));
+  expect(screen.queryByText('历史重复记账修正')).toBeNull();
 });

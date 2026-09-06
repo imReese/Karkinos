@@ -9,6 +9,7 @@ import {
   finiteBreakdownNumber,
   finiteNumber,
   isCashLedgerEntry,
+  isLedgerCorrection,
   isFundLedgerEntry,
   sumBreakdownNumbers,
 } from './ledger-format-values';
@@ -18,6 +19,18 @@ export function formatLedgerExecutionDetailLines(
   labels: LedgerExecutionDetailLabels,
   _locale: Locale,
 ): LedgerExecutionDetailLine[] {
+  if (isLedgerCorrection(entry)) {
+    return [
+      {
+        label: _locale === 'zh' ? '账面现金修正' : 'Ledger cash adjustment',
+        value: formatCurrency(entry.amount),
+      },
+      {
+        label: _locale === 'zh' ? '账面份额修正' : 'Ledger quantity adjustment',
+        value: formatQuantity(entry.quantity),
+      },
+    ];
+  }
   const hasStructuredCosts =
     finiteNumber(entry.gross_amount) !== null ||
     finiteNumber(entry.net_cash_impact) !== null ||

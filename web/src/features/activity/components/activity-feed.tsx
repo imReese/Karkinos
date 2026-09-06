@@ -2,19 +2,8 @@ import { useMemo, useState } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
-import { formatTimestamp } from '../../../shared/format';
 import type { LedgerEntry } from '../api';
-import {
-  formatLedgerActivitySummary,
-  formatLedgerPublicNote,
-  formatLedgerSourceLabel,
-} from '../ledger-format';
-import {
-  ActivityInstrument,
-  activityAmountClass,
-  activityBadgeClass,
-  LedgerExecutionDetails,
-} from './activity-feed-entry';
+import { ActivityLedgerRow } from './activity-feed-entry';
 import {
   ACTIVITY_PAGE_SIZE,
   classifyLedgerEntry,
@@ -352,67 +341,15 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                 className="block divide-y divide-[color-mix(in_srgb,var(--app-border)_24%,transparent)] md:table-row-group"
                 data-testid="activity-history-rows"
               >
-                {visibleEntries.map((entry) => {
-                  const summary = formatLedgerActivitySummary(entry, locale);
-                  const publicNote =
-                    formatLedgerPublicNote(entry, locale) ?? labels.noDetail;
-                  return (
-                    <tr
-                      key={entry.id}
-                      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 px-3 py-4 md:table-row md:p-0"
-                    >
-                      <td className="col-start-2 row-start-2 block p-0 text-right align-top md:table-cell md:px-4 md:py-3 md:text-left">
-                        <div className="font-mono text-xs font-semibold text-[var(--app-soft)]">
-                          {formatTimestamp(entry.timestamp)}
-                        </div>
-                        <div className="app-muted app-type-micro mt-1">
-                          {formatLedgerSourceLabel(entry.source, locale)}
-                        </div>
-                      </td>
-                      <td className="col-start-1 row-start-1 block p-0 align-top md:table-cell md:px-4 md:py-3">
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className={`app-type-micro inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] font-bold ${activityBadgeClass(summary.tone)}`}
-                          >
-                            {summary.shortLabel}
-                          </span>
-                          <div>
-                            <div className="font-semibold">{summary.label}</div>
-                            <div className="app-muted mt-1 text-xs">
-                              {summary.cashImpactLabel}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="col-start-1 row-start-2 block min-w-0 p-0 align-top md:table-cell md:px-4 md:py-3">
-                        <ActivityInstrument
-                          copy={copy}
-                          entry={entry}
-                          labels={labels}
-                          locale={locale}
-                        />
-                      </td>
-                      <td
-                        className={`col-start-2 row-start-1 block p-0 text-right align-top font-mono text-sm font-semibold tabular-nums md:table-cell md:px-4 md:py-3 ${activityAmountClass(summary.tone)}`}
-                      >
-                        {summary.amount}
-                        <LedgerExecutionDetails
-                          entry={entry}
-                          labels={labels}
-                          locale={locale}
-                        />
-                      </td>
-                      <td className="col-span-2 row-start-3 block min-w-0 max-w-none p-0 align-top text-[var(--app-muted)] md:table-cell md:max-w-[280px] md:px-4 md:py-3">
-                        <span
-                          className="block break-words [overflow-wrap:anywhere]"
-                          data-testid="activity-note"
-                        >
-                          {publicNote}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {visibleEntries.map((entry) => (
+                  <ActivityLedgerRow
+                    key={entry.id}
+                    entry={entry}
+                    copy={copy}
+                    labels={labels}
+                    locale={locale}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
