@@ -5310,7 +5310,8 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
         "600519",
         "019999",
     ]
-    assert response.current_drawdown == pytest.approx(0.0)
+    assert response.current_drawdown is None
+    assert response.drawdown_blockers == ["drawdown_history_unavailable"]
 
 
 def test_portfolio_overview_includes_daily_operations_summary(monkeypatch):
@@ -7887,6 +7888,21 @@ def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch
         ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_daily_equity_series_from_ledger_history",
+        lambda *args, **kwargs: [
+            portfolio_routes.EquitySeriesPoint(
+                timestamp=f"2026-06-{day}T15:00:00+08:00",
+                total=total,
+                stocks=total - 800,
+                funds=0,
+                others=0,
+                cash=800,
+            )
+            for day, total in [(22, 2200), (23, 2000)]
+        ],
+    )
 
     response = asyncio.run(endpoint())
 
@@ -7896,7 +7912,7 @@ def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch
     assert response.concentration[0].symbol == "600519"
 
 
-def test_portfolio_risk_workspace_uses_equity_series_when_legacy_curve_is_empty(
+def test_portfolio_risk_workspace_blocks_drawdown_on_unbound_history(
     monkeypatch,
 ):
     from server.routes import portfolio as portfolio_routes
@@ -7996,9 +8012,10 @@ def test_portfolio_risk_workspace_uses_equity_series_when_legacy_curve_is_empty(
 
     response = asyncio.run(endpoint())
 
-    assert response.drawdown.latest_equity == pytest.approx(2000)
-    assert response.drawdown.peak_equity == pytest.approx(2000)
-    assert response.drawdown.current_drawdown == pytest.approx(0.0)
+    assert response.drawdown is None
+    assert response.status == "partial"
+    assert response.blockers == ["drawdown_history_unavailable"]
+    assert response.concentration[0].symbol == "600519"
 
 
 def test_portfolio_cockpit_returns_targets_drift_actions_and_risk_alerts(

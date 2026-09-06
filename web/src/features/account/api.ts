@@ -35,6 +35,7 @@ export type AccountOverview = {
   drawdown_peak_equity?: number | null;
   drawdown_latest_equity?: number | null;
   drawdown_peak_timestamp?: string | null;
+  drawdown_blockers?: string[];
   valuation_timestamp?: string | null;
   quote_status?: string;
   quote_age_seconds?: number | null;
@@ -232,7 +233,7 @@ export type ExplainabilityResponse = {
 };
 
 export type RiskWorkspaceResponse = {
-  status: 'complete' | 'blocked';
+  status: 'complete' | 'partial' | 'blocked';
   blockers: string[];
   metrics: Array<{
     key: string;

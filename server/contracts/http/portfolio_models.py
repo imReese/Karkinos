@@ -286,9 +286,13 @@ class AccountOverview(BaseModel):
     today_contributors: list[TodayPnlContributor] = Field(default_factory=list)
     current_drawdown: float | None = None
     current_drawdown_amount: float | None = None
-    drawdown_peak_equity: float | None = None
+    drawdown_peak_equity: float | None = Field(
+        default=None,
+        description="Cash-flow-adjusted peak scaled to current units; not a historical account balance.",
+    )
     drawdown_latest_equity: float | None = None
     drawdown_peak_timestamp: str | None = None
+    drawdown_blockers: list[str] = Field(default_factory=list)
     valuation_timestamp: str | None = None
     quote_status: str = "live"
     quote_age_seconds: int | None = None

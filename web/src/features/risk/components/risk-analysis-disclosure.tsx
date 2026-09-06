@@ -214,7 +214,7 @@ function DrawdownChart({
   if (points.length === 0) {
     return (
       <div className="app-muted text-sm">
-        {copy.explainability.timelineEmpty}
+        {copy.overview.cards.drawdownUnavailable}
       </div>
     );
   }

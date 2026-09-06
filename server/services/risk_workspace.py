@@ -36,15 +36,9 @@ def _format_currency(value: float) -> str:
 
 def _build_drawdown_summary(
     equity_curve: list[EquityPoint],
-) -> tuple[RiskDrawdownSummary, list[RiskDrawdownPoint]]:
-    if not equity_curve:
-        empty = RiskDrawdownSummary(
-            current_drawdown=0.0,
-            max_drawdown=0.0,
-            latest_equity=0.0,
-            peak_equity=0.0,
-        )
-        return empty, []
+) -> tuple[RiskDrawdownSummary | None, list[RiskDrawdownPoint]]:
+    if len(equity_curve) < 2:
+        return None, []
 
     peak_equity = 0.0
     peak_timestamp: str | None = None
@@ -149,23 +143,29 @@ def build_risk_workspace(
         )[:3]
     )
 
-    metrics = [
-        RiskMetricItem(
-            key="current_drawdown",
-            label="Current drawdown",
-            value=drawdown_summary.current_drawdown,
-            display_value=_format_percent(drawdown_summary.current_drawdown),
-            level="high" if drawdown_summary.current_drawdown >= 0.1 else "low",
-            detail="Distance between current equity and the latest portfolio peak.",
-        ),
-        RiskMetricItem(
-            key="max_drawdown",
-            label="Max drawdown",
-            value=drawdown_summary.max_drawdown,
-            display_value=_format_percent(drawdown_summary.max_drawdown),
-            level="high" if drawdown_summary.max_drawdown >= 0.15 else "medium",
-            detail="Largest observed peak-to-trough loss across the equity curve.",
-        ),
+    metrics = (
+        []
+        if drawdown_summary is None
+        else [
+            RiskMetricItem(
+                key="current_drawdown",
+                label="Current drawdown",
+                value=drawdown_summary.current_drawdown,
+                display_value=_format_percent(drawdown_summary.current_drawdown),
+                level="high" if drawdown_summary.current_drawdown >= 0.1 else "low",
+                detail="Distance between current equity and the latest portfolio peak.",
+            ),
+            RiskMetricItem(
+                key="max_drawdown",
+                label="Max drawdown",
+                value=drawdown_summary.max_drawdown,
+                display_value=_format_percent(drawdown_summary.max_drawdown),
+                level="high" if drawdown_summary.max_drawdown >= 0.15 else "medium",
+                detail="Largest observed peak-to-trough loss across the equity curve.",
+            ),
+        ]
+    )
+    metrics += [
         RiskMetricItem(
             key="gross_exposure",
             label="Gross exposure",
@@ -268,8 +268,10 @@ def build_risk_workspace(
         )
 
     return RiskWorkspaceResponse(
-        status="complete",
-        blockers=[],
+        status="complete" if drawdown_summary is not None else "partial",
+        blockers=(
+            [] if drawdown_summary is not None else ["drawdown_history_unavailable"]
+        ),
         metrics=metrics,
         drawdown=drawdown_summary,
         drawdown_series=drawdown_series,

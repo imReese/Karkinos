@@ -244,12 +244,14 @@ function installRiskFetchMock({
   decisionResponse = decisionNeedsRiskGate,
   batchRiskResponse,
   explainabilityResponse = explainability,
+  workspaceResponse = riskWorkspace,
 }: {
   manualOrders?: unknown[];
   riskAlertsResponse?: unknown[];
   decisionResponse?: unknown;
   batchRiskResponse?: unknown;
   explainabilityResponse?: unknown;
+  workspaceResponse?: unknown;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
@@ -288,7 +290,7 @@ function installRiskFetchMock({
       return jsonResponse(accountState.snapshot.positions);
     }
     if (url.includes('/api/portfolio/risk-workspace')) {
-      return jsonResponse(riskWorkspace);
+      return jsonResponse(workspaceResponse);
     }
     if (url.includes('/api/decision/today')) {
       return jsonResponse(decisionResponse);
@@ -319,6 +321,7 @@ function renderRiskPage(options?: {
   decisionResponse?: unknown;
   batchRiskResponse?: unknown;
   explainabilityResponse?: unknown;
+  workspaceResponse?: unknown;
 }) {
   window.localStorage.clear();
   if (options?.locale) {
@@ -330,6 +333,7 @@ function renderRiskPage(options?: {
     decisionResponse: options?.decisionResponse,
     batchRiskResponse: options?.batchRiskResponse,
     explainabilityResponse: options?.explainabilityResponse,
+    workspaceResponse: options?.workspaceResponse,
   });
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -347,6 +351,26 @@ function renderRiskPage(options?: {
   );
   return { fetchMock, queryClient };
 }
+
+test('preserves exposure when historical drawdown evidence is unavailable', async () => {
+  renderRiskPage({
+    workspaceResponse: {
+      ...riskWorkspace,
+      status: 'partial',
+      blockers: ['drawdown_history_unavailable'],
+      metrics: riskWorkspace.metrics.filter(
+        (item) => !item.key.includes('drawdown'),
+      ),
+      drawdown: null,
+      drawdown_series: [],
+    },
+  });
+  expect(await screen.findByText('Drawdown evidence incomplete')).toBeTruthy();
+  expect(screen.getByTestId('risk-exposure-section')).toBeTruthy();
+  expect(
+    screen.getByTestId('risk-drawdown-section').querySelector('svg'),
+  ).toBeNull();
+});
 
 beforeEach(() => {
   vi.stubGlobal(

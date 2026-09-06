@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from math import isfinite
 from zoneinfo import ZoneInfo
 
 from server.ledger.models import LedgerEntry
@@ -160,9 +161,17 @@ def cash_flow_adjusted_equity_points_from_series(
     state,
     points: list[EquitySeriesPoint],
 ) -> list[EquityPoint]:
+    if any(
+        point.total is None
+        or not isfinite(point.total)
+        or point.missing_price_symbols
+        or _parse_quote_timestamp(point.timestamp) is None
+        for point in points
+    ):
+        return []
     raw_points = equity_points_from_series(points)
     if len(raw_points) < 2:
-        return raw_points
+        return []
 
     read_snapshot = portfolio_read_snapshot_for_state(state)
     db = getattr(state, "db", None)
