@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import uuid
 from contextlib import closing
@@ -305,8 +306,9 @@ def _cold_native_gate(baseline, cold, command, cwd, environment, manifest, *, ti
     before = _cold_financial_invariants(cold)
     baseline_before = _cold_financial_invariants(baseline)
     cold_environment = {**environment, "KARKINOS_DATA_DIR": str(cold)}
+    publication = before[2]
     probes = []
-    for _ in range(2):
+    for attempt in range(2):
         probes.append(
             _native_tcp_probe(
                 command,
@@ -318,8 +320,24 @@ def _cold_native_gate(baseline, cold, command, cwd, environment, manifest, *, ti
             )
         )
         # Schema and derived-state migration is allowed; financial facts are not.
-        if _cold_financial_invariants(cold) != before:
+        after = _cold_financial_invariants(cold)
+        if after[:2] != before[:2]:
             raise ValueError("state_clone_cold_financial_state_changed")
+        read_identity = (
+            {
+                "valuation_snapshot_id": after[2]["snapshot_id"],
+                "ledger_cutoff_id": after[2]["ledger_cutoff_id"],
+            }
+            if after[2]
+            else {"current_publication_read": "unavailable"}
+        )
+        if probes[-1]["financial_read_identity"] != read_identity:
+            raise ValueError("state_clone_cold_read_publication_drift")
+        if (publication is not None or attempt > 0) and after[2] != publication:
+            raise ValueError("state_clone_cold_publication_changed")
+        # The first startup may create its initial derived snapshot. Freeze it
+        # (including absence) for restart; existing last-good stays immutable.
+        publication = after[2]
     if probes[0]["financial_read_identity"] != probes[1]["financial_read_identity"]:
         raise ValueError("state_clone_cold_restart_identity_drift")
     if _cold_financial_invariants(baseline) != baseline_before:
@@ -329,6 +347,8 @@ def _cold_native_gate(baseline, cold, command, cwd, environment, manifest, *, ti
         "first_start": probes[0],
         "restart": probes[1],
         "ledger_incidents_publication_preserved": "passed",
+        "current_publication_read": "passed" if publication else "unavailable",
+        "financial_readiness_claimed": False,
         "input": "untouched_baseline_copy",
     }
 
@@ -479,15 +499,56 @@ def _tcp_financial_read_identity(
     with closing(
         sqlite3.connect((data / "app.db").resolve().as_uri() + "?mode=ro", uri=True)
     ) as conn:
+        from server.projections.valuation_snapshot import (
+            ledger_identity_from_rows,
+            valuation_snapshot_from_row,
+        )
+
+        conn.row_factory = sqlite3.Row
         query = (
-            "SELECT s.snapshot_id, s.ledger_cutoff_id FROM valuation_snapshots s "
+            "SELECT s.* FROM valuation_snapshots s "
             "JOIN runtime_controls c ON s.snapshot_id=json_extract(c.value_json,'$.snapshot_id') "
             "WHERE c.key='valuation_snapshot_publication' AND json_extract(c.value_json,'$.status')='ready'"
         )
         row = conn.execute(query).fetchone()
         if row is None:
-            raise ValueError("state_clone_tcp_financial_identity_unavailable")
-        identity = {"valuation_snapshot_id": row[0], "ledger_cutoff_id": row[1]}
+            for endpoint in ("/api/portfolio", "/api/portfolio/overview"):
+                try:
+                    _tcp_json(port, endpoint)
+                except urllib.error.HTTPError as exc:
+                    with exc:
+                        if exc.code != 503:
+                            raise ValueError(
+                                "state_clone_tcp_missing_evidence_not_blocked"
+                            ) from exc
+                        body = json.load(exc)
+                    if (
+                        not isinstance(body, dict)
+                        or not isinstance(body.get("detail"), str)
+                        or not body["detail"].strip()
+                    ):
+                        raise ValueError("state_clone_tcp_missing_evidence_not_blocked")
+                else:
+                    raise ValueError("state_clone_tcp_missing_evidence_not_blocked")
+            if conn.execute(query).fetchone() is not None:
+                raise ValueError("state_clone_tcp_financial_identity_drift")
+            return {"current_publication_read": "unavailable"}
+        valuation = valuation_snapshot_from_row(dict(row))
+        ledger = ledger_identity_from_rows(
+            [
+                dict(entry)
+                for entry in conn.execute("SELECT * FROM ledger_entries ORDER BY id")
+            ]
+        )
+        if any(
+            valuation[key] != ledger[key]
+            for key in ("ledger_cutoff_id", "ledger_fingerprint")
+        ):
+            raise ValueError("state_clone_tcp_publication_ledger_mismatch")
+        identity = {
+            "valuation_snapshot_id": valuation["snapshot_id"],
+            "ledger_cutoff_id": valuation["ledger_cutoff_id"],
+        }
         correction_present = False
         if require_correction_blocker:
             from server.ledger.models import LedgerEntry
@@ -495,15 +556,9 @@ def _tcp_financial_read_identity(
                 is_fund_duplicate_correction,
             )
 
-            cursor = conn.execute(
-                "SELECT * FROM ledger_entries WHERE id <= ?", (row[1],)
-            )
-            columns = [column[0] for column in cursor.description]
             correction_present = any(
-                is_fund_duplicate_correction(
-                    LedgerEntry.from_row(dict(zip(columns, entry)))
-                )
-                for entry in cursor
+                is_fund_duplicate_correction(LedgerEntry.from_row(entry))
+                for entry in ledger["rows"]
             )
         for endpoint in ("/api/portfolio", "/api/portfolio/overview"):
             body = _tcp_json(port, endpoint)

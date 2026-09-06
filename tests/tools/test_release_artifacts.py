@@ -179,6 +179,9 @@ def test_native_gate_binds_the_original_manifest_through_completion(
         return {"financial_read_identity": {"valuation_snapshot_id": "fixture"}}
 
     # Stub lifecycle work so this test isolates manifest continuity, not TCP.
+    monkeypatch.setattr(
+        gate, "_cold_native_gate", lambda *a, **kw: {"status": "stubbed"}
+    )
     monkeypatch.setattr(gate.subprocess, "Popen", lambda *a, **kw: Process())
     monkeypatch.setattr(gate.os, "killpg", lambda *a: None)
     monkeypatch.setattr(gate, "_native_tcp_probe", probe)
