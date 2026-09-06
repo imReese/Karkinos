@@ -225,11 +225,9 @@ export function OverviewCards({
   const { locale } = usePreferences();
   const todayPnl =
     overview.today_pnl_breakdown?.total ?? overview.today_pnl ?? null;
-  const drawdownPeak =
-    typeof overview.drawdown_peak_equity === 'number' &&
-    Number.isFinite(overview.drawdown_peak_equity)
-      ? formatCurrency(overview.drawdown_peak_equity)
-      : '--';
+  const drawdownAvailable =
+    typeof overview.current_drawdown === 'number' &&
+    Number.isFinite(overview.current_drawdown);
   const items: MetricStripItem[] = [
     {
       id: 'total-assets',
@@ -270,7 +268,9 @@ export function OverviewCards({
       id: 'drawdown',
       label: copy.overview.cards.currentDrawdown,
       value: formatDrawdownPercent(overview.current_drawdown),
-      detail: `${copy.overview.cards.drawdownPeak} ${drawdownPeak}`,
+      detail: drawdownAvailable
+        ? copy.overview.cards.drawdownBasis
+        : copy.overview.cards.drawdownUnavailable,
       tone:
         typeof overview.current_drawdown === 'number' &&
         overview.current_drawdown > 0

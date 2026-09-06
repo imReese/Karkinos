@@ -111,10 +111,28 @@ test('renders account metrics in a compact homepage workbench layout', async () 
   );
   expect(screen.getByText('valuation-private-fixture')).toBeTruthy();
   expect(screen.getByText('42')).toBeTruthy();
-  expect(screen.getByText('Peak ¥106,650.00')).toBeTruthy();
+  expect(screen.queryByText('Peak ¥106,650.00')).toBeNull();
+  expect(
+    screen.getByText('Adjusted for deposits and withdrawals'),
+  ).toBeTruthy();
   expect(screen.getByText('Cash Ratio 74.8%')).toBeTruthy();
   expect(screen.getByText('¥220.00')).toBeTruthy();
   expect(screen.queryByText(/\+1\.55%/)).toBeNull();
+});
+
+test('keeps a missing historical drawdown distinct from zero', () => {
+  renderWithPreferences(
+    <OverviewCards
+      overview={{
+        ...overview,
+        current_drawdown: null,
+        drawdown_blockers: ['drawdown_history_unavailable'],
+      }}
+    />,
+  );
+  expect(screen.getByText('Drawdown evidence incomplete')).toBeTruthy();
+  expect(screen.queryByText('0.00%')).toBeNull();
+  expect(screen.queryByText(/Peak ¥/)).toBeNull();
 });
 
 test('shows cached quote copy on stale overview metrics', () => {

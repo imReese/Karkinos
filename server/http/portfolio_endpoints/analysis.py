@@ -50,7 +50,6 @@ def create_router(
     build_account_state_projection = dependencies.build_account_state_projection
     build_risk_summary = dependencies.build_risk_summary
     build_risk_workspace = dependencies.build_risk_workspace
-    get_shanghai_now = dependencies.get_shanghai_now
 
     @r.get("/explainability", response_model=ExplainabilityResponse)
     async def get_explainability(
@@ -153,22 +152,11 @@ def create_router(
             state,
             equity_series,
         )
-        if (
-            not _equity_series_matches_valuation(
-                equity_series,
-                portfolio_snapshot.valuation_snapshot_id,
-            )
-            and portfolio_snapshot.total_equity is not None
+        if not _equity_series_matches_valuation(
+            equity_series,
+            portfolio_snapshot.valuation_snapshot_id,
         ):
-            equity_curve = [
-                EquityPoint(
-                    timestamp=portfolio_snapshot.valuation_as_of
-                    or get_shanghai_now().isoformat(),
-                    equity=portfolio_snapshot.total_equity,
-                )
-            ]
-        elif not equity_curve:
-            equity_curve = await performance.get_equity_curve()
+            equity_curve = []
         return build_risk_workspace(portfolio_snapshot, equity_curve)
 
     return r

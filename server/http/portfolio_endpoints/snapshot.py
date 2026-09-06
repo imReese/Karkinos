@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException
 
-from server.contracts.http.ledger_models import EquityPoint
 from server.contracts.http.portfolio_models import (
     AccountOverview,
     AccountStateResponse,
@@ -143,16 +142,8 @@ def create_router(
             equity_series,
             snapshot.valuation_snapshot_id,
         )
-        if not equity_valuation_consistent and snapshot.total_equity is not None:
-            equity_curve = [
-                EquityPoint(
-                    timestamp=snapshot.valuation_as_of
-                    or get_shanghai_now().isoformat(),
-                    equity=snapshot.total_equity,
-                )
-            ]
-        elif not equity_curve:
-            equity_curve = await performance.get_equity_curve()
+        if not equity_valuation_consistent:
+            equity_curve = []
         risk_workspace = build_risk_workspace(snapshot, equity_curve)
         valuation_consistent = (
             snapshot.valuation_snapshot_id == live_holdings.valuation_snapshot_id
@@ -190,6 +181,7 @@ def create_router(
                 "drawdown_peak_timestamp": (
                     None if drawdown is None else drawdown.peak_timestamp
                 ),
+                "drawdown_blockers": risk_workspace.blockers,
                 "daily_operations": _overview_daily_operations_summary(state),
             }
         )
