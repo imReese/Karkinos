@@ -131,17 +131,23 @@ def test_replay_rejects_non_clone_before_any_database_write(
     assert {path.name: path.read_bytes() for path in data.iterdir()} == before
 
 
-def test_candidate_migrates_reads_restarts_and_restores_disposable_state(tmp_path):
+def test_candidate_migrates_reads_restarts_and_restores_disposable_state(
+    tmp_path, monkeypatch
+):
+    from server.persistence import migrations
+
     source = tmp_path / "source"
     source.mkdir()
     db = AppDatabase(source / "app.db")
-    db.init_sync()
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            migrations,
+            "_MIGRATIONS",
+            tuple(m for m in migrations._MIGRATIONS if m.version <= 12),
+        )
+        db.init_sync()
     db.publish_current_valuation_snapshot_sync()
     with sqlite3.connect(db.path) as conn:
-        # A schema-12 state is a real migration input, not an empty database.
-        conn.execute("DROP TABLE job_runs")
-        conn.execute("DELETE FROM schema_migrations WHERE version=13")
-        conn.commit()
         before = list(conn.iterdump())
     report = run_state_clone_gate(
         source_data=source,
@@ -347,7 +353,7 @@ def test_native_tcp_gate_cannot_pass_wrong_listener_or_incomplete_stop(
     monkeypatch.setattr(
         gate, "_listener_owned_by", lambda *a: not variant.startswith("listener")
     )
-    monkeypatch.setattr(gate, "_tcp_financial_read_identity", lambda *a: {})
+    monkeypatch.setattr(gate, "_tcp_financial_read_identity", lambda *a, **kw: {})
     monkeypatch.setattr(gate, "_process_group_exists", lambda pid: True)
     monkeypatch.setattr(gate, "_wait_process_group_exit", lambda pid: False)
 
@@ -423,3 +429,111 @@ def test_native_network_preflight_does_not_create_python_bytecode(tmp_path):
         _tcp_isolation_command(_tcp_port()), cwd, dict(os.environ)
     )
     assert not cache.exists()
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_native_cold_copy_starts_before_migration_and_preserves_financial_facts(
+    tmp_path, monkeypatch, corrupt
+):
+    from server.persistence import migrations
+    from tools import state_clone_gate as gate
+
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    db = AppDatabase(baseline / "app.db")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            migrations,
+            "_MIGRATIONS",
+            tuple(m for m in migrations._MIGRATIONS if m.version <= 12),
+        )
+        db.init_sync()
+    db.publish_current_valuation_snapshot_sync()
+    with sqlite3.connect(db.path) as conn:
+        before = list(conn.iterdump())
+    versions = []
+
+    def native(command, cwd, environment, manifest, **kwargs):
+        assert kwargs["require_correction_blocker"] is True
+        data = Path(environment["KARKINOS_DATA_DIR"])
+        assert data == tmp_path / "cold"
+        with sqlite3.connect(data / "app.db") as conn:
+            versions.append(
+                conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+            )
+        candidate = AppDatabase(data / "app.db")
+        candidate.init_sync()
+        if corrupt:
+            candidate.insert_ledger_entry_sync(
+                entry_type="cash_deposit",
+                timestamp="2026-09-04T10:00:00+08:00",
+                amount=1,
+            )
+        return {"financial_read_identity": "fixture"}
+
+    monkeypatch.setattr(gate, "_native_tcp_probe", native)
+    arguments = (
+        baseline,
+        tmp_path / "cold",
+        ["native"],
+        ROOT,
+        {"KARKINOS_DATA_DIR": "warm"},
+        {},
+    )
+    if corrupt:
+        with pytest.raises(ValueError, match="cold_financial_state_changed"):
+            gate._cold_native_gate(*arguments, timeout=10)
+        assert versions == [12]
+    else:
+        report = gate._cold_native_gate(*arguments, timeout=10)
+        assert report["status"] == "passed"
+        assert versions == [12, 13]
+    with sqlite3.connect(db.path) as conn:
+        assert list(conn.iterdump()) == before
+
+
+@pytest.mark.parametrize("variant", ["valid", "overview", "risk", "missing_reason"])
+def test_native_reads_keep_correction_performance_blocked(
+    tmp_path, monkeypatch, variant
+):
+    from server.projections.legacy_fund_trade_duplicate_correction import (
+        LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
+    )
+    from tools import state_clone_gate as gate
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-09-04T10:00:00+08:00",
+        amount=1,
+        source=LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
+    )
+    publication = db.publish_current_valuation_snapshot_sync()
+    reason = "historical_correction_performance_unverified"
+
+    def response(port, endpoint):
+        if endpoint.endswith("risk-workspace"):
+            return {
+                "drawdown": None if variant != "risk" else 0,
+                "drawdown_series": [],
+                "blockers": [reason],
+            }
+        return {
+            "valuation_snapshot_id": publication["snapshot_id"],
+            "ledger_cutoff_id": publication["ledger_cutoff_id"],
+            "current_drawdown": None if variant != "overview" else 0,
+            "drawdown_peak_equity": None,
+            "drawdown_blockers": [] if variant == "missing_reason" else [reason],
+        }
+
+    monkeypatch.setattr(gate, "_tcp_json", response)
+    if variant == "valid":
+        gate._tcp_financial_read_identity(
+            tmp_path, 12345, require_correction_blocker=True
+        )
+    else:
+        with pytest.raises(ValueError, match="historical_correction_unblocked"):
+            gate._tcp_financial_read_identity(
+                tmp_path, 12345, require_correction_blocker=True
+            )

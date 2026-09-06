@@ -202,6 +202,18 @@ def run_state_clone_gate(
                 _assert_native_identity([command[0]], cwd, identity)
             return result
 
+        # This copy must reach the packaged entrypoint before any migration/preflight.
+        cold = None
+        if native is not None:
+            cold = _cold_native_gate(
+                baseline,
+                root / "cold-candidate",
+                candidate_command,
+                candidate_cwd,
+                environment,
+                native,
+                timeout=timeout,
+            )
         result = run([*candidate_command, "--replay-state"], candidate_cwd, native)
         report = json.loads(result.stdout)
         if (
@@ -218,12 +230,23 @@ def run_state_clone_gate(
         ):
             raise ValueError("state_clone_restart_failed")
         report["process_restart"] = "passed"
+        report["native_cold_start"] = cold or {"status": "not_checked"}
         if native is not None:
             first = _native_tcp_probe(
-                candidate_command, candidate_cwd, environment, native, timeout=timeout
+                candidate_command,
+                candidate_cwd,
+                environment,
+                native,
+                timeout=timeout,
+                require_correction_blocker=True,
             )
             second = _native_tcp_probe(
-                candidate_command, candidate_cwd, environment, native, timeout=timeout
+                candidate_command,
+                candidate_cwd,
+                environment,
+                native,
+                timeout=timeout,
+                require_correction_blocker=True,
             )
             if first["financial_read_identity"] != second["financial_read_identity"]:
                 raise ValueError("state_clone_tcp_restart_identity_drift")
@@ -268,6 +291,46 @@ def run_state_clone_gate(
                 )
             report["native_payload_integrity_after_run"] = "passed"
         return report
+
+
+def _cold_financial_invariants(data: Path):
+    from server.state_replay import _incidents, _ledger_identity, _published
+
+    path = data / "app.db"
+    return _ledger_identity(path), _incidents(path), _published(path)
+
+
+def _cold_native_gate(baseline, cold, command, cwd, environment, manifest, *, timeout):
+    clone_state(baseline, cold)
+    before = _cold_financial_invariants(cold)
+    baseline_before = _cold_financial_invariants(baseline)
+    cold_environment = {**environment, "KARKINOS_DATA_DIR": str(cold)}
+    probes = []
+    for _ in range(2):
+        probes.append(
+            _native_tcp_probe(
+                command,
+                cwd,
+                cold_environment,
+                manifest,
+                timeout=timeout,
+                require_correction_blocker=True,
+            )
+        )
+        # Schema and derived-state migration is allowed; financial facts are not.
+        if _cold_financial_invariants(cold) != before:
+            raise ValueError("state_clone_cold_financial_state_changed")
+    if probes[0]["financial_read_identity"] != probes[1]["financial_read_identity"]:
+        raise ValueError("state_clone_cold_restart_identity_drift")
+    if _cold_financial_invariants(baseline) != baseline_before:
+        raise ValueError("state_clone_cold_baseline_changed")
+    return {
+        "status": "passed",
+        "first_start": probes[0],
+        "restart": probes[1],
+        "ledger_incidents_publication_preserved": "passed",
+        "input": "untouched_baseline_copy",
+    }
 
 
 def _native_identity(command: list[str], cwd: Path, sha: str) -> dict:
@@ -410,7 +473,9 @@ def _verify_native_network_isolation(isolation, cwd, environment):
     )
 
 
-def _tcp_financial_read_identity(data: Path, port: int) -> dict:
+def _tcp_financial_read_identity(
+    data: Path, port: int, *, require_correction_blocker: bool = False
+) -> dict:
     with closing(
         sqlite3.connect((data / "app.db").resolve().as_uri() + "?mode=ro", uri=True)
     ) as conn:
@@ -423,18 +488,60 @@ def _tcp_financial_read_identity(data: Path, port: int) -> dict:
         if row is None:
             raise ValueError("state_clone_tcp_financial_identity_unavailable")
         identity = {"valuation_snapshot_id": row[0], "ledger_cutoff_id": row[1]}
+        correction_present = False
+        if require_correction_blocker:
+            from server.ledger.models import LedgerEntry
+            from server.projections.ledger_correction_read import (
+                is_fund_duplicate_correction,
+            )
+
+            cursor = conn.execute(
+                "SELECT * FROM ledger_entries WHERE id <= ?", (row[1],)
+            )
+            columns = [column[0] for column in cursor.description]
+            correction_present = any(
+                is_fund_duplicate_correction(
+                    LedgerEntry.from_row(dict(zip(columns, entry)))
+                )
+                for entry in cursor
+            )
         for endpoint in ("/api/portfolio", "/api/portfolio/overview"):
             body = _tcp_json(port, endpoint)
             if not isinstance(body, dict) or any(
                 body.get(key) != value for key, value in identity.items()
             ):
                 raise ValueError("state_clone_tcp_financial_identity_mismatch")
+            if correction_present and endpoint == "/api/portfolio/overview":
+                if (
+                    body.get("current_drawdown", "missing") is not None
+                    or body.get("drawdown_peak_equity", "missing") is not None
+                    or "historical_correction_performance_unverified"
+                    not in body.get("drawdown_blockers", [])
+                ):
+                    raise ValueError("state_clone_tcp_historical_correction_unblocked")
+                risk = _tcp_json(port, "/api/portfolio/risk-workspace")
+                if (
+                    risk.get("drawdown", "missing") is not None
+                    or risk.get("drawdown_series") != []
+                    or "historical_correction_performance_unverified"
+                    not in risk.get("blockers", [])
+                ):
+                    raise ValueError("state_clone_tcp_historical_correction_unblocked")
         if conn.execute(query).fetchone() != row:
             raise ValueError("state_clone_tcp_financial_identity_drift")
         return identity
 
 
-def _native_tcp_probe(command, cwd, environment, manifest, *, timeout, port=None):
+def _native_tcp_probe(
+    command,
+    cwd,
+    environment,
+    manifest,
+    *,
+    timeout,
+    port=None,
+    require_correction_blocker=False,
+):
     from scripts.release.manage_release import _health_payload_matches
 
     _assert_native_identity(command, cwd, manifest)
@@ -481,7 +588,9 @@ def _native_tcp_probe(command, cwd, environment, manifest, *, timeout, port=None
                 time.sleep(0.2)
             else:
                 raise ValueError("state_clone_tcp_health_identity_failed")
-            identity = _tcp_financial_read_identity(data, port)
+            identity = _tcp_financial_read_identity(
+                data, port, require_correction_blocker=require_correction_blocker
+            )
             if process.poll() is not None:
                 raise ValueError("state_clone_tcp_process_exited")
             process.terminate()

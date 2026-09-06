@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
+import logging
+import math
+import os
 import sqlite3
+import stat
+import time
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,35 +26,122 @@ from server.persistence.quote_current_materialization import (
 )
 from server.persistence.schema_v1 import initialize_v1_baseline_schema
 
+logger = logging.getLogger(__name__)
 
-def initialize_database(database_path: str | Path) -> None:
-    """Validate, initialize, and migrate one SQLite database atomically."""
-    with sqlite3.connect(Path(database_path), timeout=2) as conn:
+
+@contextmanager
+def _initialization_lock(database_path: Path, timeout_seconds: float):
+    if not math.isfinite(timeout_seconds) or timeout_seconds < 0:
+        raise ValueError("database_initialization_timeout_invalid")
+    lock_path = database_path.with_name(database_path.name + ".initialize.lock")
+    descriptor = os.open(
+        lock_path,
+        os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
+        0o600,
+    )
+    started = time.monotonic()
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+            raise ValueError("database_initialization_lock_invalid")
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining = timeout_seconds - (time.monotonic() - started)
+                if remaining <= 0:
+                    owner = (
+                        os.pread(descriptor, 64, 0)
+                        .decode("ascii", errors="replace")
+                        .strip()
+                    )
+                    raise TimeoutError(
+                        f"database_initialization_lock_timeout (owner_pid={owner or 'unknown'})"
+                    ) from None
+                time.sleep(min(0.05, remaining))
+        current = lock_path.lstat()
+        if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ValueError("database_initialization_lock_changed")
+        os.ftruncate(descriptor, 0)
+        os.write(descriptor, f"{os.getpid()}\n".encode("ascii"))
+        logger.info(
+            "Database initialization lock acquired: pid=%d waited=%.3fs",
+            os.getpid(),
+            time.monotonic() - started,
+        )
+        yield
+    finally:
+        # Closing also releases ownership on failure; stale PID text is diagnostic.
+        # Never unlink: a waiter may already hold a descriptor for this inode.
+        os.close(descriptor)
+
+
+def initialize_database(
+    database_path: str | Path, *, lock_timeout_seconds: float = 30
+) -> None:
+    """Serialize schema initialization; preserve existing migration transactions."""
+    path = Path(database_path).expanduser().resolve()
+    with _initialization_lock(path, lock_timeout_seconds):
+        with closing(sqlite3.connect(path, timeout=2)) as conn, conn:
+            identity = path.stat()
+            logger.info(
+                "Database initialization started: pid=%d connection=%x dev=%d inode=%d",
+                os.getpid(),
+                id(conn),
+                identity.st_dev,
+                identity.st_ino,
+            )
+            _initialize_on_connection(conn, path)
+
+
+def _initialize_on_connection(conn: sqlite3.Connection, database_path: Path) -> None:
+    phase = "compatibility"
+    started = time.monotonic()
+    try:
         conn.execute("PRAGMA busy_timeout=2000")
         assert_schema_compatible(
             conn,
             baseline_initializer=initialize_v1_baseline_schema,
         )
+        phase = "journal_mode"
         journal_mode = conn.execute("PRAGMA journal_mode").fetchone()
         if journal_mode and str(journal_mode[0]).lower() != "wal":
             conn.execute("PRAGMA journal_mode=WAL")
+        phase = "baseline"
         initialize_v1_baseline_schema(conn)
+        phase = "migrations"
         apply_schema_migrations(
             conn,
             baseline_initializer=initialize_v1_baseline_schema,
         )
+        phase = "quote_instants"
         _backfill_quote_snapshot_instants(conn)
+        phase = "market_identity"
         if _table_exists(conn, "daily_close_snapshots_v2"):
             migrate_legacy_daily_closes_on_connection(
                 conn,
-                meta_database_path=Path(database_path).parent / "meta.db",
+                meta_database_path=database_path.parent / "meta.db",
             )
+        phase = "quote_materialization"
         if _table_exists(conn, "quote_current_materialization_state"):
             reconcile_quote_current_materialization_on_connection(
                 conn,
                 updated_at=datetime.now(timezone.utc).isoformat(),
             )
         conn.commit()
+    except BaseException as exc:
+        logger.exception(
+            "Database initialization failed: pid=%d connection=%x phase=%s "
+            "in_transaction=%s elapsed=%.3fs sqlite_errorcode=%s",
+            os.getpid(),
+            id(conn),
+            phase,
+            conn.in_transaction,
+            time.monotonic() - started,
+            getattr(exc, "sqlite_errorcode", None),
+        )
+        raise
 
 
 def _backfill_quote_snapshot_instants(conn: sqlite3.Connection) -> None:
