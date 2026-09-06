@@ -1,3 +1,5 @@
+import '@testing-library/jest-dom/vitest';
+import { correctionFixture } from '../../../shared/ledger-correction-fixture';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -4359,4 +4361,19 @@ test('shows completed_no_signal as first-class account no-action beside normal r
   ).toBe('0');
   expect(within(queue).queryByText('当前没有紧急事项。')).toBeNull();
   expect(within(queue).queryByTestId('overview-today-queue-more')).toBeNull();
+});
+
+test('overview exposes correction lineage without presenting another trade', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock({}, { activityEntries: [correctionFixture] });
+  renderOverviewPage({ installFetch: false });
+  expect(
+    await screen.findByText('历史重复记账修正 示例基金 FIXTURE-FUND'),
+  ).toBeTruthy();
+  expect(screen.getByText(/记录于/)).toHaveTextContent('02/20');
+  expect(screen.getByText(/账本生效于/)).toHaveTextContent('02/10');
+  await userEvent.click(screen.getByText('查看修正依据'));
+  expect(screen.getByText('重复原流水 #101')).toBeVisible();
+  expect(screen.getByText('保留流水 #102')).toBeVisible();
+  expect(screen.getByText(/账面现金修正/)).toBeTruthy();
 });

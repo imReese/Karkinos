@@ -352,7 +352,7 @@ describe('remaining route workbench contract', () => {
       'md:overflow-x-auto md:overscroll-x-contain',
     );
     expect(activityFeed).toContain('md:table md:min-w-[760px]');
-    expect(activityFeed).toContain(
+    expect(ACTIVITY_FEED).toContain(
       'grid min-w-0 grid-cols-[minmax(0,1fr)_auto]',
     );
     expect(ACTIVITY_FEED).toContain('max-w-[240px] flex-wrap');

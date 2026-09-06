@@ -29,6 +29,10 @@ from server.models import (
     LedgerTradeSettlementCreate,
     LedgerTradeSettlementResponse,
 )
+from server.projections.ledger_correction_read import (
+    correction_read_evidence,
+    is_fund_duplicate_correction,
+)
 from server.services.manual_trade_fees import (
     MANUAL_FEE_INPUT_RULE_ID,
     MANUAL_FEE_INPUT_RULE_VERSION,
@@ -230,11 +234,13 @@ def _ledger_display_name(db, entry: LedgerEntry) -> str | None:
     return display_name or None
 
 
-def _entry_response(db, entry: LedgerEntry) -> LedgerEntryResponse:
+def _entry_response(
+    db, entry: LedgerEntry, *, correction_evidence: dict | None = None
+) -> LedgerEntryResponse:
     payload = asdict(entry)
     payload["display_name"] = _ledger_display_name(db, entry)
     payload["entry_fingerprint"] = ledger_entry_state_fingerprint(payload)
-    return LedgerEntryResponse(**payload)
+    return LedgerEntryResponse(**payload, correction_evidence=correction_evidence)
 
 
 def _append_command(
@@ -316,7 +322,15 @@ def create_router() -> APIRouter:
         state = get_app_state()
         repo = LedgerRepository(state.db)
         entries = repo.list_entries(limit=limit, offset=offset)
-        return [_entry_response(state.db, entry) for entry in entries]
+        evidence = (
+            correction_read_evidence(entries, state.db.get_all_ledger_entries_sync())
+            if any(is_fund_duplicate_correction(entry) for entry in entries)
+            else {}
+        )
+        return [
+            _entry_response(state.db, entry, correction_evidence=evidence.get(entry.id))
+            for entry in entries
+        ]
 
     @r.post("/trades", response_model=LedgerEntryCreatedResponse)
     async def create_trade_entry(body: LedgerTradeCreate) -> LedgerEntryCreatedResponse:

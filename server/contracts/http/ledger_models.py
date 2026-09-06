@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -186,6 +186,13 @@ class LedgerEntryCreatedResponse(BaseModel):
     status: str = "ok"
 
 
+class LedgerCorrectionEvidenceResponse(BaseModel):
+    status: Literal["verified", "unverified"]
+    entry_fingerprint: str
+    blockers: list[str]
+    related_entries: list[dict[str, Any]]
+
+
 class LedgerEntryResponse(BaseModel):
     id: int
     entry_type: str
@@ -214,6 +221,7 @@ class LedgerEntryResponse(BaseModel):
     settlement_note: str = ""
     cost_basis_method: str | None = None
     correction_payload: dict[str, Any] | None = None
+    correction_evidence: LedgerCorrectionEvidenceResponse | None = None
     asset_class: str = "stock"
     note: str = ""
     source: str = "manual"

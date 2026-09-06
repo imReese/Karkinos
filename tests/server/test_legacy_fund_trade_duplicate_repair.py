@@ -3,7 +3,9 @@ from __future__ import annotations
 import io
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -45,9 +47,7 @@ def _fixture_database(
         for group_index, pair_count in enumerate(group_sizes, start=1):
             symbol = f"FIXTURE-{group_index}"
             for pair_index in range(1, pair_count + 1):
-                timestamp = (
-                    f"2026-04-{group_index * 7 + pair_index:02d}" "T13:22:58+08:00"
-                )
+                timestamp = f"2026-04-{group_index * 7 + pair_index:02d}T13:22:58+08:00"
                 created_at = timestamp
                 quantity = (
                     float(pair_index) + 0.12345678901234567
@@ -178,6 +178,179 @@ def _command(preview: dict[str, object], *, command_id: str = "repair-1"):
         preview_fingerprint=str(preview["preview_fingerprint"]),
         confirmation=LEGACY_FUND_TRADE_DUPLICATE_REPAIR_CONFIRMATION,
     )
+
+
+def test_correction_read_evidence_validates_references_and_page_identity(
+    tmp_path, monkeypatch
+):
+    from server.projections.ledger_correction_read import correction_read_evidence
+
+    path = tmp_path / "read-evidence.db"
+    _fixture_database(path, group_sizes=(1,))
+    service = LegacyFundTradeDuplicateRepairService(
+        path, now=lambda: NOW, valuation_transaction_writer=_writer([])
+    )
+    service.apply(_command(service.preview()))
+    rows = _rows(path)
+    entry = next(
+        LedgerEntry.from_row(r)
+        for r in rows
+        if r["entry_type"] == LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE
+    )
+    before = _counts(path)
+    evidence = correction_read_evidence([entry], rows)[entry.id]
+    assert evidence["status"] == "verified"
+    assert {r["role"] for r in evidence["related_entries"]} == {"original", "retained"}
+    assert _counts(path) == before
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    import server.dependencies
+    from server.db import AppDatabase
+    from server.routes.ledger import create_router
+
+    db = AppDatabase(path)
+    monkeypatch.setattr(
+        server.dependencies, "get_app_state", lambda: SimpleNamespace(db=db)
+    )
+    app = FastAPI()
+    app.include_router(create_router())
+    response = TestClient(app).get("/api/ledger/entries?limit=1")
+    assert response.status_code == 200
+    item = response.json()[0]
+    assert item["id"] == entry.id
+    assert item["correction_evidence"] == evidence
+    assert item["correction_evidence"]["entry_fingerprint"] == item["entry_fingerprint"]
+    assert _counts(path) == before
+    assert _rows(path) == rows
+    for mutation in ("missing", "schema", "payload", "page"):
+        changed = json.loads(json.dumps(rows))
+        if mutation == "missing":
+            changed = [r for r in changed if r["id"] != 1]
+        else:
+            row = next(r for r in changed if r["id"] == entry.id)
+            payload = json.loads(row["correction_payload_json"])
+            if mutation == "schema":
+                payload["schema_version"] = "unknown"
+            elif mutation == "payload":
+                payload["position_after"]["quantity"] = "999"
+            else:
+                row["note"] = "changed after page read"
+            row["correction_payload_json"] = json.dumps(payload)
+        result = correction_read_evidence([entry], changed)[entry.id]
+        assert result["status"] == "unverified"
+        assert result["blockers"]
+        assert result["related_entries"] == []
+
+
+def test_daily_history_characterizes_tail_correction_without_restating_facts(tmp_path):
+    from server.projections.portfolio_views.historical_ledger_series import (
+        build_daily_equity_series_from_ledger_history,
+    )
+    from server.projections.portfolio_views.historical_series import (
+        cash_flow_adjusted_equity_points_from_series,
+    )
+
+    path = tmp_path / "history.db"
+    _fixture_database(path, group_sizes=(1,))
+    with sqlite3.connect(path) as conn:
+        for kind, timestamp, amount in [
+            ("cash_deposit", "2026-04-07T09:00:00+08:00", 100),
+            ("cash_interest", "2026-04-10T09:00:00+08:00", 0),
+        ]:
+            insert_ledger_entry_on_connection(
+                conn,
+                entry_type=kind,
+                timestamp=timestamp,
+                amount=amount,
+                asset_class="cash",
+                source="manual",
+                created_at=timestamp,
+            )
+    service = LegacyFundTradeDuplicateRepairService(
+        path, now=lambda: NOW, valuation_transaction_writer=_writer([])
+    )
+    service.apply(_command(service.preview()))
+    with sqlite3.connect(path) as conn:
+        insert_ledger_entry_on_connection(
+            conn,
+            entry_type="cash_deposit",
+            timestamp="2026-04-13T09:00:00+08:00",
+            amount=10,
+            asset_class="cash",
+            source="manual",
+            created_at=NOW,
+        )
+        insert_ledger_entry_on_connection(
+            conn,
+            entry_type="trade_buy",
+            timestamp="2026-04-14T09:00:00+08:00",
+            amount=3,
+            quantity=1,
+            price=3,
+            direction="buy",
+            symbol="FIXTURE-1",
+            asset_class="fund",
+            commission=0,
+            source="manual",
+            created_at=NOW,
+        )
+    rows = _rows(path)
+    correction = next(
+        r
+        for r in rows
+        if r["entry_type"] == LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE
+    )
+    assert correction["created_at"] == NOW
+    assert correction["timestamp"] == "2026-04-10T01:00:01+00:00"
+    original_ids = set(
+        json.loads(correction["correction_payload_json"])["original_ledger_entry_ids"]
+    )
+    # Test-only restatement is a counterfactual, never a production write policy.
+    restated = [
+        r for r in rows if r["id"] not in original_ids and r["id"] != correction["id"]
+    ]
+    before = json.dumps(rows, sort_keys=True)
+
+    def history(facts):
+        prices = [
+            {
+                "timestamp": f"2026-04-{day:02d}T15:00:00+08:00",
+                "price": price,
+                "asset_class": "fund",
+                "instrument_type": "open_end_fund",
+            }
+            for day, price in [(8, 2), (9, 3), (10, 3), (13, 3), (14, 3)]
+        ]
+        state = SimpleNamespace(
+            db=SimpleNamespace(
+                get_all_ledger_entries_sync=lambda: facts,
+                get_ledger_entries_sync=lambda **_: facts,
+                get_historical_price_matrix_sync=lambda **_: {"FIXTURE-1": prices},
+            ),
+            scheduler=None,
+        )
+        points = build_daily_equity_series_from_ledger_history(
+            state,
+            selected_range="all",
+            current_point=None,
+            now=datetime.fromisoformat("2026-04-14T16:00:00+08:00"),
+        )
+        return points, cash_flow_adjusted_equity_points_from_series(state, points)
+
+    actual, adjusted = history(rows)
+    reference, _ = history(restated)
+    assert [p.total for p in actual] == pytest.approx(
+        [100, 99.8, 119.8, 109.9, 119.9, 119.9]
+    )
+    assert [p.total for p in reference] == pytest.approx(
+        [100, 99.9, 109.9, 109.9, 119.9, 119.9]
+    )
+    assert actual[-1].total == reference[-1].total
+    # A valid correction and matching final balance do not prove historical returns.
+    assert adjusted[3].equity < adjusted[2].equity
+    assert resolve_legacy_fund_trade_duplicate_exclusions(rows).valid
+    assert json.dumps(_rows(path), sort_keys=True) == before
 
 
 def test_preview_is_zero_write_private_and_finds_generic_live_shape(tmp_path) -> None:
@@ -532,8 +705,7 @@ def test_resolver_rejects_tampered_fingerprint_and_returns_no_exclusions(
     service.apply(_command(preview))
     with sqlite3.connect(path) as conn:
         row = conn.execute(
-            "SELECT id, correction_payload_json FROM ledger_entries "
-            "WHERE source = ?",
+            "SELECT id, correction_payload_json FROM ledger_entries WHERE source = ?",
             (LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,),
         ).fetchone()
         payload = json.loads(row[1])

@@ -26,6 +26,7 @@ import {
   finiteNumber,
   formatSignedCurrency,
   isCashLedgerEntry,
+  isLedgerCorrection,
   normalizeLedgerKind,
 } from './ledger-format-values';
 import {
@@ -38,7 +39,9 @@ export function summarizeLedgerEntry(
 ): LedgerEntrySummary {
   const grossAmount = calculateLedgerEntryAmount(entry);
   const netCashImpact = finiteNumber(entry.net_cash_impact);
-  const kind = normalizeLedgerKind(entry.entry_type);
+  const kind = isLedgerCorrection(entry)
+    ? 'historical_correction'
+    : normalizeLedgerKind(entry.entry_type);
 
   if (kind === 'trade_buy' || kind === 'cash_withdrawal') {
     return {
@@ -126,7 +129,10 @@ export function formatLedgerEntryTypeLabel(
 ) {
   const entryType =
     typeof entryOrType === 'string' ? entryOrType : entryOrType.entry_type;
-  const kind = normalizeLedgerKind(entryType);
+  const kind =
+    typeof entryOrType !== 'string' && isLedgerCorrection(entryOrType)
+      ? 'historical_correction'
+      : normalizeLedgerKind(entryType);
   return ENTRY_TYPE_LABELS[locale][kind];
 }
 

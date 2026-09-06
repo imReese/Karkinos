@@ -6,6 +6,9 @@ import type {
 
 export function normalizeLedgerKind(entryType: string): LedgerSummaryKind {
   const normalized = entryType.trim().toLowerCase();
+  if (normalized === 'legacy_fund_trade_duplicate_projection_correction') {
+    return 'historical_correction';
+  }
   if (
     normalized === 'trade_buy' ||
     normalized === 'trade_sell' ||
@@ -80,4 +83,11 @@ export function isCashLedgerEntry(entry: PublicLedgerEntry) {
 
 export function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function isLedgerCorrection(entry: PublicLedgerEntry) {
+  return (
+    normalizeLedgerKind(entry.entry_type) === 'historical_correction' ||
+    entry.source === 'legacy_fund_trade_duplicate_repair'
+  );
 }

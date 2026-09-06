@@ -7,6 +7,7 @@ import type {
 
 export const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
   en: {
+    legacy_fund_trade_duplicate_repair: 'Historical duplicate correction',
     broker_statement_manual_correction: 'Reconciliation adjustment',
     manual: 'Manual entry',
     portfolio_trade: 'Portfolio trade',
@@ -15,6 +16,7 @@ export const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
     unknown: 'Source unknown',
   },
   zh: {
+    legacy_fund_trade_duplicate_repair: '历史去重修正',
     broker_statement_manual_correction: '对账校正',
     manual: '手工录入',
     portfolio_trade: '交易流水',
@@ -67,6 +69,7 @@ export const ENTRY_TYPE_LABELS: Record<
     cash_interest: 'Cash interest',
     dividend: 'Dividend',
     manual_adjustment: 'Manual adjustment',
+    historical_correction: 'Historical duplicate correction',
     other: 'Ledger movement',
   },
   zh: {
@@ -77,6 +80,7 @@ export const ENTRY_TYPE_LABELS: Record<
     cash_interest: '结息入账',
     dividend: '分红',
     manual_adjustment: '手动调整',
+    historical_correction: '历史重复记账修正',
     other: '账本变动',
   },
 };
@@ -168,6 +172,12 @@ export const ACTIVITY_LABELS: Record<
       cashImpactLabel: 'Operator adjustment',
       tone: 'adjustment',
     },
+    historical_correction: {
+      label: 'Historical duplicate correction',
+      shortLabel: 'A',
+      cashImpactLabel: 'Ledger adjustment; no new trade or deposit',
+      tone: 'adjustment',
+    },
     other: {
       label: 'Ledger entry',
       shortLabel: 'L',
@@ -216,6 +226,12 @@ export const ACTIVITY_LABELS: Record<
       label: '手工调整',
       shortLabel: '调',
       cashImpactLabel: '人工校正',
+      tone: 'adjustment',
+    },
+    historical_correction: {
+      label: '历史重复记账修正',
+      shortLabel: '修',
+      cashImpactLabel: '账面修正，非新增买卖、非入金',
       tone: 'adjustment',
     },
     other: {
