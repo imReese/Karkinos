@@ -431,9 +431,12 @@ def test_native_network_preflight_does_not_create_python_bytecode(tmp_path):
     assert not cache.exists()
 
 
-@pytest.mark.parametrize("corrupt", [False, True])
+@pytest.mark.parametrize("publication_state", ["existing", "first", "absent"])
+@pytest.mark.parametrize(
+    "corrupt", [None, "ledger", "incident", "restart", "read_binding"]
+)
 def test_native_cold_copy_starts_before_migration_and_preserves_financial_facts(
-    tmp_path, monkeypatch, corrupt
+    tmp_path, monkeypatch, corrupt, publication_state
 ):
     from server.persistence import migrations
     from tools import state_clone_gate as gate
@@ -448,7 +451,12 @@ def test_native_cold_copy_starts_before_migration_and_preserves_financial_facts(
             tuple(m for m in migrations._MIGRATIONS if m.version <= 12),
         )
         db.init_sync()
-    db.publish_current_valuation_snapshot_sync()
+    db.set_runtime_control_sync(
+        "valuation_publication_recovery",
+        {"failures": [{"reason": "fixture", "scope": None}]},
+    )
+    if publication_state == "existing":
+        db.publish_current_valuation_snapshot_sync()
     with sqlite3.connect(db.path) as conn:
         before = list(conn.iterdump())
     versions = []
@@ -463,13 +471,36 @@ def test_native_cold_copy_starts_before_migration_and_preserves_financial_facts(
             )
         candidate = AppDatabase(data / "app.db")
         candidate.init_sync()
-        if corrupt:
+        if publication_state == "first" and len(versions) == 1:
+            candidate.publish_current_valuation_snapshot_sync()
+        if corrupt == "ledger":
             candidate.insert_ledger_entry_sync(
                 entry_type="cash_deposit",
                 timestamp="2026-09-04T10:00:00+08:00",
                 amount=1,
             )
-        return {"financial_read_identity": "fixture"}
+        elif corrupt == "incident":
+            candidate.set_runtime_control_sync(
+                "valuation_publication_recovery", {"failures": []}
+            )
+        elif corrupt == "restart" and len(versions) == 2:
+            from datetime import datetime
+
+            candidate.publish_current_valuation_snapshot_sync(
+                now=datetime.fromisoformat("2027-01-04T16:00:00+08:00")
+            )
+        publication = gate._cold_financial_invariants(data)[2]
+        identity = (
+            {
+                "valuation_snapshot_id": publication["snapshot_id"],
+                "ledger_cutoff_id": publication["ledger_cutoff_id"],
+            }
+            if publication
+            else {"current_publication_read": "unavailable"}
+        )
+        if corrupt == "read_binding":
+            identity = {"valuation_snapshot_id": "unbound"}
+        return {"financial_read_identity": identity}
 
     monkeypatch.setattr(gate, "_native_tcp_probe", native)
     arguments = (
@@ -481,12 +512,19 @@ def test_native_cold_copy_starts_before_migration_and_preserves_financial_facts(
         {},
     )
     if corrupt:
-        with pytest.raises(ValueError, match="cold_financial_state_changed"):
+        with pytest.raises(
+            ValueError,
+            match="cold_(financial_state_changed|publication_changed|read_publication_drift)",
+        ):
             gate._cold_native_gate(*arguments, timeout=10)
-        assert versions == [12]
+        assert versions == ([12, 13] if corrupt == "restart" else [12])
     else:
         report = gate._cold_native_gate(*arguments, timeout=10)
         assert report["status"] == "passed"
+        assert report["current_publication_read"] == (
+            "unavailable" if publication_state == "absent" else "passed"
+        )
+        assert report["financial_readiness_claimed"] is False
         assert versions == [12, 13]
     with sqlite3.connect(db.path) as conn:
         assert list(conn.iterdump()) == before
@@ -537,3 +575,103 @@ def test_native_reads_keep_correction_performance_blocked(
             gate._tcp_financial_read_identity(
                 tmp_path, 12345, require_correction_blocker=True
             )
+
+
+@pytest.mark.parametrize(
+    "variant", ["valid_503", "500", "success", "empty_detail", "drift"]
+)
+def test_native_missing_publication_checks_actual_unavailable_response(
+    tmp_path, monkeypatch, variant
+):
+    import io
+    import urllib.error
+
+    from tools import state_clone_gate as gate
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    calls = []
+
+    def response(port, endpoint):
+        calls.append(endpoint)
+        if variant == "success":
+            return {"valuation_snapshot_id": "fake"}
+        if variant == "drift" and len(calls) == 2:
+            db.publish_current_valuation_snapshot_sync()
+        payload = {
+            "detail": (
+                ""
+                if variant == "empty_detail"
+                else "published valuation identity is unavailable"
+            )
+        }
+        raise urllib.error.HTTPError(
+            endpoint,
+            500 if variant == "500" else 503,
+            "fixture",
+            {},
+            io.BytesIO(json.dumps(payload).encode()),
+        )
+
+    monkeypatch.setattr(gate, "_tcp_json", response)
+    if variant == "valid_503":
+        assert gate._tcp_financial_read_identity(tmp_path, 12345) == {
+            "current_publication_read": "unavailable"
+        }
+        assert calls == ["/api/portfolio", "/api/portfolio/overview"]
+    else:
+        with pytest.raises(
+            ValueError, match="(missing_evidence_not_blocked|financial_identity_drift)"
+        ):
+            gate._tcp_financial_read_identity(tmp_path, 12345)
+
+
+@pytest.mark.parametrize("variant", ["ledger_binding", "snapshot_checksum"])
+def test_native_new_publication_requires_canonical_snapshot_validation(
+    tmp_path, monkeypatch, variant
+):
+    from tools import state_clone_gate as gate
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.publish_current_valuation_snapshot_sync()
+    with sqlite3.connect(db.path) as conn:
+        if variant == "ledger_binding":
+            from server.persistence.financial_facts_ledger import (
+                insert_ledger_entry_on_connection,
+            )
+
+            insert_ledger_entry_on_connection(
+                conn,
+                entry_type="cash_deposit",
+                timestamp="2026-09-04T10:00:00+08:00",
+                amount=1,
+                created_at="2026-09-04T10:00:00+08:00",
+            )
+        else:
+            # Keep the immutable original row; insert an intentionally invalid candidate.
+            conn.row_factory = sqlite3.Row
+            candidate = dict(
+                conn.execute("SELECT * FROM valuation_snapshots").fetchone()
+            )
+            candidate.pop("id")
+            candidate["snapshot_id"] = "invalid-fixture"
+            candidate["quote_set_fingerprint"] = "incorrect"
+            columns = list(candidate)
+            conn.execute(
+                f"INSERT INTO valuation_snapshots ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                list(candidate.values()),
+            )
+            conn.execute(
+                "UPDATE runtime_controls SET value_json=? WHERE key='valuation_snapshot_publication'",
+                (json.dumps({"status": "ready", "snapshot_id": "invalid-fixture"}),),
+            )
+    monkeypatch.setattr(
+        gate,
+        "_tcp_json",
+        lambda *a: pytest.fail(
+            "invalid snapshot must be rejected before accepting HTTP"
+        ),
+    )
+    with pytest.raises(ValueError):
+        gate._tcp_financial_read_identity(tmp_path, 12345)
