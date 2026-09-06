@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from math import isfinite
 from zoneinfo import ZoneInfo
 
@@ -178,7 +179,7 @@ def cash_flow_adjusted_equity_points_from_series(
     if read_snapshot is None and (
         db is None or not hasattr(db, "get_ledger_entries_sync")
     ):
-        return raw_points
+        return []
 
     by_date: dict[str, EquitySeriesPoint] = {}
     for point in points:
@@ -193,7 +194,7 @@ def cash_flow_adjusted_equity_points_from_series(
     ]
     parsed_points.sort(key=lambda item: item[0])
     if len(parsed_points) < 2:
-        return raw_points
+        return []
 
     try:
         ledger_entries = (
@@ -204,15 +205,23 @@ def cash_flow_adjusted_equity_points_from_series(
             if read_snapshot is not None
             else load_ledger_entries_for_equity_series(db)
         )
-    except (KeyError, TypeError, ValueError):
-        return raw_points
+    except (KeyError, TypeError, ValueError, OSError, sqlite3.Error):
+        return []
 
     flow_events = []
     for entry in ledger_entries:
+        if (entry.entry_type or "").strip().lower() not in (
+            _CAPITAL_INFLOW_LEDGER_TYPES | _CAPITAL_OUTFLOW_LEDGER_TYPES
+        ):
+            continue
         timestamp = ledger_entry_timestamp(entry)
-        amount = ledger_capital_flow_amount(entry)
-        if timestamp is not None and amount is not None:
-            flow_events.append((timestamp, amount))
+        try:
+            amount = ledger_capital_flow_amount(entry)
+        except (InvalidOperation, TypeError, ValueError):
+            return []
+        if timestamp is None or amount is None or not amount.is_finite():
+            return []
+        flow_events.append((timestamp, amount))
     flow_events.sort(key=lambda item: item[0])
 
     event_index = 0
@@ -227,7 +236,7 @@ def cash_flow_adjusted_equity_points_from_series(
 
     first_total = Decimal(str(first_point.total))
     if initial_units <= 0 or first_total <= 0:
-        return raw_points
+        return []
 
     units = initial_units
     unit_price = first_total / units
@@ -251,14 +260,14 @@ def cash_flow_adjusted_equity_points_from_series(
         total = Decimal(str(point.total))
         pre_flow_equity = total - period_flow
         if units <= 0 or pre_flow_equity <= 0:
-            return raw_points
+            return []
 
         unit_price = pre_flow_equity / units
         if unit_price <= 0:
-            return raw_points
+            return []
         units += period_flow / unit_price
         if units <= 0:
-            return raw_points
+            return []
 
         unitized_points.append((point, unit_price))
 

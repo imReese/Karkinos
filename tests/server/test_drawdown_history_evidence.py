@@ -1,8 +1,9 @@
 """Replay a historical valuation gap followed by a later capital deposit."""
 
 import asyncio
+import sqlite3
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -19,21 +20,22 @@ from server.projections.portfolio_views.historical_series import (
 from server.routes import portfolio
 
 
-def _state():
-    rows = [
-        {
-            "id": 1,
-            "entry_type": "cash_deposit",
-            "timestamp": "2026-01-01T09:00:00+08:00",
-            "amount": 100,
-        },
-        {
-            "id": 2,
-            "entry_type": "cash_deposit",
-            "timestamp": "2026-01-03T09:00:00+08:00",
-            "amount": 900,
-        },
-    ]
+def _state(rows=None):
+    if rows is None:
+        rows = [
+            {
+                "id": 1,
+                "entry_type": "cash_deposit",
+                "timestamp": "2026-01-01T09:00:00+08:00",
+                "amount": 100,
+            },
+            {
+                "id": 2,
+                "entry_type": "cash_deposit",
+                "timestamp": "2026-01-03T09:00:00+08:00",
+                "amount": 900,
+            },
+        ]
     return SimpleNamespace(
         db=SimpleNamespace(
             get_ledger_entries_sync=lambda limit=500, offset=0: rows[
@@ -69,7 +71,20 @@ def test_cash_flow_adjustment_does_not_bridge_unknown_valuations():
 
 @pytest.mark.parametrize("endpoint", ["overview", "risk-workspace"])
 @pytest.mark.parametrize(
-    "history", ["gap", "empty", "single", "mismatched", "complete"]
+    "history",
+    [
+        "gap",
+        "empty",
+        "single",
+        "mismatched",
+        "complete",
+        "withdrawn",
+        "missing_ledger",
+        "invalid_ledger",
+        "unreadable_ledger",
+        "invalid_flow_time",
+        "invalid_flow_amount",
+    ],
 )
 def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, history):
     state = _state()
@@ -80,9 +95,52 @@ def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, his
         points = points[-1:]
     elif history == "mismatched":
         points[-1] = points[-1].model_copy(update={"valuation_snapshot_id": "other"})
+    elif history == "withdrawn":
+        rows = [
+            {
+                "id": day,
+                "entry_type": kind,
+                "timestamp": f"2026-01-0{day}T09:00:00+08:00",
+                "amount": amount,
+            }
+            for day, kind, amount in [
+                (1, "cash_deposit", 100),
+                (2, "cash_withdrawal", 100),
+                (3, "cash_deposit", 90),
+            ]
+        ]
+        state = _state(rows)
+        points = [
+            point.model_copy(update={"total": total, "stocks": 0, "cash": total})
+            for point, total in zip(points, [100, 0, 90])
+        ]
+    elif history == "missing_ledger":
+        state.db = None
+    elif history == "invalid_ledger":
+        state = _state(
+            [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": points[0].timestamp,
+                    "amount": "invalid",
+                }
+            ]
+        )
+    elif history == "unreadable_ledger":
+        state.db.get_ledger_entries_sync = Mock(
+            side_effect=sqlite3.OperationalError("unavailable")
+        )
+    elif history in {"invalid_flow_time", "invalid_flow_amount"}:
+        rows = state.db.get_ledger_entries_sync()
+        rows[1]["timestamp" if history == "invalid_flow_time" else "amount"] = (
+            "invalid" if history == "invalid_flow_time" else None
+        )
+        state = _state(rows)
+    current_total = 90 if history == "withdrawn" else 990
     current = PortfolioSnapshot(
-        cash=990,
-        total_equity=990,
+        cash=current_total,
+        total_equity=current_total,
         positions=[],
         allocation=[],
         valuation_status="complete",
@@ -142,7 +200,7 @@ def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, his
         assert result.drawdown_peak_equity is None
         assert result.drawdown_peak_timestamp is None
         assert result.drawdown_blockers == ["drawdown_history_unavailable"]
-        assert result.total_equity == 990
+        assert result.total_equity == current_total
     else:
         assert result.status == "partial"
         assert result.drawdown is None
@@ -154,5 +212,5 @@ def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, his
             "largest_weight",
             "top3_weight",
         }
-        assert result.exposure_buckets[0].value == 990
+        assert result.exposure_buckets[0].value == current_total
     performance.get_equity_curve.assert_not_awaited()
