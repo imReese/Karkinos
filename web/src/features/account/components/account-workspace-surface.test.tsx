@@ -135,6 +135,34 @@ test('keeps a missing historical drawdown distinct from zero', () => {
   expect(screen.queryByText(/Peak ¥/)).toBeNull();
 });
 
+test.each([false, true])(
+  'explains unverified correction performance with price gap=%s',
+  (gap) => {
+    renderWithPreferences(
+      <OverviewCards
+        overview={{
+          ...overview,
+          current_drawdown: null,
+          drawdown_blockers: [
+            'historical_correction_performance_unverified',
+            ...(gap ? ['drawdown_history_unavailable'] : []),
+          ],
+        }}
+      />,
+    );
+    const explanation = screen.getByText(
+      /Historical correction performance basis is unverified/,
+    );
+    expect(
+      explanation.textContent?.includes('Drawdown evidence incomplete'),
+    ).toBe(gap);
+    expect(
+      screen.queryByText('Adjusted for deposits and withdrawals'),
+    ).toBeNull();
+    expect(screen.queryByText('0.00%')).toBeNull();
+  },
+);
+
 test('shows cached quote copy on stale overview metrics', () => {
   renderWithPreferences(
     <OverviewCards

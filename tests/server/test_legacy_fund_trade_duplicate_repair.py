@@ -248,7 +248,7 @@ def test_daily_history_characterizes_tail_correction_without_restating_facts(tmp
         build_daily_equity_series_from_ledger_history,
     )
     from server.projections.portfolio_views.historical_series import (
-        cash_flow_adjusted_equity_points_from_series,
+        historical_performance_from_series,
     )
 
     path = tmp_path / "history.db"
@@ -336,7 +336,9 @@ def test_daily_history_characterizes_tail_correction_without_restating_facts(tmp
             current_point=None,
             now=datetime.fromisoformat("2026-04-14T16:00:00+08:00"),
         )
-        return points, cash_flow_adjusted_equity_points_from_series(state, points)
+        return points, historical_performance_from_series(
+            state, points, valuation_snapshot_id=None
+        )
 
     actual, adjusted = history(rows)
     reference, _ = history(restated)
@@ -348,9 +350,116 @@ def test_daily_history_characterizes_tail_correction_without_restating_facts(tmp
     )
     assert actual[-1].total == reference[-1].total
     # A valid correction and matching final balance do not prove historical returns.
-    assert adjusted[3].equity < adjusted[2].equity
+    assert actual[3].total < actual[2].total
+    assert adjusted.equity_curve == []
+    assert adjusted.blockers == ["historical_correction_performance_unverified"]
     assert resolve_legacy_fund_trade_duplicate_exclusions(rows).valid
     assert json.dumps(_rows(path), sort_keys=True) == before
+
+
+@pytest.mark.parametrize("price_gap", [False, True])
+def test_correction_performance_is_blocked_in_bound_snapshot_http_reads(
+    tmp_path, monkeypatch, price_gap
+):
+    import socket
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from server.config import ServerConfig
+    from server.db import AppDatabase
+    from server.dependencies import AppState, AppStateContextMiddleware
+    from server.routes import portfolio
+
+    path = tmp_path / "bound-history.db"
+    _fixture_database(path, group_sizes=(1,))
+    db = AppDatabase(path)
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-04-07T09:00:00+08:00",
+        amount=100,
+        asset_class="cash",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="cash_interest",
+        timestamp="2026-04-10T09:00:00+08:00",
+        amount=0.1,
+        asset_class="cash",
+    )
+    service = LegacyFundTradeDuplicateRepairService(
+        path, now=lambda: NOW, valuation_transaction_writer=_writer([])
+    )
+    service.apply(_command(service.preview()))
+    for day, price in [(8, 2), (9, 3), (10, 3)]:
+        if price_gap and day == 9:
+            continue
+        db.save_quote_snapshot_sync(
+            symbol="FIXTURE-1",
+            asset_class="fund",
+            price=price,
+            volume=None,
+            timestamp=f"2026-04-{day:02d}T15:00:00+08:00",
+            nav_date=f"2026-04-{day:02d}",
+            quote_status="confirmed",
+            quote_source="synthetic_history",
+            provider_name="fixture",
+        )
+    now = datetime.fromisoformat("2026-04-10T16:00:00+08:00")
+    valuation = db.publish_current_valuation_snapshot_sync(now=now)
+    assert valuation["status"] == "complete"
+    assert resolve_legacy_fund_trade_duplicate_exclusions(_rows(path)).valid
+    state = AppState()
+    state.db = db
+    state.config = ServerConfig(assets=[{"symbol": "FIXTURE-1", "asset_class": "fund"}])
+    monkeypatch.setattr(portfolio, "get_shanghai_now", lambda: now)
+    reads = []
+    original_read = db.get_all_ledger_entries_sync
+
+    def read_ledger():
+        reads.append(1)
+        return original_read()
+
+    def fail(*args, **kwargs):
+        raise AssertionError("unbound ledger read or provider connection")
+
+    monkeypatch.setattr(db, "get_all_ledger_entries_sync", read_ledger)
+    monkeypatch.setattr(db, "get_ledger_entries_sync", fail)
+    monkeypatch.setattr(socket, "create_connection", fail)
+    app = FastAPI()
+    app.add_middleware(AppStateContextMiddleware, app_state=state)
+    app.include_router(portfolio.create_router())
+    # Finish setup WAL publication before measuring read-only requests.
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    before = path.read_bytes()
+    with TestClient(app) as client:
+        series_response = client.get("/api/portfolio/equity-curve/series?range=all")
+        overview_response = client.get("/api/portfolio/overview")
+        risk_response = client.get("/api/portfolio/risk-workspace")
+    for response in (series_response, overview_response, risk_response):
+        assert response.status_code == 200, response.text
+    series = series_response.json()
+    assert any(point["total"] is None for point in series) == price_gap
+    assert series[-1]["valuation_snapshot_id"] == valuation["snapshot_id"]
+    overview = overview_response.json()
+    risk = risk_response.json()
+    expected = ["historical_correction_performance_unverified"]
+    if price_gap:
+        expected.insert(0, "drawdown_history_unavailable")
+    assert overview["valuation_snapshot_id"] == valuation["snapshot_id"]
+    assert overview["ledger_cutoff_id"] == valuation["ledger_cutoff_id"]
+    assert overview["current_drawdown"] is None
+    assert overview["drawdown_peak_equity"] is None
+    assert overview["drawdown_blockers"] == expected
+    assert overview["total_equity"] == pytest.approx(110)
+    assert risk["status"] == "partial"
+    assert risk["blockers"] == expected
+    assert risk["drawdown"] is None
+    assert risk["drawdown_series"] == []
+    assert risk["exposure_buckets"]
+    assert risk["concentration"][0]["market_value"] == 30
+    assert len(reads) == 1
+    assert path.read_bytes() == before
 
 
 def test_preview_is_zero_write_private_and_finds_generic_live_shape(tmp_path) -> None:

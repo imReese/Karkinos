@@ -37,6 +37,7 @@ export const overviewCopyZh = {
     currentDrawdown: '当前回撤',
     drawdownBasis: '已剔除出入金影响',
     drawdownUnavailable: '回撤证据待补齐',
+    drawdownHistoricalCorrection: '历史记账修正的业绩口径尚未核验',
     positionsCount: '活跃持仓',
     cachedValuation: '行情缓存 · 估值时间',
     valuationStatus: (status: string) => `估值状态：${status}`,

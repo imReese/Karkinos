@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from math import isfinite
@@ -13,6 +14,7 @@ from server.models import (
     EquityPoint,
     EquitySeriesPoint,
 )
+from server.projections.ledger_correction_read import is_fund_duplicate_correction
 from server.projections.portfolio_read_snapshot_persistence import (
     portfolio_read_snapshot_for_state,
 )
@@ -162,6 +164,59 @@ def cash_flow_adjusted_equity_points_from_series(
     state,
     points: list[EquitySeriesPoint],
 ) -> list[EquityPoint]:
+    return historical_performance_from_series(
+        state,
+        points,
+        valuation_snapshot_id=points[-1].valuation_snapshot_id if points else None,
+    ).equity_curve
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalPerformanceEvaluation:
+    equity_curve: list[EquityPoint]
+    blockers: list[str]
+
+
+def historical_performance_from_series(
+    state,
+    points: list[EquitySeriesPoint],
+    *,
+    valuation_snapshot_id: str | None,
+) -> HistoricalPerformanceEvaluation:
+    read_snapshot = portfolio_read_snapshot_for_state(state)
+    db = getattr(state, "db", None)
+    try:
+        ledger_entries = (
+            [LedgerEntry.from_row(dict(row)) for row in read_snapshot.ledger_rows]
+            if read_snapshot is not None
+            else load_ledger_entries_for_equity_series(db)
+        )
+    except (KeyError, TypeError, ValueError, OSError, sqlite3.Error):
+        return HistoricalPerformanceEvaluation([], ["drawdown_history_unavailable"])
+
+    blockers = []
+    if any(is_fund_duplicate_correction(entry) for entry in ledger_entries):
+        # Correction validation proves bookkeeping, not a restated return history.
+        blockers.append("historical_correction_performance_unverified")
+    equity_curve = _unitized_equity_points(points, ledger_entries)
+    if (
+        not equity_curve
+        or not equity_series_matches_valuation(points, valuation_snapshot_id)
+        or (
+            read_snapshot is not None
+            and read_snapshot.identity.valuation_snapshot_id != valuation_snapshot_id
+        )
+    ):
+        blockers.append("drawdown_history_unavailable")
+    return HistoricalPerformanceEvaluation(
+        [] if blockers else equity_curve, sorted(set(blockers))
+    )
+
+
+def _unitized_equity_points(
+    points: list[EquitySeriesPoint],
+    ledger_entries: list[LedgerEntry],
+) -> list[EquityPoint]:
     if any(
         point.total is None
         or not isfinite(point.total)
@@ -172,13 +227,6 @@ def cash_flow_adjusted_equity_points_from_series(
         return []
     raw_points = equity_points_from_series(points)
     if len(raw_points) < 2:
-        return []
-
-    read_snapshot = portfolio_read_snapshot_for_state(state)
-    db = getattr(state, "db", None)
-    if read_snapshot is None and (
-        db is None or not hasattr(db, "get_ledger_entries_sync")
-    ):
         return []
 
     by_date: dict[str, EquitySeriesPoint] = {}
@@ -194,18 +242,6 @@ def cash_flow_adjusted_equity_points_from_series(
     ]
     parsed_points.sort(key=lambda item: item[0])
     if len(parsed_points) < 2:
-        return []
-
-    try:
-        ledger_entries = (
-            sorted(
-                (LedgerEntry.from_row(dict(row)) for row in read_snapshot.ledger_rows),
-                key=lambda entry: (entry.timestamp, entry.id or 0),
-            )
-            if read_snapshot is not None
-            else load_ledger_entries_for_equity_series(db)
-        )
-    except (KeyError, TypeError, ValueError, OSError, sqlite3.Error):
         return []
 
     flow_events = []
@@ -531,6 +567,7 @@ __all__ = (
     "equity_series_status_rank",
     "flat_intraday_equity_series_from_current",
     "historical_quote_for_equity_day",
+    "historical_performance_from_series",
     "ledger_capital_flow_amount",
     "ledger_entry_timestamp",
     "load_ledger_entries_for_equity_series",

@@ -1,4 +1,5 @@
 import { useCopy } from '../../../shared/i18n/context';
+import { drawdownUnavailableLabel } from '../../../shared/drawdown-evidence';
 import {
   EvidenceIdentityDisclosure,
   EvidenceState,
@@ -270,7 +271,10 @@ export function OverviewCards({
       value: formatDrawdownPercent(overview.current_drawdown),
       detail: drawdownAvailable
         ? copy.overview.cards.drawdownBasis
-        : copy.overview.cards.drawdownUnavailable,
+        : drawdownUnavailableLabel(
+            overview.drawdown_blockers,
+            copy.overview.cards,
+          ),
       tone:
         typeof overview.current_drawdown === 'number' &&
         overview.current_drawdown > 0

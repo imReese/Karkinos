@@ -87,7 +87,10 @@ def _build_drawdown_summary(
 def build_risk_workspace(
     snapshot: PortfolioSnapshot,
     equity_curve: list[EquityPoint],
+    *,
+    historical_blockers: list[str] | None = None,
 ) -> RiskWorkspaceResponse:
+    historical_blockers = list(historical_blockers or [])
     missing_symbols = sorted(
         set(snapshot.missing_price_symbols)
         | {
@@ -115,6 +118,7 @@ def build_risk_workspace(
         )
         if snapshot.valuation_status != "complete" and not blockers:
             blockers.append(f"portfolio_valuation_{snapshot.valuation_status}")
+        blockers.extend(historical_blockers)
         return RiskWorkspaceResponse(
             status="blocked",
             blockers=sorted(set(blockers or ["portfolio_valuation_unavailable"])),
@@ -125,7 +129,9 @@ def build_risk_workspace(
             concentration=[],
         )
 
-    drawdown_summary, drawdown_series = _build_drawdown_summary(equity_curve)
+    drawdown_summary, drawdown_series = _build_drawdown_summary(
+        [] if historical_blockers else equity_curve
+    )
 
     total_equity = snapshot.total_equity or 0.0
     gross_exposure = (
@@ -270,7 +276,10 @@ def build_risk_workspace(
     return RiskWorkspaceResponse(
         status="complete" if drawdown_summary is not None else "partial",
         blockers=(
-            [] if drawdown_summary is not None else ["drawdown_history_unavailable"]
+            historical_blockers
+            or (
+                [] if drawdown_summary is not None else ["drawdown_history_unavailable"]
+            )
         ),
         metrics=metrics,
         drawdown=drawdown_summary,

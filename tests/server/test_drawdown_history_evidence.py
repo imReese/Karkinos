@@ -84,6 +84,9 @@ def test_cash_flow_adjustment_does_not_bridge_unknown_valuations():
         "unreadable_ledger",
         "invalid_flow_time",
         "invalid_flow_amount",
+        "correction",
+        "correction_gap",
+        "correction_unknown_schema",
     ],
 )
 def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, history):
@@ -137,6 +140,22 @@ def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, his
             "invalid" if history == "invalid_flow_time" else None
         )
         state = _state(rows)
+    elif history.startswith("correction"):
+        rows = state.db.get_ledger_entries_sync()
+        rows.append(
+            {
+                "id": 3,
+                "entry_type": "legacy_fund_trade_duplicate_projection_correction",
+                "timestamp": "2026-01-03T09:00:01+08:00",
+                "source": "legacy_fund_trade_duplicate_repair",
+                "correction_payload_json": '{"schema_version":"unknown"}',
+            }
+        )
+        if history == "correction_unknown_schema":
+            rows[-1]["entry_type"] = "unknown"
+        if history == "correction_gap":
+            points[1] = points[1].model_copy(update={"total": None})
+        state = _state(rows)
     current_total = 90 if history == "withdrawn" else 990
     current = PortfolioSnapshot(
         cash=current_total,
@@ -187,6 +206,13 @@ def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, his
     )
     result = asyncio.run(handler())
 
+    expected_blockers = (
+        ["historical_correction_performance_unverified"]
+        if history.startswith("correction")
+        else ["drawdown_history_unavailable"]
+    )
+    if history == "correction_gap":
+        expected_blockers.insert(0, "drawdown_history_unavailable")
     if history == "complete":
         drawdown = (
             result.current_drawdown
@@ -199,13 +225,13 @@ def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, his
         assert result.current_drawdown_amount is None
         assert result.drawdown_peak_equity is None
         assert result.drawdown_peak_timestamp is None
-        assert result.drawdown_blockers == ["drawdown_history_unavailable"]
+        assert result.drawdown_blockers == expected_blockers
         assert result.total_equity == current_total
     else:
         assert result.status == "partial"
         assert result.drawdown is None
         assert result.drawdown_series == []
-        assert result.blockers == ["drawdown_history_unavailable"]
+        assert result.blockers == expected_blockers
         assert {item.key for item in result.metrics} == {
             "gross_exposure",
             "cash_ratio",
