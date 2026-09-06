@@ -372,6 +372,37 @@ test('preserves exposure when historical drawdown evidence is unavailable', asyn
   ).toBeNull();
 });
 
+test.each([false, true])(
+  'explains correction performance without hiding exposure, price gap=%s',
+  async (gap) => {
+    renderRiskPage({
+      workspaceResponse: {
+        ...riskWorkspace,
+        status: 'partial',
+        blockers: [
+          'historical_correction_performance_unverified',
+          ...(gap ? ['drawdown_history_unavailable'] : []),
+        ],
+        metrics: riskWorkspace.metrics.filter(
+          (item) => !item.key.includes('drawdown'),
+        ),
+        drawdown: null,
+        drawdown_series: [],
+      },
+    });
+    const explanation = await screen.findByText(
+      /Historical correction performance basis is unverified/,
+    );
+    expect(
+      explanation.textContent?.includes('Drawdown evidence incomplete'),
+    ).toBe(gap);
+    expect(screen.getByTestId('risk-exposure-section')).toBeTruthy();
+    expect(
+      screen.getByTestId('risk-drawdown-section').querySelector('svg'),
+    ).toBeNull();
+  },
+);
+
 beforeEach(() => {
   vi.stubGlobal(
     'ResizeObserver',

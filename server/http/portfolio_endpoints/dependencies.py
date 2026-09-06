@@ -60,7 +60,7 @@ class PortfolioPerformanceDependencies:
 class PortfolioSnapshotDependencies:
     get_state: StateProvider
     build_live_holdings_response: Operation
-    cash_flow_adjusted_equity_points_from_series: Operation
+    historical_performance_from_series: Operation
     collect_latest_quote_timestamps: Operation
     equity_series_matches_valuation: Operation
     overview_daily_operations_summary: Operation
@@ -86,7 +86,7 @@ class PortfolioAnalysisDependencies:
     build_position_drivers: Operation
     build_recent_drivers: Operation
     build_timeline: Operation
-    cash_flow_adjusted_equity_points_from_series: Operation
+    historical_performance_from_series: Operation
     collect_latest_quote_timestamps: Operation
     dedupe_equity_series_points_by_date: Operation
     equity_points_from_series: Operation

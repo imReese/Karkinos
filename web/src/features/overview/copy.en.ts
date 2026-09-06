@@ -41,6 +41,8 @@ export const overviewCopyEn = {
     currentDrawdown: 'Current Drawdown',
     drawdownBasis: 'Adjusted for deposits and withdrawals',
     drawdownUnavailable: 'Drawdown evidence incomplete',
+    drawdownHistoricalCorrection:
+      'Historical correction performance basis is unverified',
     positionsCount: 'Active Positions',
     cachedValuation: 'Cached quotes · valuation time',
     valuationStatus: (status: string) => `Valuation status: ${status}`,

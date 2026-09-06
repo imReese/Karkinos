@@ -30,8 +30,8 @@ def create_router(
     _build_position_drivers = dependencies.build_position_drivers
     _build_recent_drivers = dependencies.build_recent_drivers
     _build_timeline = dependencies.build_timeline
-    _cash_flow_adjusted_equity_points_from_series = (
-        dependencies.cash_flow_adjusted_equity_points_from_series
+    _historical_performance_from_series = (
+        dependencies.historical_performance_from_series
     )
     _collect_latest_quote_timestamps = dependencies.collect_latest_quote_timestamps
     _dedupe_equity_series_points_by_date = (
@@ -148,16 +148,16 @@ def create_router(
         state = dependencies.get_state()
         portfolio_snapshot = await snapshot.get_portfolio()
         equity_series = await performance.get_equity_curve_series("all")
-        equity_curve = _cash_flow_adjusted_equity_points_from_series(
+        history = _historical_performance_from_series(
             state,
             equity_series,
+            valuation_snapshot_id=portfolio_snapshot.valuation_snapshot_id,
         )
-        if not _equity_series_matches_valuation(
-            equity_series,
-            portfolio_snapshot.valuation_snapshot_id,
-        ):
-            equity_curve = []
-        return build_risk_workspace(portfolio_snapshot, equity_curve)
+        return build_risk_workspace(
+            portfolio_snapshot,
+            history.equity_curve,
+            historical_blockers=history.blockers,
+        )
 
     return r
 

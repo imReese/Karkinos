@@ -39,8 +39,8 @@ def create_router(
     r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
     _build_live_holdings_response = dependencies.build_live_holdings_response
-    _cash_flow_adjusted_equity_points_from_series = (
-        dependencies.cash_flow_adjusted_equity_points_from_series
+    _historical_performance_from_series = (
+        dependencies.historical_performance_from_series
     )
     _collect_latest_quote_timestamps = dependencies.collect_latest_quote_timestamps
     _equity_series_matches_valuation = dependencies.equity_series_matches_valuation
@@ -134,17 +134,18 @@ def create_router(
         overview = _with_overview_quote_metadata(projection.summary, snapshot)
         live_holdings = _build_live_holdings_response(state)
         equity_series = await performance.get_equity_curve_series("all")
-        equity_curve = _cash_flow_adjusted_equity_points_from_series(
+        history = _historical_performance_from_series(
             state,
             equity_series,
+            valuation_snapshot_id=snapshot.valuation_snapshot_id,
         )
         equity_valuation_consistent = _equity_series_matches_valuation(
             equity_series,
             snapshot.valuation_snapshot_id,
         )
-        if not equity_valuation_consistent:
-            equity_curve = []
-        risk_workspace = build_risk_workspace(snapshot, equity_curve)
+        risk_workspace = build_risk_workspace(
+            snapshot, history.equity_curve, historical_blockers=history.blockers
+        )
         valuation_consistent = (
             snapshot.valuation_snapshot_id == live_holdings.valuation_snapshot_id
             and equity_valuation_consistent

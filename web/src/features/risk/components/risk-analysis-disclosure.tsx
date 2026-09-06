@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react';
+import { drawdownUnavailableLabel } from '../../../shared/drawdown-evidence';
 
 import { formatPercent as formatPercentValue } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
@@ -72,7 +73,10 @@ export function RiskAnalysisDisclosure({
               {copy.riskPage.drawdown}
             </div>
             <div className="mt-3">
-              <DrawdownChart points={workspace.data.drawdown_series} />
+              <DrawdownChart
+                points={workspace.data.drawdown_series}
+                blockers={workspace.data.blockers}
+              />
             </div>
           </section>
           <section
@@ -207,14 +211,16 @@ export function RiskAnalysisDisclosure({
 
 function DrawdownChart({
   points,
+  blockers,
 }: {
   points: Array<{ timestamp: string; drawdown: number }>;
+  blockers: string[];
 }) {
   const copy = useCopy();
   if (points.length === 0) {
     return (
       <div className="app-muted text-sm">
-        {copy.overview.cards.drawdownUnavailable}
+        {drawdownUnavailableLabel(blockers, copy.overview.cards)}
       </div>
     );
   }

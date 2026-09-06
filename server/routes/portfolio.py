@@ -105,9 +105,6 @@ from server.projections.portfolio_views.historical_series import (
     bind_equity_series_valuation as _bind_equity_series_valuation,
 )
 from server.projections.portfolio_views.historical_series import (
-    cash_flow_adjusted_equity_points_from_series as _cash_flow_adjusted_equity_points_from_series,
-)
-from server.projections.portfolio_views.historical_series import (
     daily_equity_series_for_range as _daily_equity_series_for_range,
 )
 from server.projections.portfolio_views.historical_series import (
@@ -127,6 +124,9 @@ from server.projections.portfolio_views.historical_series import (
 )
 from server.projections.portfolio_views.historical_series import (
     flat_intraday_equity_series_from_current as _flat_intraday_equity_series_from_current,
+)
+from server.projections.portfolio_views.historical_series import (
+    historical_performance_from_series as _historical_performance_from_series,
 )
 from server.projections.portfolio_views.historical_series import (
     historical_quote_for_equity_day as _historical_quote_for_equity_day,
@@ -342,8 +342,8 @@ def build_portfolio_endpoint_dependencies() -> PortfolioEndpointDependencies:
             build_live_holdings_response=lambda *args, **kwargs: (
                 _build_live_holdings_response(*args, **kwargs)
             ),
-            cash_flow_adjusted_equity_points_from_series=lambda *args, **kwargs: (
-                _cash_flow_adjusted_equity_points_from_series(*args, **kwargs)
+            historical_performance_from_series=lambda *args, **kwargs: (
+                _historical_performance_from_series(*args, **kwargs)
             ),
             collect_latest_quote_timestamps=lambda *args, **kwargs: (
                 _collect_latest_quote_timestamps(*args, **kwargs)
@@ -406,8 +406,8 @@ def build_portfolio_endpoint_dependencies() -> PortfolioEndpointDependencies:
                 *args, **kwargs
             ),
             build_timeline=lambda *args, **kwargs: _build_timeline(*args, **kwargs),
-            cash_flow_adjusted_equity_points_from_series=lambda *args, **kwargs: (
-                _cash_flow_adjusted_equity_points_from_series(*args, **kwargs)
+            historical_performance_from_series=lambda *args, **kwargs: (
+                _historical_performance_from_series(*args, **kwargs)
             ),
             collect_latest_quote_timestamps=lambda *args, **kwargs: (
                 _collect_latest_quote_timestamps(*args, **kwargs)
