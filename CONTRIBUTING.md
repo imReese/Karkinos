@@ -18,24 +18,34 @@ git push origin dev
 
 `Promote verified dev` runs daily at 02:00 Asia/Shanghai (18:00 UTC), and can be
 started manually from Actions on main. GitHub schedules can be delayed.
-The trusted main script walks at most 100 first-parent dev commits, newest
-first. It chooses the newest descendant of main whose latest official Dev CI
-push run/attempt succeeded and whose Code CI gate passed. A failed or pending
-tip can remain on dev while an earlier verified ancestor is promoted. API
-errors, incomplete listings, changed identities, divergence, and an exhausted
-search bound stop the run instead of guessing.
+The trusted main workflow walks at most 100 first-parent dev commits, newest
+first. It selects the newest descendant of main whose latest official Dev CI
+push run/attempt succeeded and whose incremental Code CI gate passed. A failed
+or pending tip can remain on dev while an earlier incremental-green ancestor is
+selected. API errors, incomplete listings, changed identities, divergence, and
+an exhausted search bound stop the run instead of guessing.
+
+Selection is not authorization to update main. The exact selected SHA then runs
+a trusted, read-only full pre-promotion verification covering Python quality,
+repository hygiene and secret scanning, backend and frontend suites, trading
+safety, production dependency audit, Docker runtime smoke, browser safety, and
+acceptance evidence. The final fast-forward job receives write permission only
+after that exact full verification succeeds. If dev or main changes while the
+candidate is being verified, the exact selection becomes invalid and the run
+fails closed instead of promoting a different SHA.
 
 Promotion uses the exact SHA and a server-side non-force ref update. It never
 executes the dev checkout with write credentials, creates a PR, opens trading
-authority, creates a tag, or changes a local service. A concurrent dev/main
-change or newer CI attempt invalidates the selection. Server protection is
+authority, creates a tag, or changes a local service. Server protection is
 never bypassed.
 
-The built-in GITHUB_TOKEN cannot trigger another push workflow, so the job
-explicitly dispatches the existing full CI and Candidate workflows on main with
-the selected SHA. CI rejects a dispatch that does not match its main checkout.
-Release source verification accepts the latest exact main push or explicit
-CI dispatch, not a green run on dev or a previous successful attempt. A failed
+The built-in GITHUB_TOKEN cannot trigger another push workflow, so after the
+verified ref update the job explicitly dispatches the existing full CI and
+Candidate workflows on main with the selected SHA. These post-promotion runs
+record exact-main evidence; they are not the authorization that allowed the SHA
+to enter main. CI rejects a dispatch that does not match its main checkout.
+Release source verification accepts the latest exact main push or explicit CI
+dispatch, not a green run on dev or a previous successful attempt. A failed
 dispatch after the ref update is repairable on the next run. Existing failed
 runs are not silently retried into green; use Actions rerun after diagnosis.
 No personal access token is needed for ordinary source promotion. A server
@@ -82,9 +92,10 @@ push, so a later small commit cannot hide an earlier unpromoted formatting
 failure. Ruff, Black, isort, mypy and architecture results are independent;
 any failure fails the command. Checks do not rewrite files.
 
-Preflight precedes full backend/frontend, safety, dependency, Docker and browser
-checks. Acceptance binds test evidence. The final Code CI gate rejects failed,
-cancelled, skipped and missing results. Main retains per-commit CI evidence.
+Dev CI is change-scoped: frontend, trading, dependency, and Docker runtime jobs
+run only when their owned paths change. The scheduled promotion independently
+runs the complete pre-promotion verification before any main write. Main then
+retains full per-commit CI and candidate evidence after promotion.
 
 ## Sensitive files and test expectations
 
