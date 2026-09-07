@@ -229,12 +229,13 @@ def test_docs_consumers_and_ci_contracts_run_before_backend():
 def test_no_path_exemptions_or_hidden_failures_and_checkouts_are_read_only():
     config = workflow()
     assert set(config["on"]) == {"pull_request", "push"}
-    assert config["on"]["push"] == {"branches": ["main"]}
+    assert config["on"]["push"] == {"branches": ["main", "dev"]}
     assert config["permissions"] == {"contents": "read"}
     assert (
         config["concurrency"]["cancel-in-progress"]
         == "${{ github.event_name == 'pull_request' }}"
     )
+    assert "${{ github.ref }}" in config["concurrency"]["group"]
     assert "github.sha" in config["concurrency"]["group"]
     for job in config["jobs"].values():
         assert 0 < int(job["timeout-minutes"]) <= 20
@@ -288,3 +289,54 @@ def test_actual_gate_rejects_non_success_results(tmp_path, state):
 @pytest.mark.parametrize("results", [{}, [], {"backend": {}}, {"backend": None}])
 def test_actual_gate_rejects_absent_results(tmp_path, results):
     assert run_gate(tmp_path, results).returncode != 0
+
+
+@pytest.mark.parametrize("branch", ["main", "dev"])
+def test_long_lived_branch_policy_templates_block_history_loss(branch):
+    policy = json.loads((ROOT / f".github/rulesets/{branch}.json").read_text())
+    assert policy["target"] == "branch"
+    assert policy["enforcement"] == "active"
+    assert policy["conditions"] == {
+        "ref_name": {"include": [f"refs/heads/{branch}"], "exclude": []}
+    }
+    assert policy["bypass_actors"] == []
+    types = {rule["type"] for rule in policy["rules"]}
+    assert {"deletion", "non_fast_forward"} <= types
+    assert "required_linear_history" not in types
+
+
+def test_main_policy_template_requires_reviewed_current_ci_and_merge_commits():
+    policy = json.loads((ROOT / ".github/rulesets/main.json").read_text())
+    rules = {rule["type"]: rule for rule in policy["rules"]}
+    review = rules["pull_request"]["parameters"]
+    assert review["allowed_merge_methods"] == ["merge"]
+    assert review["required_review_thread_resolution"] is True
+    assert review["required_approving_review_count"] == 0
+    assert review["require_last_push_approval"] is False
+    checks = rules["required_status_checks"]["parameters"]
+    assert checks["strict_required_status_checks_policy"] is True
+    assert checks["do_not_enforce_on_create"] is False
+    assert checks["required_status_checks"] == [
+        {"context": workflow()["jobs"]["code-ci-gate"]["name"], "integration_id": 15368}
+    ]
+
+
+def test_dev_policy_template_permits_normal_pushes_to_start_ci():
+    policy = json.loads((ROOT / ".github/rulesets/dev.json").read_text())
+    assert {rule["type"] for rule in policy["rules"]} == {
+        "deletion",
+        "non_fast_forward",
+    }
+
+
+def test_dependabot_version_updates_target_persistent_dev():
+    config = yaml.load(
+        (ROOT / ".github/dependabot.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    assert {entry["package-ecosystem"] for entry in config["updates"]} == {
+        "uv",
+        "npm",
+        "github-actions",
+        "docker",
+    }
+    assert all(entry["target-branch"] == "dev" for entry in config["updates"])
