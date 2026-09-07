@@ -29,6 +29,14 @@ def _copy_sources(dockerfile: str) -> set[str]:
     return sources
 
 
+def _dockerignore_rules() -> list[str]:
+    return [
+        line.strip()
+        for line in Path(".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
 def test_docker_build_inputs_are_explicitly_allowlisted() -> None:
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
     sources = _copy_sources(dockerfile)
@@ -52,11 +60,7 @@ def test_docker_build_inputs_are_explicitly_allowlisted() -> None:
 
 
 def test_docker_context_is_deny_by_default_and_matches_copy_allowlist() -> None:
-    lines = [
-        line.strip()
-        for line in Path(".dockerignore").read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
+    lines = _dockerignore_rules()
 
     assert lines[0] == "**"
     allowed = {line[1:] for line in lines if line.startswith("!")}
@@ -88,33 +92,30 @@ def test_docker_context_is_deny_by_default_and_matches_copy_allowlist() -> None:
     assert "web/dist/" in lines
 
 
-def test_docker_context_contract_checks_private_sentinel_files() -> None:
-    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    absent_checks = {
-        line.strip().removeprefix("&& ").removesuffix("\\").strip()
-        for line in workflow.splitlines()
-        if "test ! -e /build-context/" in line
-    }
-    expected_checks = {
-        "test ! -e /build-context/config.json",
-        "test ! -e /build-context/broker_statement.csv",
-        "test ! -e /build-context/secret.py",
-        "test ! -e /build-context/.env",
-        "test ! -e /build-context/data/store/runtime.sqlite",
-        "test ! -e /build-context/data/store/private_runtime.py",
-        "test ! -e /build-context/logs",
-        "test ! -e /build-context/reports",
-        "test ! -e /build-context/exports",
-        "test ! -e /build-context/screenshots",
-        "test ! -e /build-context/.playwright-mcp",
-        "test ! -e /build-context/strategy/extensions/private_strategy.py",
-        "test ! -e /build-context/account_truth/private-export.csv",
-        "test ! -e /build-context/server/account-snapshot.json",
-        "test ! -e /build-context/web/src/private-account.json",
+def test_docker_context_denies_private_runtime_artifacts() -> None:
+    rules = set(_dockerignore_rules())
+    required_denies = {
+        "**/.env",
+        "**/.env.*",
+        "**/config.json",
+        "**/secret.py",
+        "**/broker_statement.csv",
+        "**/*.db",
+        "**/*.sqlite",
+        "**/*.sqlite3",
+        "**/*.duckdb",
+        "**/logs/",
+        "**/reports/",
+        "**/exports/",
+        "**/screenshots/",
+        "data/store/**",
+        "strategy/extensions/**",
+        "web/node_modules/",
+        "web/dist/",
     }
 
-    assert absent_checks == expected_checks
-    assert "test ! -e /build-context/data/store" not in absent_checks
+    assert required_denies <= rules
+    assert "!strategy/extensions/__init__.py" in rules
 
 
 def test_docker_runtime_uses_the_python_and_uv_release_baseline() -> None:
