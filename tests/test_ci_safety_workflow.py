@@ -54,12 +54,25 @@ def test_ci_has_incremental_python_quality_and_independent_trading_safety_jobs(
     assert "uv run python scripts/ci/check_python_quality.py" in workflow
     assert "Trading safety invariants" in workflow
     assert "python -m pytest -m trading_safety" in workflow
-    assert "needs: [backend, frontend, trading-safety]" in workflow
+
+    jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
+    assert set(jobs["repository-acceptance-audit"]["needs"]) == {
+        "changes",
+        "backend",
+        "frontend",
+        "trading-safety",
+    }
+    assert "needs.changes.outputs.docs_only == 'true'" in jobs[
+        "repository-acceptance-audit"
+    ]["if"]
 
 
-def test_ci_pins_uv_and_requires_every_code_ci_job_to_pass(tmp_path: Path) -> None:
+def test_ci_pins_uv_and_requires_every_scheduled_code_ci_job_to_pass(
+    tmp_path: Path,
+) -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     expected_jobs = {
+        "changes",
         "python-quality",
         "repository-contracts",
         "backend",
@@ -104,6 +117,7 @@ def test_ci_pins_uv_and_requires_every_code_ci_job_to_pass(tmp_path: Path) -> No
         )
 
     results = {name: {"result": "success"} for name in expected_jobs}
+    results["changes"]["outputs"] = {"docs_only": "false"}
     passed = execute(results)
     assert passed.returncode == 0, passed.stderr
     for name in sorted(expected_jobs):
