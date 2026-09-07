@@ -2,8 +2,8 @@ name: Promote verified dev
 
 on:
   schedule:
-    # Every day at 03:17 Asia/Tokyo (18:17 UTC); not an exact-time SLA.
-    - cron: "17 18 * * *"
+    # Every day at 02:00 Asia/Shanghai (18:00 UTC); not an exact-time SLA.
+    - cron: "0 18 * * *"
   workflow_dispatch:
   push:
     branches: [main]
