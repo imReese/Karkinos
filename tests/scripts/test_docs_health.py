@@ -28,6 +28,25 @@ def docs_root(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _write_agent_contract(root: Path) -> None:
+    _write(
+        root,
+        "AGENTS.md",
+        "\n".join(
+            [
+                "# Agent Guide",
+                "docs/README.md",
+                "docs/GOAL.md",
+                "docs/ARCHITECTURE.md",
+                "docs/PLAN.md",
+                "docs/CODEBASE.md",
+            ]
+        )
+        + "\n",
+    )
+    _write(root, "CLAUDE.md", "# Claude\n\n@AGENTS.md\n")
+
+
 def test_missing_required_document_is_rejected(docs_root):
     assert health._check_document("docs/missing.md", 10) == [
         "missing documentation file: docs/missing.md"
@@ -41,22 +60,30 @@ def test_document_guardrail_is_enforced_without_becoming_a_target(docs_root):
     assert health._check_document("docs/example.md", None) == []
 
 
-def test_agent_entrypoints_enforce_routing_not_micro_line_counts(docs_root):
-    _write(
-        docs_root,
-        "AGENTS.md",
-        "# Agent Guide\nRead AI_COLLABORATION.md and docs/README.md.\n",
-    )
-    _write(
-        docs_root,
-        "CLAUDE.md",
-        "# Claude\nFollow AGENTS.md, then AI_COLLABORATION.md.\n",
-    )
+def test_agent_entrypoints_use_one_shared_contract(docs_root):
+    _write_agent_contract(docs_root)
     assert health._check_agent_entrypoints() == []
 
     _write(docs_root, "CLAUDE.md", "# Claude\nStandalone rules.\n")
-    errors = health._check_agent_entrypoints()
-    assert "delegate repository instructions to AGENTS.md" in errors[0]
+    assert health._check_agent_entrypoints() == [
+        "CLAUDE.md must import the shared AGENTS.md contract with @AGENTS.md"
+    ]
+
+
+def test_agent_contract_routes_architecture_to_canonical_docs(docs_root):
+    _write_agent_contract(docs_root)
+    _write(
+        docs_root,
+        "AGENTS.md",
+        "# Agent Guide\ndocs/README.md\ndocs/GOAL.md\ndocs/PLAN.md\ndocs/CODEBASE.md\n",
+    )
+    assert "AGENTS.md must route agents to docs/ARCHITECTURE.md" in health._check_agent_entrypoints()
+
+
+def test_legacy_ai_collaboration_routing_is_rejected(docs_root):
+    _write_agent_contract(docs_root)
+    _write(docs_root, "CLAUDE.md", "@AGENTS.md\nRead AI_COLLABORATION.md too.\n")
+    assert "agent entrypoints must route architecture through canonical docs, not AI_COLLABORATION.md" in health._check_agent_entrypoints()
 
 
 @pytest.mark.parametrize("path_text", health.OPERATIONAL_REFERENCE_DOCS)
@@ -97,10 +124,17 @@ def test_retired_stub_cannot_return(docs_root, path_text):
     ]
 
 
+def test_retired_root_agent_policy_cannot_return(docs_root):
+    assert health._check_removed_docs_stay_removed() == []
+    _write(docs_root, "AI_COLLABORATION.md")
+    assert health._check_removed_docs_stay_removed() == [
+        "retired root document returned: AI_COLLABORATION.md"
+    ]
+
+
 def test_retired_stubs_are_not_required_documents():
     required = {
         *health.CORE_DOC_BUDGETS,
-        *health.AGENT_ENTRYPOINT_BUDGETS,
         *health.COMPATIBILITY_STUB_BUDGETS,
         *health.MAINTENANCE_DOC_BUDGETS,
         *health.FROZEN_REFERENCE_STUB_BUDGETS,
@@ -124,10 +158,11 @@ def test_retired_stubs_are_not_acceptance_evidence():
                 assert not any(path in command for path in retired), criterion.key
 
 
-def test_main_keeps_routing_operational_links_and_retirement_gate(docs_root, capsys):
+def test_main_keeps_shared_agent_contract_operational_links_and_retirement_gate(
+    docs_root, capsys
+):
     required = {
         *health.CORE_DOC_BUDGETS,
-        *health.AGENT_ENTRYPOINT_BUDGETS,
         *health.COMPATIBILITY_STUB_BUDGETS,
         *health.MAINTENANCE_DOC_BUDGETS,
         *health.FROZEN_REFERENCE_STUB_BUDGETS,
@@ -135,16 +170,7 @@ def test_main_keeps_routing_operational_links_and_retirement_gate(docs_root, cap
     }
     for path_text in required:
         _write(docs_root, path_text)
-    _write(
-        docs_root,
-        "AGENTS.md",
-        "# Agent Guide\nRead AI_COLLABORATION.md and docs/README.md.\n",
-    )
-    _write(
-        docs_root,
-        "CLAUDE.md",
-        "# Claude\nFollow AGENTS.md, then AI_COLLABORATION.md.\n",
-    )
+    _write_agent_contract(docs_root)
 
     assert health.main() == 0
     assert "passed" in capsys.readouterr().out
