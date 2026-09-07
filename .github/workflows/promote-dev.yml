@@ -17,11 +17,179 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  promote:
-    name: Fast-forward verified dev commit
+  select:
+    name: Select incremental-green dev candidate
     if: ${{ github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      has_candidate: ${{ steps.selection.outputs.has_candidate }}
+      previous_main: ${{ steps.selection.outputs.previous_main }}
+      observed_dev: ${{ steps.selection.outputs.observed_dev }}
+      commit_sha: ${{ steps.selection.outputs.commit_sha }}
+      run_id: ${{ steps.selection.outputs.run_id }}
+      run_attempt: ${{ steps.selection.outputs.run_attempt }}
+    steps:
+      - name: Checkout trusted main automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Select exact incremental-green dev SHA
+        id: selection
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.promote_dev_incremental > "${RUNNER_TEMP}/promotion-selection.json"
+          cat "${RUNNER_TEMP}/promotion-selection.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "promotion-selection.json").read_text()
+          )
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as stream:
+              if payload.get("result") == "no_eligible_new_commit":
+                  stream.write("has_candidate=false\n")
+              else:
+                  stream.write("has_candidate=true\n")
+                  for key in (
+                      "previous_main",
+                      "observed_dev",
+                      "commit_sha",
+                      "run_id",
+                      "run_attempt",
+                  ):
+                      stream.write(f"{key}={payload[key]}\n")
+          PY
+
+  full-verification:
+    name: Full pre-promotion verification
+    if: ${{ needs.select.outputs.has_candidate == 'true' }}
+    needs: [select]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      UV_VERSION: "0.11.28"
+      TARGET_SHA: ${{ needs.select.outputs.commit_sha }}
+      BASE_SHA: ${{ needs.select.outputs.previous_main }}
+    steps:
+      - name: Checkout exact candidate without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.select.outputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install uv and locked dependencies
+        run: |
+          python -m pip install "uv==${UV_VERSION}"
+          uv sync --extra server --extra dev --frozen
+      - name: Verify Python quality against current main
+        run: uv run python scripts/ci/check_python_quality.py --base "${BASE_SHA}" --head "${TARGET_SHA}"
+      - name: Verify repository hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+          uv run python scripts/ci/check_docs_health.py
+          forbidden_pattern='(^|/)(\.env$|\.env\.local$|\.env\.production$|.*\.(db|sqlite|duckdb)$|data/store/|logs/|exports/|screenshots/|reports/|\.agents/|skills-lock\.json$)'
+          tracked_forbidden="$(git ls-files | grep -E "${forbidden_pattern}" || true)"
+          test -z "${tracked_forbidden}"
+      - name: Verify no secrets enter the candidate
+        run: |
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --redact --verbose
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --no-git --redact --verbose
+      - name: Run backend full suite and evidence
+        run: |
+          mkdir -p reports/ci
+          uv run python -m pytest tests/test_server_routes.py
+          uv run python -m pytest tests/test_profit_discipline_smoke.py
+          uv run python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
+            --cov --cov-report=term --cov-report=xml \
+            --junitxml=reports/ci/backend-junit.xml
+      - name: Run trading safety invariants
+        run: uv run python -m pytest -m trading_safety
+      - name: Audit production dependencies
+        run: |
+          uv export --frozen --extra server --no-dev --no-emit-project --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
+          uv run --extra dev pip-audit --requirement "${RUNNER_TEMP}/requirements.txt" --progress-spinner=off
+          npm --prefix web audit --omit=dev --audit-level=moderate
+      - name: Run frontend full checks and evidence
+        run: |
+          npm ci --prefix web
+          npm --prefix web run format:check
+          npm --prefix web run build
+          npm --prefix web run test -- --reporter=junit --outputFile=../reports/ci/frontend-junit.xml
+      - name: Build and start candidate runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag karkinos:promotion .
+          printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
+          docker volume create "karkinos-promotion-${GITHUB_RUN_ID}"
+          docker run --detach --name karkinos-promotion \
+            --publish 127.0.0.1:8000:8000 \
+            --volume "karkinos-promotion-${GITHUB_RUN_ID}:/app/data/store" \
+            --volume "${RUNNER_TEMP}/karkinos-config.json:/app/config.json:ro" \
+            karkinos:promotion
+      - name: Verify candidate Docker runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! python scripts/ci/verify_docker_runtime.py --timeout-seconds 90; then
+            docker inspect karkinos-promotion || true
+            docker logs karkinos-promotion || true
+            exit 1
+          fi
+      - name: Stop candidate runtime
+        if: always()
+        shell: bash
+        run: |
+          docker rm --force karkinos-promotion || true
+          docker volume rm "karkinos-promotion-${GITHUB_RUN_ID}" || true
+      - name: Run browser safety smoke
+        run: |
+          npx --prefix web playwright install --with-deps chromium
+          npm --prefix web run test:e2e
+      - name: Bind acceptance evidence
+        run: |
+          uv run python scripts/ci/export_acceptance_audit.py --audit all \
+            --verify-evidence \
+            --backend-junit reports/ci/backend-junit.xml \
+            --frontend-junit reports/ci/frontend-junit.xml \
+            --pretty \
+            --output reports/ci/acceptance-audit.json
+
+  promote:
+    name: Fast-forward verified dev commit
+    if: ${{ needs.select.outputs.has_candidate == 'true' && needs.full-verification.result == 'success' && github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/main' }}
+    needs: [select, full-verification]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       actions: write
@@ -35,7 +203,38 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
-      - name: Verify exact incremental dev evidence and fast-forward main
+      - name: Fast-forward the exact fully verified selection
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m tools.promote_dev_incremental --apply
+          PREVIOUS_MAIN: ${{ needs.select.outputs.previous_main }}
+          OBSERVED_DEV: ${{ needs.select.outputs.observed_dev }}
+          COMMIT_SHA: ${{ needs.select.outputs.commit_sha }}
+          DEV_CI_RUN_ID: ${{ needs.select.outputs.run_id }}
+          DEV_CI_RUN_ATTEMPT: ${{ needs.select.outputs.run_attempt }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          from tools import promote_dev as promotion
+          from tools import promote_dev_incremental as incremental
+
+          promotion.REQUIRED_JOBS = incremental._REQUIRED_JOBS
+          promotion.latest_run = incremental.latest_run
+          promotion.verified_dev = incremental.verified_dev
+          selection = promotion.Selection(
+              previous_main=os.environ["PREVIOUS_MAIN"],
+              observed_dev=os.environ["OBSERVED_DEV"],
+              commit_sha=os.environ["COMMIT_SHA"],
+              run_id=int(os.environ["DEV_CI_RUN_ID"]),
+              run_attempt=int(os.environ["DEV_CI_RUN_ATTEMPT"]),
+          )
+          client = promotion.Client(
+              api_url="https://api.github.com",
+              repository=os.environ["GITHUB_REPOSITORY"],
+              token=os.environ["GITHUB_TOKEN"],
+              api_version="2022-11-28",
+          )
+          result = promotion.apply(client, os.environ["GITHUB_REPOSITORY"], selection)
+          print(json.dumps(result, sort_keys=True, indent=2))
+          PY
