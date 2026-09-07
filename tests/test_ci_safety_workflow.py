@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
+import runpy
+import subprocess
+import sys
 from pathlib import Path
+
+import yaml
 
 
 def test_trading_safety_marker_covers_authority_and_integrity_boundaries() -> None:
@@ -23,35 +30,47 @@ def test_trading_safety_marker_covers_authority_and_integrity_boundaries() -> No
     assert '"test_profit_discipline_smoke.py"' not in marker_block
 
 
-def test_ci_has_incremental_python_quality_and_independent_trading_safety_jobs() -> (
-    None
-):
+def test_ci_has_incremental_python_quality_and_independent_trading_safety_jobs(
+    monkeypatch,
+) -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    quality = runpy.run_path("scripts/ci/check_python_quality.py")
+    calls = []
 
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert quality["run_checks"](Path.cwd(), ["example.py"]) == 0
+    assert calls == [
+        [sys.executable, "-m", "ruff", "check", "--", "example.py"],
+        [sys.executable, "-m", "black", "--check", "--diff", "--", "example.py"],
+        [sys.executable, "-m", "isort", "--check-only", "--diff", "--", "example.py"],
+        [sys.executable, "-m", "mypy"],
+        [sys.executable, "tools/check_python_architecture.py"],
+    ]
     assert "Python changed-file quality" in workflow
-    assert "uv run ruff check" in workflow
-    assert "uv run black --check" in workflow
-    assert "uv run isort --check-only" in workflow
-    assert "uv run mypy" in workflow
-    assert "uv run python tools/check_python_architecture.py" in workflow
+    assert "uv run python scripts/ci/check_python_quality.py" in workflow
     assert "Trading safety invariants" in workflow
     assert "python -m pytest -m trading_safety" in workflow
     assert "needs: [backend, frontend, trading-safety]" in workflow
 
 
-def test_ci_pins_uv_and_requires_every_code_ci_job_to_pass() -> None:
+def test_ci_pins_uv_and_requires_every_code_ci_job_to_pass(tmp_path: Path) -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    expected_results = {
-        "python-quality": "PYTHON_QUALITY_RESULT",
-        "backend": "BACKEND_RESULT",
-        "dependency-audit": "DEPENDENCY_AUDIT_RESULT",
-        "trading-safety": "TRADING_SAFETY_RESULT",
-        "frontend": "FRONTEND_RESULT",
-        "docker-runtime": "DOCKER_RUNTIME_RESULT",
-        "browser-safety": "BROWSER_SAFETY_RESULT",
-        "repository-acceptance-audit": "REPOSITORY_ACCEPTANCE_AUDIT_RESULT",
-        "secret-scan": "SECRET_SCAN_RESULT",
-        "hygiene": "HYGIENE_RESULT",
+    expected_jobs = {
+        "python-quality",
+        "repository-contracts",
+        "backend",
+        "dependency-audit",
+        "trading-safety",
+        "frontend",
+        "docker-runtime",
+        "browser-safety",
+        "repository-acceptance-audit",
+        "secret-scan",
+        "hygiene",
     }
 
     assert 'env:\n  UV_VERSION: "0.11.28"' in workflow
@@ -62,17 +81,32 @@ def test_ci_pins_uv_and_requires_every_code_ci_job_to_pass() -> None:
     }
     assert pip_install_lines == {'python -m pip install "uv==${UV_VERSION}"'}
 
-    code_ci_gate = workflow.partition("\n  code-ci-gate:\n")[2]
-    assert code_ci_gate
-    assert "    if: always()" in code_ci_gate
-    required_jobs = {
-        line.strip().removeprefix("- ")
-        for line in code_ci_gate.splitlines()
-        if line.startswith("      - ") and not line.startswith("      - name:")
-    }
-    assert required_jobs == set(expected_results)
-    for job, result_variable in expected_results.items():
-        assert (
-            f"          {result_variable}: " f"${{{{ needs.{job}.result }}}}"
-        ) in code_ci_gate
-        assert f'          test "${{{result_variable}}}" = "success"' in code_ci_gate
+    jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
+    gate = jobs["code-ci-gate"]
+    assert gate["if"] == "always()"
+    assert set(gate["needs"]) == expected_jobs == set(jobs) - {"code-ci-gate"}
+    step = gate["steps"][0]
+    assert step["env"]["CI_JOB_RESULTS"] == "${{ toJSON(needs) }}"
+    assert step["shell"] == "python"
+
+    def execute(results):
+        return subprocess.run(
+            [sys.executable, "-c", step["run"]],
+            env={
+                **os.environ,
+                "CI_JOB_RESULTS": json.dumps(results),
+                "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+    results = {name: {"result": "success"} for name in expected_jobs}
+    passed = execute(results)
+    assert passed.returncode == 0, passed.stderr
+    for name in sorted(expected_jobs):
+        failed = execute({**results, name: {"result": "failure"}})
+        assert failed.returncode != 0, name
+        assert name in failed.stderr
