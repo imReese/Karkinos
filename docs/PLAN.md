@@ -81,6 +81,8 @@ Overview/Portfolio 允许解释性 stale/degraded read；Decision/Risk/Execution
 
 交易所归属证据预览复用同次 coverage 的 typed 历史日期和 metadata 内容绑定，仅解析显式提交且可回读的材料，输出候选字段、记录定位、材料声称日期的交集及具体 blocker。首版资格始终 `blocked`，已核验范围为空；内容摘要、官方 URL 字符串和提交者声明不构成来源真实性或历史适用性认证。预览不落库、不改变 coverage，不包含采集、认证或 apply 入口。
 
+显式 SSE 公告采集命令仅获取允许列表中的两个公开样例，验证 HTTPS 连接、拒绝重定向并限制响应时间与大小。原文、单日公告声明的规范化材料、字段映射和获取记录按各自摘要封存到指定公共证据目录；失败不发布完整记录，后续不同原文保留旧对象并报告变化。该入口不接触 app/meta 或账户状态，获取检查不授予历史归属资格，人工核验和已核验日期保持未完成与空值。
+
 ### A4. Release/state-clone gate
 
 Candidate 必须在 production mutable-state clone 上证明：

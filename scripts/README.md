@@ -321,6 +321,19 @@ uv run python scripts/data/configure_data_source.py \
 | --- | --- | --- |
 | `uv run python scripts/data/sync_market_bars_to_db.py` | Import existing Parquet bar mirrors into `data/store/meta.db.market_bars`. | Does not fetch remote data. It updates the selected local `DataStore`. |
 | `uv run python scripts/data/verify_market_bars.py --symbol SYMBOL --start YYYY-MM-DD --end YYYY-MM-DD` | Fetch one provider range and compare it with persisted local bars. | Contacts the selected market-data provider but does not overwrite local bars. |
+| `uv run python -m tools.capture_instrument_exchange_source --source stock-688802 --output-dir reports/public-sse` | Capture one allowlisted public SSE listing announcement; `etf-530380` selects the other supported sample. | Writes immutable public evidence objects and a final capture receipt only inside the explicit output directory. No application database, metadata upsert, historical qualification or automatic application. |
+
+The SSE command verifies the live HTTPS connection, rejects redirects and bounds
+response size and time. Objects live at `objects/<sha256>`; successful receipts
+live at `captures/<receipt-sha256>.json`. Use
+`data.instrument_exchange_source.read_sse_source_object(output_dir, digest)` to
+read the original bytes with an expected digest. A later response with different
+bytes retains the old object and sets `differs_from_prior_capture`; failure can
+leave unreferenced objects, but does not publish a complete successful receipt.
+The normalized date interval selects only the announced listing event day. It
+does not establish a delisting date, actual trading or continuous historical
+affiliation. Capture records preserve `qualification=blocked`, empty verified
+dates, `available_at=null` and `human_verification_status=not_performed`.
 
 These commands maintain or verify historical bars. They do not start the live
 quote scheduler.
