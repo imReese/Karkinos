@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 WORKFLOW = Path(".github/workflows/ci.yml")
 
 
@@ -51,7 +50,9 @@ def test_docs_only_acceptance_does_not_forge_test_evidence() -> None:
     )[1].split(
         "      - name: Run repository acceptance audit report with test evidence\n",
         1,
-    )[0]
+    )[
+        0
+    ]
     full_step = block.split(
         "      - name: Run repository acceptance audit report with test evidence\n",
         1,
@@ -69,9 +70,10 @@ def test_code_gate_allows_heavy_skips_only_when_classifier_says_docs_only() -> N
     block = workflow.split("  code-ci-gate:\n", 1)[1]
 
     assert 'docs_only = outputs.get("docs_only") == "true"' in block
-    assert 'if docs_only and name in skippable_for_docs:' in block
+    assert "if docs_only and name in skippable_for_docs:" in block
     assert 'result not in {"success", "skipped"}' in block
     assert 'elif result != "success":' in block
-    assert '"repository-acceptance-audit"' not in block.split(
-        "skippable_for_docs = {", 1
-    )[1].split("}", 1)[0]
+    assert (
+        '"repository-acceptance-audit"'
+        not in block.split("skippable_for_docs = {", 1)[1].split("}", 1)[0]
+    )
