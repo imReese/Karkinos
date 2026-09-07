@@ -1,4 +1,4 @@
-"""Keep Karkinos documentation canonical, navigable, and bounded."""
+"""Keep Karkinos documentation canonical, navigable, and ownership-safe."""
 
 from __future__ import annotations
 
@@ -15,14 +15,6 @@ CORE_DOC_BUDGETS = {
     "docs/PLAN.md": 460,
     "docs/CODEBASE.md": 180,
     "design.md": 240,
-    "AI_COLLABORATION.md": 180,
-}
-
-# Agent guides should stay concise, but these are coarse anti-bloat guardrails,
-# not target lengths. Their primary contract is role and routing, checked below.
-AGENT_ENTRYPOINT_BUDGETS = {
-    "AGENTS.md": 140,
-    "CLAUDE.md": 60,
 }
 
 # These paths still have acceptance consumers; migrate their claims before deletion.
@@ -47,7 +39,7 @@ FROZEN_REFERENCE_STUB_BUDGETS = {
     "docs/broker-execution-edge-conformance.en.md": 14,
 }
 
-# Operational references need link validation, not an arbitrary new size budget.
+# Operational references need link validation, not an arbitrary size budget.
 OPERATIONAL_REFERENCE_DOCS = (
     "docs/config-reference.zh.md",
     "docs/return-accounting.zh.md",
@@ -84,6 +76,8 @@ REMOVED_TOP_LEVEL_DOCS = (
     "docs/PROFIT_ENGINE_PLAN.zh.md",
 )
 
+REMOVED_ROOT_DOCS = ("AI_COLLABORATION.md",)
+
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 
 
@@ -118,18 +112,30 @@ def _check_document(path_text: str, line_budget: int | None) -> list[str]:
 
 
 def _check_agent_entrypoints() -> list[str]:
-    agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    claude = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    agents_path = REPO_ROOT / "AGENTS.md"
+    claude_path = REPO_ROOT / "CLAUDE.md"
     errors: list[str] = []
+    if not agents_path.is_file():
+        return ["missing shared agent contract: AGENTS.md"]
+    if not claude_path.is_file():
+        return ["missing Claude Code adapter: CLAUDE.md"]
 
-    for required in ("AI_COLLABORATION.md", "docs/README.md"):
+    agents = agents_path.read_text(encoding="utf-8")
+    claude = claude_path.read_text(encoding="utf-8")
+    for required in (
+        "docs/README.md",
+        "docs/GOAL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/PLAN.md",
+        "docs/CODEBASE.md",
+    ):
         if required not in agents:
             errors.append(f"AGENTS.md must route agents to {required}")
 
-    if "AGENTS.md" not in claude:
-        errors.append("CLAUDE.md must delegate repository instructions to AGENTS.md")
-    if "AI_COLLABORATION.md" not in claude:
-        errors.append("CLAUDE.md must point to AI_COLLABORATION.md for deeper policy")
+    if "@AGENTS.md" not in claude:
+        errors.append("CLAUDE.md must import the shared AGENTS.md contract with @AGENTS.md")
+    if "AI_COLLABORATION.md" in agents or "AI_COLLABORATION.md" in claude:
+        errors.append("agent entrypoints must route architecture through canonical docs, not AI_COLLABORATION.md")
 
     return errors
 
@@ -143,6 +149,11 @@ def _check_removed_docs_stay_removed() -> list[str]:
     errors.extend(
         f"retired documentation stub returned: {path_text}"
         for path_text in REMOVED_STUB_DOCS
+        if (REPO_ROOT / path_text).exists()
+    )
+    errors.extend(
+        f"retired root document returned: {path_text}"
+        for path_text in REMOVED_ROOT_DOCS
         if (REPO_ROOT / path_text).exists()
     )
     return errors
@@ -165,7 +176,6 @@ def main() -> int:
     errors: list[str] = []
     budgets = {
         **CORE_DOC_BUDGETS,
-        **AGENT_ENTRYPOINT_BUDGETS,
         **COMPATIBILITY_STUB_BUDGETS,
         **MAINTENANCE_DOC_BUDGETS,
         **FROZEN_REFERENCE_STUB_BUDGETS,
@@ -185,9 +195,8 @@ def main() -> int:
         return 1
 
     print(
-        "Documentation health check passed: canonical ownership and agent routing "
-        "are intact, coarse size guardrails hold, local links resolve, and retired "
-        "docs stay removed."
+        "Documentation health check passed: canonical ownership and shared agent "
+        "routing are intact, local links resolve, and retired docs stay removed."
     )
     return 0
 
