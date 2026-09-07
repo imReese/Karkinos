@@ -16,14 +16,14 @@ git push origin dev
 
 ## Daily promotion
 
-`Promote verified dev` runs daily at 03:17 Asia/Tokyo (18:17 UTC), and can be
+`Promote verified dev` runs daily at 02:00 Asia/Shanghai (18:00 UTC), and can be
 started manually from Actions on main. GitHub schedules can be delayed.
 The trusted main script walks at most 100 first-parent dev commits, newest
-first. It chooses the newest descendant of main whose latest official dev
-push CI run/attempt succeeded and whose Code CI gate and acceptance job passed.
-A failed or pending tip can remain on dev while an earlier verified ancestor
-is promoted. API errors, incomplete listings, changed identities, divergence,
-and an exhausted search bound stop the run instead of guessing.
+first. It chooses the newest descendant of main whose latest official Dev CI
+push run/attempt succeeded and whose Code CI gate passed. A failed or pending
+tip can remain on dev while an earlier verified ancestor is promoted. API
+errors, incomplete listings, changed identities, divergence, and an exhausted
+search bound stop the run instead of guessing.
 
 Promotion uses the exact SHA and a server-side non-force ref update. It never
 executes the dev checkout with write credentials, creates a PR, opens trading
@@ -32,7 +32,7 @@ change or newer CI attempt invalidates the selection. Server protection is
 never bypassed.
 
 The built-in GITHUB_TOKEN cannot trigger another push workflow, so the job
-explicitly dispatches the existing CI and Candidate workflows on main with
+explicitly dispatches the existing full CI and Candidate workflows on main with
 the selected SHA. CI rejects a dispatch that does not match its main checkout.
 Release source verification accepts the latest exact main push or explicit
 CI dispatch, not a green run on dev or a previous successful attempt. A failed
