@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
+from server.contracts.http.historical_coverage_models import HistoricalCoverageReport
 from server.contracts.http.ledger_models import (
     ActivityItem,
     EquityPoint,
@@ -15,6 +17,7 @@ from server.http.portfolio_endpoints.dependencies import (
     PortfolioPerformanceDependencies,
     PortfolioPerformanceOperations,
 )
+from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotRejected
 from server.projections.portfolio_read_snapshot_persistence import (
     portfolio_read_snapshot_for_state,
 )
@@ -300,6 +303,17 @@ def create_router(
             state,
             selected_range,
         )
+
+    @r.get("/equity-curve/coverage", response_model=HistoricalCoverageReport)
+    async def get_historical_coverage(
+        range: Literal["all"] = "all",
+    ) -> HistoricalCoverageReport:
+        try:
+            return await async_runtime.to_thread(
+                dependencies.read_historical_coverage, dependencies.get_state()
+            )
+        except PortfolioReadSnapshotRejected as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @r.get("/activity", response_model=list[ActivityItem])
     async def get_activity(limit: int = 10) -> list[ActivityItem]:

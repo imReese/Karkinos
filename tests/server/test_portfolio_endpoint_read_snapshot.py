@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -200,8 +201,12 @@ def test_live_holding_rejects_tampered_published_valuation(
 
 def test_portfolio_endpoint_preserves_explicit_etf_identity_from_legacy_ledger(
     tmp_path,
+    monkeypatch,
 ) -> None:
     state = _build_etf_state(tmp_path)
+    now = datetime.fromisoformat("2026-09-04T16:00:00+08:00")
+    state.require_database().publish_current_valuation_snapshot_sync(now=now)
+    monkeypatch.setattr(portfolio_routes, "get_shanghai_now", lambda: now)
 
     with TestClient(_test_app(state)) as client:
         response = client.get("/api/portfolio")

@@ -13,6 +13,65 @@ from core.types import InstrumentKey, InstrumentType
 _MAX_IDENTITIES_PER_QUERY = 400
 
 
+def read_historical_price_observations(
+    connection: sqlite3.Connection,
+    *,
+    symbols: list[str],
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    """Retain exact candidate status/NAV dates on a caller-owned read transaction.
+
+    The caller attaches the read-only meta database as market_store. Missing
+    source tables are errors, never an empty-evidence success. This does not
+    change the existing matrix's selection order or positive-price filter.
+    """
+    rows: list[dict[str, Any]] = []
+    for offset in range(0, len(symbols), _MAX_IDENTITIES_PER_QUERY):
+        chunk = symbols[offset : offset + _MAX_IDENTITIES_PER_QUERY]
+        placeholders = ",".join("?" for _ in chunk)
+        queries = (
+            f"""SELECT symbol, instrument_type, trade_date,
+                       trade_date || 'T15:00:00+08:00' AS timestamp,
+                       close_price AS price, source, captured_at,
+                       'close' AS kind, 'daily_close_snapshots_v2:' || id AS evidence_ref,
+                       NULL AS nav_date, NULL AS quote_status, identity_provenance
+                FROM daily_close_snapshots_v2
+                WHERE symbol IN ({placeholders}) AND trade_date BETWEEN ? AND ?""",
+            f"""SELECT symbol, instrument_type, substr(timestamp, 1, 10) AS trade_date,
+                       timestamp, close AS price, 'market_bars_v2' AS source,
+                       updated_at AS captured_at, 'bar' AS kind,
+                       'market_bars_v2:' || symbol || ':' || instrument_type || ':' || timestamp AS evidence_ref,
+                       NULL AS nav_date, NULL AS quote_status, identity_provenance
+                FROM market_store.market_bars_v2
+                WHERE symbol IN ({placeholders}) AND frequency = '1d'
+                  AND substr(timestamp, 1, 10) BETWEEN ? AND ?""",
+            f"""SELECT symbol, {_normalized_type_sql('COALESCE(instrument_type, asset_class)')} AS instrument_type,
+                       substr(timestamp, 1, 10) AS trade_date, timestamp, price,
+                       quote_source AS source, created_at AS captured_at,
+                       'quote' AS kind, 'quote_snapshots:' || id AS evidence_ref,
+                       nav_date, quote_status, identity_provenance
+                FROM quote_snapshots
+                WHERE symbol IN ({placeholders})
+                  AND (substr(timestamp, 1, 10) BETWEEN ? AND ?
+                       OR substr(nav_date, 1, 10) BETWEEN ? AND ?)""",
+        )
+        for index, query in enumerate(queries):
+            bounds = (start_date, end_date) * (2 if index == 2 else 1)
+            rows.extend(
+                dict(row) for row in connection.execute(query, (*chunk, *bounds))
+            )
+    return sorted(
+        rows,
+        key=lambda row: (
+            row["symbol"],
+            row["instrument_type"],
+            row["trade_date"],
+            row["evidence_ref"],
+        ),
+    )
+
+
 def read_historical_price_matrix(
     app_database_path: Path,
     *,

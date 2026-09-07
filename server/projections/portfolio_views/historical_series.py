@@ -194,10 +194,7 @@ def historical_performance_from_series(
     except (KeyError, TypeError, ValueError, OSError, sqlite3.Error):
         return HistoricalPerformanceEvaluation([], ["drawdown_history_unavailable"])
 
-    blockers = []
-    if any(is_fund_duplicate_correction(entry) for entry in ledger_entries):
-        # Correction validation proves bookkeeping, not a restated return history.
-        blockers.append("historical_correction_performance_unverified")
+    blockers = historical_correction_performance_blockers(ledger_entries)
     equity_curve = _unitized_equity_points(points, ledger_entries)
     if (
         not equity_curve
@@ -210,6 +207,15 @@ def historical_performance_from_series(
         blockers.append("drawdown_history_unavailable")
     return HistoricalPerformanceEvaluation(
         [] if blockers else equity_curve, sorted(set(blockers))
+    )
+
+
+def historical_correction_performance_blockers(entries: list[LedgerEntry]) -> list[str]:
+    # Correction validation proves bookkeeping, not a restated return history.
+    return (
+        ["historical_correction_performance_unverified"]
+        if any(is_fund_duplicate_correction(entry) for entry in entries)
+        else []
     )
 
 
