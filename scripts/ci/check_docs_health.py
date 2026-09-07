@@ -133,9 +133,13 @@ def _check_agent_entrypoints() -> list[str]:
             errors.append(f"AGENTS.md must route agents to {required}")
 
     if "@AGENTS.md" not in claude:
-        errors.append("CLAUDE.md must import the shared AGENTS.md contract with @AGENTS.md")
+        errors.append(
+            "CLAUDE.md must import the shared AGENTS.md contract with @AGENTS.md"
+        )
     if "AI_COLLABORATION.md" in agents or "AI_COLLABORATION.md" in claude:
-        errors.append("agent entrypoints must route architecture through canonical docs, not AI_COLLABORATION.md")
+        errors.append(
+            "agent entrypoints must route architecture through canonical docs, not AI_COLLABORATION.md"
+        )
 
     return errors
 
