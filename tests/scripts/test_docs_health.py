@@ -56,9 +56,8 @@ def test_local_links_resolve_without_translation_stubs(docs_root):
 
 def test_outside_repository_link_is_rejected(docs_root):
     _write(docs_root, "docs/reference.md", "[Outside](../../outside.md)\n")
-    assert "links outside the repository" in health._check_document(
-        "docs/reference.md", None
-    )[0]
+    errors = health._check_document("docs/reference.md", None)
+    assert "links outside the repository" in errors[0]
 
 
 def test_external_and_fragment_links_remain_allowed(docs_root):
