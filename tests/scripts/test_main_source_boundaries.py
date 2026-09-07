@@ -24,7 +24,9 @@ def prepared_source(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_occupied_port_refuses_before_preparation_or_launch(prepared_source, monkeypatch):
+def test_occupied_port_refuses_before_preparation_or_launch(
+    prepared_source, monkeypatch
+):
     class OccupiedPort:
         def __enter__(self):
             return self
@@ -45,7 +47,9 @@ def test_occupied_port_refuses_before_preparation_or_launch(prepared_source, mon
     assert runtime.main([]) == 1
 
 
-def test_checkout_changed_during_preparation_never_launches(prepared_source, monkeypatch):
+def test_checkout_changed_during_preparation_never_launches(
+    prepared_source, monkeypatch
+):
     identities = iter(("a" * 40, "b" * 40))
     monkeypatch.setattr(runtime, "check_source", lambda root: next(identities))
 
