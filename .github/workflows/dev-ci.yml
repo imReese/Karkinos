@@ -27,6 +27,7 @@ jobs:
       frontend: ${{ steps.classify.outputs.frontend }}
       trading: ${{ steps.classify.outputs.trading }}
       dependencies: ${{ steps.classify.outputs.dependencies }}
+      docker: ${{ steps.classify.outputs.docker }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,6 +49,7 @@ jobs:
           frontend=false
           trading=false
           dependencies=false
+          docker=false
           while IFS= read -r path; do
             case "${path}" in
               web/*) frontend=true ;;
@@ -58,10 +60,14 @@ jobs:
             case "${path}" in
               pyproject.toml|uv.lock|web/package.json|web/package-lock.json|Dockerfile|.github/dependabot.yml) dependencies=true ;;
             esac
+            case "${path}" in
+              Dockerfile|.dockerignore|docker-compose.yml|pyproject.toml|uv.lock|server/*|scripts/ci/verify_docker_runtime.py|tests/test_docker_deployment_contract.py|.github/workflows/ci.yml|.github/workflows/dev-ci.yml) docker=true ;;
+            esac
           done < <(git diff --name-only "${base_sha}" "${GITHUB_SHA}")
           echo "frontend=${frontend}" >>"${GITHUB_OUTPUT}"
           echo "trading=${trading}" >>"${GITHUB_OUTPUT}"
           echo "dependencies=${dependencies}" >>"${GITHUB_OUTPUT}"
+          echo "docker=${docker}" >>"${GITHUB_OUTPUT}"
 
   python-quality:
     name: Python changed-file quality
@@ -109,6 +115,8 @@ jobs:
             tests/scripts/test_ci_preflight.py \
             tests/test_ci_workflow.py \
             tests/test_ci_safety_workflow.py \
+            tests/test_ci_change_aware.py \
+            tests/test_docker_deployment_contract.py \
             tests/scripts/test_scripts_inventory.py \
             tests/tools/test_main_promotion.py \
             tests/scripts/test_main_source_runtime.py \
@@ -202,10 +210,45 @@ jobs:
       - run: uv export --frozen --extra server --no-dev --no-emit-project --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
       - run: uv run --extra dev pip-audit --requirement "${RUNNER_TEMP}/requirements.txt" --progress-spinner=off
 
+  docker-runtime:
+    name: Docker runtime changed-scope smoke
+    if: ${{ needs.changes.outputs.docker == 'true' }}
+    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build locked runtime image
+        run: docker build --tag karkinos:ci .
+      - name: Start runtime with fail-closed defaults
+        run: |
+          printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
+          docker volume create karkinos-ci-data
+          docker run --detach --name karkinos-ci \
+            --publish 127.0.0.1:8000:8000 \
+            --volume "karkinos-ci-data:/app/data/store" \
+            --volume "${RUNNER_TEMP}/karkinos-config.json:/app/config.json:ro" \
+            karkinos:ci
+      - name: Verify non-root fail-closed runtime
+        run: python scripts/ci/verify_docker_runtime.py --timeout-seconds 90
+      - name: Diagnose failed runtime
+        if: failure()
+        run: |
+          docker inspect karkinos-ci || true
+          docker logs karkinos-ci || true
+      - name: Stop runtime
+        if: always()
+        run: |
+          docker rm --force karkinos-ci || true
+          docker volume rm karkinos-ci-data || true
+
   code-ci-gate:
     name: Code CI gate
     if: always()
-    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan, frontend, trading-safety, dependency-audit]
+    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan, frontend, trading-safety, dependency-audit, docker-runtime]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -216,7 +259,7 @@ jobs:
         run: |
           import json, os
           results = json.loads(os.environ["RESULTS"])
-          optional = {"frontend", "trading-safety", "dependency-audit"}
+          optional = {"frontend", "trading-safety", "dependency-audit", "docker-runtime"}
           failed = []
           for name, job in results.items():
               result = job.get("result") if isinstance(job, dict) else None
