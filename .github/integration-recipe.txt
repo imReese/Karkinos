@@ -1,0 +1,395 @@
+import base64
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from urllib.request import Request, urlopen
+
+ROOT = Path.cwd()
+REPO = os.environ['GITHUB_REPOSITORY']
+TOKEN = os.environ.pop('GITHUB_TOKEN')
+PARENT = os.environ['GITHUB_SHA']
+
+def api(method, suffix, body=None):
+    req = Request('https://api.github.com/repos/' + REPO + '/' + suffix, data=json.dumps(body).encode() if body is not None else None, method=method, headers={'Authorization': 'Bearer ' + TOKEN, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
+    with urlopen(req, timeout=30) as response:
+        return json.load(response)
+
+def run(*args):
+    subprocess.run(args, check=True)
+
+def replace(path, old, new, count=1):
+    p = Path(path)
+    text = p.read_text()
+    assert old in text, (path, old[:100])
+    p.write_text(text.replace(old, new, count))
+
+new_files = {
+    'tools/promote_dev.py': '6c6eb9ecf4cd37d36da3336529370d3b5ea939c9',
+    'scripts/service/run_main.py': 'd6ae50287afa1db909595cfbf64b995d6cfd3849',
+    'tests/tools/test_main_promotion.py': '4e710faae9654b91d816bed9285ff24d70b69763',
+    'tests/scripts/test_main_source_runtime.py': '8fe3c7c873f06328540cc515520cfae09cac9544',
+}
+for name, sha in new_files.items():
+    payload = api('GET', 'git/blobs/' + sha)
+    data = base64.b64decode(payload['content'])
+    assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == sha
+    path = Path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+replace('scripts/service/run_main.py', '    for key in tuple(env):\n        if key.startswith("KARKINOS_RELEASE_") or key == "KARKINOS_ARTIFACT_FINGERPRINT":\n            env.pop(key)', '    if any(key.startswith("KARKINOS_RELEASE_") or key == "KARKINOS_ARTIFACT_FINGERPRINT" for key in env):\n        raise ValueError("main source mode cannot inherit managed release environment")')
+replace('tests/scripts/test_main_source_runtime.py', '    assert calls[0][0][-6:] == ["--host", "127.0.0.1", "--port", "8000"][-6:] or "--host" in calls[0][0]', '    assert calls[0][0][-4:] == ["--host", "127.0.0.1", "--port", "8000"]')
+replace('tests/tools/test_main_promotion.py', 'from dataclasses import replace\n\n', '')
+
+Path('.github/workflows/promote-dev.yml').write_text('''name: Promote verified dev
+
+on:
+  schedule:
+    # Every day at 03:17 Asia/Tokyo (18:17 UTC); not an exact-time SLA.
+    - cron: "17 18 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/promote-dev.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-dev-to-main
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Fast-forward verified dev commit
+    if: ${{ github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout trusted main automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Verify exact dev evidence and fast-forward main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m tools.promote_dev --apply
+''')
+
+replace('.github/workflows/ci.yml', '  pull_request:\n', '''  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Exact current main SHA to validate
+        required: true
+        type: string
+      base_sha:
+        description: Previous main SHA for the verified promotion
+        required: true
+        type: string
+  pull_request:
+''')
+replace('.github/workflows/ci.yml', '      - name: Install quality dependencies\n', '''      - name: Verify dispatched main identity
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          EXPECTED_SHA: ${{ inputs.commit_sha }}
+          EXPECTED_BASE: ${{ inputs.base_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_BASE}" =~ ^[0-9a-f]{40}$ ]]
+          test "${GITHUB_SHA}" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${EXPECTED_BASE}" "${EXPECTED_SHA}"
+
+      - name: Install quality dependencies
+''')
+replace('.github/workflows/ci.yml', "BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}", "BASE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.base_sha || github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.ref == 'refs/heads/dev' && 'origin/main' || github.event.before }}")
+replace('.github/workflows/ci.yml', '            tests/scripts/test_scripts_inventory.py \\\n', '            tests/scripts/test_scripts_inventory.py \\\n            tests/tools/test_main_promotion.py \\\n            tests/scripts/test_main_source_runtime.py \\\n            tests/test_verify_release_source_ci.py \\\n')
+
+p = Path('tools/verify_release_source_ci.py')
+text = p.read_text().replace('event: str,', 'event: str | Sequence[str],')
+anchor = '    ) -> Mapping[str, Any]:\n        return self._get_json(\n            f"/repos/{self._repository}/actions/workflows/{workflow_id}/runs",'
+assert anchor in text
+text = text.replace(anchor, '''    ) -> Mapping[str, Any]:
+        if not isinstance(event, str):
+            if not event or len(set(event)) != len(event):
+                raise SourceCIVerificationError("release_source_ci_events_invalid")
+            runs = []
+            for selected_event in event:
+                payload = self.workflow_runs(workflow_id=workflow_id, branch=branch,
+                    event=selected_event, commit_sha=commit_sha)
+                runs.extend(_complete_page(payload, "workflow_runs"))
+            return {"total_count": len(runs), "workflow_runs": runs}
+        return self._get_json(
+            f"/repos/{self._repository}/actions/workflows/{workflow_id}/runs",''', 1)
+text = text.replace('            "event": event,\n            "head_sha": commit_sha,', '            "head_sha": commit_sha,', 1)
+anchor = '        if any(run.get(key) != value for key, value in expected.items()):'
+assert anchor in text
+text = text.replace(anchor, '''        allowed_events = (event,) if isinstance(event, str) else tuple(event)
+        if run.get("event") not in allowed_events or any(run.get(key) != value for key, value in expected.items()):''', 1)
+text = text.replace('parser.add_argument("--event", default="push")', 'parser.add_argument("--event", action="append", choices=("push", "workflow_dispatch"))')
+text = text.replace('            event=args.event,', '            event=tuple(args.event or ("push", "workflow_dispatch")),')
+p.write_text(text)
+
+replace('scripts/start_server.sh', '  ./scripts/start_server.sh prod\n', '  ./scripts/start_server.sh main\n  ./scripts/start_server.sh prod\n')
+replace('scripts/start_server.sh', 'Modes:\n  dev', 'Modes:\n  main  Run a clean main checkout with built frontend, without a tag.\n        Foreground mode; Ctrl+C stops API and research worker.\n  dev')
+replace('scripts/start_server.sh', 'case "${MODE}" in\ndev)', '''case "${MODE}" in
+main)
+	if [[ "${1:-}" == "main" ]]; then
+		shift
+	fi
+	exec python3 "${SCRIPT_DIR}/service/run_main.py" "$@"
+	;;
+dev)''')
+
+p = Path('.github/rulesets/main.json')
+policy = json.loads(p.read_text())
+policy['name'] = 'main-verified-fast-forward'
+policy['rules'] = [rule for rule in policy['rules'] if rule['type'] != 'pull_request']
+p.write_text(json.dumps(policy, indent=2) + '\n')
+
+p = Path('tests/scripts/test_ci_preflight.py')
+text = p.read_text().replace('assert set(config["on"]) == {"pull_request", "push"}', 'assert set(config["on"]) == {"pull_request", "push", "workflow_dispatch"}')
+start = text.index('def test_main_policy_template_requires_reviewed_current_ci_and_merge_commits():')
+end = text.index('\n\ndef test_dev_policy_template_permits_normal_pushes_to_start_ci():', start)
+text = text[:start] + '''def test_main_policy_template_requires_ci_without_pr_or_bypass():
+    policy = json.loads((ROOT / ".github/rulesets/main.json").read_text())
+    rules = {rule["type"]: rule for rule in policy["rules"]}
+    assert set(rules) == {"deletion", "non_fast_forward", "required_status_checks"}
+    assert "pull_request" not in rules
+    assert policy["bypass_actors"] == []
+    checks = rules["required_status_checks"]["parameters"]
+    assert checks["strict_required_status_checks_policy"] is True
+    assert checks["do_not_enforce_on_create"] is False
+    assert checks["required_status_checks"] == [
+        {"context": workflow()["jobs"]["code-ci-gate"]["name"], "integration_id": 15368}
+    ]
+''' + text[end:]
+p.write_text(text)
+
+p = Path('AGENTS.md')
+text = p.read_text()
+if '## Branch' in text:
+    text = text[:text.index('## Branch')]
+text += '''\n## Branch integration\n\n- Normal development uses the persistent dev branch. Keep both dev and main.\n- Do not create PRs for routine dev to main promotion. The daily trusted-main workflow selects an exact successful dev CI commit and fast-forwards main without a merge commit.\n- Never force-push or reset either branch. Divergence requires explicit synchronization and fresh CI.\n- Source startup from main is tag-free via scripts/start_server.sh main. It never activates or rewrites the managed production release.\n- GitHub ruleset JSON files are templates, not proof that server-side protection is active.\n'''
+p.write_text(text)
+
+Path('CONTRIBUTING.md').write_text('''# Contributing
+
+## Persistent branches
+
+Use `dev` for normal development. `main` follows exact verified dev commits;
+there is no routine PR, squash, merge commit, branch deletion, or merge-back.
+Do not edit the running source checkout. Stop the service before updating it,
+or use a separate main worktree for running and dev worktree for development.
+
+```bash
+git switch dev
+git pull --ff-only origin dev
+# edit, check, commit
+git push origin dev
+```
+
+## Daily promotion
+
+`Promote verified dev` runs daily at 03:17 Asia/Tokyo (18:17 UTC), and can be
+started manually from Actions on main. GitHub schedules can be delayed.
+The trusted main script walks at most 100 first-parent dev commits, newest
+first. It chooses the newest descendant of main whose latest official dev
+push CI run/attempt succeeded and whose Code CI gate and acceptance job passed.
+A failed or pending tip can remain on dev while an earlier verified ancestor
+is promoted. API errors, incomplete listings, changed identities, divergence,
+and an exhausted search bound stop the run instead of guessing.
+
+Promotion uses the exact SHA and a server-side non-force ref update. It never
+executes the dev checkout with write credentials, creates a PR, opens trading
+authority, creates a tag, or changes a local service. A concurrent dev/main
+change or newer CI attempt invalidates the selection. Server protection is
+never bypassed.
+
+The built-in GITHUB_TOKEN cannot trigger another push workflow, so the job
+explicitly dispatches the existing CI and Candidate workflows on main with
+the selected SHA. CI rejects a dispatch that does not match its main checkout.
+Release source verification accepts the latest exact main push or explicit
+CI dispatch, not a green run on dev or a previous successful attempt. A failed
+dispatch after the ref update is repairable on the next run. Existing failed
+runs are not silently retried into green; use Actions rerun after diagnosis.
+No personal access token is needed for ordinary source promotion. A server
+permission/rules rejection remains an error; workflow-file changes can require
+an owner-authorized token with the appropriate workflow permission.
+
+## GitHub protection (one-time administrator setting)
+
+Import `.github/rulesets/main.json` and `.github/rulesets/dev.json` in Settings
+-> Rules -> Rulesets, replacing any previous PR-required main policy. The main
+policy requires Code CI gate from GitHub Actions, prohibits force-push and
+deletion, and has no bypass actors. Dev permits normal pushes to start CI but
+also prohibits history loss. Do not enable a PR requirement for this workflow.
+Templates in Git are not active GitHub settings. Inspect the actual rulesets:
+
+```bash
+gh api repos/imReese/Karkinos/rulesets
+# Only when these rules do not exist, create them with administrator access:
+gh api --method POST repos/imReese/Karkinos/rulesets --input .github/rulesets/main.json
+gh api --method POST repos/imReese/Karkinos/rulesets --input .github/rulesets/dev.json
+```
+
+Keep automatic head-branch deletion disabled. Dependabot version updates target
+dev; security updates can target default main and require synchronization into
+dev before further fast-forward promotion. Never reset a divergent branch.
+
+## Local checks
+
+```bash
+uv sync --locked --extra server --extra dev
+uv run --locked python scripts/ci/check_python_quality.py --base origin/main
+uv run --locked python scripts/ci/check_docs_health.py
+uv run --locked python -m pytest tests/scripts/test_ci_preflight.py tests/test_ci_workflow.py tests/test_ci_safety_workflow.py tests/scripts/test_scripts_inventory.py tests/tools/test_main_promotion.py tests/scripts/test_main_source_runtime.py tests/test_verify_release_source_ci.py
+uv run --locked python -m pytest
+npm --prefix web run format:check
+npm --prefix web run build
+npm --prefix web run test
+```
+
+The quality entrypoint includes local staged, unstaged and untracked Python
+changes. An unavailable revision fails rather than silently skipping checks.
+In dev CI, Python quality is checked against main, not only the previous dev
+push, so a later small commit cannot hide an earlier unpromoted formatting
+failure. Ruff, Black, isort, mypy and architecture results are independent;
+any failure fails the command. Checks do not rewrite files.
+
+Preflight precedes full backend/frontend, safety, dependency, Docker and browser
+checks. Acceptance binds test evidence. The final Code CI gate rejects failed,
+cancelled, skipped and missing results. Main retains per-commit CI evidence.
+
+## Sensitive files and test expectations
+
+Never commit `.env*`, credentials, private account exports, runtime databases,
+`data/store/`, `.run/`, logs, screenshots or generated reports. Use templates
+without overwriting existing private configuration. Keep tokens out of arguments.
+
+Financial data, risk, trading authority, valuation and API changes need focused
+deterministic tests and must preserve human confirmation and fail-closed gates.
+Frontend changes should cover loading, error, empty and stale/cache states.
+Do not mistake passing local CI for validation against a real broker/provider.
+''')
+
+p = Path('README.md')
+text = p.read_text()
+a = text.index('## Quick start')
+b = text.index('## Verification', a)
+text = text[:a] + '''## Quick start: run main without a tag
+
+Requirements: Python 3.12+, Node.js 24.x, `uv`, and Git.
+Stop a running source service before updating its checkout.
+
+```bash
+git switch main
+git pull --ff-only origin main
+test -e config.json || cp config.example.json config.json
+test -e .env || cp .env.example .env
+./scripts/start_server.sh main
+```
+
+Open `http://127.0.0.1:8000`. This builds the frontend and runs the API plus
+research worker in the foreground; Ctrl+C stops both. No tag, native release,
+GitHub credentials, or Docker is required for startup. A clean main checkout
+matching the fetched origin/main is required. Startup never pulls, switches,
+resets branches, or stops an unknown listener automatically.
+
+Main-source data defaults to `.run/main/data`, separate from dev and a managed
+production installation. To use existing data, stop its current owner and
+explicitly select `KARKINOS_DATA_DIR`; startup does not copy or migrate your
+managed production layout automatically. Set `KARKINOS_MAIN_PORT` when 8000 is
+already occupied. Do not edit or pull this checkout while it is running.
+
+For development with hot reload, use `./scripts/start_server.sh dev` and open
+`http://127.0.0.1:5173`; stop it with `./scripts/stop_server.sh dev`.
+The optional legacy `prod` mode still controls an already installed immutable
+release. See [scripts/README.md](scripts/README.md) for these separate modes.
+
+''' + text[b:]
+p.write_text(text)
+
+p = Path('scripts/README.md')
+text = p.read_text()
+text = text.replace('## Service lifecycle', '''## Main source startup (no tag)
+
+```bash
+git switch main
+git pull --ff-only origin main
+./scripts/start_server.sh main
+```
+
+`main` runs `scripts/service/run_main.py`: locked backend dependencies, npm ci,
+a fresh frontend build, provider-free persisted-state preflight, then API and
+research worker supervised in the foreground. Ctrl+C stops both; an exited
+child stops its peer, and inherited lifetime pipes end children if the parent
+dies abruptly. No reload, tag, packaged controller, production pointer switch,
+or automatic git update occurs. Use a clean main checkout matching the fetched
+origin/main; stop before pulling or editing that checkout.
+
+The default address is 127.0.0.1:8000 (`KARKINOS_MAIN_PORT` overrides the port).
+The default data path is `.run/main/data`; explicit `KARKINOS_DATA_DIR` is
+respected. Existing dev/managed data is not copied. An occupied port is refused,
+not killed. Managed-release environment variables are rejected rather than
+clearing a recovery guard. The `.run/main` lock prevents duplicate supervisors.
+Use `python3 scripts/service/run_main.py --check` for a read-only checkout check.
+
+The existing stop wrapper addresses background dev/prod processes, not this
+foreground mode. Stop main mode with Ctrl+C in its terminal. All financial and
+human-authority gates remain in the existing application; source startup is
+not proof of financial readiness or immutable-release provenance.
+
+## Service lifecycle''', 1)
+p.write_text(text)
+
+# Restore the temporary verification workflow and remove this one-time recipe
+# from the proposed tree. Nothing writes a branch from this validation job.
+original = subprocess.check_output(['git', 'show', 'd4424c7b9ffd659d5a645d663a37780e1a40117f:.github/workflows/source-evidence.yml'])
+Path('.github/workflows/source-evidence.yml').write_bytes(original)
+Path('.github/integration-recipe.txt').unlink()
+paths = list(new_files) + ['.github/workflows/promote-dev.yml', '.github/workflows/ci.yml', 'tools/verify_release_source_ci.py', 'scripts/start_server.sh', '.github/rulesets/main.json', 'tests/scripts/test_ci_preflight.py', 'AGENTS.md', 'CONTRIBUTING.md', 'README.md', 'scripts/README.md', '.github/workflows/source-evidence.yml', '.github/integration-recipe.txt']
+python_paths = [p for p in paths if p.endswith('.py')]
+run('uv', 'run', '--frozen', 'isort', *python_paths)
+run('uv', 'run', '--frozen', 'black', *python_paths)
+run('uv', 'run', '--frozen', 'ruff', 'check', *python_paths)
+run('uv', 'run', '--frozen', 'mypy')
+run('uv', 'run', '--frozen', 'python', 'tools/check_python_architecture.py')
+run('bash', '-n', 'scripts/start_server.sh')
+run('uv', 'run', '--frozen', 'python', 'scripts/ci/check_docs_health.py')
+run('uv', 'run', '--frozen', 'python', '-m', 'pytest', 'tests/scripts/test_ci_preflight.py', 'tests/test_ci_workflow.py', 'tests/test_ci_safety_workflow.py', 'tests/scripts/test_scripts_inventory.py', 'tests/tools/test_main_promotion.py', 'tests/scripts/test_main_source_runtime.py', 'tests/test_verify_release_source_ci.py')
+run('uv', 'run', '--frozen', 'python', '-m', 'pytest', '-n', '4', '--dist', 'loadfile', '--max-worker-restart=0', '--cov', '--cov-report=term', '--junitxml=reports/ci/integration-validation.xml')
+run('git', 'add', '--', *paths)
+status = subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z']).split(b'\0')
+changed = [p.decode() for p in status if p]
+assert set(changed) <= set(paths)
+entries = []
+for name in changed:
+    p = Path(name)
+    if not p.exists():
+        entries.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': None})
+        continue
+    data = p.read_bytes()
+    blob = api('POST', 'git/blobs', {'content': base64.b64encode(data).decode(), 'encoding': 'base64'})
+    assert blob['sha'] == hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+    mode = '100755' if name.endswith('.sh') else '100644'
+    entries.append({'path': name, 'mode': mode, 'type': 'blob', 'sha': blob['sha']})
+base_tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+tree = api('POST', 'git/trees', {'base_tree': base_tree, 'tree': entries})
+commit = api('POST', 'git/commits', {'message': 'Promote verified dev snapshots without PRs and run main source without tags\n\nFast-forward exact dev CI evidence, explicitly dispatch main CI and Candidate, reject races and incomplete evidence, and repair interrupted dispatch. Preserve production release workflows and safety gates. Add isolated foreground main source startup with shared worker lifetime supervision.\n\nValidated on the locked GitHub runner before this commit object was created; no branch ref is updated by the validation job.', 'tree': tree['sha'], 'parents': [PARENT]})
+print('BUILT_COMMIT_SHA=' + commit['sha'], flush=True)
+print('BUILT_TREE_SHA=' + tree['sha'], flush=True)
+print('CHANGED_FILES=' + json.dumps(changed), flush=True)
