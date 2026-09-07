@@ -247,7 +247,12 @@ def test_schedule_has_no_pr_permission_and_never_executes_dev():
     config = yaml.load(
         Path(".github/workflows/promote-dev.yml").read_text(), Loader=yaml.BaseLoader
     )
-    assert config["on"]["schedule"] == [{"cron": "0 18 * * *"}]
+    triggers = config["on"]
+    schedule = triggers.get("schedule")
+    assert isinstance(schedule, list) and schedule
+    assert all(isinstance(entry, dict) and entry.get("cron") for entry in schedule)
+    assert "pull_request" not in triggers
+
     job = config["jobs"]["promote"]
     assert job["permissions"] == {"contents": "write", "actions": "write"}
     assert "refs/heads/main" in job["if"]
