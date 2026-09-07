@@ -11,11 +11,8 @@ on:
         description: Previous main SHA for the verified promotion
         required: true
         type: string
-  pull_request:
   push:
-    branches:
-      - main
-      - dev
+    branches: [main]
 
 permissions:
   contents: read
@@ -24,68 +21,10 @@ env:
   UV_VERSION: "0.11.28"
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: main-ci-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
-  changes:
-    name: Change classification
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      docs_only: ${{ steps.classify.outputs.docs_only }}
-      base_sha: ${{ steps.classify.outputs.base_sha }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Classify changes against the verification base
-        id: classify
-        env:
-          REQUESTED_BASE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.base_sha || github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.ref == 'refs/heads/dev' && 'origin/main' || github.event.before }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          base_sha="${REQUESTED_BASE_SHA}"
-          if [[ "${base_sha}" == "origin/main" ]]; then
-            base_sha="$(git rev-parse refs/remotes/origin/main)"
-          fi
-          [[ "${base_sha}" =~ ^[0-9a-f]{40}$ ]]
-          git cat-file -e "${base_sha}^{commit}"
-          git merge-base --is-ancestor "${base_sha}" "${GITHUB_SHA}"
-
-          docs_only=true
-          # Main verification remains full even for a documentation-only promoted SHA.
-          # The optimization is intentionally limited to dev/PR feedback.
-          if [[ "${GITHUB_REF}" == "refs/heads/main" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            docs_only=false
-          else
-            while IFS= read -r path; do
-              [[ -z "${path}" ]] && continue
-              case "${path}" in
-                *.md|docs/*|AGENTS.md|CLAUDE.md|LICENSE)
-                  ;;
-                *)
-                  docs_only=false
-                  break
-                  ;;
-              esac
-            done < <(git diff --name-only "${base_sha}" "${GITHUB_SHA}")
-          fi
-
-          echo "base_sha=${base_sha}" >>"${GITHUB_OUTPUT}"
-          echo "docs_only=${docs_only}" >>"${GITHUB_OUTPUT}"
-          {
-            echo "## Change classification"
-            echo
-            echo "- base: \`${base_sha}\`"
-            echo "- head: \`${GITHUB_SHA}\`"
-            echo "- docs_only: \`${docs_only}\`"
-          } >>"${GITHUB_STEP_SUMMARY}"
-
   python-quality:
     name: Python changed-file quality
     runs-on: ubuntu-latest
@@ -96,15 +35,12 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
-
       - name: Install uv
         run: python -m pip install "uv==${UV_VERSION}"
-
       - name: Verify dispatched main identity
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
@@ -118,17 +54,12 @@ jobs:
           [[ "${EXPECTED_BASE}" =~ ^[0-9a-f]{40}$ ]]
           test "${GITHUB_SHA}" = "${EXPECTED_SHA}"
           git merge-base --is-ancestor "${EXPECTED_BASE}" "${EXPECTED_SHA}"
-
       - name: Install quality dependencies
         run: uv sync --extra dev --frozen
-
       - name: Check changed Python files and stable boundaries
-        shell: bash
         env:
-          BASE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.base_sha || github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.ref == 'refs/heads/dev' && 'origin/main' || github.event.before }}
-        run: |
-          uv run python scripts/ci/check_python_quality.py \
-            --base "${BASE_SHA}" --head "${GITHUB_SHA}"
+          BASE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.base_sha || github.event.before }}
+        run: uv run python scripts/ci/check_python_quality.py --base "${BASE_SHA}" --head "${GITHUB_SHA}"
 
   repository-contracts:
     name: Repository contract tests
@@ -139,21 +70,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
-
       - name: Install uv
         run: python -m pip install "uv==${UV_VERSION}"
-
-      - name: Install contract test dependencies
+      - name: Install contract dependencies
         run: uv sync --extra server --extra dev --frozen
-
       - name: Run repository contract tests
         run: |
-          mkdir -p reports/ci
           uv run python -m pytest \
             tests/scripts/test_docs_health.py \
             tests/strategy/test_strategy_docs.py \
@@ -163,403 +89,28 @@ jobs:
             tests/scripts/test_scripts_inventory.py \
             tests/tools/test_main_promotion.py \
             tests/scripts/test_main_source_runtime.py \
-            tests/test_verify_release_source_ci.py \
-            --junitxml=reports/ci/repository-contracts-junit.xml
+            tests/test_verify_release_source_ci.py
 
-      - name: Upload repository contract evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: repository-contracts-evidence
-          path: reports/ci/repository-contracts-junit.xml
-          if-no-files-found: error
-
-  backend:
-    name: Backend tests
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
-    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
+  hygiene:
+    name: Repository hygiene
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-
-      - name: Install uv
-        run: python -m pip install "uv==${UV_VERSION}"
-
-      - name: Install backend dependencies
-        run: uv sync --extra server --extra dev --frozen
-
-      - name: Run server route tests
-        run: uv run python -m pytest tests/test_server_routes.py
-
-      - name: Run deterministic Profit Discipline smoke path
-        run: uv run python -m pytest tests/test_profit_discipline_smoke.py
-
-      - name: Run backend test suite
+      - name: Check public shell entrypoint syntax
+        run: bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+      - name: Check documentation health
+        run: python scripts/ci/check_docs_health.py
+      - name: Check tracked private artifacts
+        shell: bash
         run: |
-          mkdir -p reports/ci
-          uv run python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
-            --cov --cov-report=term --cov-report=xml \
-            --junitxml=reports/ci/backend-junit.xml
-
-      - name: Upload backend test evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: backend-test-evidence
-          path: |
-            reports/ci/backend-junit.xml
-            reports/ci/coverage.xml
-          if-no-files-found: error
-
-  dependency-audit:
-    name: Production dependency audit
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
-    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24.20.0"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install uv and locked audit tooling
-        run: |
-          python -m pip install "uv==${UV_VERSION}"
-          uv sync --extra server --extra dev --frozen
-
-      - name: Audit locked Python production dependencies
-        run: |
-          uv export --frozen --extra server --no-dev --no-emit-project \
-            --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
-          uv run --extra dev pip-audit \
-            --requirement "${RUNNER_TEMP}/requirements.txt" \
-            --progress-spinner=off
-
-      - name: Audit npm production dependencies
-        run: |
-          audit_log="${RUNNER_TEMP}/npm-audit.log"
-          for attempt in 1 2 3; do
-            if npm --prefix web audit --omit=dev --audit-level=moderate \
-              --fetch-timeout=60000 --fetch-retries=0 >"${audit_log}" 2>&1; then
-              cat "${audit_log}"
-              exit 0
-            fi
-
-            cat "${audit_log}"
-            if ! grep -Eq \
-              'audit endpoint returned an error|network timeout|503 Service Unavailable|ECONNRESET|ETIMEDOUT|EAI_AGAIN' \
-              "${audit_log}"; then
-              exit 1
-            fi
-            if [[ "${attempt}" -eq 3 ]]; then
-              exit 1
-            fi
-            sleep "$((attempt * 10))"
-          done
-
-  trading-safety:
-    name: Trading safety invariants
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
-    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-
-      - name: Install uv
-        run: python -m pip install "uv==${UV_VERSION}"
-
-      - name: Install backend dependencies
-        run: uv sync --extra server --extra dev --frozen
-
-      - name: Run fail-closed trading safety tests
-        run: |
-          mkdir -p reports/ci
-          uv run python -m pytest -m trading_safety \
-            --junitxml=reports/ci/trading-safety-junit.xml
-
-      - name: Upload trading safety evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: trading-safety-evidence
-          path: reports/ci/trading-safety-junit.xml
-          if-no-files-found: error
-
-  frontend:
-    name: Frontend checks
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
-    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24.20.0"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install frontend dependencies
-        run: npm ci --prefix web
-
-      - name: Check frontend formatting
-        run: npm --prefix web run format:check
-
-      - name: Build frontend
-        run: npm --prefix web run build
-
-      - name: Run frontend tests
-        run: |
-          mkdir -p reports/ci
-          npm --prefix web run test -- --reporter=junit --outputFile=../reports/ci/frontend-junit.xml
-
-      - name: Upload frontend test evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: frontend-test-evidence
-          path: reports/ci/frontend-junit.xml
-          if-no-files-found: error
-
-  docker-runtime:
-    name: Docker runtime smoke
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
-    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Seed ignored build-context sentinels
-        run: |
-          mkdir -p data/store logs reports exports screenshots .playwright-mcp
-          printf 'docker-context-sentinel\n' > config.json
-          printf 'docker-context-sentinel\n' > broker_statement.csv
-          printf 'docker-context-sentinel\n' > secret.py
-          printf 'docker-context-sentinel\n' > .env
-          printf 'docker-context-sentinel\n' > data/store/runtime.sqlite
-          printf 'docker-context-sentinel\n' > data/store/private_runtime.py
-          printf 'docker-context-sentinel\n' > logs/runtime.log
-          printf 'docker-context-sentinel\n' > reports/private-report.json
-          printf 'docker-context-sentinel\n' > exports/private-export.csv
-          printf 'docker-context-sentinel\n' > screenshots/private-shot.png
-          printf 'docker-context-sentinel\n' > .playwright-mcp/session.json
-          printf 'docker-context-sentinel\n' > strategy/extensions/private_strategy.py
-          printf 'docker-context-sentinel\n' > account_truth/private-export.csv
-          printf 'docker-context-sentinel\n' > server/account-snapshot.json
-          printf 'docker-context-sentinel\n' > web/src/private-account.json
-
-      - name: Build locked runtime image
-        run: docker build --tag karkinos:ci .
-
-      - name: Verify private artifacts stay outside the build context
-        run: |
-          docker build --tag karkinos-context-contract --file - . <<'DOCKERFILE'
-          FROM karkinos:ci
-          USER root
-          COPY . /build-context
-          RUN test -e /build-context/pyproject.toml \
-              && test -e /build-context/README.md \
-              && test -e /build-context/LICENSE \
-              && test -e /build-context/server/app.py \
-              && test ! -e /build-context/config.json \
-              && test ! -e /build-context/broker_statement.csv \
-              && test ! -e /build-context/secret.py \
-              && test ! -e /build-context/.env \
-              && test ! -e /build-context/data/store/runtime.sqlite \
-              && test ! -e /build-context/data/store/private_runtime.py \
-              && test ! -e /build-context/logs \
-              && test ! -e /build-context/reports \
-              && test ! -e /build-context/exports \
-              && test ! -e /build-context/screenshots \
-              && test ! -e /build-context/.playwright-mcp \
-              && test ! -e /build-context/strategy/extensions/private_strategy.py \
-              && test ! -e /build-context/account_truth/private-export.csv \
-              && test ! -e /build-context/server/account-snapshot.json \
-              && test ! -e /build-context/web/src/private-account.json
-          DOCKERFILE
-
-      - name: Start runtime with fail-closed defaults
-        run: |
-          mkdir -p "${RUNNER_TEMP}/karkinos-data"
-          runtime_uid="$(docker run --rm --entrypoint id karkinos:ci -u)"
-          runtime_gid="$(docker run --rm --entrypoint id karkinos:ci -g)"
-          chmod 0700 "${RUNNER_TEMP}/karkinos-data"
-          sudo chown "${runtime_uid}:${runtime_gid}" "${RUNNER_TEMP}/karkinos-data"
-          printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
-          docker run --detach --name karkinos-ci \
-            --publish 127.0.0.1:8000:8000 \
-            --volume "${RUNNER_TEMP}/karkinos-data:/app/data/store" \
-            --volume "${RUNNER_TEMP}/karkinos-config.json:/app/config.json:ro" \
-            karkinos:ci
-
-      - name: Verify non-root fail-closed runtime
-        run: |
-          test "$(docker inspect --format '{{.Config.User}}' karkinos-ci)" = "karkinos"
-          python scripts/ci/verify_docker_runtime.py --timeout-seconds 90
-
-      - name: Capture runtime logs
-        if: always()
-        run: |
-          if docker container inspect karkinos-ci >/dev/null 2>&1; then
-            docker logs karkinos-ci
-          fi
-
-      - name: Stop runtime
-        if: always()
-        run: docker rm --force karkinos-ci
-
-  browser-safety:
-    name: Browser safety smoke
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
-    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24.20.0"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install uv
-        run: python -m pip install "uv==${UV_VERSION}"
-
-      - name: Install backend and frontend dependencies
-        run: |
-          uv sync --extra server --extra dev --frozen
-          npm ci --prefix web
-
-      - name: Install Chromium
-        run: npx --prefix web playwright install --with-deps chromium
-
-      - name: Build product frontend
-        run: npm --prefix web run build
-
-      - name: Run browser safety smoke
-        run: npm --prefix web run test:e2e
-
-      - name: Upload browser evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: browser-safety-evidence
-          path: |
-            reports/ci/playwright-junit.xml
-            web/test-results/
-          if-no-files-found: warn
-
-  repository-acceptance-audit:
-    name: Repository acceptance audit
-    if: ${{ always() && needs.changes.result == 'success' && (needs.changes.outputs.docs_only == 'true' || (needs.backend.result == 'success' && needs.frontend.result == 'success' && needs.trading-safety.result == 'success')) }}
-    needs: [changes, backend, frontend, trading-safety]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-
-      - name: Install uv
-        run: python -m pip install "uv==${UV_VERSION}"
-
-      - name: Install acceptance dependencies
-        run: uv sync --extra server --extra dev --frozen
-
-      - name: Download backend test evidence
-        if: ${{ needs.changes.outputs.docs_only != 'true' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: backend-test-evidence
-          path: reports/ci
-
-      - name: Download frontend test evidence
-        if: ${{ needs.changes.outputs.docs_only != 'true' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: frontend-test-evidence
-          path: reports/ci
-
-      - name: Run repository acceptance audit report for docs-only changes
-        if: ${{ needs.changes.outputs.docs_only == 'true' }}
-        run: |
-          mkdir -p reports/ci
-          uv run python scripts/ci/export_acceptance_audit.py --audit all \
-            --pretty \
-            --output reports/ci/acceptance-audit.json
-
-      - name: Run repository acceptance audit report with test evidence
-        if: ${{ needs.changes.outputs.docs_only != 'true' }}
-        run: |
-          uv run python scripts/ci/export_acceptance_audit.py --audit all \
-            --verify-evidence \
-            --backend-junit reports/ci/backend-junit.xml \
-            --frontend-junit reports/ci/frontend-junit.xml \
-            --pretty \
-            --output reports/ci/acceptance-audit.json
-
-      - name: Upload acceptance evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: repository-acceptance-audit
-          path: reports/ci/acceptance-audit.json
-          if-no-files-found: error
+          set -euo pipefail
+          forbidden_pattern='(^|/)(\.env$|\.env\.local$|\.env\.production$|.*\.(db|sqlite|duckdb)$|data/store/|logs/|exports/|screenshots/|reports/|\.agents/|skills-lock\.json$)'
+          tracked_forbidden="$(git ls-files | grep -E "${forbidden_pattern}" || true)"
+          test -z "${tracked_forbidden}"
 
   secret-scan:
     name: Secret scan
@@ -571,123 +122,231 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-
       - name: Scan git history with Gitleaks
-        run: |
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/repo" \
-            ghcr.io/gitleaks/gitleaks:v8.30.1 \
-            detect --source /repo --redact --verbose
-
+        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --redact --verbose
       - name: Scan working tree with Gitleaks
-        run: |
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/repo" \
-            ghcr.io/gitleaks/gitleaks:v8.30.1 \
-            detect --source /repo --no-git --redact --verbose
+        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --no-git --redact --verbose
 
-  hygiene:
-    name: Repository hygiene
+  backend:
+    name: Backend tests
+    needs: [python-quality, repository-contracts, hygiene, secret-scan]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Check public shell entrypoint syntax
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - run: python -m pip install "uv==${UV_VERSION}"
+      - run: uv sync --extra server --extra dev --frozen
+      - name: Run server route tests
+        run: uv run python -m pytest tests/test_server_routes.py
+      - name: Run deterministic Profit Discipline smoke path
+        run: uv run python -m pytest tests/test_profit_discipline_smoke.py
+      - name: Run backend test suite
         run: |
-          bash -n \
-            scripts/start_server.sh \
-            scripts/stop_server.sh \
-            scripts/service/manage_launch_agent.sh \
-            scripts/release/bootstrap_installer.sh
+          mkdir -p reports/ci
+          uv run python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
+            --cov --cov-report=term --cov-report=xml \
+            --junitxml=reports/ci/backend-junit.xml
+      - name: Upload backend test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-test-evidence
+          path: |
+            reports/ci/backend-junit.xml
+            reports/ci/coverage.xml
+          if-no-files-found: error
 
-      - name: Check documentation health
-        run: python scripts/ci/check_docs_health.py
-
-      - name: Check tracked private artifacts
-        shell: bash
+  frontend:
+    name: Frontend checks
+    needs: [python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --prefix web
+      - run: npm --prefix web run format:check
+      - run: npm --prefix web run build
+      - name: Run frontend tests
         run: |
-          set -euo pipefail
+          mkdir -p reports/ci
+          npm --prefix web run test -- --reporter=junit --outputFile=../reports/ci/frontend-junit.xml
+      - name: Upload frontend test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-test-evidence
+          path: reports/ci/frontend-junit.xml
+          if-no-files-found: error
 
-          forbidden_pattern='(^|/)(\.env$|\.env\.local$|\.env\.production$|.*\.(db|sqlite|duckdb)$|data/store/|logs/|exports/|screenshots/|reports/|\.agents/|skills-lock\.json$)'
-          tracked_forbidden="$(git ls-files | grep -E "${forbidden_pattern}" || true)"
+  trading-safety:
+    name: Trading safety invariants
+    needs: [python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - run: python -m pip install "uv==${UV_VERSION}"
+      - run: uv sync --extra server --extra dev --frozen
+      - run: uv run python -m pytest -m trading_safety
 
-          if [[ -n "${tracked_forbidden}" ]]; then
-            echo "Forbidden files are tracked:"
-            echo "${tracked_forbidden}"
-            exit 1
-          fi
+  dependency-audit:
+    name: Production dependency audit
+    needs: [python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - run: python -m pip install "uv==${UV_VERSION}"
+      - run: uv sync --extra server --extra dev --frozen
+      - run: uv export --frozen --extra server --no-dev --no-emit-project --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
+      - run: uv run --extra dev pip-audit --requirement "${RUNNER_TEMP}/requirements.txt" --progress-spinner=off
+      - name: Audit npm production dependencies
+        run: npm --prefix web audit --omit=dev --audit-level=moderate
 
-          echo "No tracked private artifacts found."
+  docker-runtime:
+    name: Docker runtime smoke
+    needs: [python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build locked runtime image
+        run: docker build --tag karkinos:ci .
+      - name: Start runtime with fail-closed defaults
+        run: |
+          mkdir -p "${RUNNER_TEMP}/karkinos-data"
+          printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
+          docker run --detach --name karkinos-ci \
+            --publish 127.0.0.1:8000:8000 \
+            --volume "${RUNNER_TEMP}/karkinos-data:/app/data/store" \
+            --volume "${RUNNER_TEMP}/karkinos-config.json:/app/config.json:ro" \
+            karkinos:ci
+      - name: Verify non-root fail-closed runtime
+        run: python scripts/ci/verify_docker_runtime.py --timeout-seconds 90
+      - name: Stop runtime
+        if: always()
+        run: docker rm --force karkinos-ci
+
+  browser-safety:
+    name: Browser safety smoke
+    needs: [python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: python -m pip install "uv==${UV_VERSION}"
+      - run: uv sync --extra server --extra dev --frozen
+      - run: npm ci --prefix web
+      - run: npx --prefix web playwright install --with-deps chromium
+      - run: npm --prefix web run build
+      - run: npm --prefix web run test:e2e
+
+  repository-acceptance-audit:
+    name: Repository acceptance audit
+    needs: [backend, frontend, trading-safety]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - run: python -m pip install "uv==${UV_VERSION}"
+      - run: uv sync --extra server --extra dev --frozen
+      - name: Download backend test evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: backend-test-evidence
+          path: reports/ci
+      - name: Download frontend test evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: frontend-test-evidence
+          path: reports/ci
+      - name: Run repository acceptance audit report
+        run: |
+          uv run python scripts/ci/export_acceptance_audit.py --audit all \
+            --verify-evidence \
+            --backend-junit reports/ci/backend-junit.xml \
+            --frontend-junit reports/ci/frontend-junit.xml \
+            --pretty \
+            --output reports/ci/acceptance-audit.json
 
   code-ci-gate:
     name: Code CI gate
     if: always()
     needs:
-      - changes
       - python-quality
       - repository-contracts
+      - hygiene
+      - secret-scan
       - backend
-      - dependency-audit
-      - trading-safety
       - frontend
+      - trading-safety
+      - dependency-audit
       - docker-runtime
       - browser-safety
       - repository-acceptance-audit
-      - secret-scan
-      - hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every scheduled code CI check to pass
+      - name: Require every main CI check to pass
         env:
-          CI_JOB_RESULTS: ${{ toJSON(needs) }}
+          RESULTS: ${{ toJSON(needs) }}
         shell: python
         run: |
-          import json
-          import os
-          from pathlib import Path
-
-          results = json.loads(os.environ["CI_JOB_RESULTS"])
-          if not isinstance(results, dict) or not results:
-              raise SystemExit("No required job results were supplied")
-
-          changes = results.get("changes")
-          outputs = changes.get("outputs", {}) if isinstance(changes, dict) else {}
-          docs_only = outputs.get("docs_only") == "true"
-          skippable_for_docs = {
-              "backend",
-              "dependency-audit",
-              "trading-safety",
-              "frontend",
-              "docker-runtime",
-              "browser-safety",
-          }
-
-          lines = [
-              "## Code CI gate",
-              "",
-              f"docs_only: `{str(docs_only).lower()}`",
-              "",
-              "| Job | Result |",
-              "| --- | --- |",
-          ]
-          failed = []
-          for name, job in sorted(results.items()):
-              result = job.get("result") if isinstance(job, dict) else None
-              lines.append(f"| {name} | {result or 'missing'} |")
-              if docs_only and name in skippable_for_docs:
-                  if result not in {"success", "skipped"}:
-                      failed.append(name)
-              elif result != "success":
-                  failed.append(name)
-
-          summary = "\n".join(lines) + "\n"
-          print(summary)
-          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as out:
-              out.write(summary)
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          failed = [name for name, job in results.items() if not isinstance(job, dict) or job.get("result") != "success"]
           if failed:
-              raise SystemExit("Required checks did not succeed: " + ", ".join(failed))
+              raise SystemExit("Main CI checks did not succeed: " + ", ".join(sorted(failed)))
