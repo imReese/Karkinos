@@ -2,78 +2,57 @@ from __future__ import annotations
 
 from pathlib import Path
 
-WORKFLOW = Path(".github/workflows/ci.yml")
+MAIN_CI = Path(".github/workflows/ci.yml")
+DEV_CI = Path(".github/workflows/dev-ci.yml")
 
 
-def _workflow() -> str:
-    return WORKFLOW.read_text(encoding="utf-8")
+def _main_ci() -> str:
+    return MAIN_CI.read_text(encoding="utf-8")
 
 
-def test_docs_only_classifier_is_narrow_and_main_stays_full() -> None:
-    workflow = _workflow()
-
-    assert "name: Change classification" in workflow
-    assert "git diff --name-only" in workflow
-    assert "*.md|docs/*|AGENTS.md|CLAUDE.md|LICENSE" in workflow
-    assert 'GITHUB_REF}" == "refs/heads/main"' in workflow
-    assert 'GITHUB_EVENT_NAME}" == "workflow_dispatch"' in workflow
-    assert "docs_only=false" in workflow
+def _dev_ci() -> str:
+    return DEV_CI.read_text(encoding="utf-8")
 
 
-def test_heavy_jobs_skip_only_for_docs_only_changes() -> None:
-    workflow = _workflow()
+def test_main_ci_is_main_only_and_full() -> None:
+    workflow = _main_ci()
 
-    for job in (
-        "backend",
-        "dependency-audit",
-        "trading-safety",
-        "frontend",
-        "docker-runtime",
-        "browser-safety",
+    assert "name: CI" in workflow
+    assert "branches:\n      - main" in workflow
+    assert "      - dev" not in workflow
+    assert "pull_request:" not in workflow
+    for job_name in (
+        "Backend tests",
+        "Production dependency audit",
+        "Trading safety invariants",
+        "Frontend checks",
+        "Docker runtime smoke",
+        "Browser safety smoke",
+        "Repository acceptance audit",
     ):
-        block = workflow.split(f"  {job}:\n", 1)[1].split("\n  ", 1)[0]
-        assert "if: ${{ needs.changes.outputs.docs_only != 'true' }}" in block
-        assert "changes" in block.split("needs:", 1)[1].split("\n", 1)[0]
+        assert f"name: {job_name}" in workflow
 
 
-def test_docs_only_acceptance_does_not_forge_test_evidence() -> None:
-    workflow = _workflow()
-    block = workflow.split("  repository-acceptance-audit:\n", 1)[1].split(
-        "\n  secret-scan:\n", 1
-    )[0]
+def test_dev_ci_is_incremental_and_never_runs_main_full_suite() -> None:
+    workflow = _dev_ci()
 
-    assert "Run repository acceptance audit report for docs-only changes" in block
-    assert "Run repository acceptance audit report with test evidence" in block
-    docs_step = block.split(
-        "      - name: Run repository acceptance audit report for docs-only changes\n",
-        1,
-    )[1].split(
-        "      - name: Run repository acceptance audit report with test evidence\n",
-        1,
-    )[
-        0
-    ]
-    full_step = block.split(
-        "      - name: Run repository acceptance audit report with test evidence\n",
-        1,
-    )[1].split("      - name: Upload acceptance evidence\n", 1)[0]
-    assert "--verify-evidence" not in docs_step
-    assert "--backend-junit" not in docs_step
-    assert "--frontend-junit" not in docs_step
-    assert "--verify-evidence" in full_step
-    assert "--backend-junit" in full_step
-    assert "--frontend-junit" in full_step
+    assert "name: Dev CI" in workflow
+    assert "branches:\n      - dev" in workflow
+    assert "pull_request:" in workflow
+    assert "Dev change classification" in workflow
+    assert "git diff --name-only" in workflow
+    assert "Frontend changed-scope checks" in workflow
+    assert "Trading safety changed-scope checks" in workflow
+    assert "Dependency changed-scope audit" in workflow
+    for main_only_job in (
+        "Run backend test suite",
+        "Docker runtime smoke",
+        "Browser safety smoke",
+        "Repository acceptance audit",
+    ):
+        assert main_only_job not in workflow
 
 
-def test_code_gate_allows_heavy_skips_only_when_classifier_says_docs_only() -> None:
-    workflow = _workflow()
-    block = workflow.split("  code-ci-gate:\n", 1)[1]
-
-    assert 'docs_only = outputs.get("docs_only") == "true"' in block
-    assert "if docs_only and name in skippable_for_docs:" in block
-    assert 'result not in {"success", "skipped"}' in block
-    assert 'elif result != "success":' in block
-    assert (
-        '"repository-acceptance-audit"'
-        not in block.split("skippable_for_docs = {", 1)[1].split("}", 1)[0]
-    )
+def test_both_workflows_expose_the_same_promotion_gate_name() -> None:
+    assert "name: Code CI gate" in _main_ci()
+    assert "name: Code CI gate" in _dev_ci()
