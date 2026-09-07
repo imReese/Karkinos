@@ -1,0 +1,226 @@
+name: Dev CI
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.11.28"
+
+concurrency:
+  group: dev-ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Dev change classification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.classify.outputs.frontend }}
+      trading: ${{ steps.classify.outputs.trading }}
+      dependencies: ${{ steps.classify.outputs.dependencies }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Classify changed paths
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'origin/main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${BASE_SHA}"
+          if [[ "${base_sha}" == "origin/main" ]]; then
+            base_sha="$(git rev-parse refs/remotes/origin/main)"
+          fi
+          git merge-base --is-ancestor "${base_sha}" "${GITHUB_SHA}"
+          frontend=false
+          trading=false
+          dependencies=false
+          while IFS= read -r path; do
+            case "${path}" in
+              web/*) frontend=true ;;
+            esac
+            case "${path}" in
+              account_truth/*|execution/*|risk/*|oms/*|server/*|analytics/*|strategy/*|tests/test_trading_controls.py|tests/test_controlled_*.py|tests/test_oms_service.py) trading=true ;;
+            esac
+            case "${path}" in
+              pyproject.toml|uv.lock|web/package.json|web/package-lock.json|Dockerfile|.github/dependabot.yml) dependencies=true ;;
+            esac
+          done < <(git diff --name-only "${base_sha}" "${GITHUB_SHA}")
+          echo "frontend=${frontend}" >>"${GITHUB_OUTPUT}"
+          echo "trading=${trading}" >>"${GITHUB_OUTPUT}"
+          echo "dependencies=${dependencies}" >>"${GITHUB_OUTPUT}"
+
+  python-quality:
+    name: Python changed-file quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Install uv
+        run: python -m pip install "uv==${UV_VERSION}"
+      - name: Install quality dependencies
+        run: uv sync --extra dev --frozen
+      - name: Check changed Python files and stable boundaries
+        run: uv run python scripts/ci/check_python_quality.py --base origin/main --head "${GITHUB_SHA}"
+
+  repository-contracts:
+    name: Repository contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Install uv
+        run: python -m pip install "uv==${UV_VERSION}"
+      - name: Install contract dependencies
+        run: uv sync --extra server --extra dev --frozen
+      - name: Run repository contract tests
+        run: |
+          uv run python -m pytest \
+            tests/scripts/test_docs_health.py \
+            tests/strategy/test_strategy_docs.py \
+            tests/scripts/test_ci_preflight.py \
+            tests/test_ci_workflow.py \
+            tests/test_ci_safety_workflow.py \
+            tests/scripts/test_scripts_inventory.py \
+            tests/tools/test_main_promotion.py \
+            tests/scripts/test_main_source_runtime.py \
+            tests/test_verify_release_source_ci.py
+
+  hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check shell entrypoints
+        run: bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+      - name: Check documentation health
+        run: python scripts/ci/check_docs_health.py
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Scan working tree with Gitleaks
+        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --no-git --redact --verbose
+
+  frontend:
+    name: Frontend changed-scope checks
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --prefix web
+      - run: npm --prefix web run format:check
+      - run: npm --prefix web run build
+      - run: npm --prefix web run test
+
+  trading-safety:
+    name: Trading safety changed-scope checks
+    if: ${{ needs.changes.outputs.trading == 'true' }}
+    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - run: python -m pip install "uv==${UV_VERSION}"
+      - run: uv sync --extra server --extra dev --frozen
+      - run: uv run python -m pytest -m trading_safety
+
+  dependency-audit:
+    name: Dependency changed-scope audit
+    if: ${{ needs.changes.outputs.dependencies == 'true' }}
+    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - run: python -m pip install "uv==${UV_VERSION}"
+      - run: uv sync --extra server --extra dev --frozen
+      - run: uv export --frozen --extra server --no-dev --no-emit-project --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
+      - run: uv run --extra dev pip-audit --requirement "${RUNNER_TEMP}/requirements.txt" --progress-spinner=off
+
+  code-ci-gate:
+    name: Code CI gate
+    if: always()
+    needs: [changes, python-quality, repository-contracts, hygiene, secret-scan, frontend, trading-safety, dependency-audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require scheduled dev checks to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        shell: python
+        run: |
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          optional = {"frontend", "trading-safety", "dependency-audit"}
+          failed = []
+          for name, job in results.items():
+              result = job.get("result") if isinstance(job, dict) else None
+              if name in optional and result == "skipped":
+                  continue
+              if result != "success":
+                  failed.append(name)
+          if failed:
+              raise SystemExit("Dev CI checks did not succeed: " + ", ".join(sorted(failed)))
