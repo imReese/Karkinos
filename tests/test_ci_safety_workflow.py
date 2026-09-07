@@ -62,9 +62,10 @@ def test_ci_has_incremental_python_quality_and_independent_trading_safety_jobs(
         "frontend",
         "trading-safety",
     }
-    assert "needs.changes.outputs.docs_only == 'true'" in jobs[
-        "repository-acceptance-audit"
-    ]["if"]
+    assert (
+        "needs.changes.outputs.docs_only == 'true'"
+        in jobs["repository-acceptance-audit"]["if"]
+    )
 
 
 def test_ci_pins_uv_and_requires_every_scheduled_code_ci_job_to_pass(
