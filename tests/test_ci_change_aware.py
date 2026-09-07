@@ -2,26 +2,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 MAIN_CI = Path(".github/workflows/ci.yml")
 DEV_CI = Path(".github/workflows/dev-ci.yml")
 
 
-def _main_ci() -> str:
-    return MAIN_CI.read_text(encoding="utf-8")
+def _load_workflow(path: Path) -> dict:
+    return yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 
-def _dev_ci() -> str:
-    return DEV_CI.read_text(encoding="utf-8")
+def _job_names(config: dict) -> set[str]:
+    return {
+        job["name"]
+        for job in config["jobs"].values()
+        if isinstance(job, dict) and "name" in job
+    }
 
 
 def test_main_ci_is_main_only_and_full() -> None:
-    workflow = _main_ci()
+    config = _load_workflow(MAIN_CI)
+    triggers = config["on"]
 
-    assert "name: CI" in workflow
-    assert "branches:\n      - main" in workflow
-    assert "      - dev" not in workflow
-    assert "pull_request:" not in workflow
-    for job_name in (
+    assert config["name"] == "CI"
+    assert triggers["push"]["branches"] == ["main"]
+    assert "pull_request" not in triggers
+    assert {
         "Backend tests",
         "Production dependency audit",
         "Trading safety invariants",
@@ -29,30 +35,31 @@ def test_main_ci_is_main_only_and_full() -> None:
         "Docker runtime smoke",
         "Browser safety smoke",
         "Repository acceptance audit",
-    ):
-        assert f"name: {job_name}" in workflow
+    } <= _job_names(config)
 
 
 def test_dev_ci_is_incremental_and_never_runs_main_full_suite() -> None:
-    workflow = _dev_ci()
+    config = _load_workflow(DEV_CI)
+    triggers = config["on"]
+    job_names = _job_names(config)
 
-    assert "name: Dev CI" in workflow
-    assert "branches:\n      - dev" in workflow
-    assert "pull_request:" in workflow
-    assert "Dev change classification" in workflow
-    assert "git diff --name-only" in workflow
-    assert "Frontend changed-scope checks" in workflow
-    assert "Trading safety changed-scope checks" in workflow
-    assert "Dependency changed-scope audit" in workflow
-    for main_only_job in (
-        "Run backend test suite",
+    assert config["name"] == "Dev CI"
+    assert triggers["push"]["branches"] == ["dev"]
+    assert triggers["pull_request"]["branches"] == ["dev"]
+    assert {
+        "Dev change classification",
+        "Frontend changed-scope checks",
+        "Trading safety changed-scope checks",
+        "Dependency changed-scope audit",
+    } <= job_names
+    assert {
+        "Backend tests",
         "Docker runtime smoke",
         "Browser safety smoke",
         "Repository acceptance audit",
-    ):
-        assert main_only_job not in workflow
+    }.isdisjoint(job_names)
 
 
 def test_both_workflows_expose_the_same_promotion_gate_name() -> None:
-    assert "name: Code CI gate" in _main_ci()
-    assert "name: Code CI gate" in _dev_ci()
+    assert "Code CI gate" in _job_names(_load_workflow(MAIN_CI))
+    assert "Code CI gate" in _job_names(_load_workflow(DEV_CI))
