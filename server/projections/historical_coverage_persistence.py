@@ -1,14 +1,23 @@
 """Bind coverage-only evidence to the canonical read snapshot without writes."""
 
 import sqlite3
+from collections.abc import Mapping
 from contextlib import ExitStack
 from datetime import datetime
 
 from server.contracts.http.historical_coverage_models import HistoricalCoverageReport
 from server.dependencies import AppState
 from server.persistence.database_identity import require_database_path
+from server.persistence.instrument_metadata import read_instrument_metadata_rows
 from server.persistence.market_price_matrix import read_historical_price_observations
 from server.persistence.valuation_publication_recovery import unresolved_publications
+from server.projections.instrument_exchange_evidence import (
+    ExchangeSourceReference,
+    InstrumentExchangePreview,
+    InstrumentExchangeTargets,
+    build_instrument_exchange_targets,
+    preview_instrument_exchange_evidence,
+)
 from server.projections.portfolio_read_market_rows import read_only_connection
 from server.projections.portfolio_read_snapshot import (
     PortfolioReadSnapshot,
@@ -27,8 +36,15 @@ from server.services.market_hours import get_shanghai_now
 
 
 def read_historical_coverage(state: AppState) -> HistoricalCoverageReport:
+    snapshot, evidence = read_historical_coverage_inputs(state)
+    return build_historical_coverage(snapshot, evidence)
+
+
+def read_historical_coverage_inputs(
+    state: AppState, *, evaluated_at: datetime | None = None
+) -> tuple[PortfolioReadSnapshot, HistoricalCoverageEvidence]:
     """Reject drift across app/meta reads; no initialization or unbound fallback."""
-    evaluated_at = get_shanghai_now()
+    evaluated_at = evaluated_at if evaluated_at is not None else get_shanghai_now()
     if not isinstance(state, AppState):
         raise PortfolioReadSnapshotRejected(
             "coverage requires a bound application state"
@@ -63,7 +79,7 @@ def read_historical_coverage(state: AppState) -> HistoricalCoverageReport:
                 raise PortfolioReadSnapshotRejected(
                     "coverage evidence changed during read"
                 )
-            return build_historical_coverage(snapshot, evidence)
+            return snapshot, evidence
     except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
         raise PortfolioReadSnapshotRejected(
             "persisted historical coverage inputs unavailable"
@@ -72,6 +88,30 @@ def read_historical_coverage(state: AppState) -> HistoricalCoverageReport:
 
 def _data_version(connection: sqlite3.Connection) -> int:
     return int(connection.execute("PRAGMA data_version").fetchone()[0])
+
+
+def read_instrument_exchange_targets(state: AppState) -> InstrumentExchangeTargets:
+    snapshot, evidence = read_historical_coverage_inputs(state)
+    return build_instrument_exchange_targets(snapshot, evidence)
+
+
+def preview_instrument_exchange_from_state(
+    state: AppState,
+    *,
+    expected_targets: InstrumentExchangeTargets,
+    sources: tuple[ExchangeSourceReference, ...],
+    source_contents: Mapping[str, bytes],
+) -> InstrumentExchangePreview:
+    """Re-read at the pinned diagnostic time, rejecting any changed input facts."""
+    snapshot, evidence = read_historical_coverage_inputs(
+        state, evaluated_at=expected_targets.evaluated_at
+    )
+    return preview_instrument_exchange_evidence(
+        expected_targets,
+        current_targets=build_instrument_exchange_targets(snapshot, evidence),
+        sources=sources,
+        source_contents=source_contents,
+    )
 
 
 def _read_evidence(
@@ -87,17 +127,7 @@ def _read_evidence(
     observations = read_historical_price_observations(
         connection, symbols=symbols, start_date=start, end_date=end
     )
-    metadata = []
-    for offset in range(0, len(symbols), 400):
-        chunk = symbols[offset : offset + 400]
-        placeholders = ",".join("?" for _ in chunk)
-        metadata.extend(
-            dict(row)
-            for row in connection.execute(
-                f"SELECT * FROM instrument_metadata WHERE symbol IN ({placeholders}) ORDER BY symbol, asset_type",
-                chunk,
-            )
-        )
+    metadata = read_instrument_metadata_rows(connection, symbols=symbols)
     calendars = [
         dict(row)
         for row in connection.execute(
