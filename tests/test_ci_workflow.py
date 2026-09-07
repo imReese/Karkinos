@@ -94,16 +94,17 @@ def test_ci_repository_hygiene_blocks_runtime_and_generated_artifacts() -> None:
 
 def test_release_reuses_exact_successful_main_ci_before_publishing() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text()
+    dev_ci_workflow = Path(".github/workflows/dev-ci.yml").read_text()
     release_workflow = Path(".github/workflows/release.yml").read_text()
 
     assert 'tags:\n      - "v*"' not in ci_workflow
     assert "name: Publish release image" not in ci_workflow
-    assert (
-        "github.event_name == 'pull_request' && github.ref || github.sha" in ci_workflow
-    )
-    assert (
-        "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in ci_workflow
-    )
+    assert "branches: [main]" in ci_workflow
+    assert "pull_request:" not in ci_workflow
+    assert "group: main-ci-${{ github.sha }}" in ci_workflow
+    assert "cancel-in-progress: false" in ci_workflow
+    assert "pull_request:" in dev_ci_workflow
+    assert "branches:\n      - dev" in dev_ci_workflow
 
     assert 'tags:\n      - "v*"' in release_workflow
     assert "name: Verify exact main Code CI" in release_workflow
