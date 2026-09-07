@@ -77,13 +77,19 @@ def test_agent_contract_routes_architecture_to_canonical_docs(docs_root):
         "AGENTS.md",
         "# Agent Guide\ndocs/README.md\ndocs/GOAL.md\ndocs/PLAN.md\ndocs/CODEBASE.md\n",
     )
-    assert "AGENTS.md must route agents to docs/ARCHITECTURE.md" in health._check_agent_entrypoints()
+    assert (
+        "AGENTS.md must route agents to docs/ARCHITECTURE.md"
+        in health._check_agent_entrypoints()
+    )
 
 
 def test_legacy_ai_collaboration_routing_is_rejected(docs_root):
     _write_agent_contract(docs_root)
     _write(docs_root, "CLAUDE.md", "@AGENTS.md\nRead AI_COLLABORATION.md too.\n")
-    assert "agent entrypoints must route architecture through canonical docs, not AI_COLLABORATION.md" in health._check_agent_entrypoints()
+    assert (
+        "agent entrypoints must route architecture through canonical docs, not AI_COLLABORATION.md"
+        in health._check_agent_entrypoints()
+    )
 
 
 @pytest.mark.parametrize("path_text", health.OPERATIONAL_REFERENCE_DOCS)
