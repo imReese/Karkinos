@@ -228,7 +228,7 @@ def test_docs_consumers_and_ci_contracts_run_before_backend():
 
 def test_no_path_exemptions_or_hidden_failures_and_checkouts_are_read_only():
     config = workflow()
-    assert set(config["on"]) == {"pull_request", "push"}
+    assert set(config["on"]) == {"pull_request", "push", "workflow_dispatch"}
     assert config["on"]["push"] == {"branches": ["main", "dev"]}
     assert config["permissions"] == {"contents": "read"}
     assert (
@@ -305,14 +305,12 @@ def test_long_lived_branch_policy_templates_block_history_loss(branch):
     assert "required_linear_history" not in types
 
 
-def test_main_policy_template_requires_reviewed_current_ci_and_merge_commits():
+def test_main_policy_template_requires_ci_without_pr_or_bypass():
     policy = json.loads((ROOT / ".github/rulesets/main.json").read_text())
     rules = {rule["type"]: rule for rule in policy["rules"]}
-    review = rules["pull_request"]["parameters"]
-    assert review["allowed_merge_methods"] == ["merge"]
-    assert review["required_review_thread_resolution"] is True
-    assert review["required_approving_review_count"] == 0
-    assert review["require_last_push_approval"] is False
+    assert set(rules) == {"deletion", "non_fast_forward", "required_status_checks"}
+    assert "pull_request" not in rules
+    assert policy["bypass_actors"] == []
     checks = rules["required_status_checks"]["parameters"]
     assert checks["strict_required_status_checks_policy"] is True
     assert checks["do_not_enforce_on_create"] is False

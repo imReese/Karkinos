@@ -38,31 +38,35 @@ guarantee.
 - Broker credentials, private account exports, runtime databases, logs, and
   screenshots must never enter source control.
 
-## Quick start
+## Quick start: run main without a tag
 
-Requirements: Python 3.12+, Node.js 24.x, `uv`, and optionally Docker.
-
-```bash
-cp config.example.json config.json
-cp .env.example .env
-uv sync --extra server --extra dev --frozen
-npm ci --prefix web
-uv run python -m server --check-config
-./scripts/start_server.sh
-```
-
-Open `http://127.0.0.1:5173` for the development UI. Stop development services
-with:
+Requirements: Python 3.12+, Node.js 24.x, `uv`, and Git.
+Stop a running source service before updating its checkout.
 
 ```bash
-./scripts/stop_server.sh
+git switch main
+git pull --ff-only origin main
+test -e config.json || cp config.example.json config.json
+test -e .env || cp .env.example .env
+./scripts/start_server.sh main
 ```
 
-Development and production are intentionally separate. `./scripts/start_server.sh
-prod` starts only the immutable release already selected under
-`~/Library/Application Support/Karkinos/current`; it does not build or promote
-the local checkout. See [scripts/README.md](scripts/README.md) for candidate,
-update, rollback, recovery, and bootstrap commands.
+Open `http://127.0.0.1:8000`. This builds the frontend and runs the API plus
+research worker in the foreground; Ctrl+C stops both. No tag, native release,
+GitHub credentials, or Docker is required for startup. A clean main checkout
+matching the fetched origin/main is required. Startup never pulls, switches,
+resets branches, or stops an unknown listener automatically.
+
+Main-source data defaults to `.run/main/data`, separate from dev and a managed
+production installation. To use existing data, stop its current owner and
+explicitly select `KARKINOS_DATA_DIR`; startup does not copy or migrate your
+managed production layout automatically. Set `KARKINOS_MAIN_PORT` when 8000 is
+already occupied. Do not edit or pull this checkout while it is running.
+
+For development with hot reload, use `./scripts/start_server.sh dev` and open
+`http://127.0.0.1:5173`; stop it with `./scripts/stop_server.sh dev`.
+The optional legacy `prod` mode still controls an already installed immutable
+release. See [scripts/README.md](scripts/README.md) for these separate modes.
 
 ## Verification
 

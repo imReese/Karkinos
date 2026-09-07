@@ -101,9 +101,22 @@ class GitHubActionsClient:
         *,
         workflow_id: int,
         branch: str,
-        event: str,
+        event: str | Sequence[str],
         commit_sha: str,
     ) -> Mapping[str, Any]:
+        if not isinstance(event, str):
+            if not event or len(set(event)) != len(event):
+                raise SourceCIVerificationError("release_source_ci_events_invalid")
+            runs = []
+            for selected_event in event:
+                payload = self.workflow_runs(
+                    workflow_id=workflow_id,
+                    branch=branch,
+                    event=selected_event,
+                    commit_sha=commit_sha,
+                )
+                runs.extend(_complete_page(payload, "workflow_runs"))
+            return {"total_count": len(runs), "workflow_runs": runs}
         return self._get_json(
             f"/repos/{self._repository}/actions/workflows/{workflow_id}/runs",
             {
@@ -169,7 +182,7 @@ def select_latest_exact_run(
     workflow_id: int,
     workflow_path: str,
     branch: str,
-    event: str,
+    event: str | Sequence[str],
     commit_sha: str,
     expected_run_id: int | None = None,
     expected_run_attempt: int | None = None,
@@ -193,10 +206,12 @@ def select_latest_exact_run(
         expected = {
             "workflow_id": workflow_id,
             "head_branch": branch,
-            "event": event,
             "head_sha": commit_sha,
         }
-        if any(run.get(key) != value for key, value in expected.items()):
+        allowed_events = (event,) if isinstance(event, str) else tuple(event)
+        if run.get("event") not in allowed_events or any(
+            run.get(key) != value for key, value in expected.items()
+        ):
             raise SourceCIVerificationError("release_source_ci_run_identity_mismatch")
         if _workflow_path_without_ref(run.get("path")) != workflow_path:
             raise SourceCIVerificationError("release_source_ci_run_path_mismatch")
@@ -288,7 +303,7 @@ def wait_for_verified_source_ci(
     workflow_name: str,
     workflow_path: str,
     branch: str,
-    event: str,
+    event: str | Sequence[str],
     commit_sha: str,
     required_job_names: Sequence[str],
     timeout_seconds: float,
@@ -444,7 +459,9 @@ def main() -> int:
     parser.add_argument("--workflow-name", default="CI")
     parser.add_argument("--workflow-path", default=".github/workflows/ci.yml")
     parser.add_argument("--branch", default="main")
-    parser.add_argument("--event", default="push")
+    parser.add_argument(
+        "--event", action="append", choices=("push", "workflow_dispatch")
+    )
     parser.add_argument("--required-job", action="append", dest="required_jobs")
     parser.add_argument("--timeout-seconds", type=float, default=1200)
     parser.add_argument("--poll-interval-seconds", type=float, default=15)
@@ -477,7 +494,7 @@ def main() -> int:
             workflow_name=args.workflow_name,
             workflow_path=args.workflow_path,
             branch=args.branch,
-            event=args.event,
+            event=tuple(args.event or ("push", "workflow_dispatch")),
             commit_sha=args.commit_sha,
             required_job_names=required_jobs,
             timeout_seconds=args.timeout_seconds,

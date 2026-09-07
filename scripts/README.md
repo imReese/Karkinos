@@ -16,6 +16,34 @@ CI, or internal implementation command. Canonical financial and safety logic
 remains in application packages such as `data`, `account_truth`, `analytics`,
 and `server`.
 
+## Main source startup (no tag)
+
+```bash
+git switch main
+git pull --ff-only origin main
+./scripts/start_server.sh main
+```
+
+`main` runs `scripts/service/run_main.py`: locked backend dependencies, npm ci,
+a fresh frontend build, provider-free persisted-state preflight, then API and
+research worker supervised in the foreground. Ctrl+C stops both; an exited
+child stops its peer, and inherited lifetime pipes end children if the parent
+dies abruptly. No reload, tag, packaged controller, production pointer switch,
+or automatic git update occurs. Use a clean main checkout matching the fetched
+origin/main; stop before pulling or editing that checkout.
+
+The default address is 127.0.0.1:8000 (`KARKINOS_MAIN_PORT` overrides the port).
+The default data path is `.run/main/data`; explicit `KARKINOS_DATA_DIR` is
+respected. Existing dev/managed data is not copied. An occupied port is refused,
+not killed. Managed-release environment variables are rejected rather than
+clearing a recovery guard. The `.run/main` lock prevents duplicate supervisors.
+Use `python3 scripts/service/run_main.py --check` for a read-only checkout check.
+
+The existing stop wrapper addresses background dev/prod processes, not this
+foreground mode. Stop main mode with Ctrl+C in its terminal. All financial and
+human-authority gates remain in the existing application; source startup is
+not proof of financial readiness or immutable-release provenance.
+
 ## Service lifecycle
 
 | Command | Purpose | Boundary |

@@ -41,9 +41,12 @@ usage() {
 	cat <<'EOF'
 Usage:
   ./scripts/start_server.sh [dev] [extra server args...]
+  ./scripts/start_server.sh main
   ./scripts/start_server.sh prod
 
 Modes:
+  main  Run a clean main checkout with built frontend, without a tag.
+        Foreground mode; Ctrl+C stops API and research worker.
   dev   Run the current source tree with reload plus the Vite frontend.
         It defaults to backend port 8001; production uses its persisted port.
   prod  Start the supervised immutable release selected by
@@ -66,6 +69,12 @@ fi
 
 MODE="${MODE:-${1:-dev}}"
 case "${MODE}" in
+main)
+	if [[ "${1:-}" == "main" ]]; then
+		shift
+	fi
+	exec python3 "${SCRIPT_DIR}/service/run_main.py" "$@"
+	;;
 dev)
 	if [[ "${1:-}" == "dev" ]]; then
 		shift
