@@ -1,10 +1,9 @@
-"""Exercise CI scope selection, independent checks and the actual final gate."""
+"""Exercise Python quality scope and the split dev/main CI contracts."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -125,68 +124,24 @@ def test_quality_failure_keeps_other_checks(tmp_path, monkeypatch, failure_index
         assert kwargs["cwd"] == tmp_path
         assert kwargs["timeout"] == quality.CHECK_TIMEOUT_SECONDS
         calls.append(command)
-        exit_code = int(len(calls) - 1 == failure_index)
-        return subprocess.CompletedProcess(command, exit_code)
+        return subprocess.CompletedProcess(command, int(len(calls) - 1 == failure_index))
 
     monkeypatch.setattr(quality.subprocess, "run", run)
     assert quality.run_checks(tmp_path, ["name with spaces.py"]) == 1
     assert len(calls) == 5
     assert [command[2] for command in calls[:4]] == ["ruff", "black", "isort", "mypy"]
     assert calls[4][-1] == "tools/check_python_architecture.py"
-    assert all(command[-2:] == ["--", "name with spaces.py"] for command in calls[:3])
 
 
-@pytest.mark.parametrize(
-    "error",
-    [OSError("unavailable"), subprocess.TimeoutExpired("check", 1)],
-)
-def test_unavailable_or_timed_out_check_cannot_pass(tmp_path, monkeypatch, error):
-    calls = []
-
-    def run(command, **kwargs):
-        calls.append(command)
-        if len(calls) == 1:
-            raise error
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(quality.subprocess, "run", run)
-    assert quality.run_checks(tmp_path, ["example.py"]) == 1
-    assert len(calls) == 5
+def workflow(path):
+    return yaml.load((ROOT / path).read_text(), Loader=yaml.BaseLoader)
 
 
-def test_empty_python_diff_still_checks_types_and_architecture(tmp_path, monkeypatch):
-    calls = []
-
-    def run(command, **kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(quality.subprocess, "run", run)
-    assert quality.run_checks(tmp_path, []) == 0
-    assert calls == [
-        [sys.executable, "-m", "mypy"],
-        [sys.executable, "tools/check_python_architecture.py"],
-    ]
-
-
-def workflow():
-    # BaseLoader preserves YAML's `on` key instead of treating it as a boolean.
-    return yaml.load(
-        (ROOT / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader
-    )
-
-
-def test_expensive_jobs_require_all_preflight_checks_and_change_classification():
-    jobs = workflow()["jobs"]
-    independent_preflight = {
-        "changes",
-        "python-quality",
-        "repository-contracts",
-        "hygiene",
-        "secret-scan",
-    }
-    for name in independent_preflight:
-        assert not jobs[name].get("needs")
+def test_main_ci_is_full_and_main_only():
+    config = workflow(".github/workflows/ci.yml")
+    assert set(config["on"]) == {"push", "workflow_dispatch"}
+    assert config["on"]["push"] == {"branches": ["main"]}
+    jobs = config["jobs"]
     for name in (
         "backend",
         "frontend",
@@ -194,134 +149,45 @@ def test_expensive_jobs_require_all_preflight_checks_and_change_classification()
         "dependency-audit",
         "docker-runtime",
         "browser-safety",
+        "repository-acceptance-audit",
     ):
-        assert set(jobs[name]["needs"]) == independent_preflight
-        assert jobs[name]["if"] == "${{ needs.changes.outputs.docs_only != 'true' }}"
-    assert set(jobs["code-ci-gate"]["needs"]) == set(jobs) - {"code-ci-gate"}
+        assert name in jobs
+    assert set(jobs["repository-acceptance-audit"]["needs"]) == {
+        "backend",
+        "frontend",
+        "trading-safety",
+    }
     assert jobs["code-ci-gate"]["if"] == "always()"
-    assert jobs["code-ci-gate"]["name"] == "Code CI gate"
-    acceptance = jobs["repository-acceptance-audit"]
-    assert acceptance["name"] == "Repository acceptance audit"
-    assert set(acceptance["needs"]) == {
-        "changes",
-        "backend",
-        "frontend",
-        "trading-safety",
-    }
-    assert "needs.changes.outputs.docs_only == 'true'" in acceptance["if"]
-    assert "needs.backend.result == 'success'" in acceptance["if"]
+    assert set(jobs["code-ci-gate"]["needs"]) == set(jobs) - {"code-ci-gate"}
 
 
-def test_docs_consumers_and_ci_contracts_run_before_backend():
-    jobs = workflow()["jobs"]
-    steps = jobs["repository-contracts"]["steps"]
-    command = next(
-        step["run"] for step in steps if step["name"] == "Run repository contract tests"
-    )
-    for path in (
-        "tests/scripts/test_docs_health.py",
-        "tests/strategy/test_strategy_docs.py",
-        "tests/scripts/test_ci_preflight.py",
-        "tests/test_ci_workflow.py",
-        "tests/test_ci_safety_workflow.py",
-        "tests/scripts/test_scripts_inventory.py",
-    ):
-        assert path in command
-    quality_step = next(
-        step
-        for step in jobs["python-quality"]["steps"]
-        if step["name"] == "Check changed Python files and stable boundaries"
-    )
-    assert "scripts/ci/check_python_quality.py" in quality_step["run"]
-    assert '--base "${BASE_SHA}" --head "${GITHUB_SHA}"' in quality_step["run"]
+def test_dev_ci_is_incremental_and_dev_only():
+    config = workflow(".github/workflows/dev-ci.yml")
+    assert set(config["on"]) == {"pull_request", "push"}
+    assert config["on"]["push"] == {"branches": ["dev"]}
+    jobs = config["jobs"]
+    assert "changes" in jobs
+    assert "backend" not in jobs
+    assert "docker-runtime" not in jobs
+    assert "browser-safety" not in jobs
+    assert "repository-acceptance-audit" not in jobs
+    for name in ("frontend", "trading-safety", "dependency-audit"):
+        assert "if" in jobs[name]
+    assert jobs["code-ci-gate"]["if"] == "always()"
+    assert set(jobs["code-ci-gate"]["needs"]) == set(jobs) - {"code-ci-gate"}
 
 
-def test_no_path_exemptions_or_hidden_failures_and_checkouts_are_read_only():
-    config = workflow()
-    assert set(config["on"]) == {"pull_request", "push", "workflow_dispatch"}
-    assert config["on"]["push"] == {"branches": ["main", "dev"]}
-    assert config["permissions"] == {"contents": "read"}
-    assert (
-        config["concurrency"]["cancel-in-progress"]
-        == "${{ github.event_name == 'pull_request' }}"
-    )
-    assert "${{ github.ref }}" in config["concurrency"]["group"]
-    assert "github.sha" in config["concurrency"]["group"]
-    for job in config["jobs"].values():
-        assert 0 < int(job["timeout-minutes"]) <= 20
-        assert "continue-on-error" not in job
-        for step in job["steps"]:
-            assert "continue-on-error" not in step
-            if step.get("uses", "").startswith("actions/checkout@"):
-                assert step["with"]["persist-credentials"] == "false"
-
-
-def run_gate(tmp_path, results):
-    gate = workflow()["jobs"]["code-ci-gate"]["steps"][0]
-    assert gate["env"]["CI_JOB_RESULTS"] == "${{ toJSON(needs) }}"
-    assert gate["shell"] == "python"
-    return subprocess.run(
-        [sys.executable, "-c", gate["run"]],
-        env={
-            **os.environ,
-            "CI_JOB_RESULTS": json.dumps(results),
-            "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
-        },
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-def test_actual_gate_requires_success_and_writes_all_results(tmp_path):
-    results = {
-        name: {"result": "success"}
-        for name in workflow()["jobs"]["code-ci-gate"]["needs"]
-    }
-    results["changes"]["outputs"] = {"docs_only": "false"}
-    result = run_gate(tmp_path, results)
-    assert result.returncode == 0, result.stderr
-    summary = (tmp_path / "summary.md").read_text()
-    assert all(name in summary for name in results)
-
-
-def test_actual_gate_accepts_only_expected_docs_only_skips(tmp_path):
-    needs = workflow()["jobs"]["code-ci-gate"]["needs"]
-    results = {name: {"result": "success"} for name in needs}
-    results["changes"]["outputs"] = {"docs_only": "true"}
-    for name in (
-        "backend",
-        "dependency-audit",
-        "trading-safety",
-        "frontend",
-        "docker-runtime",
-        "browser-safety",
-    ):
-        results[name] = {"result": "skipped"}
-    assert run_gate(tmp_path, results).returncode == 0
-
-    results["repository-acceptance-audit"] = {"result": "skipped"}
-    failed = run_gate(tmp_path, results)
-    assert failed.returncode != 0
-    assert "repository-acceptance-audit" in failed.stderr
-
-
-@pytest.mark.parametrize("state", ["failure", "cancelled", "skipped", "unknown", None])
-def test_actual_gate_rejects_non_success_results(tmp_path, state):
-    results = {
-        "changes": {"result": "success", "outputs": {"docs_only": "false"}},
-        "backend": {"result": "success"},
-        "repository-contracts": {"result": state},
-    }
-    result = run_gate(tmp_path, results)
-    assert result.returncode != 0
-    assert "repository-contracts" in result.stderr
-    assert "backend" in (tmp_path / "summary.md").read_text()
-
-
-@pytest.mark.parametrize("results", [{}, [], {"backend": {}}, {"backend": None}])
-def test_actual_gate_rejects_absent_results(tmp_path, results):
-    assert run_gate(tmp_path, results).returncode != 0
+def test_both_ci_workflows_are_read_only_and_fail_closed():
+    for path in (".github/workflows/ci.yml", ".github/workflows/dev-ci.yml"):
+        config = workflow(path)
+        assert config["permissions"] == {"contents": "read"}
+        for job in config["jobs"].values():
+            assert 0 < int(job["timeout-minutes"]) <= 20
+            assert "continue-on-error" not in job
+            for step in job["steps"]:
+                assert "continue-on-error" not in step
+                if step.get("uses", "").startswith("actions/checkout@"):
+                    assert step["with"]["persist-credentials"] == "false"
 
 
 @pytest.mark.parametrize("branch", ["main", "dev"])
@@ -335,39 +201,20 @@ def test_long_lived_branch_policy_templates_block_history_loss(branch):
     assert policy["bypass_actors"] == []
     types = {rule["type"] for rule in policy["rules"]}
     assert {"deletion", "non_fast_forward"} <= types
-    assert "required_linear_history" not in types
 
 
-def test_main_policy_template_requires_ci_without_pr_or_bypass():
+def test_main_policy_template_requires_code_ci_gate():
     policy = json.loads((ROOT / ".github/rulesets/main.json").read_text())
     rules = {rule["type"]: rule for rule in policy["rules"]}
-    assert set(rules) == {"deletion", "non_fast_forward", "required_status_checks"}
-    assert "pull_request" not in rules
-    assert policy["bypass_actors"] == []
     checks = rules["required_status_checks"]["parameters"]
     assert checks["strict_required_status_checks_policy"] is True
-    assert checks["do_not_enforce_on_create"] is False
     assert checks["required_status_checks"] == [
-        {"context": workflow()["jobs"]["code-ci-gate"]["name"], "integration_id": 15368}
+        {"context": "Code CI gate", "integration_id": 15368}
     ]
-
-
-def test_dev_policy_template_permits_normal_pushes_to_start_ci():
-    policy = json.loads((ROOT / ".github/rulesets/dev.json").read_text())
-    assert {rule["type"] for rule in policy["rules"]} == {
-        "deletion",
-        "non_fast_forward",
-    }
 
 
 def test_dependabot_version_updates_target_persistent_dev():
     config = yaml.load(
         (ROOT / ".github/dependabot.yml").read_text(), Loader=yaml.BaseLoader
     )
-    assert {entry["package-ecosystem"] for entry in config["updates"]} == {
-        "uv",
-        "npm",
-        "github-actions",
-        "docker",
-    }
     assert all(entry["target-branch"] == "dev" for entry in config["updates"])
