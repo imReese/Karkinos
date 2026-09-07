@@ -1,4 +1,4 @@
-"""Keep Karkinos documentation small, canonical, and link-safe."""
+"""Keep Karkinos documentation canonical, navigable, and bounded."""
 
 from __future__ import annotations
 
@@ -16,8 +16,13 @@ CORE_DOC_BUDGETS = {
     "docs/CODEBASE.md": 180,
     "design.md": 240,
     "AI_COLLABORATION.md": 180,
-    "AGENTS.md": 80,
-    "CLAUDE.md": 80,
+}
+
+# Agent guides should stay concise, but these are coarse anti-bloat guardrails,
+# not target lengths. Their primary contract is role and routing, checked below.
+AGENT_ENTRYPOINT_BUDGETS = {
+    "AGENTS.md": 140,
+    "CLAUDE.md": 60,
 }
 
 # These paths still have acceptance consumers; migrate their claims before deletion.
@@ -92,7 +97,7 @@ def _check_document(path_text: str, line_budget: int | None) -> list[str]:
     line_count = len(text.splitlines())
     if line_budget is not None and line_count > line_budget:
         errors.append(
-            f"{path_text} has {line_count} lines; documentation budget is {line_budget}"
+            f"{path_text} has {line_count} lines; documentation guardrail is {line_budget}"
         )
 
     for raw_target in MARKDOWN_LINK.findall(text):
@@ -108,6 +113,23 @@ def _check_document(path_text: str, line_budget: int | None) -> list[str]:
             continue
         if not resolved.exists():
             errors.append(f"{path_text} has a broken local link: {raw_target}")
+
+    return errors
+
+
+def _check_agent_entrypoints() -> list[str]:
+    agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    claude = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    errors: list[str] = []
+
+    for required in ("AI_COLLABORATION.md", "docs/README.md"):
+        if required not in agents:
+            errors.append(f"AGENTS.md must route agents to {required}")
+
+    if "AGENTS.md" not in claude:
+        errors.append("CLAUDE.md must delegate repository instructions to AGENTS.md")
+    if "AI_COLLABORATION.md" not in claude:
+        errors.append("CLAUDE.md must point to AI_COLLABORATION.md for deeper policy")
 
     return errors
 
@@ -143,6 +165,7 @@ def main() -> int:
     errors: list[str] = []
     budgets = {
         **CORE_DOC_BUDGETS,
+        **AGENT_ENTRYPOINT_BUDGETS,
         **COMPATIBILITY_STUB_BUDGETS,
         **MAINTENANCE_DOC_BUDGETS,
         **FROZEN_REFERENCE_STUB_BUDGETS,
@@ -151,6 +174,7 @@ def main() -> int:
         errors.extend(_check_document(path_text, line_budget))
     for path_text in OPERATIONAL_REFERENCE_DOCS:
         errors.extend(_check_document(path_text, None))
+    errors.extend(_check_agent_entrypoints())
     errors.extend(_check_removed_docs_stay_removed())
     errors.extend(_check_tests_do_not_parse_plan())
 
@@ -161,8 +185,9 @@ def main() -> int:
         return 1
 
     print(
-        "Documentation health check passed: canonical docs are bounded, frozen "
-        "references stay small, local links resolve, and retired docs stay removed."
+        "Documentation health check passed: canonical ownership and agent routing "
+        "are intact, coarse size guardrails hold, local links resolve, and retired "
+        "docs stay removed."
     )
     return 0
 
