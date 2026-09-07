@@ -213,6 +213,8 @@ def test_docs_consumers_and_ci_contracts_run_before_backend():
         "tests/strategy/test_strategy_docs.py",
         "tests/scripts/test_ci_preflight.py",
         "tests/test_ci_workflow.py",
+        "tests/test_ci_safety_workflow.py",
+        "tests/scripts/test_scripts_inventory.py",
     ):
         assert path in command
     quality_step = next(

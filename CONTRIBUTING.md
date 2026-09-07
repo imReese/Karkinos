@@ -8,7 +8,7 @@ Install the locked dependencies and run the same checks used by CI:
 uv sync --extra server --extra dev --frozen
 uv run python scripts/ci/check_python_quality.py --base origin/main
 uv run python scripts/ci/check_docs_health.py
-uv run python -m pytest tests/scripts/test_docs_health.py tests/strategy/test_strategy_docs.py tests/scripts/test_ci_preflight.py tests/test_ci_workflow.py
+uv run python -m pytest tests/scripts/test_docs_health.py tests/strategy/test_strategy_docs.py tests/scripts/test_ci_preflight.py tests/test_ci_workflow.py tests/test_ci_safety_workflow.py tests/scripts/test_scripts_inventory.py
 uv run python -m pytest tests/test_server_routes.py
 uv run python -m pytest
 npm --prefix web run format:check

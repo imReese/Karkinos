@@ -396,6 +396,7 @@ the private key outside the repository with permissions `0600` or stricter.
 
 | Command | Purpose |
 | --- | --- |
+| `uv run python scripts/ci/check_python_quality.py --base origin/main` | Run incremental Ruff, Black, isort, and stable type/architecture checks without rewriting files; use `--base HEAD~1 --head HEAD` for the exact committed diff. |
 | `uv run python scripts/ci/check_docs_health.py` | Check core documentation budgets, local links, language pairs, and roadmap/test separation. |
 | `uv run python scripts/ci/export_acceptance_audit.py --audit all` | Export acceptance manifests and optionally bind deterministic test evidence. |
 | `uv run python scripts/ci/verify_docker_runtime.py` | Confirm a built container starts with the live scheduler running while broker and capital authority remain disabled. |
