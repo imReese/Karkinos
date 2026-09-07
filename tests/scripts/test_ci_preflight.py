@@ -124,7 +124,9 @@ def test_quality_failure_keeps_other_checks(tmp_path, monkeypatch, failure_index
         assert kwargs["cwd"] == tmp_path
         assert kwargs["timeout"] == quality.CHECK_TIMEOUT_SECONDS
         calls.append(command)
-        return subprocess.CompletedProcess(command, int(len(calls) - 1 == failure_index))
+        return subprocess.CompletedProcess(
+            command, int(len(calls) - 1 == failure_index)
+        )
 
     monkeypatch.setattr(quality.subprocess, "run", run)
     assert quality.run_checks(tmp_path, ["name with spaces.py"]) == 1
