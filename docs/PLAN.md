@@ -77,7 +77,7 @@ Overview/Portfolio 允许解释性 stale/degraded read；Decision/Risk/Execution
 - complete snapshot 后的新 publication 失败；
 - previous stable schema -> current candidate migration。
 
-只读 `GET /api/portfolio/equity-curve/coverage?range=all` 解释完整账本持有区间内的逐日价格证据，分别报告价格需求与证据状态；只有 `required + missing` 计为确定缺口。报告绑定 valuation/ledger/market identity、实际读取的日历与来源证据，跨库读取漂移则拒绝本次诊断。基金 NAV 规则缺失、交易所日历未验证及无法安全 replay 的品种身份保留未知或不可用。它不补价、不重述曲线、不消除历史修正 blocker；后续受控 ingestion 必须另行核验。
+只读 `GET /api/portfolio/equity-curve/coverage?range=all` 解释完整账本持有区间内的逐日价格证据，分别报告价格需求与证据状态；只有 `required + missing` 计为确定缺口。报告绑定 valuation/ledger/market identity、实际读取的日历与来源证据，以及读取边界一次取得的 `evaluated_at`；采集是否到期使用诊断时间，不混用行情事件 `as_of`，跨库读取漂移则拒绝本次诊断。基金 NAV 规则缺失、交易所日历未验证及无法安全 replay 的品种身份保留未知或不可用。它不补价、不重述曲线、不消除历史修正 blocker；后续受控 ingestion 必须另行核验。
 
 ### A4. Release/state-clone gate
 

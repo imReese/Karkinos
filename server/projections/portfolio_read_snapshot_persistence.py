@@ -88,6 +88,22 @@ def portfolio_read_snapshot_for_state(state: object) -> PortfolioReadSnapshot | 
     return get_or_build_portfolio_read_snapshot(state)
 
 
+def read_persisted_portfolio_snapshot_identity(
+    database_path: Path,
+) -> PortfolioReadSnapshotIdentity:
+    """Resolve the current published identity for read-boundary drift checks."""
+    return _resolve_read_identity(database_path).identity
+
+
+def portfolio_read_snapshot_date_window(
+    snapshot: PortfolioReadSnapshot,
+) -> tuple[str, str]:
+    """Expose the canonical matrix bounds for diagnostics over the same snapshot."""
+    return _matrix_date_window(
+        snapshot.ledger_rows, valuation=snapshot.published_valuation
+    )
+
+
 def _get_or_build_portfolio_read_snapshot(state: AppState) -> PortfolioReadSnapshot:
     """Resolve the current identity and build outside request-local pinning."""
 
@@ -654,4 +670,6 @@ __all__ = [
     "LEGACY_UNBOUND_MARKET_IDENTITY",
     "get_or_build_portfolio_read_snapshot",
     "portfolio_read_snapshot_for_state",
+    "read_persisted_portfolio_snapshot_identity",
+    "portfolio_read_snapshot_date_window",
 ]
