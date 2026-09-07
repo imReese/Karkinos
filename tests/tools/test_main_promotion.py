@@ -253,8 +253,24 @@ def test_schedule_has_no_pr_permission_and_never_executes_dev():
     assert all(isinstance(entry, dict) and entry.get("cron") for entry in schedule)
     assert "pull_request" not in triggers
 
+    select_job = config["jobs"]["select"]
+    assert select_job["permissions"] == {"contents": "read", "actions": "read"}
+
+    full_verification = config["jobs"]["full-verification"]
+    assert full_verification["permissions"] == {"contents": "read"}
+    assert full_verification["needs"] == ["select"]
+    candidate_checkout = next(
+        step
+        for step in full_verification["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
+    )
+    assert candidate_checkout["with"]["persist-credentials"] == "false"
+    assert candidate_checkout["with"]["ref"] == "${{ needs.select.outputs.commit_sha }}"
+
     job = config["jobs"]["promote"]
     assert job["permissions"] == {"contents": "write", "actions": "write"}
+    assert job["needs"] == ["select", "full-verification"]
+    assert "needs.full-verification.result == 'success'" in job["if"]
     assert "refs/heads/main" in job["if"]
     checkout = next(
         step
