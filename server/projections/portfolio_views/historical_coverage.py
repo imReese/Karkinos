@@ -42,6 +42,7 @@ _SH = ZoneInfo("Asia/Shanghai")
 @dataclass(frozen=True)
 class HistoricalCoverageEvidence:
     snapshot_identity: PortfolioReadSnapshotIdentity
+    evaluated_at: datetime
     observations: tuple[dict[str, Any], ...]
     metadata: tuple[dict[str, Any], ...]
     calendars: tuple[dict[str, Any], ...]
@@ -64,6 +65,14 @@ def build_historical_coverage(
 def _build(
     snapshot: PortfolioReadSnapshot, evidence: HistoricalCoverageEvidence
 ) -> HistoricalCoverageReport:
+    if (
+        not isinstance(evidence.evaluated_at, datetime)
+        or evidence.evaluated_at.utcoffset() is None
+    ):
+        raise PortfolioReadSnapshotRejected(
+            "coverage diagnostic time must be timezone-aware"
+        )
+    evaluated_at = evidence.evaluated_at.astimezone(_SH)
     end = date.fromisoformat(str(snapshot.published_valuation["trade_date"]))
     as_of = parse_quote_timestamp(snapshot.published_valuation.get("as_of"))
     if as_of is None:
@@ -138,7 +147,7 @@ def _build(
         for symbol in replay.active_symbols:
             key = keys[symbol]
             requirement, reason, calendar_ref = _requirement(
-                key, day, as_of, metadata[key], calendars
+                key, day, evaluated_at, metadata[key], calendars
             )
             status, reasons, refs = _evidence_status(
                 key, observations[(key, day.isoformat())], evidence.incidents
@@ -184,7 +193,10 @@ def _build(
     )
     return HistoricalCoverageReport(
         identity=asdict(snapshot.identity),
-        evidence_fingerprint=stable_json_fingerprint(asdict(evidence)),
+        evaluated_at=evaluated_at.isoformat(),
+        evidence_fingerprint=stable_json_fingerprint(
+            {**asdict(evidence), "evaluated_at": evaluated_at.isoformat()}
+        ),
         calendar_evidence_refs=sorted(
             {item.calendar_evidence_ref for item in items if item.calendar_evidence_ref}
         ),
@@ -204,7 +216,7 @@ def _build(
     )
 
 
-def _requirement(key, day, as_of, metadata, calendars):
+def _requirement(key, day, evaluated_at, metadata, calendars):
     if key.instrument_type.value == "open_end_fund":
         return "unknown", "fund_nav_rule_unavailable", None
     if key.instrument_type.value not in {"stock", "etf"}:
@@ -218,7 +230,7 @@ def _requirement(key, day, as_of, metadata, calendars):
     validation, days = calendar
     if not days[day.isoformat()]:
         return "not_required", "verified_exchange_closed", validation.evidence_ref
-    if datetime.combine(day, POST_CLOSE_INGESTION_TIME, tzinfo=_SH) > as_of:
+    if datetime.combine(day, POST_CLOSE_INGESTION_TIME, tzinfo=_SH) > evaluated_at:
         return "unknown", "session_evidence_not_due", validation.evidence_ref
     return "required", "held_on_verified_trading_day", validation.evidence_ref
 

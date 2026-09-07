@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 import server.models as facade
 from server.contracts.http import (
+    historical_coverage_models,
     ledger_models,
     market_models,
     portfolio_models,
@@ -21,6 +22,7 @@ from server.contracts.http import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FACADE_PATH = PROJECT_ROOT / "server/models.py"
 MODEL_MODULES = (
+    historical_coverage_models,
     market_models,
     portfolio_models,
     ledger_models,
@@ -66,6 +68,7 @@ def test_http_model_facade_is_only_a_stable_import_surface() -> None:
         for node in tree.body
         if isinstance(node, ast.ImportFrom) and node.module != "__future__"
     } == {
+        "server.contracts.http.historical_coverage_models",
         "server.contracts.http.ledger_models",
         "server.contracts.http.market_models",
         "server.contracts.http.portfolio_models",
@@ -109,6 +112,7 @@ def test_http_model_dependency_graph_is_acyclic_and_explicit() -> None:
         }
 
     assert actual == {
+        "server.contracts.http.historical_coverage_models": set(),
         "server.contracts.http.market_models": set(),
         "server.contracts.http.portfolio_models": {
             "server.contracts.http.strategy_models"

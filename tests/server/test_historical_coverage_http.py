@@ -75,8 +75,8 @@ def test_get_rejects_drift_outside_base_market_identity(monkeypatch, tmp_path, t
         connection.execute("PRAGMA data_version")
     original = persistence._read_evidence
 
-    def drifting(connection, snapshot):
-        evidence = original(connection, snapshot)
+    def drifting(connection, snapshot, *, evaluated_at):
+        evidence = original(connection, snapshot, evaluated_at=evaluated_at)
         path = tmp_path / ("app.db" if target == "app" else "meta.db")
         with sqlite3.connect(path) as writer:
             writer.execute("CREATE TABLE coverage_drift_fixture (value TEXT)")
@@ -158,3 +158,86 @@ def test_real_get_retains_nav_date_even_when_capture_is_outside_window(tmp_path)
     assert payload["items"][0]["valuation_date"] == "2026-09-01"
     assert payload["items"][0]["evidence_status"] == "available"
     assert payload["items"][0]["requirement"] == "unknown"
+
+
+def test_real_get_clock_crosses_due_time_without_republishing(monkeypatch, tmp_path):
+    import json
+    from datetime import datetime
+
+    from server.persistence.instrument_metadata import InstrumentMetadataRepository
+    from server.persistence.market_calendar import (
+        upsert_market_calendar_snapshot_in_transaction,
+    )
+    from tests.server.test_market_calendar_dates import _verified_calendar
+
+    state = _build_etf_state(tmp_path)
+    DataStore(tmp_path)
+    db = state.require_database()
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-09-01T11:00:00+08:00",
+        symbol="510301",
+        quantity=10,
+        price=2,
+        direction="buy",
+        asset_class="etf",
+    )
+    publication = db.publish_current_valuation_snapshot_sync(
+        now=datetime.fromisoformat("2026-09-04T17:00:00+08:00")
+    )
+    assert publication["as_of"] == "2026-09-04T15:00:00+08:00"
+    for symbol in ("510300", "510301"):
+        InstrumentMetadataRepository(db.path).upsert_metadata(
+            symbol=symbol, asset_type="etf", display_name="fixture", exchange="SSE"
+        )
+    calendar = _verified_calendar(2026)
+    calendar["days"] = json.loads(calendar["days_json"])
+    with sqlite3.connect(db.path) as connection:
+        connection.row_factory = sqlite3.Row
+        upsert_market_calendar_snapshot_in_transaction(
+            connection,
+            calendar,
+            now="2026-09-04T17:00:00+08:00",
+            preserve_same_evidence_review=False,
+        )
+    before = _checkpoint_bytes(tmp_path)
+    evaluated = datetime.fromisoformat("2026-09-04T15:30:00+08:00")
+    calls = []
+
+    def clock():
+        calls.append(1)
+        return evaluated
+
+    monkeypatch.setattr(persistence, "get_shanghai_now", clock)
+    monkeypatch.setattr(
+        db,
+        "publish_current_valuation_snapshot_sync",
+        _fail_independent_read("republish"),
+    )
+    with TestClient(_test_app(state)) as client:
+        early = client.get("/api/portfolio/equity-curve/coverage")
+        evaluated = datetime.fromisoformat("2026-09-04T17:00:00+08:00")
+        late = client.get("/api/portfolio/equity-curve/coverage")
+        repeated = client.get("/api/portfolio/equity-curve/coverage")
+    assert early.status_code == late.status_code == repeated.status_code == 200
+    old, new = early.json(), late.json()
+    assert old["identity"] == new["identity"]
+    assert old["evidence_fingerprint"] != new["evidence_fingerprint"]
+    assert new == repeated.json()
+    assert len(calls) == 3
+    assert all(
+        item["requirement"] == "unknown"
+        for item in old["items"]
+        if item["valuation_date"] == "2026-09-04"
+    )
+    final = {
+        item["symbol"]: item
+        for item in new["items"]
+        if item["valuation_date"] == "2026-09-04"
+    }
+    assert (
+        final["510300"]["requirement"] == final["510301"]["requirement"] == "required"
+    )
+    assert final["510300"]["evidence_status"] == "available"
+    assert final["510301"]["evidence_status"] == "missing"
+    assert before == {path: path.read_bytes() for path in before}

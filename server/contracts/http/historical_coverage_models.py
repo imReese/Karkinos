@@ -23,6 +23,7 @@ class HistoricalCoverageReport(BaseModel):
     range: Literal["all"] = "all"
     interval: Literal["daily"] = "daily"
     identity: dict[str, str | int]
+    evaluated_at: str
     evidence_fingerprint: str
     calendar_evidence_refs: list[str]
     start_date: str | None

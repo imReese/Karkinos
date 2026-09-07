@@ -1,6 +1,7 @@
 """Coverage explains price evidence without changing historical accounting."""
 
 from dataclasses import replace
+from datetime import datetime
 
 import pytest
 
@@ -60,9 +61,19 @@ def _price(day, **kwargs):
     )
 
 
-def _evidence(snapshot, *, prices=(), calendars=None, metadata=None, incidents=()):
+def _evidence(
+    snapshot,
+    *,
+    prices=(),
+    calendars=None,
+    metadata=None,
+    incidents=(),
+    evaluated_at=None,
+):
     return HistoricalCoverageEvidence(
         snapshot_identity=snapshot.identity,
+        evaluated_at=evaluated_at
+        or datetime.fromisoformat("2026-09-07T17:00:00+08:00"),
         observations=tuple(prices),
         calendars=tuple(
             [_verified_calendar(2026, closed_dates={"2026-09-02"})]
@@ -309,3 +320,37 @@ def test_legacy_nav_datetime_is_parsed_by_canonical_date_owner():
     assert by_day["2026-09-01"].evidence_status == "available"
     assert by_day["2026-09-03"].evidence_status == "missing"
     assert by_day["2026-09-04"].evidence_status == "unverified"
+
+
+@pytest.mark.parametrize("has_price", [False, True])
+def test_fixed_close_snapshot_uses_explicit_diagnostic_clock(has_price):
+    snapshot = replace(
+        _snapshot(),
+        published_valuation={
+            "trade_date": "2026-09-07",
+            "as_of": "2026-09-07T15:00:00+08:00",
+        },
+    )
+    early = _evidence(
+        snapshot,
+        prices=[_price(7)] if has_price else [],
+        evaluated_at=datetime.fromisoformat("2026-09-07T15:30:00+08:00"),
+    )
+    late = replace(
+        early, evaluated_at=datetime.fromisoformat("2026-09-07T17:00:00+08:00")
+    )
+    early_report = build_historical_coverage(snapshot, early)
+    late_report = build_historical_coverage(snapshot, late)
+    assert early_report.items[-1].requirement == "unknown"
+    assert late_report.items[-1].requirement == "required"
+    assert late_report.items[-1].evidence_status == (
+        "available" if has_price else "missing"
+    )
+    assert (
+        late_report.confirmed_gap_instrument_dates
+        == early_report.confirmed_gap_instrument_dates + (0 if has_price else 1)
+    )
+    assert late_report.identity == early_report.identity
+    assert late_report.evaluated_at == "2026-09-07T17:00:00+08:00"
+    assert early_report.evidence_fingerprint != late_report.evidence_fingerprint
+    assert late_report == build_historical_coverage(snapshot, late)

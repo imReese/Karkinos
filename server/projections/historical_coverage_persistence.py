@@ -2,6 +2,7 @@
 
 import sqlite3
 from contextlib import ExitStack
+from datetime import datetime
 
 from server.contracts.http.historical_coverage_models import HistoricalCoverageReport
 from server.dependencies import AppState
@@ -14,18 +15,20 @@ from server.projections.portfolio_read_snapshot import (
     PortfolioReadSnapshotRejected,
 )
 from server.projections.portfolio_read_snapshot_persistence import (
-    _matrix_date_window,
-    _resolve_read_identity,
     get_or_build_portfolio_read_snapshot,
+    portfolio_read_snapshot_date_window,
+    read_persisted_portfolio_snapshot_identity,
 )
 from server.projections.portfolio_views.historical_coverage import (
     HistoricalCoverageEvidence,
     build_historical_coverage,
 )
+from server.services.market_hours import get_shanghai_now
 
 
 def read_historical_coverage(state: AppState) -> HistoricalCoverageReport:
     """Reject drift across app/meta reads; no initialization or unbound fallback."""
+    evaluated_at = get_shanghai_now()
     if not isinstance(state, AppState):
         raise PortfolioReadSnapshotRejected(
             "coverage requires a bound application state"
@@ -49,8 +52,10 @@ def read_historical_coverage(state: AppState) -> HistoricalCoverageReport:
                     "ATTACH DATABASE ? AS market_store",
                     (f"{meta_path.resolve().as_uri()}?mode=ro",),
                 )
-                evidence = _read_evidence(connection, snapshot)
-            if _resolve_read_identity(path).identity != snapshot.identity:
+                evidence = _read_evidence(
+                    connection, snapshot, evaluated_at=evaluated_at
+                )
+            if read_persisted_portfolio_snapshot_identity(path) != snapshot.identity:
                 raise PortfolioReadSnapshotRejected(
                     "coverage snapshot identity changed during read"
                 )
@@ -70,11 +75,12 @@ def _data_version(connection: sqlite3.Connection) -> int:
 
 
 def _read_evidence(
-    connection: sqlite3.Connection, snapshot: PortfolioReadSnapshot
+    connection: sqlite3.Connection,
+    snapshot: PortfolioReadSnapshot,
+    *,
+    evaluated_at: datetime,
 ) -> HistoricalCoverageEvidence:
-    start, end = _matrix_date_window(
-        snapshot.ledger_rows, valuation=snapshot.published_valuation
-    )
+    start, end = portfolio_read_snapshot_date_window(snapshot)
     symbols = sorted(
         {str(row["symbol"]) for row in snapshot.ledger_rows if row.get("symbol")}
     )
@@ -101,6 +107,7 @@ def _read_evidence(
     ]
     return HistoricalCoverageEvidence(
         snapshot_identity=snapshot.identity,
+        evaluated_at=evaluated_at,
         observations=tuple(observations),
         metadata=tuple(metadata),
         calendars=tuple(calendars),
