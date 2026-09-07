@@ -2,8 +2,6 @@
 
 Repository entry point for coding agents. Karkinos is a local-first quantitative investing platform for reproducible research, point-in-time evidence, portfolio decisions, risk controls, simulation, shadow validation, and human-supervised execution. It is not a generic CRUD app or toy backtester.
 
-Read `AI_COLLABORATION.md` for deeper repository-wide AI policy.
-
 ## Route the task
 
 Start at `docs/README.md`, then read only what the task needs:
