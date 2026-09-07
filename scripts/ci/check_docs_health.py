@@ -20,22 +20,14 @@ CORE_DOC_BUDGETS = {
     "CLAUDE.md": 80,
 }
 
+# These paths still have acceptance consumers; migrate their claims before deletion.
 COMPATIBILITY_STUB_BUDGETS = {
     "docs/README.zh.md": 12,
     "docs/README.en.md": 12,
-    "docs/KARKINOS_GOAL.md": 12,
-    "docs/KARKINOS_GOAL.zh.md": 12,
     "docs/ROADMAP.md": 12,
     "docs/ROADMAP.zh.md": 12,
-    "docs/ARCHITECTURE.zh.md": 12,
     "docs/IMPLEMENTATION_LOG.md": 12,
-    "docs/IMPLEMENTATION_LOG.zh.md": 12,
     "docs/CONTROLLED_EXECUTION_PLAN.md": 12,
-    "docs/CONTROLLED_EXECUTION_PLAN.zh.md": 12,
-    "docs/config-reference.en.md": 12,
-    "docs/return-accounting.en.md": 12,
-    "docs/account-truth-import.en.md": 12,
-    "docs/strategy/README.en.md": 12,
 }
 
 MAINTENANCE_DOC_BUDGETS = {
@@ -45,20 +37,38 @@ MAINTENANCE_DOC_BUDGETS = {
 
 FROZEN_REFERENCE_STUB_BUDGETS = {
     "docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md": 14,
-    "docs/broker-adapter-conformance.en.md": 14,
-    "docs/broker-adapter-conformance.zh.md": 14,
     "docs/broker-adapter-release-review.en.md": 14,
     "docs/broker-adapter-release-review.zh.md": 14,
     "docs/broker-execution-edge-conformance.en.md": 14,
-    "docs/broker-execution-edge-conformance.zh.md": 14,
-    "docs/broker-order-lifecycle-ingestion.en.md": 14,
-    "docs/broker-order-lifecycle-ingestion.zh.md": 14,
-    "docs/controlled-broker-cancellation.en.md": 14,
-    "docs/controlled-broker-cancellation.zh.md": 14,
-    "docs/operator-approval-signing.md": 14,
-    "docs/operator-approval-signing.zh.md": 14,
-    "docs/qmt-order-lifecycle-import.zh.md": 14,
 }
+
+# Operational references need link validation, not an arbitrary new size budget.
+OPERATIONAL_REFERENCE_DOCS = (
+    "docs/config-reference.zh.md",
+    "docs/return-accounting.zh.md",
+)
+
+REMOVED_STUB_DOCS = (
+    "docs/KARKINOS_GOAL.md",
+    "docs/KARKINOS_GOAL.zh.md",
+    "docs/ARCHITECTURE.zh.md",
+    "docs/IMPLEMENTATION_LOG.zh.md",
+    "docs/CONTROLLED_EXECUTION_PLAN.zh.md",
+    "docs/config-reference.en.md",
+    "docs/return-accounting.en.md",
+    "docs/account-truth-import.en.md",
+    "docs/strategy/README.en.md",
+    "docs/broker-adapter-conformance.en.md",
+    "docs/broker-adapter-conformance.zh.md",
+    "docs/broker-execution-edge-conformance.zh.md",
+    "docs/broker-order-lifecycle-ingestion.en.md",
+    "docs/broker-order-lifecycle-ingestion.zh.md",
+    "docs/controlled-broker-cancellation.en.md",
+    "docs/controlled-broker-cancellation.zh.md",
+    "docs/operator-approval-signing.md",
+    "docs/operator-approval-signing.zh.md",
+    "docs/qmt-order-lifecycle-import.zh.md",
+)
 
 REMOVED_TOP_LEVEL_DOCS = (
     "docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md",
@@ -72,7 +82,7 @@ REMOVED_TOP_LEVEL_DOCS = (
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 
 
-def _check_document(path_text: str, line_budget: int) -> list[str]:
+def _check_document(path_text: str, line_budget: int | None) -> list[str]:
     path = REPO_ROOT / path_text
     if not path.is_file():
         return [f"missing documentation file: {path_text}"]
@@ -80,7 +90,7 @@ def _check_document(path_text: str, line_budget: int) -> list[str]:
     text = path.read_text(encoding="utf-8")
     errors: list[str] = []
     line_count = len(text.splitlines())
-    if line_count > line_budget:
+    if line_budget is not None and line_count > line_budget:
         errors.append(
             f"{path_text} has {line_count} lines; documentation budget is {line_budget}"
         )
@@ -103,11 +113,17 @@ def _check_document(path_text: str, line_budget: int) -> list[str]:
 
 
 def _check_removed_docs_stay_removed() -> list[str]:
-    return [
+    errors = [
         f"superseded top-level document returned: {path_text}"
         for path_text in REMOVED_TOP_LEVEL_DOCS
         if (REPO_ROOT / path_text).exists()
     ]
+    errors.extend(
+        f"retired documentation stub returned: {path_text}"
+        for path_text in REMOVED_STUB_DOCS
+        if (REPO_ROOT / path_text).exists()
+    )
+    return errors
 
 
 def _check_tests_do_not_parse_plan() -> list[str]:
@@ -133,6 +149,8 @@ def main() -> int:
     }
     for path_text, line_budget in budgets.items():
         errors.extend(_check_document(path_text, line_budget))
+    for path_text in OPERATIONAL_REFERENCE_DOCS:
+        errors.extend(_check_document(path_text, None))
     errors.extend(_check_removed_docs_stay_removed())
     errors.extend(_check_tests_do_not_parse_plan())
 
@@ -144,8 +162,7 @@ def main() -> int:
 
     print(
         "Documentation health check passed: canonical docs are bounded, frozen "
-        "references stay small, local links resolve, and superseded master docs "
-        "stay removed."
+        "references stay small, local links resolve, and retired docs stay removed."
     )
     return 0
 
