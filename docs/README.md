@@ -26,48 +26,36 @@ Reliability
 -> Controlled Capital
 ```
 
-## 文档 review 结论
+## 当前操作参考
 
-### 当前操作参考
-
-这些描述仍在使用的配置/金融语义，可以按需查阅，但不定义产品方向：
+这些文档解释仍在使用的配置、金融语义和操作，不定义产品方向：
 
 - [配置参考](config-reference.zh.md)
 - [收益核算](return-accounting.zh.md)
+- [账户证据导入](account-truth-import.zh.md)
 - [scripts 运行与发布](../scripts/README.md)
 
-中文是 canonical operational reference；同名英文文件只是翻译，不作为架构 source of truth。
+工程文档默认中文；不为没有翻译正文的文件保留语言切换入口。
 
-### Frozen / later-stage reference
+## 冻结能力与旧 Strategy
 
-以下文档对应已经实现或曾计划的 Account Truth / broker / controlled-execution 能力。代码和安全测试继续保留，但该方向在 [PLAN.md](PLAN.md) 解冻前不扩展；其中出现的 `v1.8`、20-day soak 或旧 milestone 不代表当前 roadmap：
+Account Truth / broker / controlled-execution 方向在 [PLAN.md](PLAN.md) 解冻前不扩展；代码与安全测试继续保留。旧 milestone、`v1.8` 或 20-day soak 不代表当前 roadmap。
 
+恢复真实执行前，应依据选定 provider 和当前架构重新审核操作流程、签名流程、conformance 与 recovery。Order/Fill 必须复用统一 lifecycle；撤单仍是独立的人审 command；签名不能授予超出代码所绑定 exact scope 的权限。旧 QMT adapter 只保留兼容，不代表已通过重新接入审核。
+
+[Strategy 兼容说明](strategy/README.zh.md) 描述旧扩展体系。新研究能力按 `Dataset -> Alpha/Model -> Forecast -> Portfolio` 实现，不再扩大旧 Strategy 抽象。
+
+## 暂留的验收兼容路径
+
+以下占位页仍被现有 acceptance manifests 引用，暂不删除，也不增加正文：
+
+- `README.zh.md`、`README.en.md`
+- `ROADMAP.md`、`ROADMAP.zh.md`、`IMPLEMENTATION_LOG.md`、`CONTROLLED_EXECUTION_PLAN.md`
 - `BROKER_CONNECTOR_SOAK_RUNBOOK.md`
-- `account-truth-import.*`
-- `broker-adapter-conformance.*`
-- `broker-adapter-release-review.*`
-- `broker-execution-edge-conformance.*`
-- `broker-order-lifecycle-ingestion.*`
-- `controlled-broker-cancellation.*`
-- `operator-approval-signing.*`
-- `qmt-order-lifecycle-import.zh.md`
+- `broker-adapter-release-review.en.md`、`broker-adapter-release-review.zh.md`
+- `broker-execution-edge-conformance.en.md`
 
-需要修改这些能力时，以当前代码契约、测试、GOAL/ARCHITECTURE 的安全边界为准，不从旧 milestone 推导需求。
-
-### Legacy Strategy reference
-
-`strategy/README.*` 描述旧 Strategy 扩展体系。现有功能继续兼容；新的盈利研究能力按 `Dataset -> Alpha/Model -> Forecast -> Portfolio` 架构实现，不再扩大旧 Strategy 抽象。
-
-### Compatibility stubs
-
-以下旧名字只为历史链接/acceptance registry 保留，不能增加正文：
-
-- `README.zh/en`
-- `KARKINOS_GOAL*`
-- `ROADMAP*`
-- `ARCHITECTURE.zh.md`
-- `IMPLEMENTATION_LOG*`
-- `CONTROLLED_EXECUTION_PLAN*`
+这些文件不是操作手册，也不能单独证明文档交付已完成。删除前须迁移对应引用并核对验收声明，不能用 GOAL/PLAN 替换缺失证据来保持通过状态。其余无验收依赖的跳转、翻译和冻结占位页已移除，不新增 archive 或替代跳转页。
 
 实现历史属于 Git commits、PRs、Releases，不再维护第二份 implementation diary。
 
@@ -81,4 +69,4 @@ Reliability
 6. Topic docs 只解释稳定接口或操作，不写 roadmap。
 7. 新的窄架构决策可以写 ADR；不要再建“XX 总设计”。
 8. 研究/交易契约优先落在 typed code + deterministic tests，文档不成为可执行 acceptance 数据源。
-9. 工程文档默认中文；只有明确外部协作价值时维护翻译。
+9. 只有明确外部协作价值且能维护实际正文时才增加翻译。

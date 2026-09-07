@@ -1,6 +1,6 @@
 # Karkinos 配置指南
 
-[English](config-reference.en.md) | [中文文档](README.zh.md)
+[文档入口](README.md)
 
 Karkinos 的“配置”包括程序默认值、`config.json`、进程环境变量和命令行参数。运行时资本授权、Account Truth、会话预算、风控证据和订单状态属于 SQLite 中的动态事实，不属于静态配置。
 
