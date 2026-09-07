@@ -241,16 +241,17 @@ def _source_records(
     if hashlib.sha256(content).hexdigest() != source.content_sha256:
         return (), ("source_content_digest_mismatch",)
     try:
-        payload = json.loads(content)
+        payload = json.loads(content, object_pairs_hook=_source_object)
         if (
-            set(payload) != {"schema_version", "records"}
+            not isinstance(payload, dict)
+            or set(payload) != {"schema_version", "records"}
             or payload["schema_version"] != "karkinos.instrument-exchange-source.v1"
             or not isinstance(payload["records"], list)
         ):
             raise ValueError("invalid source envelope")
         records, identifiers = [], set()
         for index, row in enumerate(payload["records"]):
-            if set(row) != {
+            if not isinstance(row, dict) or set(row) != {
                 "record_id",
                 "symbol",
                 "instrument_type",
@@ -296,3 +297,12 @@ def _source_records(
         return tuple(records), ()
     except (TypeError, ValueError, KeyError, UnicodeDecodeError):
         return (), ("source_schema_invalid",)
+
+
+def _source_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise ValueError("duplicate source object field")
+        result[name] = value
+    return result

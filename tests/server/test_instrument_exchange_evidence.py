@@ -141,6 +141,39 @@ def test_caller_verified_flag_does_not_replace_content_contract():
     assert result.items[0].candidate_exchange is None
 
 
+@pytest.mark.parametrize("level", ["record", "envelope"])
+def test_duplicate_json_fields_cannot_hide_conflicting_material(level):
+    reference, content = _source([_record()])
+    if level == "record":
+        content = content.replace(
+            b'"exchange": "SSE"', b'"exchange": "SZSE", "exchange": "SSE"'
+        )
+    else:
+        conflict = json.dumps([dict(_record(), exchange="SZSE")]).encode()
+        content = content.replace(
+            b'"records":', b'"records": ' + conflict + b', "records":'
+        )
+    reference = replace(reference, content_sha256=hashlib.sha256(content).hexdigest())
+    result = _preview(_targets(), (reference, content))
+    assert "source_schema_invalid" in result.items[0].blockers
+    assert result.items[0].candidate_exchange is None
+    assert result.source_reviews[0].records == ()
+
+
+@pytest.mark.parametrize("level", ["record", "envelope"])
+def test_non_object_source_values_produce_schema_blockers(level):
+    reference, content = _source([list(_record())])
+    if level == "envelope":
+        content = json.dumps(["schema_version", "records"]).encode()
+        reference = replace(
+            reference, content_sha256=hashlib.sha256(content).hexdigest()
+        )
+    result = _preview(_targets(), (reference, content))
+    assert "source_schema_invalid" in result.items[0].blockers
+    assert result.items[0].candidate_exchange is None
+    assert result.source_reviews[0].records == ()
+
+
 @pytest.mark.parametrize(
     "extra", [{}, {"verified": True}, {"approved_by": "claimed reviewer"}]
 )
