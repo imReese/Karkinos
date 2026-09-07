@@ -28,12 +28,11 @@ or operational changes.
   runtime databases, or secrets.
 - Commit, push, publish, or open a pull request only when the owner requests it.
 
-## Branch workflow
 
-- Use the persistent `dev` branch for normal owner-authorized development.
-- Integrate into `main` through a reviewed `dev` -> `main` PR after its current
-  `Code CI gate` succeeds; never substitute an older green commit.
-- Use a merge commit, retain `dev`, and synchronize `main` back into `dev`.
-- Do not force-push either long-lived branch or bypass repository rules.
-- Follow `CONTRIBUTING.md`; ruleset JSON files are templates, not proof that
-  GitHub-side protection is enabled.
+## Branch integration
+
+- Normal development uses the persistent dev branch. Keep both dev and main.
+- Do not create PRs for routine dev to main promotion. The daily trusted-main workflow selects an exact successful dev CI commit and fast-forwards main without a merge commit.
+- Never force-push or reset either branch. Divergence requires explicit synchronization and fresh CI.
+- Source startup from main is tag-free via scripts/start_server.sh main. It never activates or rewrites the managed production release.
+- GitHub ruleset JSON files are templates, not proof that server-side protection is active.
