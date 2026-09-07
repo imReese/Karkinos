@@ -64,7 +64,10 @@ def test_dev_ci_runs_trading_safety_only_for_relevant_changes() -> None:
     jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
 
     assert "python -m pytest -m trading_safety" in workflow
-    assert jobs["trading-safety"]["if"] == "${{ needs.changes.outputs.trading == 'true' }}"
+    assert (
+        jobs["trading-safety"]["if"]
+        == "${{ needs.changes.outputs.trading == 'true' }}"
+    )
     assert "repository-acceptance-audit" not in jobs
     assert "docker-runtime" not in jobs
     assert "browser-safety" not in jobs
