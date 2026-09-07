@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - dev
 
 permissions:
   contents: read
@@ -13,7 +14,7 @@ env:
   UV_VERSION: "0.11.28"
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

@@ -27,3 +27,13 @@ or operational changes.
 - Do not commit private account data, credentials, exports, screenshots,
   runtime databases, or secrets.
 - Commit, push, publish, or open a pull request only when the owner requests it.
+
+## Branch workflow
+
+- Use the persistent `dev` branch for normal owner-authorized development.
+- Integrate into `main` through a reviewed `dev` -> `main` PR after its current
+  `Code CI gate` succeeds; never substitute an older green commit.
+- Use a merge commit, retain `dev`, and synchronize `main` back into `dev`.
+- Do not force-push either long-lived branch or bypass repository rules.
+- Follow `CONTRIBUTING.md`; ruleset JSON files are templates, not proof that
+  GitHub-side protection is enabled.
