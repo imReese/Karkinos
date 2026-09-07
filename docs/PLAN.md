@@ -79,6 +79,8 @@ Overview/Portfolio 允许解释性 stale/degraded read；Decision/Risk/Execution
 
 只读 `GET /api/portfolio/equity-curve/coverage?range=all` 解释完整账本持有区间内的逐日价格证据，分别报告价格需求与证据状态；只有 `required + missing` 计为确定缺口。报告绑定 valuation/ledger/market identity、实际读取的日历与来源证据，以及读取边界一次取得的 `evaluated_at`；采集是否到期使用诊断时间，不混用行情事件 `as_of`，跨库读取漂移则拒绝本次诊断。基金 NAV 规则缺失、交易所日历未验证及无法安全 replay 的品种身份保留未知或不可用。它不补价、不重述曲线、不消除历史修正 blocker；后续受控 ingestion 必须另行核验。
 
+交易所归属证据预览复用同次 coverage 的 typed 历史日期和 metadata 内容绑定，仅解析显式提交且可回读的材料，输出候选字段、记录定位、材料声称日期的交集及具体 blocker。首版资格始终 `blocked`，已核验范围为空；内容摘要、官方 URL 字符串和提交者声明不构成来源真实性或历史适用性认证。预览不落库、不改变 coverage，不包含采集、认证或 apply 入口。
+
 ### A4. Release/state-clone gate
 
 Candidate 必须在 production mutable-state clone 上证明：

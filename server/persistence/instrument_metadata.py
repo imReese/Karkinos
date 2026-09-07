@@ -217,6 +217,25 @@ class InstrumentMetadataRepository:
             return [dict(row) for row in rows]
 
 
+def read_instrument_metadata_rows(
+    connection: sqlite3.Connection, *, symbols: Sequence[str]
+) -> tuple[dict[str, Any], ...]:
+    """Read exact stored rows on the caller's existing read-only transaction."""
+    rows = []
+    normalized = sorted(set(symbols))
+    for offset in range(0, len(normalized), _MAX_METADATA_BATCH_READ):
+        chunk = normalized[offset : offset + _MAX_METADATA_BATCH_READ]
+        placeholders = ",".join("?" for _ in chunk)
+        rows.extend(
+            dict(row)
+            for row in connection.execute(
+                f"SELECT * FROM instrument_metadata WHERE symbol IN ({placeholders}) ORDER BY symbol, asset_type",
+                chunk,
+            )
+        )
+    return tuple(rows)
+
+
 def _serialize_metadata_json(value: dict[str, Any] | str | None) -> str | None:
     if value is None:
         return None
