@@ -742,6 +742,7 @@ def test_unrelated_failed_publication_does_not_block_verified_holdings(tmp_path)
         price=10,
         asset_class="stock",
     )
+    db.publish_current_valuation_snapshot_sync(now=NOW)
     _run(db, "unrelated-failure", ["600002"])
     _finish(db, "unrelated-failure", status="failed", success=0, failure=1)
     before = db.get_runtime_control_sync("valuation_snapshot_publication")
@@ -785,9 +786,9 @@ def test_legacy_failed_current_pointer_survives_startup_republication(tmp_path):
         )
     restarted = AppDatabase(db.path)
     restarted.init_sync()
-    restarted.publish_current_valuation_snapshot_sync()
+    restarted.publish_current_valuation_snapshot_sync(now=NOW)
     assert (
-        current_valuation_snapshot(SimpleNamespace(db=restarted))["status"]
+        current_valuation_snapshot(SimpleNamespace(db=restarted), now=NOW)["status"]
         == "complete"
     )
     assert (

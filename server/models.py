@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from server.contracts.http.historical_coverage_models import (
+    HistoricalCoverageItem,
+    HistoricalCoverageReport,
+)
 from server.contracts.http.ledger_models import (
     ActivityItem,
     CashFlowCreate,
@@ -121,6 +125,8 @@ from server.contracts.http.strategy_models import (
 )
 
 __all__ = [
+    "HistoricalCoverageItem",
+    "HistoricalCoverageReport",
     "MarketQuote",
     "WatchlistItem",
     "WatchlistCreateRequest",

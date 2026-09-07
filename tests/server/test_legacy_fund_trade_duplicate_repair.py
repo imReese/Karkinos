@@ -366,6 +366,7 @@ def test_correction_performance_is_blocked_in_bound_snapshot_http_reads(
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
+    from data.store import DataStore
     from server.config import ServerConfig
     from server.db import AppDatabase
     from server.dependencies import AppState, AppStateContextMiddleware
@@ -373,6 +374,7 @@ def test_correction_performance_is_blocked_in_bound_snapshot_http_reads(
 
     path = tmp_path / "bound-history.db"
     _fixture_database(path, group_sizes=(1,))
+    DataStore(tmp_path)
     db = AppDatabase(path)
     db.insert_ledger_entry_sync(
         entry_type="cash_deposit",
@@ -434,10 +436,19 @@ def test_correction_performance_is_blocked_in_bound_snapshot_http_reads(
     before = path.read_bytes()
     with TestClient(app) as client:
         series_response = client.get("/api/portfolio/equity-curve/series?range=all")
+        coverage_response = client.get("/api/portfolio/equity-curve/coverage")
         overview_response = client.get("/api/portfolio/overview")
         risk_response = client.get("/api/portfolio/risk-workspace")
-    for response in (series_response, overview_response, risk_response):
+    for response in (
+        series_response,
+        coverage_response,
+        overview_response,
+        risk_response,
+    ):
         assert response.status_code == 200, response.text
+    assert coverage_response.json()["performance_blockers"] == [
+        "historical_correction_performance_unverified"
+    ]
     series = series_response.json()
     assert any(point["total"] is None for point in series) == price_gap
     assert series[-1]["valuation_snapshot_id"] == valuation["snapshot_id"]

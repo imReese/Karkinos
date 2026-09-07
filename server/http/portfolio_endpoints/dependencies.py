@@ -30,6 +30,7 @@ class PortfolioSnapshotOperations:
 @dataclass(frozen=True, slots=True)
 class PortfolioPerformanceDependencies:
     get_state: StateProvider
+    read_historical_coverage: Operation
     append_current_equity_series_point: Operation
     bind_current_equity_valuation: Operation
     bind_equity_series_valuation: Operation

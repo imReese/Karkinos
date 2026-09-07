@@ -40,6 +40,7 @@ from server.models import (
     PortfolioSnapshot,
     TradeCreate,
 )
+from server.projections.historical_coverage_persistence import read_historical_coverage
 from server.projections.portfolio_application import (
     build_account_state_response as _build_account_state_response,
 )
@@ -268,6 +269,7 @@ def build_portfolio_endpoint_dependencies() -> PortfolioEndpointDependencies:
     return PortfolioEndpointDependencies(
         performance=PortfolioPerformanceDependencies(
             get_state=_get_portfolio_state,
+            read_historical_coverage=read_historical_coverage,
             append_current_equity_series_point=lambda *args, **kwargs: (
                 _append_current_equity_series_point(*args, **kwargs)
             ),

@@ -157,11 +157,17 @@ def affected_publications(
     return [
         failure
         for failure in unresolved_publications(conn)
-        if not failure.get("scope")
-        or _instrument_scope(instruments).intersection(
-            _instrument_scope(failure["scope"])
-        )
+        if publication_affects_instruments(failure, instruments)
     ]
+
+
+def publication_affects_instruments(
+    failure: dict[str, Any], instruments: set[tuple[str, str]]
+) -> bool:
+    """Apply the canonical typed scope rule to already-read incident evidence."""
+    return not failure.get("scope") or bool(
+        _instrument_scope(instruments).intersection(_instrument_scope(failure["scope"]))
+    )
 
 
 def record_publication_recovery(
