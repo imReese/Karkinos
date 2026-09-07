@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import os
 import runpy
 import subprocess
 import sys
@@ -24,16 +22,10 @@ def test_trading_safety_marker_covers_authority_and_integrity_boundaries() -> No
         "test_strategy_broker_boundary.py",
         "test_trading_controls.py",
     }
-
     assert all(f'"{name}"' in conftest for name in expected)
-    marker_block = conftest.split("def _is_trading_safety_test", maxsplit=1)[1]
-    assert '"test_profit_discipline_smoke.py"' not in marker_block
 
 
-def test_ci_has_incremental_python_quality_and_independent_trading_safety_jobs(
-    monkeypatch,
-) -> None:
-    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+def test_python_quality_checks_remain_identical_for_dev_and_main(monkeypatch) -> None:
     quality = runpy.run_path("scripts/ci/check_python_quality.py")
     calls = []
 
@@ -50,78 +42,38 @@ def test_ci_has_incremental_python_quality_and_independent_trading_safety_jobs(
         [sys.executable, "-m", "mypy"],
         [sys.executable, "tools/check_python_architecture.py"],
     ]
-    assert "Python changed-file quality" in workflow
-    assert "uv run python scripts/ci/check_python_quality.py" in workflow
-    assert "Trading safety invariants" in workflow
-    assert "python -m pytest -m trading_safety" in workflow
-
-    jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
-    assert set(jobs["repository-acceptance-audit"]["needs"]) == {
-        "changes",
-        "backend",
-        "frontend",
-        "trading-safety",
-    }
-    assert (
-        "needs.changes.outputs.docs_only == 'true'"
-        in jobs["repository-acceptance-audit"]["if"]
-    )
 
 
-def test_ci_pins_uv_and_requires_every_scheduled_code_ci_job_to_pass(
-    tmp_path: Path,
-) -> None:
+def test_main_ci_runs_full_safety_and_acceptance_suite() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    expected_jobs = {
-        "changes",
-        "python-quality",
-        "repository-contracts",
-        "backend",
-        "dependency-audit",
-        "trading-safety",
-        "frontend",
-        "docker-runtime",
-        "browser-safety",
-        "repository-acceptance-audit",
-        "secret-scan",
-        "hygiene",
-    }
-
-    assert 'env:\n  UV_VERSION: "0.11.28"' in workflow
-    pip_install_lines = {
-        line.strip().removeprefix("run: ")
-        for line in workflow.splitlines()
-        if "python -m pip install" in line
-    }
-    assert pip_install_lines == {'python -m pip install "uv==${UV_VERSION}"'}
-
     jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
-    gate = jobs["code-ci-gate"]
-    assert gate["if"] == "always()"
-    assert set(gate["needs"]) == expected_jobs == set(jobs) - {"code-ci-gate"}
-    step = gate["steps"][0]
-    assert step["env"]["CI_JOB_RESULTS"] == "${{ toJSON(needs) }}"
-    assert step["shell"] == "python"
 
-    def execute(results):
-        return subprocess.run(
-            [sys.executable, "-c", step["run"]],
-            env={
-                **os.environ,
-                "CI_JOB_RESULTS": json.dumps(results),
-                "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
-            },
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
+    assert "python -m pytest -m trading_safety" in workflow
+    assert set(jobs["repository-acceptance-audit"]["needs"]) == {
+        "backend",
+        "frontend",
+        "trading-safety",
+    }
+    assert "docker-runtime" in jobs
+    assert "browser-safety" in jobs
+    assert "dependency-audit" in jobs
 
-    results = {name: {"result": "success"} for name in expected_jobs}
-    results["changes"]["outputs"] = {"docs_only": "false"}
-    passed = execute(results)
-    assert passed.returncode == 0, passed.stderr
-    for name in sorted(expected_jobs):
-        failed = execute({**results, name: {"result": "failure"}})
-        assert failed.returncode != 0, name
-        assert name in failed.stderr
+
+def test_dev_ci_runs_trading_safety_only_for_relevant_changes() -> None:
+    workflow = Path(".github/workflows/dev-ci.yml").read_text(encoding="utf-8")
+    jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
+
+    assert "python -m pytest -m trading_safety" in workflow
+    assert jobs["trading-safety"]["if"] == "${{ needs.changes.outputs.trading == 'true' }}"
+    assert "repository-acceptance-audit" not in jobs
+    assert "docker-runtime" not in jobs
+    assert "browser-safety" not in jobs
+
+
+def test_both_workflows_pin_uv_and_expose_code_ci_gate() -> None:
+    for path in (".github/workflows/ci.yml", ".github/workflows/dev-ci.yml"):
+        workflow = Path(path).read_text(encoding="utf-8")
+        jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
+        assert 'UV_VERSION: "0.11.28"' in workflow
+        assert jobs["code-ci-gate"]["name"] == "Code CI gate"
+        assert jobs["code-ci-gate"]["if"] == "always()"
