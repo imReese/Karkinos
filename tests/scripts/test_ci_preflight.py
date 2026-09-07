@@ -176,10 +176,16 @@ def workflow():
     )
 
 
-def test_expensive_jobs_require_all_preflight_checks():
+def test_expensive_jobs_require_all_preflight_checks_and_change_classification():
     jobs = workflow()["jobs"]
-    preflight = {"python-quality", "repository-contracts", "hygiene", "secret-scan"}
-    for name in preflight:
+    independent_preflight = {
+        "changes",
+        "python-quality",
+        "repository-contracts",
+        "hygiene",
+        "secret-scan",
+    }
+    for name in independent_preflight:
         assert not jobs[name].get("needs")
     for name in (
         "backend",
@@ -189,17 +195,21 @@ def test_expensive_jobs_require_all_preflight_checks():
         "docker-runtime",
         "browser-safety",
     ):
-        assert set(jobs[name]["needs"]) == preflight
-        assert "if" not in jobs[name]
+        assert set(jobs[name]["needs"]) == independent_preflight
+        assert jobs[name]["if"] == "${{ needs.changes.outputs.docs_only != 'true' }}"
     assert set(jobs["code-ci-gate"]["needs"]) == set(jobs) - {"code-ci-gate"}
     assert jobs["code-ci-gate"]["if"] == "always()"
     assert jobs["code-ci-gate"]["name"] == "Code CI gate"
-    assert jobs["repository-acceptance-audit"]["name"] == "Repository acceptance audit"
-    assert set(jobs["repository-acceptance-audit"]["needs"]) == {
+    acceptance = jobs["repository-acceptance-audit"]
+    assert acceptance["name"] == "Repository acceptance audit"
+    assert set(acceptance["needs"]) == {
+        "changes",
         "backend",
         "frontend",
         "trading-safety",
     }
+    assert "needs.changes.outputs.docs_only == 'true'" in acceptance["if"]
+    assert "needs.backend.result == 'success'" in acceptance["if"]
 
 
 def test_docs_consumers_and_ci_contracts_run_before_backend():
@@ -268,15 +278,38 @@ def test_actual_gate_requires_success_and_writes_all_results(tmp_path):
         name: {"result": "success"}
         for name in workflow()["jobs"]["code-ci-gate"]["needs"]
     }
+    results["changes"]["outputs"] = {"docs_only": "false"}
     result = run_gate(tmp_path, results)
     assert result.returncode == 0, result.stderr
     summary = (tmp_path / "summary.md").read_text()
     assert all(name in summary for name in results)
 
 
+def test_actual_gate_accepts_only_expected_docs_only_skips(tmp_path):
+    needs = workflow()["jobs"]["code-ci-gate"]["needs"]
+    results = {name: {"result": "success"} for name in needs}
+    results["changes"]["outputs"] = {"docs_only": "true"}
+    for name in (
+        "backend",
+        "dependency-audit",
+        "trading-safety",
+        "frontend",
+        "docker-runtime",
+        "browser-safety",
+    ):
+        results[name] = {"result": "skipped"}
+    assert run_gate(tmp_path, results).returncode == 0
+
+    results["repository-acceptance-audit"] = {"result": "skipped"}
+    failed = run_gate(tmp_path, results)
+    assert failed.returncode != 0
+    assert "repository-acceptance-audit" in failed.stderr
+
+
 @pytest.mark.parametrize("state", ["failure", "cancelled", "skipped", "unknown", None])
 def test_actual_gate_rejects_non_success_results(tmp_path, state):
     results = {
+        "changes": {"result": "success", "outputs": {"docs_only": "false"}},
         "backend": {"result": "success"},
         "repository-contracts": {"result": state},
     }
