@@ -86,6 +86,8 @@ jobs:
             tests/scripts/test_ci_preflight.py \
             tests/test_ci_workflow.py \
             tests/test_ci_safety_workflow.py \
+            tests/test_ci_change_aware.py \
+            tests/test_docker_deployment_contract.py \
             tests/scripts/test_scripts_inventory.py \
             tests/tools/test_main_promotion.py \
             tests/scripts/test_main_source_runtime.py \
@@ -247,18 +249,25 @@ jobs:
         run: docker build --tag karkinos:ci .
       - name: Start runtime with fail-closed defaults
         run: |
-          mkdir -p "${RUNNER_TEMP}/karkinos-data"
           printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
+          docker volume create karkinos-ci-data
           docker run --detach --name karkinos-ci \
             --publish 127.0.0.1:8000:8000 \
-            --volume "${RUNNER_TEMP}/karkinos-data:/app/data/store" \
+            --volume "karkinos-ci-data:/app/data/store" \
             --volume "${RUNNER_TEMP}/karkinos-config.json:/app/config.json:ro" \
             karkinos:ci
       - name: Verify non-root fail-closed runtime
         run: python scripts/ci/verify_docker_runtime.py --timeout-seconds 90
+      - name: Diagnose failed runtime
+        if: failure()
+        run: |
+          docker inspect karkinos-ci || true
+          docker logs karkinos-ci || true
       - name: Stop runtime
         if: always()
-        run: docker rm --force karkinos-ci
+        run: |
+          docker rm --force karkinos-ci || true
+          docker volume rm karkinos-ci-data || true
 
   browser-safety:
     name: Browser safety smoke
