@@ -75,7 +75,7 @@ def test_checkout_changed_during_preparation_never_launches(prepared_source, mon
     assert len(commands) == 4
 
 
-def test_second_spawn_failure_stops_first_child_and_restores_signals(tmp_path, monkeypatch):
+def test_spawn_failure_stops_peer_and_restores_signals(tmp_path, monkeypatch):
     class Child:
         terminated = False
 
