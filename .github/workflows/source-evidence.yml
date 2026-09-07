@@ -2,8 +2,8 @@ name: Source evidence
 
 on:
   push:
-    branches: [main, dev]
-    paths: [.github/workflows/source-evidence.yml]
+    branches: [dev]
+    paths: [.github/workflows/source-evidence.yml, .github/integration-recipe.txt]
   workflow_dispatch:
 
 permissions:
@@ -11,34 +11,34 @@ permissions:
 
 jobs:
   source:
-    name: Export isolated verification dependencies
+    name: Validate integration and prepare immutable commit object
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
-      - name: Checkout repository
+      - name: Checkout source for isolated verification
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
-
-      - name: Export locked backend verification environment
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Install locked verification dependencies
         run: |
-          set -euo pipefail
           python -m pip install uv==0.11.28
-          uv python install 3.12.13
-          uv sync --managed-python --python 3.12.13 --extra server --extra dev --frozen
-          mkdir -p "${RUNNER_TEMP}/verification"
-          git archive --format=tar HEAD | gzip > "${RUNNER_TEMP}/verification/source.tar.gz"
-          python_root="$(dirname "$(dirname "$(uv python find --managed-python 3.12.13)")")"
-          tar -C "${python_root}" -czf "${RUNNER_TEMP}/verification/python.tar.gz" .
-          tar -czf "${RUNNER_TEMP}/verification/venv.tar.gz" .venv
-          git rev-parse HEAD > "${RUNNER_TEMP}/verification/COMMIT"
-          cd "${RUNNER_TEMP}/verification"
-          sha256sum source.tar.gz python.tar.gz venv.tar.gz > SHA256SUMS
-
-      - name: Upload verification dependencies
+          uv sync --extra server --extra dev --frozen
+      - name: Prepare and fully validate proposed integration
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/integration-recipe.txt
+      - name: Upload integration test evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: offline-source-verification
-          path: ${{ runner.temp }}/verification/
-          if-no-files-found: error
-          retention-days: 1
+          name: integration-validation
+          path: reports/ci/integration-validation.xml
+          if-no-files-found: warn
+          retention-days: 7
