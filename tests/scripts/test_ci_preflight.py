@@ -170,10 +170,9 @@ def test_dev_ci_is_incremental_and_dev_only():
     jobs = config["jobs"]
     assert "changes" in jobs
     assert "backend" not in jobs
-    assert "docker-runtime" not in jobs
     assert "browser-safety" not in jobs
     assert "repository-acceptance-audit" not in jobs
-    for name in ("frontend", "trading-safety", "dependency-audit"):
+    for name in ("frontend", "trading-safety", "dependency-audit", "docker-runtime"):
         assert "if" in jobs[name]
     assert jobs["code-ci-gate"]["if"] == "always()"
     assert set(jobs["code-ci-gate"]["needs"]) == set(jobs) - {"code-ci-gate"}
