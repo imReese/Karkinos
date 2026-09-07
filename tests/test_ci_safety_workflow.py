@@ -59,7 +59,7 @@ def test_main_ci_runs_full_safety_and_acceptance_suite() -> None:
     assert "dependency-audit" in jobs
 
 
-def test_dev_ci_runs_trading_safety_only_for_relevant_changes() -> None:
+def test_dev_ci_runs_safety_checks_only_for_relevant_changes() -> None:
     workflow = Path(".github/workflows/dev-ci.yml").read_text(encoding="utf-8")
     jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
 
@@ -67,8 +67,10 @@ def test_dev_ci_runs_trading_safety_only_for_relevant_changes() -> None:
     assert (
         jobs["trading-safety"]["if"] == "${{ needs.changes.outputs.trading == 'true' }}"
     )
+    assert (
+        jobs["docker-runtime"]["if"] == "${{ needs.changes.outputs.docker == 'true' }}"
+    )
     assert "repository-acceptance-audit" not in jobs
-    assert "docker-runtime" not in jobs
     assert "browser-safety" not in jobs
 
 
