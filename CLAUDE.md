@@ -1,29 +1,30 @@
-# Karkinos Repository Instructions
+# Karkinos Claude Guide
 
-This is the authoritative repository entry point for AI-assisted work. Read
-`AI_COLLABORATION.md` before implementation, review, diagnosis, documentation,
-or operational changes.
+`AGENTS.md` is the primary repository instruction file. Read it first and follow
+it for task routing, engineering invariants, validation, Git workflow, security,
+and documentation ownership.
 
-## Required context
+Then read `AI_COLLABORATION.md` for the deeper repository-wide AI policy. Do not
+copy those rules into this file; they remain authoritative at their owning
+sources.
 
-1. Start at `docs/README.md`.
-2. Read `docs/GOAL.md`, `docs/ARCHITECTURE.md`, `docs/PLAN.md`, or
-   `docs/CODEBASE.md` only as the task requires.
-3. Treat persisted financial facts, explicit snapshots, and ledger cutoffs as
-   authoritative; provider responses and runtime caches are ingestion inputs.
-4. Preserve human confirmation as the default for live-like workflows.
+For each task:
 
-## Working rules
+1. Route the task through the canonical docs listed in `AGENTS.md` instead of
+   loading the whole documentation tree.
+2. Inspect the owning implementation, direct callers, and relevant tests before
+   proposing changes.
+3. Prefer small evidence-backed slices over broad rewrites or speculative
+   abstractions.
+4. For persisted financial state, authority, risk, execution, release, or worker
+   behavior, preserve fail-closed semantics and add deterministic replay/safety
+   coverage where applicable.
+5. Use `.github/workflows/ci.yml` as the source of truth for CI and report only
+   checks that actually ran.
+6. Preserve unrelated workspace changes and private data boundaries.
+7. Commit, push, merge, publish, tag, release, or open PRs only when the owner
+   explicitly requests that action.
 
-- Preserve unrelated and uncommitted workspace changes.
-- Diagnose from source evidence before changing behavior.
-- Keep each financial concept in one canonical implementation.
-- Fail closed on the affected action when evidence is missing, stale,
-  conflicting, partial, or unreconciled; preserve verified last-good reads when
-  a newer candidate write fails.
-- Add deterministic validation for affected invariants and direct consumers.
-- Use production-state replay fixtures for production-state incidents.
-- Do not create parallel roadmaps, implementation logs, or master design docs.
-- Do not commit private account data, credentials, exports, screenshots,
-  runtime databases, or secrets.
-- Commit, push, publish, or open a pull request only when the owner requests it.
+If this file conflicts with `AGENTS.md`, follow `AGENTS.md`. If an engineering
+rule needs more detail, follow the canonical document or code/test owner linked
+from `AGENTS.md` rather than expanding this adapter.
