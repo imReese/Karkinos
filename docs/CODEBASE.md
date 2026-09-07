@@ -97,6 +97,8 @@ Parquet/catalog 发布读取；`server/contracts/jobs.py` 持有 JobRun/JobStore
 持有首条日历任务消费边界。`server/projections/system_readiness.py` 只投影运行证据，
 不能代替 decision/risk/execution authority 的业务 gate。
 
+`data/instrument_exchange_source.py` 持有固定 SSE 公告的显式获取、原文封存和材料映射；`tools/capture_instrument_exchange_source.py` 仅提供命令入口。它不依赖应用状态或 metadata writer；公共证据获取记录与 `server/projections/instrument_exchange_evidence.py` 的只读候选资格保持分离。
+
 ## 5. Persistence 规则
 
 - Financial transaction 必须在一个明确 UnitOfWork 内原子完成。
