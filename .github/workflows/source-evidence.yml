@@ -2,7 +2,7 @@ name: Source evidence
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths: [.github/workflows/source-evidence.yml]
   workflow_dispatch:
 
@@ -20,27 +20,25 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24.20.0"
-
-      - name: Download locked frontend dependencies
+      - name: Export locked backend verification environment
         run: |
-          npm ci --prefix web --ignore-scripts
+          set -euo pipefail
+          python -m pip install uv==0.11.28
+          uv python install 3.12.13
+          uv sync --managed-python --python 3.12.13 --extra server --extra dev --frozen
           mkdir -p "${RUNNER_TEMP}/verification"
-          tar -C web -czf "${RUNNER_TEMP}/verification/node_modules.tar.gz" node_modules
+          git archive --format=tar HEAD | gzip > "${RUNNER_TEMP}/verification/source.tar.gz"
+          python_root="$(dirname "$(dirname "$(uv python find --managed-python 3.12.13)")")"
+          tar -C "${python_root}" -czf "${RUNNER_TEMP}/verification/python.tar.gz" .
+          tar -czf "${RUNNER_TEMP}/verification/venv.tar.gz" .venv
+          git rev-parse HEAD > "${RUNNER_TEMP}/verification/COMMIT"
           cd "${RUNNER_TEMP}/verification"
-          sha256sum node_modules.tar.gz > SHA256SUMS
-
-      - name: Download provider module for offline tests
-        run: |
-          python -m pip download --no-deps --only-binary=:all: --dest "${RUNNER_TEMP}/verification" akshare
+          sha256sum source.tar.gz python.tar.gz venv.tar.gz > SHA256SUMS
 
       - name: Upload verification dependencies
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: offline-frontend-provider-dependencies
+          name: offline-source-verification
           path: ${{ runner.temp }}/verification/
           if-no-files-found: error
           retention-days: 1
