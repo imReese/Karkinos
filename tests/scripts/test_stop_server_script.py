@@ -6,6 +6,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path("scripts/stop_server.sh")
 
 
@@ -192,6 +194,28 @@ def test_stop_server_default_dev_mode_does_not_stop_production(tmp_path: Path) -
     recorded_calls = calls.read_text(encoding="utf-8") if calls.exists() else ""
     assert "controller service-stop" not in recorded_calls
     assert "launchctl print" not in recorded_calls
+
+
+@pytest.mark.parametrize("exit_status", [0, 7])
+def test_stop_server_main_dispatches_without_git_or_release_controller(
+    tmp_path: Path, exit_status: int
+) -> None:
+    repo, env, calls = _stop_script_repo(tmp_path, resident_service_loaded=True)
+    env["KARKINOS_BACKEND_PORT"] = "not-a-production-port"
+    _write_executable(
+        tmp_path / "bin" / "python3",
+        "#!/usr/bin/env bash\n"
+        f'printf "python3 %s\\n" "$*" >>"{calls}"\n'
+        f"exit {exit_status}\n",
+    )
+
+    result = _run_stop(repo, env, "main")
+
+    assert result.returncode == exit_status, result.stderr
+    assert calls.read_text(encoding="utf-8") == (
+        f"python3 {repo}/scripts/service/run_main.py --stop\n"
+    )
+    assert (tmp_path / "launchd-loaded").is_file()
 
 
 def test_stop_server_help_and_unknown_mode_never_mutate_services(
