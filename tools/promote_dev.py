@@ -169,7 +169,14 @@ def select(client: Client, repository: str) -> Selection | None:
     )
 
 
-def ensure_followup(client: Client, repository: str, sha: str, base: str) -> list[str]:
+def ensure_followup(
+    client: Client,
+    repository: str,
+    sha: str,
+    base: str,
+    *,
+    full: FullVerification | None = None,
+) -> list[str]:
     """GITHUB_TOKEN pushes do not trigger CI: dispatch missing exact-main runs.
 
     Retrying after a successful ref write but failed dispatch repairs only the
@@ -207,6 +214,9 @@ def ensure_followup(client: Client, repository: str, sha: str, base: str) -> lis
         inputs = {"commit_sha": sha}
         if filename == "ci.yml":
             inputs["base_sha"] = base
+            if full is not None:
+                inputs["promotion_run_id"] = str(full.run_id)
+                inputs["promotion_run_attempt"] = str(full.run_attempt)
         client.write(
             f"actions/workflows/{filename}/dispatches",
             {"ref": "main", "inputs": inputs},
@@ -246,7 +256,10 @@ def verify_full_run(
         raise ci.SourceCIVerificationError("promotion_full_run_identity_mismatch")
     ci.verify_required_jobs(
         client.workflow_run_jobs(run_id=full.run_id),
-        required_job_names=("Full pre-promotion verification / Code CI gate",),
+        required_job_names=(
+            "Full pre-promotion verification / Code CI gate",
+            f"Verified source {selection.commit_sha}",
+        ),
         commit_sha=full.workflow_sha,
     )
     snapshot_keys = (*expected, "status", "conclusion", "event")
@@ -304,7 +317,7 @@ def apply(
     if client.ref("main") != selection.commit_sha:
         raise ci.SourceCIVerificationError("promotion_main_write_not_confirmed")
     requested = ensure_followup(
-        client, repository, selection.commit_sha, selection.previous_main
+        client, repository, selection.commit_sha, selection.previous_main, full=full
     )
     return {**asdict(selection), "main_updated": changed, "dispatched": requested}
 

@@ -153,13 +153,14 @@ def _run_gate(tmp_path: Path, results: dict) -> tuple[subprocess.CompletedProces
     output = tmp_path / "github-output"
     output.write_text("existing=preserved\n")
     result = subprocess.run(
-        [sys.executable, "-c", gate["steps"][-1]["run"]],
+        [sys.executable, *shlex.split(gate["steps"][-1]["run"])[1:]],
         cwd=tmp_path,
         env={
             **os.environ,
             "RESULTS": json.dumps(results),
             "GITHUB_OUTPUT": str(output),
             "CI_COMMIT_SHA": "c" * 40,
+            "PYTHONPATH": str(ROOT),
         },
         capture_output=True,
         text=True,
@@ -170,7 +171,9 @@ def _run_gate(tmp_path: Path, results: dict) -> tuple[subprocess.CompletedProces
 
 def _successful_jobs() -> dict:
     gate = _workflow("ci.yml")["jobs"]["code-ci-gate"]
-    return {name: {"result": "success"} for name in gate["needs"]}
+    results = {name: {"result": "success"} for name in gate["needs"]}
+    results["verification-plan"]["outputs"] = {"mode": "full", "commit_sha": "c" * 40}
+    return results
 
 
 def test_full_gate_writes_candidate_identity_only_after_every_job_succeeds(tmp_path):
@@ -202,10 +205,17 @@ def test_full_ci_checkout_and_reusable_outputs_bind_the_exact_candidate():
             for step in job["steps"]
             if step.get("uses", "").startswith("actions/checkout@")
         ]
-        if name != "code-ci-gate":
-            assert checkouts, name
+        assert checkouts, name
         for checkout in checkouts:
-            assert checkout["with"]["ref"] == "${{ env.CI_COMMIT_SHA }}"
+            expected_ref = "${{ env.CI_COMMIT_SHA }}"
+            if name in {"verification-plan", "code-ci-gate"}:
+                expected_ref = "${{ github.sha }}"
+            elif name == "repository-acceptance-audit":
+                expected_ref = (
+                    "${{ needs.verification-plan.outputs.mode == 'reuse' "
+                    "&& github.sha || env.CI_COMMIT_SHA }}"
+                )
+            assert checkout["with"]["ref"] == expected_ref
             assert checkout["with"]["persist-credentials"] == "false"
     gate = jobs["code-ci-gate"]
     assert set(gate["needs"]) == set(jobs) - {"code-ci-gate"}
@@ -251,3 +261,92 @@ def test_every_full_ci_uv_operation_preserves_the_lockfile():
                 assert env.get("UV_FROZEN", "false") == "false"
                 assert "--locked" in tokens or env.get("UV_LOCKED") == "true", line
     assert operations == {"sync", "run", "export"}
+
+
+def test_reuse_workflow_keeps_fresh_checks_and_rechecks_before_gate():
+    workflow = _workflow("ci.yml")
+    jobs = workflow["jobs"]
+    reusable = {
+        "python-quality",
+        "repository-contracts",
+        "backend",
+        "frontend",
+        "trading-safety",
+        "docker-runtime",
+        "browser-safety",
+    }
+    for name in reusable:
+        assert "verification-plan" in jobs[name]["needs"]
+        assert jobs[name]["if"] == "needs.verification-plan.outputs.mode == 'full'"
+    for name in ("hygiene", "secret-scan", "dependency-audit"):
+        assert "if" not in jobs[name]
+        assert not reusable.intersection(jobs[name]["needs"])
+        assert "verification-plan" in jobs[name]["needs"]
+    for name in ("verification-plan", "repository-acceptance-audit"):
+        assert jobs[name]["permissions"] == {"contents": "read", "actions": "read"}
+    audit = jobs["repository-acceptance-audit"]
+    assert audit["if"].startswith(
+        "always() && needs.verification-plan.result == 'success'"
+    )
+    assert "needs.verification-plan.outputs.mode == 'reuse'" in audit["if"]
+    for name in ("backend", "frontend", "trading-safety"):
+        assert f"needs.{name}.result == 'success'" in audit["if"]
+    recheck = next(step for step in audit["steps"] if step.get("id") == "recheck")
+    assert recheck["if"] == "needs.verification-plan.outputs.mode == 'reuse'"
+    assert recheck["run"] == "python -m tools.ci_reuse verify"
+    assert recheck["env"]["SOURCE_WORKFLOW_SHA"] == (
+        "${{ needs.verification-plan.outputs.source_workflow_sha }}"
+    )
+    assert recheck["env"]["POLICY_FINGERPRINT"] == (
+        "${{ needs.verification-plan.outputs.policy_fingerprint }}"
+    )
+    assert (
+        audit["outputs"]["evidence_rechecked"]
+        == "${{ steps.recheck.outputs.evidence_rechecked }}"
+    )
+    for step in audit["steps"]:
+        if "uv " in step.get("run", "") or step.get("uses", "").startswith(
+            "actions/download-artifact@"
+        ):
+            assert step["if"] == "needs.verification-plan.outputs.mode == 'full'"
+    assert "--verify-evidence" in audit["steps"][-1]["run"]
+
+
+def _reused_jobs() -> dict:
+    results = _successful_jobs()
+    results["verification-plan"]["outputs"] = {"mode": "reuse", "commit_sha": "c" * 40}
+    for name in (
+        "python-quality",
+        "repository-contracts",
+        "backend",
+        "frontend",
+        "trading-safety",
+        "docker-runtime",
+        "browser-safety",
+    ):
+        results[name]["result"] = "skipped"
+    results["repository-acceptance-audit"]["outputs"] = {"evidence_rechecked": "true"}
+    return results
+
+
+def test_workflow_gate_accepts_only_rechecked_reuse(tmp_path):
+    result, output = _run_gate(tmp_path, _reused_jobs())
+    assert result.returncode == 0, result.stderr
+    assert output == f"existing=preserved\nverified_sha={'c' * 40}\n"
+
+
+@pytest.mark.parametrize("name", _reused_jobs())
+def test_workflow_gate_rejects_every_reuse_job_failure(tmp_path, name):
+    results = _reused_jobs()
+    results[name]["result"] = "failure"
+    result, output = _run_gate(tmp_path, results)
+    assert result.returncode != 0
+    assert output == "existing=preserved\n"
+
+
+def test_workflow_gate_does_not_accept_audit_success_without_recheck_output(tmp_path):
+    results = _reused_jobs()
+    results["repository-acceptance-audit"]["outputs"] = {}
+    result, output = _run_gate(tmp_path, results)
+    assert result.returncode != 0
+    assert output == "existing=preserved\n"

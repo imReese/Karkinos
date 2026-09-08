@@ -101,6 +101,7 @@ jobs:
             tests/test_docker_deployment_contract.py \
             tests/scripts/test_scripts_inventory.py \
             tests/tools/test_main_promotion.py \
+            tests/tools/test_ci_reuse.py \
             tests/scripts/test_main_source_runtime.py \
             tests/test_verify_release_source_ci.py
 

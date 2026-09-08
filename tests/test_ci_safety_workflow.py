@@ -50,6 +50,7 @@ def test_main_ci_runs_full_safety_and_acceptance_suite() -> None:
 
     assert "python -m pytest -m trading_safety" in workflow
     assert set(jobs["repository-acceptance-audit"]["needs"]) == {
+        "verification-plan",
         "backend",
         "frontend",
         "trading-safety",

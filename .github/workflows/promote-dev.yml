@@ -81,16 +81,40 @@ jobs:
     needs: [select]
     permissions:
       contents: read
+      actions: read
     uses: ./.github/workflows/ci.yml
     with:
       commit_sha: ${{ needs.select.outputs.commit_sha }}
       base_sha: ${{ needs.select.outputs.previous_main }}
       pre_promotion: true
 
+  verification-receipt:
+    name: Verified source ${{ needs.select.outputs.commit_sha }}
+    if: ${{ needs.select.outputs.has_candidate == 'true' && needs.full-verification.result == 'success' }}
+    needs: [select, full-verification]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Bind successful full verification to the selected commit
+        env:
+          SELECTED_SHA: ${{ needs.select.outputs.commit_sha }}
+          VERIFIED_SHA: ${{ needs.full-verification.outputs.verified_sha }}
+        shell: python
+        run: |
+          import os
+          import re
+
+          selected = os.environ["SELECTED_SHA"]
+          verified = os.environ["VERIFIED_SHA"]
+          if re.fullmatch(r"[0-9a-f]{40}", selected) is None or selected != verified:
+              raise SystemExit("Full verification did not certify the exact selected commit")
+          print("Verified source " + selected)
+
   promote:
     name: Fast-forward verified dev commit
-    if: ${{ needs.select.outputs.has_candidate == 'true' && needs.full-verification.result == 'success' && github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/main' }}
-    needs: [select, full-verification]
+    if: ${{ needs.select.outputs.has_candidate == 'true' && needs.full-verification.result == 'success' && needs.verification-receipt.result == 'success' && github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/main' }}
+    needs: [select, full-verification, verification-receipt]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
