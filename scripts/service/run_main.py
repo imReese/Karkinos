@@ -28,6 +28,7 @@ if __package__:
     from .main_control import MainControl, request_stop
     from .main_logs import MainLogs
     from .main_readiness import startup_ready
+    from .source_state import check_prepared, running_record, source_directory
 else:
     from main_background import (
         Startup,
@@ -40,6 +41,7 @@ else:
     from main_control import MainControl, request_stop
     from main_logs import MainLogs
     from main_readiness import startup_ready
+    from source_state import check_prepared, running_record, source_directory
 
 ROOT = Path(__file__).resolve().parents[2]
 RECOVERY_JOURNALS = (".release-transaction.json", ".legacy-bootstrap-transaction.json")
@@ -228,6 +230,7 @@ def supervise(
     *,
     startup: Startup | None = None,
     logs: MainLogs | None = None,
+    ready_callback=None,
 ) -> int:
     """Own both processes; inherited lifetime pipes also handle abrupt parent death."""
     children = []
@@ -288,6 +291,8 @@ def supervise(
                         return 1
                     if logs is not None:
                         logs.check_running()
+                    if ready_callback is not None:
+                        ready_callback()
                     startup.confirm()
                     ready = True
                     print(f"Main ready at http://127.0.0.1:{port}", flush=True)
@@ -321,6 +326,7 @@ def main(argv=None) -> int:
         help="Run in the terminal for debugging; Ctrl+C stops the service",
     )
     parser.add_argument("--startup-fd", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--prepared", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     startup = Startup(args.startup_fd)
     try:
@@ -332,21 +338,39 @@ def main(argv=None) -> int:
                 or args.startup_fd is not None
             ):
                 raise ValueError("--stop cannot be combined with startup options")
-            return request_stop(ROOT / ".run/main")
-        sha = check_source(ROOT)
+            runtime = ROOT / ".run/main"
+            if args.prepared:
+                runtime = (
+                    source_directory(Path(runtime_environment(ROOT)["KARKINOS_HOME"]))
+                    / "run"
+                )
+            return request_stop(runtime)
+        env = runtime_environment(ROOT) if args.prepared else None
+        verify = (
+            (lambda root: check_prepared(root, Path(env["KARKINOS_HOME"])))
+            if args.prepared
+            else check_source
+        )
+        sha = verify(ROOT)
         if args.check:
             print(f"Main checkout: {sha}")
             return 0
         port = int(os.environ.get("KARKINOS_MAIN_PORT", "8000"))
         if not 1 <= port <= 65535:
             raise ValueError("KARKINOS_MAIN_PORT must be between 1 and 65535")
-        runtime = ROOT / ".run" / "main"
-        env = runtime_environment(ROOT)
+        env = env or runtime_environment(ROOT)
+        runtime = (
+            source_directory(Path(env["KARKINOS_HOME"])) / "run"
+            if args.prepared
+            else ROOT / ".run" / "main"
+        )
         require_runtime_files(env, initialize=args.init)
         if not args.foreground and args.startup_fd is None:
             command = [sys.executable, str(ROOT / "scripts/service/run_main.py")]
             if args.init:
                 command.append("--init")
+            if args.prepared:
+                command.append("--prepared")
             return launch_background(
                 command, env, Path(env["KARKINOS_HOME"]) / "logs/main.log"
             )
@@ -367,6 +391,11 @@ def main(argv=None) -> int:
                 logs = locks.enter_context(MainLogs(home / "logs"))
                 locks.enter_context(redirect_output(logs.stream))
             control = locks.enter_context(MainControl(runtime))
+            ready_callback = None
+            if args.prepared:
+                ready_callback = locks.enter_context(
+                    running_record(home, ROOT, sha, port, env)
+                )
 
             def monitor():
                 startup.check()
@@ -382,13 +411,18 @@ def main(argv=None) -> int:
             print(f"Configuration: {env['KARKINOS_CONFIG_PATH']}", flush=True)
             print(f"Environment file: {env['KARKINOS_ENV_FILE']}", flush=True)
             with acknowledge_interrupted_start(control):
-                for command in (
-                    ["uv", "sync", "--locked", "--extra", "server"],
-                    ["npm", "ci", "--prefix", "web"],
-                    ["npm", "--prefix", "web", "run", "build"],
-                ):
+                commands = (
+                    ()
+                    if args.prepared
+                    else (
+                        ["uv", "sync", "--locked", "--extra", "server"],
+                        ["npm", "ci", "--prefix", "web"],
+                        ["npm", "--prefix", "web", "run", "build"],
+                    )
+                )
+                for command in commands:
                     run_preparation(command, cwd=ROOT, env=env, monitor=monitor)
-                if check_source(ROOT) != sha:
+                if verify(ROOT) != sha:
                     raise ValueError(
                         "main changed during preparation; nothing was started"
                     )
@@ -400,11 +434,19 @@ def main(argv=None) -> int:
                     env=env,
                     monitor=monitor,
                 )
-                if check_source(ROOT) != sha:
+                if verify(ROOT) != sha:
                     raise ValueError(
                         "main changed during preflight; nothing was started"
                     )
-            return supervise(ROOT, env, port, control, startup=startup, logs=logs)
+            return supervise(
+                ROOT,
+                env,
+                port,
+                control,
+                startup=startup,
+                logs=logs,
+                ready_callback=ready_callback,
+            )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         startup.fail(str(exc))
         print(f"Main source startup refused: {exc}", file=sys.stderr)

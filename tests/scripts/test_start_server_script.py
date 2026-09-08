@@ -29,6 +29,8 @@ def _copy_start_script(tmp_path: Path) -> tuple[Path, Path]:
     copied = scripts / SCRIPT.name
     copied.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
     copied.chmod(0o755)
+    helper = Path("scripts/service/dev_environment.py")
+    (service_scripts / helper.name).write_text(helper.read_text(encoding="utf-8"))
     return repo, bin_dir
 
 
@@ -93,6 +95,11 @@ def _dev_repo(
         "#!/usr/bin/env bash\n"
         "set -eu\n"
         f'printf "uv %s\\n" "$*" >>"{calls}"\n'
+        f'printf "account=%s\\n" "${{KARKINOS_HOME:-}}" >>"{calls}"\n'
+        f'printf "data=%s\\n" "${{KARKINOS_DATA_DIR:-}}" >>"{calls}"\n'
+        f'printf "config=%s\\n" "${{KARKINOS_CONFIG_PATH:-}}" >>"{calls}"\n'
+        f'printf "env-file=%s\\n" "${{KARKINOS_ENV_FILE:-}}" >>"{calls}"\n'
+        f'printf "project-env=%s\\n" "${{UV_PROJECT_ENVIRONMENT:-}}" >>"{calls}"\n'
         'if [[ "$*" == *"python -c"* ]]; then exit 0; fi\n'
         f"printf '%s\\n' \"$$\" >'{tmp_path / 'uv-launch-called'}'\n"
         + spawn_child
@@ -475,7 +482,7 @@ def test_start_server_fresh_dev_is_source_only_on_8001_even_when_prod_is_residen
         backend_command = next(
             shlex.split(line)
             for line in recorded_calls.splitlines()
-            if "python -m server" in line
+            if "/scripts/service/run_dev.py" in line
         )
         assert backend_command == [
             "uv",
@@ -483,9 +490,8 @@ def test_start_server_fresh_dev_is_source_only_on_8001_even_when_prod_is_residen
             "--locked",
             "--extra",
             "server",
-            "python",
-            "-m",
-            "server",
+            str(repo / ".venv/bin/python"),
+            str(repo / "scripts/service/run_dev.py"),
             "--host",
             "127.0.0.1",
             "--port",
@@ -504,6 +510,78 @@ def test_start_server_fresh_dev_is_source_only_on_8001_even_when_prod_is_residen
         assert "\t" in (repo / ".run" / "web.pid").read_text()
     finally:
         _cleanup_dev_processes(repo)
+
+
+def test_dev_isolates_environment_after_user_local_env_before_dependency_install(
+    tmp_path: Path,
+):
+    repo, env, calls = _dev_repo(tmp_path)
+    local_env = Path(env["HOME"]) / ".local/bin/env"
+    local_env.parent.mkdir(parents=True)
+    production = tmp_path / "private-daily-home"
+    repeated_shell_init = tmp_path / "shell-init"
+    repeated_shell_init.write_text(
+        f"export KARKINOS_HOME='{production}'\n", encoding="utf-8"
+    )
+    local_env.write_text(
+        f"export KARKINOS_HOME='{production}'\n"
+        f"export KARKINOS_DATA_DIR='{production}/data'\n"
+        f"export KARKINOS_CONFIG_PATH='{production}/config/config.json'\n"
+        f"export KARKINOS_ENV_FILE='{production}/config/.env'\n"
+        f"export UV_PROJECT_ENVIRONMENT='{production}/.venv'\n"
+        f"export BASH_ENV='{repeated_shell_init}'\n",
+        encoding="utf-8",
+    )
+    env["MODE"] = "dev"
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "dev"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    try:
+        assert result.returncode == 0, result.stderr
+        recorded_calls = calls.read_text(encoding="utf-8")
+        development = repo / ".run/dev-home"
+        for name, value in (
+            ("account", development),
+            ("data", development / "data"),
+            ("config", development / "config/config.json"),
+            ("env-file", development / "config/.env"),
+            ("project-env", repo / ".venv"),
+        ):
+            assert f"{name}={value}\n" in recorded_calls
+        assert str(production) not in recorded_calls
+        assert not production.exists()
+    finally:
+        _cleanup_dev_processes(repo)
+
+
+@pytest.mark.parametrize("unsafe", ["home", "env-file"])
+def test_dev_rejects_daily_path_before_uv_or_frontend(tmp_path: Path, unsafe: str):
+    repo, env, calls = _dev_repo(tmp_path)
+    production = tmp_path / "daily-home"
+    env["KARKINOS_HOME"] = str(production)
+    arguments = ["bash", "scripts/start_server.sh", "dev"]
+    if unsafe == "home":
+        env["KARKINOS_DEV_HOME"] = str(production)
+    else:
+        arguments.extend(["--env-file", str(production / "config/.env")])
+    result = subprocess.run(
+        arguments,
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert not calls.exists()
+    assert not production.exists()
+    assert not (repo / ".run/dev-home").exists()
 
 
 def test_start_server_dev_loads_user_local_environment(tmp_path: Path):
@@ -623,15 +701,15 @@ def test_start_server_dev_forwards_effective_bind_with_cli_precedence(
         backend_command = next(
             shlex.split(line)
             for line in recorded_calls.splitlines()
-            if "python -m server" in line
+            if "/scripts/service/run_dev.py" in line
         )
-        assert backend_command[8:12] == [
+        assert backend_command[7:11] == [
             "--host",
             expected_host,
             "--port",
             expected_port,
         ]
-        assert backend_command[17:] == arguments
+        assert backend_command[16:] == arguments
         assert f"vite-backend=http://127.0.0.1:{expected_port}" in recorded_calls
         assert f"http://127.0.0.1:{expected_port}/api/health" in recorded_calls
     finally:

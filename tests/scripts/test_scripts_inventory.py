@@ -21,6 +21,8 @@ PYTHON_HELP_ENTRYPOINTS = (
     "data/sync_market_bars_to_db.py",
     "data/verify_market_bars.py",
     "service/audit_daily_candidate_production.py",
+    "service/run_dev.py",
+    "service/source_main.py",
 )
 
 

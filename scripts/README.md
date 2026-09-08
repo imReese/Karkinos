@@ -10,7 +10,7 @@ ordinary lifecycle interface:
 ./scripts/stop_server.sh        # stop exact tracked development services
 ./scripts/stop_server.sh main   # stop the main source supervisor
 ./scripts/stop_server.sh prod   # stop the supervised production service
-./scripts/stop_server.sh all    # stop dev and prod; excludes main
+./scripts/stop_server.sh all    # stop dev, main, and prod
 ```
 
 Everything below a subdirectory is a specialized owner/operator, maintenance,
@@ -20,66 +20,66 @@ and `server`.
 
 ## Main source startup (no tag)
 
+日常主服务可以从任意开发分支启动；开发目录有未提交修改也不影响它：
+
 ```bash
-git switch main
-./scripts/stop_server.sh main
-git pull --ff-only origin main
 ./scripts/start_server.sh main
 ```
 
-`main` runs `scripts/service/run_main.py`: locked backend dependencies, npm ci,
-a fresh frontend build, provider-free persisted-state preflight, then the API
-and research worker under a detached background supervisor. Dependencies,
-build, and preflight run on each start. The command reports progress and returns
-success only after the API, databases, and current research and data workers
-are ready. These checks confirm service startup, not financial readiness.
-Closing the terminal after success leaves the service running. Ctrl+C while
-startup is pending cancels the attempt and cleans up its processes.
+入口 `service/source_main.py` 从调用仓库的 `origin` 获取远端 `main`，记录
+exact SHA，在 `$KARKINOS_HOME/source` 下的独立 checkout 安装锁定依赖并构建。
+开发目录的分支、源码、`.venv` 和 `web/dist` 不参与 main 的运行。
+已准备好的同一版本可以复用；运行中的版本不会被原地更新。
 
-Startup prints the log path and its final success or failure. Logs go to
-`$KARKINOS_HOME/logs/main.log`, rotate during operation at 20 MiB, and retain
-three archives. For the default runtime home, follow them with:
+更新先完成获取和构建，再停止受控 main 实例并启动新版本。获取、构建或准备被取消时，
+已有实例继续运行。切换后的启动检查若失败，命令返回失败并保留版本信息供排查；
+不会自动恢复数据库，也不会假定旧代码兼容已经变化的持久化状态。
+新旧 API/worker 不同时访问同一套账户数据。若 `--status` 显示未完成的 activation，
+离线启动与重启会拒绝；检查日志后重新运行默认更新入口完成恢复。
 
 ```bash
-tail -F "$HOME/Library/Application Support/Karkinos/logs/main.log"
+./scripts/start_server.sh main --status       # 查看运行状态、版本及路径
+./scripts/start_server.sh main --no-update    # 启动已准备版本，无需联网或重新构建
+./scripts/start_server.sh main --restart      # 重启已准备版本，不更新代码
+./scripts/start_server.sh main --logs         # 最近的服务日志
+./scripts/start_server.sh main --logs --follow
+./scripts/stop_server.sh main
 ```
 
-Use `./scripts/start_server.sh main --foreground` for terminal debugging. That
-mode keeps logs in the terminal without automatic file logging; Ctrl+C stops
-the service. Default background startup needs no `nohup`, redirection, or
-trailing `&`. It does not install login startup or automatic crash restarts.
+更新与启动在内部是分开的阶段。默认入口提供一键更新体验；普通重启使用已准备版本。
+首次使用和更新需要 Git origin 的访问权限，不需要 tag、GitHub Actions 凭据、Docker
+或已安装的不可变发布包。只读状态、日志和停止操作不要求开发目录 clean 或联网。
+托管目录由脚本管理，不要在里面编辑、切分支或运行开发构建。
 
-`./scripts/stop_server.sh main` stops either mode. An exited child stops its
-peer, and inherited lifetime pipes end children if the supervisor dies
-abruptly. Internal helpers `service/main_background.py`,
-`service/main_logs.py`, and `service/main_readiness.py` own detached startup,
-log rotation, and process readiness respectively; they are not separate
-operator commands. No reload, tag, packaged controller, production pointer
-switch, or automatic git update occurs. Use a clean main checkout matching the
-fetched origin/main; stop before pulling or editing that checkout.
+API、数据库及当前 research/data worker 就绪后，后台启动命令才返回成功；
+这只证明服务启动，不代表金融决策就绪。关闭终端不会停止已启动服务。
+启动期间按 Ctrl+C 会取消本次尝试并清理其进程。
+`service/run_main.py` 继续负责 supervisor、账户状态检查与生命周期锁；
+`service/main_background.py`、`service/main_logs.py`、`service/main_readiness.py`
+分别负责后台启动、日志轮转和就绪检查，`service/main_control.py` 负责安全停止，
+`service/source_state.py` 负责准备版本与运行身份的本地记录。
 
-The default address is 127.0.0.1:8000 (`KARKINOS_MAIN_PORT` overrides the port).
-An occupied port is refused, not killed. Main uses the original runtime files
-in place; it does not copy private data or use configuration from the checkout.
+服务日志写入 `$KARKINOS_HOME/logs/main.log`，运行中按 20 MiB 轮转并保留三个归档。
+默认路径是 `~/Library/Application Support/Karkinos/logs/main.log`。
+使用 `./scripts/start_server.sh main --foreground` 可以在终端跟随服务日志，
+Ctrl+C 停止该服务；日志仍然落盘并轮转。普通后台模式不需要 `nohup`、重定向或 `&`。
+此模式不安装登录启动，也不自动重启崩溃的服务。
 
-| Environment variable | Default |
+默认监听 `127.0.0.1:8000`，`KARKINOS_MAIN_PORT` 可以选择其他端口。
+未知端口占用会报错，不会杀进程。账户数据和配置继续原地使用：
+
+| 环境变量 | 默认值 |
 | --- | --- |
 | `KARKINOS_HOME` | `~/Library/Application Support/Karkinos` |
 | `KARKINOS_DATA_DIR` | `$KARKINOS_HOME/data` |
 | `KARKINOS_CONFIG_PATH` | `$KARKINOS_HOME/config/config.json` |
 | `KARKINOS_ENV_FILE` | `$KARKINOS_HOME/config/.env` |
 
-All four overrides must be explicit absolute paths. The frontend always comes
-from this checkout's freshly built `web/dist`, including when an inherited
-static-directory override points elsewhere. Normal startup requires both
-`app.db` and `meta.db` under the selected data directory and both configuration
-files. Missing files produce an error instead of silently creating an empty
-account; first check that the selected paths identify the intended account.
-If a data override selects another managed installation, select its original
-`KARKINOS_HOME` as well; mismatched runtime homes are refused so their recovery
-guards remain effective.
+覆盖值必须是绝对路径。启动要求已有 `app.db`、`meta.db` 和两个配置文件；
+缺失时明确报错，不会默默换成空账户。更换开发分支或更新 main 不复制、重建这些文件。
+不要为了修复缺失路径使用 `--init`。
 
-Only for a new account, prepare the configuration and explicitly initialize:
+仅首次创建新账户时，显式准备配置并初始化空数据目录：
 
 ```bash
 export KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
@@ -89,42 +89,35 @@ test -e "$KARKINOS_HOME/config/.env" || cp .env.example "$KARKINOS_HOME/config/.
 ./scripts/start_server.sh main --init
 ```
 
-Review the configuration before running the last command. Existing files are
-not overwritten. `--init` requires an empty data directory and creates new empty
-databases; do not use it to upgrade or repair existing data. Subsequent starts
-use `./scripts/start_server.sh main` without `--init`.
+执行 `--init` 前检查配置。已有文件不覆盖，非空数据目录拒绝初始化。
+后续启动不带 `--init`。main 的 home/data 生命周期锁、恢复 journal 和
+LaunchAgent 互斥仍然生效。已加载的包服务应先用 `./scripts/stop_server.sh prod`
+停止；恢复保护不会由启动脚本清除。
 
-For its entire lifetime, main holds `$KARKINOS_HOME/.release.lock` and the
-selected data directory's `.source-runtime.lock`, as well as its checkout
-supervisor lock. Pending release or bootstrap recovery journals block startup.
-On macOS, either loaded `com.karkinos.daily-candidate` or
-`com.karkinos.research-worker` also blocks startup, even for a different runtime
-home. Stop them with `./scripts/stop_server.sh prod` before using main. Inherited
-managed-release identity variables are rejected; recovery guards are never
-cleared by source startup. When stopping a different managed installation,
-select its original `KARKINOS_HOME` for that stop command.
+从旧版“直接运行当前 main checkout”的服务迁移时，先在旧运行目录执行
+`python3 scripts/service/run_main.py --stop`，再调用新版默认 main 入口。
+旧版监督进程不会被模糊进程匹配或端口扫描清理。
 
-The main stop command uses `service/main_control.py` to contact the running
-supervisor and does not require a
-clean Git checkout or an installed release controller. `all` still stops only
-dev and prod. Before updating main, run `./scripts/stop_server.sh main`, then
-`git pull --ff-only origin main`, then `./scripts/start_server.sh main`.
-Use `python3 scripts/service/run_main.py --check` for a read-only checkout check.
-All financial and human-authority gates remain in the existing application;
-source startup is not proof of financial readiness or immutable-release provenance.
+开发服务用 `./scripts/start_server.sh dev`，默认 backend `8001`、Vite `5173`。
+`service/run_dev.py` 固定可识别的源码入口，保留重载并支持精确停止。
+`service/dev_environment.py` 为它选择 `.run/dev-home` 下独立的空开发账户；
+专用开发配置在 `config/config.json` 与 `config/.env`，数据在 `data/`。
+可以设置绝对路径 `KARKINOS_DEV_HOME`；该路径不能复用日常或发布账户。
+不会复制原有私人配置或数据库，也不会继承 main 的账户路径和 Python 环境。
+需要的数据源配置应写入专用开发配置，`--env-file` 也必须指向该开发环境的配置文件。
 
 ## Service lifecycle
 
 | Command | Purpose | Boundary |
 | --- | --- | --- |
-| `./scripts/start_server.sh` or `./scripts/start_server.sh dev` | Start the current source tree: reloadable backend on `127.0.0.1:8001` plus Vite on `127.0.0.1:5173`. | Uses locked backend dependencies and refreshes frontend dependencies with `npm ci` when the lockfile, package metadata, or npm configuration changes. Failed startup cleans up the processes created by that attempt. |
-| `./scripts/start_server.sh main` | Build and start the clean main source checkout in the background with the selected existing account; return after service readiness. | Logs rotate under `$KARKINOS_HOME/logs/`. Uses the original runtime data and configuration under lifetime locks; missing account files, loaded managed services, or pending recovery fail closed. |
-| `./scripts/start_server.sh main --foreground` | Run the same main service in the terminal for debugging. | Ctrl+C stops it; logs stay in the terminal without automatic file logging. |
+| `./scripts/start_server.sh` or `./scripts/start_server.sh dev` | Start the current source tree: reloadable backend on `127.0.0.1:8001` plus Vite on `127.0.0.1:5173`. | Uses a dedicated development account and locked backend dependencies; refreshes frontend dependencies with `npm ci` when the lockfile, package metadata, or npm configuration changes. Failed startup cleans up the processes created by that attempt. |
+| `./scripts/start_server.sh main` | Fetch main, prepare its exact SHA in an isolated checkout, and start in the background with the existing account; return after service readiness. | Logs rotate under `$KARKINOS_HOME/logs/`. Uses the original runtime data and configuration under lifetime locks; missing account files, loaded managed services, or pending recovery fail closed. |
+| `./scripts/start_server.sh main --foreground` | Start the same managed main service and follow its logs in the terminal. | Ctrl+C stops it; logs also remain in the rotating log files. |
 | `./scripts/start_server.sh prod` | Start the supervised API and isolated research worker from the immutable release already selected by `~/Library/Application Support/Karkinos/current`. | Never builds from the checkout, copies source into a release, updates `current`, or falls back to source execution. It requires both processes to belong to the exact current release and fails closed when either is unavailable. |
 | `./scripts/stop_server.sh` or `./scripts/stop_server.sh dev` | Stop only the exact tracked development processes. | Symmetric with the default development start and never touches production. |
-| `./scripts/stop_server.sh main` | Ask the running main supervisor to stop its API and research worker. | Uses the main control endpoint without Git checks or a release controller. |
+| `./scripts/stop_server.sh main` | Ask the running main supervisor to stop its API and research worker. | Uses the managed home control endpoint without Git checks or a release controller. |
 | `./scripts/stop_server.sh prod` | Stop only the exact supervised production service. | Uses the packaged controller and persisted service port; it does not kill unknown listeners or sweep ports. |
-| `./scripts/stop_server.sh all` | Explicitly stop both development and production; excludes main. | Validates recorded PID, process command, and start identity for every target. |
+| `./scripts/stop_server.sh all` | Explicitly stop development, main, and production, attempting each even if another stop fails. | Validates recorded PID, process command, and start identity for every target. |
 
 Bootstrap records the production port once in the private managed-runtime
 receipt (`.service-config.json`), defaulting to 8000. Updates, rollback,

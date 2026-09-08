@@ -190,6 +190,10 @@ jobs:
             tests/scripts/test_main_background.py \
             tests/scripts/test_main_logs.py \
             tests/scripts/test_main_readiness.py \
+            tests/scripts/test_source_main*.py \
+            tests/scripts/test_dev_environment.py \
+            tests/scripts/test_start_server_script.py \
+            tests/scripts/test_stop_server_script.py \
             tests/test_verify_release_source_ci.py
 
   hygiene:

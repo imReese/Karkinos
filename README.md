@@ -46,14 +46,15 @@ For an existing account, use its original runtime directory. The default is
 configuration in `config/config.json` and `config/.env`.
 
 ```bash
-git switch main
-./scripts/stop_server.sh main
-git pull --ff-only origin main
 ./scripts/start_server.sh main
 ```
 
-Open `http://127.0.0.1:8000` after startup succeeds. The command builds the
-frontend, checks the persisted state, and starts the service in the background.
+Run this from your development checkout, on any branch, including with local
+changes. The command fetches `origin`'s `main` and prepares that exact commit in
+an isolated directory under `$KARKINOS_HOME/source`. It builds the frontend,
+checks the persisted state, and starts the service in the background.
+Fetch or build failure leaves an existing main service running.
+Open `http://127.0.0.1:8000` after startup succeeds.
 It returns after the API, databases, research worker, and data worker are ready;
 this confirms service startup, not financial readiness. You can then close the
 terminal. Stop the service with `./scripts/stop_server.sh main`; Ctrl+C while
@@ -64,25 +65,31 @@ location of `~/Library/Application Support/Karkinos/logs/main.log`. The log
 rotates at 20 MiB and retains three archives. To follow it:
 
 ```bash
-tail -F "$HOME/Library/Application Support/Karkinos/logs/main.log"
+./scripts/start_server.sh main --logs --follow
 ```
 
-Use `./scripts/start_server.sh main --foreground` for terminal debugging;
-Ctrl+C stops that foreground service, and logs stay in the terminal. Ordinary
+Use `./scripts/start_server.sh main --foreground` to follow service logs in the
+terminal; Ctrl+C stops that service. Logs also remain in the rotating files. Ordinary
 startup needs no `nohup`, redirection, or trailing `&`. It does not install
 automatic startup at login or restart the service after a crash.
 
-No tag, native release, GitHub credentials, or Docker is required for startup.
-A clean main checkout
-matching the fetched origin/main is required. Startup never pulls, switches,
-resets branches, or stops an unknown listener automatically.
+No tag, native release, GitHub Actions credentials, or Docker is required.
+Updating requires access to the configured Git origin. Your development
+checkout, branch, dependencies, and local changes are left in place.
+
+```bash
+./scripts/start_server.sh main --status
+./scripts/start_server.sh main --no-update  # start the prepared version offline
+./scripts/start_server.sh main --restart    # restart without fetching or building
+./scripts/stop_server.sh main
+```
 
 Startup requires existing `data/app.db`, `data/meta.db`, and both configuration
 files; missing files fail explicitly instead of opening an empty account.
 `KARKINOS_HOME`, `KARKINOS_DATA_DIR`, `KARKINOS_CONFIG_PATH`, and
 `KARKINOS_ENV_FILE` accept explicit absolute paths. Changing `KARKINOS_HOME`
 changes the other defaults. Files stay in place; no private data is copied.
-The frontend always uses this checkout's freshly built `web/dist`.
+The frontend and Python environment come from the isolated prepared checkout.
 
 For a genuinely new account, prepare configuration without overwriting files:
 
@@ -99,13 +106,16 @@ account and requires an empty data directory. It is never an existing-account
 upgrade command. Subsequent starts use `./scripts/start_server.sh main`.
 Stop managed services with `./scripts/stop_server.sh prod` before starting main;
 loaded managed services and pending release recovery block startup. Set
-`KARKINOS_MAIN_PORT` when 8000 is already occupied. Stop main before editing or
-pulling its checkout, then start it again.
+`KARKINOS_MAIN_PORT` when 8000 is already occupied. Never edit the managed source
+directory directly; run the default main command to prepare an update.
 
 For development with hot reload, use `./scripts/start_server.sh dev` and open
 `http://127.0.0.1:5173`; stop it with `./scripts/stop_server.sh dev`.
 The optional legacy `prod` mode still controls an already installed immutable
 release. See [scripts/README.md](scripts/README.md) for these separate modes.
+Development uses its own initially empty account at `.run/dev-home`; set an
+absolute `KARKINOS_DEV_HOME` for a different dedicated development directory.
+It does not inherit the daily account's configuration or databases.
 
 ## Verification
 

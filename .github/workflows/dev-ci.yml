@@ -103,6 +103,10 @@ jobs:
             tests/tools/test_main_promotion.py \
             tests/tools/test_ci_reuse.py \
             tests/scripts/test_main_source_runtime.py \
+            tests/scripts/test_source_main*.py \
+            tests/scripts/test_dev_environment.py \
+            tests/scripts/test_start_server_script.py \
+            tests/scripts/test_stop_server_script.py \
             tests/test_verify_release_source_ci.py
 
   hygiene:
