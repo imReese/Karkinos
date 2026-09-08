@@ -84,10 +84,10 @@ def _run_identity(repository, **overrides: str) -> subprocess.CompletedProcess:
     [
         {},
         {"GITHUB_EVENT_NAME": "workflow_dispatch"},
-        {"GITHUB_REF": "refs/heads/dev"},
         {"GITHUB_REPOSITORY": "fork-owner/Karkinos"},
         {
             "GITHUB_REF": "refs/heads/dev",
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
             "GITHUB_REPOSITORY": "fork-owner/Karkinos",
         },
         {
@@ -102,7 +102,7 @@ def _run_identity(repository, **overrides: str) -> subprocess.CompletedProcess:
         },
     ],
 )
-def test_identity_accepts_exact_main_temporary_dev_push_and_reusable_candidate(
+def test_identity_accepts_exact_main_dev_dispatch_and_reusable_candidate(
     repository, overrides
 ):
     result = _run_identity(repository, **overrides)
@@ -118,6 +118,7 @@ def test_identity_accepts_exact_main_temporary_dev_push_and_reusable_candidate(
         {"EXPECTED_BASE": "main"},
         {"EXPECTED_BASE": "f" * 40},
         {"EXPECTED_BASE": "diverged"},
+        {"GITHUB_REF": "refs/heads/dev"},
         {"GITHUB_REF": "refs/heads/dev", "GITHUB_EVENT_NAME": "pull_request"},
         {"GITHUB_REF": "refs/heads/dev", "GITHUB_EVENT_NAME": "schedule"},
         {"GITHUB_REF": "refs/heads/dev", "PRE_PROMOTION": "true"},
@@ -222,9 +223,9 @@ def test_full_ci_checkout_and_reusable_outputs_bind_the_exact_candidate():
     }
 
 
-def test_full_ci_temporary_dev_push_entry_preserves_main_and_read_only_permissions():
+def test_full_ci_push_is_main_only_and_permissions_are_read_only():
     workflow = _workflow("ci.yml")
-    assert workflow["on"]["push"] == {"branches": ["main", "dev"]}
+    assert workflow["on"]["push"] == {"branches": ["main"]}
     assert set(workflow["on"]) == {"push", "workflow_dispatch", "workflow_call"}
     assert workflow["permissions"] == {"contents": "read"}
 
