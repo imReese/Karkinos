@@ -41,12 +41,16 @@ usage() {
 	cat <<'EOF'
 Usage:
   ./scripts/start_server.sh [dev] [extra server args...]
-  ./scripts/start_server.sh main
+  ./scripts/start_server.sh main [--foreground] [--init]
   ./scripts/start_server.sh prod
 
 Modes:
   main  Run a clean main checkout with built frontend, without a tag.
-        Foreground mode; Ctrl+C stops API and research worker.
+        Starts in the background; returns after service readiness.
+        Logs: $KARKINOS_HOME/logs/main.log (20 MiB, three archives).
+        Default home: ~/Library/Application Support/Karkinos.
+        --foreground keeps logs in the terminal; Ctrl+C stops the service.
+        --init explicitly creates a new empty account; not for upgrades.
   dev   Run the current source tree with reload plus the Vite frontend.
         It defaults to backend port 8001; production uses its persisted port.
   prod  Start the supervised immutable release selected by

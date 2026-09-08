@@ -53,7 +53,7 @@ def test_occupied_port_refuses_before_preparation_or_launch(
     monkeypatch.setattr(runtime.socket, "socket", OccupiedPort)
     monkeypatch.setattr(runtime.subprocess, "run", unexpected)
     monkeypatch.setattr(runtime, "supervise", unexpected)
-    assert runtime.main([]) == 1
+    assert runtime.main(["--foreground"]) == 1
 
 
 def test_checkout_changed_during_preparation_never_launches(
@@ -78,13 +78,18 @@ def test_checkout_changed_during_preparation_never_launches(
         commands.append(command)
         return subprocess.CompletedProcess(command, 0)
 
-    def unexpected(*args):
+    def unexpected(*args, **kwargs):
         pytest.fail("the verified checkout identity changed")
 
-    monkeypatch.setattr(runtime.socket, "socket", AvailablePort)
-    monkeypatch.setattr(runtime.subprocess, "run", run)
+    native_socket = runtime.socket.socket
+    monkeypatch.setattr(
+        runtime.socket,
+        "socket",
+        lambda *args: native_socket(*args) if args else AvailablePort(),
+    )
+    monkeypatch.setattr(runtime, "run_preparation", run)
     monkeypatch.setattr(runtime, "supervise", unexpected)
-    assert runtime.main([]) == 1
+    assert runtime.main(["--foreground"]) == 1
     assert len(commands) == 3
     assert all("--check-state" not in command for command in commands)
 

@@ -52,10 +52,28 @@ git pull --ff-only origin main
 ./scripts/start_server.sh main
 ```
 
-Open `http://127.0.0.1:8000`. This builds the frontend and runs the API plus
-research worker in the foreground; Ctrl+C or `./scripts/stop_server.sh main`
-stops both. No tag, native release,
-GitHub credentials, or Docker is required for startup. A clean main checkout
+Open `http://127.0.0.1:8000` after startup succeeds. The command builds the
+frontend, checks the persisted state, and starts the service in the background.
+It returns after the API, databases, research worker, and data worker are ready;
+this confirms service startup, not financial readiness. You can then close the
+terminal. Stop the service with `./scripts/stop_server.sh main`; Ctrl+C while
+startup is still pending cancels that attempt and cleans up its processes.
+
+Logs are written automatically to `$KARKINOS_HOME/logs/main.log`, with a default
+location of `~/Library/Application Support/Karkinos/logs/main.log`. The log
+rotates at 20 MiB and retains three archives. To follow it:
+
+```bash
+tail -F "$HOME/Library/Application Support/Karkinos/logs/main.log"
+```
+
+Use `./scripts/start_server.sh main --foreground` for terminal debugging;
+Ctrl+C stops that foreground service, and logs stay in the terminal. Ordinary
+startup needs no `nohup`, redirection, or trailing `&`. It does not install
+automatic startup at login or restart the service after a crash.
+
+No tag, native release, GitHub credentials, or Docker is required for startup.
+A clean main checkout
 matching the fetched origin/main is required. Startup never pulls, switches,
 resets branches, or stops an unknown listener automatically.
 

@@ -5,7 +5,7 @@ ordinary lifecycle interface:
 
 ```bash
 ./scripts/start_server.sh       # source development
-./scripts/start_server.sh main  # main source with the existing account
+./scripts/start_server.sh main  # background main source with the existing account
 ./scripts/start_server.sh prod  # selected immutable production release
 ./scripts/stop_server.sh        # stop exact tracked development services
 ./scripts/stop_server.sh main   # stop the main source supervisor
@@ -28,13 +28,35 @@ git pull --ff-only origin main
 ```
 
 `main` runs `scripts/service/run_main.py`: locked backend dependencies, npm ci,
-a fresh frontend build, provider-free persisted-state preflight, then API and
-research worker supervised in the foreground. Ctrl+C or
-`./scripts/stop_server.sh main` stops both; an exited
-child stops its peer, and inherited lifetime pipes end children if the parent
-dies abruptly. No reload, tag, packaged controller, production pointer switch,
-or automatic git update occurs. Use a clean main checkout matching the fetched
-origin/main; stop before pulling or editing that checkout.
+a fresh frontend build, provider-free persisted-state preflight, then the API
+and research worker under a detached background supervisor. Dependencies,
+build, and preflight run on each start. The command reports progress and returns
+success only after the API, databases, and current research and data workers
+are ready. These checks confirm service startup, not financial readiness.
+Closing the terminal after success leaves the service running. Ctrl+C while
+startup is pending cancels the attempt and cleans up its processes.
+
+Startup prints the log path and its final success or failure. Logs go to
+`$KARKINOS_HOME/logs/main.log`, rotate during operation at 20 MiB, and retain
+three archives. For the default runtime home, follow them with:
+
+```bash
+tail -F "$HOME/Library/Application Support/Karkinos/logs/main.log"
+```
+
+Use `./scripts/start_server.sh main --foreground` for terminal debugging. That
+mode keeps logs in the terminal without automatic file logging; Ctrl+C stops
+the service. Default background startup needs no `nohup`, redirection, or
+trailing `&`. It does not install login startup or automatic crash restarts.
+
+`./scripts/stop_server.sh main` stops either mode. An exited child stops its
+peer, and inherited lifetime pipes end children if the supervisor dies
+abruptly. Internal helpers `service/main_background.py`,
+`service/main_logs.py`, and `service/main_readiness.py` own detached startup,
+log rotation, and process readiness respectively; they are not separate
+operator commands. No reload, tag, packaged controller, production pointer
+switch, or automatic git update occurs. Use a clean main checkout matching the
+fetched origin/main; stop before pulling or editing that checkout.
 
 The default address is 127.0.0.1:8000 (`KARKINOS_MAIN_PORT` overrides the port).
 An occupied port is refused, not killed. Main uses the original runtime files
@@ -96,7 +118,8 @@ source startup is not proof of financial readiness or immutable-release provenan
 | Command | Purpose | Boundary |
 | --- | --- | --- |
 | `./scripts/start_server.sh` or `./scripts/start_server.sh dev` | Start the current source tree: reloadable backend on `127.0.0.1:8001` plus Vite on `127.0.0.1:5173`. | Uses locked backend dependencies and refreshes frontend dependencies with `npm ci` when the lockfile, package metadata, or npm configuration changes. Failed startup cleans up the processes created by that attempt. |
-| `./scripts/start_server.sh main` | Build and supervise the clean main source checkout with the selected existing account. | Uses the original runtime data and configuration under lifetime locks; missing account files, loaded managed services, or pending recovery fail closed. |
+| `./scripts/start_server.sh main` | Build and start the clean main source checkout in the background with the selected existing account; return after service readiness. | Logs rotate under `$KARKINOS_HOME/logs/`. Uses the original runtime data and configuration under lifetime locks; missing account files, loaded managed services, or pending recovery fail closed. |
+| `./scripts/start_server.sh main --foreground` | Run the same main service in the terminal for debugging. | Ctrl+C stops it; logs stay in the terminal without automatic file logging. |
 | `./scripts/start_server.sh prod` | Start the supervised API and isolated research worker from the immutable release already selected by `~/Library/Application Support/Karkinos/current`. | Never builds from the checkout, copies source into a release, updates `current`, or falls back to source execution. It requires both processes to belong to the exact current release and fails closed when either is unavailable. |
 | `./scripts/stop_server.sh` or `./scripts/stop_server.sh dev` | Stop only the exact tracked development processes. | Symmetric with the default development start and never touches production. |
 | `./scripts/stop_server.sh main` | Ask the running main supervisor to stop its API and research worker. | Uses the main control endpoint without Git checks or a release controller. |
