@@ -48,7 +48,7 @@ not proof of financial readiness or immutable-release provenance.
 
 | Command | Purpose | Boundary |
 | --- | --- | --- |
-| `./scripts/start_server.sh` or `./scripts/start_server.sh dev` | Start the current source tree: reloadable backend on `127.0.0.1:8001` plus Vite on `127.0.0.1:5173`. | Isolated from stable production on port 8000. Writes only source-worktree PID/log state and may install missing frontend dependencies. |
+| `./scripts/start_server.sh` or `./scripts/start_server.sh dev` | Start the current source tree: reloadable backend on `127.0.0.1:8001` plus Vite on `127.0.0.1:5173`. | Uses locked backend dependencies and refreshes frontend dependencies with `npm ci` when the lockfile, package metadata, or npm configuration changes. Failed startup cleans up the processes created by that attempt. |
 | `./scripts/start_server.sh prod` | Start the supervised API and isolated research worker from the immutable release already selected by `~/Library/Application Support/Karkinos/current`. | Never builds from the checkout, copies source into a release, updates `current`, or falls back to source execution. It requires both processes to belong to the exact current release and fails closed when either is unavailable. |
 | `./scripts/stop_server.sh` or `./scripts/stop_server.sh dev` | Stop only the exact tracked development processes. | Symmetric with the default development start and never touches production. |
 | `./scripts/stop_server.sh prod` | Stop only the exact supervised production service. | Uses the packaged controller and persisted service port; it does not kill unknown listeners or sweep ports. |
@@ -61,6 +61,11 @@ only pass `KARKINOS_BACKEND_PORT` when it is explicitly set; a value that does
 not match the receipt fails closed instead of silently moving the service to a
 different port. To bootstrap on a non-default port, pass `--service-port` once
 or set `KARKINOS_BACKEND_PORT` for that bootstrap command.
+
+Development passes its effective host and port to the backend explicitly;
+`--host` and `--port` override the development defaults. In Docker Compose,
+`KARKINOS_PORT` selects the published host port; the container listener and
+health check remain on port 8000.
 
 The live scheduler always starts with every backend and has no service-level off
 switch. Its liveness is required before startup succeeds. Automatic trading is
@@ -422,9 +427,37 @@ the private key outside the repository with permissions `0600` or stricter.
 
 ## CI and release checks
 
+`dev-ci.yml` publishes `Dev CI gate`. Independent test-only changes run the changed
+tests; references from other test modules, source, shared fixture, deleted-test,
+or unknown changes broaden backend checks. Only explicit documentation scopes
+skip runtime checks.
+Every backend scope also runs the trading-safety suite. Dependency changes audit
+both Python and npm. Missing classification or unexpected skipped jobs fail.
+
+`ci.yml` is the single full-verification implementation, used both by main CI
+and by the trusted main promotion workflow through `workflow_call`. All jobs
+check out the exact requested SHA, use locked Python dependencies, and preserve
+JUnit/coverage evidence. Promotion publishes `Main promotion gate` on the
+verified candidate SHA only after the reusable full gate succeeds and its run
+identity is rechecked; the main ruleset requires that distinct GitHub Actions
+status. The write job executes trusted main code with separate permissions.
+Post-promotion main CI remains an independent release-source check. A fresh
+promotion run with no new candidate repairs missing CI/candidate dispatches
+without rewriting main or automatically rerunning failed checks.
+
+Changing `.github/rulesets/main.json` does not apply it to GitHub. The one-time,
+owner-approved migration first dispatches full `ci.yml` on the exact new dev
+commit with the current main SHA as `base_sha`. After verifying that full run,
+fast-forward main under its existing `Code CI gate` rule, then apply the new
+`Main promotion gate` rule before normal promotion resumes. Full CI permits
+explicit dispatch on dev for this purpose; its requested SHA must equal the
+actual checkout, and release-source verification still requires a main run.
+Never relax the rule or use a force push to bootstrap the migration.
+
 | Command | Purpose |
 | --- | --- |
-| `uv run python scripts/ci/check_python_quality.py --base origin/main` | Run incremental Ruff, Black, isort, and stable type/architecture checks without rewriting files; use `--base HEAD~1 --head HEAD` for the exact committed diff. |
+| `uv run --locked --extra dev python scripts/ci/check_python_quality.py --base origin/main` | Run incremental Ruff, Black, isort, and stable type/architecture checks without rewriting files; use `--base HEAD~1 --head HEAD` for the exact committed diff. |
+| `python scripts/ci/classify_dev_changes.py --base BASE --head HEAD` | Classify an exact ancestor-to-checkout diff for dev CI; unknown scopes broaden checks rather than silently skipping tests. |
 | `uv run python scripts/ci/check_docs_health.py` | Check core documentation budgets, local links, language pairs, and roadmap/test separation. |
 | `uv run python scripts/ci/export_acceptance_audit.py --audit all` | Export acceptance manifests and optionally bind deterministic test evidence. |
 | `uv run python scripts/ci/verify_docker_runtime.py` | Confirm a built container starts with the live scheduler running while broker and capital authority remain disabled. |

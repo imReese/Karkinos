@@ -79,5 +79,7 @@ def test_both_workflows_pin_uv_and_expose_code_ci_gate() -> None:
         workflow = Path(path).read_text(encoding="utf-8")
         jobs = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]
         assert 'UV_VERSION: "0.11.28"' in workflow
-        assert jobs["code-ci-gate"]["name"] == "Code CI gate"
+        assert jobs["code-ci-gate"]["name"] == (
+            "Dev CI gate" if "dev-ci" in path else "Code CI gate"
+        )
         assert jobs["code-ci-gate"]["if"] == "always()"

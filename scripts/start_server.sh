@@ -129,13 +129,13 @@ if [[ ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
 	echo "Error: pyproject.toml was not found under ${REPO_ROOT}." >&2
 	exit 1
 fi
-if ! UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" uv run python -c \
+if ! UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" uv run --locked --extra server python -c \
 	"import fastapi, uvicorn, aiosqlite, websockets" >/dev/null 2>&1; then
 	cat >&2 <<'EOF'
-Error: server dependencies are not installed.
+Error: server dependencies could not be loaded from the committed lockfile.
 
 Install them with:
-  UV_CACHE_DIR=.uv-cache uv sync --extra server --extra dev
+  UV_CACHE_DIR=.uv-cache uv sync --locked --extra server --extra dev
 EOF
 	exit 1
 fi
@@ -167,8 +167,11 @@ for ((i = 0; i < ${#SERVER_ARGS[@]}; i++)); do
 			BACKEND_PORT="${SERVER_ARGS[$((i + 1))]}"
 		fi
 		;;
+	--host=*) BACKEND_HOST="${SERVER_ARGS[$i]#--host=}" ;;
+	--port=*) BACKEND_PORT="${SERVER_ARGS[$i]#--port=}" ;;
 	esac
 done
+SERVER_ARGS=(--host "${BACKEND_HOST}" --port "${BACKEND_PORT}" "${SERVER_ARGS[@]}")
 
 PRODUCT_ENTRY_URL="http://${BACKEND_HOST}:${BACKEND_PORT}"
 HOT_RELOAD_URL="http://${FRONTEND_HOST}:${FRONTEND_PORT}"
@@ -196,17 +199,24 @@ require_positive_integer() {
 
 ensure_frontend_dependencies() {
 	local web_dir="${REPO_ROOT}/web"
-	if [[ ! -f "${web_dir}/package.json" ]]; then
-		echo "Error: web/package.json was not found." >&2
+	if [[ ! -f "${web_dir}/package.json" || ! -f "${web_dir}/package-lock.json" ]]; then
+		echo "Error: web/package.json and web/package-lock.json are required." >&2
 		exit 1
 	fi
-	if [[ -x "${web_dir}/node_modules/.bin/vite" && -f "${web_dir}/node_modules/vitest/globals.d.ts" ]]; then
+	local stamp_file="${web_dir}/node_modules/.karkinos-dependencies"
+	local dependency_stamp
+	local -a dependency_files=("${web_dir}/package.json" "${web_dir}/package-lock.json")
+	[[ ! -f "${web_dir}/.npmrc" ]] || dependency_files+=("${web_dir}/.npmrc")
+	dependency_stamp="$(cksum "${dependency_files[@]}")"
+	if [[ -x "${web_dir}/node_modules/.bin/vite" && -f "${web_dir}/node_modules/vitest/globals.d.ts" &&
+		-f "${stamp_file}" && "$(cat "${stamp_file}")" == "${dependency_stamp}" ]]; then
 		return
 	fi
-	echo "Frontend dependencies are missing or incomplete; running npm install"
+	echo "Frontend dependency inputs changed or installation is incomplete; running npm ci"
 	pushd "${web_dir}" >/dev/null
-	npm install
+	npm ci
 	popd >/dev/null
+	printf '%s\n' "${dependency_stamp}" >"${stamp_file}"
 }
 
 guide_data_source_configuration() {
@@ -268,18 +278,56 @@ frontend_is_ready() {
 		"http://$(probe_host "${FRONTEND_HOST}"):${FRONTEND_PORT}/" 2>/dev/null
 }
 
+launch_tree_pids() {
+	local pid="$1" child_pid
+	while IFS= read -r child_pid; do
+		[[ -z "${child_pid}" ]] || launch_tree_pids "${child_pid}"
+	done < <(pgrep -P "${pid}" 2>/dev/null || true)
+	printf '%s\n' "${pid}"
+}
+
 cleanup_launch() {
 	local launch_pid="$1"
 	local tracked_pid="$2"
 	local pid_file="$3"
-	if [[ "${tracked_pid}" != "${launch_pid}" ]] && kill -0 "${tracked_pid}" >/dev/null 2>&1; then
-		kill "${tracked_pid}" >/dev/null 2>&1 || true
+	local pid any_alive
+	local -a launch_pids=()
+	while IFS= read -r pid; do
+		launch_pids+=("${pid}")
+	done < <(launch_tree_pids "${launch_pid}")
+	if [[ "${tracked_pid}" != "${launch_pid}" ]]; then
+		while IFS= read -r pid; do
+			launch_pids+=("${pid}")
+		done < <(launch_tree_pids "${tracked_pid}")
 	fi
-	if kill -0 "${launch_pid}" >/dev/null 2>&1; then
-		kill "${launch_pid}" >/dev/null 2>&1 || true
-	fi
+	for pid in "${launch_pids[@]}"; do
+		kill -TERM "${pid}" >/dev/null 2>&1 || true
+	done
+	for _ in {1..20}; do
+		any_alive=false
+		for pid in "${launch_pids[@]}"; do
+			kill -0 "${pid}" >/dev/null 2>&1 && any_alive=true
+		done
+		[[ "${any_alive}" == true ]] || break
+		sleep 0.1
+	done
+	for pid in "${launch_pids[@]}"; do
+		kill -0 "${pid}" >/dev/null 2>&1 && kill -KILL "${pid}" >/dev/null 2>&1 || true
+	done
 	wait "${launch_pid}" >/dev/null 2>&1 || true
 	rm -f "${pid_file}"
+}
+
+cleanup_failed_startup() {
+	local status=$?
+	trap - EXIT INT TERM
+	if [[ -n "${WEB_LAUNCH_PID:-}" ]]; then
+		cleanup_launch "${WEB_LAUNCH_PID}" "${TRACKED_WEB_PID:-${WEB_LAUNCH_PID}}" "${WEB_PID_FILE}"
+	fi
+	if [[ -n "${LAUNCH_PID:-}" ]]; then
+		cleanup_launch "${LAUNCH_PID}" "${TRACKED_PID:-${LAUNCH_PID}}" "${PID_FILE}"
+	fi
+	exit "${status}"
 }
 
 write_pid_record() {
@@ -299,14 +347,12 @@ wait_for_backend() {
 	while ((SECONDS < deadline)); do
 		if ! kill -0 "${TRACKED_PID}" >/dev/null 2>&1; then
 			echo "Error: development backend exited before readiness. Check ${LOG_FILE}." >&2
-			cleanup_launch "${LAUNCH_PID}" "${TRACKED_PID}" "${PID_FILE}"
 			return 1
 		fi
 		backend_is_ready && return 0
 		sleep 1
 	done
 	echo "Error: backend readiness timed out after ${STARTUP_HEALTH_TIMEOUT_SECONDS}s. Check ${LOG_FILE}." >&2
-	cleanup_launch "${LAUNCH_PID}" "${TRACKED_PID}" "${PID_FILE}"
 	return 1
 }
 
@@ -315,14 +361,12 @@ wait_for_frontend() {
 	while ((SECONDS < deadline)); do
 		if ! kill -0 "${TRACKED_WEB_PID}" >/dev/null 2>&1; then
 			echo "Error: development frontend exited before readiness. Check ${WEB_LOG_FILE}." >&2
-			cleanup_launch "${WEB_LAUNCH_PID}" "${TRACKED_WEB_PID}" "${WEB_PID_FILE}"
 			return 1
 		fi
 		frontend_is_ready && return 0
 		sleep 1
 	done
 	echo "Error: frontend readiness timed out after ${FRONTEND_STARTUP_TIMEOUT_SECONDS}s. Check ${WEB_LOG_FILE}." >&2
-	cleanup_launch "${WEB_LAUNCH_PID}" "${TRACKED_WEB_PID}" "${WEB_PID_FILE}"
 	return 1
 }
 
@@ -368,13 +412,18 @@ echo "Building product frontend bundle for ${PRODUCT_ENTRY_URL}"
 npm --prefix web run build
 guide_data_source_configuration
 
+LAUNCH_PID=""
+WEB_LAUNCH_PID=""
+trap cleanup_failed_startup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 echo "Starting source development backend on ${PRODUCT_ENTRY_URL}"
 if command -v setsid >/dev/null 2>&1; then
 	setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+		uv run --locked --extra server python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 else
 	nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+		uv run --locked --extra server python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 fi
 LAUNCH_PID=$!
 TRACKED_PID="${LAUNCH_PID}"
@@ -382,7 +431,6 @@ sleep 1
 child_pid="$(pgrep -P "${LAUNCH_PID}" | tail -n 1 || true)"
 [[ -z "${child_pid}" ]] || TRACKED_PID="${child_pid}"
 if ! write_pid_record "${PID_FILE}" "${TRACKED_PID}"; then
-	cleanup_launch "${LAUNCH_PID}" "${TRACKED_PID}" "${PID_FILE}"
 	exit 1
 fi
 wait_for_backend
@@ -391,10 +439,10 @@ echo "Starting Vite frontend on ${HOT_RELOAD_URL}"
 pushd "${REPO_ROOT}/web" >/dev/null
 if command -v setsid >/dev/null 2>&1; then
 	setsid nohup env KARKINOS_DEV_BACKEND_URL="http://$(probe_host "${BACKEND_HOST}"):${BACKEND_PORT}" \
-		npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" >>"${WEB_LOG_FILE}" 2>&1 &
+		npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" --strictPort >>"${WEB_LOG_FILE}" 2>&1 &
 else
 	nohup env KARKINOS_DEV_BACKEND_URL="http://$(probe_host "${BACKEND_HOST}"):${BACKEND_PORT}" \
-		npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" >>"${WEB_LOG_FILE}" 2>&1 &
+		npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" --strictPort >>"${WEB_LOG_FILE}" 2>&1 &
 fi
 WEB_LAUNCH_PID=$!
 popd >/dev/null
@@ -403,10 +451,10 @@ sleep 1
 web_child_pid="$(pgrep -P "${WEB_LAUNCH_PID}" | tail -n 1 || true)"
 [[ -z "${web_child_pid}" ]] || TRACKED_WEB_PID="${web_child_pid}"
 if ! write_pid_record "${WEB_PID_FILE}" "${TRACKED_WEB_PID}"; then
-	cleanup_launch "${WEB_LAUNCH_PID}" "${TRACKED_WEB_PID}" "${WEB_PID_FILE}"
 	exit 1
 fi
 wait_for_frontend
+trap - EXIT INT TERM
 
 cat <<EOF
 Karkinos development environment started.
@@ -414,5 +462,5 @@ Backend:  ${PRODUCT_ENTRY_URL}
 Frontend: ${HOT_RELOAD_URL}
 
 Stable production, if loaded, remains isolated on its own port and release.
-Use ./scripts/stop_server.sh to stop Karkinos development and production services.
+Use ./scripts/stop_server.sh to stop Karkinos development services.
 EOF

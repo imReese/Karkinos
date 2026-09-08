@@ -23,6 +23,15 @@ jobs:
       source_ci_run_id: ${{ steps.ci.outputs.source_ci_run_id }}
       source_ci_run_attempt: ${{ steps.ci.outputs.source_ci_run_attempt }}
     steps:
+      - name: Require stable SemVer tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release publication requires a stable SemVer tag: vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
       - name: Checkout tagged repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -102,7 +111,7 @@ jobs:
       name: stable
     concurrency:
       group: release-image-${{ github.repository }}
-      # GitHub Actions queues this concurrency group (queue: max); cancellation stays disabled.
+      queue: max
       cancel-in-progress: false
     permissions:
       actions: read
@@ -248,11 +257,6 @@ jobs:
           test "${remote_tag_commit_sha}" = "${VERIFIED_COMMIT_SHA}"
           git merge-base --is-ancestor "${VERIFIED_COMMIT_SHA}" "origin/main"
 
-      # Candidate workflow owns docker/build-push-action. Stable promotion must not rebuild.
-      # Candidate OCI labels bind org.opencontainers.image.revision=${{ needs.verify_main_code_ci.outputs.commit_sha }}.
-      # Build and push multi-architecture image is intentionally replaced by digest promotion.
-      # --verify-immutable-image-tags-absent remains a candidate-only preflight name; stable uses digest compatibility for safe retries.
-      # docker/setup-buildx-action and platforms: linux/amd64,linux/arm64 remain candidate-only.
       # GHCR tags are not registry-enforced immutable. This workflow treats the
       # SemVer and sha tags as write-once; consumers must trust the manifest digest.
       - name: Promote immutable image identities by exact manifest digest

@@ -141,7 +141,7 @@ def workflow(path):
 
 def test_main_ci_is_full_and_main_only():
     config = workflow(".github/workflows/ci.yml")
-    assert set(config["on"]) == {"push", "workflow_dispatch"}
+    assert set(config["on"]) == {"push", "workflow_dispatch", "workflow_call"}
     assert config["on"]["push"] == {"branches": ["main"]}
     jobs = config["jobs"]
     for name in (
@@ -169,10 +169,16 @@ def test_dev_ci_is_incremental_and_dev_only():
     assert config["on"]["push"] == {"branches": ["dev"]}
     jobs = config["jobs"]
     assert "changes" in jobs
-    assert "backend" not in jobs
+    assert "backend" in jobs
     assert "browser-safety" not in jobs
     assert "repository-acceptance-audit" not in jobs
-    for name in ("frontend", "trading-safety", "dependency-audit", "docker-runtime"):
+    for name in (
+        "backend",
+        "frontend",
+        "trading-safety",
+        "dependency-audit",
+        "docker-runtime",
+    ):
         assert "if" in jobs[name]
     assert jobs["code-ci-gate"]["if"] == "always()"
     assert set(jobs["code-ci-gate"]["needs"]) == set(jobs) - {"code-ci-gate"}
@@ -210,7 +216,7 @@ def test_main_policy_template_requires_code_ci_gate():
     checks = rules["required_status_checks"]["parameters"]
     assert checks["strict_required_status_checks_policy"] is True
     assert checks["required_status_checks"] == [
-        {"context": "Code CI gate", "integration_id": 15368}
+        {"context": "Main promotion gate", "integration_id": 15368}
     ]
 
 

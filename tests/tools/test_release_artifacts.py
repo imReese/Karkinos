@@ -452,7 +452,7 @@ def test_candidate_production_install_uses_locked_hash_enforced_commands(
             [
                 "uv",
                 "export",
-                "--frozen",
+                "--locked",
                 "--extra",
                 "server",
                 "--no-dev",
