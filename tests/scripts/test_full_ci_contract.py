@@ -60,6 +60,7 @@ def _run_identity(repository, **overrides: str) -> subprocess.CompletedProcess:
     root, commits = repository
     env = {
         **os.environ,
+        "GITHUB_REPOSITORY": "imReese/Karkinos",
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_EVENT_NAME": "push",
         "GITHUB_SHA": commits["candidate"],
@@ -83,6 +84,12 @@ def _run_identity(repository, **overrides: str) -> subprocess.CompletedProcess:
     [
         {},
         {"GITHUB_EVENT_NAME": "workflow_dispatch"},
+        {"GITHUB_REF": "refs/heads/dev"},
+        {"GITHUB_REPOSITORY": "fork-owner/Karkinos"},
+        {
+            "GITHUB_REF": "refs/heads/dev",
+            "GITHUB_REPOSITORY": "fork-owner/Karkinos",
+        },
         {
             "GITHUB_REF": "refs/heads/dev",
             "GITHUB_EVENT_NAME": "workflow_dispatch",
@@ -95,7 +102,7 @@ def _run_identity(repository, **overrides: str) -> subprocess.CompletedProcess:
         },
     ],
 )
-def test_identity_accepts_exact_main_dev_dispatch_and_reusable_candidate(
+def test_identity_accepts_exact_main_temporary_dev_push_and_reusable_candidate(
     repository, overrides
 ):
     result = _run_identity(repository, **overrides)
@@ -111,7 +118,10 @@ def test_identity_accepts_exact_main_dev_dispatch_and_reusable_candidate(
         {"EXPECTED_BASE": "main"},
         {"EXPECTED_BASE": "f" * 40},
         {"EXPECTED_BASE": "diverged"},
-        {"GITHUB_REF": "refs/heads/dev"},
+        {"GITHUB_REF": "refs/heads/dev", "GITHUB_EVENT_NAME": "pull_request"},
+        {"GITHUB_REF": "refs/heads/dev", "GITHUB_EVENT_NAME": "schedule"},
+        {"GITHUB_REF": "refs/heads/dev", "PRE_PROMOTION": "true"},
+        {"GITHUB_REF": "refs/heads/dev", "GITHUB_SHA": "base"},
         {
             "GITHUB_REF": "refs/heads/feature",
             "GITHUB_EVENT_NAME": "workflow_dispatch",
@@ -210,6 +220,13 @@ def test_full_ci_checkout_and_reusable_outputs_bind_the_exact_candidate():
         "base_sha": "${{ needs.select.outputs.previous_main }}",
         "pre_promotion": "true",
     }
+
+
+def test_full_ci_temporary_dev_push_entry_preserves_main_and_read_only_permissions():
+    workflow = _workflow("ci.yml")
+    assert workflow["on"]["push"] == {"branches": ["main", "dev"]}
+    assert set(workflow["on"]) == {"push", "workflow_dispatch", "workflow_call"}
+    assert workflow["permissions"] == {"contents": "read"}
 
 
 def test_every_full_ci_uv_operation_preserves_the_lockfile():
