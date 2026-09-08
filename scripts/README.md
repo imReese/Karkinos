@@ -28,6 +28,8 @@ and `server`.
 
 入口 `service/source_main.py` 从调用仓库的 `origin` 获取远端 `main`，记录
 exact SHA，在 `$KARKINOS_HOME/source` 下的独立 checkout 安装锁定依赖并构建。
+`.python-version` 选择与 CI 相同的 Python 3.12 系列，兼容本机已有的 pyenv 补丁版本；
+uv 为运行环境选择兼容解释器，缺少时自动安装，避免随宿主机默认值升级到其他 Python 系列。
 开发目录的分支、源码、`.venv` 和 `web/dist` 不参与 main 的运行。
 已准备好的同一版本可以复用；运行中的版本不会被原地更新。
 
