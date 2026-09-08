@@ -139,10 +139,10 @@ def workflow(path):
     return yaml.load((ROOT / path).read_text(), Loader=yaml.BaseLoader)
 
 
-def test_full_ci_allows_main_and_temporary_dev_bootstrap_pushes():
+def test_main_ci_is_full_and_main_only():
     config = workflow(".github/workflows/ci.yml")
     assert set(config["on"]) == {"push", "workflow_dispatch", "workflow_call"}
-    assert config["on"]["push"] == {"branches": ["main", "dev"]}
+    assert config["on"]["push"] == {"branches": ["main"]}
     jobs = config["jobs"]
     for name in (
         "backend",
