@@ -37,6 +37,7 @@ class VerifiedSourceCI:
     commit_sha: str
     run_id: int
     run_attempt: int
+    event: str
     run_url: str
     required_job_ids: tuple[int, ...]
 
@@ -382,6 +383,7 @@ def wait_for_verified_source_ci(
                         commit_sha=commit_sha,
                         run_id=run_id,
                         run_attempt=run_attempt,
+                        event=str(run["event"]),
                         run_url=str(run["html_url"]),
                         required_job_ids=job_ids,
                     )
@@ -423,6 +425,7 @@ def _run_snapshot(run: Mapping[str, Any] | None) -> tuple[Any, ...] | None:
         run.get("status"),
         run.get("conclusion"),
         run.get("head_sha"),
+        run.get("event"),
     )
 
 
@@ -444,6 +447,7 @@ def _append_github_outputs(path: Path, result: VerifiedSourceCI) -> None:
         output.write(f"commit_sha={result.commit_sha}\n")
         output.write(f"source_ci_run_id={result.run_id}\n")
         output.write(f"source_ci_run_attempt={result.run_attempt}\n")
+        output.write(f"source_ci_event={result.event}\n")
         output.write(f"source_ci_run_url={result.run_url}\n")
         output.write(
             "source_ci_required_job_ids="

@@ -7,6 +7,7 @@ import pytest
 from tools.verify_release_source_ci import (
     GitHubActionsClient,
     SourceCIVerificationError,
+    _append_github_outputs,
     select_latest_exact_run,
     validate_workflow_identity,
     verify_required_jobs,
@@ -152,8 +153,63 @@ def test_exact_successful_main_run_and_required_jobs_are_accepted() -> None:
     assert result.commit_sha == _SHA
     assert result.run_id == 101
     assert result.run_attempt == 2
+    assert result.event == "push"
     assert result.required_job_ids == (201, 202)
     assert client.requested_run_id == 101
+
+
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
+def test_verified_event_reaches_github_outputs(event, tmp_path) -> None:
+    class EventClient(_FakeClient):
+        def workflow_runs(self, **kwargs):
+            assert kwargs["event"] == ("push", "workflow_dispatch")
+            return _runs(_run(event=event))
+
+    result = wait_for_verified_source_ci(
+        EventClient(),
+        repository=_REPOSITORY,
+        workflow_file="ci.yml",
+        workflow_name="CI",
+        workflow_path=_WORKFLOW_PATH,
+        branch="main",
+        event=("push", "workflow_dispatch"),
+        commit_sha=_SHA,
+        required_job_names=_REQUIRED_JOBS,
+        timeout_seconds=0,
+        poll_interval_seconds=1,
+    )
+    output = tmp_path / "github-output"
+    _append_github_outputs(output, result)
+    fields = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert result.event == event
+    assert fields["source_ci_event"] == event
+    assert fields["source_ci_run_id"] == "101"
+    assert fields["source_ci_run_attempt"] == "2"
+
+
+def test_event_change_during_verification_is_inconclusive() -> None:
+    class ChangingEventClient(_FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.events = iter(("push", "workflow_dispatch"))
+
+        def workflow_runs(self, **kwargs):
+            return _runs(_run(event=next(self.events)))
+
+    with pytest.raises(SourceCIVerificationError, match="changed_during_verification"):
+        wait_for_verified_source_ci(
+            ChangingEventClient(),
+            repository=_REPOSITORY,
+            workflow_file="ci.yml",
+            workflow_name="CI",
+            workflow_path=_WORKFLOW_PATH,
+            branch="main",
+            event=("push", "workflow_dispatch"),
+            commit_sha=_SHA,
+            required_job_names=_REQUIRED_JOBS,
+            timeout_seconds=0,
+            poll_interval_seconds=1,
+        )
 
 
 def test_latest_successful_job_results_allow_partial_rerun_evidence() -> None:

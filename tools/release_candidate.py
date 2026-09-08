@@ -157,6 +157,7 @@ def build_candidate_manifest(
     version: str,
     source_ci_run_id: int,
     source_ci_run_attempt: int,
+    source_ci_event: str,
     candidate_workflow_run_id: int,
     candidate_workflow_run_attempt: int,
     candidate_workflow_event: str,
@@ -170,7 +171,9 @@ def build_candidate_manifest(
     _regular_directory(repo_root, "candidate_source_root_invalid")
     if version != _version(repo_root):
         raise ValueError("candidate_version_source_mismatch")
-    if not _positive_run_identity(source_ci_run_id, source_ci_run_attempt):
+    if not _positive_run_identity(
+        source_ci_run_id, source_ci_run_attempt
+    ) or source_ci_event not in ("push", "workflow_dispatch"):
         raise ValueError("candidate_source_ci_identity_invalid")
     if not _positive_run_identity(
         candidate_workflow_run_id, candidate_workflow_run_attempt
@@ -245,7 +248,7 @@ def build_candidate_manifest(
         "source_ci": {
             "workflow": "CI",
             "workflow_path": ".github/workflows/ci.yml",
-            "event": "push",
+            "event": source_ci_event,
             "branch": "main",
             "run_id": source_ci_run_id,
             "run_attempt": source_ci_run_attempt,
@@ -305,6 +308,7 @@ def verify_candidate_manifest(
     expected_version: str | None = None,
     expected_source_ci_run_id: int | None = None,
     expected_source_ci_run_attempt: int | None = None,
+    expected_source_ci_event: str | None = None,
     expected_candidate_workflow_run_id: int | None = None,
     expected_candidate_workflow_run_attempt: int | None = None,
     expected_candidate_workflow_event: str | None = None,
@@ -320,6 +324,7 @@ def verify_candidate_manifest(
         expected_version=expected_version,
         expected_source_ci_run_id=expected_source_ci_run_id,
         expected_source_ci_run_attempt=expected_source_ci_run_attempt,
+        expected_source_ci_event=expected_source_ci_event,
         expected_candidate_workflow_run_id=expected_candidate_workflow_run_id,
         expected_candidate_workflow_run_attempt=expected_candidate_workflow_run_attempt,
         expected_candidate_workflow_event=expected_candidate_workflow_event,
@@ -389,6 +394,7 @@ def verify_candidate_manifest_metadata(
     expected_version: str | None = None,
     expected_source_ci_run_id: int | None = None,
     expected_source_ci_run_attempt: int | None = None,
+    expected_source_ci_event: str | None = None,
     expected_candidate_workflow_run_id: int | None = None,
     expected_candidate_workflow_run_attempt: int | None = None,
     expected_candidate_workflow_event: str | None = None,
@@ -416,7 +422,7 @@ def verify_candidate_manifest_metadata(
         not isinstance(source_ci, dict)
         or source_ci.get("workflow") != "CI"
         or source_ci.get("workflow_path") != ".github/workflows/ci.yml"
-        or source_ci.get("event") != "push"
+        or source_ci.get("event") not in ("push", "workflow_dispatch")
         or source_ci.get("branch") != "main"
     ):
         raise ValueError("candidate_manifest_source_ci_invalid")
@@ -433,6 +439,11 @@ def verify_candidate_manifest_metadata(
         and source_ci["run_attempt"] != expected_source_ci_run_attempt
     ):
         raise ValueError("candidate_manifest_source_ci_attempt_mismatch")
+    if (
+        expected_source_ci_event is not None
+        and source_ci["event"] != expected_source_ci_event
+    ):
+        raise ValueError("candidate_manifest_source_ci_event_mismatch")
     candidate_workflow = manifest.get("candidate_workflow")
     if (
         not isinstance(candidate_workflow, dict)
@@ -561,6 +572,9 @@ def main() -> int:
     build.add_argument("--version", required=True)
     build.add_argument("--source-ci-run-id", type=int, required=True)
     build.add_argument("--source-ci-run-attempt", type=int, required=True)
+    build.add_argument(
+        "--source-ci-event", choices=("push", "workflow_dispatch"), required=True
+    )
     build.add_argument("--candidate-workflow-run-id", type=int, required=True)
     build.add_argument("--candidate-workflow-run-attempt", type=int, required=True)
     build.add_argument(
@@ -580,6 +594,7 @@ def main() -> int:
     verify.add_argument("--version")
     verify.add_argument("--source-ci-run-id", type=int)
     verify.add_argument("--source-ci-run-attempt", type=int)
+    verify.add_argument("--source-ci-event", choices=("push", "workflow_dispatch"))
     verify.add_argument("--candidate-selection", type=Path)
     verify.add_argument("--repository")
     verify.add_argument("--image-reference")
@@ -600,6 +615,7 @@ def main() -> int:
                 version=args.version,
                 source_ci_run_id=args.source_ci_run_id,
                 source_ci_run_attempt=args.source_ci_run_attempt,
+                source_ci_event=args.source_ci_event,
                 candidate_workflow_run_id=args.candidate_workflow_run_id,
                 candidate_workflow_run_attempt=args.candidate_workflow_run_attempt,
                 candidate_workflow_event=args.candidate_workflow_event,
@@ -655,6 +671,7 @@ def main() -> int:
                 expected_version=args.version,
                 expected_source_ci_run_id=args.source_ci_run_id,
                 expected_source_ci_run_attempt=args.source_ci_run_attempt,
+                expected_source_ci_event=args.source_ci_event,
                 expected_candidate_workflow_run_id=expected_candidate_run_id,
                 expected_candidate_workflow_run_attempt=(
                     expected_candidate_run_attempt

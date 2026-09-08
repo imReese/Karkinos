@@ -94,6 +94,7 @@ def _candidate_bundle(tmp_path: Path) -> tuple[Path, dict[str, bytes]]:
         version=__version__,
         source_ci_run_id=123,
         source_ci_run_attempt=2,
+        source_ci_event="push",
         candidate_workflow_run_id=_CANDIDATE_RUN_ID,
         candidate_workflow_run_attempt=_CANDIDATE_RUN_ATTEMPT,
         candidate_workflow_event="push",

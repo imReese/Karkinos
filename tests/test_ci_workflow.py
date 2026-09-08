@@ -328,6 +328,40 @@ def test_candidate_reruns_bind_workflow_attempt_artifact_and_image_identity() ->
     )
 
 
+def test_candidate_and_release_pass_verified_source_ci_event() -> None:
+    for filename, source_job, verifier_step, consumer_job, consumer_step in (
+        (
+            "candidate.yml",
+            "source",
+            "source_ci",
+            "manifest",
+            "Build candidate manifest",
+        ),
+        (
+            "release.yml",
+            "verify_main_code_ci",
+            "ci",
+            "release",
+            "Verify candidate manifest and artifact bytes",
+        ),
+    ):
+        jobs = yaml.load(
+            Path(f".github/workflows/{filename}").read_text(), Loader=yaml.BaseLoader
+        )["jobs"]
+        assert jobs[source_job]["outputs"]["source_ci_event"] == (
+            "${{ steps." + verifier_step + ".outputs.source_ci_event }}"
+        )
+        step = next(
+            step
+            for step in jobs[consumer_job]["steps"]
+            if step.get("name") == consumer_step
+        )
+        assert step["env"]["SOURCE_CI_EVENT"] == (
+            "${{ needs." + source_job + ".outputs.source_ci_event }}"
+        )
+        assert '--source-ci-event "${SOURCE_CI_EVENT}"' in step["run"]
+
+
 def test_native_candidates_are_signed_with_github_provenance() -> None:
     workflow = Path(".github/workflows/candidate.yml").read_text()
     native_job = workflow.split("  native:\n", 1)[1].split("  image:\n", 1)[0]
