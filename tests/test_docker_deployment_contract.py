@@ -130,6 +130,15 @@ def test_docker_runtime_uses_the_python_and_uv_release_baseline() -> None:
     assert 'pip install --no-cache-dir "uv==${UV_VERSION}"' in dockerfile
 
 
+def test_compose_port_override_keeps_the_internal_listener_and_probe_on_8000() -> None:
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    assert '"${KARKINOS_PORT:-8000}:8000"' in compose
+    assert "- KARKINOS_PORT=8000" in compose
+    assert "- KARKINOS_PORT=${KARKINOS_PORT" not in compose
+    assert "http://127.0.0.1:8000/api/settings/live/status" in compose
+
+
 def test_deployment_examples_keep_scheduler_always_on_and_authority_fail_closed() -> (
     None
 ):

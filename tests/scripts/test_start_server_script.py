@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import os
+import select
+import shlex
 import signal
 import subprocess
 from pathlib import Path
+
+import pytest
 
 SCRIPT = Path("scripts/start_server.sh")
 
@@ -66,6 +70,7 @@ def _dev_repo(
     *,
     health_ready: bool = True,
     frontend_ready: bool = True,
+    backend_child: bool = False,
 ) -> tuple[Path, dict[str, str], Path]:
     repo, bin_dir = _copy_start_script(tmp_path)
     calls = tmp_path / "calls.log"
@@ -74,23 +79,41 @@ def _dev_repo(
     (repo / "web" / "package.json").write_text(
         '{"scripts":{"build":"true","dev":"true"}}\n', encoding="utf-8"
     )
+    (repo / "web" / "package-lock.json").write_text('{"lockfileVersion":3}\n')
+    (repo / "web" / ".npmrc").write_text("engine-strict=true\n")
+    spawn_child = (
+        'bash -c \'trap "" TERM; '
+        f'echo $$ > "{tmp_path / "backend-child.pid"}"; exec sleep 60'
+        "' &\n"
+        if backend_child
+        else ""
+    )
     _write_executable(
         bin_dir / "uv",
         "#!/usr/bin/env bash\n"
         "set -eu\n"
         f'printf "uv %s\\n" "$*" >>"{calls}"\n'
         'if [[ "$*" == *"python -c"* ]]; then exit 0; fi\n'
-        f"touch '{tmp_path / 'uv-launch-called'}'\n"
-        "exec sleep 60\n",
+        f"printf '%s\\n' \"$$\" >'{tmp_path / 'uv-launch-called'}'\n"
+        + spawn_child
+        + "exec sleep 60\n",
     )
     _write_executable(
         bin_dir / "npm",
         "#!/usr/bin/env bash\n"
         "set -eu\n"
         f'printf "npm %s\\n" "$*" >>"{calls}"\n'
+        'if [[ "$*" == "ci" ]]; then\n'
+        '  if [[ "${KARKINOS_TEST_NPM_CI_EXIT:-0}" != "0" ]]; then\n'
+        '    exit "${KARKINOS_TEST_NPM_CI_EXIT}"\n'
+        "  fi\n"
+        "  mkdir -p node_modules/.bin node_modules/vitest\n"
+        "  touch node_modules/.bin/vite node_modules/vitest/globals.d.ts\n"
+        "  chmod +x node_modules/.bin/vite\n"
+        "fi\n"
         'if [[ "$*" == *"run dev"* ]]; then\n'
         f'  printf "vite-backend=%s\\n" "${{KARKINOS_DEV_BACKEND_URL:-}}" >>"{calls}"\n'
-        f"  touch '{tmp_path / 'npm-dev-called'}'\n"
+        f"  printf '%s\\n' \"$$\" >'{tmp_path / 'npm-dev-called'}'\n"
         "  exec sleep 60\n"
         "fi\n"
         "exit 0\n",
@@ -449,7 +472,33 @@ def test_start_server_fresh_dev_is_source_only_on_8001_even_when_prod_is_residen
         assert "lsof -tiTCP:8001 -sTCP:LISTEN" in recorded_calls
         assert "lsof -tiTCP:5173 -sTCP:LISTEN" in recorded_calls
         assert "TCP:8000" not in recorded_calls
-        assert "uv run python -m server" in recorded_calls
+        backend_command = next(
+            shlex.split(line)
+            for line in recorded_calls.splitlines()
+            if "python -m server" in line
+        )
+        assert backend_command == [
+            "uv",
+            "run",
+            "--locked",
+            "--extra",
+            "server",
+            "python",
+            "-m",
+            "server",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8001",
+            "--reload",
+            "--reload-exclude",
+            "tests/**",
+            "--reload-exclude",
+            "web/**",
+        ]
+        assert "uv run --locked --extra server python -c" in recorded_calls
+        assert "npm ci\n" in recorded_calls
+        assert "--strictPort" in recorded_calls
         assert "vite-backend=http://127.0.0.1:8001" in recorded_calls
         assert "\t" in (repo / ".run" / "dev-server.pid").read_text()
         assert "\t" in (repo / ".run" / "web.pid").read_text()
@@ -542,3 +591,158 @@ def test_start_server_dev_cleans_up_backend_after_readiness_timeout(
     assert (tmp_path / "uv-launch-called").is_file()
     assert not (repo / ".run" / "dev-server.pid").exists()
     assert not (tmp_path / "npm-dev-called").exists()
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_host", "expected_port"),
+    [
+        ([], "127.0.0.1", "8123"),
+        (["--host", "0.0.0.0", "--port", "8124"], "0.0.0.0", "8124"),
+        (["--host=0.0.0.0", "--port=8125"], "0.0.0.0", "8125"),
+    ],
+)
+def test_start_server_dev_forwards_effective_bind_with_cli_precedence(
+    tmp_path: Path, arguments: list[str], expected_host: str, expected_port: str
+):
+    repo, env, calls = _dev_repo(tmp_path)
+    env["KARKINOS_DEV_BACKEND_PORT"] = "8123"
+    env["KARKINOS_PORT"] = "8000"
+    env["KARKINOS_HOST"] = "192.0.2.1"
+
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "dev", *arguments],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        assert result.returncode == 0, result.stderr
+        recorded_calls = calls.read_text()
+        backend_command = next(
+            shlex.split(line)
+            for line in recorded_calls.splitlines()
+            if "python -m server" in line
+        )
+        assert backend_command[8:12] == [
+            "--host",
+            expected_host,
+            "--port",
+            expected_port,
+        ]
+        assert backend_command[17:] == arguments
+        assert f"vite-backend=http://127.0.0.1:{expected_port}" in recorded_calls
+        assert f"http://127.0.0.1:{expected_port}/api/health" in recorded_calls
+    finally:
+        _cleanup_dev_processes(repo)
+
+
+@pytest.mark.parametrize(
+    "changed_input", [None, "package.json", "package-lock.json", ".npmrc"]
+)
+def test_start_server_dev_syncs_frontend_when_dependency_inputs_change(
+    tmp_path: Path, changed_input: str | None
+):
+    repo, env, calls = _dev_repo(tmp_path)
+    web = repo / "web"
+    (web / "node_modules" / ".bin").mkdir(parents=True)
+    (web / "node_modules" / "vitest").mkdir()
+    _write_executable(web / "node_modules" / ".bin" / "vite", "#!/bin/sh\n")
+    (web / "node_modules" / "vitest" / "globals.d.ts").touch()
+    stamp = web / "node_modules" / ".karkinos-dependencies"
+    inputs = [
+        str(web / name) for name in ("package.json", "package-lock.json", ".npmrc")
+    ]
+    stamp.write_bytes(subprocess.check_output(["cksum", *inputs]))
+    if changed_input:
+        target = web / changed_input
+        target.write_text(target.read_text() + "\n")
+
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "dev"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        assert result.returncode == 0, result.stderr
+        assert ("npm ci\n" in calls.read_text()) is (changed_input is not None)
+        assert "npm install" not in calls.read_text()
+        assert stamp.read_bytes() == subprocess.check_output(["cksum", *inputs])
+    finally:
+        _cleanup_dev_processes(repo)
+
+
+def test_start_server_dev_does_not_record_failed_frontend_install(tmp_path: Path):
+    repo, env, calls = _dev_repo(tmp_path)
+    env["KARKINOS_TEST_NPM_CI_EXIT"] = "17"
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "dev"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 17
+    assert "npm ci\n" in calls.read_text()
+    assert not (repo / "web/node_modules/.karkinos-dependencies").exists()
+    assert not (tmp_path / "uv-launch-called").exists()
+
+
+@pytest.mark.parametrize("backend_child", [False, True])
+def test_start_server_dev_rolls_back_both_processes_after_frontend_timeout(
+    tmp_path: Path, backend_child: bool
+):
+    repo, env, _calls = _dev_repo(
+        tmp_path, frontend_ready=False, backend_child=backend_child
+    )
+    if backend_child:
+        _write_executable(
+            tmp_path / "bin/pgrep",
+            "#!/usr/bin/env bash\n"
+            f'if [[ "$2" == "$(cat "{tmp_path / "uv-launch-called"}")" ]]; then\n'
+            f'  cat "{tmp_path / "backend-child.pid"}"\n'
+            "fi\n",
+        )
+    env["KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS"] = "1"
+    read_fd, write_fd = os.pipe()
+    try:
+        result = subprocess.run(
+            ["bash", "scripts/start_server.sh", "dev"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            pass_fds=(write_fd,),
+        )
+    finally:
+        os.close(write_fd)
+    try:
+        assert result.returncode == 1, result.stderr
+        assert "frontend readiness timed out" in result.stderr
+        for launch_file in ("uv-launch-called", "npm-dev-called"):
+            pid = int((tmp_path / launch_file).read_text())
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+        assert not (repo / ".run/dev-server.pid").exists()
+        assert not (repo / ".run/web.pid").exists()
+        assert select.select([read_fd], [], [], 1)[
+            0
+        ], "a startup child survived rollback"
+        assert os.read(read_fd, 1) == b""
+    finally:
+        os.close(read_fd)
+        _cleanup_dev_processes(repo)
+        if backend_child and (tmp_path / "backend-child.pid").is_file():
+            try:
+                os.kill(
+                    int((tmp_path / "backend-child.pid").read_text()), signal.SIGKILL
+                )
+            except ProcessLookupError:
+                pass

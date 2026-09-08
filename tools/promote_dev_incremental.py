@@ -6,7 +6,7 @@ from __future__ import annotations
 from tools import promote_dev as promotion
 from tools import verify_release_source_ci as ci
 
-_REQUIRED_JOBS = ("Code CI gate",)
+_REQUIRED_JOBS = ("Dev CI gate",)
 _WORKFLOW_FILE = "dev-ci.yml"
 _WORKFLOW_NAME = "Dev CI"
 _WORKFLOW_PATH = ".github/workflows/dev-ci.yml"

@@ -253,13 +253,13 @@ def _install_locked_production_packages(
     site_packages: Path,
     requirements: Path,
 ) -> None:
-    """Export the frozen production graph and require every artifact hash."""
+    """Validate and export the locked production graph and require every artifact hash."""
     requirements.write_text(
         _run(
             [
                 "uv",
                 "export",
-                "--frozen",
+                "--locked",
                 "--extra",
                 "server",
                 "--no-dev",

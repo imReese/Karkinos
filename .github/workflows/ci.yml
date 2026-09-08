@@ -1,10 +1,25 @@
 name: CI
 
 on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        required: true
+        type: string
+      base_sha:
+        required: true
+        type: string
+      pre_promotion:
+        type: boolean
+        default: false
+    outputs:
+      verified_sha:
+        description: Exact checkout that passed every full verification job
+        value: ${{ jobs.code-ci-gate.outputs.verified_sha }}
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: Exact current main SHA to validate
+        description: Exact main or dev checkout SHA to validate
         required: true
         type: string
       base_sha:
@@ -19,9 +34,11 @@ permissions:
 
 env:
   UV_VERSION: "0.11.28"
+  UV_LOCKED: "true"
+  CI_COMMIT_SHA: ${{ inputs.commit_sha || github.sha }}
 
 concurrency:
-  group: main-ci-${{ github.sha }}
+  group: full-ci-${{ github.workflow }}-${{ inputs.commit_sha || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -34,6 +51,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
           fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -41,25 +59,34 @@ jobs:
           python-version: "3.12.13"
       - name: Install uv
         run: python -m pip install "uv==${UV_VERSION}"
-      - name: Verify dispatched main identity
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+      - name: Verify exact checkout identity
         env:
-          EXPECTED_SHA: ${{ inputs.commit_sha }}
-          EXPECTED_BASE: ${{ inputs.base_sha }}
+          EXPECTED_SHA: ${{ env.CI_COMMIT_SHA }}
+          EXPECTED_BASE: ${{ inputs.base_sha || github.event.before }}
+          PRE_PROMOTION: ${{ inputs.pre_promotion || false }}
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF}" = "refs/heads/main"
-          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${EXPECTED_BASE}" =~ ^[0-9a-f]{40}$ ]]
-          test "${GITHUB_SHA}" = "${EXPECTED_SHA}"
-          git merge-base --is-ancestor "${EXPECTED_BASE}" "${EXPECTED_SHA}"
+          if [[ "${GITHUB_REF}" != refs/heads/main ]]; then
+            test "${GITHUB_EVENT_NAME}" = workflow_dispatch
+            test "${GITHUB_REF}" = refs/heads/dev
+            test "${PRE_PROMOTION}" = false
+          fi
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          if [[ "${PRE_PROMOTION}" != true ]]; then
+            test "${GITHUB_SHA}" = "${EXPECTED_SHA}"
+          fi
+          [[ "${EXPECTED_BASE}" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          if [[ "${EXPECTED_BASE}" != 0000000000000000000000000000000000000000 ]]; then
+            git merge-base --is-ancestor "${EXPECTED_BASE}" "${EXPECTED_SHA}"
+          fi
       - name: Install quality dependencies
-        run: uv sync --extra dev --frozen
+        run: uv sync --extra dev --locked
       - name: Check changed Python files and stable boundaries
         env:
-          BASE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.base_sha || github.event.before }}
-        run: uv run python scripts/ci/check_python_quality.py --base "${BASE_SHA}" --head "${GITHUB_SHA}"
+          BASE_SHA: ${{ inputs.base_sha || github.event.before }}
+        run: uv run python scripts/ci/check_python_quality.py --base "${BASE_SHA}" --head "${CI_COMMIT_SHA}"
 
   repository-contracts:
     name: Repository contract tests
@@ -70,6 +97,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -77,13 +105,15 @@ jobs:
       - name: Install uv
         run: python -m pip install "uv==${UV_VERSION}"
       - name: Install contract dependencies
-        run: uv sync --extra server --extra dev --frozen
+        run: uv sync --extra server --extra dev --locked
       - name: Run repository contract tests
         run: |
           uv run python -m pytest \
             tests/scripts/test_docs_health.py \
             tests/strategy/test_strategy_docs.py \
             tests/scripts/test_ci_preflight.py \
+            tests/scripts/test_full_ci_contract.py \
+            tests/scripts/test_classify_dev_changes.py \
             tests/test_ci_workflow.py \
             tests/test_ci_safety_workflow.py \
             tests/test_ci_change_aware.py \
@@ -102,6 +132,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Check public shell entrypoint syntax
         run: bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
       - name: Check documentation health
@@ -123,6 +154,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
           fetch-depth: 0
       - name: Scan git history with Gitleaks
         run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --redact --verbose
@@ -139,12 +171,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
       - run: python -m pip install "uv==${UV_VERSION}"
-      - run: uv sync --extra server --extra dev --frozen
+      - run: uv sync --extra server --extra dev --locked
       - name: Run server route tests
         run: uv run python -m pytest tests/test_server_routes.py
       - name: Run deterministic Profit Discipline smoke path
@@ -175,6 +208,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -206,12 +240,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
       - run: python -m pip install "uv==${UV_VERSION}"
-      - run: uv sync --extra server --extra dev --frozen
+      - run: uv sync --extra server --extra dev --locked
       - run: uv run python -m pytest -m trading_safety
 
   dependency-audit:
@@ -224,13 +259,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
       - run: python -m pip install "uv==${UV_VERSION}"
-      - run: uv sync --extra server --extra dev --frozen
-      - run: uv export --frozen --extra server --no-dev --no-emit-project --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
+      - run: uv sync --extra server --extra dev --locked
+      - run: uv export --locked --extra server --no-dev --no-emit-project --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
       - run: uv run --extra dev pip-audit --requirement "${RUNNER_TEMP}/requirements.txt" --progress-spinner=off
       - name: Audit npm production dependencies
         run: npm --prefix web audit --omit=dev --audit-level=moderate
@@ -245,6 +281,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Build locked runtime image
         run: docker build --tag karkinos:ci .
       - name: Start runtime with fail-closed defaults
@@ -279,6 +316,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -290,7 +328,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: python -m pip install "uv==${UV_VERSION}"
-      - run: uv sync --extra server --extra dev --frozen
+      - run: uv sync --extra server --extra dev --locked
       - run: npm ci --prefix web
       - run: npx --prefix web playwright install --with-deps chromium
       - run: npm --prefix web run build
@@ -306,12 +344,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
       - run: python -m pip install "uv==${UV_VERSION}"
-      - run: uv sync --extra server --extra dev --frozen
+      - run: uv sync --extra server --extra dev --locked
       - name: Download backend test evidence
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -348,8 +387,11 @@ jobs:
       - repository-acceptance-audit
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      verified_sha: ${{ steps.gate.outputs.verified_sha }}
     steps:
       - name: Require every main CI check to pass
+        id: gate
         env:
           RESULTS: ${{ toJSON(needs) }}
         shell: python
@@ -359,3 +401,5 @@ jobs:
           failed = [name for name, job in results.items() if not isinstance(job, dict) or job.get("result") != "success"]
           if failed:
               raise SystemExit("Main CI checks did not succeed: " + ", ".join(sorted(failed)))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("verified_sha=" + os.environ["CI_COMMIT_SHA"] + "\n")

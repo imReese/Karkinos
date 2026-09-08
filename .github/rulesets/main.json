@@ -23,7 +23,7 @@
       "parameters": {
         "required_status_checks": [
           {
-            "context": "Code CI gate",
+            "context": "Main promotion gate",
             "integration_id": 15368
           }
         ],

@@ -6,6 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+import yaml
+
 
 def test_ci_runs_backend_frontend_and_profit_discipline_smoke_path() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text()
@@ -39,9 +42,19 @@ def test_ci_pins_release_toolchains_and_github_actions() -> None:
     nvmrc = Path(".nvmrc").read_text().strip()
     npmrc = Path("web/.npmrc").read_text().strip()
 
-    action_refs = re.findall(r"uses:\s+([^\s#]+)", workflow)
+    action_refs = []
+    for path in sorted(Path(".github/workflows").glob("*.yml")):
+        config = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+        for job in config["jobs"].values():
+            for entry in (job, *job.get("steps", [])):
+                if "uses" in entry:
+                    action_refs.append(entry["uses"])
     assert action_refs
-    assert all(re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", ref) for ref in action_refs)
+    for ref in action_refs:
+        if ref.startswith("./"):
+            assert Path(ref).is_file()
+        else:
+            assert re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", ref)
     assert (
         "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1" in workflow
     )
@@ -93,106 +106,155 @@ def test_ci_repository_hygiene_blocks_runtime_and_generated_artifacts() -> None:
 
 
 def test_release_reuses_exact_successful_main_ci_before_publishing() -> None:
-    ci_workflow = Path(".github/workflows/ci.yml").read_text()
-    dev_ci_workflow = Path(".github/workflows/dev-ci.yml").read_text()
-    release_workflow = Path(".github/workflows/release.yml").read_text()
+    release = yaml.load(
+        Path(".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    candidate = yaml.load(
+        Path(".github/workflows/candidate.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    assert release["on"] == {"push": {"tags": ["v*"]}}
+    assert release["permissions"] == {"contents": "read"}
+    verifier = release["jobs"]["verify_main_code_ci"]
+    publisher = release["jobs"]["release"]
+    verifier_steps = {step["name"]: step for step in verifier["steps"]}
+    publisher_steps = {step["name"]: step for step in publisher["steps"]}
 
-    assert 'tags:\n      - "v*"' not in ci_workflow
-    assert "name: Publish release image" not in ci_workflow
-    assert "branches: [main]" in ci_workflow
-    assert "pull_request:" not in ci_workflow
-    assert "group: main-ci-${{ github.sha }}" in ci_workflow
-    assert "cancel-in-progress: false" in ci_workflow
-    assert "pull_request:" in dev_ci_workflow
-    assert "branches:\n      - dev" in dev_ci_workflow
-
-    assert 'tags:\n      - "v*"' in release_workflow
-    assert "name: Verify exact main Code CI" in release_workflow
-    assert "actions: read" in release_workflow
-    assert "python tools/verify_release_source_ci.py" in release_workflow
-    assert '--required-job "Code CI gate"' in release_workflow
-    assert '--required-job "Repository acceptance audit"' in release_workflow
-    assert 'test "${commit_sha}" = "${GITHUB_SHA}"' in release_workflow
-    assert 'tag_object_sha="$(git rev-parse "${GITHUB_REF}")"' in release_workflow
+    assert verifier["permissions"] == {"actions": "read", "contents": "read"}
+    assert verifier["steps"][0]["name"] == "Require stable SemVer tag"
+    source = verifier_steps["Verify tag source and main ancestry"]["run"]
+    assert 'test "${commit_sha}" = "${GITHUB_SHA}"' in source
+    assert 'tag_object_sha="$(git rev-parse "${GITHUB_REF}")"' in source
+    assert 'git merge-base --is-ancestor "${commit_sha}" "origin/main"' in source
+    evidence = verifier_steps["Verify exact main CI evidence"]["run"]
+    assert "python tools/verify_release_source_ci.py" in evidence
+    assert '--required-job "Code CI gate"' in evidence
+    assert '--required-job "Repository acceptance audit"' in evidence
+    assert '--commit-sha "${RELEASE_COMMIT_SHA}"' in evidence
+    assert publisher["needs"] == ["verify_main_code_ci"]
+    assert publisher["environment"] == {"name": "stable"}
+    assert publisher["concurrency"] == {
+        "group": "release-image-${{ github.repository }}",
+        "queue": "max",
+        "cancel-in-progress": "false",
+    }
+    assert publisher["permissions"] == {
+        "actions": "read",
+        "attestations": "write",
+        "contents": "write",
+        "id-token": "write",
+        "packages": "write",
+    }
+    checkout = publisher_steps["Checkout verified release commit"]
+    assert checkout["with"]["ref"] == (
+        "${{ needs.verify_main_code_ci.outputs.commit_sha }}"
+    )
+    assert checkout["with"]["persist-credentials"] == "false"
+    action_names = {
+        step["uses"].split("@", 1)[0] for step in publisher["steps"] if "uses" in step
+    }
+    assert "docker/setup-buildx-action" in action_names
+    assert "docker/login-action" in action_names
+    assert "docker/build-push-action" not in action_names
+    assert "actions/download-artifact" not in action_names
     assert (
-        'test "${remote_tag_object_sha}" = "${VERIFIED_TAG_OBJECT_SHA}"'
-        in release_workflow
+        publisher_steps["Log in to GitHub Container Registry"]["with"]["registry"]
+        == "ghcr.io"
     )
-    assert "git merge-base --is-ancestor" in release_workflow
-    assert "needs: [verify_main_code_ci]" in release_workflow
-    assert "name: Publish release image" in release_workflow
-    assert "python tools/release_image_plan.py" in release_workflow
-    assert "docker/setup-buildx-action" in release_workflow
-    assert "docker/login-action" in release_workflow
-    assert "docker/build-push-action" in release_workflow
-    assert "registry: ghcr.io" in release_workflow
-    assert "platforms: linux/amd64,linux/arm64" in release_workflow
-    assert "group: release-image-${{ github.repository }}" in release_workflow
-    assert "queue: max" in release_workflow
-    assert "cancel-in-progress: false" in release_workflow
-    assert "--verify-immutable-image-tags-absent" in release_workflow
-    assert "packages: write" in release_workflow
-    verifier_job, publisher_job = release_workflow.split("  release:\n", 1)
-    assert "packages: write" not in verifier_job
-    assert "actions: read" in publisher_job
-    assert "python tools/download_candidate.py fetch" in publisher_job
-    assert "actions/download-artifact" not in publisher_job
-    assert "--json tagName,isDraft,isPrerelease" in publisher_job
-    assert "gh release create" in publisher_job and "--draft" in publisher_job
-    assert 'gh release edit "${RELEASE_TAG}" --draft=false' in publisher_job
-    assert (
-        'if [[ "${release_is_draft}" != true ]]; then\n'
-        '                echo "Published release is immutable and missing expected asset: '
-        '${name}" >&2' in publisher_job
-    )
-    assert 'cmp -s "${expected_assets_file}" "${actual_assets_file}"' in publisher_job
-    assert publisher_job.index('if [[ "${release_is_draft}" != true ]]') < (
-        publisher_job.index('gh release upload "${RELEASE_TAG}" "${asset}"')
-    )
-    assert publisher_job.index(
-        'cmp -s "${expected_assets_file}" "${actual_assets_file}"'
-    ) < publisher_job.index('gh release edit "${RELEASE_TAG}" --draft=false')
-    assert "--json tagName,draft" not in publisher_job
-    assert '--commit-sha "${GITHUB_SHA}"' not in release_workflow
-    assert "org.opencontainers.image.revision=${{ github.sha }}" not in release_workflow
-    assert (
-        "org.opencontainers.image.revision=${{ needs.verify_main_code_ci.outputs.commit_sha }}"
-        in release_workflow
-    )
-    publisher_steps = publisher_job.split("      - name:")
-    assert all("uses: docker/build-push-action" not in step for step in publisher_steps)
-    assert (
-        release_workflow.index("Log in to GitHub Container Registry")
-        < release_workflow.index("Compute release image plan and verify immutable tags")
-        < release_workflow.index("Reverify remote tag and main ancestry")
-        < release_workflow.index(
-            "Promote immutable image identities by exact manifest digest"
-        )
-        < release_workflow.index(
-            "Publish the same native candidate bytes to the GitHub release"
-        )
-        < release_workflow.index(
-            "Advance mutable image aliases after native publication"
-        )
-    )
-
-    immutable_step = release_workflow.split(
-        "      - name: Promote immutable image identities by exact manifest digest\n",
-        1,
-    )[1].split(
-        "      - name: Publish the same native candidate bytes to the GitHub release\n",
-        1,
-    )[
-        0
+    fetch = publisher_steps["Fetch exact candidate bundle from candidate workflow"]
+    assert "python tools/download_candidate.py fetch" in fetch["run"]
+    assert '--commit-sha "${RELEASE_COMMIT_SHA}"' in fetch["run"]
+    plan = publisher_steps["Compute release image plan and verify immutable tags"][
+        "run"
     ]
-    mutable_step = release_workflow.split(
-        "      - name: Advance mutable image aliases after native publication\n",
-        1,
-    )[1].split("      - name: Summarize immutable promotion\n", 1)[0]
+    assert "python tools/release_image_plan.py" in plan
+    assert "--verify-immutable-image-tags-compatible" in plan
+    assert '--expected-image-digest "${CANDIDATE_DIGEST}"' in plan
+    reverify = publisher_steps["Reverify remote tag and main ancestry"]["run"]
+    assert 'test "${remote_tag_object_sha}" = "${VERIFIED_TAG_OBJECT_SHA}"' in reverify
+    assert 'test "${remote_tag_commit_sha}" = "${VERIFIED_COMMIT_SHA}"' in reverify
+    assert 'git merge-base --is-ancestor "${VERIFIED_COMMIT_SHA}" "origin/main"' in (
+        reverify
+    )
+    publication = publisher_steps[
+        "Publish the same native candidate bytes to the GitHub release"
+    ]["run"]
+    assert "--json tagName,isDraft,isPrerelease" in publication
+    assert "gh release create" in publication and "--draft" in publication
+    assert 'gh release edit "${RELEASE_TAG}" --draft=false' in publication
+    assert publication.index('if [[ "${release_is_draft}" != true ]]') < (
+        publication.index('gh release upload "${RELEASE_TAG}" "${asset}"')
+    )
+    assert publication.index(
+        'cmp -s "${expected_assets_file}" "${actual_assets_file}"'
+    ) < publication.index('gh release edit "${RELEASE_TAG}" --draft=false')
+
+    step_names = list(publisher_steps)
+    ordered_steps = [
+        "Log in to GitHub Container Registry",
+        "Compute release image plan and verify immutable tags",
+        "Reverify remote tag and main ancestry",
+        "Promote immutable image identities by exact manifest digest",
+        "Publish the same native candidate bytes to the GitHub release",
+        "Advance mutable image aliases after native publication",
+    ]
+    positions = [step_names.index(name) for name in ordered_steps]
+    assert positions == sorted(positions)
+    immutable_step = publisher_steps[
+        "Promote immutable image identities by exact manifest digest"
+    ]["run"]
+    mutable_step = publisher_steps[
+        "Advance mutable image aliases after native publication"
+    ]["run"]
     assert '["immutable_image_tags"]' in immutable_step
     assert '["image_tags"]' not in immutable_step
     assert '["immutable_image_tags"]' in mutable_step
     assert '["image_tags"]' in mutable_step
+
+    image_build = next(
+        step
+        for step in candidate["jobs"]["image"]["steps"]
+        if step.get("uses", "").startswith("docker/build-push-action@")
+    )
+    assert image_build["with"]["platforms"] == "linux/amd64,linux/arm64"
+    assert image_build["with"]["push"] == "true"
+    assert (
+        "org.opencontainers.image.revision=${{ needs.source.outputs.commit_sha }}"
+        in image_build["with"]["labels"].splitlines()
+    )
+
+
+@pytest.mark.parametrize(
+    ("tag", "accepted"),
+    [
+        ("v0.0.0", True),
+        ("v12.34.567", True),
+        ("v1.2.3-alpha.1", False),
+        ("v1.2.3-beta.1", False),
+        ("v1.2.3-rc.1", False),
+        ("v1.2.3+build.1", False),
+        ("v01.2.3", False),
+        ("v1.2", False),
+        ("1.2.3", False),
+        ("v1.2.3\n", False),
+    ],
+)
+def test_release_entry_accepts_only_stable_semver(tag: str, accepted: bool) -> None:
+    release = yaml.load(
+        Path(".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    step = release["jobs"]["verify_main_code_ci"]["steps"][0]
+    assert step["name"] == "Require stable SemVer tag"
+    assert step["shell"] == "bash"
+    result = subprocess.run(
+        ["bash", "-c", step["run"]],
+        env={"GITHUB_REF_NAME": tag},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (result.returncode == 0) is accepted
+    if not accepted:
+        assert "requires a stable SemVer tag" in result.stderr
 
 
 def test_candidate_and_release_fetch_with_ephemeral_basic_auth() -> None:

@@ -46,7 +46,7 @@ COPY server/ ./server/
 COPY strategy/ ./strategy/
 COPY --from=frontend-build /app/web/dist /app/web/dist
 
-RUN uv sync --frozen --extra server --no-dev && \
+RUN uv sync --locked --extra server --no-dev && \
     useradd --create-home --shell /bin/bash karkinos && \
     mkdir -p /app/data/store && \
     chown -R karkinos:karkinos /app

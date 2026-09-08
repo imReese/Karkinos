@@ -10,6 +10,7 @@ from tools import verify_release_source_ci as ci
 
 REPO = "imReese/Karkinos"
 A, B, C = (letter * 40 for letter in "abc")
+FULL = promotion.FullVerification(B, A, 900, 1)
 
 
 class FakeClient:
@@ -19,6 +20,21 @@ class FakeClient:
         self.attempt = 1
         self.writes = []
         self.skipped_job = False
+
+    def workflow_run(self, run_id):
+        assert run_id == 900
+        return {
+            "id": 900,
+            "run_attempt": 1,
+            "path": ".github/workflows/promote-dev.yml",
+            "head_branch": "main",
+            "head_sha": A,
+            "repository": {"full_name": REPO},
+            "head_repository": {"full_name": REPO},
+            "event": "schedule",
+            "status": "in_progress",
+            "conclusion": None,
+        }
 
     def ref(self, branch):
         return self.refs[branch]
@@ -61,6 +77,19 @@ class FakeClient:
         return {"total_count": 1, "workflow_runs": [run]}
 
     def workflow_run_jobs(self, *, run_id):
+        if run_id == 900:
+            return {
+                "total_count": 1,
+                "jobs": [
+                    {
+                        "id": 901,
+                        "name": "Full pre-promotion verification / Code CI gate",
+                        "head_sha": A,
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ],
+            }
         sha = B if run_id == 100 + ord("b") else C
         jobs = [
             {
@@ -131,27 +160,37 @@ def test_successful_run_with_skipped_required_job_is_rejected():
 def test_ref_update_is_exact_fast_forward_and_dispatches_main_ci_and_candidate():
     client = FakeClient()
     selected = promotion.select(client, REPO)
-    result = promotion.apply(client, REPO, selected)
+    result = promotion.apply(client, REPO, selected, full=FULL)
     assert client.refs == {"main": B, "dev": C}
     assert result["main_updated"] is True
     assert result["dispatched"] == ["ci.yml", "candidate.yml"]
     assert client.writes[0] == (
+        f"statuses/{B}",
+        {
+            "state": "success",
+            "context": "Main promotion gate",
+            "description": "Exact candidate passed the complete reusable CI",
+            "target_url": f"https://github.com/{REPO}/actions/runs/900/attempts/1",
+        },
+        "POST",
+    )
+    assert client.writes[1] == (
         "git/refs/heads/main",
         {"sha": B, "force": False},
         "PATCH",
     )
-    assert client.writes[1][1] == {
+    assert client.writes[2][1] == {
         "ref": "main",
         "inputs": {"commit_sha": B, "base_sha": A},
     }
-    assert client.writes[2][1] == {"ref": "main", "inputs": {"commit_sha": B}}
+    assert client.writes[3][1] == {"ref": "main", "inputs": {"commit_sha": B}}
 
 
 def test_retry_after_ref_write_repairs_dispatch_without_rewriting_history():
     client = FakeClient()
     selected = promotion.select(client, REPO)
     client.refs["main"] = B
-    result = promotion.apply(client, REPO, selected)
+    result = promotion.apply(client, REPO, selected, full=FULL)
     assert result["main_updated"] is False
     assert all(method == "POST" for _, _, method in client.writes)
 
@@ -169,7 +208,7 @@ def test_changed_authorization_stops_before_any_write(change):
     else:
         client.states[B] = "failure"
     with pytest.raises(ci.SourceCIVerificationError):
-        promotion.apply(client, REPO, selected)
+        promotion.apply(client, REPO, selected, full=FULL)
     assert client.writes == []
 
 
@@ -184,9 +223,10 @@ def test_server_rejection_never_falls_back_to_force_or_dispatch(monkeypatch):
 
     monkeypatch.setattr(client, "write", reject)
     with pytest.raises(ci.SourceCIVerificationError, match="403"):
-        promotion.apply(client, REPO, selected)
+        promotion.apply(client, REPO, selected, full=FULL)
     assert len(calls) == 1
-    assert calls[0][0][1]["force"] is False
+    assert calls[0][0][0] == f"statuses/{B}"
+    assert all(args[0] != "git/refs/heads/main" for args, _ in calls)
 
 
 def test_history_bound_fails_explicitly(monkeypatch):
@@ -259,16 +299,19 @@ def test_schedule_has_no_pr_permission_and_never_executes_dev():
     full_verification = config["jobs"]["full-verification"]
     assert full_verification["permissions"] == {"contents": "read"}
     assert full_verification["needs"] == ["select"]
-    candidate_checkout = next(
-        step
-        for step in full_verification["steps"]
-        if step.get("uses", "").startswith("actions/checkout@")
-    )
-    assert candidate_checkout["with"]["persist-credentials"] == "false"
-    assert candidate_checkout["with"]["ref"] == "${{ needs.select.outputs.commit_sha }}"
+    assert full_verification["uses"] == "./.github/workflows/ci.yml"
+    assert full_verification["with"] == {
+        "commit_sha": "${{ needs.select.outputs.commit_sha }}",
+        "base_sha": "${{ needs.select.outputs.previous_main }}",
+        "pre_promotion": "true",
+    }
 
     job = config["jobs"]["promote"]
-    assert job["permissions"] == {"contents": "write", "actions": "write"}
+    assert job["permissions"] == {
+        "contents": "write",
+        "actions": "write",
+        "statuses": "write",
+    }
     assert job["needs"] == ["select", "full-verification"]
     assert "needs.full-verification.result == 'success'" in job["if"]
     assert "refs/heads/main" in job["if"]
@@ -280,20 +323,118 @@ def test_schedule_has_no_pr_permission_and_never_executes_dev():
     assert checkout["with"]["persist-credentials"] == "false"
     assert checkout["with"]["ref"] == "${{ github.sha }}"
     assert all("pull-request" not in step.get("run", "") for step in job["steps"])
+    repair = config["jobs"]["repair-followup"]
+    assert repair["needs"] == ["select"]
+    assert "has_candidate == 'false'" in repair["if"]
+    assert repair["permissions"] == {"contents": "read", "actions": "write"}
+    assert repair["steps"][-1]["run"].endswith("--repair-followup")
 
 
 @pytest.mark.parametrize(
-    "method,status,accepted",
+    "defect", ["sha", "attempt", "branch", "event", "repository", "job", "changed"]
+)
+def test_full_verification_is_required_before_publishing_gate_or_moving_main(
+    monkeypatch, defect
+):
+    client = FakeClient()
+    selected = promotion.select(client, REPO)
+    full = FULL
+    original = client.workflow_run
+    if defect == "sha":
+        full = promotion.FullVerification(C, A, 900, 1)
+    elif defect == "job":
+        original_jobs = client.workflow_run_jobs
+
+        def jobs(*, run_id):
+            payload = original_jobs(run_id=run_id)
+            if run_id == 900:
+                payload["jobs"][0]["conclusion"] = "skipped"
+            return payload
+
+        monkeypatch.setattr(client, "workflow_run_jobs", jobs)
+    else:
+        calls = []
+
+        def run(run_id):
+            payload = original(run_id)
+            calls.append(run_id)
+            if defect == "attempt" or (defect == "changed" and len(calls) > 1):
+                payload["run_attempt"] = 2
+            elif defect == "branch":
+                payload["head_branch"] = "dev"
+            elif defect == "event":
+                payload["event"] = "pull_request"
+            elif defect == "repository":
+                payload["head_repository"] = {"full_name": "fork/Karkinos"}
+            return payload
+
+        monkeypatch.setattr(client, "workflow_run", run)
+    with pytest.raises(ci.SourceCIVerificationError):
+        promotion.apply(client, REPO, selected, full=full)
+    assert client.writes == []
+
+
+def test_fresh_retry_repairs_missing_dispatch_after_main_already_moved(monkeypatch):
+    client = FakeClient()
+    client.refs["main"] = B
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPO)
+    monkeypatch.setattr(promotion, "Client", lambda **_: client)
+    assert promotion.main(["--repair-followup"]) == 0
+    assert client.refs["main"] == B
+    assert [suffix for suffix, _, _ in client.writes] == [
+        "actions/workflows/ci.yml/dispatches",
+        "actions/workflows/candidate.yml/dispatches",
+    ]
+
+
+def test_running_workflow_metadata_changes_do_not_invalidate_verified_identity(
+    monkeypatch,
+):
+    client = FakeClient()
+    selected = promotion.select(client, REPO)
+    original = client.workflow_run
+    calls = []
+
+    def run(run_id):
+        calls.append(run_id)
+        payload = original(run_id)
+        payload["updated_at"] = str(len(calls))
+        payload["repository"]["pushed_at"] = str(len(calls))
+        return payload
+
+    monkeypatch.setattr(client, "workflow_run", run)
+    assert promotion.verify_full_run(client, REPO, selected, FULL).endswith(
+        "/900/attempts/1"
+    )
+    assert len(calls) == 2
+    assert client.writes == []
+
+
+def test_bare_apply_cannot_publish_a_full_gate_from_incremental_evidence(monkeypatch):
+    client = FakeClient()
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPO)
+    monkeypatch.setattr(promotion, "Client", lambda **_: client)
+    assert promotion.main(["--apply"]) == 1
+    assert client.writes == []
+
+
+@pytest.mark.parametrize(
+    "method,status,accepted,status_endpoint",
     [
-        ("PATCH", 200, True),
-        ("PATCH", 204, False),
-        ("POST", 200, True),
-        ("POST", 204, True),
-        ("POST", 202, False),
+        ("PATCH", 200, True, False),
+        ("PATCH", 204, False, False),
+        ("POST", 200, True, False),
+        ("POST", 204, True, False),
+        ("POST", 202, False, False),
+        ("POST", 201, True, True),
+        ("POST", 200, False, True),
+        ("POST", 204, False, True),
     ],
 )
 def test_http_write_handles_versioned_dispatch_responses(
-    monkeypatch, method, status, accepted
+    monkeypatch, method, status, accepted, status_endpoint
 ):
     class Response:
         def __init__(self):
@@ -324,6 +465,8 @@ def test_http_write_handles_versioned_dispatch_responses(
         if method == "PATCH"
         else "actions/workflows/ci.yml/dispatches"
     )
+    if status_endpoint:
+        suffix = f"statuses/{B}"
     if accepted:
         client.write(suffix, {}, method=method)
     else:
