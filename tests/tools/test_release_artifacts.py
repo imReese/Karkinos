@@ -33,6 +33,7 @@ from tools.release_candidate import (
     build_candidate_manifest,
     verify_candidate_image_metadata,
     verify_candidate_manifest,
+    verify_candidate_manifest_metadata,
 )
 
 _SHA = "a" * 40
@@ -916,8 +917,9 @@ def test_candidate_zip_extract_rejects_symlink_and_traversal(tmp_path: Path) -> 
         download_candidate._safe_zip_extract(symlink.getvalue(), tmp_path / "symlink")
 
 
+@pytest.mark.parametrize("source_ci_event", ["push", "workflow_dispatch"])
 def test_candidate_manifest_round_trip_binds_artifact_bytes(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, source_ci_event: str
 ) -> None:
     artifact_dir = tmp_path / "candidate-artifacts"
     artifact_dir.mkdir()
@@ -942,6 +944,7 @@ def test_candidate_manifest_round_trip_binds_artifact_bytes(
         version=_VERSION,
         source_ci_run_id=123,
         source_ci_run_attempt=2,
+        source_ci_event=source_ci_event,
         candidate_workflow_run_id=456,
         candidate_workflow_run_attempt=3,
         candidate_workflow_event="push",
@@ -959,12 +962,14 @@ def test_candidate_manifest_round_trip_binds_artifact_bytes(
         expected_version=_VERSION,
         expected_source_ci_run_id=123,
         expected_source_ci_run_attempt=2,
+        expected_source_ci_event=source_ci_event,
         expected_candidate_workflow_run_id=456,
         expected_candidate_workflow_run_attempt=3,
         expected_candidate_workflow_event="push",
         expected_image_reference="ghcr.io/imreese/karkinos",
         repo_root=Path("."),
     )
+    assert verified["source_ci"]["event"] == source_ci_event
     assert verified["image"]["digest"] == "sha256:" + "b" * 64
     assert verified["image"]["candidate_tag"].endswith("run-456-attempt-2")
     assert verified["toolchain"] == {
@@ -983,6 +988,32 @@ def test_candidate_manifest_round_trip_binds_artifact_bytes(
             expected_candidate_workflow_run_id=456,
             expected_candidate_workflow_run_attempt=4,
         )
+
+    mismatched_event = "workflow_dispatch" if source_ci_event == "push" else "push"
+    with pytest.raises(ValueError, match="candidate_manifest_source_ci_event_mismatch"):
+        verify_candidate_manifest(
+            manifest_path,
+            artifact_dir=artifact_dir,
+            expected_commit_sha=_SHA,
+            expected_source_ci_run_id=123,
+            expected_source_ci_run_attempt=2,
+            expected_source_ci_event=mismatched_event,
+        )
+    assert (
+        verify_candidate_manifest_metadata(manifest_path, expected_commit_sha=_SHA)[
+            "source_ci"
+        ]["event"]
+        == source_ci_event
+    )
+    for invalid_event in ("schedule", "pull_request", "", None, []):
+        manifest["source_ci"]["event"] = invalid_event
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with pytest.raises(ValueError, match="candidate_manifest_source_ci_invalid"):
+            verify_candidate_manifest_metadata(manifest_path, expected_commit_sha=_SHA)
+    del manifest["source_ci"]["event"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="candidate_manifest_source_ci_invalid"):
+        verify_candidate_manifest_metadata(manifest_path, expected_commit_sha=_SHA)
 
 
 def test_candidate_manifest_cli_imports_package_from_direct_script_path(
@@ -1023,6 +1054,8 @@ def test_candidate_manifest_cli_imports_package_from_direct_script_path(
             "123",
             "--source-ci-run-attempt",
             "1",
+            "--source-ci-event",
+            "workflow_dispatch",
             "--candidate-workflow-run-id",
             "456",
             "--candidate-workflow-run-attempt",
@@ -1048,7 +1081,48 @@ def test_candidate_manifest_cli_imports_package_from_direct_script_path(
     )
 
     assert result.returncode == 0, result.stderr
-    assert json.loads(output.read_text(encoding="utf-8"))["commit_sha"] == _SHA
+    manifest = json.loads(output.read_text(encoding="utf-8"))
+    assert manifest["commit_sha"] == _SHA
+    assert manifest["source_ci"]["event"] == "workflow_dispatch"
+    missing_event_command = list(result.args)
+    event_index = missing_event_command.index("--source-ci-event")
+    del missing_event_command[event_index : event_index + 2]
+    missing_event_result = subprocess.run(
+        missing_event_command,
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert missing_event_result.returncode == 2
+    assert "--source-ci-event" in missing_event_result.stderr
+    mismatch_result = subprocess.run(
+        [
+            sys.executable,
+            str(Path("tools/release_candidate.py").resolve()),
+            "verify",
+            "--manifest",
+            str(output),
+            "--artifact-dir",
+            str(artifact_dir),
+            "--commit-sha",
+            _SHA,
+            "--source-ci-run-id",
+            "123",
+            "--source-ci-run-attempt",
+            "1",
+            "--source-ci-event",
+            "push",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert mismatch_result.returncode == 1
+    assert "candidate_manifest_source_ci_event_mismatch" in mismatch_result.stderr
 
 
 def _candidate_image_metadata(reference: str, digest: str) -> dict[str, object]:

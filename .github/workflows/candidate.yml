@@ -33,6 +33,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       source_ci_run_id: ${{ steps.source_ci.outputs.source_ci_run_id }}
       source_ci_run_attempt: ${{ steps.source_ci.outputs.source_ci_run_attempt }}
+      source_ci_event: ${{ steps.source_ci.outputs.source_ci_event }}
     steps:
       - name: Checkout candidate source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -407,6 +408,7 @@ jobs:
           CANDIDATE_VERSION: ${{ needs.source.outputs.version }}
           SOURCE_CI_RUN_ID: ${{ needs.source.outputs.source_ci_run_id }}
           SOURCE_CI_RUN_ATTEMPT: ${{ needs.source.outputs.source_ci_run_attempt }}
+          SOURCE_CI_EVENT: ${{ needs.source.outputs.source_ci_event }}
           CANDIDATE_WORKFLOW_RUN_ID: ${{ github.run_id }}
           CANDIDATE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
           CANDIDATE_WORKFLOW_EVENT: ${{ github.event_name }}
@@ -422,6 +424,7 @@ jobs:
             --version "${CANDIDATE_VERSION}" \
             --source-ci-run-id "${SOURCE_CI_RUN_ID}" \
             --source-ci-run-attempt "${SOURCE_CI_RUN_ATTEMPT}" \
+            --source-ci-event "${SOURCE_CI_EVENT}" \
             --candidate-workflow-run-id "${CANDIDATE_WORKFLOW_RUN_ID}" \
             --candidate-workflow-run-attempt "${CANDIDATE_WORKFLOW_RUN_ATTEMPT}" \
             --candidate-workflow-event "${CANDIDATE_WORKFLOW_EVENT}" \
