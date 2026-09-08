@@ -23,12 +23,12 @@ def _job_names(config: dict) -> set[str]:
     }
 
 
-def test_main_ci_is_main_only_and_full() -> None:
+def test_full_ci_allows_main_and_temporary_dev_bootstrap_pushes() -> None:
     config = _load_workflow(MAIN_CI)
     triggers = config["on"]
 
     assert config["name"] == "CI"
-    assert triggers["push"]["branches"] == ["main"]
+    assert triggers["push"]["branches"] == ["main", "dev"]
     assert "pull_request" not in triggers
     assert {
         "Backend tests",

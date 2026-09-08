@@ -446,12 +446,19 @@ promotion run with no new candidate repairs missing CI/candidate dispatches
 without rewriting main or automatically rerunning failed checks.
 
 Changing `.github/rulesets/main.json` does not apply it to GitHub. The one-time,
-owner-approved migration first dispatches full `ci.yml` on the exact new dev
-commit with the current main SHA as `base_sha`. After verifying that full run,
-fast-forward main under its existing `Code CI gate` rule, then apply the new
-`Main promotion gate` rule before normal promotion resumes. Full CI permits
-explicit dispatch on dev for this purpose; its requested SHA must equal the
-actual checkout, and release-source verification still requires a main run.
+owner-approved migration temporarily enables full `ci.yml` on dev pushes to
+obtain the complete check accepted by the existing `Code CI gate` rule for
+the exact candidate commit. A successful manually dispatched run alone does
+not prove that the protected-branch rule accepts it. Verify the actual push
+run and required check before fast-forwarding main under the existing rule.
+The temporary dev entry requires a push or explicit dispatch,
+`pre_promotion=false`, and exact checkout/SHA and ancestor-base verification.
+
+After the trusted main workflow is installed, apply the distinct
+`Main promotion gate` rule and remove the temporary full-CI dev push entry.
+Validate that cleanup commit through an actual trusted promotion before
+declaring the migration complete; normal dev pushes must return to incremental
+`Dev CI` only. Release-source verification continues to require a main run.
 Never relax the rule or use a force push to bootstrap the migration.
 
 | Command | Purpose |

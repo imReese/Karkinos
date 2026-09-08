@@ -27,7 +27,8 @@ on:
         required: true
         type: string
   push:
-    branches: [main]
+    # Temporary bootstrap bridge; remove dev after trusted main promotion is installed.
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -68,7 +69,10 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF}" != refs/heads/main ]]; then
-            test "${GITHUB_EVENT_NAME}" = workflow_dispatch
+            case "${GITHUB_EVENT_NAME}" in
+              push|workflow_dispatch) ;;
+              *) exit 1 ;;
+            esac
             test "${GITHUB_REF}" = refs/heads/dev
             test "${PRE_PROMOTION}" = false
           fi
