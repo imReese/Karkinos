@@ -121,6 +121,9 @@ jobs:
             tests/scripts/test_scripts_inventory.py \
             tests/tools/test_main_promotion.py \
             tests/scripts/test_main_source_runtime.py \
+            tests/scripts/test_main_source_boundaries.py \
+            tests/scripts/test_main_source_state.py \
+            tests/scripts/test_main_control.py \
             tests/test_verify_release_source_ci.py
 
   hygiene:

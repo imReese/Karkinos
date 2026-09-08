@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -55,17 +56,25 @@ def test_unverified_checkout_is_refused_without_reset(source, change):
     assert git("status", "--porcelain") == before
 
 
-def test_data_is_separate_by_default_and_explicit_selection_is_respected(
-    tmp_path, monkeypatch
-):
+def test_stable_home_selects_original_data_and_configuration(tmp_path, monkeypatch):
     for key in tuple(os.environ):
-        if key.startswith("KARKINOS_RELEASE_") or key in {
-            "KARKINOS_ARTIFACT_FINGERPRINT",
-            "KARKINOS_DATA_DIR",
-        }:
+        if key.startswith("KARKINOS_"):
             monkeypatch.delenv(key)
+    monkeypatch.setattr(runtime.Path, "home", lambda: tmp_path / "user")
     env = runtime.runtime_environment(tmp_path)
-    assert env["KARKINOS_DATA_DIR"] == str(tmp_path / ".run/main/data")
+    home = tmp_path / "user/Library/Application Support/Karkinos"
+    assert env["KARKINOS_HOME"] == str(home)
+    assert env["KARKINOS_DATA_DIR"] == str(home / "data")
+    assert env["KARKINOS_CONFIG_PATH"] == str(home / "config/config.json")
+    assert env["KARKINOS_ENV_FILE"] == str(home / "config/.env")
+    assert env["KARKINOS_STATIC_DIR"] == str(tmp_path / "web/dist")
+    monkeypatch.setenv("KARKINOS_HOME", str(tmp_path / "isolated"))
+    isolated = runtime.runtime_environment(tmp_path)
+    assert isolated["KARKINOS_DATA_DIR"] == str(tmp_path / "isolated/data")
+    assert isolated["KARKINOS_CONFIG_PATH"] == str(
+        tmp_path / "isolated/config/config.json"
+    )
+    assert isolated["KARKINOS_ENV_FILE"] == str(tmp_path / "isolated/config/.env")
     monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path / "explicit-data"))
     assert runtime.runtime_environment(tmp_path)["KARKINOS_DATA_DIR"].endswith(
         "explicit-data"
@@ -86,14 +95,34 @@ class PortProbe:
         assert address[0] == "127.0.0.1"
 
 
-def test_locked_preparation_and_state_preflight_before_launch(tmp_path, monkeypatch):
+@pytest.fixture
+def runtime_files(tmp_path, monkeypatch):
+    home = tmp_path / "runtime"
+    (home / "config").mkdir(parents=True)
+    (home / "data").mkdir()
+    for path in ("config/config.json", "config/.env", "data/app.db", "data/meta.db"):
+        (home / path).write_text("original fixture")
+    env = {
+        "KARKINOS_HOME": str(home),
+        "KARKINOS_DATA_DIR": str(home / "data"),
+        "KARKINOS_CONFIG_PATH": str(home / "config/config.json"),
+        "KARKINOS_ENV_FILE": str(home / "config/.env"),
+    }
+    monkeypatch.setattr(runtime, "runtime_environment", lambda root: env)
+    monkeypatch.setattr(runtime, "require_runtime_idle", lambda env: None)
+    return env
+
+
+def test_locked_preparation_and_state_preflight_before_launch(
+    tmp_path, monkeypatch, runtime_files
+):
     monkeypatch.setattr(runtime, "ROOT", tmp_path)
     monkeypatch.setattr(runtime, "check_source", lambda root: "a" * 40)
-    monkeypatch.setattr(runtime.socket, "socket", PortProbe)
+    native_socket = runtime.socket.socket
     monkeypatch.setattr(
-        runtime,
-        "runtime_environment",
-        lambda root: {"KARKINOS_DATA_DIR": str(tmp_path / "data")},
+        runtime.socket,
+        "socket",
+        lambda *args: native_socket(*args) if args else PortProbe(),
     )
     commands = []
 
@@ -118,15 +147,12 @@ def test_locked_preparation_and_state_preflight_before_launch(tmp_path, monkeypa
     assert commands[-1][-3:] == ["-m", "server", "--check-state"]
 
 
-def test_preparation_failure_cannot_launch_partial_service(tmp_path, monkeypatch):
+def test_preparation_failure_cannot_launch_partial_service(
+    tmp_path, monkeypatch, runtime_files
+):
     monkeypatch.setattr(runtime, "ROOT", tmp_path)
     monkeypatch.setattr(runtime, "check_source", lambda root: "a" * 40)
     monkeypatch.setattr(runtime.socket, "socket", PortProbe)
-    monkeypatch.setattr(
-        runtime,
-        "runtime_environment",
-        lambda root: {"KARKINOS_DATA_DIR": str(tmp_path / "data")},
-    )
 
     def fail(command, **kwargs):
         raise subprocess.CalledProcessError(1, command)
@@ -162,7 +188,9 @@ def test_child_exit_stops_peer_and_binds_both_to_parent_lifetime(tmp_path, monke
         return children[len(calls) - 1]
 
     monkeypatch.setattr(runtime.subprocess, "Popen", spawn)
-    assert runtime.supervise(tmp_path, {}, 8000) == 1
+    control = Mock()
+    control.stop_requested.return_value = False
+    assert runtime.supervise(tmp_path, {}, 8000, control) == 1
     assert children[1].terminated is True
     assert calls[0][0][-4:] == ["--host", "127.0.0.1", "--port", "8000"]
     assert calls[1][0][-1] == "--research-worker"

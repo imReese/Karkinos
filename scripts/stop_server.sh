@@ -24,12 +24,13 @@ production_service_port_is_valid() {
 usage() {
 	cat <<'EOF'
 Usage:
-  ./scripts/stop_server.sh [dev|prod|all]
+  ./scripts/stop_server.sh [main|dev|prod|all]
 
 Modes:
+  main  Stop the foreground main source supervisor and its children.
   dev   Stop only exact PID-tracked source development processes (default).
   prod  Stop only the supervised immutable production service.
-  all   Stop both development and production services.
+  all   Stop both development and production services; excludes main.
 
 Unknown listeners are never signaled. Production is stopped only through the
 packaged release controller selected by the managed current pointer.
@@ -190,6 +191,9 @@ fi
 
 MODE="${1:-dev}"
 case "${MODE}" in
+main)
+	exec python3 "${SCRIPT_DIR}/service/run_main.py" --stop
+	;;
 dev)
 	STOP_DEVELOPMENT=true
 	STOP_PRODUCTION=false

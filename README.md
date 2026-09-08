@@ -41,27 +41,48 @@ guarantee.
 ## Quick start: run main without a tag
 
 Requirements: Python 3.12+, Node.js 24.x, `uv`, and Git.
-Stop a running source service before updating its checkout.
+For an existing account, use its original runtime directory. The default is
+`~/Library/Application Support/Karkinos`, with databases under `data/` and
+configuration in `config/config.json` and `config/.env`.
 
 ```bash
 git switch main
+./scripts/stop_server.sh main
 git pull --ff-only origin main
-test -e config.json || cp config.example.json config.json
-test -e .env || cp .env.example .env
 ./scripts/start_server.sh main
 ```
 
 Open `http://127.0.0.1:8000`. This builds the frontend and runs the API plus
-research worker in the foreground; Ctrl+C stops both. No tag, native release,
+research worker in the foreground; Ctrl+C or `./scripts/stop_server.sh main`
+stops both. No tag, native release,
 GitHub credentials, or Docker is required for startup. A clean main checkout
 matching the fetched origin/main is required. Startup never pulls, switches,
 resets branches, or stops an unknown listener automatically.
 
-Main-source data defaults to `.run/main/data`, separate from dev and a managed
-production installation. To use existing data, stop its current owner and
-explicitly select `KARKINOS_DATA_DIR`; startup does not copy or migrate your
-managed production layout automatically. Set `KARKINOS_MAIN_PORT` when 8000 is
-already occupied. Do not edit or pull this checkout while it is running.
+Startup requires existing `data/app.db`, `data/meta.db`, and both configuration
+files; missing files fail explicitly instead of opening an empty account.
+`KARKINOS_HOME`, `KARKINOS_DATA_DIR`, `KARKINOS_CONFIG_PATH`, and
+`KARKINOS_ENV_FILE` accept explicit absolute paths. Changing `KARKINOS_HOME`
+changes the other defaults. Files stay in place; no private data is copied.
+The frontend always uses this checkout's freshly built `web/dist`.
+
+For a genuinely new account, prepare configuration without overwriting files:
+
+```bash
+export KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
+mkdir -p "$KARKINOS_HOME/config"
+test -e "$KARKINOS_HOME/config/config.json" || cp config.example.json "$KARKINOS_HOME/config/config.json"
+test -e "$KARKINOS_HOME/config/.env" || cp .env.example "$KARKINOS_HOME/config/.env"
+./scripts/start_server.sh main --init
+```
+
+Review the configuration before `--init`; it explicitly creates a new empty
+account and requires an empty data directory. It is never an existing-account
+upgrade command. Subsequent starts use `./scripts/start_server.sh main`.
+Stop managed services with `./scripts/stop_server.sh prod` before starting main;
+loaded managed services and pending release recovery block startup. Set
+`KARKINOS_MAIN_PORT` when 8000 is already occupied. Stop main before editing or
+pulling its checkout, then start it again.
 
 For development with hot reload, use `./scripts/start_server.sh dev` and open
 `http://127.0.0.1:5173`; stop it with `./scripts/stop_server.sh dev`.

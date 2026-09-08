@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+from unittest.mock import Mock
 
 import pytest
 
@@ -16,11 +17,19 @@ def prepared_source(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "ROOT", tmp_path)
     monkeypatch.setenv("KARKINOS_MAIN_PORT", "8000")
     monkeypatch.setattr(runtime, "check_source", lambda root: "a" * 40)
-    monkeypatch.setattr(
-        runtime,
-        "runtime_environment",
-        lambda root: {"KARKINOS_DATA_DIR": str(tmp_path / "data")},
-    )
+    home = tmp_path / "runtime"
+    (home / "config").mkdir(parents=True)
+    (home / "data").mkdir()
+    for name in ("config/config.json", "config/.env", "data/app.db", "data/meta.db"):
+        (home / name).write_text("original fixture")
+    env = {
+        "KARKINOS_HOME": str(home),
+        "KARKINOS_DATA_DIR": str(home / "data"),
+        "KARKINOS_CONFIG_PATH": str(home / "config/config.json"),
+        "KARKINOS_ENV_FILE": str(home / "config/.env"),
+    }
+    monkeypatch.setattr(runtime, "runtime_environment", lambda root: env)
+    monkeypatch.setattr(runtime, "require_runtime_idle", lambda env: None)
     return tmp_path
 
 
@@ -76,7 +85,8 @@ def test_checkout_changed_during_preparation_never_launches(
     monkeypatch.setattr(runtime.subprocess, "run", run)
     monkeypatch.setattr(runtime, "supervise", unexpected)
     assert runtime.main([]) == 1
-    assert len(commands) == 4
+    assert len(commands) == 3
+    assert all("--check-state" not in command for command in commands)
 
 
 def test_spawn_failure_stops_peer_and_restores_signals(tmp_path, monkeypatch):
@@ -105,7 +115,7 @@ def test_spawn_failure_stops_peer_and_restores_signals(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runtime.subprocess, "Popen", spawn)
     with pytest.raises(OSError, match="spawn failed"):
-        runtime.supervise(tmp_path, {}, 8000)
+        runtime.supervise(tmp_path, {}, 8000, Mock())
     assert child.terminated is True
     for sig, handler in previous.items():
         assert signal.getsignal(sig) == handler
@@ -116,6 +126,8 @@ def test_spawn_failure_stops_peer_and_restores_signals(tmp_path, monkeypatch):
 
 
 def test_check_only_has_no_runtime_side_effects(prepared_source, monkeypatch):
+    before = sorted(str(path) for path in prepared_source.rglob("*"))
+
     def unexpected(*args, **kwargs):
         pytest.fail("check-only mode must not prepare or launch the runtime")
 
@@ -123,4 +135,4 @@ def test_check_only_has_no_runtime_side_effects(prepared_source, monkeypatch):
     monkeypatch.setattr(runtime.subprocess, "run", unexpected)
     monkeypatch.setattr(runtime, "supervise", unexpected)
     assert runtime.main(["--check"]) == 0
-    assert list(prepared_source.iterdir()) == []
+    assert sorted(str(path) for path in prepared_source.rglob("*")) == before

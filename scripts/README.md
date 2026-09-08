@@ -5,10 +5,12 @@ ordinary lifecycle interface:
 
 ```bash
 ./scripts/start_server.sh       # source development
+./scripts/start_server.sh main  # main source with the existing account
 ./scripts/start_server.sh prod  # selected immutable production release
 ./scripts/stop_server.sh        # stop exact tracked development services
+./scripts/stop_server.sh main   # stop the main source supervisor
 ./scripts/stop_server.sh prod   # stop the supervised production service
-./scripts/stop_server.sh all    # explicitly stop both
+./scripts/stop_server.sh all    # stop dev and prod; excludes main
 ```
 
 Everything below a subdirectory is a specialized owner/operator, maintenance,
@@ -20,39 +22,86 @@ and `server`.
 
 ```bash
 git switch main
+./scripts/stop_server.sh main
 git pull --ff-only origin main
 ./scripts/start_server.sh main
 ```
 
 `main` runs `scripts/service/run_main.py`: locked backend dependencies, npm ci,
 a fresh frontend build, provider-free persisted-state preflight, then API and
-research worker supervised in the foreground. Ctrl+C stops both; an exited
+research worker supervised in the foreground. Ctrl+C or
+`./scripts/stop_server.sh main` stops both; an exited
 child stops its peer, and inherited lifetime pipes end children if the parent
 dies abruptly. No reload, tag, packaged controller, production pointer switch,
 or automatic git update occurs. Use a clean main checkout matching the fetched
 origin/main; stop before pulling or editing that checkout.
 
 The default address is 127.0.0.1:8000 (`KARKINOS_MAIN_PORT` overrides the port).
-The default data path is `.run/main/data`; explicit `KARKINOS_DATA_DIR` is
-respected. Existing dev/managed data is not copied. An occupied port is refused,
-not killed. Managed-release environment variables are rejected rather than
-clearing a recovery guard. The `.run/main` lock prevents duplicate supervisors.
-Use `python3 scripts/service/run_main.py --check` for a read-only checkout check.
+An occupied port is refused, not killed. Main uses the original runtime files
+in place; it does not copy private data or use configuration from the checkout.
 
-The existing stop wrapper addresses background dev/prod processes, not this
-foreground mode. Stop main mode with Ctrl+C in its terminal. All financial and
-human-authority gates remain in the existing application; source startup is
-not proof of financial readiness or immutable-release provenance.
+| Environment variable | Default |
+| --- | --- |
+| `KARKINOS_HOME` | `~/Library/Application Support/Karkinos` |
+| `KARKINOS_DATA_DIR` | `$KARKINOS_HOME/data` |
+| `KARKINOS_CONFIG_PATH` | `$KARKINOS_HOME/config/config.json` |
+| `KARKINOS_ENV_FILE` | `$KARKINOS_HOME/config/.env` |
+
+All four overrides must be explicit absolute paths. The frontend always comes
+from this checkout's freshly built `web/dist`, including when an inherited
+static-directory override points elsewhere. Normal startup requires both
+`app.db` and `meta.db` under the selected data directory and both configuration
+files. Missing files produce an error instead of silently creating an empty
+account; first check that the selected paths identify the intended account.
+If a data override selects another managed installation, select its original
+`KARKINOS_HOME` as well; mismatched runtime homes are refused so their recovery
+guards remain effective.
+
+Only for a new account, prepare the configuration and explicitly initialize:
+
+```bash
+export KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
+mkdir -p "$KARKINOS_HOME/config"
+test -e "$KARKINOS_HOME/config/config.json" || cp config.example.json "$KARKINOS_HOME/config/config.json"
+test -e "$KARKINOS_HOME/config/.env" || cp .env.example "$KARKINOS_HOME/config/.env"
+./scripts/start_server.sh main --init
+```
+
+Review the configuration before running the last command. Existing files are
+not overwritten. `--init` requires an empty data directory and creates new empty
+databases; do not use it to upgrade or repair existing data. Subsequent starts
+use `./scripts/start_server.sh main` without `--init`.
+
+For its entire lifetime, main holds `$KARKINOS_HOME/.release.lock` and the
+selected data directory's `.source-runtime.lock`, as well as its checkout
+supervisor lock. Pending release or bootstrap recovery journals block startup.
+On macOS, either loaded `com.karkinos.daily-candidate` or
+`com.karkinos.research-worker` also blocks startup, even for a different runtime
+home. Stop them with `./scripts/stop_server.sh prod` before using main. Inherited
+managed-release identity variables are rejected; recovery guards are never
+cleared by source startup. When stopping a different managed installation,
+select its original `KARKINOS_HOME` for that stop command.
+
+The main stop command uses `service/main_control.py` to contact the running
+supervisor and does not require a
+clean Git checkout or an installed release controller. `all` still stops only
+dev and prod. Before updating main, run `./scripts/stop_server.sh main`, then
+`git pull --ff-only origin main`, then `./scripts/start_server.sh main`.
+Use `python3 scripts/service/run_main.py --check` for a read-only checkout check.
+All financial and human-authority gates remain in the existing application;
+source startup is not proof of financial readiness or immutable-release provenance.
 
 ## Service lifecycle
 
 | Command | Purpose | Boundary |
 | --- | --- | --- |
 | `./scripts/start_server.sh` or `./scripts/start_server.sh dev` | Start the current source tree: reloadable backend on `127.0.0.1:8001` plus Vite on `127.0.0.1:5173`. | Uses locked backend dependencies and refreshes frontend dependencies with `npm ci` when the lockfile, package metadata, or npm configuration changes. Failed startup cleans up the processes created by that attempt. |
+| `./scripts/start_server.sh main` | Build and supervise the clean main source checkout with the selected existing account. | Uses the original runtime data and configuration under lifetime locks; missing account files, loaded managed services, or pending recovery fail closed. |
 | `./scripts/start_server.sh prod` | Start the supervised API and isolated research worker from the immutable release already selected by `~/Library/Application Support/Karkinos/current`. | Never builds from the checkout, copies source into a release, updates `current`, or falls back to source execution. It requires both processes to belong to the exact current release and fails closed when either is unavailable. |
 | `./scripts/stop_server.sh` or `./scripts/stop_server.sh dev` | Stop only the exact tracked development processes. | Symmetric with the default development start and never touches production. |
+| `./scripts/stop_server.sh main` | Ask the running main supervisor to stop its API and research worker. | Uses the main control endpoint without Git checks or a release controller. |
 | `./scripts/stop_server.sh prod` | Stop only the exact supervised production service. | Uses the packaged controller and persisted service port; it does not kill unknown listeners or sweep ports. |
-| `./scripts/stop_server.sh all` | Explicitly stop both development and production. | Validates recorded PID, process command, and start identity for every target. |
+| `./scripts/stop_server.sh all` | Explicitly stop both development and production; excludes main. | Validates recorded PID, process command, and start identity for every target. |
 
 Bootstrap records the production port once in the private managed-runtime
 receipt (`.service-config.json`), defaulting to 8000. Updates, rollback,
