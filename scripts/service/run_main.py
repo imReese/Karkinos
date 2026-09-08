@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 import fcntl
 import os
 import signal
@@ -202,6 +203,23 @@ def stop_children(children) -> None:
             child.wait(timeout=5)
 
 
+def require_port_available(port: int) -> None:
+    with socket.socket() as probe:
+        address = ("127.0.0.1", port)
+        try:
+            probe.bind(address)
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                raise
+            # macOS reuse can overlap a wildcard listener; exclude it first.
+            with socket.socket() as connection:
+                connection.settimeout(0.5)
+                if connection.connect_ex(address) != errno.ECONNREFUSED:
+                    raise error
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind(address)
+
+
 def supervise(
     root: Path,
     env: dict[str, str],
@@ -343,8 +361,7 @@ def main(argv=None) -> int:
             data.mkdir(parents=True, exist_ok=True, mode=0o700)
             locks.enter_context(exclusive_lock(data / ".source-runtime.lock"))
             # Never stop an existing production service or an unknown listener.
-            with socket.socket() as probe:
-                probe.bind(("127.0.0.1", port))
+            require_port_available(port)
             logs = None
             if args.startup_fd is not None:
                 logs = locks.enter_context(MainLogs(home / "logs"))

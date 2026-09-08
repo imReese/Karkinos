@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import signal
+import socket
 import subprocess
 from unittest.mock import Mock
 
@@ -92,6 +94,54 @@ def test_checkout_changed_during_preparation_never_launches(
     assert runtime.main(["--foreground"]) == 1
     assert len(commands) == 3
     assert all("--check-state" not in command for command in commands)
+
+
+def test_closed_connection_time_wait_allows_immediate_restart():
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.settimeout(2)
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        listener.listen(1)
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
+            connection, _ = listener.accept()
+            with connection:
+                connection.settimeout(2)
+                # Server closes first, leaving this server port in TIME_WAIT.
+                connection.shutdown(socket.SHUT_WR)
+                assert client.recv(1) == b""
+                client.shutdown(socket.SHUT_WR)
+                assert connection.recv(1) == b""
+    with socket.socket() as plain_probe:
+        with pytest.raises(OSError) as error:
+            plain_probe.bind(("127.0.0.1", port))
+        assert error.value.errno == errno.EADDRINUSE
+    runtime.require_port_available(port)
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "0.0.0.0"])
+@pytest.mark.parametrize("reuse", [False, True])
+def test_restart_probe_still_refuses_live_listener_without_disturbing_it(host, reuse):
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, int(reuse))
+        listener.settimeout(2)
+        listener.bind((host, 0))
+        port = listener.getsockname()[1]
+        listener.listen(1)
+        with pytest.raises(OSError) as error:
+            runtime.require_port_available(port)
+        assert error.value.errno == errno.EADDRINUSE
+        probe_connection, _ = listener.accept()
+        with probe_connection:
+            probe_connection.settimeout(2)
+            assert probe_connection.recv(1) == b""
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
+            client.sendall(b"still running")
+            connection, _ = listener.accept()
+            with connection:
+                connection.settimeout(2)
+                connection.sendall(connection.recv(32))
+            assert client.recv(32) == b"still running"
 
 
 def test_spawn_failure_stops_peer_and_restores_signals(tmp_path, monkeypatch):
