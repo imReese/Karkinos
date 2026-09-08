@@ -7,6 +7,7 @@ import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -38,6 +39,8 @@ def source(tmp_path):
     env = {
         "CI_COMMIT_SHA": candidate,
         "CI_BASE_SHA": old,
+        "CI_PRE_PROMOTION": "false",
+        "CI_FORCE_FULL": "false",
         "GITHUB_SHA": candidate,
         "GITHUB_REPOSITORY": REPOSITORY,
         "GITHUB_REF": "refs/heads/main",
@@ -460,29 +463,37 @@ def test_gate_mode_cannot_be_missing_unknown_or_passed_as_a_top_level_hint():
 def test_cli_gate_emits_identity_only_after_success(source, monkeypatch):
     root, _, candidate, env = source
     output = root / "output"
+    summary = root / "summary.md"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     monkeypatch.setenv("CI_COMMIT_SHA", candidate)
     result = gate_results("reuse")
     result["verification-plan"]["outputs"]["commit_sha"] = candidate
     monkeypatch.setenv("RESULTS", json.dumps(result))
     assert reuse.main(["gate"]) == 0
     assert output.read_text() == "verified_sha=" + candidate + "\n"
+    expected_summary = f"CI verification: `verified`.\nCommit: `{candidate}`.\n"
+    assert summary.read_text() == expected_summary
     output.unlink()
     monkeypatch.setenv("RESULTS", "{}")
     assert reuse.main(["gate"]) == 1
     assert not output.exists()
+    assert summary.read_text() == expected_summary
 
 
 def test_gate_cannot_emit_a_different_sha_than_the_validated_plan(source, monkeypatch):
     root, old, candidate, _ = source
     output = root / "output"
+    summary = root / "summary.md"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     monkeypatch.setenv("CI_COMMIT_SHA", candidate)
     result = gate_results("full")
     result["verification-plan"]["outputs"]["commit_sha"] = old
     monkeypatch.setenv("RESULTS", json.dumps(result))
     assert reuse.main(["gate"]) == 1
     assert not output.exists()
+    assert not summary.exists()
 
 
 @pytest.mark.parametrize("missing", ["SOURCE_WORKFLOW_SHA", "POLICY_FINGERPRINT", None])
@@ -501,20 +512,30 @@ def test_verify_cli_requires_pinned_plan_and_never_falls_back(
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     output = root / "output"
+    summary = root / "summary.md"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     monkeypatch.setattr(reuse, "REPO_ROOT", root)
     monkeypatch.setattr(reuse, "_client", lambda _: client)
     if missing:
         assert reuse.main(["verify"]) == 1
         assert not output.exists()
+        assert not summary.exists()
         assert client.reads == 0
     else:
         assert reuse.main(["verify"]) == 0
         assert "evidence_rechecked=true\n" in output.read_text()
+        expected_summary = (
+            f"CI verification: `reuse`.\nCommit: `{candidate}`.\n"
+            "Evidence: [trusted promotion attempt]"
+            f"(https://github.com/{REPOSITORY}/actions/runs/900/attempts/1).\n"
+        )
+        assert summary.read_text() == expected_summary
         output.unlink()
         client.run["run_attempt"] = 2
         assert reuse.main(["verify"]) == 1
         assert not output.exists()
+        assert summary.read_text() == expected_summary
 
 
 def test_pending_dispatch_finishes_within_bounded_wait(source, monkeypatch):
@@ -530,7 +551,11 @@ def test_pending_dispatch_finishes_within_bounded_wait(source, monkeypatch):
         return result
 
     monkeypatch.setattr(client, "workflow_run", pending_once)
-    monkeypatch.setattr(reuse.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        reuse,
+        "time",
+        SimpleNamespace(monotonic=reuse.time.monotonic, sleep=sleeps.append),
+    )
     result = reuse.verify_reuse(client, reuse.validate_context(env, root), root, 900, 1)
     assert result.commit_sha == candidate
     assert sleeps == [2]

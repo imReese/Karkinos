@@ -159,6 +159,7 @@ def _run_gate(tmp_path: Path, results: dict) -> tuple[subprocess.CompletedProces
             **os.environ,
             "RESULTS": json.dumps(results),
             "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
             "CI_COMMIT_SHA": "c" * 40,
             "PYTHONPATH": str(ROOT),
         },
