@@ -41,17 +41,25 @@ usage() {
 	cat <<'EOF'
 Usage:
   ./scripts/start_server.sh [dev] [extra server args...]
+  ./scripts/start_server.sh main [--no-update|--restart|--status|--logs] [--follow]
   ./scripts/start_server.sh main [--foreground] [--init]
   ./scripts/start_server.sh prod
 
 Modes:
-  main  Run a clean main checkout with built frontend, without a tag.
+  main  Fetch main and prepare it in an isolated source directory, without a tag.
         Starts in the background; returns after service readiness.
+        The calling checkout may be on any branch and have local changes.
+        --no-update starts the prepared version without fetching or building.
+        --restart restarts the prepared version without updating it.
+        --status shows the selected version and running service.
+        --logs shows recent logs; add --follow to keep watching.
         Logs: $KARKINOS_HOME/logs/main.log (20 MiB, three archives).
         Default home: ~/Library/Application Support/Karkinos.
-        --foreground keeps logs in the terminal; Ctrl+C stops the service.
+        --foreground follows logs in the terminal; Ctrl+C stops the service.
         --init explicitly creates a new empty account; not for upgrades.
   dev   Run the current source tree with reload plus the Vite frontend.
+        Uses an isolated empty development account under .run/dev-home.
+        Set KARKINOS_DEV_HOME to select another dedicated development home.
         It defaults to backend port 8001; production uses its persisted port.
   prod  Start the supervised immutable release selected by
         ~/Library/Application Support/Karkinos/current.
@@ -77,7 +85,7 @@ main)
 	if [[ "${1:-}" == "main" ]]; then
 		shift
 	fi
-	exec python3 "${SCRIPT_DIR}/service/run_main.py" "$@"
+	exec python3 "${SCRIPT_DIR}/service/source_main.py" "$@"
 	;;
 dev)
 	if [[ "${1:-}" == "dev" ]]; then
@@ -87,6 +95,11 @@ dev)
 		# shellcheck disable=SC1091
 		source "${HOME}/.local/bin/env"
 	fi
+	exec python3 "${SCRIPT_DIR}/service/dev_environment.py" --repo "${REPO_ROOT}" -- \
+		bash "${SCRIPT_DIR}/start_server.sh" --dev-prepared "$@"
+	;;
+--dev-prepared)
+	shift
 	;;
 prod)
 	if [[ "${1:-}" == "prod" ]]; then
@@ -424,10 +437,10 @@ trap 'exit 143' TERM
 echo "Starting source development backend on ${PRODUCT_ENTRY_URL}"
 if command -v setsid >/dev/null 2>&1; then
 	setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run --locked --extra server python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+		uv run --locked --extra server "${REPO_ROOT}/.venv/bin/python" "${SCRIPT_DIR}/service/run_dev.py" "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 else
 	nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run --locked --extra server python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+		uv run --locked --extra server "${REPO_ROOT}/.venv/bin/python" "${SCRIPT_DIR}/service/run_dev.py" "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 fi
 LAUNCH_PID=$!
 TRACKED_PID="${LAUNCH_PID}"

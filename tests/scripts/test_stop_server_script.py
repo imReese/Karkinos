@@ -213,9 +213,43 @@ def test_stop_server_main_dispatches_without_git_or_release_controller(
 
     assert result.returncode == exit_status, result.stderr
     assert calls.read_text(encoding="utf-8") == (
-        f"python3 {repo}/scripts/service/run_main.py --stop\n"
+        f"python3 {repo}/scripts/service/source_main.py --stop\n"
     )
     assert (tmp_path / "launchd-loaded").is_file()
+
+
+@pytest.mark.parametrize("main_exit", [0, 7])
+@pytest.mark.parametrize("entry", ["module", "file"])
+def test_stop_all_attempts_main_dev_and_prod_even_if_main_fails(
+    tmp_path: Path, main_exit: int, entry: str
+) -> None:
+    repo, env, calls = _stop_script_repo(tmp_path, resident_service_loaded=True)
+    _write_executable(
+        tmp_path / "bin" / "python3",
+        "#!/usr/bin/env bash\n"
+        f'printf "main-control %s\\n" "$*" >>"{calls}"\n'
+        f"exit {main_exit}\n",
+    )
+    pid = 4201
+    started_at = "Sun Aug 30 22:00:00 2026"
+    command = (
+        f"{repo}/.venv/bin/python -m server --reload"
+        if entry == "module"
+        else f"/system/Python {repo}/scripts/service/run_dev.py --reload"
+    )
+    _register_process(env, pid, command=command, started_at=started_at)
+    _write_pid_record(repo / ".run/dev-server.pid", pid, started_at)
+
+    result = _run_stop(repo, env, "all")
+
+    assert result.returncode == (1 if main_exit else 0), result.stderr
+    assert not _fake_process_is_alive(env, pid)
+    assert not (tmp_path / "launchd-loaded").exists()
+    recorded = calls.read_text(encoding="utf-8")
+    assert f"main-control {repo}/scripts/service/source_main.py --stop" in recorded
+    assert "controller service-stop" in recorded
+    if main_exit:
+        assert "Karkinos all services stopped" not in result.stdout
 
 
 def test_stop_server_help_and_unknown_mode_never_mutate_services(

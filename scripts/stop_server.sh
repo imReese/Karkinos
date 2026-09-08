@@ -27,10 +27,10 @@ Usage:
   ./scripts/stop_server.sh [main|dev|prod|all]
 
 Modes:
-  main  Stop the foreground main source supervisor and its children.
+  main  Stop the managed main source supervisor and its children.
   dev   Stop only exact PID-tracked source development processes (default).
   prod  Stop only the supervised immutable production service.
-  all   Stop both development and production services; excludes main.
+  all   Stop development, main, and production services.
 
 Unknown listeners are never signaled. Production is stopped only through the
 packaged release controller selected by the managed current pointer.
@@ -96,7 +96,8 @@ command_matches_owner() {
 	local owner="$2"
 	case "${owner}" in
 	dev-backend)
-		[[ "${command}" == *"${REPO_ROOT}"* && "${command}" == *" -m server"* ]]
+		[[ "${command}" == *"${REPO_ROOT}/scripts/service/run_dev.py"* ||
+			("${command}" == *"${REPO_ROOT}"* && "${command}" == *" -m server"*) ]]
 		;;
 	dev-frontend)
 		[[ "${command}" == *"${REPO_ROOT}/web"* && "${command}" == *"vite"* ]]
@@ -192,7 +193,7 @@ fi
 MODE="${1:-dev}"
 case "${MODE}" in
 main)
-	exec python3 "${SCRIPT_DIR}/service/run_main.py" --stop
+	exec python3 "${SCRIPT_DIR}/service/source_main.py" --stop
 	;;
 dev)
 	STOP_DEVELOPMENT=true
@@ -214,6 +215,9 @@ all)
 esac
 
 EXIT_STATUS=0
+if [[ "${MODE}" == "all" ]]; then
+	python3 "${SCRIPT_DIR}/service/source_main.py" --stop || EXIT_STATUS=1
+fi
 if [[ "${STOP_DEVELOPMENT}" == true ]]; then
 	stop_tracked_process "${REPO_ROOT}/.run/web.pid" "Karkinos development frontend" "dev-frontend" || EXIT_STATUS=1
 	stop_tracked_process "${REPO_ROOT}/.run/dev-server.pid" "Karkinos development backend" "dev-backend" || EXIT_STATUS=1
