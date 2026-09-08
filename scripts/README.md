@@ -631,6 +631,27 @@ JUnit：`Repository acceptance audit` 再次验证上游完整验收检查的精
 修改必需检查来“修复”证据。候选构建和 release-source verifier 继续要求精确 main
 run 及原有命名 gate；候选 manifest schema 和分支规则不因 CI 去重而变化。
 
+例如，用 GitHub CLI 强制重跑远端当前 main，以其第一父提交作为质量检查的 diff base：
+
+```bash
+ci_repository='imReese/Karkinos'
+ci_commit_sha="$(gh api "repos/${ci_repository}/commits/main" --jq '.sha')"
+ci_base_sha="$(gh api "repos/${ci_repository}/commits/${ci_commit_sha}" --jq '.parents[0].sha')"
+gh workflow run ci.yml --repo "$ci_repository" --ref main \
+  -f commit_sha="$ci_commit_sha" \
+  -f base_sha="$ci_base_sha" \
+  -F force_full=true
+gh run list --repo "$ci_repository" --workflow ci.yml --branch main \
+  --event workflow_dispatch --commit "$ci_commit_sha" \
+  --json databaseId,attempt,createdAt,status,conclusion,url
+```
+
+使用 dispatch 返回的新 run URL；如果未返回 URL，在列表中核对 SHA 和新建时间后取
+`databaseId`，再执行 `gh run watch RUN_ID --repo imReese/Karkinos --exit-status`。
+不要把更早的同 SHA run 当成此次结果。若读取 SHA 后 main 已前进，身份检查会拒绝
+旧输入，重新读取并 dispatch 即可。`base_sha` 只影响增量 Python quality 的差异范围，
+完整测试仍执行原集合；无需改分支或填写晋级证据提示。
+
 ### 迁移、验证与成本
 
 引入复用逻辑的首次晋级由旧 main 工作流执行。它没有新 receipt 或新 dispatch 提示，
