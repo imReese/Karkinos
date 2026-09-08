@@ -128,17 +128,17 @@ def test_locked_preparation_and_state_preflight_before_launch(
 
     def run(command, **kwargs):
         commands.append(command)
-        assert kwargs["check"] is True
+        assert callable(kwargs["monitor"])
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(runtime.subprocess, "run", run)
+    monkeypatch.setattr(runtime, "run_preparation", run)
 
-    def supervise(*args):
+    def supervise(*args, **kwargs):
         assert len(commands) == 4
         return 0
 
     monkeypatch.setattr(runtime, "supervise", supervise)
-    assert runtime.main([]) == 0
+    assert runtime.main(["--foreground"]) == 0
     assert commands[:3] == [
         ["uv", "sync", "--locked", "--extra", "server"],
         ["npm", "ci", "--prefix", "web"],
@@ -152,16 +152,21 @@ def test_preparation_failure_cannot_launch_partial_service(
 ):
     monkeypatch.setattr(runtime, "ROOT", tmp_path)
     monkeypatch.setattr(runtime, "check_source", lambda root: "a" * 40)
-    monkeypatch.setattr(runtime.socket, "socket", PortProbe)
+    native_socket = runtime.socket.socket
+    monkeypatch.setattr(
+        runtime.socket,
+        "socket",
+        lambda *args: native_socket(*args) if args else PortProbe(),
+    )
 
     def fail(command, **kwargs):
         raise subprocess.CalledProcessError(1, command)
 
-    monkeypatch.setattr(runtime.subprocess, "run", fail)
+    monkeypatch.setattr(runtime, "run_preparation", fail)
     monkeypatch.setattr(
         runtime, "supervise", lambda *args: pytest.fail("must not start")
     )
-    assert runtime.main([]) == 1
+    assert runtime.main(["--foreground"]) == 1
 
 
 def test_child_exit_stops_peer_and_binds_both_to_parent_lifetime(tmp_path, monkeypatch):

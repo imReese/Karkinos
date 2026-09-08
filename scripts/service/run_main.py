@@ -1,4 +1,4 @@
-"""Run a clean main checkout in the foreground, without tags or managed releases."""
+"""Run a clean main checkout with supervised processes and persistent logs."""
 
 from __future__ import annotations
 
@@ -12,12 +12,33 @@ import stat
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 if __package__:
+    from .main_background import (
+        Startup,
+        acknowledge_interrupted_start,
+        launch_background,
+        redirect_output,
+        run_preparation,
+        startup_signals,
+    )
     from .main_control import MainControl, request_stop
+    from .main_logs import MainLogs
+    from .main_readiness import startup_ready
 else:
+    from main_background import (
+        Startup,
+        acknowledge_interrupted_start,
+        launch_background,
+        redirect_output,
+        run_preparation,
+        startup_signals,
+    )
     from main_control import MainControl, request_stop
+    from main_logs import MainLogs
+    from main_readiness import startup_ready
 
 ROOT = Path(__file__).resolve().parents[2]
 RECOVERY_JOURNALS = (".release-transaction.json", ".legacy-bootstrap-transaction.json")
@@ -181,7 +202,15 @@ def stop_children(children) -> None:
             child.wait(timeout=5)
 
 
-def supervise(root: Path, env: dict[str, str], port: int, control: MainControl) -> int:
+def supervise(
+    root: Path,
+    env: dict[str, str],
+    port: int,
+    control: MainControl,
+    *,
+    startup: Startup | None = None,
+    logs: MainLogs | None = None,
+) -> int:
     """Own both processes; inherited lifetime pipes also handle abrupt parent death."""
     children = []
     read_fd, write_fd = os.pipe()
@@ -194,6 +223,9 @@ def supervise(root: Path, env: dict[str, str], port: int, control: MainControl) 
     previous = {
         sig: signal.signal(sig, stop) for sig in (signal.SIGINT, signal.SIGTERM)
     }
+    started_at = datetime.now(timezone.utc)
+    deadline = time.monotonic() + 90
+    ready = False
     try:
         python = str(root / ".venv" / "bin" / "python")
         for args in (
@@ -210,10 +242,12 @@ def supervise(root: Path, env: dict[str, str], port: int, control: MainControl) 
                 )
             )
         print(
-            f"Main source service starting at http://127.0.0.1:{port}; Ctrl+C stops both processes.",
+            f"Main source service starting at http://127.0.0.1:{port}",
             flush=True,
         )
         while not stopping:
+            if logs is not None:
+                logs.check_running()
             if control.stop_requested():
                 stopping = True
                 continue
@@ -223,6 +257,22 @@ def supervise(root: Path, env: dict[str, str], port: int, control: MainControl) 
                     file=sys.stderr,
                 )
                 return 1
+            if startup is not None and not ready:
+                startup.check()
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("API and worker startup readiness timed out")
+                if startup_ready(port, children[1].pid, started_at):
+                    # Health is read-only; a child exit during polling still fails startup.
+                    if any(child.poll() is not None for child in children):
+                        raise ValueError("a main process exited during startup")
+                    startup.check()
+                    if control.stop_requested():
+                        return 1
+                    if logs is not None:
+                        logs.check_running()
+                    startup.confirm()
+                    ready = True
+                    print(f"Main ready at http://127.0.0.1:{port}", flush=True)
             time.sleep(0.2)
         return 0
     finally:
@@ -247,11 +297,23 @@ def main(argv=None) -> int:
         "--init", action="store_true", help="Explicitly initialize a new empty account"
     )
     parser.add_argument("--stop", action="store_true", help="Stop this main supervisor")
+    parser.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Run in the terminal for debugging; Ctrl+C stops the service",
+    )
+    parser.add_argument("--startup-fd", type=int, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    startup = Startup(args.startup_fd)
     try:
         if args.stop:
-            if args.check or args.init:
-                raise ValueError("--stop cannot be combined with --check or --init")
+            if (
+                args.check
+                or args.init
+                or args.foreground
+                or args.startup_fd is not None
+            ):
+                raise ValueError("--stop cannot be combined with startup options")
             return request_stop(ROOT / ".run/main")
         sha = check_source(ROOT)
         if args.check:
@@ -263,8 +325,16 @@ def main(argv=None) -> int:
         runtime = ROOT / ".run" / "main"
         env = runtime_environment(ROOT)
         require_runtime_files(env, initialize=args.init)
+        if not args.foreground and args.startup_fd is None:
+            command = [sys.executable, str(ROOT / "scripts/service/run_main.py")]
+            if args.init:
+                command.append("--init")
+            return launch_background(
+                command, env, Path(env["KARKINOS_HOME"]) / "logs/main.log"
+            )
         runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
         with contextlib.ExitStack() as locks:
+            locks.enter_context(startup_signals())
             locks.enter_context(exclusive_lock(runtime / "service.lock"))
             home = Path(env["KARKINOS_HOME"])
             locks.enter_context(exclusive_lock(home / ".release.lock"))
@@ -275,35 +345,55 @@ def main(argv=None) -> int:
             # Never stop an existing production service or an unknown listener.
             with socket.socket() as probe:
                 probe.bind(("127.0.0.1", port))
+            logs = None
+            if args.startup_fd is not None:
+                logs = locks.enter_context(MainLogs(home / "logs"))
+                locks.enter_context(redirect_output(logs.stream))
+            control = locks.enter_context(MainControl(runtime))
+
+            def monitor():
+                startup.check()
+                if logs is not None:
+                    logs.check_running()
+                if control.stop_requested():
+                    raise InterruptedError("main startup was stopped")
+
             print(
                 f"Starting source SHA {sha}; data directory: {env['KARKINOS_DATA_DIR']}",
                 flush=True,
             )
             print(f"Configuration: {env['KARKINOS_CONFIG_PATH']}", flush=True)
             print(f"Environment file: {env['KARKINOS_ENV_FILE']}", flush=True)
-            for command in (
-                ["uv", "sync", "--locked", "--extra", "server"],
-                ["npm", "ci", "--prefix", "web"],
-                ["npm", "--prefix", "web", "run", "build"],
-            ):
-                subprocess.run(command, cwd=ROOT, env=env, check=True)
-            if check_source(ROOT) != sha:
-                raise ValueError("main changed during preparation; nothing was started")
-            require_runtime_files(env, initialize=args.init)
-            require_runtime_idle(env)
-            subprocess.run(
-                [str(ROOT / ".venv/bin/python"), "-m", "server", "--check-state"],
-                cwd=ROOT,
-                env=env,
-                check=True,
-            )
-            if check_source(ROOT) != sha:
-                raise ValueError("main changed during preflight; nothing was started")
-            with MainControl(runtime) as control:
-                return supervise(ROOT, env, port, control)
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            with acknowledge_interrupted_start(control):
+                for command in (
+                    ["uv", "sync", "--locked", "--extra", "server"],
+                    ["npm", "ci", "--prefix", "web"],
+                    ["npm", "--prefix", "web", "run", "build"],
+                ):
+                    run_preparation(command, cwd=ROOT, env=env, monitor=monitor)
+                if check_source(ROOT) != sha:
+                    raise ValueError(
+                        "main changed during preparation; nothing was started"
+                    )
+                require_runtime_files(env, initialize=args.init)
+                require_runtime_idle(env)
+                run_preparation(
+                    [str(ROOT / ".venv/bin/python"), "-m", "server", "--check-state"],
+                    cwd=ROOT,
+                    env=env,
+                    monitor=monitor,
+                )
+                if check_source(ROOT) != sha:
+                    raise ValueError(
+                        "main changed during preflight; nothing was started"
+                    )
+            return supervise(ROOT, env, port, control, startup=startup, logs=logs)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        startup.fail(str(exc))
         print(f"Main source startup refused: {exc}", file=sys.stderr)
         return 1
+    finally:
+        startup.close()
 
 
 if __name__ == "__main__":

@@ -66,7 +66,7 @@ def test_missing_original_files_fail_before_install_or_database_write(
     (home / missing).unlink()
     run = Mock(side_effect=AssertionError("must not prepare or initialize"))
     monkeypatch.setattr(runtime.subprocess, "run", run)
-    assert runtime.main([]) == 1
+    assert runtime.main(["--foreground"]) == 1
     run.assert_not_called()
     assert not (runtime.ROOT / ".run").exists()
 
@@ -98,7 +98,7 @@ def test_pending_recovery_prevents_even_preparation(
     monkeypatch.setattr(
         runtime.subprocess, "run", Mock(side_effect=AssertionError("must not prepare"))
     )
-    assert runtime.main([]) == 1
+    assert runtime.main(["--foreground"]) == 1
     assert (home / journal).is_symlink() or (
         home / journal
     ).read_text() == "recovery must remain visible"
@@ -153,7 +153,7 @@ def test_other_checkout_or_release_owner_prevents_start(account, monkeypatch, fi
     )
     monkeypatch.setattr(runtime.subprocess, "run", run)
     with runtime.exclusive_lock(home / filename):
-        assert runtime.main([]) == 1
+        assert runtime.main(["--foreground"]) == 1
     run.assert_not_called()
 
 
@@ -197,7 +197,12 @@ def test_init_rechecks_empty_account_after_preparation(account, monkeypatch):
     from contextlib import nullcontext
 
     port = Mock()
-    monkeypatch.setattr(runtime.socket, "socket", lambda: nullcontext(port))
+    native_socket = runtime.socket.socket
+    monkeypatch.setattr(
+        runtime.socket,
+        "socket",
+        lambda *args: native_socket(*args) if args else nullcontext(port),
+    )
     commands = []
 
     def prepare(command, **kwargs):
@@ -208,8 +213,8 @@ def test_init_rechecks_empty_account_after_preparation(account, monkeypatch):
         (home / "data/app.db").write_bytes(b"account appeared during preparation")
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(runtime.subprocess, "run", prepare)
-    assert runtime.main(["--init"]) == 1
+    monkeypatch.setattr(runtime, "run_preparation", prepare)
+    assert runtime.main(["--foreground", "--init"]) == 1
     assert len(commands) == 3
     assert (home / "data/app.db").read_bytes() == b"account appeared during preparation"
     assert not (home / "data/meta.db").exists()
