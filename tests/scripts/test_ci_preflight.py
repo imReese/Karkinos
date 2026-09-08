@@ -139,7 +139,7 @@ def workflow(path):
     return yaml.load((ROOT / path).read_text(), Loader=yaml.BaseLoader)
 
 
-def test_main_ci_is_full_and_main_only():
+def test_main_ci_retains_full_verification_and_main_only_push():
     config = workflow(".github/workflows/ci.yml")
     assert set(config["on"]) == {"push", "workflow_dispatch", "workflow_call"}
     assert config["on"]["push"] == {"branches": ["main"]}
@@ -155,6 +155,7 @@ def test_main_ci_is_full_and_main_only():
     ):
         assert name in jobs
     assert set(jobs["repository-acceptance-audit"]["needs"]) == {
+        "verification-plan",
         "backend",
         "frontend",
         "trading-safety",
