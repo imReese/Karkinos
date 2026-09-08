@@ -40,7 +40,9 @@ guarantee.
 
 ## Quick start: run main without a tag
 
-Requirements: Python 3.12+, Node.js 24.x, `uv`, and Git.
+Requirements: Python 3.12, Node.js 24.x, `uv`, and Git. The repository selects
+Python 3.12 in `.python-version`, matching the CI series; existing pyenv patch
+versions remain usable, and `uv` installs a compatible interpreter when needed.
 For an existing account, use its original runtime directory. The default is
 `~/Library/Application Support/Karkinos`, with databases under `data/` and
 configuration in `config/config.json` and `config/.env`.
