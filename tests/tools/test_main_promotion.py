@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 import yaml
 
@@ -79,7 +84,7 @@ class FakeClient:
     def workflow_run_jobs(self, *, run_id):
         if run_id == 900:
             return {
-                "total_count": 1,
+                "total_count": 2,
                 "jobs": [
                     {
                         "id": 901,
@@ -87,7 +92,14 @@ class FakeClient:
                         "head_sha": A,
                         "status": "completed",
                         "conclusion": "success",
-                    }
+                    },
+                    {
+                        "id": 902,
+                        "name": f"Verified source {B}",
+                        "head_sha": A,
+                        "status": "completed",
+                        "conclusion": "success",
+                    },
                 ],
             }
         sha = B if run_id == 100 + ord("b") else C
@@ -181,7 +193,12 @@ def test_ref_update_is_exact_fast_forward_and_dispatches_main_ci_and_candidate()
     )
     assert client.writes[2][1] == {
         "ref": "main",
-        "inputs": {"commit_sha": B, "base_sha": A},
+        "inputs": {
+            "commit_sha": B,
+            "base_sha": A,
+            "promotion_run_id": "900",
+            "promotion_run_attempt": "1",
+        },
     }
     assert client.writes[3][1] == {"ref": "main", "inputs": {"commit_sha": B}}
 
@@ -282,8 +299,6 @@ def test_invalid_sha_and_wrong_workflow_ref_cannot_write(monkeypatch):
 
 
 def test_schedule_has_no_pr_permission_and_never_executes_dev():
-    from pathlib import Path
-
     config = yaml.load(
         Path(".github/workflows/promote-dev.yml").read_text(), Loader=yaml.BaseLoader
     )
@@ -297,7 +312,7 @@ def test_schedule_has_no_pr_permission_and_never_executes_dev():
     assert select_job["permissions"] == {"contents": "read", "actions": "read"}
 
     full_verification = config["jobs"]["full-verification"]
-    assert full_verification["permissions"] == {"contents": "read"}
+    assert full_verification["permissions"] == {"contents": "read", "actions": "read"}
     assert full_verification["needs"] == ["select"]
     assert full_verification["uses"] == "./.github/workflows/ci.yml"
     assert full_verification["with"] == {
@@ -306,14 +321,22 @@ def test_schedule_has_no_pr_permission_and_never_executes_dev():
         "pre_promotion": "true",
     }
 
+    receipt = config["jobs"]["verification-receipt"]
+    assert receipt["name"] == "Verified source ${{ needs.select.outputs.commit_sha }}"
+    assert receipt["needs"] == ["select", "full-verification"]
+    assert receipt["permissions"] == {}
+    assert "needs.full-verification.result == 'success'" in receipt["if"]
+    assert not any("uses" in step for step in receipt["steps"])
+
     job = config["jobs"]["promote"]
     assert job["permissions"] == {
         "contents": "write",
         "actions": "write",
         "statuses": "write",
     }
-    assert job["needs"] == ["select", "full-verification"]
+    assert job["needs"] == ["select", "full-verification", "verification-receipt"]
     assert "needs.full-verification.result == 'success'" in job["if"]
+    assert "needs.verification-receipt.result == 'success'" in job["if"]
     assert "refs/heads/main" in job["if"]
     checkout = next(
         step
@@ -328,6 +351,45 @@ def test_schedule_has_no_pr_permission_and_never_executes_dev():
     assert "has_candidate == 'false'" in repair["if"]
     assert repair["permissions"] == {"contents": "read", "actions": "write"}
     assert repair["steps"][-1]["run"].endswith("--repair-followup")
+
+
+@pytest.mark.parametrize(
+    "selected,verified,accepted",
+    [
+        (B, B, True),
+        (B, C, False),
+        (B, "", False),
+        ("", "", False),
+        ("main", "main", False),
+        ("B" * 40, "B" * 40, False),
+    ],
+)
+def test_trusted_receipt_executes_only_for_matching_full_source_sha(
+    selected, verified, accepted
+):
+    config = yaml.load(
+        Path(".github/workflows/promote-dev.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    receipt = config["jobs"]["verification-receipt"]
+    assert len(receipt["steps"]) == 1
+    step = receipt["steps"][0]
+    assert step["shell"] == "python"
+    bound_values = {
+        "${{ needs.select.outputs.commit_sha }}": selected,
+        "${{ needs.full-verification.outputs.verified_sha }}": verified,
+    }
+    assert set(step["env"].values()) == set(bound_values)
+    result = subprocess.run(
+        [sys.executable, "-c", step["run"]],
+        env={
+            **os.environ,
+            **{name: bound_values[value] for name, value in step["env"].items()},
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (result.returncode == 0) is accepted, result.stderr
 
 
 @pytest.mark.parametrize(
@@ -374,6 +436,79 @@ def test_full_verification_is_required_before_publishing_gate_or_moving_main(
     assert client.writes == []
 
 
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "missing",
+        "duplicate",
+        "wrong_candidate",
+        "wrong_workflow_sha",
+        "failure",
+        "cancelled",
+        "skipped",
+        "in_progress",
+    ],
+)
+def test_candidate_receipt_must_bind_a_unique_successful_source_before_any_write(
+    monkeypatch, defect
+):
+    client = FakeClient()
+    selected = promotion.select(client, REPO)
+    original = client.workflow_run_jobs
+
+    def jobs(*, run_id):
+        payload = original(run_id=run_id)
+        if run_id != FULL.run_id:
+            return payload
+        receipt = payload["jobs"][1]
+        if defect == "missing":
+            payload["jobs"].pop()
+        elif defect == "duplicate":
+            payload["jobs"].append({**receipt, "id": 903})
+        elif defect == "wrong_candidate":
+            receipt["name"] = f"Verified source {C}"
+        elif defect == "wrong_workflow_sha":
+            receipt["head_sha"] = B
+        elif defect == "in_progress":
+            receipt["status"] = "in_progress"
+            receipt["conclusion"] = None
+        else:
+            receipt["conclusion"] = defect
+        payload["total_count"] = len(payload["jobs"])
+        return payload
+
+    monkeypatch.setattr(client, "workflow_run_jobs", jobs)
+    with pytest.raises(ci.SourceCIVerificationError, match="required_job_"):
+        promotion.apply(client, REPO, selected, full=FULL)
+    assert client.writes == []
+
+
+@pytest.mark.parametrize("state", ["pending", "failure", "success"])
+def test_followup_hints_never_replace_existing_main_runs(monkeypatch, state):
+    client = FakeClient()
+    client.refs["main"] = B
+    original = client.workflow_runs
+
+    def runs(*, workflow_id, branch, event, commit_sha):
+        payload = original(
+            workflow_id=workflow_id, branch="dev", event=event, commit_sha=commit_sha
+        )
+        run = payload["workflow_runs"][0]
+        run["head_branch"] = branch
+        run["path"] = (
+            ".github/workflows/ci.yml"
+            if workflow_id == 7
+            else ".github/workflows/candidate.yml"
+        )
+        run["status"] = "in_progress" if state == "pending" else "completed"
+        run["conclusion"] = None if state == "pending" else state
+        return payload
+
+    monkeypatch.setattr(client, "workflow_runs", runs)
+    assert promotion.ensure_followup(client, REPO, B, A, full=FULL) == []
+    assert client.writes == []
+
+
 def test_fresh_retry_repairs_missing_dispatch_after_main_already_moved(monkeypatch):
     client = FakeClient()
     client.refs["main"] = B
@@ -386,6 +521,11 @@ def test_fresh_retry_repairs_missing_dispatch_after_main_already_moved(monkeypat
         "actions/workflows/ci.yml/dispatches",
         "actions/workflows/candidate.yml/dispatches",
     ]
+    assert client.writes[0][1] == {
+        "ref": "main",
+        "inputs": {"commit_sha": B, "base_sha": B},
+    }
+    assert client.writes[1][1] == {"ref": "main", "inputs": {"commit_sha": B}}
 
 
 def test_running_workflow_metadata_changes_do_not_invalidate_verified_identity(
