@@ -38,12 +38,12 @@ repos:
         language: system
         files: ^web/.*\.(ts|tsx|js|jsx|css|md|json)$
         require_serial: true
-      - id: documentation-health
-        name: documentation health
-        entry: python scripts/ci/check_docs_health.py
+      - id: documentation-integrity
+        name: documentation integrity
+        entry: python scripts/ci/check_docs_integrity.py
         language: system
         pass_filenames: false
-        files: ^(README\.md|docs/.*\.md|AGENTS\.md|CLAUDE\.md)$
+        files: '(^|/).*\.md$|^docs/|^scripts/ci/check_docs_integrity\.py$'
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
