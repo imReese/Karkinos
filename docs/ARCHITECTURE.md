@@ -1,383 +1,365 @@
-# Karkinos 架构
+# Karkinos Architecture
 
-本文定义 Karkinos 的**目标架构**和迁移期间必须保持的 invariant。它不是当前代码树的逐文件说明。实施顺序见 [PLAN.md](PLAN.md)，当前目录映射见 [CODEBASE.md](CODEBASE.md)。
+This document defines the durable architectural boundaries and ownership rules
+of Karkinos.
 
-## 1. 架构结论
+It is not a target package tree, runtime topology, storage plan, migration plan,
+or roadmap. Current priorities belong to [PLAN.md](PLAN.md), current repository
+reality to [ENGINEERING.md](ENGINEERING.md), and external design references to
+[REFERENCES.md](REFERENCES.md).
 
-Karkinos 的最终形态是一个 **single-node、local-first、Python-first 的量化研究与投资系统**。
+## 1. Architectural shape
 
-不采用“大而全微服务”作为目标。目标运行时由少量受监督进程组成，核心数据通过持久化契约连接：
+Karkinos is a local-first quantitative research and investing platform for the
+China market.
+
+Its core research, portfolio, simulation, and financial state can be owned and
+operated locally. External data providers, brokers, AI services, and optional
+hosted services are adapters to the system; they do not become its architectural
+center or source of authority.
+
+The canonical product flow is:
 
 ```text
-Web
- |
-API / Query / Command
- |
-+-------------------+--------------------+
-|                   |                    |
-Data/Operations     Research Worker      Execution Worker (later)
-Worker              (heavy/model work)   (broker edge only)
-|                   |                    |
-+-------------------+--------------------+
-                    |
-          Persistent contracts
+Market Data
+-> Point-in-time Dataset
+-> Feature / Alpha / Model
+-> Forecast
+-> Portfolio Target
+-> Rebalance Plan
+-> Risk
+-> Simulation / Paper / Shadow
+-> Human-supervised Execution
+-> Orders / Fills
+-> Accounting / Reconciliation
+-> Attribution
+-> Alpha Health / Retirement
 ```
 
-系统按三种职责组织，而不是按页面组织：
+These are semantic boundaries, not required processes, services, databases, or
+packages. Keep them together when that is simpler. Split implementation only
+when a real boundary or measured need justifies it.
+
+## 2. Durable invariants
+
+1. **Point-in-time before prediction.** Research may only use information that
+   was available at the modeled decision time.
+
+2. **Reproducible inputs before reproducible results.** Research and simulation
+   results bind exact data, code/model, parameters, time boundaries, and
+   financially relevant assumptions.
+
+3. **One canonical owner per concept.** A financial or research fact has one
+   calculation or write authority, even when it has many derived
+   representations.
+
+4. **Prediction is not portfolio intent.** Alpha, models, scores, and forecasts
+   express investment views; they do not directly create orders.
+
+5. **Portfolio intent is not execution.** Desired holdings, rebalance actions,
+   orders, fills, and accounting facts are distinct concepts.
+
+6. **External input is not internal authority.** Provider responses, broker
+   snapshots, caches, AI output, and UI state must be validated or reconciled
+   before becoming canonical Karkinos state.
+
+7. **Financial semantics are shared where they matter.** Simulation, paper,
+   shadow, and future live workflows must not independently redefine market
+   rules, fees, orders, fills, or accounting.
+
+8. **Uncertainty blocks the affected action.** Missing or stale evidence may
+   prevent a dependent decision or execution without unnecessarily disabling
+   unrelated parts of the product.
+
+9. **Failed attempts do not destroy valid state.** A failed refresh,
+   calculation, or publication must not silently replace the last known valid
+   result.
+
+10. **Capital authority never emerges implicitly.** Research, AI, UI actions,
+    providers, or strategy code cannot grant themselves permission to trade
+    real capital.
+
+## 3. Market data and point-in-time datasets
+
+External providers produce observations, not canonical research datasets.
+
+Core market and fundamental data must preserve enough identity and time
+information to answer:
 
 ```text
-Research & Data Plane
-Financial / Trading Control Plane
-Operations Plane
+What happened?
+When did it happen?
+When could the strategy legally know it?
+When did Karkinos obtain it?
+Where did it come from?
+Which revision is this?
 ```
 
-## 2. 核心原则
+This normally requires explicit market/event time, availability time, capture
+time, source, and revision identity.
 
-1. **Point-in-time before prediction.** 没有正确时间语义的数据不能进入 Alpha 研究。
-2. **Immutable inputs before reproducibility.** 研究和发布都绑定内容身份，不依赖“当前目录里刚好是什么”。
-3. **Persisted facts before authority.** Provider、模型、缓存和 UI 都不能直接成为账户或交易事实。
-4. **One concept, one owner.** 一个金融概念只能有一个 canonical 计算所有者。
-5. **Fail closed on the affected action.** 不确定性阻断受影响动作，不扩大成无关功能的全局故障。
-6. **Last-good survives failed attempts.** 最新失败不能摧毁上一份已验证、仍可重放的状态。
-7. **Replay over repair-by-guessing.** 生产事故和研究结果都从持久化输入重放，不靠手工改 marker。
-8. **Research/live semantic parity where it matters.** 成本、成交、T+1、lot、停牌和风险语义不能各写一套。
-9. **Human-supervised capital.** 权限不能自行扩张。
-10. **Optimize only measured bottlenecks.** 先修 ownership/语义，再谈 Rust 或分布式系统。
+Normalization and validation turn provider observations into Karkinos data.
+Research consumes published point-in-time datasets rather than depending on
+whatever a provider currently returns.
 
-## 3. 三个 Plane
+A dataset used by an experiment has a stable identity. Corrections or revisions
+produce a distinguishable dataset state rather than silently changing the
+historical input of an existing result.
 
-### 3.1 Research & Data Plane
+China-market semantics such as trading calendars, historical universe
+membership, corporate actions, suspension, price limits, lot rules, and data
+availability belong to this domain rather than being reconstructed ad hoc by
+individual strategies.
 
-负责可批量分析、可重放、point-in-time 的研究材料：
+## 4. Research and forecasts
+
+Research owns the production and evaluation of investment views.
+
+Its conceptual flow is:
 
 ```text
-market calendar
-historical universe
-OHLCV / 1d / later 1m
-adjustment factors
-limit / suspension state
-turnover / liquidity / market cap
-industry / membership
-fundamentals
-features
-alpha outputs
-model forecasts
-experiment artifacts
+Dataset
+-> Features
+-> Alpha / Model
+-> Forecast
+-> Evaluation
 ```
 
-它回答“当时能知道什么”和“这个研究输入到底是什么”，不拥有账户权限。
+An Alpha or model may produce scores, expected returns, probabilities,
+rankings, confidence, or similar predictive outputs.
 
-### 3.2 Financial / Trading Control Plane
+The canonical output consumed by portfolio construction is a forecast or
+equivalent investment view, not a BUY/SELL command.
 
-负责小而强一致、需要事务和审计的事实：
+A reproducible experiment must identify the inputs and assumptions needed to
+reconstruct its result. Exact representation is an implementation choice; the
+architectural requirement is that meaningful research results are not detached
+from their provenance.
+
+Canonical metrics, backtest results, and financial calculations are produced by
+deterministic application code. AI may propose hypotheses, generate research
+candidates, explain results, or critique experiments, but AI output is not
+canonical quantitative evidence by itself.
+
+## 5. Portfolio construction and rebalance planning
+
+Portfolio construction owns the transformation from investment views into
+desired capital allocation.
 
 ```text
-canonical quote / close
-ledger / lots / cash
-valuation publication
-fees
-Account Truth
-portfolio/account state
-risk decisions
-orders / fills / OMS
-reconciliation
-authority / runtime controls
-audit events
+Forecasts
++ portfolio state
++ constraints
++ risk / exposure information
++ expected trading costs
+-> Portfolio Target
 ```
 
-这里的事实可以引用 Research/Data Plane 的 immutable identity，但不能依赖可变文件路径或 provider 当前返回值。
+A `Portfolio Target` describes desired portfolio state. It does not describe
+how an order should be submitted.
 
-### 3.3 Operations Plane
+Rebalance planning compares desired state with authoritative current state and
+produces the intended portfolio changes required to move toward that target.
 
-负责系统运行，而不是金融计算：
+The portfolio layer owns allocation decisions and trade-offs between expected
+return, risk, diversification, turnover, cost, liquidity, and other portfolio
+constraints.
 
-```text
-durable jobs
-schedules
-leases / heartbeats
-retry / backoff
-last success / latest attempt
-worker readiness
-incidents
-release identity
-activation / rollback state
-```
+Simple portfolio methods must remain possible without requiring optimizer or
+framework machinery.
 
-后台工作必须有持久 run identity；API 进程不再是匿名 `asyncio.create_task()` 的总宿主。
+## 6. Risk
 
-## 4. 目标运行时拓扑
+Risk is a policy boundary around portfolio intent and capital-affecting actions.
 
-### API process
+Risk may constrain, reduce, or block proposed portfolio changes. It may also
+prevent an execution when required evidence, freshness, authority, or financial
+constraints are not satisfied.
 
-只负责：
+Risk does not generate Alpha, own portfolio accounting, or become an alternative
+execution engine.
 
-- provider-free queries；
-- 显式 commands；
-- request validation / response projection；
-- WebSocket/status；
-- 将异步工作写入 durable job queue。
+Financial risk rules and operational readiness are related but distinct.
+Implementation should not mix infrastructure health with financial policy
+merely because both can block an action.
 
-API 不应承担长期 provider polling、全市场 ingestion、模型调用或重研究任务。
+## 7. Simulation and execution
 
-### Data / Operations worker
+Simulation and execution consume portfolio intent; they do not decide the
+investment thesis.
 
-负责：
-
-- scheduler；
-- market calendar / universe / quote / bar ingestion；
-- dataset publication；
-- provider retry/backoff；
-- provider-free scheduled operational jobs。
-
-单个 provider timeout 或 ingestion crash 最多让该 worker/domain degraded，不能拖垮 API。
-
-### Research worker
-
-负责：
-
-- feature/Alpha/Model experiments；
-- OOS / sweep / diagnostics；
-- AI-assisted hypothesis/critique；
-- content-addressed artifact publication。
-
-Research worker 没有账户、资本或 broker authority。
-
-### Execution worker
-
-真实 broker 接入前不存在生产写权限。未来启用时，它是独立、default-off 的 adapter boundary，只消费已经通过 account/risk/operator gates 的 exact order identity。
-
-## 5. 存储拓扑
-
-目标数据目录：
+The durable financial lifecycle is:
 
 ```text
-data/
-  control/
-    app.db
-  catalog/
-    catalog.db
-  lake/
-    market/daily/...
-    market/1m/...
-    universe/...
-    fundamentals/...
-    features/...
-  artifacts/
-    experiments/<content-id>/
-    models/<content-id>/
-    reports/<content-id>/
-```
-
-### `app.db`
-
-Financial/Trading Control + Operations 的 authoritative transactional facts。继续使用 SQLite/WAL、唯一约束、事务、append-oriented audit。
-
-### `catalog.db`
-
-只保存 dataset/artifact manifest、revision lineage、schema、quality report、publication pointer 和小型索引。可从 immutable artifacts 校验，不保存大规模 bars。
-
-### `lake/`
-
-Parquet/Arrow 是未来大规模市场与研究数据的 primary bulk representation。DuckDB 是 query engine，Polars/NumPy 是 compute engine；它们都不是 financial authority。
-
-当前 `meta.db + SQLite market_bars + Parquet mirror` 通过迁移逐步演进，不做一次性格式重写。
-
-首个日频 catalog adapter 是 `data.dataset_catalog`。当前兼容目录仍使用原有 `app.db`；新增 `catalog/catalog.db` 和 `lake/daily/<content-digest>.parquet`。不自动迁移现有行情数据库或重写其历史。
-
-## 6. 统一时间模型
-
-任何外部金融数据至少区分：
-
-```text
-event_time / market_time
-available_at
-captured_at
-```
-
-必要时再记录：
-
-```text
-session_date
-source_revision
-published_at
-```
-
-语义：
-
-- `event_time`：事实属于市场的哪个时点；
-- `available_at`：研究者最早何时可以合法知道；
-- `captured_at`：Karkinos 何时取得；
-- `published_at`：Karkinos 何时把它提升为某个 canonical/dataset generation。
-
-`PRE_CLOSE`、财报期末、公告日、复权和 universe membership 都必须按这套模型处理，禁止用 request date 猜事实归属。
-
-## 7. Dataset publication contract
-
-Dataset 采用 candidate -> validate -> publish：
-
-```text
-raw/staged input
--> normalize
--> validate PIT / identity / schema / quality
--> write immutable partition/artifact
--> compute content digest
--> publish manifest
-```
-
-任何 correction/revision 产生新的 generation；不能静默改写已被 experiment 引用的 bytes。
-
-首版 daily bundle 同时绑定逐 session 的 typed universe membership 与完整 bars，校验上市/退市区间、停牌一致性、OHLC、三种时间及 availability evidence ref。证据来源由输入提供，manifest 明确标记 `provider_coverage_verified=false`；结构校验通过不足以打开 Alpha gate。该版本拒绝重复 instrument/session 和未知字段，修订发布为独立 DatasetRef，旧引用读取原始字节。
-
-首版不在单个 generation 内重建多版本历史。`read_as_of` 联合检查 universe/daily 的可用时间；只要该 generation 有尚未可用的记录就拒绝，调用方必须绑定合适的更早 generation。采集时间允许晚于历史 cutoff，但不能晚于 publication 时间。
-
-最小 `DatasetRef` 必须能绑定：
-
-- dataset kind / schema version；
-- universe identity；
-- time range / frequency；
-- source revisions；
-- PIT policy；
-- row/partition counts；
-- content digest；
-- quality report；
-- created/published time。
-
-## 8. Research domain
-
-研究链路是一等系统，不挂在 HTTP route 或 AI workflow 下：
-
-```text
-DatasetRef
--> FeatureSet
--> AlphaSpec / ModelSpec
--> ExperimentRun
--> ForecastSet
--> Diagnostics
-```
-
-核心对象：
-
-- `FeatureSpec` / `FeatureSetRef`
-- `AlphaSpec`
-- `ModelSpec`
-- `ExperimentRun`
-- `ForecastSet`
-- `ResearchArtifactRef`
-
-每个 experiment 保存 exact input refs、代码/release identity、参数、seed、结果和 artifacts。
-
-`strategy/` 逐步变为 compatibility layer。最终 “Strategy/Deployment” 是 Alpha/Model + Portfolio Policy + Execution Policy 的组合，不是一个直接发 BUY/SELL 的黑盒。
-
-AI 只通过 Research ports 提出 `AlphaSpec`、实验配置或 critique；它不计算 canonical metrics，也不直接进入 Order path。
-
-## 9. Portfolio domain
-
-Alpha/Model 输出先形成 Forecast，再进入组合构建：
-
-```text
-ForecastSet
--> Alpha ensemble
--> risk/exposure model
--> cost model
--> PortfolioTarget
--> RebalancePlan
-```
-
-核心输出是 target weights + constraints + reasons，而不是直接订单。
-
-长期保留简单 baseline（Top-N equal weight、rank weight），复杂 optimizer 必须在同一 OOS/after-cost framework 中证明增量价值。
-
-## 10. Simulation / Execution / Accounting
-
-研究计算允许向量化；**成交与账户状态**采用统一事件/时间语义。
-
-```text
-RebalancePlan
--> OrderIntent
--> PreTradeRisk
+Rebalance Plan
+-> Risk-approved Intent
 -> Order
--> ExecutionAdapter
 -> Fill
 -> Accounting
--> Reconciliation
 ```
 
-Backtest、paper、shadow、live 的区别主要是 clock/data/execution adapter，不是四套金融规则。
+Backtest, simulation, paper, shadow, and future live operation may use different
+clocks, data sources, matching models, or external adapters, but they should
+share the financial concepts that describe orders, fills, fees, positions, and
+market constraints.
 
-目标是一个 canonical order lifecycle。Paper broker、simulator、未来 broker adapter 都投影到同一 Order/Fill 状态模型，避免 paper OMS、broker lifecycle 和 persistence 各维护一套状态真相。
+China-market rules such as T+1, board lots, commissions, taxes, price limits,
+suspensions, and applicable trading restrictions must not be independently
+reimplemented by each execution mode.
 
-Backtest 不能长期依赖“默认批准风险”的兼容胶水；同一风险/订单约束必须能在 simulation 中真实执行。
+Vectorized research is allowed and often desirable. It must not silently replace
+financially meaningful order, fill, cost, or accounting semantics when those
+semantics affect the result.
 
-## 11. Financial publication 与读取
+Real-money execution is an outer adapter and remains human-supervised by
+default. A future broker integration cannot bypass canonical risk, authority,
+order, or reconciliation boundaries.
 
-所有 current pointer 使用同一模式：
+## 8. Accounting and reconciliation
+
+Accounting owns Karkinos's canonical internal financial state.
+
+This includes the authoritative treatment of concepts such as:
+
+* cash;
+* positions and lots;
+* fees and taxes;
+* realized and unrealized PnL;
+* orders and fills as accounting inputs;
+* valuation state where required by portfolio accounting.
+
+Derived portfolio views, dashboards, analytics, and reports may represent this
+state but must not independently recalculate or mutate its canonical facts.
+
+External broker records, statements, imports, and snapshots are evidence about
+the external account. They become Karkinos facts only through an explicit
+import or reconciliation boundary.
+
+When external evidence conflicts with local state, preserve the discrepancy
+until it can be explained or reconciled. Do not invent missing financial facts
+to make records agree.
+
+## 9. Attribution and Alpha health
+
+Investment outcomes feed back into research through attribution and Alpha
+health rather than rewriting historical research results.
+
+Attribution should make it possible to distinguish, where evidence permits,
+effects from:
 
 ```text
-last_successful_publication
-latest_attempt
+market / factor exposure
+Alpha
+portfolio construction
+turnover and costs
+execution
 ```
 
-成功时原子替换 current；失败时记录 attempt/incident，candidate 回滚，last-good 不动。
+Alpha health evaluates whether evidence supporting an investment edge remains
+valid over time.
 
-Read availability 与 Action readiness 永远分离：
+Promotion, weighting, degradation, isolation, and retirement of research ideas
+are downstream decisions based on evidence; they do not mutate the historical
+identity of the experiments that produced that evidence.
+
+## 10. Canonical ownership and derived representations
+
+"One canonical owner" does not mean "one representation."
+
+Canonical state may be exposed through:
+
+* API DTOs;
+* database read models;
+* caches;
+* reports;
+* materialized views;
+* analytics;
+* UI state.
+
+These are derived representations and may be optimized for their consumers.
+
+They must not silently acquire independent write authority or duplicate the
+financial or research calculation owned elsewhere.
+
+Canonical ownership is a semantic rule, not a requirement for one class, one
+table, one file, or one package.
+
+## 11. Freshness, publication, and failure
+
+Read availability and action readiness are different concepts.
+
+A useful last-known result may remain visible with its `as_of`, provenance, and
+freshness clearly exposed even when a newer attempt failed.
+
+An action that requires newer evidence must remain blocked until the required
+evidence becomes valid.
+
+A failure in one provider or subsystem should degrade the capabilities that
+depend on it rather than automatically turning into a global product failure.
+
+Unknown outcomes from external side effects must be reconciled before the
+system assumes success or retries an action that may already have occurred.
+
+## 12. Outer adapters
+
+The following are outer concerns rather than canonical domain owners:
 
 ```text
-read: ready | stale/degraded | unavailable
-action: ready | blocked
+data providers
+broker APIs
+HTTP / API delivery
+Web UI
+AI providers
+storage engines
+schedulers and background runners
+optional hosted services
 ```
 
-Portfolio/Overview 可以展示 last-good 的 `as_of` 与最新失败原因；Decision/Risk/Execution 对 fresh evidence 继续 fail closed。
+Adapters translate between external systems and Karkinos concepts.
 
-## 12. Commands、Queries 与 side effects
+They may cache, transport, serialize, schedule, or present information, but they
+must not redefine the semantics owned by the core domains.
 
-- Query：provider-free、zero-write、只读 canonical state。
-- Command：显式、typed、idempotent，写事务或 enqueue durable job。
-- Background job：有 run id、claim/lease、attempt、heartbeat、result、error 和 replay identity。
-- External side effect：先持久 claim，再调用外部系统；使用 client/idempotency identity；unknown outcome 只查询恢复，不盲目重试；最终由 reconciliation 关闭。
+The core workflow must not require a hosted account or cloud control plane.
+Optional remote capabilities may be added later without transferring implicit
+ownership of core user state away from the local-first system.
 
-跨 SQLite 与 Parquet 不追求分布式事务；通过 immutable content ID + publish pointer 组合一致性。
+## 13. Architectural evolution
 
-## 13. Operations / readiness
+Prefer the simplest implementation that preserves these boundaries.
 
-每个 subsystem 至少公开：
+Do not create a service, process, database, repository, protocol, plugin,
+worker, or language boundary merely because a conceptual domain exists.
 
-```text
-status
-last_success
-latest_attempt
-as_of
-freshness
-blockers
-safe_next_action
-```
+Introduce stronger physical separation only when justified by concrete needs
+such as correctness, isolation, independent lifecycle, performance, or a real
+external boundary.
 
-最低运行状态包括 API、DB、data worker、research worker、market datasets、valuation reads、Decision readiness、execution authority。
+Likewise, do not preserve an obsolete internal abstraction merely because it
+once represented the architecture.
 
-`process alive` 不是 product ready。
+External projects in [REFERENCES.md](REFERENCES.md) provide design evidence.
+They do not prescribe Karkinos's package structure, APIs, technology choices,
+or implementation machinery.
 
-## 14. 依赖与语言
+## 14. What this document does not define
 
-Python 继续负责 research、domain、orchestration、API；TypeScript/React 负责 Web。
+This architecture intentionally does not prescribe:
 
-性能路线：
+* Python package layout;
+* process or worker topology;
+* database count or storage engine;
+* SQLite, Parquet, Arrow, DuckDB, Polars, Rust, or other technology choices;
+* queue or scheduler design;
+* HTTP route structure;
+* release or deployment machinery;
+* current implementation ownership;
+* migration sequencing;
+* current feature priorities.
 
-```text
-correct ownership/semantics
--> vectorize with NumPy/Polars
--> Arrow/Parquet/DuckDB
--> profile/benchmark
--> only then Rust/native hot path
-```
+Those choices may change without changing the architecture.
 
-如未来 simulation、optimizer 或数据 kernel 有明确 SLO 且 Python/columnar stack 无法满足，可用 Rust + Arrow/PyO3 下沉。Rust 不承担 product orchestration，也不用于“修复”业务状态机错误。
-
-## 15. 迁移原则
-
-- 不做 big-bang rewrite。
-- 不先大搬目录再补行为测试。
-- 先建立新 boundary，再让旧 facade/adapter 逐步委托进去。
-- 每次迁移先有 characterization/replay tests，再移动 ownership，最后删除 compatibility。
-- 当前 broker/controlled-execution 安全工作保留但冻结扩张，直到 Data -> Alpha -> Portfolio -> Shadow 主链成熟。
-- 当前 immutable release/rollback 体系继续保留并作为 Operations Plane 基础。
-
-架构参考可以借鉴 Qlib 的 Dataset/Experiment、LEAN 的可替换 data/transaction handler、NautilusTrader 的 research/live 执行语义一致性、vn.py 的 gateway/OMS 边界，以及本地 A 股工具的列式数据实践；Karkinos 不直接绑定或复制其中任何框架。
+If a decision is about what Karkinos should build **now**, it belongs in
+`PLAN.md`. If it describes how the repository works **today**, it belongs in
+`ENGINEERING.md`. If it is a durable financial or research ownership rule, it
+belongs here.

@@ -1,89 +1,201 @@
-# Karkinos 目标
+# Karkinos Goal
 
-本文定义 Karkinos 的长期产品目标和不可跨越的边界。当前开发顺序只在 [PLAN.md](PLAN.md) 维护。
+This document defines the long-term product goal and hard boundaries of
+Karkinos.
 
-## 北极星
+Durable system design belongs to [ARCHITECTURE.md](ARCHITECTURE.md). Current
+development scope belongs to [PLAN.md](PLAN.md). This document should change
+rarely.
 
-Karkinos 是面向中国市场的、本地优先的个人量化研究与投资系统。
+## Product
 
-它不承诺盈利；它要持续提高一个严肃个人投资者发现、验证、部署和淘汰投资 edge 的能力：
+Karkinos is a **local-first quantitative research and investing platform for
+the China market**.
 
-> Karkinos 能否把原始市场数据稳定地转化为可复现、样本外有效、扣除真实成本后仍具有正期望的组合，并在 edge 衰减时及时识别并停止继续依赖它？
+Its purpose is to help the user discover, validate, combine, deploy, monitor,
+and retire investment edge with enough rigor that research can support real
+capital decisions.
 
-## 最终闭环
+Karkinos is not judged by lines of code, number of strategies, test count,
+infrastructure sophistication, AI features, or broker integrations.
+
+Its value comes from answering a harder question well:
+
+> Given the information that was actually available at the time, does this
+> investment idea produce robust value after realistic costs and constraints,
+> and how should that evidence affect the portfolio today?
+
+Karkinos does not promise investment returns. It exists to make investment
+reasoning more disciplined, reproducible, and falsifiable.
+
+## Core loop
+
+The long-term product loop is:
 
 ```text
 Market Data
 -> Point-in-time Dataset
--> Feature / Alpha / Model
+-> Research
 -> Forecast
 -> Portfolio Target
 -> Rebalance Plan
 -> Risk
 -> Simulation / Paper / Shadow
--> Human-supervised Execution
+-> Human-supervised Action
 -> Accounting / Reconciliation
 -> Attribution
--> Alpha Health / Retirement
+-> Edge Monitoring / Retirement
 ```
 
-研究负责产生 edge；组合构建负责把 edge 变成资本配置；执行、账本、风控、对账和权限负责避免把研究优势之外的错误放大成真实损失。
+The center of the product is the loop from **data to evidence to portfolio
+decision**, not automated trading.
 
-## 产品优先级
+Research should make it cheap to propose an idea, test it honestly, compare it
+with alternatives, understand why it works or fails, and discard it when the
+evidence is weak.
 
-长期优先级固定为：
+## Product priorities
 
-1. **Edge quality**：先证明预测与组合在严格样本外、成本和容量约束后仍有价值。
-2. **Reproducibility**：同一数据、代码、参数和时间边界可以确定性重放。
-3. **Reliability**：单一 provider、worker、任务或 candidate write 的失败不能无理由拖垮整个产品。
-4. **Financial integrity**：账户、账本、估值、费用、订单、成交和对账只有一个 canonical owner。
-5. **Capital safety**：真实资金权限默认关闭、人工监督、有界、可暂停、可撤销。
-6. **Operator clarity**：用户必须知道系统看到了什么、相信什么、阻断什么，以及下一步能安全做什么。
+When priorities conflict, Karkinos prefers:
 
-## 数据与研究边界
+1. **Edge quality**
+   Evidence must survive point-in-time evaluation, out-of-sample testing,
+   realistic costs, and relevant market constraints.
 
-- 所有核心研究数据必须有明确的 market/event time、可用时间、采集时间、来源和 revision identity。
-- Universe、财务数据、复权、停牌和行业成分必须按 point-in-time 语义构建，禁止 survivorship 和 future leak。
-- 回测必须绑定冻结数据集、代码/模型版本、参数、成本、OOS 结果和限制。
-- Alpha 的基础输出优先是预测分数、预期收益或概率，不是 BUY/SELL。
-- Strategy 不再作为一切研究的中心概念；最终部署对象由 Alpha/Model、Portfolio Policy、Risk/Execution Policy 和证据共同组成。
-- AI 可以提出假设和实验，但 canonical 指标、回测、组合和风险结果必须由本地确定性代码计算。
+2. **Reproducibility**
+   A meaningful result should be traceable to the data, assumptions, parameters,
+   and implementation that produced it.
 
-## 财务与交易边界
+3. **Financial correctness**
+   Portfolio state, costs, positions, orders, fills, valuation, and accounting
+   must have unambiguous financial meaning.
 
-- Provider 响应和运行时缓存只是输入；只有验证、持久化并发布后的事实可以进入 authoritative reads。
-- Portfolio、ledger、valuation、PnL、fees、orders、fills 和 reconciliation 都有唯一 canonical owner。
-- “最新尝试”与“最后一次成功状态”必须分开；失败的新写入不得破坏已验证的 last-good 读取。
-- 需要最新证据的 Decision、Risk、Order 和 Execution 必须继续 fail closed。
-- Backtest、paper、shadow 和未来 live 应共享 T+1、lot、fees、limits、suspension、order/fill 和 accounting 语义。
-- 外部 side effect 必须有持久 idempotency identity、可恢复状态和后续 reconciliation。
+4. **Capital safety**
+   Real-money actions remain bounded, explicit, observable, and
+   human-supervised by default.
 
-## 权限与隐私边界
+5. **Operator clarity**
+   The user should be able to understand what the system knows, what it is
+   uncertain about, why an action is suggested or blocked, and what changed.
 
-- 真实资金提交默认关闭，live-like 流程默认逐单人工确认。
-- AI、策略、研究结果和 UI 操作都不能自行授予交易或资本权限。
-- 权限可以自动暂停或收窄，但不能自行续期、恢复、放宽或扩大资本。
-- Karkinos 不保存券商密码，不允许策略/AI 直接调用券商。
-- 私有账户导出、凭证、运行数据库、日志和截图不得进入源码仓库。
+6. **Engineering simplicity**
+   Complexity is justified only when it improves research quality, financial
+   correctness, reliability, safety, or meaningful product capability.
 
-## 成功标准
+## Research standard
 
-Karkinos 的工程成功应能持续证明：
+Karkinos should make weak research difficult to mistake for strong research.
 
-- 研究数据和实验可以按 exact identity 重放；
-- Alpha/Model 在多个 OOS 窗口、真实成本和容量敏感性下仍有稳定证据；
-- Portfolio Construction 能解释收益、风险、换手、成本和约束之间的取舍；
-- shadow 与研究假设的偏差可以量化；
-- PnL 可以归因到市场/风格暴露、Alpha、组合构建和执行成本；
-- edge 衰减可以被识别、降权、隔离或淘汰；
-- 单个外部依赖或后台任务故障只影响对应功能域；
-- 任何真实资金权限都可观察、可过期、可暂停、可撤销且不会自行扩大。
+Core research must respect:
 
-## 非目标
+* point-in-time information availability;
+* historical universe membership and China-market trading constraints;
+* reproducible data and experiment identity;
+* out-of-sample evaluation;
+* realistic fees, taxes, turnover, liquidity, and execution assumptions where
+  they materially affect results;
+* comparison against simple baselines;
+* explicit limitations and uncertainty.
 
-- 投资建议或保证收益。
-- 高频、超低延迟或交易所级 tick 基础设施。
-- 永久授权、无人值守的全账户自动交易。
-- 近期建设机构级多账户 OMS、策略市场或社交平台。
-- 为了架构审美进行微服务化、分布式化或全量语言重写。
-- 把 broker integration、AI 对话或 UI 页面数量当成投资 edge。
+Alpha, models, scores, rankings, probabilities, or expected returns express
+investment views. They are not automatically BUY or SELL commands.
+
+A strategy abstraction must not become the center of the product if it hides
+the distinction between research evidence, portfolio construction, risk, and
+execution.
+
+## Local-first boundary
+
+The core Karkinos workflow must not depend on a hosted account or cloud control
+plane.
+
+Core user state, research artifacts, portfolio state, and primary calculations
+are owned locally by default.
+
+External services may provide data, models, notifications, remote computation,
+backup, synchronization, or other optional capabilities, but using such
+services must not silently transfer authority over the core workflow.
+
+Local-first does not mean offline-only. It means the local product remains the
+owner of its core state and decisions.
+
+## AI boundary
+
+AI can assist with:
+
+* hypothesis generation;
+* research exploration;
+* experiment design;
+* explanation and critique;
+* workflow assistance.
+
+AI does not become the authority for canonical market facts, quantitative
+metrics, portfolio state, financial accounting, risk results, or capital
+permission.
+
+Canonical quantitative and financial results must remain reproducible by
+deterministic application code.
+
+AI may help the user reason about a decision. It does not receive independent
+authority to make that decision real.
+
+## Capital and execution boundary
+
+Real-money automation is not the default product mode.
+
+Live-like workflows are human-supervised unless the user explicitly adopts a
+more permissive mode supported by deliberate safety boundaries.
+
+Karkinos must not:
+
+* allow research or AI code to grant itself capital authority;
+* allow strategies to bypass portfolio, risk, or execution boundaries;
+* store broker passwords as part of the normal product model;
+* treat a broker connection as proof that an investment process is sound;
+* expand capital authority implicitly because a previous action succeeded.
+
+Broker integration is an outer capability, not the product center.
+
+## Success
+
+Karkinos succeeds when it materially improves the quality of the user's
+investment process.
+
+A mature Karkinos should make it possible to:
+
+* reconstruct why a research result existed;
+* distinguish genuine predictive evidence from leakage, overfitting, and cost
+  illusion;
+* compare competing Alpha, model, and portfolio approaches on consistent
+  evidence;
+* understand how forecasts become portfolio decisions;
+* explain the contribution of Alpha, portfolio construction, risk, turnover,
+  costs, and execution to realized outcomes;
+* detect when an edge is weakening or no longer justified;
+* reduce, isolate, or retire weak research rather than preserving it because it
+  once performed well;
+* move from research to simulated or real decisions without changing the
+  financial meaning of the system;
+* keep real-capital actions understandable, bounded, and reversible where the
+  external system permits.
+
+The product should become more useful as evidence accumulates, not merely more
+complex.
+
+## Non-goals
+
+Karkinos is not intended to be:
+
+* an investment-advice or guaranteed-return product;
+* a high-frequency or exchange-grade low-latency trading system;
+* an unattended full-account autonomous trading bot;
+* an institutional multi-account OMS in the near term;
+* a strategy marketplace or social trading network;
+* a generic broker terminal;
+* an AI agent platform disguised as a quantitative product;
+* a cloud platform that requires hosted identity to access the core workflow;
+* a showcase for microservices, distributed systems, language rewrites, or
+  architecture patterns without demonstrated product need.
+
+Features are successful only when they strengthen the path from trustworthy
+data to trustworthy investment decisions.
