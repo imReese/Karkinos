@@ -1,6 +1,3 @@
-# === GitHub Python.gitignore (canonical) ===
-# https://github.com/github/gitignore/blob/main/Python.gitignore
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -39,13 +36,13 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Unit test / coverage reports
+# Tests / coverage
 htmlcov/
 .tox/
 .nox/
 .coverage
 .coverage.*
-.cache
+.cache/
 nosetests.xml
 coverage.xml
 *.cover
@@ -53,34 +50,38 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+
+# Web test artifacts
 web/test-results/
+web/playwright-report/
 
 # Translations
 *.mo
 *.pot
 
-# Django stuff:
+# Django
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
-# Flask stuff:
+# Flask
 instance/
 .webassets-cache
 
-# Scrapy stuff:
+# Scrapy
 .scrapy
 
-# Sphinx documentation
+# Documentation build output
 docs/_build/
+/site/
 
 # PyBuilder
 .pybuilder/
 target/
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Jupyter
+.ipynb_checkpoints/
 
 # IPython
 profile_default/
@@ -89,45 +90,40 @@ ipython_config.py
 # PEP 582
 __pypackages__/
 
-# Celery stuff
+# Celery
 celerybeat-schedule
 celerybeat.pid
 
-# SageMath parsed files
+# SageMath
 *.sage.py
 
-# Environments
+# Python environments and local environment files
 .env
+.env.*
+!.env.example
 .envrc
-.venv
+.venv/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
 
-# Spyder project settings
+# Spyder
 .spyderproject
 .spyproject
 
-# Rope project settings
+# Rope
 .ropeproject
 
-# mkdocs documentation
-/site
-
-# mypy
+# Type checking
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# Pyre type checker
 .pyre/
-
-# pytype static type analyzer
 .pytype/
 
-# Cython debug symbols
+# Cython
 cython_debug/
 
 # Ruff
@@ -136,75 +132,69 @@ cython_debug/
 # PyPI configuration
 .pypirc
 
-# === Project-specific ===
+# Runtime data
+/data/store/
 
-# Data store (parquet, sqlite — runtime generated, not source code)
-data/store/
+# Local configuration and private inputs
+/config.json
+/secret.py
+/broker_statement.csv
 
-# Secrets & local config
-config.json
-secret.py
-broker_statement.csv
+# Local AI / coding-agent state
+/.pi/
+/.claude/
+/.codex/
+/.superpowers/
+/.agents/
+/skills-lock.json
 
-# Local AI tool state
-.pi/
-.claude/
-.codex
-.codex/
-.superpowers/
-.agents/
-skills-lock.json
-
-# Local editor settings
+# Local editor / OS state
 .vscode/
+.idea/
+.DS_Store
 
-# Docs
+# Documentation allowlist
+#
+# Coding agents and planning tools may generate transient plans, design notes,
+# audits, and scratch documents under docs/. Keep docs closed by default so
+# only explicitly maintained documentation enters source control.
 docs/*
-!docs/assets/
-!docs/assets/*.svg
-!docs/README.en.md
-!docs/README.zh.md
+
+# Canonical documentation
+!docs/README.md
+!docs/GOAL.md
 !docs/ARCHITECTURE.md
-!docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md
-!docs/CODEBASE.md
-!docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md
-!docs/CONTROLLED_EXECUTION_PLAN.md
-!docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md
-!docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md
-!docs/KARKINOS_GOAL.md
-!docs/ROADMAP.md
-!docs/ROADMAP.zh.md
-!docs/IMPLEMENTATION_LOG.md
-!docs/BENCHMARKS.md
-!docs/UI_VISUAL_AUDIT.md
-!docs/UI_VISUAL_AUDIT.zh.md
-!docs/account-truth-import.en.md
-!docs/account-truth-import.zh.md
-!docs/broker-execution-edge-conformance.en.md
-!docs/broker-execution-edge-conformance.zh.md
-!docs/controlled-broker-cancellation.en.md
-!docs/controlled-broker-cancellation.zh.md
-!docs/config-reference.en.md
-!docs/config-reference.zh.md
-!docs/strategy/
-!docs/strategy/README.en.md
-!docs/strategy/README.zh.md
+!docs/PLAN.md
+!docs/ENGINEERING.md
+!docs/REFERENCES.md
+
+# Maintained guides
+!docs/guides/
+!docs/guides/**
+
+# Documentation assets
+!docs/assets/
+!docs/assets/**
 
 # Node.js
 node_modules/
 web/dist/
 *.tsbuildinfo
 
-# Local build / release artifacts and tool caches
-candidate/
+# Local build, runtime, release artifacts, and tool caches
+/candidate/
 .uv-cache/
 .playwright-mcp/
 .run/
-logs/
-reports/
+/logs/
+/reports/
 
 # Local temporary databases
 tmp-*.db
 tmp-*.sqlite
 *.db-wal
 *.db-shm
+*.db-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal

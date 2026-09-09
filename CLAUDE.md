@@ -1,5 +1,3 @@
-# Karkinos Claude Code Instructions
+# Karkinos Claude Code Guide
 
 @AGENTS.md
-
-`AGENTS.md` is the single shared repository instruction contract for coding agents. Claude Code imports it here so Claude and Codex use the same project rules instead of maintaining parallel copies.
