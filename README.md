@@ -1,151 +1,250 @@
 # Karkinos
 
 > Investing is a chronic condition. Here is your scalpel.
->
-> 投资是一种慢性病。这是你的手术刀。
 
-Karkinos is a local-first quantitative research and investing platform for the
-China market. It connects reproducible research, persisted portfolio evidence,
-risk controls, daily decisions, paper/shadow validation, and human-supervised
-execution in one auditable workflow.
+[简体中文](README.zh.md)
 
-## What Karkinos does
+Karkinos is a **local-first quantitative research and investing platform for the China market**.
 
-- Reproducible backtests with frozen datasets, modeled costs, OOS validation,
-  parameter sweeps, and strategy comparison.
-- Persisted market, portfolio, ledger, valuation, fee, Account Truth, and
-  reconciliation evidence with explicit provenance and freshness.
-- Daily account actions including buy, sell, hold, rebalance, no-action, and
-  review-required outcomes.
-- Mandatory data, account, fee, risk, and operator gates before live-like
-  actions.
-- Paper Broker, OMS, paper/shadow workflows, signal journals, and post-decision
-  review.
-- Evidence-bound AI research whose output remains non-authoritative and cannot
-  grant trading or capital authority.
-- Verified immutable native releases with explicit candidate testing, update,
-  rollback, and recovery paths.
+It is built around a simple idea: investment research should be reproducible,
+falsifiable, cost-aware, and connected to portfolio decisions without turning
+the product into an unattended trading bot.
 
-## Safety boundary
+Karkinos helps turn market data into research evidence, forecasts, portfolio
+decisions, simulation results, and explainable investment actions while keeping
+financial state and capital authority explicit.
 
-Karkinos is research and operating software, not investment advice or a return
-guarantee.
+## Why Karkinos
 
-- Real-money submission is disabled by default.
-- Strategy and AI code cannot call a broker directly.
-- Live-like actions require explicit, bounded, revocable human authority.
-- Read endpoints do not silently contact providers or mutate financial facts.
-- Broker credentials, private account exports, runtime databases, logs, and
-  screenshots must never enter source control.
+Many quantitative tools make it easy to produce a backtest and much harder to
+answer the questions that matter afterward:
 
-## Quick start: run main without a tag
+* Did the strategy use information that was actually available at the time?
+* Does the result survive out-of-sample evaluation and realistic costs?
+* Is the apparent edge distinct from market or factor exposure?
+* How should multiple forecasts affect the portfolio?
+* What changed between research expectations and simulated or realized results?
+* When should an edge be reduced, quarantined, or retired?
 
-Requirements: Python 3.12, Node.js 24.x, `uv`, and Git. The repository selects
-Python 3.12 in `.python-version`, matching the CI series; existing pyenv patch
-versions remain usable, and `uv` installs a compatible interpreter when needed.
-For an existing account, use its original runtime directory. The default is
-`~/Library/Application Support/Karkinos`, with databases under `data/` and
-configuration in `config/config.json` and `config/.env`.
+Karkinos is designed around that full research lifecycle rather than around
+strategy count, infrastructure complexity, or broker connectivity.
 
-```bash
-./scripts/start_server.sh main
+## Core workflow
+
+```text
+Market Data
+-> Point-in-time Dataset
+-> Research
+-> Forecast
+-> Portfolio Target
+-> Rebalance Plan
+-> Risk
+-> Simulation / Paper / Shadow
+-> Human-supervised Action
+-> Accounting / Reconciliation
+-> Attribution
+-> Edge Monitoring / Retirement
 ```
 
-Run this from your development checkout, on any branch, including with local
-changes. The command fetches `origin`'s `main` and prepares that exact commit in
-an isolated directory under `$KARKINOS_HOME/source`. It builds the frontend,
-checks the persisted state, and starts the service in the background.
-Fetch or build failure leaves an existing main service running.
-Open `http://127.0.0.1:8000` after startup succeeds.
-It returns after the API, databases, research worker, and data worker are ready;
-this confirms service startup, not financial readiness. You can then close the
-terminal. Stop the service with `./scripts/stop_server.sh main`; Ctrl+C while
-startup is still pending cancels that attempt and cleans up its processes.
+The center of the product is the path from **trustworthy data to trustworthy
+investment decisions**.
 
-Logs are written automatically to `$KARKINOS_HOME/logs/main.log`, with a default
-location of `~/Library/Application Support/Karkinos/logs/main.log`. The log
-rotates at 20 MiB and retains three archives. To follow it:
+Automated trading is not the product goal.
+
+## Current capabilities
+
+The repository currently includes foundations for:
+
+* China-market data integration and local market-data persistence;
+* quantitative strategies, backtesting, transaction-cost modeling, parameter
+  exploration, and out-of-sample evaluation;
+* reproducible research and point-in-time data workflows;
+* portfolio, valuation, fee, return-accounting, and reconciliation workflows;
+* risk-gated simulation, paper, and shadow evaluation;
+* locally owned financial state and user configuration;
+* optional AI-assisted research whose output remains non-authoritative;
+* a FastAPI backend and React/TypeScript web application.
+
+Some areas of the existing codebase are intentionally being simplified. The
+current engineering scope is defined only in
+[docs/PLAN.md](docs/PLAN.md).
+
+## Design principles
+
+### Research before automation
+
+An Alpha, model, score, ranking, probability, or expected return expresses an
+investment view. It does not automatically become an order.
+
+Research evidence, portfolio construction, risk, execution, and accounting are
+separate responsibilities.
+
+### Point-in-time by default
+
+Research must distinguish what happened from when that information became
+available.
+
+Historical universe membership, corporate actions, suspensions, price limits,
+trading calendars, and other China-market constraints must not be reconstructed
+using future information.
+
+### Reproducible evidence
+
+Meaningful research results should remain traceable to the data, assumptions,
+parameters, time boundaries, and implementation that produced them.
+
+A backtest is evidence only when its inputs and financial assumptions are
+credible.
+
+### Local-first ownership
+
+Core research, portfolio state, financial state, and primary calculations are
+owned locally by default.
+
+External providers may supply data, models, notifications, or optional
+capabilities, but they do not become the source of authority for the core
+workflow.
+
+Local-first does not mean offline-only.
+
+### Human-supervised capital
+
+Real-money automation is not the default product mode.
+
+Research code, AI, providers, and UI state cannot grant themselves capital
+authority or bypass portfolio and risk boundaries.
+
+## Quick start
+
+### Requirements
+
+* Python 3.12+
+* Node.js 24.x
+* [uv](https://docs.astral.sh/uv/)
+* Git
+
+### Development
+
+Clone the repository and switch to the normal development branch:
 
 ```bash
-./scripts/start_server.sh main --logs --follow
+git clone https://github.com/imReese/Karkinos.git
+cd Karkinos
+git switch dev
 ```
 
-Use `./scripts/start_server.sh main --foreground` to follow service logs in the
-terminal; Ctrl+C stops that service. Logs also remain in the rotating files. Ordinary
-startup needs no `nohup`, redirection, or trailing `&`. It does not install
-automatic startup at login or restart the service after a crash.
-
-No tag, native release, GitHub Actions credentials, or Docker is required.
-Updating requires access to the configured Git origin. Your development
-checkout, branch, dependencies, and local changes are left in place.
+Start the development environment:
 
 ```bash
-./scripts/start_server.sh main --status
-./scripts/start_server.sh main --no-update  # start the prepared version offline
-./scripts/start_server.sh main --restart    # restart without fetching or building
-./scripts/stop_server.sh main
+./scripts/start_server.sh dev
 ```
 
-Startup requires existing `data/app.db`, `data/meta.db`, and both configuration
-files; missing files fail explicitly instead of opening an empty account.
-`KARKINOS_HOME`, `KARKINOS_DATA_DIR`, `KARKINOS_CONFIG_PATH`, and
-`KARKINOS_ENV_FILE` accept explicit absolute paths. Changing `KARKINOS_HOME`
-changes the other defaults. Files stay in place; no private data is copied.
-The frontend and Python environment come from the isolated prepared checkout.
+Then open:
 
-For a genuinely new account, prepare configuration without overwriting files:
-
-```bash
-export KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
-mkdir -p "$KARKINOS_HOME/config"
-test -e "$KARKINOS_HOME/config/config.json" || cp config.example.json "$KARKINOS_HOME/config/config.json"
-test -e "$KARKINOS_HOME/config/.env" || cp .env.example "$KARKINOS_HOME/config/.env"
-./scripts/start_server.sh main --init
+```text
+http://127.0.0.1:5173
 ```
 
-Review the configuration before `--init`; it explicitly creates a new empty
-account and requires an empty data directory. It is never an existing-account
-upgrade command. Subsequent starts use `./scripts/start_server.sh main`.
-Stop managed services with `./scripts/stop_server.sh prod` before starting main;
-loaded managed services and pending release recovery block startup. Set
-`KARKINOS_MAIN_PORT` when 8000 is already occupied. Never edit the managed source
-directory directly; run the default main command to prepare an update.
+The development runtime uses a dedicated local environment and does not need to
+reuse a normal Karkinos account.
 
-For development with hot reload, use `./scripts/start_server.sh dev` and open
-`http://127.0.0.1:5173`; stop it with `./scripts/stop_server.sh dev`.
-The optional legacy `prod` mode still controls an already installed immutable
-release. See [scripts/README.md](scripts/README.md) for these separate modes.
-Development uses its own initially empty account at `.run/dev-home`; set an
-absolute `KARKINOS_DEV_HOME` for a different dedicated development directory.
-It does not inherit the daily account's configuration or databases.
-
-## Verification
+Stop it with:
 
 ```bash
-uv run python -m pytest
+./scripts/stop_server.sh dev
+```
+
+For the managed `main` runtime, logs, status commands, existing-account startup,
+or the legacy immutable-release workflow, see
+[scripts/README.md](scripts/README.md).
+
+## Development checks
+
+Install the locked development environment:
+
+```bash
+uv sync --locked --extra server --extra dev
+```
+
+Run the backend test suite:
+
+```bash
+uv run --locked python -m pytest
+```
+
+Run the main frontend checks:
+
+```bash
 npm --prefix web run format:check
 npm --prefix web run test
 npm --prefix web run build
 ```
 
+Run narrow checks first when working on a focused change. The repository CI is
+the authoritative full verification path.
+
 ## Documentation
 
-Start at [docs/README.md](docs/README.md). The active engineering documentation
-is intentionally small:
+Start with [docs/README.md](docs/README.md).
 
-- [Goal](docs/GOAL.md) — why Karkinos exists and its hard boundaries.
-- [Architecture](docs/ARCHITECTURE.md) — durable ownership, data flow, and
-  failure semantics.
-- [Plan](docs/PLAN.md) — the single current implementation plan.
-- [Codebase](docs/CODEBASE.md) — source layout and dependency rules.
+The canonical engineering documents are intentionally small:
 
-Historical implementation detail belongs in Git history and Releases rather
-than a second roadmap or implementation diary.
+* [Goal](docs/GOAL.md) — product purpose and hard boundaries.
+* [Architecture](docs/ARCHITECTURE.md) — durable domain and ownership rules.
+* [Plan](docs/PLAN.md) — current development scope.
+* [Engineering](docs/ENGINEERING.md) — current codebase reality, structural debt,
+  and engineering guidance.
+* [References](docs/REFERENCES.md) — mature open-source designs used for
+  conceptual comparison.
+
+Stable operational and financial notes live under
+[docs/guides/](docs/guides/).
+
+Implementation history belongs in Git rather than in parallel roadmaps or
+implementation diaries.
+
+## Project status
+
+Karkinos is under active development.
+
+`dev` is the normal development branch. `main` receives verified development
+commits through the repository promotion workflow.
+
+Current priorities are intentionally kept out of this README; see
+[docs/PLAN.md](docs/PLAN.md).
+
+## Safety
+
+Karkinos is research and investing software, not investment advice or a
+guarantee of returns.
+
+Do not commit or publish:
+
+* API keys or credentials;
+* broker passwords or private authentication material;
+* real account exports or transaction history;
+* runtime databases;
+* private logs or screenshots containing financial information.
+
+Use sanitized synthetic data for tests and public bug reports.
+
+See [SECURITY.md](SECURITY.md) for the security policy.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making repository changes.
+
+Substantial quantitative-domain or architecture work should also consult
+[docs/REFERENCES.md](docs/REFERENCES.md) before introducing a new
+Karkinos-specific abstraction.
 
 ## Technology
 
-Python · FastAPI · SQLite · React · TypeScript · Vite · Docker
+Python · FastAPI · SQLite · React · TypeScript · Vite
+
+Additional data and analytical dependencies are documented in
+`pyproject.toml` and `web/package.json`.
 
 ## License
 
-MIT
+Karkinos is released under the [MIT License](LICENSE).
