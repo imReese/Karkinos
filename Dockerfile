@@ -14,8 +14,8 @@ ARG UV_VERSION=0.11.28
 ARG VERSION=0.3.2
 
 LABEL org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.source="https://github.com/imReese/Karkinos" \
-      org.opencontainers.image.licenses="MIT"
+    org.opencontainers.image.source="https://github.com/imReese/Karkinos" \
+    org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

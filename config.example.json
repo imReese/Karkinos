@@ -1,93 +1,81 @@
 {
-    "server": {
-        "host": "127.0.0.1",
-        "port": 8000,
-        "market_calendar_auto_sync": true,
-        "cors_allowed_origins": [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173"
-        ],
-        "notification": {
-            "type": "console"
-        }
-    },
-    "data_source": {
-        "provider": "akshare",
-        "live_poll_interval": 60,
-        "provider_config": {
-            "tushare_token_env": "KARKINOS_TUSHARE_TOKEN"
-        }
-    },
     "account_truth": {
         "broker_statement_collector": {
-            "enabled": false,
             "daily_snapshot_roll_forward_enabled": false,
+            "enabled": false,
+            "max_file_bytes": 10485760,
             "path": "broker_statement.csv",
             "poll_interval_seconds": 5,
-            "stability_delay_seconds": 2,
-            "max_file_bytes": 10485760
+            "stability_delay_seconds": 2
         },
         "citic_history_xls_directory": {
             "enabled": false,
-            "path": "",
-            "max_files": 120,
             "max_file_bytes": 10485760,
-            "max_total_bytes": 67108864
+            "max_files": 120,
+            "max_total_bytes": 67108864,
+            "path": ""
         }
     },
+    "ai": {
+        "adapter_kind": "openai_compatible_https",
+        "api_key_env": "KARKINOS_AI_API_KEY",
+        "base_url": "",
+        "enabled": false,
+        "model": "",
+        "provider": "",
+        "timeout_seconds": 20
+    },
     "broker_fee": {
+        "account_identifier_saved": false,
         "account_profile_id": "primary-broker-account",
         "broker_name": "示例券商",
-        "schedule_id": "local_broker_fee_schedule",
-        "display_name": "示例券商账户费用规则",
         "currency": "CNY",
-        "source_type": "broker_app_commission_query",
-        "account_identifier_saved": false,
-        "screenshots_saved": false,
-        "private_exports_saved": false,
-        "precedence": "broker_statement_overrides_config",
-        "rounding": {
-            "money_precision": "0.01",
-            "mode": "half_up"
-        },
-        "stock_a_commission_rate": 0.0001,
-        "stock_a_min_commission": 5.0,
-        "fund_etf_commission_rate": 0.0001,
-        "fund_etf_min_commission": 5.0,
-        "stamp_tax_rate": 0.0005,
-        "transfer_fee_rate": 0.00001,
-        "fund_etf_transfer_fee_rate": 0.0,
+        "display_name": "示例券商账户费用规则",
         "exchange_transfer_fee_rates": {
             "shanghai": 0.00001,
             "shenzhen": 0.0
         },
+        "fund_etf_commission_rate": 0.0001,
+        "fund_etf_min_commission": 5.0,
+        "fund_etf_transfer_fee_rate": 0.0,
+        "limitations": [
+            "broker_statements_remain_authoritative",
+            "broker_regulatory_fees_assumed_absorbed"
+        ],
         "other_fee_rate": 0.0,
+        "precedence": "broker_statement_overrides_config",
+        "private_exports_saved": false,
+        "rounding": {
+            "mode": "half_up",
+            "money_precision": "0.01"
+        },
         "rules": [
             {
-                "id": "stock_a_commission_sse",
-                "component": "commission",
                 "asset_classes": [
                     "stock"
                 ],
+                "component": "commission",
+                "id": "stock_a_commission_sse",
+                "included_in_total_fee": true,
                 "instrument_types": [
                     "a_share"
                 ],
                 "markets": [
                     "SSE"
                 ],
-                "side": "both",
-                "rate": "0.00010",
-                "rate_base": "gross_amount",
                 "min_fee": "5.00",
                 "payer": "account",
-                "included_in_total_fee": true
+                "rate": "0.00010",
+                "rate_base": "gross_amount",
+                "side": "both"
             },
             {
-                "id": "stock_stamp_tax_sell",
-                "component": "stamp_tax",
                 "asset_classes": [
                     "stock"
                 ],
+                "component": "stamp_tax",
+                "id": "stock_stamp_tax_sell",
+                "included_in_total_fee": true,
                 "instrument_types": [
                     "a_share"
                 ],
@@ -95,25 +83,37 @@
                     "SSE",
                     "SZSE"
                 ],
-                "side": "sell",
+                "payer": "seller",
                 "rate": "0.00050",
                 "rate_base": "gross_amount",
-                "payer": "seller",
-                "included_in_total_fee": true
+                "side": "sell"
             }
         ],
-        "limitations": [
-            "broker_statements_remain_authoritative",
-            "broker_regulatory_fees_assumed_absorbed"
-        ]
+        "schedule_id": "local_broker_fee_schedule",
+        "screenshots_saved": false,
+        "source_type": "broker_app_commission_query",
+        "stamp_tax_rate": 0.0005,
+        "stock_a_commission_rate": 0.0001,
+        "stock_a_min_commission": 5.0,
+        "transfer_fee_rate": 0.00001
     },
-    "ai": {
-        "enabled": false,
-        "provider": "",
-        "model": "",
-        "base_url": "",
-        "adapter_kind": "openai_compatible_https",
-        "timeout_seconds": 20,
-        "api_key_env": "KARKINOS_AI_API_KEY"
+    "data_source": {
+        "live_poll_interval": 60,
+        "provider": "akshare",
+        "provider_config": {
+            "tushare_token_env": "KARKINOS_TUSHARE_TOKEN"
+        }
+    },
+    "server": {
+        "cors_allowed_origins": [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173"
+        ],
+        "host": "127.0.0.1",
+        "market_calendar_auto_sync": true,
+        "notification": {
+            "type": "console"
+        },
+        "port": 8000
     }
 }
