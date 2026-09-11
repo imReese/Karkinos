@@ -10,6 +10,7 @@
   <a href="https://github.com/imReese/Karkinos/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/imReese/Karkinos/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/imReese/Karkinos/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag"></a>
   <a href="pyproject.toml"><img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white"></a>
+  <a href="web/package.json"><img alt="Node.js 24.x" src="https://img.shields.io/badge/Node.js-24.x-5FA04E?logo=nodedotjs&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/imReese/Karkinos"></a>
 </p>
 
@@ -70,18 +71,15 @@ git switch dev
 
 发布版本：[Releases](https://github.com/imReese/Karkinos/releases) · 运行与维护命令：[scripts/README.md](scripts/README.md)
 
-## 文档
+## 资源
 
-- [Goal](docs/GOAL.md) — 产品方向和边界
-- [Architecture](docs/ARCHITECTURE.md) — 领域 ownership 和系统设计
-- [Plan](docs/PLAN.md) — 当前开发重点
-- [Engineering](docs/ENGINEERING.md) — 当前代码库和工程约束
-- [Guides](docs/guides/) — 配置和金融语义
+**产品** — [Goal](docs/GOAL.md) · [Architecture](docs/ARCHITECTURE.md) · [Plan](docs/PLAN.md)  
+**工程** — [Engineering](docs/ENGINEERING.md) · [Guides](docs/guides/) · [贡献](CONTRIBUTING.md)  
+**项目** — [Releases](https://github.com/imReese/Karkinos/releases) · [安全](SECURITY.md) · [MIT License](LICENSE)
 
-## 项目
+---
 
-Python · FastAPI · SQLite · React · TypeScript · Vite
-
-[贡献](CONTRIBUTING.md) · [安全](SECURITY.md) · [MIT License](LICENSE)
-
-Karkinos 是量化研究与投资软件，不构成投资建议，也不保证任何收益。
+<div align="center">
+<sub>Python · FastAPI · SQLite · React · TypeScript · Vite</sub><br>
+<sub>Karkinos 是量化研究与投资软件，不构成投资建议，也不保证任何收益。</sub>
+</div>
