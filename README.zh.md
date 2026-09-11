@@ -25,32 +25,18 @@
 
 Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风险、模拟、会计和归因连接成一条本地优先的工作流。
 
+**市场数据 → point-in-time 研究 → 组合决策 → 评估 → 持续反馈。**
+
 ## 核心能力
 
 - **Point-in-time 数据** — 研究输入只使用建模决策时点真正可获得的信息。
 - **Research** — 回测、交易成本建模、参数探索、样本外评估和稳健性分析。
 - **Portfolio & Risk** — 已发布预测先形成组合目标，再经过明确的风险决策和再平衡计划进入执行。
-- **Evaluation** — backtest、paper 和 shadow 工作流用于连接研究预期与后续结果。
+- **Simulation & Evaluation** — backtest、paper 和 shadow 工作流连接研究预期与后续结果。
+- **Accounting & Attribution** — 现金、持仓、费用、收益、对账和结果归因保持明确。
 - **中国市场语义** — 交易日历、停牌、涨跌停、交易单位、费用和税费是一等约束。
-- **Local-first** — 核心研究产物、组合状态、金融状态和主要计算默认由本地持有。
 - **AI-assisted Research** — 可选 AI 用于加速研究迭代，量化和金融结果由确定性代码持有。
-- **Web App** — FastAPI 后端、React / TypeScript 界面和本地运行环境。
-
-## 工作流
-
-```mermaid
-flowchart LR
-    A[Market Data] --> B[PIT Dataset] --> C[Research]
-    C --> D[Published Forecast] --> E[Portfolio Target]
-    E --> F[Risk Decision] --> G[Rebalance Plan]
-    G --> H[Simulation / Paper / Shadow]
-    G --> I[Human-supervised Execution]
-    H --> J[Outcome]
-    I --> K[Accounting]
-    J --> L[Attribution]
-    K --> L
-    L --> M[Alpha / Model Health] --> C
-```
+- **Application** — FastAPI 后端、React / TypeScript 界面和本地优先的运行环境。
 
 ## 开发快速开始
 
