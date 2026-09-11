@@ -20,6 +20,7 @@ LABEL org.opencontainers.image.version="${VERSION}" \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/app/.venv/bin:${PATH} \
+    KARKINOS_WORKSPACE=/app \
     KARKINOS_CONFIG_PATH=/app/config.json \
     KARKINOS_DATA_DIR=/app/data/store \
     KARKINOS_HOST=0.0.0.0 \
