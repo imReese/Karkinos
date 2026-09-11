@@ -1,66 +1,88 @@
 # Karkinos Plan
 
-This document defines the **current development scope** only.
+This document defines the current development scope.
 
-Long-term product intent belongs to [GOAL.md](GOAL.md), durable system boundaries to [ARCHITECTURE.md](ARCHITECTURE.md), and codebase ownership and engineering guidance to [ENGINEERING.md](ENGINEERING.md).
+## Current focus — Engineering Reset and platform reliability
 
-Implementation history belongs in Git. When the current scope changes, replace obsolete planning content instead of appending a historical roadmap.
+Karkinos currently has more implementation complexity than its core quantitative
+workflow justifies.
 
-## Current focus — Engineering Reset
+Before expanding AI autonomy or adding new product capabilities, the project
+must establish a reliable quantitative platform foundation. Data, datasets,
+research, portfolio construction, simulation, accounting, and evidence must work
+correctly and be independently verifiable without relying on AI orchestration.
 
-Karkinos currently has more implementation complexity than its core quantitative workflow justifies.
+The current platform path is:
 
-Before adding new product capabilities, the project should reduce accidental complexity, restore clear ownership, and make the core research and investing workflow reliable and understandable.
+```text
+Market Data
+-> PIT Dataset
+-> Research / Evaluation
+-> Published Forecast
+-> Portfolio
+-> Simulation / Shadow
+-> Evidence / Feedback
+```
 
-The goal is not a cleaner architecture for its own sake. The goal is a simpler platform that makes it easier to discover, validate, and use investment edge.
+AI may drive research iteration on top of this path, but it must not compensate
+for unstable data, missing financial semantics, or unreliable platform behavior.
 
 ## In scope
 
-* Align the canonical repository documentation and development rules.
-
-* Audit major subsystems against mature quantitative projects and the actual Karkinos product goal.
-
-* Classify major code areas as **KEEP**, **SIMPLIFY**, **FREEZE**, **DELETE**, or **REPLACE**.
-
-* Remove or simplify accidental acceptance, conformance, compatibility, runtime, and infrastructure complexity.
-
-* Restore a clear core workflow:
-
-  `Market Data -> PIT Dataset -> Research -> Portfolio -> Simulation -> Decision`
-
-* Validate a small set of high-value real product journeys.
-
-* Improve engineering checks where they protect meaningful behavior and maintainability.
+- Align the repository with the canonical architecture and remove conflicting
+  historical abstractions.
+- Classify major code areas as **KEEP**, **SIMPLIFY**, **FREEZE**, **DELETE**, or
+  **REPLACE** based on real product value and compatibility requirements.
+- Stabilize the continuous data path: acquisition, normalization, point-in-time
+  publication, freshness, revision handling, and failure recovery.
+- Restore a clear research path from Dataset through evaluation and Published
+  Forecast into portfolio construction and simulation.
+- Ensure core platform capabilities remain usable and testable independently of
+  AI providers and AI orchestration.
+- Remove or simplify accidental acceptance, conformance, compatibility, runtime,
+  and infrastructure complexity.
+- Validate a small set of high-value end-to-end product journeys using realistic
+  local workflows.
+- Improve tests and CI where they protect meaningful behavior, financial
+  semantics, persisted compatibility, and important boundaries.
 
 ## Out of scope
 
 Until the Engineering Reset is complete, do not expand:
 
-* live trading or new broker integrations;
-* capital-authority or automatic-execution infrastructure;
-* autonomous AI trading or new AI orchestration frameworks;
-* new acceptance or conformance frameworks;
-* hosted accounts, cloud control planes, or cloud sync;
-* unrelated product features;
-* large rewrites, microservice migrations, or language rewrites done primarily for architectural preference.
+- live trading or new broker integrations;
+- capital-authority or automatic-execution infrastructure;
+- autonomous AI trading or new AI orchestration frameworks;
+- new acceptance or conformance frameworks;
+- hosted accounts, cloud control planes, or cloud sync;
+- unrelated product features;
+- large rewrites, microservice migrations, or language rewrites done primarily
+  for architectural preference.
 
-Maintenance fixes remain allowed when required to preserve user data, security, financial correctness, persisted compatibility, or currently supported behavior.
+Maintenance fixes remain allowed when required to preserve user data, security,
+financial correctness, persisted compatibility, or currently supported behavior.
 
 ## Exit criteria
 
 The Engineering Reset is complete when:
 
-* major code areas have explicit KEEP / SIMPLIFY / FREEZE / DELETE / REPLACE decisions;
-* meaningful accidental complexity has actually been removed or frozen;
-* the core quantitative workflow has clear ownership and works end to end;
-* normal local development and runtime behavior are predictable;
-* a small set of real product journeys passes reliably;
-* tests and CI primarily protect meaningful behavior, financial semantics, and important boundaries rather than obsolete implementation structure.
+- major code areas have explicit KEEP / SIMPLIFY / FREEZE / DELETE / REPLACE
+  decisions;
+- meaningful accidental complexity has actually been removed or frozen;
+- the Data -> PIT Dataset path is reliable, observable, and replayable;
+- the core research, portfolio, simulation, accounting, and evidence workflow
+  has clear ownership and works end to end;
+- those platform capabilities work correctly without AI orchestration;
+- normal local development and runtime behavior are predictable;
+- a small set of real product journeys passes reliably;
+- tests and CI primarily protect behavior, financial semantics, compatibility,
+  and important boundaries rather than obsolete implementation structure.
 
 ## After the reset
 
 Do not automatically resume an old roadmap.
 
-Choose the next development focus from `GOAL.md`, current product evidence, user needs, and the simplified codebase, then replace the current focus in this file.
-
-Historical milestones and unfinished acceptance items do not re-enter scope merely because they once existed.
+Choose the next development focus from `GOAL.md`, current product evidence, user
+needs, and the simplified codebase, then replace the current focus in this file.
+Historical milestones and unfinished acceptance items do not re-enter scope merely
+because they once existed.
