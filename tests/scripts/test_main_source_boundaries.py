@@ -19,19 +19,22 @@ def prepared_source(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "ROOT", tmp_path)
     monkeypatch.setenv("KARKINOS_MAIN_PORT", "8000")
     monkeypatch.setattr(runtime, "check_source", lambda root: "a" * 40)
-    home = tmp_path / "runtime"
-    (home / "config").mkdir(parents=True)
-    (home / "data").mkdir()
-    for name in ("config/config.json", "config/.env", "data/app.db", "data/meta.db"):
-        (home / name).write_text("original fixture")
+    workspace = tmp_path / "workspace"
+    (workspace / "data/store").mkdir(parents=True)
+    (workspace / "config.json").write_text("{}\n")
+    (workspace / ".env").write_text("\n")
+    for name in ("app.db", "meta.db"):
+        (workspace / "data/store" / name).write_text("fixture")
     env = {
-        "KARKINOS_HOME": str(home),
-        "KARKINOS_DATA_DIR": str(home / "data"),
-        "KARKINOS_CONFIG_PATH": str(home / "config/config.json"),
-        "KARKINOS_ENV_FILE": str(home / "config/.env"),
+        "KARKINOS_WORKSPACE": str(workspace),
+        "KARKINOS_HOME": str(workspace),
+        "KARKINOS_DATA_DIR": str(workspace / "data/store"),
+        "KARKINOS_CONFIG_PATH": str(workspace / "config.json"),
+        "KARKINOS_ENV_FILE": str(workspace / ".env"),
+        "KARKINOS_STATIC_DIR": str(tmp_path / "web/dist"),
     }
     monkeypatch.setattr(runtime, "runtime_environment", lambda root: env)
-    monkeypatch.setattr(runtime, "require_runtime_idle", lambda env: None)
+    monkeypatch.setattr(runtime, "require_runtime_idle", lambda workspace: None)
     return tmp_path
 
 
@@ -107,7 +110,6 @@ def test_closed_connection_time_wait_allows_immediate_restart():
             connection, _ = listener.accept()
             with connection:
                 connection.settimeout(2)
-                # Server closes first, leaving this server port in TIME_WAIT.
                 connection.shutdown(socket.SHUT_WR)
                 assert client.recv(1) == b""
                 client.shutdown(socket.SHUT_WR)
@@ -186,8 +188,7 @@ def test_check_only_has_no_runtime_side_effects(prepared_source, monkeypatch):
     def unexpected(*args, **kwargs):
         pytest.fail("check-only mode must not prepare or launch the runtime")
 
-    monkeypatch.setattr(runtime, "runtime_environment", unexpected)
-    monkeypatch.setattr(runtime.subprocess, "run", unexpected)
+    monkeypatch.setattr(runtime, "run_preparation", unexpected)
     monkeypatch.setattr(runtime, "supervise", unexpected)
     assert runtime.main(["--check"]) == 0
     assert sorted(str(path) for path in prepared_source.rglob("*")) == before
