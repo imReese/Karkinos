@@ -1,4 +1,4 @@
-"""Source main runs from a verified checkout with an explicit local workspace."""
+"""Stable source runtime uses the selected branch and shared local workspace."""
 
 from __future__ import annotations
 
@@ -28,30 +28,35 @@ def source(tmp_path):
     (tmp_path / "app.py").write_text("value = 1\n")
     git("add", ".")
     git("commit", "-qm", "fixture")
-    sha = git("rev-parse", "HEAD")
-    git("update-ref", "refs/remotes/origin/main", sha)
-    return tmp_path, git, sha
+    return tmp_path, git, git("rev-parse", "HEAD")
 
 
-def test_clean_main_needs_no_tag(source):
+def test_clean_selected_branch_needs_no_remote_identity(source, monkeypatch):
     root, git, sha = source
+    monkeypatch.setenv("KARKINOS_SOURCE_BRANCH", "main")
     assert git("tag", "--list") == ""
     assert runtime.check_source(root) == sha
 
 
-@pytest.mark.parametrize("change", ["branch", "dirty", "untracked", "ahead"])
-def test_unverified_checkout_is_refused_without_reset(source, change):
+def test_clean_local_commit_is_valid_source_code(source, monkeypatch):
     root, git, _sha = source
+    (root / "app.py").write_text("value = 2\n")
+    git("add", ".")
+    git("commit", "-qm", "local commit")
+    monkeypatch.setenv("KARKINOS_SOURCE_BRANCH", "main")
+    assert runtime.check_source(root) == git("rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("change", ["branch", "dirty", "untracked"])
+def test_wrong_or_dirty_checkout_is_refused_without_reset(source, change, monkeypatch):
+    root, git, _sha = source
+    monkeypatch.setenv("KARKINOS_SOURCE_BRANCH", "main")
     if change == "branch":
         git("checkout", "-qb", "dev")
     elif change == "dirty":
         (root / "app.py").write_text("value = 2\n")
-    elif change == "untracked":
-        (root / "extra.py").write_text("value = 2\n")
     else:
-        (root / "app.py").write_text("value = 2\n")
-        git("add", ".")
-        git("commit", "-qm", "local only")
+        (root / "extra.py").write_text("value = 2\n")
     before = git("status", "--porcelain")
     with pytest.raises(ValueError):
         runtime.check_source(root)
@@ -120,7 +125,7 @@ def runtime_files(tmp_path, monkeypatch):
         "KARKINOS_STATIC_DIR": str(tmp_path / "web/dist"),
     }
     monkeypatch.setattr(runtime, "runtime_environment", lambda root: env)
-    monkeypatch.setattr(runtime, "require_runtime_idle", lambda env: None)
+    monkeypatch.setattr(runtime, "require_runtime_idle", lambda workspace: None)
     return env
 
 
