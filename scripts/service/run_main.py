@@ -1,4 +1,4 @@
-"""Run the selected clean source branch from the shared local workspace."""
+"""Run a stable source snapshot from the shared local Karkinos workspace."""
 
 from __future__ import annotations
 
@@ -41,7 +41,9 @@ else:
     from main_logs import MainLogs
     from main_readiness import startup_ready
 
-ROOT = Path(__file__).resolve().parents[2]
+DRIVER = Path(__file__).resolve()
+DEFAULT_ROOT = DRIVER.parents[2]
+ROOT = Path(os.environ.get("KARKINOS_SOURCE_ROOT", DEFAULT_ROOT)).expanduser().resolve()
 RECOVERY_JOURNALS = (".release-transaction.json", ".legacy-bootstrap-transaction.json")
 CHILD_ENTRY = (
     "from server.workers.supervisor import watch_supervisor_lifetime; "
@@ -56,15 +58,42 @@ def git(root: Path, *args: str) -> str:
     ).stdout.strip()
 
 
+def source_branch() -> str:
+    branch = os.environ.get("KARKINOS_SOURCE_BRANCH", "main")
+    path = Path(branch)
+    if not branch or path.is_absolute() or ".." in path.parts:
+        raise ValueError("KARKINOS_SOURCE_BRANCH is not a safe branch name")
+    return branch
+
+
+def runtime_directory(workspace: Path) -> Path:
+    return workspace / ".run" / source_branch()
+
+
+def log_path(workspace: Path) -> Path:
+    branch = source_branch()
+    name = "main.log" if branch == "main" else f"{branch.replace('/', '-')}.log"
+    return workspace / "logs" / name
+
+
 def check_source(root: Path) -> str:
-    expected_branch = os.environ.get("KARKINOS_SOURCE_BRANCH", "main")
+    if os.environ.get("KARKINOS_SOURCE_SNAPSHOT") == "1":
+        expected_sha = os.environ.get("KARKINOS_SOURCE_SHA", "").strip()
+        marker = root / ".karkinos-source-sha"
+        if not expected_sha or not marker.is_file():
+            raise ValueError("source snapshot identity is missing")
+        if marker.read_text(encoding="utf-8").strip() != expected_sha:
+            raise ValueError("source snapshot identity changed")
+        return expected_sha
+
+    expected_branch = source_branch()
     current_branch = git(root, "symbolic-ref", "--short", "HEAD")
     if current_branch != expected_branch:
         raise ValueError(
             f"source runtime expected branch {expected_branch!r}, found {current_branch!r}"
         )
     if git(root, "status", "--porcelain", "--untracked-files=normal"):
-        raise ValueError("source runtime requires a clean checkout")
+        raise ValueError("stable source runtime requires a clean checkout")
     return git(root, "rev-parse", "HEAD")
 
 
@@ -93,7 +122,7 @@ def runtime_environment(root: Path) -> dict[str, str]:
                 "KARKINOS_WORKSPACE and legacy KARKINOS_HOME select different paths"
             )
 
-    selected = configured_workspace or legacy_home or str(root.resolve())
+    selected = configured_workspace or legacy_home or str(DEFAULT_ROOT.resolve())
     workspace = _absolute_path(selected, "KARKINOS_WORKSPACE")
     env["KARKINOS_WORKSPACE"] = workspace
     # Compatibility for runtime code not yet renamed from HOME to WORKSPACE.
@@ -202,7 +231,7 @@ def supervise(
     startup: Startup | None = None,
     logs: MainLogs | None = None,
 ) -> int:
-    """Own the API and research worker for one source-runtime instance."""
+    """Own the API and research worker for one stable source-runtime instance."""
 
     children = []
     read_fd, write_fd = os.pipe()
@@ -280,7 +309,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--init", action="store_true", help="Initialize a new empty workspace"
     )
-    parser.add_argument("--stop", action="store_true", help="Stop this workspace")
+    parser.add_argument("--stop", action="store_true", help="Stop this branch runtime")
     parser.add_argument(
         "--foreground",
         action="store_true",
@@ -292,7 +321,7 @@ def main(argv=None) -> int:
     try:
         env = runtime_environment(ROOT)
         workspace = Path(env["KARKINOS_WORKSPACE"])
-        runtime = workspace / ".run/main"
+        runtime = runtime_directory(workspace)
 
         if args.stop:
             if (
@@ -306,7 +335,7 @@ def main(argv=None) -> int:
 
         sha = check_source(ROOT)
         if args.check:
-            print(f"Source checkout: {sha}")
+            print(f"Source snapshot: {sha}")
             return 0
 
         port = int(os.environ.get("KARKINOS_MAIN_PORT", "8000"))
@@ -315,10 +344,10 @@ def main(argv=None) -> int:
 
         require_runtime_files(env, initialize=args.init)
         if not args.foreground and args.startup_fd is None:
-            command = [sys.executable, str(ROOT / "scripts/service/run_main.py")]
+            command = [sys.executable, str(DRIVER)]
             if args.init:
                 command.append("--init")
-            return launch_background(command, env, workspace / "logs/main.log")
+            return launch_background(command, env, log_path(workspace))
 
         runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
         with contextlib.ExitStack() as locks:
@@ -344,6 +373,8 @@ def main(argv=None) -> int:
                 if control.stop_requested():
                     raise InterruptedError("source startup was stopped")
 
+            print(f"Branch: {source_branch()}", flush=True)
+            print(f"Source: {ROOT}", flush=True)
             print(f"Workspace: {workspace}", flush=True)
             print(f"Data: {env['KARKINOS_DATA_DIR']}", flush=True)
             print(f"Configuration: {env['KARKINOS_CONFIG_PATH']}", flush=True)
