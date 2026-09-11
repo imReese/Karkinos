@@ -143,7 +143,9 @@ def _pid(path: Path, pid: int, started_at: str) -> None:
     path.write_text(f"{pid}\t{started_at}\n", encoding="utf-8")
 
 
-def _stop(repo: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
+def _stop(
+    repo: Path, env: dict[str, str], *args: str
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "scripts/stop_server.sh", *args],
         cwd=repo,
