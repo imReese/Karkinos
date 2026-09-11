@@ -39,9 +39,11 @@ risk, simulation, accounting, and attribution in one local-first workflow.
 - **AI-assisted research** — optional AI can accelerate research iteration while deterministic code owns quantitative and financial results.
 - **Application** — FastAPI backend, React / TypeScript interface, and a local-first runtime.
 
-## Development quick start
+## Quick start
 
 Requirements: **Python 3.12+**, **Node.js 24.x**, **uv**, and **Git**.
+
+### Run from source
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -50,13 +52,36 @@ git switch dev
 ./scripts/start_server.sh dev
 ```
 
-Open `http://127.0.0.1:5173`.
+The development launcher creates an isolated local environment under `.run/dev-home` and starts:
 
-```bash
-./scripts/stop_server.sh dev
+- Web app: `http://127.0.0.1:5173`
+- API: `http://127.0.0.1:8001`
+- Health: `http://127.0.0.1:8001/api/health`
+
+### Configure development
+
+Development mode keeps its own configuration and data:
+
+```text
+.run/dev-home/config/config.json
+.run/dev-home/config/.env
+.run/dev-home/data/
 ```
 
-Packaged builds: [Releases](https://github.com/imReese/Karkinos/releases) · Runtime and maintenance commands: [scripts/README.md](scripts/README.md)
+The default market-data provider is **AKShare** and requires no token.
+
+Choose AKShare or configure TuShare interactively after the development home has been created:
+
+```bash
+uv run python scripts/data/configure_data_source.py \
+  --config-path .run/dev-home/config/config.json \
+  --env-file .run/dev-home/config/.env
+```
+
+TuShare credentials are stored in the dedicated development `.env`, not in `config.json`.
+AI providers, notifications, fees, server settings, and other options are documented in the [configuration guide](docs/guides/configuration.md).
+
+Packaged builds: [Releases](https://github.com/imReese/Karkinos/releases) · Runtime and lifecycle commands: [scripts/README.md](scripts/README.md)
 
 ## Resources
 
