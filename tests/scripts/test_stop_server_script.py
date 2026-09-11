@@ -78,9 +78,7 @@ def _repo(
     )
     _write_executable(
         bin_dir / "pgrep",
-        "#!/usr/bin/env bash\n"
-        f'printf "pgrep %s\\n" "$*" >>"{calls}"\n'
-        "exit 1\n",
+        "#!/usr/bin/env bash\n" f'printf "pgrep %s\\n" "$*" >>"{calls}"\n' "exit 1\n",
     )
     _write_executable(bin_dir / "uname", "#!/usr/bin/env bash\necho Darwin\n")
     _write_executable(
