@@ -60,7 +60,9 @@ def test_python_files_rejects_bad_or_mismatched_revisions(repository: Path) -> N
         quality.python_files(repository, base=head, head=head)
 
 
-def test_run_checks_runs_stable_boundaries_without_changed_python(monkeypatch, tmp_path):
+def test_run_checks_runs_stable_boundaries_without_changed_python(
+    monkeypatch, tmp_path
+):
     calls = []
 
     def run(command, **kwargs):
