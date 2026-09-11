@@ -5,12 +5,12 @@ umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEFAULT_KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
-KARKINOS_HOME_PATH="${KARKINOS_HOME:-${DEFAULT_KARKINOS_HOME}}"
+KARKINOS_WORKSPACE_PATH="${KARKINOS_WORKSPACE:-${KARKINOS_HOME:-${REPO_ROOT}}}"
+DEV_WORKSPACE_PATH="${KARKINOS_DEV_WORKSPACE:-${KARKINOS_DEV_HOME:-${REPO_ROOT}/.run/dev}}"
 LAUNCH_AGENT_LABEL="com.karkinos.daily-candidate"
 LAUNCH_AGENT_TARGET="gui/$(id -u)/${LAUNCH_AGENT_LABEL}"
 LAUNCH_AGENT_PLIST="${HOME}/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist"
-PACKAGED_RELEASE_CONTROL="${KARKINOS_HOME_PATH}/current/bin/karkinosctl"
+PACKAGED_RELEASE_CONTROL="${KARKINOS_WORKSPACE_PATH}/current/bin/karkinosctl"
 PRODUCTION_SERVICE_PORT="${KARKINOS_BACKEND_PORT:-}"
 
 production_service_port_is_valid() {
@@ -27,32 +27,30 @@ Usage:
   ./scripts/stop_server.sh [main|dev|prod|all]
 
 Modes:
-  main  Stop the managed main source supervisor and its children.
-  dev   Stop only exact PID-tracked source development processes (default).
-  prod  Stop only the supervised immutable production service.
+  main  Stop the source main supervisor in the selected workspace.
+  dev   Stop exact PID-tracked development processes (default).
+  prod  Stop an installed immutable production service in the selected workspace.
   all   Stop development, main, and production services.
 
-Unknown listeners are never signaled. Production is stopped only through the
-packaged release controller selected by the managed current pointer.
+KARKINOS_WORKSPACE defaults to the repository root for source usage.
+KARKINOS_DEV_WORKSPACE defaults to .run/dev. Unknown listeners are never signaled.
 EOF
 }
 
 packaged_release_control_is_valid() {
 	local release_dir release_name release_control
-	if [[ "${KARKINOS_HOME_PATH}" != /* || ! -L "${KARKINOS_HOME_PATH}/current" ]]; then
+	if [[ "${KARKINOS_WORKSPACE_PATH}" != /* || ! -L "${KARKINOS_WORKSPACE_PATH}/current" ]]; then
 		return 1
 	fi
-	release_dir="$(CDPATH='' cd -- "${KARKINOS_HOME_PATH}/current" 2>/dev/null && pwd -P)" || return 1
+	release_dir="$(CDPATH='' cd -- "${KARKINOS_WORKSPACE_PATH}/current" 2>/dev/null && pwd -P)" || return 1
 	release_name="${release_dir##*/}"
 	release_control="${release_dir}/bin/karkinosctl"
-	[[ "${release_dir}" == "${KARKINOS_HOME_PATH}/releases/${release_name}" &&
+	[[ "${release_dir}" == "${KARKINOS_WORKSPACE_PATH}/releases/${release_name}" &&
 		"${release_name}" =~ ^sha-[0-9a-f]{40}$ &&
 		-f "${release_dir}/release.json" && ! -L "${release_dir}/release.json" &&
 		-d "${release_dir}/bin" && ! -L "${release_dir}/bin" &&
 		-f "${release_control}" && ! -L "${release_control}" &&
 		-x "${release_control}" ]] || return 1
-	# Stop through the physical release that was validated above. Re-reading
-	# current here would reopen a pointer-switch race before the exec boundary.
 	PACKAGED_RELEASE_CONTROL="${release_control}"
 }
 
@@ -73,7 +71,7 @@ stop_resident_service() {
 	fi
 	if ! packaged_release_control_is_valid; then
 		echo "Error: production service state has no packaged immutable release controller." >&2
-		echo "Migrate a legacy source LaunchAgent with the explicit release bootstrap workflow before stopping it here." >&2
+		echo "Set KARKINOS_WORKSPACE to the installed runtime workspace." >&2
 		return 1
 	fi
 	local -a service_args=(service-stop)
@@ -103,7 +101,7 @@ command_matches_owner() {
 		[[ "${command}" == *"${REPO_ROOT}/web"* && "${command}" == *"vite"* ]]
 		;;
 	legacy-native)
-		[[ "${command}" == *"${KARKINOS_HOME_PATH}/"* && "${command}" == *"/bin/karkinos"* ]]
+		[[ "${command}" == *"${KARKINOS_WORKSPACE_PATH}/"* && "${command}" == *"/bin/karkinos"* ]]
 		;;
 	*) return 1 ;;
 	esac
@@ -193,7 +191,8 @@ fi
 MODE="${1:-dev}"
 case "${MODE}" in
 main)
-	exec python3 "${SCRIPT_DIR}/service/source_main.py" --stop
+	export KARKINOS_WORKSPACE="${KARKINOS_WORKSPACE_PATH}"
+	exec python3 "${SCRIPT_DIR}/service/run_main.py" --stop
 	;;
 dev)
 	STOP_DEVELOPMENT=true
@@ -216,22 +215,28 @@ esac
 
 EXIT_STATUS=0
 if [[ "${MODE}" == "all" ]]; then
-	python3 "${SCRIPT_DIR}/service/source_main.py" --stop || EXIT_STATUS=1
+	KARKINOS_WORKSPACE="${KARKINOS_WORKSPACE_PATH}" \
+		python3 "${SCRIPT_DIR}/service/run_main.py" --stop || EXIT_STATUS=1
 fi
 if [[ "${STOP_DEVELOPMENT}" == true ]]; then
-	stop_tracked_process "${REPO_ROOT}/.run/web.pid" "Karkinos development frontend" "dev-frontend" || EXIT_STATUS=1
-	stop_tracked_process "${REPO_ROOT}/.run/dev-server.pid" "Karkinos development backend" "dev-backend" || EXIT_STATUS=1
+	stop_tracked_process "${DEV_WORKSPACE_PATH}/run/frontend.pid" "Karkinos development frontend" "dev-frontend" || EXIT_STATUS=1
+	stop_tracked_process "${DEV_WORKSPACE_PATH}/run/backend.pid" "Karkinos development backend" "dev-backend" || EXIT_STATUS=1
 
-	# Clean up only old PID-file based source processes from transitional scripts.
+	# Transitional PID locations are cleaned only when they still belong to this checkout.
+	if [[ -f "${REPO_ROOT}/.run/web.pid" ]]; then
+		stop_tracked_process "${REPO_ROOT}/.run/web.pid" "legacy Karkinos development frontend" "dev-frontend" || EXIT_STATUS=1
+	fi
+	if [[ -f "${REPO_ROOT}/.run/dev-server.pid" ]]; then
+		stop_tracked_process "${REPO_ROOT}/.run/dev-server.pid" "legacy Karkinos development backend" "dev-backend" || EXIT_STATUS=1
+	fi
 	if [[ -f "${REPO_ROOT}/.run/server.pid" ]]; then
 		stop_tracked_process "${REPO_ROOT}/.run/server.pid" "legacy Karkinos source backend" "dev-backend" || EXIT_STATUS=1
 	fi
 fi
 
 if [[ "${STOP_PRODUCTION}" == true ]]; then
-	# Clean up only the exact old native PID record. No port sweep is performed.
-	if [[ -f "${KARKINOS_HOME_PATH}/.run/server.pid" ]]; then
-		stop_tracked_process "${KARKINOS_HOME_PATH}/.run/server.pid" "legacy Karkinos native backend" "legacy-native" || EXIT_STATUS=1
+	if [[ -f "${KARKINOS_WORKSPACE_PATH}/.run/server.pid" ]]; then
+		stop_tracked_process "${KARKINOS_WORKSPACE_PATH}/.run/server.pid" "legacy Karkinos native backend" "legacy-native" || EXIT_STATUS=1
 	fi
 
 	if packaged_release_control_is_valid ||
