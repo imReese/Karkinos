@@ -1,25 +1,30 @@
 # Karkinos Strategy 兼容说明
 
-> Status: legacy compatibility guide.
+> Status: legacy compatibility.
 
-当前 `strategy/` 仍承载已实现 backtest/runtime 的兼容能力。新的研究能力按照
-[ARCHITECTURE.md](../ARCHITECTURE.md) 的 Dataset -> Research -> Published Forecast -> Portfolio 路径发展。
+## 当前角色
 
-## 当前基线策略
+`strategy/` 保留现有 backtest/runtime 兼容。
 
-现有 built-in strategies 主要用于 regression、研究 baseline 和现有 UI/runtime 兼容。它们不因为被内置就自动成为经过验证的 Alpha。
+新研究路径：
 
-当前代码中的策略和参数以 `strategy/` 实现及其测试为准。
+```text
+Dataset
+-> Research
+-> Published Forecast
+-> Portfolio
+```
 
-## 现有扩展契约
+Built-in strategies 主要用于 regression、baseline 和现有 UI/runtime 兼容，不自动代表经过验证的 Alpha。
 
-兼容策略仍可以通过现有 extension 机制加载。现有 `karkinos.strategy.v1` 是兼容 schema version，不是产品 roadmap 版本。
+## Extension contract
 
-旧 Strategy 输出可能使用 signal 或 target-weight 语义；这些输出仍必须经过相应的研究评估、Portfolio、Risk 和 Simulation/Execution 边界，不能直接获得资本权限。
+- 现有 extension mechanism 继续兼容。
+- `karkinos.strategy.v1` 是 schema version，不是 roadmap 版本。
+- Legacy signal / target-weight 输出仍必须经过 Research、Portfolio、Risk、Simulation/Execution 边界。
+- Strategy output 不授予 capital authority。
 
-## 不再扩大的 Strategy 职责
-
-新的研究能力不继续把以下职责塞进 Strategy class：
+## Strategy 不再扩大的职责
 
 ```text
 feature engineering
@@ -32,9 +37,7 @@ accounting
 capital authority
 ```
 
-这些职责分别属于 Research、Portfolio、Risk、Simulation、Execution 和 Accounting 边界。
-
-## 迁移方向
+## 迁移映射
 
 ```text
 Legacy Strategy
@@ -46,8 +49,16 @@ Legacy Strategy
      +-> execution        -> Simulation / Execution
 ```
 
-迁移以真实产品价值和调用方为依据，不为目录整洁进行一次性重写。
+## Evaluation
 
-## Evaluation standard
+关注：
 
-Strategy / Alpha 的价值不能用单次回测总收益判断。新的研究评估应关注 point-in-time 数据、OOS、after-cost、exposure、turnover、capacity 和 robustness 等证据。
+```text
+point-in-time
+OOS
+after-cost
+exposure
+turnover
+capacity
+robustness
+```
