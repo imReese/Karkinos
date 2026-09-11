@@ -50,7 +50,7 @@ risk, simulation, accounting, and attribution in one local-first workflow.
 
 ### Source runtime
 
-For the normal local workflow, the repository root owns the local Karkinos state. All source branches use the same `config.json`, `.env`, `data/store`, `logs`, and `exports`; the selected Git branch only changes the code being run.
+For the normal local workflow, the repository root owns the local Karkinos state. Source branches share the same `config.json`, `.env`, `data/store`, `logs`, and `exports`; selecting a branch only changes the code being run.
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -60,7 +60,7 @@ cp .env.example .env
 ./scripts/start_server.sh --init
 ```
 
-`main` is the default branch, so later starts are simply:
+`main` is the default, so later starts are simply:
 
 ```bash
 ./scripts/start_server.sh
@@ -68,41 +68,49 @@ cp .env.example .env
 
 Open `http://127.0.0.1:8000`.
 
-The local layout is intentionally the same on macOS and Linux source workflows:
+The launcher does **not** switch the current Git checkout. Stable branches are materialized as disposable code snapshots under `.run/<branch>/code` with `git archive`, while persistent local state stays in the repository root:
 
 ```text
 Karkinos/
 ├── config.json
 ├── .env
-├── data/store/      # databases and local data
+├── data/store/          # databases and local data
 ├── logs/
 ├── exports/
 └── .run/
-    ├── source.lock  # one source backend at a time
-    ├── main/        # main process/control state only
-    └── dev/         # dev process state only
+    ├── source.lock      # one source backend at a time
+    ├── main/
+    │   └── code/        # cached main source snapshot + derived dependencies
+    └── dev/             # dev PID / process state only
 ```
 
-The local configuration, data, logs, exports, and `.run/` are ignored by Git. Code can be replaced or switched independently from local state.
+`config.json`, `.env`, runtime data, logs, exports, and `.run/` are ignored by Git.
 
-The launcher can select a branch directly:
+You can stay on `dev` while running stable `main`:
 
 ```bash
+git switch dev
+
+# run the current dev working tree, including local uncommitted edits
 ./scripts/start_server.sh dev
-./scripts/start_server.sh --branch dev
-./scripts/start_server.sh feature/my-research-change
+
+# stop dev, then run the locally fetched main snapshot
+./scripts/stop_server.sh dev
+./scripts/start_server.sh
 ```
 
-It safely switches the checkout to that branch. It refuses to switch when tracked/untracked source changes are present or another Karkinos source runtime is still using the checkout; it never resets, stashes, or discards changes automatically.
+The current checkout remains on `dev`. `main` and other stable branch snapshots do not read uncommitted working-tree changes.
 
-`main` uses the stable source runtime on port `8000`. Other branches use the development runtime with backend reload on `8001` and Vite on `5173`. **They still use the same local config and data.** Only one source backend may open the shared workspace at a time.
-
-Stop the default `main` runtime or a development branch with:
+Run another committed branch without switching the checkout:
 
 ```bash
-./scripts/stop_server.sh
-./scripts/stop_server.sh dev
+./scripts/start_server.sh feature/my-research-change
+./scripts/stop_server.sh feature/my-research-change
 ```
+
+Snapshot branches use the latest branch ref already available locally. Run `git fetch origin` when you want to refresh `origin/main` or another remote branch. The cached snapshot is rebuilt only when that ref points to a new commit.
+
+`dev` is intentionally special: it runs the current `dev` working tree with backend reload on `8001` and Vite on `5173`. Stable snapshots serve the built application on `8000`. All source modes still use the same local config and data, and only one source backend may open the shared workspace at a time.
 
 Because branches share the same databases, schema-changing development must use explicit migrations and preserve the persisted-data compatibility rules in [docs/ENGINEERING.md](docs/ENGINEERING.md).
 
@@ -159,9 +167,10 @@ The default market-data provider is **AKShare** and requires no token. TuShare, 
 
 ## Development
 
-`dev` is the persistent development branch. The launcher selects it for you when the checkout is safe to switch:
+`dev` is the persistent development branch. Switch to it yourself once and keep working there:
 
 ```bash
+git switch dev
 ./scripts/start_server.sh dev
 ```
 
@@ -171,7 +180,7 @@ Development starts:
 - API: `http://127.0.0.1:8001`
 - Health: `http://127.0.0.1:8001/api/health`
 
-Unlike the old isolated-dev-home model, development deliberately uses the same repository-local `config.json`, `.env`, and `data/store` as `main`. `.run/dev` contains only disposable process state. Stop it with `./scripts/stop_server.sh dev` before switching to another source branch.
+Development deliberately reuses the repository-local `config.json`, `.env`, and `data/store`. `.run/dev` contains only disposable process state. The default `./scripts/start_server.sh` can still run the cached `main` snapshot without changing or cleaning the dev checkout.
 
 For contribution workflow, tests, migration rules, and engineering constraints, see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ENGINEERING.md](docs/ENGINEERING.md).
 
