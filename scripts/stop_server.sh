@@ -21,9 +21,10 @@ Usage:
   ./scripts/stop_server.sh all
   ./scripts/stop_server.sh prod
 
-main is the default source branch. Source branches share config.json, .env,
-data/store, logs, and exports; only their process state differs under .run/<branch>.
-Unknown listeners are never signaled.
+main is the default. dev stops the current-working-tree development runtime.
+Other branch names stop their stable snapshot runtime. Source branches share
+config.json, .env, data/store, logs, and exports; only code/dependencies/process
+state are branch-specific. Unknown listeners are never signaled.
 EOF
 }
 
@@ -91,11 +92,11 @@ command_matches_owner() {
 	local command="$1"
 	local owner="$2"
 	case "${owner}" in
-	source-backend)
+	dev-backend)
 		[[ "${command}" == *"${REPO_ROOT}/scripts/service/run_dev.py"* ||
 			("${command}" == *"${REPO_ROOT}"* && "${command}" == *" -m server"*) ]]
 		;;
-	source-frontend)
+	dev-frontend)
 		[[ "${command}" == *"${REPO_ROOT}/web"* && "${command}" == *"vite"* ]]
 		;;
 	*) return 1 ;;
@@ -168,35 +169,34 @@ stop_tracked_process() {
 	echo "Stopped ${label} (${pid})."
 }
 
-stop_main() {
+stop_snapshot_branch() {
+	local branch="$1"
 	KARKINOS_WORKSPACE="${SOURCE_WORKSPACE}" \
 	KARKINOS_HOME="${SOURCE_WORKSPACE}" \
-	KARKINOS_SOURCE_BRANCH=main \
+	KARKINOS_SOURCE_BRANCH="${branch}" \
 		python3 "${SCRIPT_DIR}/service/run_main.py" --stop
 }
 
-stop_development_branch() {
-	local branch="$1"
-	local runtime="${SOURCE_WORKSPACE}/.run/${branch}"
+stop_dev() {
+	local runtime="${SOURCE_WORKSPACE}/.run/dev"
 	local status=0
-	stop_tracked_process "${runtime}/frontend.pid" "Karkinos ${branch} frontend" "source-frontend" || status=1
-	stop_tracked_process "${runtime}/backend.pid" "Karkinos ${branch} backend" "source-backend" || status=1
+	stop_tracked_process "${runtime}/frontend.pid" "Karkinos dev frontend" "dev-frontend" || status=1
+	stop_tracked_process "${runtime}/backend.pid" "Karkinos dev backend" "dev-backend" || status=1
 	return "${status}"
 }
 
-stop_all_source_development() {
-	local status=0 pid_file runtime
+stop_all_snapshots() {
+	local status=0 socket runtime branch
 	if [[ ! -d "${SOURCE_WORKSPACE}/.run" ]]; then
 		return 0
 	fi
-	while IFS= read -r pid_file; do
-		runtime="${pid_file%/frontend.pid}"
-		stop_tracked_process "${pid_file}" "Karkinos source frontend" "source-frontend" || status=1
-		stop_tracked_process "${runtime}/backend.pid" "Karkinos source backend" "source-backend" || status=1
-	done < <(find "${SOURCE_WORKSPACE}/.run" -type f -name frontend.pid -print 2>/dev/null || true)
-	while IFS= read -r pid_file; do
-		stop_tracked_process "${pid_file}" "Karkinos source backend" "source-backend" || status=1
-	done < <(find "${SOURCE_WORKSPACE}/.run" -type f -name backend.pid -print 2>/dev/null || true)
+	while IFS= read -r socket; do
+		[[ -n "${socket}" ]] || continue
+		runtime="${socket%/control.sock}"
+		branch="${runtime#${SOURCE_WORKSPACE}/.run/}"
+		[[ "${branch}" != "dev" ]] || continue
+		stop_snapshot_branch "${branch}" || status=1
+	done < <(find "${SOURCE_WORKSPACE}/.run" -type s -name control.sock -print 2>/dev/null || true)
 	return "${status}"
 }
 
@@ -239,8 +239,8 @@ fi
 
 if [[ "${TARGET_BRANCH}" == "all" ]]; then
 	EXIT_STATUS=0
-	stop_main || EXIT_STATUS=1
-	stop_all_source_development || EXIT_STATUS=1
+	stop_dev || EXIT_STATUS=1
+	stop_all_snapshots || EXIT_STATUS=1
 	if ((EXIT_STATUS != 0)); then
 		exit "${EXIT_STATUS}"
 	fi
@@ -253,10 +253,10 @@ git check-ref-format --branch "${TARGET_BRANCH}" >/dev/null 2>&1 || {
 	exit 2
 }
 
-if [[ "${TARGET_BRANCH}" == "main" ]]; then
-	stop_main
+if [[ "${TARGET_BRANCH}" == "dev" ]]; then
+	stop_dev
 else
-	stop_development_branch "${TARGET_BRANCH}"
+	stop_snapshot_branch "${TARGET_BRANCH}"
 fi
 
 echo "Karkinos ${TARGET_BRANCH} runtime stopped. Unknown listeners were not touched."
