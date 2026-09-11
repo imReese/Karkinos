@@ -5,9 +5,34 @@ umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-KARKINOS_WORKSPACE_PATH="${KARKINOS_WORKSPACE:-${KARKINOS_HOME:-${REPO_ROOT}}}"
-PRODUCTION_CONTROL="${KARKINOS_WORKSPACE_PATH}/current/bin/karkinosctl"
+SOURCE_WORKSPACE="${KARKINOS_WORKSPACE:-${REPO_ROOT}}"
+INSTALLED_HOME="${KARKINOS_HOME:-${KARKINOS_WORKSPACE:-${REPO_ROOT}}}"
+PRODUCTION_CONTROL="${INSTALLED_HOME}/current/bin/karkinosctl"
 PRODUCTION_SERVICE_PORT="${KARKINOS_BACKEND_PORT:-}"
+
+usage() {
+	cat <<'EOF'
+Usage:
+  ./scripts/start_server.sh [branch] [extra args...]
+  ./scripts/start_server.sh --branch <branch> [extra args...]
+  ./scripts/start_server.sh prod
+
+Source branches:
+  main is the default. The launcher safely switches this checkout to the selected
+  branch, then runs it against the same local config.json, .env, data/store,
+  logs, and exports. Runtime process state alone is separated under .run/<branch>.
+
+  main        Stable source runtime on port 8000. Supports --init and --foreground.
+  dev/other   Development runtime with backend reload on port 8001 and Vite on 5173.
+
+The launcher never resets, stashes, or discards local changes. Branch switching
+is refused while the checkout is dirty or another source runtime is using it.
+Only one source backend may use the shared local workspace at a time.
+
+prod controls an already installed immutable release and is retained only for
+legacy/native release maintenance.
+EOF
+}
 
 production_service_port_is_valid() {
 	if [[ -z "${PRODUCTION_SERVICE_PORT}" ]]; then
@@ -19,13 +44,13 @@ production_service_port_is_valid() {
 
 require_packaged_release_control() {
 	local release_dir release_name release_control
-	if [[ "${KARKINOS_WORKSPACE_PATH}" != /* || ! -L "${KARKINOS_WORKSPACE_PATH}/current" ]]; then
+	if [[ "${INSTALLED_HOME}" != /* || ! -L "${INSTALLED_HOME}/current" ]]; then
 		return 1
 	fi
-	release_dir="$(CDPATH='' cd -- "${KARKINOS_WORKSPACE_PATH}/current" 2>/dev/null && pwd -P)" || return 1
+	release_dir="$(CDPATH='' cd -- "${INSTALLED_HOME}/current" 2>/dev/null && pwd -P)" || return 1
 	release_name="${release_dir##*/}"
 	release_control="${release_dir}/bin/karkinosctl"
-	[[ "${release_dir}" == "${KARKINOS_WORKSPACE_PATH}/releases/${release_name}" &&
+	[[ "${release_dir}" == "${INSTALLED_HOME}/releases/${release_name}" &&
 		"${release_name}" =~ ^sha-[0-9a-f]{40}$ &&
 		-f "${release_dir}/release.json" && ! -L "${release_dir}/release.json" &&
 		-d "${release_dir}/bin" && ! -L "${release_dir}/bin" &&
@@ -34,32 +59,68 @@ require_packaged_release_control() {
 	PRODUCTION_CONTROL="${release_control}"
 }
 
-usage() {
-	cat <<'EOF'
-Usage:
-  ./scripts/start_server.sh [dev] [extra server args...]
-  ./scripts/start_server.sh main [--foreground] [--init]
-  ./scripts/start_server.sh prod
+source_runtime_is_running() {
+	local command
+	while IFS= read -r command; do
+		[[ "${command}" == *"${REPO_ROOT}/scripts/service/run_main.py"* ||
+			"${command}" == *"${REPO_ROOT}/scripts/service/run_dev.py"* ]] && return 0
+	done < <(ps -axo command= 2>/dev/null || true)
+	return 1
+}
 
-Modes:
-  main  Run the current clean main checkout as the user runtime.
-        The repository root is the default workspace. Set KARKINOS_WORKSPACE
-        to an explicit absolute directory to keep user state elsewhere.
-        Configuration defaults to <workspace>/config, data to <workspace>/data,
-        logs to <workspace>/logs, and internal process state to <workspace>/.run/main.
-        --foreground follows the service in this terminal; Ctrl+C stops it.
-        --init explicitly creates a new empty workspace; not for upgrades.
-  dev   Run the current source tree with reload plus the Vite frontend.
-        Uses the isolated disposable workspace .run/dev by default.
-        Set KARKINOS_DEV_WORKSPACE to another dedicated absolute directory.
-        It defaults to backend port 8001.
-  prod  Start an already installed immutable release selected by
-        <workspace>/current. KARKINOS_HOME remains a legacy compatibility alias.
+switch_branch_if_needed() {
+	local target="$1"
+	shift
+	git check-ref-format --branch "${target}" >/dev/null 2>&1 || {
+		echo "Error: invalid Git branch '${target}'." >&2
+		exit 2
+	}
 
-The live scheduler always starts with the backend. It has no independent off
-switch. Automatic trading remains a separate default-off runtime control and
-does not gain broker, execution, or capital authority from this command.
-EOF
+	local current
+	current="$(git -C "${REPO_ROOT}" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+	if [[ "${current}" == "${target}" ]]; then
+		return 0
+	fi
+	if source_runtime_is_running; then
+		echo "Error: a Karkinos source runtime is still using this checkout." >&2
+		echo "Stop it before switching from '${current:-detached HEAD}' to '${target}'." >&2
+		exit 1
+	fi
+	if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain --untracked-files=normal)" ]]; then
+		echo "Error: the Git checkout has local changes." >&2
+		echo "Commit, stash, or discard them yourself before switching branches." >&2
+		exit 1
+	fi
+
+	if git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/heads/${target}"; then
+		git -C "${REPO_ROOT}" switch "${target}"
+	elif git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/remotes/origin/${target}"; then
+		git -C "${REPO_ROOT}" switch --track -c "${target}" "origin/${target}"
+	else
+		echo "Error: branch '${target}' is not available locally or under origin/." >&2
+		echo "Fetch it explicitly, then retry." >&2
+		exit 1
+	fi
+
+	# Continue with the launcher belonging to the selected code branch.
+	exec bash "${REPO_ROOT}/scripts/start_server.sh" "${target}" "$@"
+}
+
+require_source_workspace() {
+	if [[ "${SOURCE_WORKSPACE}" != /* ]]; then
+		echo "Error: KARKINOS_WORKSPACE must be an absolute path when set." >&2
+		exit 2
+	fi
+	if [[ ! -f "${SOURCE_WORKSPACE}/config.json" ]]; then
+		echo "Error: missing ${SOURCE_WORKSPACE}/config.json" >&2
+		echo "Create it with: cp config.example.json config.json" >&2
+		exit 1
+	fi
+	if [[ ! -f "${SOURCE_WORKSPACE}/.env" ]]; then
+		echo "Error: missing ${SOURCE_WORKSPACE}/.env" >&2
+		echo "Create it with: cp .env.example .env" >&2
+		exit 1
+	fi
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -67,36 +128,10 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 	exit 0
 fi
 
-MODE="${MODE:-${1:-dev}}"
-case "${MODE}" in
-main)
-	if [[ "${1:-}" == "main" ]]; then
-		shift
-	fi
-	export KARKINOS_WORKSPACE="${KARKINOS_WORKSPACE_PATH}"
-	exec python3 "${SCRIPT_DIR}/service/run_main.py" "$@"
-	;;
-dev)
-	if [[ "${1:-}" == "dev" ]]; then
-		shift
-	fi
-	if [[ -f "${HOME}/.local/bin/env" ]]; then
-		# shellcheck disable=SC1091
-		source "${HOME}/.local/bin/env"
-	fi
-	exec python3 "${SCRIPT_DIR}/service/dev_environment.py" --repo "${REPO_ROOT}" -- \
-		bash "${SCRIPT_DIR}/start_server.sh" --dev-prepared "$@"
-	;;
---dev-prepared)
+if [[ "${1:-}" == "prod" ]]; then
 	shift
-	;;
-prod)
-	if [[ "${1:-}" == "prod" ]]; then
-		shift
-	fi
 	if (($# != 0)); then
 		echo "Error: prod does not accept ad-hoc server arguments." >&2
-		echo "Set KARKINOS_BACKEND_PORT explicitly when a non-default port is required." >&2
 		exit 2
 	fi
 	if ! production_service_port_is_valid; then
@@ -104,8 +139,8 @@ prod)
 		exit 2
 	fi
 	if ! require_packaged_release_control; then
-		echo "Error: production requires the packaged immutable release controller under the selected workspace." >&2
-		echo "Set KARKINOS_WORKSPACE to the installed runtime workspace." >&2
+		echo "Error: production requires an installed immutable release controller." >&2
+		echo "Set KARKINOS_HOME to that installed runtime when necessary." >&2
 		exit 1
 	fi
 	service_args=(service-start)
@@ -113,13 +148,36 @@ prod)
 		service_args+=(--service-port "${PRODUCTION_SERVICE_PORT}")
 	fi
 	exec "${PRODUCTION_CONTROL}" "${service_args[@]}"
-	;;
-*)
-	echo "Error: unknown mode '${MODE}'." >&2
-	usage >&2
-	exit 2
-	;;
-esac
+fi
+
+TARGET_BRANCH="main"
+if [[ "${1:-}" == "--branch" ]]; then
+	(($# >= 2)) || {
+		echo "Error: --branch requires a branch name." >&2
+		exit 2
+	}
+	TARGET_BRANCH="$2"
+	shift 2
+elif [[ -n "${1:-}" && "${1}" != -* ]]; then
+	TARGET_BRANCH="$1"
+	shift
+fi
+
+switch_branch_if_needed "${TARGET_BRANCH}" "$@"
+require_source_workspace
+
+export KARKINOS_WORKSPACE="${SOURCE_WORKSPACE}"
+# Temporary compatibility for runtime code still reading the older name.
+export KARKINOS_HOME="${SOURCE_WORKSPACE}"
+export KARKINOS_DATA_DIR="${KARKINOS_DATA_DIR:-${SOURCE_WORKSPACE}/data/store}"
+export KARKINOS_CONFIG_PATH="${KARKINOS_CONFIG_PATH:-${SOURCE_WORKSPACE}/config.json}"
+export KARKINOS_ENV_FILE="${KARKINOS_ENV_FILE:-${SOURCE_WORKSPACE}/.env}"
+export KARKINOS_STATIC_DIR="${REPO_ROOT}/web/dist"
+export KARKINOS_SOURCE_BRANCH="${TARGET_BRANCH}"
+
+if [[ "${TARGET_BRANCH}" == "main" ]]; then
+	exec python3 "${SCRIPT_DIR}/service/run_main.py" "$@"
+fi
 
 cd "${REPO_ROOT}"
 
@@ -146,13 +204,13 @@ EOF
 	exit 1
 fi
 
-DEV_WORKSPACE="${KARKINOS_WORKSPACE:-${REPO_ROOT}/.run/dev}"
-RUN_DIR="${DEV_WORKSPACE}/run"
-LOG_DIR="${DEV_WORKSPACE}/logs"
-PID_FILE="${RUN_DIR}/backend.pid"
-WEB_PID_FILE="${RUN_DIR}/frontend.pid"
-LOG_FILE="${LOG_DIR}/backend.log"
-WEB_LOG_FILE="${LOG_DIR}/frontend.log"
+BRANCH_SLUG="${TARGET_BRANCH//\//-}"
+RUNTIME_DIR="${SOURCE_WORKSPACE}/.run/${TARGET_BRANCH}"
+LOG_DIR="${SOURCE_WORKSPACE}/logs"
+PID_FILE="${RUNTIME_DIR}/backend.pid"
+WEB_PID_FILE="${RUNTIME_DIR}/frontend.pid"
+LOG_FILE="${LOG_DIR}/${BRANCH_SLUG}-backend.log"
+WEB_LOG_FILE="${LOG_DIR}/${BRANCH_SLUG}-frontend.log"
 LOG_MAX_BYTES="${KARKINOS_LOG_MAX_BYTES:-20971520}"
 STARTUP_HEALTH_TIMEOUT_SECONDS="${KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-60}"
 FRONTEND_STARTUP_TIMEOUT_SECONDS="${KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS:-30}"
@@ -227,12 +285,12 @@ ensure_frontend_dependencies() {
 }
 
 guide_data_source_configuration() {
-	if [[ -f "${KARKINOS_CONFIG_PATH:-config.json}" || -n "${KARKINOS_TUSHARE_TOKEN:-}" ]]; then
+	if [[ -n "${KARKINOS_TUSHARE_TOKEN:-}" ]]; then
 		return
 	fi
 	cat <<'EOF'
-Data source: defaulting to AKShare.
-Configure local development data with:
+Data source: AKShare works without a token.
+To select AKShare or configure TuShare interactively:
   uv run python scripts/data/configure_data_source.py
 EOF
 }
@@ -386,8 +444,8 @@ if ! command -v curl >/dev/null 2>&1; then
 	exit 1
 fi
 
-mkdir -p "${RUN_DIR}" "${LOG_DIR}"
-chmod 700 "${DEV_WORKSPACE}" "${RUN_DIR}" "${LOG_DIR}"
+mkdir -p "${RUNTIME_DIR}" "${LOG_DIR}" "${SOURCE_WORKSPACE}/data/store" "${SOURCE_WORKSPACE}/exports"
+chmod 700 "${RUNTIME_DIR}" "${LOG_DIR}" "${SOURCE_WORKSPACE}/data/store"
 
 for pid_file in "${PID_FILE}" "${WEB_PID_FILE}"; do
 	if [[ ! -f "${pid_file}" ]]; then
@@ -396,8 +454,7 @@ for pid_file in "${PID_FILE}" "${WEB_PID_FILE}"; do
 	existing_record="$(cat "${pid_file}")"
 	IFS=$'\t' read -r existing_pid _ <<<"${existing_record}"
 	if [[ "${existing_pid}" =~ ^[0-9]+$ ]] && kill -0 "${existing_pid}" >/dev/null 2>&1; then
-		echo "Error: a tracked development process is already running with PID ${existing_pid}." >&2
-		echo "Stop it explicitly with ./scripts/stop_server.sh dev." >&2
+		echo "Error: branch '${TARGET_BRANCH}' already has a tracked development process with PID ${existing_pid}." >&2
 		exit 1
 	fi
 	rm -f "${pid_file}"
@@ -424,7 +481,7 @@ WEB_LAUNCH_PID=""
 trap cleanup_failed_startup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-echo "Starting source development backend on ${PRODUCT_ENTRY_URL}"
+echo "Starting branch '${TARGET_BRANCH}' backend on ${PRODUCT_ENTRY_URL}"
 if command -v setsid >/dev/null 2>&1; then
 	setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
 		uv run --locked --extra server "${REPO_ROOT}/.venv/bin/python" "${SCRIPT_DIR}/service/run_dev.py" "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
@@ -464,10 +521,11 @@ wait_for_frontend
 trap - EXIT INT TERM
 
 cat <<EOF
-Karkinos development environment started.
-Workspace: ${DEV_WORKSPACE}
-Backend:  ${PRODUCT_ENTRY_URL}
-Frontend: ${HOT_RELOAD_URL}
+Karkinos branch '${TARGET_BRANCH}' started.
+Workspace: ${SOURCE_WORKSPACE}
+Backend:   ${PRODUCT_ENTRY_URL}
+Frontend:  ${HOT_RELOAD_URL}
 
-Use ./scripts/stop_server.sh dev to stop Karkinos development services.
+config.json, .env, data/store, logs, and exports are shared across source branches.
+Use ./scripts/stop_server.sh ${TARGET_BRANCH} to stop this runtime.
 EOF
