@@ -5,13 +5,27 @@ umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-KARKINOS_WORKSPACE_PATH="${KARKINOS_WORKSPACE:-${KARKINOS_HOME:-${REPO_ROOT}}}"
-DEV_WORKSPACE_PATH="${KARKINOS_DEV_WORKSPACE:-${KARKINOS_DEV_HOME:-${REPO_ROOT}/.run/dev}}"
+SOURCE_WORKSPACE="${KARKINOS_WORKSPACE:-${REPO_ROOT}}"
+INSTALLED_HOME="${KARKINOS_HOME:-${KARKINOS_WORKSPACE:-${REPO_ROOT}}}"
 LAUNCH_AGENT_LABEL="com.karkinos.daily-candidate"
 LAUNCH_AGENT_TARGET="gui/$(id -u)/${LAUNCH_AGENT_LABEL}"
 LAUNCH_AGENT_PLIST="${HOME}/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist"
-PACKAGED_RELEASE_CONTROL="${KARKINOS_WORKSPACE_PATH}/current/bin/karkinosctl"
+PACKAGED_RELEASE_CONTROL="${INSTALLED_HOME}/current/bin/karkinosctl"
 PRODUCTION_SERVICE_PORT="${KARKINOS_BACKEND_PORT:-}"
+
+usage() {
+	cat <<'EOF'
+Usage:
+  ./scripts/stop_server.sh [branch]
+  ./scripts/stop_server.sh --branch <branch>
+  ./scripts/stop_server.sh all
+  ./scripts/stop_server.sh prod
+
+main is the default source branch. Source branches share config.json, .env,
+data/store, logs, and exports; only their process state differs under .run/<branch>.
+Unknown listeners are never signaled.
+EOF
+}
 
 production_service_port_is_valid() {
 	if [[ -z "${PRODUCTION_SERVICE_PORT}" ]]; then
@@ -21,41 +35,21 @@ production_service_port_is_valid() {
 		((10#${PRODUCTION_SERVICE_PORT} <= 65535))
 }
 
-usage() {
-	cat <<'EOF'
-Usage:
-  ./scripts/stop_server.sh [main|dev|prod|all]
-
-Modes:
-  main  Stop the source main supervisor in the selected workspace.
-  dev   Stop exact PID-tracked development processes (default).
-  prod  Stop an installed immutable production service in the selected workspace.
-  all   Stop development, main, and production services.
-
-KARKINOS_WORKSPACE defaults to the repository root for source usage.
-KARKINOS_DEV_WORKSPACE defaults to .run/dev. Unknown listeners are never signaled.
-EOF
-}
-
 packaged_release_control_is_valid() {
 	local release_dir release_name release_control
-	if [[ "${KARKINOS_WORKSPACE_PATH}" != /* || ! -L "${KARKINOS_WORKSPACE_PATH}/current" ]]; then
+	if [[ "${INSTALLED_HOME}" != /* || ! -L "${INSTALLED_HOME}/current" ]]; then
 		return 1
 	fi
-	release_dir="$(CDPATH='' cd -- "${KARKINOS_WORKSPACE_PATH}/current" 2>/dev/null && pwd -P)" || return 1
+	release_dir="$(CDPATH='' cd -- "${INSTALLED_HOME}/current" 2>/dev/null && pwd -P)" || return 1
 	release_name="${release_dir##*/}"
 	release_control="${release_dir}/bin/karkinosctl"
-	[[ "${release_dir}" == "${KARKINOS_WORKSPACE_PATH}/releases/${release_name}" &&
+	[[ "${release_dir}" == "${INSTALLED_HOME}/releases/${release_name}" &&
 		"${release_name}" =~ ^sha-[0-9a-f]{40}$ &&
 		-f "${release_dir}/release.json" && ! -L "${release_dir}/release.json" &&
 		-d "${release_dir}/bin" && ! -L "${release_dir}/bin" &&
 		-f "${release_control}" && ! -L "${release_control}" &&
 		-x "${release_control}" ]] || return 1
 	PACKAGED_RELEASE_CONTROL="${release_control}"
-}
-
-is_number() {
-	[[ "${1:-}" =~ ^[0-9]+$ ]]
 }
 
 resident_service_is_loaded() {
@@ -71,7 +65,7 @@ stop_resident_service() {
 	fi
 	if ! packaged_release_control_is_valid; then
 		echo "Error: production service state has no packaged immutable release controller." >&2
-		echo "Set KARKINOS_WORKSPACE to the installed runtime workspace." >&2
+		echo "Set KARKINOS_HOME to the installed runtime." >&2
 		return 1
 	fi
 	local -a service_args=(service-stop)
@@ -79,6 +73,10 @@ stop_resident_service() {
 		service_args+=(--service-port "${PRODUCTION_SERVICE_PORT}")
 	fi
 	"${PACKAGED_RELEASE_CONTROL}" "${service_args[@]}"
+}
+
+is_number() {
+	[[ "${1:-}" =~ ^[0-9]+$ ]]
 }
 
 process_start_identity() {
@@ -93,15 +91,12 @@ command_matches_owner() {
 	local command="$1"
 	local owner="$2"
 	case "${owner}" in
-	dev-backend)
+	source-backend)
 		[[ "${command}" == *"${REPO_ROOT}/scripts/service/run_dev.py"* ||
 			("${command}" == *"${REPO_ROOT}"* && "${command}" == *" -m server"*) ]]
 		;;
-	dev-frontend)
+	source-frontend)
 		[[ "${command}" == *"${REPO_ROOT}/web"* && "${command}" == *"vite"* ]]
-		;;
-	legacy-native)
-		[[ "${command}" == *"${KARKINOS_WORKSPACE_PATH}/"* && "${command}" == *"/bin/karkinos"* ]]
 		;;
 	*) return 1 ;;
 	esac
@@ -123,7 +118,6 @@ stop_tracked_process() {
 	local label="$2"
 	local owner="$3"
 	if [[ ! -f "${pid_file}" ]]; then
-		echo "${label} is not running."
 		return 0
 	fi
 
@@ -135,7 +129,6 @@ stop_tracked_process() {
 		return 1
 	fi
 	if ! kill -0 "${pid}" >/dev/null 2>&1; then
-		echo "${label} is not running; cleaning its stale PID file."
 		rm -f "${pid_file}"
 		return 0
 	fi
@@ -175,87 +168,95 @@ stop_tracked_process() {
 	echo "Stopped ${label} (${pid})."
 }
 
+stop_main() {
+	KARKINOS_WORKSPACE="${SOURCE_WORKSPACE}" \
+	KARKINOS_HOME="${SOURCE_WORKSPACE}" \
+	KARKINOS_SOURCE_BRANCH=main \
+		python3 "${SCRIPT_DIR}/service/run_main.py" --stop
+}
+
+stop_development_branch() {
+	local branch="$1"
+	local runtime="${SOURCE_WORKSPACE}/.run/${branch}"
+	local status=0
+	stop_tracked_process "${runtime}/frontend.pid" "Karkinos ${branch} frontend" "source-frontend" || status=1
+	stop_tracked_process "${runtime}/backend.pid" "Karkinos ${branch} backend" "source-backend" || status=1
+	return "${status}"
+}
+
+stop_all_source_development() {
+	local status=0 pid_file runtime
+	if [[ ! -d "${SOURCE_WORKSPACE}/.run" ]]; then
+		return 0
+	fi
+	while IFS= read -r pid_file; do
+		runtime="${pid_file%/frontend.pid}"
+		stop_tracked_process "${pid_file}" "Karkinos source frontend" "source-frontend" || status=1
+		stop_tracked_process "${runtime}/backend.pid" "Karkinos source backend" "source-backend" || status=1
+	done < <(find "${SOURCE_WORKSPACE}/.run" -type f -name frontend.pid -print 2>/dev/null || true)
+	while IFS= read -r pid_file; do
+		stop_tracked_process "${pid_file}" "Karkinos source backend" "source-backend" || status=1
+	done < <(find "${SOURCE_WORKSPACE}/.run" -type f -name backend.pid -print 2>/dev/null || true)
+	return "${status}"
+}
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+	usage
+	exit 0
+fi
+
+if [[ "${1:-}" == "prod" ]]; then
+	shift
+	(($# == 0)) || {
+		usage >&2
+		exit 2
+	}
+	if packaged_release_control_is_valid ||
+		resident_service_is_loaded ||
+		[[ -f "${LAUNCH_AGENT_PLIST}" ]]; then
+		stop_resident_service
+		echo "Karkinos production service stopped."
+	else
+		echo "Karkinos production service is not running."
+	fi
+	exit 0
+fi
+
+TARGET_BRANCH="main"
+if [[ "${1:-}" == "--branch" ]]; then
+	(($# == 2)) || {
+		usage >&2
+		exit 2
+	}
+	TARGET_BRANCH="$2"
+elif [[ -n "${1:-}" ]]; then
 	(($# == 1)) || {
 		usage >&2
 		exit 2
 	}
-	usage
+	TARGET_BRANCH="$1"
+fi
+
+if [[ "${TARGET_BRANCH}" == "all" ]]; then
+	EXIT_STATUS=0
+	stop_main || EXIT_STATUS=1
+	stop_all_source_development || EXIT_STATUS=1
+	if ((EXIT_STATUS != 0)); then
+		exit "${EXIT_STATUS}"
+	fi
+	echo "Karkinos source runtimes stopped."
 	exit 0
 fi
-if (($# > 1)); then
-	usage >&2
+
+git check-ref-format --branch "${TARGET_BRANCH}" >/dev/null 2>&1 || {
+	echo "Error: invalid Git branch '${TARGET_BRANCH}'." >&2
 	exit 2
+}
+
+if [[ "${TARGET_BRANCH}" == "main" ]]; then
+	stop_main
+else
+	stop_development_branch "${TARGET_BRANCH}"
 fi
 
-MODE="${1:-dev}"
-case "${MODE}" in
-main)
-	export KARKINOS_WORKSPACE="${KARKINOS_WORKSPACE_PATH}"
-	exec python3 "${SCRIPT_DIR}/service/run_main.py" --stop
-	;;
-dev)
-	STOP_DEVELOPMENT=true
-	STOP_PRODUCTION=false
-	;;
-prod)
-	STOP_DEVELOPMENT=false
-	STOP_PRODUCTION=true
-	;;
-all)
-	STOP_DEVELOPMENT=true
-	STOP_PRODUCTION=true
-	;;
-*)
-	echo "Error: unknown mode '${MODE}'." >&2
-	usage >&2
-	exit 2
-	;;
-esac
-
-EXIT_STATUS=0
-if [[ "${MODE}" == "all" ]]; then
-	KARKINOS_WORKSPACE="${KARKINOS_WORKSPACE_PATH}" \
-		python3 "${SCRIPT_DIR}/service/run_main.py" --stop || EXIT_STATUS=1
-fi
-if [[ "${STOP_DEVELOPMENT}" == true ]]; then
-	stop_tracked_process "${DEV_WORKSPACE_PATH}/run/frontend.pid" "Karkinos development frontend" "dev-frontend" || EXIT_STATUS=1
-	stop_tracked_process "${DEV_WORKSPACE_PATH}/run/backend.pid" "Karkinos development backend" "dev-backend" || EXIT_STATUS=1
-
-	# Transitional PID locations are cleaned only when they still belong to this checkout.
-	if [[ -f "${REPO_ROOT}/.run/web.pid" ]]; then
-		stop_tracked_process "${REPO_ROOT}/.run/web.pid" "legacy Karkinos development frontend" "dev-frontend" || EXIT_STATUS=1
-	fi
-	if [[ -f "${REPO_ROOT}/.run/dev-server.pid" ]]; then
-		stop_tracked_process "${REPO_ROOT}/.run/dev-server.pid" "legacy Karkinos development backend" "dev-backend" || EXIT_STATUS=1
-	fi
-	if [[ -f "${REPO_ROOT}/.run/server.pid" ]]; then
-		stop_tracked_process "${REPO_ROOT}/.run/server.pid" "legacy Karkinos source backend" "dev-backend" || EXIT_STATUS=1
-	fi
-fi
-
-if [[ "${STOP_PRODUCTION}" == true ]]; then
-	if [[ -f "${KARKINOS_WORKSPACE_PATH}/.run/server.pid" ]]; then
-		stop_tracked_process "${KARKINOS_WORKSPACE_PATH}/.run/server.pid" "legacy Karkinos native backend" "legacy-native" || EXIT_STATUS=1
-	fi
-
-	if packaged_release_control_is_valid ||
-		resident_service_is_loaded ||
-		[[ -f "${LAUNCH_AGENT_PLIST}" ]]; then
-		if stop_resident_service; then
-			echo "Karkinos production service stopped."
-		else
-			echo "Error: failed to stop ${LAUNCH_AGENT_TARGET}." >&2
-			EXIT_STATUS=1
-		fi
-	else
-		echo "Karkinos production service is not running."
-	fi
-fi
-
-if ((EXIT_STATUS != 0)); then
-	echo "Error: one or more tracked Karkinos processes could not be stopped safely." >&2
-	exit "${EXIT_STATUS}"
-fi
-
-echo "Karkinos ${MODE} services stopped. Unknown listeners were not touched."
+echo "Karkinos ${TARGET_BRANCH} runtime stopped. Unknown listeners were not touched."
