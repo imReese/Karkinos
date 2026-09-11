@@ -52,18 +52,11 @@ Choose the runtime that matches how you want to operate Karkinos:
 
 ### Docker Compose
 
-Clone the stable branch and create local configuration from the templates:
-
 ```bash
 git clone --branch main --depth 1 https://github.com/imReese/Karkinos.git
 cd Karkinos
 cp config.example.json config.json
 cp .env.example .env
-```
-
-Then start the application:
-
-```bash
 docker compose up --build -d
 ```
 
@@ -73,49 +66,55 @@ Docker Compose keeps the database in the `karkinos-data` Docker volume and mount
 
 ### Source runtime
 
-Use this when you want the full application directly from a checkout without Docker. Choose an explicit persistent runtime directory first:
+For normal source usage, the cloned repository root is the Karkinos workspace. No platform-specific application-data directory is required.
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
 cd Karkinos
 git switch main
-
-export KARKINOS_HOME="/absolute/path/to/your/karkinos-workspace"
-mkdir -p "$KARKINOS_HOME/config"
-cp config.example.json "$KARKINOS_HOME/config/config.json"
-cp .env.example "$KARKINOS_HOME/config/.env"
-
+cp config.example.json config.json
+cp .env.example .env
 ./scripts/start_server.sh main --init
 ```
 
-Open `http://127.0.0.1:8000`.
-
-`--init` is only for creating a new empty runtime. Subsequent starts use:
+Open `http://127.0.0.1:8000`. `--init` is only for the first creation of an empty workspace; later starts use:
 
 ```bash
 ./scripts/start_server.sh main
 ```
 
-The current source runtime stores configuration, databases, logs, and managed source state below the selected `KARKINOS_HOME`. Runtime lifecycle commands are documented in [scripts/README.md](scripts/README.md).
+The source workspace keeps user-visible state in one predictable place:
+
+```text
+Karkinos/
+├── config.json
+├── .env
+├── data/store/      # databases and local data
+├── logs/
+├── exports/
+└── .run/main/       # internal process state
+```
+
+`config.json`, `.env`, runtime data, logs, exports, and `.run/` are ignored by Git. To keep user state outside the checkout, set `KARKINOS_WORKSPACE` to an explicit absolute directory and place its `config.json` / `.env` there. `KARKINOS_HOME` is retained only as a compatibility alias for older managed installations.
+
+Lifecycle commands are documented in [scripts/README.md](scripts/README.md).
 
 ### Python / pip from source
 
 Karkinos is installable as a Python package from this repository. The PyPI project named `karkinos` is unrelated to this repository, so **do not use `pip install karkinos`**.
 
-From a Karkinos source checkout:
-
 ```bash
 python -m pip install ".[server]"
 ```
 
-For the full Web application, build the frontend once:
+For the Web UI:
 
 ```bash
 npm ci --prefix web
 npm --prefix web run build
 ```
 
-Create local runtime configuration and run the server from the repository root:
+Then create local configuration and start from the workspace root:
 
 ```bash
 cp config.example.json config.json
@@ -123,7 +122,7 @@ cp .env.example .env
 python -m server
 ```
 
-Open `http://127.0.0.1:8000`. In this plain Python mode, the default local data directory is `data/store` unless `KARKINOS_DATA_DIR` is set explicitly.
+Open `http://127.0.0.1:8000`. The default writable data directory is `data/store`.
 
 ### Native releases
 
@@ -139,7 +138,7 @@ User configuration and financial/research state are persistent local data. Sourc
 
 ## Development
 
-Development is separate from ordinary Karkinos usage. It uses the persistent `dev` branch and a disposable isolated sandbox.
+Development is separate from ordinary Karkinos usage. It uses the persistent `dev` branch and a disposable isolated workspace.
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -148,13 +147,13 @@ git switch dev
 ./scripts/start_server.sh dev
 ```
 
-The development launcher creates `.run/dev-home` and starts:
+The development launcher creates `.run/dev` and starts:
 
 - Web app: `http://127.0.0.1:5173`
 - API: `http://127.0.0.1:8001`
 - Health: `http://127.0.0.1:8001/api/health`
 
-Development configuration and data stay inside `.run/dev-home`; the directory is disposable and must never be pointed at a real user runtime.
+Development configuration, data, logs, and process state stay inside `.run/dev`. The directory is disposable and must never be pointed at a real user workspace. Use `KARKINOS_DEV_WORKSPACE` only when a separate absolute development workspace is required.
 
 For contribution workflow, tests, and engineering constraints, see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ENGINEERING.md](docs/ENGINEERING.md).
 
