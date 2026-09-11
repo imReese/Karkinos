@@ -103,14 +103,13 @@ def runtime_environment(root: Path) -> dict[str, str]:
         raise ValueError("KARKINOS_WORKSPACE must be a nonempty absolute path")
     workspace = workspace.resolve()
     env["KARKINOS_WORKSPACE"] = str(workspace)
-    # Existing native-release/state code still reads KARKINOS_HOME. Keep it as
-    # an exact compatibility alias while workspace becomes the public concept.
+    # Temporary compatibility for native-release/state code not yet renamed.
     env["KARKINOS_HOME"] = str(workspace)
 
     for key, default in (
-        ("KARKINOS_DATA_DIR", workspace / "data"),
-        ("KARKINOS_CONFIG_PATH", workspace / "config/config.json"),
-        ("KARKINOS_ENV_FILE", workspace / "config/.env"),
+        ("KARKINOS_DATA_DIR", workspace / "data/store"),
+        ("KARKINOS_CONFIG_PATH", workspace / "config.json"),
+        ("KARKINOS_ENV_FILE", workspace / ".env"),
     ):
         env.setdefault(key, str(default))
     for key in ("KARKINOS_DATA_DIR", "KARKINOS_CONFIG_PATH", "KARKINOS_ENV_FILE"):
@@ -129,7 +128,8 @@ def require_runtime_files(env: dict[str, str], *, initialize: bool) -> None:
             raise ValueError(f"missing {key}: {env[key]}; see scripts/README.md")
     data = Path(env["KARKINOS_DATA_DIR"])
     workspace = Path(env["KARKINOS_WORKSPACE"])
-    if data.parent != workspace:
+    default_data = workspace / "data/store"
+    if data != default_data:
         for marker in (
             "current",
             ".service-config.json",
