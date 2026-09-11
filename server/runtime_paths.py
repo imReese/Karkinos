@@ -17,9 +17,7 @@ def _explicit_runtime_root() -> Path | None:
         resolved_workspace = _resolved_path(workspace)
         resolved_home = _resolved_path(legacy_home)
         if resolved_workspace != resolved_home:
-            raise RuntimeError(
-                "KARKINOS_WORKSPACE and legacy KARKINOS_HOME disagree"
-            )
+            raise RuntimeError("KARKINOS_WORKSPACE and legacy KARKINOS_HOME disagree")
         return resolved_workspace
     if workspace:
         return _resolved_path(workspace)
