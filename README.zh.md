@@ -10,86 +10,58 @@
 
 [![Dev CI](https://github.com/imReese/Karkinos/actions/workflows/dev-ci.yml/badge.svg?branch=dev)](https://github.com/imReese/Karkinos/actions/workflows/dev-ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag)](https://github.com/imReese/Karkinos/releases)
-[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Node.js](https://img.shields.io/badge/Node.js-24.x-5FA04E?logo=nodedotjs&logoColor=white)](web/package.json)
 [![License](https://img.shields.io/github/license/imReese/Karkinos)](LICENSE)
 
 </div>
 
-Karkinos 把中国市场数据、Point-in-Time 研究、组合构建、风险、模拟、会计、归因和可选的 AI 辅助研究连接成一个本地优先的完整工作流。
+Karkinos 将中国市场数据转化为 point-in-time 研究证据、组合目标、模拟结果、会计状态、归因和持续研究反馈。
 
-## 最新状态
+## 当前能力
 
-| | |
-| --- | --- |
-| **最新 Release** | [GitHub Releases](https://github.com/imReese/Karkinos/releases) |
-| **当前重点** | [Engineering Reset 与平台可靠性](docs/PLAN.md) |
-| **开发分支** | `dev` 持续开发；验证通过的 commit 晋级到 `main` |
+- **Data** — 中国市场数据源接入、本地持久化、交易日历和 point-in-time 研究输入。
+- **Research** — 回测、交易成本建模、参数探索、样本外评估和稳健性分析。
+- **Portfolio** — 组合目标、估值、费用、收益核算和对账工作流。
+- **Evaluation** — backtest、paper、shadow 和经过风险约束的模拟工作流。
+- **AI-assisted Research** — 可选的 API 辅助研究，量化和金融结果由确定性代码计算。
+- **Web App** — FastAPI 后端、React / TypeScript 界面和本地运行环境。
 
-## 当前可用能力
+当前开发重点：[docs/PLAN.md](docs/PLAN.md)
 
-| 领域 | 当前能力 |
-| --- | --- |
-| **Data** | 中国市场数据源接入、本地持久化、交易日历和 Point-in-Time 研究输入 |
-| **Research** | 策略研究、回测、交易成本建模、参数探索、样本外和稳健性评估 |
-| **Portfolio & Accounting** | 组合视图、估值、费用、收益核算、本地金融状态和对账工作流 |
-| **Evaluation** | Backtest、Paper、Shadow 和经过风险约束的模拟工作流 |
-| **AI-assisted Research** | 可选的 API 辅助研究；量化和金融结果仍由确定性代码产生 |
-| **Web App** | FastAPI 后端、React / TypeScript 界面和本地运行环境 |
+## 工作流
 
-## Karkinos 如何工作
-
-```text
-Market Data
-    |
-    v
-PIT Dataset
-    |
-    v
-Research / Evaluation
-    |
-    v
-Published Forecast
-    |
-    v
-Portfolio Target
-    |
-    v
-Risk Decision
-    |
-    v
-Rebalance Plan
-   /            \
-  v              v
-Simulation /    Human-supervised
-Paper / Shadow   Execution
-  |              |
-  v              v
-Outcome      Fills / Financial Events
-   \            /
-    v          v
- Accounting / Attribution
-          |
-          v
-   Alpha / Model Health
-          |
-          +--------------------> Research
+```mermaid
+flowchart TD
+    A[Market Data] --> B[PIT Dataset]
+    B --> C[Research / Evaluation]
+    C --> D[Published Forecast]
+    D --> E[Portfolio Target]
+    E --> F[Risk Decision]
+    F --> G[Rebalance Plan]
+    G --> H[Simulation / Paper / Shadow]
+    G --> I[Human-supervised Execution]
+    H --> J[Outcome]
+    I --> K[Fills / Financial Events]
+    K --> L[Accounting]
+    J --> M[Attribution]
+    L --> M
+    M --> N[Alpha / Model Health]
+    N --> C
 ```
 
-## 为什么 Karkinos 不一样
+## 核心特性
 
-- **Point-in-Time 研究** — 只使用决策时点真正可获得的信息。
-- **可复现证据** — 结果绑定数据、假设、参数和时间边界。
-- **After-cost 评估** — 在有实质影响时纳入费用、税费、换手、流动性和执行假设。
-- **Portfolio before orders** — 预测先形成组合意图，再进入执行意图。
-- **中国市场语义** — 交易日历、停牌、涨跌停、手数规则等约束是一等公民。
-- **持续反馈** — 结果通过归因和 Alpha / Model Health 回到研究环节。
-- **AI 辅助而非 AI 权威** — AI 可以加速研究迭代，但不拥有市场事实、金融状态或资本权限。
-- **Local-first** — 核心研究产物、组合状态和主要计算默认由本地拥有。
+- **Point-in-time research** — 研究只使用建模决策时点真正可获得的信息。
+- **Reproducible evidence** — 结果绑定数据、假设、参数和时间边界。
+- **After-cost evaluation** — 在相关研究中计入费用、税费、换手、流动性和执行假设。
+- **Portfolio before orders** — 预测先形成组合意图，再形成执行意图。
+- **China-market semantics** — 交易日历、停牌、涨跌停、交易单位等市场约束是一等输入。
+- **Continuous feedback** — 结果通过归因和 Alpha / Model Health 回流研究。
+- **AI-assisted, not AI-authoritative** — AI 可以加速研究迭代，量化和金融事实由 Karkinos 持有。
+- **Local-first ownership** — 核心研究产物、组合状态和主要计算默认由本地持有。
 
 ## 快速开始
 
-环境要求：**Python 3.12+**、**Node.js 24.x**、**uv**、**Git**。
+环境要求：**Python 3.12+**、**Node.js 24.x**、**uv** 和 **Git**。
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -98,11 +70,7 @@ git switch dev
 ./scripts/start_server.sh dev
 ```
 
-浏览器打开：
-
-```text
-http://127.0.0.1:5173
-```
+打开 `http://127.0.0.1:5173`。
 
 停止开发环境：
 
@@ -110,7 +78,7 @@ http://127.0.0.1:5173
 ./scripts/stop_server.sh dev
 ```
 
-运行和维护命令：[scripts/README.md](scripts/README.md)
+运行与维护命令：[scripts/README.md](scripts/README.md)
 
 ## 文档
 
@@ -125,10 +93,6 @@ http://127.0.0.1:5173
 
 **技术栈：** Python · FastAPI · SQLite · React · TypeScript · Vite
 
-**贡献：** [CONTRIBUTING.md](CONTRIBUTING.md)
-
-**安全：** [SECURITY.md](SECURITY.md)
-
-**License：** [MIT](LICENSE)
+**贡献：** [CONTRIBUTING.md](CONTRIBUTING.md) · **安全：** [SECURITY.md](SECURITY.md) · **License：** [MIT](LICENSE)
 
 Karkinos 是量化研究与投资软件，不构成投资建议，也不保证任何收益。
