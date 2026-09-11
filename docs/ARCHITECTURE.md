@@ -1,91 +1,63 @@
 # Karkinos Architecture
 
-This document defines the durable architecture of Karkinos: the core system
-flow, domain ownership, sources of truth, and boundaries that should remain
-stable as the implementation evolves.
-
-Current priorities belong to [PLAN.md](PLAN.md), current repository reality to
-[ENGINEERING.md](ENGINEERING.md), and external design references to
-[REFERENCES.md](REFERENCES.md).
-
 ## 1. System overview
 
 Karkinos is a **local-first quantitative research and investing platform for the
 China market**.
 
-Its core is a continuous evidence flywheel. New market information becomes
-point-in-time research input; research produces forecasts; forecasts inform
-portfolio decisions; simulation and observed outcomes produce new evidence that
-feeds back into research.
+Its core is a continuous evidence flywheel:
 
 ```text
                          Human / Scheduler / AI
                                   |
                                   v
-External Data -> Market Data -> PIT Dataset -> Research -> Forecast
-                                                   ^           |
-                                                   |           v
-                                           Alpha / Model    Portfolio
-                                              Health           |
-                                                   ^           v
-                                                   |      Risk / Rebalance
-                                                   |           |
-                                                   |           v
-                                           Attribution <- Outcome
-                                                           ^
-                                                           |
-                                            Simulation / Paper / Shadow
-                                                           |
-                                             Human-supervised Execution
+External Data -> Market Data -> PIT Dataset -> Research -> Published Forecast
+                                                       ^              |
+                                                       |              v
+                                                Alpha / Model      Portfolio
+                                                   Health             |
+                                                       ^              v
+                                                       |        Risk Guardrails
+                                                       |              |
+                                                       |              v
+                                                Attribution <- Outcomes
+                                                       ^          /       \
+                                                       |         /         \
+                                                Accounting   Simulation   Execution
+                                                       ^         |           |
+                                                       |         v           v
+                                                       +------ Fills / Financial Events
 ```
 
-The platform owns quantitative and financial truth. Humans, schedulers, the Web
-application, CLI tools, and AI may invoke platform capabilities, but they do not
-redefine their semantics.
+New market information becomes point-in-time research input. Research produces
+validated forecasts. Portfolio construction turns forecasts into desired capital
+allocation. Risk controls whether proposed actions may proceed. Simulation and
+execution produce outcomes. Accounting and attribution turn those outcomes into
+new evidence for research.
 
-## 2. Platform capabilities and orchestration
+## 2. Domain ownership
 
-Core capabilities must be usable and verifiable independently of AI:
-
-```text
-acquire and normalize market data
-publish point-in-time datasets
-run reproducible experiments
-publish forecasts and evaluation results
-construct portfolio targets and rebalance plans
-apply risk constraints
-simulate orders, fills, costs, and portfolio changes
-maintain canonical financial state
-calculate attribution and Alpha / Model health
-```
-
-AI may propose hypotheses, submit experiments, inspect evidence, critique
-results, and choose follow-up research. Replacing or disabling an AI provider
-must not change the quantitative or financial meaning of these capabilities.
-
-## 3. Domain ownership
-
-| Domain | Owns |
+| Domain | Canonical responsibility |
 | --- | --- |
-| **Market Data** | Normalized market observations, source identity, market/event time, availability time, capture time, and China-market data semantics |
-| **Dataset** | Point-in-time selection, reproducible research inputs, dataset identity, and revision lineage |
-| **Research** | Features, experiments, Alpha / Model evaluation, forecasts, and research evidence |
-| **Portfolio** | Desired capital allocation, portfolio targets, rebalance intent, and allocation trade-offs |
-| **Risk** | Financial constraints and decisions that reduce, modify, or block portfolio actions |
-| **Simulation / Execution** | Order and fill lifecycle, matching/execution semantics, and financially relevant execution costs |
-| **Accounting / Reconciliation** | Cash, lots, positions, fees, taxes, PnL, valuation state, and reconciliation with external account evidence |
-| **Attribution / Alpha Health** | Outcome decomposition, research-performance feedback, and evidence used to promote, degrade, isolate, or retire edge |
+| **Market Data** | Normalized observations, source identity, market/event time, availability time, capture time, source revision history, and China-market data semantics |
+| **Dataset** | Point-in-time composition, universe and time selection, dataset identity, and reproducible research inputs |
+| **Research** | Features, experiments, evaluation, research evidence, and publication of forecasts |
+| **Portfolio** | Desired capital allocation, portfolio targets, and rebalance planning |
+| **Risk** | Independent hard constraints and decisions that allow, block, or require recalculation of portfolio actions |
+| **Simulation** | Historical or forward-time market replay, clocks, matching models, slippage models, and hypothetical execution |
+| **Execution** | Canonical order/fill lifecycle and external execution boundary |
+| **Accounting** | Isolated financial books containing cash, lots, positions, booked fees and taxes, PnL, and valuation state |
+| **Attribution / Alpha Health** | Outcome decomposition and evidence used to promote, degrade, isolate, or retire research edge |
 
-Ownership is semantic. It does not require one package, class, table, process, or
-service per domain.
+Ownership is semantic. A domain may have multiple representations, but only one
+canonical calculation or write owner for each fact.
 
-## 4. Data and point-in-time datasets
+## 3. Data and point-in-time datasets
 
-External providers produce observations. They are inputs, not canonical
-research datasets.
+External providers produce observations. Market Data normalizes those
+observations and owns their source, time, and revision semantics.
 
-Market data used for research must preserve enough identity and time information
-to distinguish:
+Research data must distinguish:
 
 ```text
 what happened
@@ -93,166 +65,250 @@ when it happened
 when it became knowable
 when Karkinos captured it
 where it came from
-which revision it belongs to
+which source revision it belongs to
 ```
 
-Normalization and validation turn provider observations into Karkinos market
-data. Dataset publication then selects a point-in-time-consistent research view
-with a stable identity.
+Dataset publication selects a point-in-time-consistent view of Market Data and
+assigns it a stable identity.
 
-An experiment binds an identifiable dataset. Corrections and revisions produce a
-distinguishable dataset state rather than silently changing the historical input
-of an existing result.
+A Dataset owns the composition of research input, not the revision history of
+its underlying market facts.
+
+An experiment binds an identifiable Dataset. Later corrections or provider
+revisions do not silently change the input of an existing experiment.
+
+Dataset identity must be reproducible; it does not require a physical full copy
+of all underlying data.
 
 Trading calendars, historical universe membership, corporate actions,
-suspensions, price limits, lot rules, and other China-market constraints belong
-to shared market semantics rather than individual strategies.
+suspensions, price limits, lot rules, and other China-market constraints are
+shared market semantics rather than strategy-local logic.
 
-## 5. Research, forecasts, and portfolio construction
+## 4. Research and forecasts
 
-Research turns datasets into predictive evidence:
+Research turns Datasets into predictive evidence:
 
 ```text
 Dataset
 -> Features
 -> Alpha / Model
--> Forecast
+-> Experiment
 -> Evaluation
+-> Research Evidence
+-> Published Forecast
 ```
 
-Research outputs investment views such as scores, rankings, probabilities,
-expected returns, or equivalent forecasts. A forecast is not an order.
+Experiments may produce scores, rankings, probabilities, expected returns,
+confidence estimates, or other predictive outputs.
 
-Portfolio construction combines forecasts with current portfolio state,
-constraints, exposures, liquidity, and expected costs to produce desired capital
-allocation:
+Experiment output is research evidence by default. It does not automatically
+become portfolio input.
+
+A Published Forecast is the Research -> Portfolio contract. It identifies the
+investment view together with the dataset/research identity, as-of boundary,
+universe, and forecast horizon required to interpret it.
+
+Canonical research metrics and evaluation results are produced by deterministic
+platform code.
+
+## 5. Portfolio and risk
+
+Portfolio construction combines published forecasts with the current financial
+book, portfolio policy, exposures, liquidity, expected costs, and other
+allocation inputs:
 
 ```text
-Forecasts
-+ Current Portfolio
-+ Constraints / Exposures / Costs
+Published Forecasts
++ Financial Book
++ Portfolio Policy
++ Risk / Exposure Estimates
++ Liquidity / Expected Costs
 -> Portfolio Target
+```
+
+A `Portfolio Target` is the desired allocation owned by Portfolio.
+
+Risk applies independent hard guardrails:
+
+```text
+Portfolio Target
+-> Risk Decision
+   -> allowed
+   -> blocked
+   -> recalculate with explicit constraints
+```
+
+Risk does not silently rewrite a Portfolio Target. When a target must change,
+Portfolio remains responsible for producing the new target.
+
+A Rebalance Plan is generated from an allowed Portfolio Target and the current
+financial book:
+
+```text
+Allowed Portfolio Target
++ Current Financial Book
 -> Rebalance Plan
 ```
 
-A `Portfolio Target` describes desired state. A `Rebalance Plan` describes the
-intended change from current state toward that target. Neither defines how an
-order is submitted or filled.
+A Rebalance Plan describes intended portfolio changes. It is not an Order.
 
-Simple portfolio policies must remain possible without requiring optimizer or
-framework machinery.
+## 6. Simulation, execution, and accounting
 
-## 6. Risk, simulation, execution, and accounting
+Simulation and Execution are separate boundaries.
 
-Risk evaluates portfolio intent and capital-affecting actions. It may constrain,
-modify, or block a rebalance, but it does not generate Alpha or own accounting.
+Simulation provides an evaluation environment for hypothetical outcomes. It may
+model clocks, market replay, matching, slippage, transaction costs, and
+simulated fills.
 
-The financial lifecycle is:
+Execution owns the canonical Order / Fill lifecycle and the interaction with an
+external execution venue.
 
 ```text
 Rebalance Plan
--> Risk-approved Intent
+-> Pre-trade Risk
+-> Order Intent
 -> Order
 -> Fill
--> Accounting
 ```
 
-Simulation and execution own the canonical order/fill lifecycle and the
-financial semantics of matching and execution. Backtest, paper, shadow, and
-future live workflows may use different clocks, data sources, and execution
-adapters, but they must not independently redefine orders, fills, fees, or
-market constraints.
+Backtest and paper workflows may reuse the same Order / Fill semantics through a
+simulated venue. Future live workflows use an external execution adapter.
 
-Accounting consumes confirmed fills and other financial events. It owns cash,
-lots, positions, fees, taxes, realized and unrealized PnL, and related valuation
-state.
+Shadow evaluation may observe a target or rebalance plan without requiring a
+simulated Order / Fill lifecycle.
 
-External broker statements, snapshots, and imports are evidence about an
-external account. Reconciliation compares that evidence with Karkinos state;
-it does not invent missing financial facts to force agreement.
+Expected, simulated, and booked costs are distinct:
+
+```text
+Portfolio  -> expected transaction cost
+Simulation -> simulated execution cost
+Execution  -> venue/broker execution evidence
+Accounting -> booked financial effect
+```
+
+Accounting consumes confirmed financial events and maintains isolated financial
+books.
+
+```text
+Financial Book
+  cash
+  lots
+  positions
+  booked fees / taxes
+  realized / unrealized PnL
+  valuation state
+```
+
+Backtest, paper, shadow, and actual-account state do not share mutable financial
+state. Where they maintain financial books, they share accounting semantics but
+remain isolated books.
+
+Execution reconciliation compares local Order / Fill state with external order
+and trade evidence. Accounting reconciliation compares local financial state
+with external cash, position, fee, and account evidence.
 
 China-market rules such as T+1, board lots, commissions, taxes, price limits,
-and suspensions must be shared wherever they materially affect simulation or
-execution results.
+and suspensions are shared wherever they materially affect portfolio,
+simulation, execution, or accounting results.
 
-## 7. Outcomes and the research feedback loop
+## 7. Outcomes, attribution, and Alpha health
 
-Research does not end when a forecast or portfolio target is produced.
+Outcomes feed the research loop:
 
 ```text
 Forecast / Portfolio Intent
--> Simulation or Observed Outcome
+-> Simulated or Observed Outcome
 -> Attribution
 -> Alpha / Model Health
 -> Research
 ```
 
-Attribution separates effects such as market or factor exposure, Alpha,
-portfolio construction, turnover, costs, and execution where the available
-evidence permits.
+Attribution decomposes outcomes where evidence permits, including:
 
-Alpha / Model Health evaluates whether the evidence supporting an edge remains
-valid. Promotion, weighting, degradation, isolation, and retirement create new
-research decisions; they do not rewrite the historical identity of earlier
-experiments.
+```text
+market / factor exposure
+Alpha / Model
+portfolio construction
+turnover and costs
+execution
+unexplained residual
+```
 
-## 8. Sources of truth and derived representations
+Alpha / Model Health tracks whether the evidence supporting an edge remains
+valid over time.
 
-A financial or research concept has one canonical calculation or write owner,
-but it may have many derived representations.
+Promotion, weighting, degradation, isolation, and retirement produce new
+research decisions. They do not rewrite historical experiment identity.
 
-Examples include API responses, database read models, caches, reports,
-materialized views, analytics, and UI models. These may be optimized for their
-consumers, but they must not become competing sources of truth.
+## 8. AI and orchestration
 
-External providers, broker APIs, AI output, HTTP delivery, Web UI, storage
-engines, schedulers, and optional hosted services are adapters or orchestration
-boundaries. They do not own Karkinos domain semantics merely because they carry,
-persist, or present the data.
+Humans, schedulers, CLI tools, the Web application, and AI invoke the same
+platform capabilities.
 
-## 9. Cross-cutting invariants
+AI may:
+
+```text
+propose hypotheses
+submit experiments
+inspect evidence
+critique results
+select follow-up research
+```
+
+AI does not own Market Data, Dataset identity, quantitative metrics, Published
+Forecasts, Portfolio state, Risk decisions, Accounting state, or capital
+authority.
+
+The platform capabilities used by AI remain independently invokable and
+verifiable without an AI provider.
+
+## 9. Sources of truth
+
+A canonical fact may have multiple derived representations:
+
+```text
+API responses
+database read models
+caches
+reports
+materialized views
+analytics
+UI models
+```
+
+Derived representations do not gain independent calculation or write authority.
+
+Provider responses, broker APIs, AI output, HTTP delivery, Web UI, storage
+engines, and schedulers do not become canonical domain owners by carrying,
+persisting, or presenting information.
+
+## 10. Core invariants
 
 - **Point-in-time before prediction.** Research only uses information available
   at the modeled decision time.
-- **Reproducibility.** Meaningful results bind enough data, code/model,
-  parameters, time boundaries, and financial assumptions to be reconstructed.
-- **One canonical owner per concept.** Derived representations do not gain
-  independent calculation or write authority.
-- **Forecast is not portfolio intent. Portfolio intent is not execution.** These
-  boundaries remain distinct even when implemented in the same process.
-- **Failed attempts do not destroy valid state.** A failed refresh, calculation,
-  or publication does not silently replace the last known valid result.
+- **Reproducibility.** Research and simulation results bind enough data,
+  code/model, parameters, time boundaries, and financial assumptions to be
+  reconstructed.
+- **One canonical owner per fact.** Multiple representations do not create
+  competing sources of truth.
+- **Experiment evidence is not portfolio input.** Portfolio consumes explicitly
+  published forecasts.
+- **Forecast is not portfolio intent. Portfolio intent is not execution.**
+- **Portfolio owns targets. Risk owns guardrails.** Risk never silently becomes a
+  second portfolio constructor.
+- **Simulation is not Execution. Execution is not Accounting.** Shared financial
+  semantics do not imply shared runtime state.
+- **Financial books are isolated.** Backtest, paper, shadow, and actual-account
+  state never leak mutable state across books.
+- **Failed attempts do not destroy valid state.** Failed refreshes,
+  calculations, or publications do not silently replace the last known valid
+  result.
 - **Uncertainty blocks the affected action.** Missing, stale, conflicting, or
   unverified evidence blocks dependent actions without unnecessarily disabling
   unrelated capabilities.
-- **Financial semantics are shared where they matter.** Simulation and execution
-  use consistent market, cost, order, fill, and accounting concepts.
-- **AI drives iteration; Karkinos owns truth.** AI can direct research but cannot
-  become the authority for market facts, quantitative metrics, portfolio state,
-  accounting, risk results, or capital permission.
+- **AI drives iteration; Karkinos owns truth.**
 - **Local-first ownership.** Core research and financial workflows do not depend
   on a hosted account or cloud control plane.
 - **Capital authority is explicit.** Real-money authority is bounded,
   human-supervised by default, and never granted implicitly by research, AI,
   providers, or UI state.
-
-## 10. Implementation freedom
-
-This architecture deliberately does not prescribe:
-
-- Python package layout;
-- process or worker topology;
-- database count or storage engine;
-- SQLite, Parquet, Arrow, DuckDB, Polars, Rust, or other technology choices;
-- queue or scheduler implementation;
-- HTTP route structure;
-- release or deployment machinery;
-- current migration sequence or feature priority.
-
-Use the simplest implementation that preserves the boundaries above. Introduce
-stronger physical separation only when correctness, isolation, lifecycle,
-performance, or a real external boundary requires it.
-
-If a decision is about what Karkinos should build now, it belongs in
-[PLAN.md](PLAN.md). If it describes how the repository works today, it belongs
-in [ENGINEERING.md](ENGINEERING.md).
