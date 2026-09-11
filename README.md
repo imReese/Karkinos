@@ -39,11 +39,17 @@ risk, simulation, accounting, and attribution in one local-first workflow.
 - **AI-assisted research** — optional AI can accelerate research iteration while deterministic code owns quantitative and financial results.
 - **Application** — FastAPI backend, React / TypeScript interface, and a local-first runtime.
 
-## Quick start
+## Using Karkinos
 
-Requirements: **Python 3.12+**, **Node.js 24.x**, **uv**, and **Git**.
+Published releases are the user-facing runtime. The current packaged releases provide macOS builds for Apple Silicon and Intel; available packages and verified installer assets are published on [Releases](https://github.com/imReese/Karkinos/releases).
 
-### Run from source
+User configuration and financial/research state are persistent local data. They are kept separate from source-development state; `.run/dev-home` is a disposable development sandbox and must not be used for real Karkinos data.
+
+Runtime and release lifecycle details: [scripts/README.md](scripts/README.md)
+
+## Development
+
+Source development requires **Python 3.12+**, **Node.js 24.x**, **uv**, and **Git**.
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -52,15 +58,13 @@ git switch dev
 ./scripts/start_server.sh dev
 ```
 
-The development launcher creates an isolated local environment under `.run/dev-home` and starts:
+The development launcher creates an isolated environment under `.run/dev-home` and starts:
 
 - Web app: `http://127.0.0.1:5173`
 - API: `http://127.0.0.1:8001`
 - Health: `http://127.0.0.1:8001/api/health`
 
-### Configure development
-
-Development mode keeps its own configuration and data:
+Development configuration and data stay inside the sandbox:
 
 ```text
 .run/dev-home/config/config.json
@@ -68,9 +72,7 @@ Development mode keeps its own configuration and data:
 .run/dev-home/data/
 ```
 
-The default market-data provider is **AKShare** and requires no token.
-
-Choose AKShare or configure TuShare interactively after the development home has been created:
+The default market-data provider is **AKShare** and requires no token. To choose AKShare or configure TuShare interactively after the development sandbox exists:
 
 ```bash
 uv run python scripts/data/configure_data_source.py \
@@ -78,10 +80,7 @@ uv run python scripts/data/configure_data_source.py \
   --env-file .run/dev-home/config/.env
 ```
 
-TuShare credentials are stored in the dedicated development `.env`, not in `config.json`.
-AI providers, notifications, fees, server settings, and other options are documented in the [configuration guide](docs/guides/configuration.md).
-
-Packaged builds: [Releases](https://github.com/imReese/Karkinos/releases) · Runtime and lifecycle commands: [scripts/README.md](scripts/README.md)
+TuShare credentials are stored in the development `.env`, not in `config.json`. AI providers, notifications, fees, server settings, and other development options are documented in the [configuration guide](docs/guides/configuration.md).
 
 ## Resources
 
