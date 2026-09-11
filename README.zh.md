@@ -38,9 +38,11 @@ Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风�
 - **AI-assisted Research** — 可选 AI 用于加速研究迭代，量化和金融结果由确定性代码持有。
 - **Application** — FastAPI 后端、React / TypeScript 界面和本地优先的运行环境。
 
-## 开发快速开始
+## 快速开始
 
 环境要求：**Python 3.12+**、**Node.js 24.x**、**uv** 和 **Git**。
+
+### 从源码运行
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -49,13 +51,36 @@ git switch dev
 ./scripts/start_server.sh dev
 ```
 
-打开 `http://127.0.0.1:5173`。
+开发模式会在 `.run/dev-home` 下创建独立的本地环境，并启动：
 
-```bash
-./scripts/stop_server.sh dev
+- Web：`http://127.0.0.1:5173`
+- API：`http://127.0.0.1:8001`
+- Health：`http://127.0.0.1:8001/api/health`
+
+### 配置开发环境
+
+开发模式使用独立的配置和数据：
+
+```text
+.run/dev-home/config/config.json
+.run/dev-home/config/.env
+.run/dev-home/data/
 ```
 
-发布版本：[Releases](https://github.com/imReese/Karkinos/releases) · 运行与维护命令：[scripts/README.md](scripts/README.md)
+默认数据源是 **AKShare**，无需 Token。
+
+开发环境创建后，可交互选择 AKShare 或配置 TuShare：
+
+```bash
+uv run python scripts/data/configure_data_source.py \
+  --config-path .run/dev-home/config/config.json \
+  --env-file .run/dev-home/config/.env
+```
+
+TuShare 凭证写入独立开发 `.env`，不会写入 `config.json`。
+AI Provider、通知、费用、Server 和其他选项见 [配置指南](docs/guides/configuration.md)。
+
+发布版本：[Releases](https://github.com/imReese/Karkinos/releases) · 运行与生命周期命令：[scripts/README.md](scripts/README.md)
 
 ## 资源
 
