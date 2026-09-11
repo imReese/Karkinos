@@ -88,7 +88,7 @@ def test_release_and_candidate_verify_exact_main_code_ci() -> None:
         text = Path(path).read_text(encoding="utf-8")
         assert "tools/verify_release_source_ci.py" in text
         assert '--required-job "Code CI gate"' in text
-        assert 'Repository acceptance audit' not in text
+        assert "Repository acceptance audit" not in text
 
 
 def test_candidate_and_release_never_persist_checkout_credentials() -> None:
