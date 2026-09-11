@@ -40,14 +40,72 @@ Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风�
 
 ## 使用 Karkinos
 
-根据你的运行方式选择入口：
-
 | 方式 | 适合场景 | 环境要求 |
 | --- | --- | --- |
-| **Docker Compose** | 隔离运行完整 Web + API | Docker / Docker Compose |
-| **源码运行** | 从 Git checkout 直接运行完整本地应用 | Python 3.12+、Node.js 24.x、`uv`、Git、POSIX shell |
-| **Python / pip 源码安装** | 手动 Python/API 运行和本地集成 | Python 3.12+；完整 Web 还需要 Node.js 24.x |
+| **源码运行** | 日常本地使用和开发 | Python 3.12+、Node.js 24.x、`uv`、Git、POSIX shell |
+| **Docker Compose** | 隔离运行 Web + API | Docker / Docker Compose |
+| **Python / pip 源码安装** | 手动 Python/API 集成 | Python 3.12+；完整 Web 还需要 Node.js 24.x |
 | **Native Release** | 使用经过验证的原生发布包 | 当前提供 macOS arm64 / x86_64 |
+
+### 源码运行
+
+对于日常本地使用，Git 仓库根目录就是 Karkinos 的本地状态目录。所有源码分支共用同一份 `config.json`、`.env`、`data/store`、`logs` 和 `exports`；选择 Git 分支只决定运行哪一套代码。
+
+```bash
+git clone https://github.com/imReese/Karkinos.git
+cd Karkinos
+cp config.example.json config.json
+cp .env.example .env
+./scripts/start_server.sh --init
+```
+
+默认分支是 `main`，后续启动直接执行：
+
+```bash
+./scripts/start_server.sh
+```
+
+打开 `http://127.0.0.1:8000`。
+
+本地目录结构在 macOS 和 Linux 的源码工作流中保持一致：
+
+```text
+Karkinos/
+├── config.json
+├── .env
+├── data/store/      # 数据库和本地数据
+├── logs/
+├── exports/
+└── .run/
+    ├── source.lock  # 同一时间只允许一个 source backend
+    ├── main/        # 只保存 main 的进程 / control 状态
+    └── dev/         # 只保存 dev 的进程状态
+```
+
+本地配置、数据、logs、exports 和 `.run/` 都被 Git 忽略。代码可以切换或替换，本地状态保持不变。
+
+启动脚本可以直接选择分支：
+
+```bash
+./scripts/start_server.sh dev
+./scripts/start_server.sh --branch dev
+./scripts/start_server.sh feature/my-research-change
+```
+
+脚本会安全切换到目标分支。如果 checkout 中存在未提交 / 未跟踪的源码改动，或者还有 Karkinos source runtime 正在使用当前 checkout，切换会直接拒绝；脚本不会自动 reset、stash 或丢弃任何改动。
+
+`main` 使用稳定源码运行方式，默认端口 `8000`。其他分支使用开发运行方式：后端 reload 默认端口 `8001`，Vite 默认端口 `5173`。**这些分支仍然共用同一份本地配置和数据。** 同一时间只允许一个 source backend 打开这套本地状态。
+
+停止默认 `main` 或某个开发分支：
+
+```bash
+./scripts/stop_server.sh
+./scripts/stop_server.sh dev
+```
+
+由于不同分支共用同一份数据库，涉及 schema 的开发必须使用明确 migration，并遵守 [docs/ENGINEERING.md](docs/ENGINEERING.md) 中的持久化兼容规则。
+
+生命周期细节见 [scripts/README.md](scripts/README.md)。
 
 ### Docker Compose
 
@@ -62,41 +120,6 @@ docker compose up --build -d
 打开 `http://127.0.0.1:8000`。
 
 Docker Compose 将数据库保存在 `karkinos-data` Docker volume 中，并以只读方式挂载 `config.json`。如需 TuShare、AI 或通知凭证，在启动前编辑 `.env`。
-
-### 源码运行
-
-普通源码运行直接把 Git clone 下来的仓库根目录作为 Karkinos workspace，不依赖 macOS / Linux / Windows 各自的系统应用数据目录。
-
-```bash
-git clone https://github.com/imReese/Karkinos.git
-cd Karkinos
-git switch main
-cp config.example.json config.json
-cp .env.example .env
-./scripts/start_server.sh main --init
-```
-
-打开 `http://127.0.0.1:8000`。`--init` 只用于第一次创建空 workspace；后续启动使用：
-
-```bash
-./scripts/start_server.sh main
-```
-
-源码 workspace 的用户状态保持在一个明确的位置：
-
-```text
-Karkinos/
-├── config.json
-├── .env
-├── data/store/      # 数据库和本地数据
-├── logs/
-├── exports/
-└── .run/main/       # 内部进程状态
-```
-
-`config.json`、`.env`、运行数据、logs、exports 和 `.run/` 都被 Git 忽略。如需把用户状态放到 checkout 外，可显式设置绝对路径 `KARKINOS_WORKSPACE`，并把对应的 `config.json` / `.env` 放到该 workspace。`KARKINOS_HOME` 仅作为旧 managed installation 的兼容别名保留。
-
-生命周期命令见 [scripts/README.md](scripts/README.md)。
 
 ### Python / pip 源码安装
 
@@ -113,7 +136,7 @@ npm ci --prefix web
 npm --prefix web run build
 ```
 
-然后从 workspace 根目录创建配置并启动：
+然后从仓库根目录创建本地配置并启动：
 
 ```bash
 cp config.example.json config.json
@@ -133,28 +156,23 @@ python -m server
 
 默认行情数据源是 **AKShare**，无需 Token。TuShare、AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
 
-用户配置和金融 / 研究状态属于需要长期保留的本地数据。源码开发状态与用户 workspace 分离，不能拿开发沙箱存放真实 Karkinos 数据。
-
 ## 开发 Karkinos
 
-开发流程和普通使用分开。源码开发使用长期存在的 `dev` 分支，以及可丢弃的独立开发 workspace。
+`dev` 是长期存在的开发分支。checkout 状态允许安全切换时，启动脚本会自动选择它：
 
 ```bash
-git clone https://github.com/imReese/Karkinos.git
-cd Karkinos
-git switch dev
 ./scripts/start_server.sh dev
 ```
 
-开发启动器创建 `.run/dev`，并启动：
+开发环境启动：
 
 - Web：`http://127.0.0.1:5173`
 - API：`http://127.0.0.1:8001`
 - Health：`http://127.0.0.1:8001/api/health`
 
-开发配置、数据、logs 和进程状态全部留在 `.run/dev`。该目录是可丢弃的开发沙箱，绝不能指向真实用户 workspace。只有需要单独开发目录时才设置绝对路径 `KARKINOS_DEV_WORKSPACE`。
+现在不再使用独立的 dev-home。`dev` 有意与 `main` 共用仓库根目录下的 `config.json`、`.env` 和 `data/store`；`.run/dev` 只保存可丢弃的进程状态。切换到其他源码分支前，先执行 `./scripts/stop_server.sh dev`。
 
-贡献流程、测试和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
+贡献流程、测试、migration 规则和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
 
 ## 资源
 
