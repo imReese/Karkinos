@@ -1,245 +1,152 @@
 # Karkinos 配置指南
 
-[文档入口](README.md)
+[文档入口](../README.md)
 
-Karkinos 的“配置”包括程序默认值、`config.json`、进程环境变量和命令行参数。运行时资本授权、Account Truth、会话预算、风控证据和订单状态属于 SQLite 中的动态事实，不属于静态配置。
-
-`config.json` 和 `.env` 默认都不应提交。前者保存普通本机参数，后者用于向进程提供部署覆盖和密钥。
+Karkinos 的本地配置来自程序默认值、`config.json`、环境变量和命令行参数。
+运行时金融事实、研究结果和资本权限不属于静态配置。
 
 ## 快速开始
 
+从仓库根目录创建本地配置：
+
 ```bash
 cp config.example.json config.json
-# 可选：复制环境变量模板供 Docker Compose 或 python -m server 使用
 cp .env.example .env
-python -m server --check-config
-python -m server
+uv run python -m server --check-config
 ```
 
-直接执行 `python -m server` 时会自动读取项目目录中的 `.env`。已有进程环境变量不会被 `.env` 覆盖。可通过 `--env-file PATH` 或进程变量 `KARKINOS_ENV_FILE` 指定其他文件；显式指定的文件不存在时会阻止启动。
+`config.json` 和 `.env` 默认不应提交。完整安全示例见
+[`config.example.json`](../../config.example.json) 和
+[`.env.example`](../../.env.example)。
 
-`--check-config` 只完成 `.env`、JSON、环境覆盖和类型校验，然后退出；它不会启动 Web 服务、联系行情/AI/broker，也不会验证 API Key 是否可用。
+## 配置优先级
 
-## 配置来源与优先级
-
-同一个配置项出现多次时，优先级为：
+同一个配置项出现多次时：
 
 ```text
-命令行参数 > 已有进程环境变量 > .env > config.json > 程序默认值
+命令行参数
+> 已有进程环境变量
+> .env
+> config.json
+> 程序默认值
 ```
 
-| 来源 | 适用内容 | 是否提交 |
-| --- | --- | --- |
-| 程序默认值 | 安全默认、开发默认 | 代码内维护 |
-| `config.json` | 本机运行参数、费用模型、脱敏 connector 配置 | 否 |
-| 环境变量 / `.env` | 密钥、容器路径、部署覆盖 | 否 |
-| CLI | 本次启动的 `--host`、`--port` | 不保存 |
-| SQLite | 账户事实、watchlist、授权、证据、会话和订单状态 | 运行时数据 |
-
-`KARKINOS_CONFIG_PATH` 决定先读取哪个文件；`KARKINOS_DATA_DIR` 决定运行时数据目录。它们不是 `config.json` 内字段。
-
-## config.json 结构
-
-推荐配置只保留五个分组，完整安全示例见仓库根目录的 [`config.example.json`](../config.example.json)。
-
-| 分组 | 用途 |
-| --- | --- |
-| `server` | Web 服务、CORS、交易日历同步和通知 |
-| `data_source` | 行情提供方和轮询间隔；凭证只能来自环境变量 |
-| `account_truth` | 显式启用的本地只读账户证据采集边界 |
-| `broker_fee` | 券商费用建模 |
-| `ai` | 外部模型连接参数；密钥默认来自环境变量 |
-
-未知顶层字段、未知分组字段、同一字段同时使用新旧格式以及错误的字段类型都会阻止启动。这样可以避免拼写错误或无效值被静默忽略。已删除的旧 `live_auto_start` 字段是升级兼容例外：读取时忽略且不能关闭 scheduler。配置文件只在启动时解析；路由复用同一个类型化配置对象，不会在请求期间重新读取 JSON。
-
-### server
-
-| 字段 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `host` | string | `0.0.0.0` | API 监听地址；本机开发可使用 `127.0.0.1`。 |
-| `port` | integer | `8000` | API 监听端口。 |
-| `market_calendar_auto_sync` | boolean | `true` | 服务启动时，自动采集当年上交所日历并与年度官方休市公告交叉核验；每年 12 月起同时采集下一年。 |
-| `cors_allowed_origins` | string[] | 本机前端地址 | 允许访问 API 的浏览器 origin。 |
-| `notification` | object | `{"type":"console"}` | 只保存通知通道类型：`console`、`telegram` 或 `wechat`；凭证和目标字段会被拒绝。 |
-
-### data_source
-
-| 字段 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `provider` | string | `akshare` | `akshare` 或 `tushare`。 |
-| `live_poll_interval` | integer | `60` | 行情和调度轮询间隔，单位秒，最少 `15`。 |
-| `provider_config.tushare_token_env` | string | `KARKINOS_TUSHARE_TOKEN` | 保存 TuShare Token 的环境变量名；这是元数据，不是 Token 本身。 |
-
-交互式配置脚本会保留分组结构：
-
-```bash
-uv run python scripts/data/configure_data_source.py --provider akshare
-uv run python scripts/data/configure_data_source.py --provider tushare
-```
-
-TuShare token 通过隐藏输入读取，不接受命令行参数。脚本会保留 `provider_config.tushare_token_env`，只把无凭证的 provider、轮询和环境变量名元数据写入已被 Git 忽略的 `config.json`，并把 Token 写入该变量名对应的、权限为 `0600` 的 `.env`（或 `--env-file` / `KARKINOS_ENV_FILE` 指定文件）。切换到 AkShare 会保留已有环境凭证；删除凭证必须是显式操作。Settings API 和 Web 页面不接收凭证，只展示是否已配置。`config.json` 中出现顶层或分组内 `tushare_token` 会阻止启动，配置脚本也会直接拒绝，不做自动凭证迁移。
-
-### account_truth
-
-`account_truth.broker_statement_collector` 是启动时显式启用的本地文件采集器。它只读取一份
-canonical CSV、等待文件稳定、按 fingerprint 幂等暂存 broker evidence，并让既有 Account Truth
-对账投影读取该批次。它不联系券商或行情 provider，也不会写生产账本、修改持仓、OMS、风控、
-kill switch 或资本权限。
-
-| 字段 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `enabled` | boolean | `false` | 是否随服务器启动只读 collector；必须显式开启。 |
-| `daily_snapshot_roll_forward_enabled` | boolean | `false` | 是否在已复核交易日的 08:45–09:35 准备阶段，将最后完整的现金与逐标的持仓状态按“无活动”派生到当日 08:45；要求 `enabled=true`。 |
-| `path` | string | `broker_statement.csv` | 本地 CSV 路径；相对路径以服务进程工作目录解析。 |
-| `poll_interval_seconds` | number | `5` | 文件轮询间隔，范围 `0.5`–`3600` 秒。 |
-| `stability_delay_seconds` | number | `2` | 同一文件 size/mtime 保持稳定后才读取，范围 `0`–`60` 秒。 |
-| `max_file_bytes` | integer | `10485760` | 只读大小上限，范围 1 KiB–100 MiB。 |
-
-文件缺失时 collector 等待；写入中、超限、非 UTF-8 或 schema 被阻断时 fail closed，不会暂存
-不完整事件。相同 fingerprint 在重复轮询或重启后复用既有 import run，不产生重复 Account Truth
-事件。状态可从 `GET /api/account-truth/broker-statement/collector` 查看。手工上传仍作为显式
-fallback，但不再是已启用本地 collector 的日常必需步骤。
-
-启用每日快照滚动后，系统会删除由同一功能生成的旧日快照，从未变的原始行重算一个现金快照
-和每个已知标的的持仓快照，再原子替换 CSV。固定时点为当日上海时间 08:45；同日重放必须字节
-一致。来源事件晚于该时点、现金锚点或逐标的状态不完整、数值非有限、账本事件晚于来源、账本
-在文件刷新后被回填，或文件并发变化时均 fail closed。collector 仍须等待文件稳定并独立校验，
-之后准备检查才会继续。该功能不联系券商，不修改生产账本，不创建/提交订单，也不改变执行或
-资本权限。
-
-`account_truth.citic_history_xls_directory` 是另一条显式启用、按需触发的中信旧版 XLS
-检查来源，不会在后台自动轮询。`GET /api/account-truth/citic-history-xls/directory`
-只返回脱敏配置状态；只有操作员调用 `POST .../directory/scan` 后才会读取文件。API
-不返回配置路径或任何来源文件名。
-
-| 字段 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `enabled` | boolean | `false` | 允许显式扫描命令，但不会启动后台任务。 |
-| `path` | string | 空 | 私有目录的绝对路径；仅启用时必填。 |
-| `max_files` | integer | `120` | 直属 `.xls` 候选上限，范围 1–600。 |
-| `max_file_bytes` | integer | `10485760` | 单文件上限，范围 1 KiB–10 MiB。 |
-| `max_total_bytes` | integer | `67108864` | 总读取上限，不小于单文件上限且不超过 100 MiB。 |
-
-扫描拒绝符号链接、子目录遍历、读取中变化的文件和超限输入；只返回按内容去重的
-隐私最小化预览，不做持久化。第二次显式复核会重新扫描目录，并且必须找到同一完整
-SHA-256，之后也只能保存待补证/拒绝元数据；解析事件仍不能进入 Account Truth 或对账。
-
-### broker_fee
-
-`broker_fee` 是本地费用估算输入，券商账单和 Account Truth 始终是最终事实来源。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `account_profile_id` | string | 脱敏账户 profile id，不能写完整资金账号。 |
-| `broker_name` | string | 券商展示名称。 |
-| `schedule_id` | string | 费用规则标识。 |
-| `display_name` | string | 仅用于本地可读说明。 |
-| `currency` | string | 费用模型币种说明，示例为 `CNY`。 |
-| `source_type` | string | 费用输入的脱敏来源类型。 |
-| `precedence` | string | 声明券商账单优先于配置估算。 |
-| `stock_a_commission_rate` | number/string | A 股佣金率。 |
-| `stock_a_min_commission` | number/string | A 股最低佣金。 |
-| `fund_etf_commission_rate` | number/string | ETF/场内基金佣金率。 |
-| `fund_etf_min_commission` | number/string | ETF/场内基金最低佣金。 |
-| `stamp_tax_rate` | number/string | 股票卖出印花税率。 |
-| `transfer_fee_rate` | number/string | 默认股票过户费率。 |
-| `fund_etf_transfer_fee_rate` | number/string | ETF/场内基金过户费率；未填时继承 `transfer_fee_rate`。 |
-| `exchange_transfer_fee_rates` | object | 按交易所覆盖过户费率。 |
-| `other_fee_rate` | number/string | 其他费用率。 |
-| `rounding.money_precision` | number/string | 费用分项的货币精度，例如 `0.01` 表示按分。 |
-| `rounding.mode` | string | 舍入模式：`half_up`、`half_even`、`down` 或 `up`。 |
-| `rules` | array | 按资产、市场、方向和费用组件定义的细分规则。 |
-| `limitations` | string[] | 当前费用模型的已知假设和待复核项。 |
-
-`account_identifier_saved`、`screenshots_saved` 和 `private_exports_saved` 必须保持 `false`。完整账号、截图、交割单或真实导出不得写入配置。
-
-解析器还接受 `profile_id`、`schema_version`、`source`、`effective_from`、`captured_at`、`rounding`、`rule_application`、`broker_absorbed_components`、`commission` 和 `taxes_and_fees` 作为结构化导入/归一化输入。它们不会成为独立账户事实；运行时保留归一化后的费用条款、舍入规则、schedule/profile 标识和限制。配置舍入只用于估算：各费用分项先按指定精度舍入，再求总费用；券商账单仍覆盖估算。
-
-旧字段 `broker_fee_schedule`、`account_commission_rate` 和 `account_min_commission` 仅用于迁移读取；新写入统一使用 `broker_fee`。
-
-### ai
-
-| 字段 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `enabled` | boolean | `false` | 是否允许人工显式调用已配置的外部模型边界。 |
-| `provider` | string | 空 | Provider id，例如 `deepseek` 或内部兼容服务标识。 |
-| `model` | string | 空 | Provider 使用的模型名称。 |
-| `base_url` | string | 空 | 无凭证的 HTTPS API 根地址。 |
-| `adapter_kind` | string | `openai_compatible_https` | 当前已审核的 adapter 类型。 |
-| `timeout_seconds` | number | `20` | 单次请求超时，必须在 0 到 60 秒之间。 |
-| `api_key_env` | string | `KARKINOS_AI_API_KEY` | 保存密钥的环境变量名，不是密钥本身。 |
-
-启用 `ai.enabled` 时必须显式设置 `provider`、`model` 和无凭证 HTTPS `base_url`。核心不会为 DeepSeek 或其他厂商猜测 endpoint。
-
-`ai.api_keys` 不再接受；API Key 只能来自环境变量。继续在 JSON 中配置该字段会阻止启动。
-
-`allow_financial_context` 已移除；继续配置它会带迁移提示并阻止启动。删除该字段即可。是否允许发送某一类证据由具体的人工确认、不可变证据范围和对应 API 契约决定，不能由一个全局布尔值放宽。
-
-AI 凭证解析顺序为：
-
-1. `KARKINOS_AI_API_KEY`；
-2. `ai.api_key_env` 指向的环境变量；
-3. 根据 provider 推导的 `<PROVIDER>_API_KEY`；
-
-## 环境变量
-
-### 运行时与数据
-
-| 环境变量 | 覆盖字段 / 用途 |
-| --- | --- |
-| `KARKINOS_CONFIG_PATH` | `config.json` 路径，默认 `./config.json` |
-| `KARKINOS_DATA_DIR` | 数据目录，默认 `./data/store` |
-| `KARKINOS_ENV_FILE` | `python -m server` 使用的环境文件路径；也可用 `--env-file` |
-| `KARKINOS_HOST` | `server.host` |
-| `KARKINOS_PORT` | `server.port` |
-| `KARKINOS_CORS_ALLOWED_ORIGINS` | `server.cors_allowed_origins`，逗号分隔 |
-| `KARKINOS_DATA_SOURCE` | `data_source.provider` |
-| `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |
-| `KARKINOS_TUSHARE_TOKEN` | 默认的 TuShare 边缘适配器凭证变量；可由 `data_source.provider_config.tushare_token_env` 选择其他大写环境变量名。变量值不会进入 `config.json` 或 Settings API。 |
-| `KARKINOS_TELEGRAM_BOT_TOKEN` | Telegram Bot 凭证；仅限环境变量 |
-| `KARKINOS_TELEGRAM_CHAT_ID` | Telegram 目标；仅限环境变量 |
-| `KARKINOS_WECHAT_SENDKEY` | Server酱凭证；仅限环境变量 |
-
-运行时与 AI 覆盖由同一个启动加载器处理。已存在的非空进程环境值优先于 `.env`；对白名单内的空凭证值，允许由选定的 `.env` 回填。布尔值接受 `true/false`、`1/0`、`yes/no` 和 `on/off`；拼写错误会阻止启动。Port、轮询间隔（最少 15 秒）、AI timeout、HTTPS base URL 和 CORS 空列表同样会被校验。
-
-### AI
+常用路径：
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `KARKINOS_AI_ENABLED` | 覆盖 `ai.enabled` |
-| `KARKINOS_AI_PROVIDER` | 覆盖 `ai.provider` |
-| `KARKINOS_AI_MODEL` | 覆盖 `ai.model` |
-| `KARKINOS_AI_BASE_URL` | 覆盖 `ai.base_url` |
-| `KARKINOS_AI_ADAPTER_KIND` | 覆盖 `ai.adapter_kind` |
-| `KARKINOS_AI_TIMEOUT_SECONDS` | 覆盖 `ai.timeout_seconds` |
-| `KARKINOS_AI_API_KEY` | 推荐的 AI API Key 来源 |
+| `KARKINOS_CONFIG_PATH` | `config.json` 路径 |
+| `KARKINOS_DATA_DIR` | 本地运行数据目录 |
+| `KARKINOS_ENV_FILE` | 显式选择环境文件 |
 
-## 高级与兼容配置
+## `server`
 
-运行时仍接受以下高级顶层字段，但最小示例不会默认打开它们：
+`server` 保存本地 API 的监听、CORS、交易日历同步和通知类型等普通运行参数。
 
-- `broker_connectors`：只读券商事实 connector；不得包含 password、secret、token 或 credential 字段。`local_export_readonly` 只接受已审查的 `karkinos.readonly_broker_snapshot_export.v2` 来源契约；默认不启用任何 connector。
-- `controlled_bridge_policy`：受控桥接复核白名单；`per_order_confirmation_required` 必须为 `true`，`automation_allowed` 必须为 `false`。
-- `trusted_operator_identities`：Ed25519 公钥白名单；只存公钥。
-- 回测兼容字段：`initial_cash`、`start_date`、`end_date`、`assets`、`instruments`、`strategy`、`short_period`、`long_period` 和 `commission_rate`。
+常用字段包括：
 
-`assets` 和 `instruments` 只用于旧配置迁移或独立回测。实时 watchlist 与资产元数据应保存在 SQLite。
+```text
+host
+port
+market_calendar_auto_sync
+cors_allowed_origins
+notification
+```
 
-## 不属于静态配置的内容
+部署到非本机环境时应配置明确的可信 CORS origin，而不是依赖不受控的通配符。
 
-以下内容不能通过 `config.json` 或环境变量授予：
+## `data_source`
 
-- 券商提交、撤单或自动执行权限；
-- 资本授权、会话预算或运行时 token；
-- Account Truth、持仓、成交、对账和风控证据；
-- AI 产物成为账户事实、Decision 输入或交易指令的资格。
+`data_source` 选择市场数据 provider 和轮询配置。
 
-这些边界由运行时数据库、人工确认和受控执行契约管理。详见 [`CONTROLLED_EXECUTION_PLAN.md`](CONTROLLED_EXECUTION_PLAN.md)。
+当前示例支持：
 
-## 安全规则
+```text
+provider = akshare | tushare
+live_poll_interval
+tushare_token_env
+```
 
-- 不提交 `config.json`、`.env`、API Key、券商凭证或私钥。
-- 不在 CLI 参数中传递 token；命令历史可能泄露。
-- 不在配置中保存完整账户号、截图、交割单、真实账户导出或运行数据库。
-- 线上部署显式设置 CORS origin，不使用不受控的通配符。
-- 配置错误应修复后再启动，不要通过捕获异常回退到默认值。
+TuShare Token 只通过环境变量提供。默认变量为：
+
+```text
+KARKINOS_TUSHARE_TOKEN
+```
+
+不要把真实 Token 写入 `config.json`。
+
+## `ai`
+
+AI 是可选的研究边界。典型配置包括：
+
+```text
+enabled
+provider
+model
+base_url
+adapter_kind
+timeout_seconds
+api_key_env
+```
+
+推荐把 API Key 放在：
+
+```text
+KARKINOS_AI_API_KEY
+```
+
+也可以通过 `ai.api_key_env` 指向另一个环境变量。
+
+AI 配置只决定外部模型连接方式，不授予市场事实、研究结果、组合状态、金融事实或资本权限。
+
+## `broker_fee`
+
+`broker_fee` 描述本地交易成本模型，例如：
+
+```text
+佣金率和最低佣金
+印花税
+过户费
+费用舍入规则
+按市场 / 资产 / 买卖方向定义的细分规则
+```
+
+这些值用于估算和模拟。已导入并确认的真实券商费用属于金融事实，并不因为配置中的估算值而被覆盖。
+
+完整示例以 [`config.example.json`](../../config.example.json) 为准。
+
+## Maintenance-only configuration
+
+`account_truth` 和其他 broker / controlled-execution 相关配置用于维护现有兼容能力，当前默认关闭，也不属于当前开发主线。
+
+现有 Account Truth 本地导入说明见
+[account-truth-import.md](account-truth-import.md)。除非
+[`PLAN.md`](../PLAN.md) 明确重新纳入范围，否则不要围绕这些配置扩展新的 broker 或资本权限功能。
+
+## 常用环境变量
+
+| 环境变量 | 用途 |
+| --- | --- |
+| `KARKINOS_HOST` | API 监听地址 |
+| `KARKINOS_PORT` | API 监听端口 |
+| `KARKINOS_CORS_ALLOWED_ORIGINS` | 浏览器可信 origin，逗号分隔 |
+| `KARKINOS_DATA_SOURCE` | 市场数据 provider |
+| `KARKINOS_LIVE_POLL_INTERVAL` | 数据轮询间隔 |
+| `KARKINOS_TUSHARE_TOKEN` | TuShare Token |
+| `KARKINOS_AI_ENABLED` | 是否启用外部 AI |
+| `KARKINOS_AI_PROVIDER` | AI provider |
+| `KARKINOS_AI_MODEL` | AI model |
+| `KARKINOS_AI_BASE_URL` | AI API base URL |
+| `KARKINOS_AI_ADAPTER_KIND` | AI adapter 类型 |
+| `KARKINOS_AI_TIMEOUT_SECONDS` | AI 请求超时 |
+| `KARKINOS_AI_API_KEY` | AI API Key |
+| `KARKINOS_TELEGRAM_BOT_TOKEN` | Telegram 通知凭证 |
+| `KARKINOS_TELEGRAM_CHAT_ID` | Telegram 目标 |
+| `KARKINOS_WECHAT_SENDKEY` | Server酱凭证 |
+
+## 安全
+
+- 不提交 `config.json`、真实 `.env`、API Key、券商凭证或私钥。
+- 不在 CLI 参数中传递 secret 或 token。
+- 不在配置中保存完整账户号、真实账户导出、截图或运行数据库。
+- 配置错误应显式修复，不应通过静默回退产生一个看似正常但语义不同的运行状态。

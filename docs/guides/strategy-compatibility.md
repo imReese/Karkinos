@@ -1,63 +1,53 @@
 # Karkinos Strategy 兼容说明
 
-> Status: legacy compatibility. 新的研究能力按 [ARCHITECTURE.md](../ARCHITECTURE.md) 的 `Dataset -> Alpha/Model -> Forecast -> Portfolio` 架构研发。
+> Status: legacy compatibility guide.
 
-当前 `strategy/` 仍是已实现 backtest/runtime 的兼容层，不会立即删除。
+当前 `strategy/` 仍承载已实现 backtest/runtime 的兼容能力。新的研究能力按照
+[ARCHITECTURE.md](../ARCHITECTURE.md) 的 Dataset -> Research -> Published Forecast -> Portfolio 路径发展。
 
-## 当前内置基线
+## 当前基线策略
 
-代码中保留的 built-in strategies 包括：
+现有 built-in strategies 主要用于 regression、研究 baseline 和现有 UI/runtime 兼容。它们不因为被内置就自动成为经过验证的 Alpha。
 
-- `dual_ma`
-- `monthly_rebalance`
-- `bollinger`
-- `rsi`
-- `donchian_breakout`
-- `time_series_momentum`
-- `volatility_target_trend`
-- `pairs_ratio_mean_reversion`
+当前代码中的策略和参数以 `strategy/` 实现及其测试为准。
 
-它们用于 regression、研究基线和现有 UI/runtime 兼容，不代表经过实盘验证的 Alpha。
+## 现有扩展契约
 
-## 当前扩展契约
+兼容策略仍可以通过现有 extension 机制加载。现有 `karkinos.strategy.v1` 是兼容 schema version，不是产品 roadmap 版本。
 
-私有兼容策略可以继续放在 `strategy/extensions/`，或使用 `KARKINOS_STRATEGY_EXTENSION_DIR`。
+旧 Strategy 输出可能使用 signal 或 target-weight 语义；这些输出仍必须经过相应的研究评估、Portfolio、Risk 和 Simulation/Execution 边界，不能直接获得资本权限。
 
-现有 manifest 使用 `karkinos.strategy.v1`，声明 strategy id、class path、typed parameters、asset/frequency scope 和验证信息。该 schema version 不是产品 roadmap 版本。
+## 不再扩大的 Strategy 职责
 
-现有 Strategy 输出通常是 signal/target-weight 语义；后续仍经过 backtest、cost、risk、paper/shadow 和 human gate。
-
-## 不再扩大的抽象
-
-新研究功能不继续把下面内容塞进 Strategy class：
+新的研究能力不继续把以下职责塞进 Strategy class：
 
 ```text
 feature engineering
-alpha diagnostics
+experiment evaluation
 model training
 portfolio optimization
+risk authorization
 execution simulation
+accounting
 capital authority
 ```
 
-这些能力分别由 Research、Portfolio、Simulation/Execution 和 Financial Control contexts 拥有。
+这些职责分别属于 Research、Portfolio、Risk、Simulation、Execution 和 Accounting 边界。
 
 ## 迁移方向
 
 ```text
 Legacy Strategy
      |
-     +-> extract signal logic -> AlphaSpec / ModelSpec
-     +-> output               -> ForecastSet
-     +-> sizing               -> Portfolio policy
-     +-> trade planning       -> RebalancePlan
-     +-> execution            -> shared simulation/execution
+     +-> predictive logic -> Research / Alpha / Model
+     +-> research output  -> Published Forecast
+     +-> sizing           -> Portfolio
+     +-> trade planning   -> Rebalance Plan
+     +-> execution        -> Simulation / Execution
 ```
 
-旧 Strategy 在迁移完成前继续通过 compatibility adapter 运行；不要为了目录整洁一次性重写现有策略。
+迁移以真实产品价值和调用方为依据，不为目录整洁进行一次性重写。
 
-## 验收原则
+## Evaluation standard
 
-Strategy/Alpha 的价值不能用单次回测总收益判断。新的研究 gate 统一使用 point-in-time dataset、rolling OOS、after-cost、exposure、turnover、capacity 和 shadow evidence。
-
-需要了解当前实现参数时直接查看 `strategy/builtins/` 和对应测试；不再在本文复制每个策略几十行说明。
+Strategy / Alpha 的价值不能用单次回测总收益判断。新的研究评估应关注 point-in-time 数据、OOS、after-cost、exposure、turnover、capacity 和 robustness 等证据。

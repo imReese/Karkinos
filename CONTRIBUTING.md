@@ -1,109 +1,112 @@
 # Contributing
 
-## Persistent branches
+## Branches
 
-Use `dev` for normal development. `main` follows exact verified dev commits;
-there is no routine PR, squash, merge commit, branch deletion, or merge-back.
-Do not edit the running source checkout. Stop the service before updating it,
-or use a separate main worktree for running and dev worktree for development.
+`dev` is the normal development branch. `main` receives verified development
+commits through the repository promotion workflow.
+
+Maintainers may work directly on `dev`. External contributions should use a
+feature branch or fork and open a pull request targeting `dev`.
+
+Never force-push, reset, or delete `dev` or `main`.
+
+## Before changing code
+
+Start with [docs/README.md](docs/README.md) and read only the documents relevant
+to the change.
+
+For substantial quantitative-domain or architecture work, consult
+[docs/REFERENCES.md](docs/REFERENCES.md) before introducing a new project-specific
+abstraction.
+
+Keep changes focused. Do not combine unrelated cleanup, feature work, and
+financial-semantic changes without a concrete reason.
+
+## Development setup
 
 ```bash
 git switch dev
 git pull --ff-only origin dev
-# edit, check, commit
-git push origin dev
-```
-
-## Daily promotion
-
-`Promote verified dev` runs daily at 02:00 Asia/Shanghai (18:00 UTC), and can be
-started manually from Actions on main. GitHub schedules can be delayed.
-The trusted main workflow walks at most 100 first-parent dev commits, newest
-first. It selects the newest descendant of main whose latest official Dev CI
-push run/attempt succeeded and whose incremental Code CI gate passed. A failed
-or pending tip can remain on dev while an earlier incremental-green ancestor is
-selected. API errors, incomplete listings, changed identities, divergence, and
-an exhausted search bound stop the run instead of guessing.
-
-Selection is not authorization to update main. The exact selected SHA then runs
-a trusted, read-only full pre-promotion verification covering Python quality,
-repository hygiene and secret scanning, backend and frontend suites, trading
-safety, production dependency audit, Docker runtime smoke, browser safety, and
-acceptance evidence. The final fast-forward job receives write permission only
-after that exact full verification succeeds. If dev or main changes while the
-candidate is being verified, the exact selection becomes invalid and the run
-fails closed instead of promoting a different SHA.
-
-Promotion uses the exact SHA and a server-side non-force ref update. It never
-executes the dev checkout with write credentials, creates a PR, opens trading
-authority, creates a tag, or changes a local service. Server protection is
-never bypassed.
-
-The built-in GITHUB_TOKEN cannot trigger another push workflow, so after the
-verified ref update the job explicitly dispatches the existing full CI and
-Candidate workflows on main with the selected SHA. These post-promotion runs
-record exact-main evidence; they are not the authorization that allowed the SHA
-to enter main. CI rejects a dispatch that does not match its main checkout.
-Release source verification accepts the latest exact main push or explicit CI
-dispatch, not a green run on dev or a previous successful attempt. A failed
-dispatch after the ref update is repairable on the next run. Existing failed
-runs are not silently retried into green; use Actions rerun after diagnosis.
-No personal access token is needed for ordinary source promotion. A server
-permission/rules rejection remains an error; workflow-file changes can require
-an owner-authorized token with the appropriate workflow permission.
-
-## GitHub protection (one-time administrator setting)
-
-Import `.github/rulesets/main.json` and `.github/rulesets/dev.json` in Settings
--> Rules -> Rulesets, replacing any previous PR-required main policy. The main
-policy requires Code CI gate from GitHub Actions, prohibits force-push and
-deletion, and has no bypass actors. Dev permits normal pushes to start CI but
-also prohibits history loss. Do not enable a PR requirement for this workflow.
-Templates in Git are not active GitHub settings. Inspect the actual rulesets:
-
-```bash
-gh api repos/imReese/Karkinos/rulesets
-# Only when these rules do not exist, create them with administrator access:
-gh api --method POST repos/imReese/Karkinos/rulesets --input .github/rulesets/main.json
-gh api --method POST repos/imReese/Karkinos/rulesets --input .github/rulesets/dev.json
-```
-
-Keep automatic head-branch deletion disabled. Dependabot version updates target
-dev; security updates can target default main and require synchronization into
-dev before further fast-forward promotion. Never reset a divergent branch.
-
-## Local checks
-
-```bash
 uv sync --locked --extra server --extra dev
-uv run --locked python scripts/ci/check_python_quality.py --base origin/main
-uv run --locked python scripts/ci/check_docs_health.py
-uv run --locked python -m pytest tests/scripts/test_ci_preflight.py tests/test_ci_workflow.py tests/test_ci_safety_workflow.py tests/scripts/test_scripts_inventory.py tests/tools/test_main_promotion.py tests/scripts/test_main_source_runtime.py tests/test_verify_release_source_ci.py
-uv run --locked python -m pytest
-npm --prefix web run format:check
-npm --prefix web run build
-npm --prefix web run test
+npm --prefix web ci
 ```
 
-The quality entrypoint includes local staged, unstaged and untracked Python
-changes. An unavailable revision fails rather than silently skipping checks.
-In dev CI, Python quality is checked against main, not only the previous dev
-push, so a later small commit cannot hide an earlier unpromoted formatting
-failure. Ruff, Black, isort, mypy and architecture results are independent;
-any failure fails the command. Checks do not rewrite files.
+For the normal development runtime:
 
-Dev CI is change-scoped: frontend, trading, dependency, and Docker runtime jobs
-run only when their owned paths change. The scheduled promotion independently
-runs the complete pre-promotion verification before any main write. Main then
-retains full per-commit CI and candidate evidence after promotion.
+```bash
+./scripts/start_server.sh dev
+```
 
-## Sensitive files and test expectations
+See [scripts/README.md](scripts/README.md) for runtime commands.
 
-Never commit `.env*`, credentials, private account exports, runtime databases,
-`data/store/`, `.run/`, logs, screenshots or generated reports. Use templates
-without overwriting existing private configuration. Keep tokens out of arguments.
+## Validation
 
-Financial data, risk, trading authority, valuation and API changes need focused
-deterministic tests and must preserve human confirmation and fail-closed gates.
-Frontend changes should cover loading, error, empty and stale/cache states.
-Do not mistake passing local CI for validation against a real broker/provider.
+Run the narrowest relevant checks first.
+
+Python quality:
+
+```bash
+uv run --locked python scripts/ci/check_python_quality.py --base origin/dev
+```
+
+Documentation integrity:
+
+```bash
+uv run --locked python scripts/ci/check_docs_integrity.py
+```
+
+Relevant Python tests:
+
+```bash
+uv run --locked python -m pytest <relevant-tests>
+```
+
+Web changes:
+
+```bash
+npm --prefix web run format:check
+npm --prefix web run test
+npm --prefix web run build
+```
+
+Use the full Python suite when the affected boundary or regression risk justifies
+it:
+
+```bash
+uv run --locked python -m pytest
+```
+
+`.github/workflows/dev-ci.yml` defines branch verification. Full `main`
+verification is defined by `.github/workflows/ci.yml`.
+
+Do not weaken assertions, typing, financial invariants, or fail-closed behavior
+merely to make a check pass.
+
+## Tests
+
+Tests should protect meaningful behavior and financial or research semantics.
+Avoid tests that only enumerate private symbols, preserve obsolete repository
+structure, or encode project-management acceptance criteria.
+
+Use synthetic or sanitized fixtures. Tests must not require real brokerage
+credentials, account exports, or personal financial data.
+
+## Commits and pull requests
+
+Use focused commits with messages that describe the actual change.
+
+A pull request should explain:
+
+- the problem being solved;
+- the important design or behavior change;
+- the validation that actually ran;
+- any persisted-data, financial-semantic, or compatibility impact.
+
+Do not claim tests or workflows that were not run.
+
+## Sensitive data
+
+Never commit credentials, real account exports, runtime databases, private logs,
+or screenshots containing personal financial information.
+
+If a secret is exposed, follow [SECURITY.md](SECURITY.md).
