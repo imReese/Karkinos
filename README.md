@@ -37,7 +37,7 @@ risk, simulation, accounting, and attribution in one local-first workflow.
 - **AI-assisted research** — optional AI can accelerate research iteration while deterministic code owns quantitative and financial results.
 - **Web application** — FastAPI backend with a React / TypeScript interface and local runtime.
 
-## Research-to-portfolio loop
+## Workflow
 
 ```mermaid
 flowchart LR
