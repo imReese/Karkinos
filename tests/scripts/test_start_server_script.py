@@ -1,4 +1,4 @@
-"""Executable contracts for the branch-selected source launcher."""
+"""Executable contracts for the snapshot-based source launcher."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def _source_repo(
     copied.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
     copied.chmod(0o755)
     (service / "run_dev.py").write_text("# fixture entrypoint\n", encoding="utf-8")
-    (service / "run_main.py").write_text("# fixture entrypoint\n", encoding="utf-8")
+    (service / "run_main.py").write_text("# fixture launcher\n", encoding="utf-8")
 
     (repo / "config.json").write_text("{}\n", encoding="utf-8")
     (repo / ".env").write_text("KARKINOS_DATA_SOURCE=akshare\n", encoding="utf-8")
@@ -64,17 +64,17 @@ def _source_repo(
 
     calls = tmp_path / "calls.log"
     python_calls = tmp_path / "python-calls.log"
-
     _write_executable(
         bin_dir / "python3",
         "#!/usr/bin/env bash\n"
         "set -eu\n"
         f'printf "python3 %s\\n" "$*" >>"{python_calls}"\n'
         f'printf "workspace=%s\\n" "${{KARKINOS_WORKSPACE:-}}" >>"{python_calls}"\n'
+        f'printf "source-root=%s\\n" "${{KARKINOS_SOURCE_ROOT:-}}" >>"{python_calls}"\n'
+        f'printf "source-sha=%s\\n" "${{KARKINOS_SOURCE_SHA:-}}" >>"{python_calls}"\n'
+        f'printf "branch=%s\\n" "${{KARKINOS_SOURCE_BRANCH:-}}" >>"{python_calls}"\n'
         f'printf "data=%s\\n" "${{KARKINOS_DATA_DIR:-}}" >>"{python_calls}"\n'
-        f'printf "config=%s\\n" "${{KARKINOS_CONFIG_PATH:-}}" >>"{python_calls}"\n'
-        f'printf "env-file=%s\\n" "${{KARKINOS_ENV_FILE:-}}" >>"{python_calls}"\n'
-        f'printf "branch=%s\\n" "${{KARKINOS_SOURCE_BRANCH:-}}" >>"{python_calls}"\n',
+        f'printf "config=%s\\n" "${{KARKINOS_CONFIG_PATH:-}}" >>"{python_calls}"\n',
     )
     _write_executable(
         bin_dir / "uv",
@@ -82,9 +82,6 @@ def _source_repo(
         "set -eu\n"
         f'printf "uv %s\\n" "$*" >>"{calls}"\n'
         f'printf "workspace=%s\\n" "${{KARKINOS_WORKSPACE:-}}" >>"{calls}"\n'
-        f'printf "data=%s\\n" "${{KARKINOS_DATA_DIR:-}}" >>"{calls}"\n'
-        f'printf "config=%s\\n" "${{KARKINOS_CONFIG_PATH:-}}" >>"{calls}"\n'
-        f'printf "env-file=%s\\n" "${{KARKINOS_ENV_FILE:-}}" >>"{calls}"\n'
         f'printf "branch=%s\\n" "${{KARKINOS_SOURCE_BRANCH:-}}" >>"{calls}"\n'
         'if [[ "$*" == *"python -c"* ]]; then exit 0; fi\n'
         f"printf '%s\\n' \"$$\" >'{tmp_path / 'uv-launch-called'}'\n"
@@ -122,12 +119,11 @@ def _source_repo(
         bin_dir / "curl",
         "#!/usr/bin/env bash\n"
         "set -eu\n"
-        f'printf "curl %s\\n" "$*" >>"{calls}"\n'
         'if [[ "$*" == *":5173/"* ]]; then\n'
         f"  exit {frontend_exit}\n"
         "fi\n"
         'if [[ "$*" == *"/api/settings/live/status"* ]]; then\n'
-        '  printf \'{"running":true,"market_open":false}\'\n'
+        '  printf \'{"running":true}\'\n'
         f"  exit {health_exit}\n"
         "fi\n"
         "printf '%s' "
@@ -141,12 +137,7 @@ def _source_repo(
         bin_dir / "ps",
         "#!/usr/bin/env bash\n"
         "set -eu\n"
-        'if [[ "$*" == "-axo command=" ]]; then\n'
-        '  if [[ -n "${KARKINOS_TEST_RUNNING_SOURCE:-}" ]]; then\n'
-        f'    printf "%s\\n" "python {repo}/scripts/service/run_dev.py"\n'
-        "  fi\n"
-        "  exit 0\n"
-        "fi\n"
+        'if [[ "$*" == "-axo command=" ]]; then exit 0; fi\n'
         'if [[ "${1:-}" == "-p" && "${3:-}" == "-o" && "${4:-}" == "lstart=" ]]; then\n'
         "  printf '%s\\n' 'Sun Aug 30 22:00:00 2026'\n"
         "  exit 0\n"
@@ -160,6 +151,8 @@ def _source_repo(
     _git(repo, "config", "user.email", "test@example.invalid")
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "fixture")
+    main_sha = _git(repo, "rev-parse", "main")
+    _git(repo, "update-ref", "refs/remotes/origin/main", main_sha)
     _git(repo, "branch", "dev")
     _git(repo, "branch", "feature/research")
     if current_branch != "main":
@@ -172,14 +165,17 @@ def _source_repo(
         "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS": "2",
         "KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS": "2",
     }
+    for key in tuple(env):
+        if key.startswith("KARKINOS_") and not key.startswith("KARKINOS_TEST_"):
+            env.pop(key)
     return repo, env, calls
 
 
 def _cleanup_source_processes(repo: Path) -> None:
-    run_dir = repo / ".run"
+    run_dir = repo / ".run/dev"
     if not run_dir.exists():
         return
-    for pid_file in run_dir.rglob("*.pid"):
+    for pid_file in run_dir.glob("*.pid"):
         raw = pid_file.read_text(encoding="utf-8").split("\t", 1)[0]
         if raw.isdigit():
             try:
@@ -210,8 +206,11 @@ def _prod_repo(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
     return repo, env, calls
 
 
-def test_default_source_branch_is_main_and_uses_repo_local_state(tmp_path: Path):
+def test_default_main_snapshot_does_not_switch_dirty_dev_checkout(tmp_path: Path):
     repo, env, _calls = _source_repo(tmp_path, current_branch="dev")
+    (repo / "app.py").write_text("value = 'dirty dev'\n", encoding="utf-8")
+    before = _git(repo, "status", "--porcelain")
+
     result = subprocess.run(
         ["bash", "scripts/start_server.sh", "--init"],
         cwd=repo,
@@ -220,106 +219,45 @@ def test_default_source_branch_is_main_and_uses_repo_local_state(tmp_path: Path)
         text=True,
         check=False,
     )
+
     assert result.returncode == 0, result.stderr
-    assert _git(repo, "branch", "--show-current") == "main"
-    recorded = (tmp_path / "python-calls.log").read_text(encoding="utf-8")
-    assert "scripts/service/run_main.py --init" in recorded
-    assert f"workspace={repo}" in recorded
-    assert f"data={repo / 'data/store'}" in recorded
-    assert f"config={repo / 'config.json'}" in recorded
-    assert f"env-file={repo / '.env'}" in recorded
-    assert "branch=main" in recorded
-
-
-def test_branch_switch_refuses_dirty_checkout_without_mutating_it(tmp_path: Path):
-    repo, env, _calls = _source_repo(tmp_path, current_branch="dev")
-    (repo / "app.py").write_text("value = 2\n", encoding="utf-8")
-    before = _git(repo, "status", "--porcelain")
-    result = subprocess.run(
-        ["bash", "scripts/start_server.sh"],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 1
-    assert "checkout has local changes" in result.stderr
     assert _git(repo, "branch", "--show-current") == "dev"
     assert _git(repo, "status", "--porcelain") == before
-    assert not (tmp_path / "python-calls.log").exists()
+    snapshot = repo / ".run/main/code"
+    assert (snapshot / "app.py").read_text() == "value = 1\n"
+    assert (snapshot / ".karkinos-source-sha").read_text().strip() == _git(
+        repo, "rev-parse", "refs/remotes/origin/main"
+    )
+    recorded = (tmp_path / "python-calls.log").read_text(encoding="utf-8")
+    assert f"workspace={repo}" in recorded
+    assert f"source-root={snapshot}" in recorded
+    assert "branch=main" in recorded
+    assert f"data={repo / 'data/store'}" in recorded
+    assert f"config={repo / 'config.json'}" in recorded
 
 
-def test_branch_switch_refuses_while_source_runtime_is_running(tmp_path: Path):
+def test_arbitrary_branch_snapshot_keeps_current_checkout_untouched(tmp_path: Path):
     repo, env, _calls = _source_repo(tmp_path, current_branch="dev")
-    env["KARKINOS_TEST_RUNNING_SOURCE"] = "1"
     result = subprocess.run(
-        ["bash", "scripts/start_server.sh"],
+        ["bash", "scripts/start_server.sh", "feature/research", "--foreground"],
         cwd=repo,
         env=env,
         capture_output=True,
         text=True,
         check=False,
     )
-    assert result.returncode == 1
-    assert "source runtime is still using this checkout" in result.stderr
+
+    assert result.returncode == 0, result.stderr
     assert _git(repo, "branch", "--show-current") == "dev"
+    snapshot = repo / ".run/feature/research/code"
+    assert snapshot.is_dir()
+    assert (snapshot / ".karkinos-source-branch").read_text().strip() == "feature/research"
+    recorded = (tmp_path / "python-calls.log").read_text(encoding="utf-8")
+    assert f"source-root={snapshot}" in recorded
+    assert "branch=feature/research" in recorded
 
 
-def test_dev_uses_shared_local_config_and_data_with_branch_only_runtime_state(
-    tmp_path: Path,
-):
-    repo, env, calls = _source_repo(tmp_path, current_branch="dev")
-    result = subprocess.run(
-        ["bash", "scripts/start_server.sh", "dev"],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=20,
-    )
-    try:
-        assert result.returncode == 0, result.stderr
-        recorded = calls.read_text(encoding="utf-8")
-        assert f"workspace={repo}" in recorded
-        assert f"data={repo / 'data/store'}" in recorded
-        assert f"config={repo / 'config.json'}" in recorded
-        assert f"env-file={repo / '.env'}" in recorded
-        assert "branch=dev" in recorded
-        assert "vite-backend=http://127.0.0.1:8001" in recorded
-        assert (repo / ".run/dev/backend.pid").is_file()
-        assert (repo / ".run/dev/frontend.pid").is_file()
-        assert not (repo / ".run/dev/config").exists()
-        assert not (repo / ".run/dev/data").exists()
-        assert (repo / "config.json").is_file()
-        assert (repo / ".env").is_file()
-    finally:
-        _cleanup_source_processes(repo)
-
-
-def test_arbitrary_development_branch_gets_only_its_own_process_state(tmp_path: Path):
-    repo, env, _calls = _source_repo(tmp_path, current_branch="dev")
-    result = subprocess.run(
-        ["bash", "scripts/start_server.sh", "feature/research"],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=20,
-    )
-    try:
-        assert result.returncode == 0, result.stderr
-        assert _git(repo, "branch", "--show-current") == "feature/research"
-        assert (repo / ".run/feature/research/backend.pid").is_file()
-        assert (repo / ".run/feature/research/frontend.pid").is_file()
-        assert "Workspace: " + str(repo) in result.stdout
-    finally:
-        _cleanup_source_processes(repo)
-
-
-def test_explicit_branch_option_matches_positional_branch(tmp_path: Path):
+def test_explicit_branch_option_matches_positional_snapshot(tmp_path: Path):
     repo, env, _calls = _source_repo(tmp_path, current_branch="dev")
     result = subprocess.run(
         ["bash", "scripts/start_server.sh", "--branch", "main", "--foreground"],
@@ -330,15 +268,39 @@ def test_explicit_branch_option_matches_positional_branch(tmp_path: Path):
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert _git(repo, "branch", "--show-current") == "main"
-    recorded = (tmp_path / "python-calls.log").read_text(encoding="utf-8")
-    assert "scripts/service/run_main.py --foreground" in recorded
-    assert "branch=main" in recorded
+    assert _git(repo, "branch", "--show-current") == "dev"
+    assert (repo / ".run/main/code/.karkinos-source-sha").is_file()
 
 
-def test_dev_preserves_existing_listener_without_starting_processes(tmp_path: Path):
-    repo, env, _calls = _source_repo(tmp_path, current_branch="dev")
-    env["KARKINOS_TEST_DEV_LISTENER"] = "31337"
+def test_dev_uses_current_dirty_working_tree_and_shared_local_state(tmp_path: Path):
+    repo, env, calls = _source_repo(tmp_path, current_branch="dev")
+    (repo / "app.py").write_text("value = 'work in progress'\n", encoding="utf-8")
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "dev"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    try:
+        assert result.returncode == 0, result.stderr
+        assert _git(repo, "branch", "--show-current") == "dev"
+        recorded = calls.read_text(encoding="utf-8")
+        assert f"workspace={repo}" in recorded
+        assert "branch=dev" in recorded
+        assert "vite-backend=http://127.0.0.1:8001" in recorded
+        assert (repo / ".run/dev/backend.pid").is_file()
+        assert (repo / ".run/dev/frontend.pid").is_file()
+        assert not (repo / ".run/dev/config").exists()
+        assert not (repo / ".run/dev/data").exists()
+    finally:
+        _cleanup_source_processes(repo)
+
+
+def test_dev_requires_current_checkout_to_be_dev(tmp_path: Path):
+    repo, env, _calls = _source_repo(tmp_path, current_branch="main")
     result = subprocess.run(
         ["bash", "scripts/start_server.sh", "dev"],
         cwd=repo,
@@ -348,14 +310,29 @@ def test_dev_preserves_existing_listener_without_starting_processes(tmp_path: Pa
         check=False,
     )
     assert result.returncode == 1
-    assert "development port is already occupied" in result.stderr
-    assert "Backend listener PID(s): 31337" in result.stderr
-    assert not (tmp_path / "uv-launch-called").exists()
-    assert not (tmp_path / "npm-dev-called").exists()
+    assert "Switch to dev yourself" in result.stderr
+    assert _git(repo, "branch", "--show-current") == "main"
 
 
-def test_backend_readiness_timeout_cleans_tracked_process(tmp_path: Path):
-    repo, env, _calls = _source_repo(tmp_path, current_branch="dev", health_ready=False)
+def test_missing_snapshot_branch_fails_without_switching(tmp_path: Path):
+    repo, env, _calls = _source_repo(tmp_path, current_branch="dev")
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "missing-branch"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "is not available locally or under origin" in result.stderr
+    assert _git(repo, "branch", "--show-current") == "dev"
+
+
+def test_backend_readiness_timeout_cleans_dev_process(tmp_path: Path):
+    repo, env, _calls = _source_repo(
+        tmp_path, current_branch="dev", health_ready=False
+    )
     env["KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS"] = "1"
     result = subprocess.run(
         ["bash", "scripts/start_server.sh", "dev"],
@@ -384,29 +361,3 @@ def test_prod_still_delegates_only_to_installed_release_controller(tmp_path: Pat
     )
     assert result.returncode == 0, result.stderr
     assert calls.read_text(encoding="utf-8") == "service-start\n"
-
-
-def test_prod_rejects_current_pointer_outside_installed_releases(tmp_path: Path):
-    repo, env, calls = _prod_repo(tmp_path)
-    home = Path(env["KARKINOS_HOME"])
-    external = tmp_path / "external" / f"sha-{'b' * 40}"
-    (external / "bin").mkdir(parents=True)
-    (external / "release.json").write_text("{}\n", encoding="utf-8")
-    _write_executable(
-        external / "bin/karkinosctl",
-        f"#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >>'{calls}'\n",
-    )
-    (home / "current").unlink()
-    (home / "current").symlink_to(external)
-
-    result = subprocess.run(
-        ["bash", "scripts/start_server.sh", "prod"],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 1
-    assert "installed immutable release controller" in result.stderr
-    assert not calls.exists()
