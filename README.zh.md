@@ -36,7 +36,7 @@ Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风�
 - **AI-assisted Research** — 可选 AI 用于加速研究迭代，量化和金融结果由确定性代码持有。
 - **Web App** — FastAPI 后端、React / TypeScript 界面和本地运行环境。
 
-## 从研究到组合
+## 工作流
 
 ```mermaid
 flowchart LR
