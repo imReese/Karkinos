@@ -10,6 +10,7 @@
   <a href="https://github.com/imReese/Karkinos/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/imReese/Karkinos/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/imReese/Karkinos/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag"></a>
   <a href="pyproject.toml"><img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white"></a>
+  <a href="web/package.json"><img alt="Node.js 24.x" src="https://img.shields.io/badge/Node.js-24.x-5FA04E?logo=nodedotjs&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/imReese/Karkinos"></a>
 </p>
 
@@ -71,18 +72,15 @@ Open `http://127.0.0.1:5173`.
 
 Packaged builds: [Releases](https://github.com/imReese/Karkinos/releases) · Runtime and maintenance commands: [scripts/README.md](scripts/README.md)
 
-## Documentation
+## Resources
 
-- [Goal](docs/GOAL.md) — product direction and boundaries
-- [Architecture](docs/ARCHITECTURE.md) — domain ownership and system design
-- [Plan](docs/PLAN.md) — current development focus
-- [Engineering](docs/ENGINEERING.md) — codebase reality and engineering constraints
-- [Guides](docs/guides/) — configuration and financial semantics
+**Product** — [Goal](docs/GOAL.md) · [Architecture](docs/ARCHITECTURE.md) · [Plan](docs/PLAN.md)  
+**Engineering** — [Engineering](docs/ENGINEERING.md) · [Guides](docs/guides/) · [Contributing](CONTRIBUTING.md)  
+**Project** — [Releases](https://github.com/imReese/Karkinos/releases) · [Security](SECURITY.md) · [MIT License](LICENSE)
 
-## Project
+---
 
-Python · FastAPI · SQLite · React · TypeScript · Vite
-
-[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT License](LICENSE)
-
-Karkinos is research and investing software, not investment advice or a guarantee of returns.
+<div align="center">
+<sub>Python · FastAPI · SQLite · React · TypeScript · Vite</sub><br>
+<sub>Karkinos is research and investing software, not investment advice or a guarantee of returns.</sub>
+</div>
