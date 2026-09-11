@@ -77,28 +77,43 @@ def check_source(root: Path) -> str:
 
 def runtime_environment(root: Path) -> dict[str, str]:
     env = dict(os.environ)
-    # Do not pretend source execution is an attested immutable release.
     if any(
         key.startswith("KARKINOS_RELEASE_") or key == "KARKINOS_ARTIFACT_FINGERPRINT"
         for key in env
     ):
         raise ValueError("main source mode cannot inherit managed release environment")
-    env.setdefault(
-        "KARKINOS_HOME", str(Path.home() / "Library/Application Support/Karkinos")
-    )
-    home = Path(env["KARKINOS_HOME"])
+
+    configured_workspace = env.get("KARKINOS_WORKSPACE")
+    legacy_home = env.get("KARKINOS_HOME")
+    if configured_workspace and legacy_home:
+        workspace = Path(configured_workspace).expanduser()
+        legacy = Path(legacy_home).expanduser()
+        if not workspace.is_absolute() or not legacy.is_absolute():
+            raise ValueError(
+                "KARKINOS_WORKSPACE and legacy KARKINOS_HOME must be absolute paths"
+            )
+        if workspace.resolve() != legacy.resolve():
+            raise ValueError(
+                "KARKINOS_WORKSPACE and legacy KARKINOS_HOME select different paths"
+            )
+
+    selected = configured_workspace or legacy_home or str(root)
+    workspace = Path(selected).expanduser()
+    if not workspace.is_absolute():
+        raise ValueError("KARKINOS_WORKSPACE must be a nonempty absolute path")
+    workspace = workspace.resolve()
+    env["KARKINOS_WORKSPACE"] = str(workspace)
+    # Existing native-release/state code still reads KARKINOS_HOME. Keep it as
+    # an exact compatibility alias while workspace becomes the public concept.
+    env["KARKINOS_HOME"] = str(workspace)
+
     for key, default in (
-        ("KARKINOS_DATA_DIR", home / "data"),
-        ("KARKINOS_CONFIG_PATH", home / "config/config.json"),
-        ("KARKINOS_ENV_FILE", home / "config/.env"),
+        ("KARKINOS_DATA_DIR", workspace / "data"),
+        ("KARKINOS_CONFIG_PATH", workspace / "config/config.json"),
+        ("KARKINOS_ENV_FILE", workspace / "config/.env"),
     ):
         env.setdefault(key, str(default))
-    for key in (
-        "KARKINOS_HOME",
-        "KARKINOS_DATA_DIR",
-        "KARKINOS_CONFIG_PATH",
-        "KARKINOS_ENV_FILE",
-    ):
+    for key in ("KARKINOS_DATA_DIR", "KARKINOS_CONFIG_PATH", "KARKINOS_ENV_FILE"):
         if not env[key] or not Path(env[key]).expanduser().is_absolute():
             raise ValueError(f"{key} must be a nonempty absolute path")
         env[key] = str(Path(env[key]).expanduser().resolve())
@@ -113,8 +128,8 @@ def require_runtime_files(env: dict[str, str], *, initialize: bool) -> None:
         if not Path(env[key]).is_file():
             raise ValueError(f"missing {key}: {env[key]}; see scripts/README.md")
     data = Path(env["KARKINOS_DATA_DIR"])
-    home = Path(env["KARKINOS_HOME"])
-    if data.parent != home:
+    workspace = Path(env["KARKINOS_WORKSPACE"])
+    if data.parent != workspace:
         for marker in (
             "current",
             ".service-config.json",
@@ -126,8 +141,8 @@ def require_runtime_files(env: dict[str, str], *, initialize: bool) -> None:
             except FileNotFoundError:
                 continue
             raise ValueError(
-                f"data belongs to another runtime home: {data.parent}; "
-                "set KARKINOS_HOME to that directory to retain its recovery protection"
+                f"data belongs to another runtime workspace: {data.parent}; "
+                "set KARKINOS_WORKSPACE to that directory to retain its recovery protection"
             )
     databases = [data / name for name in ("app.db", "meta.db")]
     if initialize:
@@ -143,18 +158,18 @@ def require_runtime_files(env: dict[str, str], *, initialize: bool) -> None:
     ):
         raise ValueError(
             f"existing account databases missing under {data}; "
-            "check KARKINOS_HOME or use --init only for a new empty account"
+            "check KARKINOS_WORKSPACE or use --init only for a new empty workspace"
         )
 
 
 def require_runtime_idle(env: dict[str, str]) -> None:
-    home = Path(env["KARKINOS_HOME"])
+    workspace = Path(env["KARKINOS_WORKSPACE"])
     for name in RECOVERY_JOURNALS:
         try:
-            (home / name).lstat()
+            (workspace / name).lstat()
         except FileNotFoundError:
             continue
-        raise ValueError(f"pending runtime recovery: {home / name}; recover it first")
+        raise ValueError(f"pending runtime recovery: {workspace / name}; recover it first")
     if sys.platform == "darwin":
         for label in ("com.karkinos.daily-candidate", "com.karkinos.research-worker"):
             result = subprocess.run(
@@ -213,7 +228,6 @@ def require_port_available(port: int) -> None:
         except OSError as error:
             if error.errno != errno.EADDRINUSE:
                 raise
-            # macOS reuse can overlap a wildcard listener; exclude it first.
             with socket.socket() as connection:
                 connection.settimeout(0.5)
                 if connection.connect_ex(address) != errno.ECONNREFUSED:
@@ -283,7 +297,6 @@ def supervise(
                 if time.monotonic() >= deadline:
                     raise TimeoutError("API and worker startup readiness timed out")
                 if startup_ready(port, children[1].pid, started_at):
-                    # Health is read-only; a child exit during polling still fails startup.
                     if any(child.poll() is not None for child in children):
                         raise ValueError("a main process exited during startup")
                     startup.check()
@@ -330,6 +343,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     startup = Startup(args.startup_fd)
     try:
+        env = runtime_environment(ROOT)
+        workspace = Path(env["KARKINOS_WORKSPACE"])
         if args.stop:
             if (
                 args.check
@@ -338,16 +353,12 @@ def main(argv=None) -> int:
                 or args.startup_fd is not None
             ):
                 raise ValueError("--stop cannot be combined with startup options")
-            runtime = ROOT / ".run/main"
+            runtime = workspace / ".run" / "main"
             if args.prepared:
-                runtime = (
-                    source_directory(Path(runtime_environment(ROOT)["KARKINOS_HOME"]))
-                    / "run"
-                )
+                runtime = source_directory(workspace) / "run"
             return request_stop(runtime)
-        env = runtime_environment(ROOT) if args.prepared else None
         verify = (
-            (lambda root: check_prepared(root, Path(env["KARKINOS_HOME"])))
+            (lambda root: check_prepared(root, workspace))
             if args.prepared
             else check_source
         )
@@ -358,11 +369,10 @@ def main(argv=None) -> int:
         port = int(os.environ.get("KARKINOS_MAIN_PORT", "8000"))
         if not 1 <= port <= 65535:
             raise ValueError("KARKINOS_MAIN_PORT must be between 1 and 65535")
-        env = env or runtime_environment(ROOT)
         runtime = (
-            source_directory(Path(env["KARKINOS_HOME"])) / "run"
+            source_directory(workspace) / "run"
             if args.prepared
-            else ROOT / ".run" / "main"
+            else workspace / ".run" / "main"
         )
         require_runtime_files(env, initialize=args.init)
         if not args.foreground and args.startup_fd is None:
@@ -371,30 +381,26 @@ def main(argv=None) -> int:
                 command.append("--init")
             if args.prepared:
                 command.append("--prepared")
-            return launch_background(
-                command, env, Path(env["KARKINOS_HOME"]) / "logs/main.log"
-            )
+            return launch_background(command, env, workspace / "logs/main.log")
         runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
         with contextlib.ExitStack() as locks:
             locks.enter_context(startup_signals())
             locks.enter_context(exclusive_lock(runtime / "service.lock"))
-            home = Path(env["KARKINOS_HOME"])
-            locks.enter_context(exclusive_lock(home / ".release.lock"))
+            locks.enter_context(exclusive_lock(workspace / ".release.lock"))
             require_runtime_idle(env)
             data = Path(env["KARKINOS_DATA_DIR"])
             data.mkdir(parents=True, exist_ok=True, mode=0o700)
             locks.enter_context(exclusive_lock(data / ".source-runtime.lock"))
-            # Never stop an existing production service or an unknown listener.
             require_port_available(port)
             logs = None
             if args.startup_fd is not None:
-                logs = locks.enter_context(MainLogs(home / "logs"))
+                logs = locks.enter_context(MainLogs(workspace / "logs"))
                 locks.enter_context(redirect_output(logs.stream))
             control = locks.enter_context(MainControl(runtime))
             ready_callback = None
             if args.prepared:
                 ready_callback = locks.enter_context(
-                    running_record(home, ROOT, sha, port, env)
+                    running_record(workspace, ROOT, sha, port, env)
                 )
 
             def monitor():
@@ -404,6 +410,7 @@ def main(argv=None) -> int:
                 if control.stop_requested():
                     raise InterruptedError("main startup was stopped")
 
+            print(f"Workspace: {workspace}", flush=True)
             print(
                 f"Starting source SHA {sha}; data directory: {env['KARKINOS_DATA_DIR']}",
                 flush=True,
