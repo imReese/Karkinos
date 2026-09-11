@@ -1,4 +1,4 @@
-"""Run the current clean main checkout from a local Karkinos workspace."""
+"""Run the selected clean source branch from the shared local workspace."""
 
 from __future__ import annotations
 
@@ -57,14 +57,15 @@ def git(root: Path, *args: str) -> str:
 
 
 def check_source(root: Path) -> str:
-    if git(root, "symbolic-ref", "--short", "HEAD") != "main":
-        raise ValueError("main source runtime requires the main branch")
+    expected_branch = os.environ.get("KARKINOS_SOURCE_BRANCH", "main")
+    current_branch = git(root, "symbolic-ref", "--short", "HEAD")
+    if current_branch != expected_branch:
+        raise ValueError(
+            f"source runtime expected branch {expected_branch!r}, found {current_branch!r}"
+        )
     if git(root, "status", "--porcelain", "--untracked-files=normal"):
-        raise ValueError("main source runtime requires a clean checkout")
-    sha = git(root, "rev-parse", "HEAD")
-    if sha != git(root, "rev-parse", "refs/remotes/origin/main"):
-        raise ValueError("local main differs from origin/main; use git pull --ff-only")
-    return sha
+        raise ValueError("source runtime requires a clean checkout")
+    return git(root, "rev-parse", "HEAD")
 
 
 def _absolute_path(value: str, name: str) -> str:
@@ -77,10 +78,13 @@ def _absolute_path(value: str, name: str) -> str:
 def runtime_environment(root: Path) -> dict[str, str]:
     env = dict(os.environ)
     if any(
-        key.startswith("KARKINOS_RELEASE_") or key == "KARKINOS_ARTIFACT_FINGERPRINT"
+        key.startswith("KARKINOS_RELEASE_")
+        or key == "KARKINOS_ARTIFACT_FINGERPRINT"
         for key in env
     ):
-        raise ValueError("main source runtime cannot inherit managed release environment")
+        raise ValueError(
+            "source runtime cannot inherit managed release environment"
+        )
 
     configured_workspace = env.get("KARKINOS_WORKSPACE")
     legacy_home = env.get("KARKINOS_HOME")
@@ -95,7 +99,7 @@ def runtime_environment(root: Path) -> dict[str, str]:
     selected = configured_workspace or legacy_home or str(root.resolve())
     workspace = _absolute_path(selected, "KARKINOS_WORKSPACE")
     env["KARKINOS_WORKSPACE"] = workspace
-    # Compatibility for older installed/runtime code while callers migrate.
+    # Compatibility for runtime code not yet renamed from HOME to WORKSPACE.
     env["KARKINOS_HOME"] = workspace
 
     defaults = {
@@ -121,7 +125,9 @@ def require_runtime_files(env: dict[str, str], *, initialize: bool) -> None:
     databases = [data / name for name in ("app.db", "meta.db")]
     if initialize:
         if data.exists() and any(data.iterdir()):
-            raise ValueError("--init requires an empty data directory; nothing replaced")
+            raise ValueError(
+                "--init requires an empty data directory; nothing replaced"
+            )
         return
 
     if not all(
@@ -130,7 +136,7 @@ def require_runtime_files(env: dict[str, str], *, initialize: bool) -> None:
     ):
         raise ValueError(
             f"existing account databases missing under {data}; "
-            "check KARKINOS_WORKSPACE or use --init only for a new empty workspace"
+            "use --init only for a new empty local workspace"
         )
 
 
@@ -292,13 +298,18 @@ def main(argv=None) -> int:
         runtime = workspace / ".run/main"
 
         if args.stop:
-            if args.check or args.init or args.foreground or args.startup_fd is not None:
+            if (
+                args.check
+                or args.init
+                or args.foreground
+                or args.startup_fd is not None
+            ):
                 raise ValueError("--stop cannot be combined with startup options")
             return request_stop(runtime)
 
         sha = check_source(ROOT)
         if args.check:
-            print(f"Main checkout: {sha}")
+            print(f"Source checkout: {sha}")
             return 0
 
         port = int(os.environ.get("KARKINOS_MAIN_PORT", "8000"))
@@ -316,12 +327,11 @@ def main(argv=None) -> int:
         with contextlib.ExitStack() as locks:
             locks.enter_context(startup_signals())
             locks.enter_context(exclusive_lock(runtime / "service.lock"))
-            locks.enter_context(exclusive_lock(runtime / "workspace.lock"))
+            locks.enter_context(exclusive_lock(workspace / ".run/source.lock"))
             require_runtime_idle(workspace)
 
             data = Path(env["KARKINOS_DATA_DIR"])
             data.mkdir(parents=True, exist_ok=True, mode=0o700)
-            locks.enter_context(exclusive_lock(runtime / "data.lock"))
             require_port_available(port)
 
             logs = None
@@ -335,7 +345,7 @@ def main(argv=None) -> int:
                 if logs is not None:
                     logs.check_running()
                 if control.stop_requested():
-                    raise InterruptedError("main startup was stopped")
+                    raise InterruptedError("source startup was stopped")
 
             print(f"Workspace: {workspace}", flush=True)
             print(f"Data: {env['KARKINOS_DATA_DIR']}", flush=True)
@@ -350,7 +360,9 @@ def main(argv=None) -> int:
                 ):
                     run_preparation(command, cwd=ROOT, env=env, monitor=monitor)
                 if check_source(ROOT) != sha:
-                    raise ValueError("main changed during preparation; nothing was started")
+                    raise ValueError(
+                        "source changed during preparation; nothing was started"
+                    )
                 require_runtime_files(env, initialize=args.init)
                 require_runtime_idle(workspace)
                 run_preparation(
@@ -360,12 +372,14 @@ def main(argv=None) -> int:
                     monitor=monitor,
                 )
                 if check_source(ROOT) != sha:
-                    raise ValueError("main changed during preflight; nothing was started")
+                    raise ValueError(
+                        "source changed during preflight; nothing was started"
+                    )
 
             return supervise(ROOT, env, port, control, startup=startup, logs=logs)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         startup.fail(str(exc))
-        print(f"Main source startup refused: {exc}", file=sys.stderr)
+        print(f"Source startup refused: {exc}", file=sys.stderr)
         return 1
     finally:
         startup.close()
