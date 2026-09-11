@@ -154,27 +154,18 @@ cython_debug/
 .DS_Store
 
 # Documentation allowlist
-#
-# Coding agents and planning tools may generate transient plans, design notes,
-# audits, and scratch documents under docs/. Keep docs closed by default so
-# only explicitly maintained documentation enters source control.
 docs/*
-
-# Canonical documentation
 !docs/README.md
 !docs/GOAL.md
 !docs/ARCHITECTURE.md
 !docs/PLAN.md
 !docs/ENGINEERING.md
 !docs/REFERENCES.md
-
-# Maintained guides
 !docs/guides/
-!docs/guides/**
-
-# Documentation assets
-!docs/assets/
-!docs/assets/**
+!docs/guides/configuration.md
+!docs/guides/return-accounting.md
+!docs/guides/account-truth-import.md
+!docs/guides/strategy-compatibility.md
 
 # Node.js
 node_modules/
@@ -188,6 +179,8 @@ web/dist/
 .run/
 /logs/
 /reports/
+/exports/
+/screenshots/
 
 # Local temporary databases
 tmp-*.db
