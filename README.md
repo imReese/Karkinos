@@ -41,14 +41,72 @@ risk, simulation, accounting, and attribution in one local-first workflow.
 
 ## Using Karkinos
 
-Choose the runtime that matches how you want to operate Karkinos:
-
 | Method | Best for | Requirements |
 | --- | --- | --- |
-| **Docker Compose** | Isolated full Web + API runtime | Docker / Docker Compose |
-| **Source runtime** | Full local runtime from a Git checkout | Python 3.12+, Node.js 24.x, `uv`, Git, POSIX shell |
-| **Python / pip from source** | Manual Python/API runtime and local integration | Python 3.12+; Node.js 24.x for the Web UI |
+| **Source runtime** | Normal local use and development | Python 3.12+, Node.js 24.x, `uv`, Git, POSIX shell |
+| **Docker Compose** | Isolated Web + API runtime | Docker / Docker Compose |
+| **Python / pip from source** | Manual Python/API integration | Python 3.12+; Node.js 24.x for the Web UI |
 | **Native release** | Verified packaged runtime | Currently macOS arm64 / x86_64 |
+
+### Source runtime
+
+For the normal local workflow, the repository root owns the local Karkinos state. All source branches use the same `config.json`, `.env`, `data/store`, `logs`, and `exports`; the selected Git branch only changes the code being run.
+
+```bash
+git clone https://github.com/imReese/Karkinos.git
+cd Karkinos
+cp config.example.json config.json
+cp .env.example .env
+./scripts/start_server.sh --init
+```
+
+`main` is the default branch, so later starts are simply:
+
+```bash
+./scripts/start_server.sh
+```
+
+Open `http://127.0.0.1:8000`.
+
+The local layout is intentionally the same on macOS and Linux source workflows:
+
+```text
+Karkinos/
+├── config.json
+├── .env
+├── data/store/      # databases and local data
+├── logs/
+├── exports/
+└── .run/
+    ├── source.lock  # one source backend at a time
+    ├── main/        # main process/control state only
+    └── dev/         # dev process state only
+```
+
+The local configuration, data, logs, exports, and `.run/` are ignored by Git. Code can be replaced or switched independently from local state.
+
+The launcher can select a branch directly:
+
+```bash
+./scripts/start_server.sh dev
+./scripts/start_server.sh --branch dev
+./scripts/start_server.sh feature/my-research-change
+```
+
+It safely switches the checkout to that branch. It refuses to switch when tracked/untracked source changes are present or another Karkinos source runtime is still using the checkout; it never resets, stashes, or discards changes automatically.
+
+`main` uses the stable source runtime on port `8000`. Other branches use the development runtime with backend reload on `8001` and Vite on `5173`. **They still use the same local config and data.** Only one source backend may open the shared workspace at a time.
+
+Stop the default `main` runtime or a development branch with:
+
+```bash
+./scripts/stop_server.sh
+./scripts/stop_server.sh dev
+```
+
+Because branches share the same databases, schema-changing development must use explicit migrations and preserve the persisted-data compatibility rules in [docs/ENGINEERING.md](docs/ENGINEERING.md).
+
+Lifecycle details: [scripts/README.md](scripts/README.md).
 
 ### Docker Compose
 
@@ -62,42 +120,7 @@ docker compose up --build -d
 
 Open `http://127.0.0.1:8000`.
 
-Docker Compose keeps the database in the `karkinos-data` Docker volume and mounts `config.json` read-only into the container. Edit `.env` for optional TuShare, AI, or notification credentials before starting the service.
-
-### Source runtime
-
-For normal source usage, the cloned repository root is the Karkinos workspace. No platform-specific application-data directory is required.
-
-```bash
-git clone https://github.com/imReese/Karkinos.git
-cd Karkinos
-git switch main
-cp config.example.json config.json
-cp .env.example .env
-./scripts/start_server.sh main --init
-```
-
-Open `http://127.0.0.1:8000`. `--init` is only for the first creation of an empty workspace; later starts use:
-
-```bash
-./scripts/start_server.sh main
-```
-
-The source workspace keeps user-visible state in one predictable place:
-
-```text
-Karkinos/
-├── config.json
-├── .env
-├── data/store/      # databases and local data
-├── logs/
-├── exports/
-└── .run/main/       # internal process state
-```
-
-`config.json`, `.env`, runtime data, logs, exports, and `.run/` are ignored by Git. To keep user state outside the checkout, set `KARKINOS_WORKSPACE` to an explicit absolute directory and place its `config.json` / `.env` there. `KARKINOS_HOME` is retained only as a compatibility alias for older managed installations.
-
-Lifecycle commands are documented in [scripts/README.md](scripts/README.md).
+Docker Compose keeps its database in the `karkinos-data` Docker volume and mounts `config.json` read-only into the container. Edit `.env` for optional TuShare, AI, or notification credentials before starting the service.
 
 ### Python / pip from source
 
@@ -114,7 +137,7 @@ npm ci --prefix web
 npm --prefix web run build
 ```
 
-Then create local configuration and start from the workspace root:
+Then create local configuration and start from the repository root:
 
 ```bash
 cp config.example.json config.json
@@ -134,28 +157,23 @@ The standalone `bootstrap_installer.sh` asset is for the managed release/update 
 
 The default market-data provider is **AKShare** and requires no token. TuShare, AI providers, notifications, fees, server settings, paths, and environment-variable precedence are documented in the [configuration guide](docs/guides/configuration.md).
 
-User configuration and financial/research state are persistent local data. Source-development state is separate and must not be used as the user's real Karkinos runtime.
-
 ## Development
 
-Development is separate from ordinary Karkinos usage. It uses the persistent `dev` branch and a disposable isolated workspace.
+`dev` is the persistent development branch. The launcher selects it for you when the checkout is safe to switch:
 
 ```bash
-git clone https://github.com/imReese/Karkinos.git
-cd Karkinos
-git switch dev
 ./scripts/start_server.sh dev
 ```
 
-The development launcher creates `.run/dev` and starts:
+Development starts:
 
 - Web app: `http://127.0.0.1:5173`
 - API: `http://127.0.0.1:8001`
 - Health: `http://127.0.0.1:8001/api/health`
 
-Development configuration, data, logs, and process state stay inside `.run/dev`. The directory is disposable and must never be pointed at a real user workspace. Use `KARKINOS_DEV_WORKSPACE` only when a separate absolute development workspace is required.
+Unlike the old isolated-dev-home model, development deliberately uses the same repository-local `config.json`, `.env`, and `data/store` as `main`. `.run/dev` contains only disposable process state. Stop it with `./scripts/stop_server.sh dev` before switching to another source branch.
 
-For contribution workflow, tests, and engineering constraints, see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ENGINEERING.md](docs/ENGINEERING.md).
+For contribution workflow, tests, migration rules, and engineering constraints, see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ENGINEERING.md](docs/ENGINEERING.md).
 
 ## Resources
 
