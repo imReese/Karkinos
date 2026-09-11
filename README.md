@@ -26,32 +26,18 @@
 Karkinos connects point-in-time market data, reproducible research, portfolio construction,
 risk, simulation, accounting, and attribution in one local-first workflow.
 
-## Highlights
+**Market data → point-in-time research → portfolio decisions → evaluation → continuous feedback.**
+
+## Capabilities
 
 - **Point-in-time data** — research inputs reflect information available at the modeled decision time.
 - **Research** — backtesting, transaction-cost modeling, parameter exploration, out-of-sample evaluation, and robustness analysis.
 - **Portfolio & risk** — published forecasts become portfolio targets, explicit risk decisions, and rebalance plans before execution.
-- **Evaluation** — backtest, paper, and shadow workflows connect research expectations with later outcomes.
+- **Simulation & evaluation** — backtest, paper, and shadow workflows connect research expectations with later outcomes.
+- **Accounting & attribution** — cash, positions, fees, returns, reconciliation, and outcome attribution remain explicit.
 - **China-market semantics** — trading calendars, suspensions, price limits, lot rules, fees, and taxes are first-class concerns.
-- **Local-first** — core research artifacts, portfolio state, financial state, and primary calculations remain locally owned.
 - **AI-assisted research** — optional AI can accelerate research iteration while deterministic code owns quantitative and financial results.
-- **Web application** — FastAPI backend with a React / TypeScript interface and local runtime.
-
-## Workflow
-
-```mermaid
-flowchart LR
-    A[Market Data] --> B[PIT Dataset] --> C[Research]
-    C --> D[Published Forecast] --> E[Portfolio Target]
-    E --> F[Risk Decision] --> G[Rebalance Plan]
-    G --> H[Simulation / Paper / Shadow]
-    G --> I[Human-supervised Execution]
-    H --> J[Outcome]
-    I --> K[Accounting]
-    J --> L[Attribution]
-    K --> L
-    L --> M[Alpha / Model Health] --> C
-```
+- **Application** — FastAPI backend, React / TypeScript interface, and a local-first runtime.
 
 ## Development quick start
 
