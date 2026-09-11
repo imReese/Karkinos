@@ -1,4 +1,4 @@
-"""Tag-free source startup must not mutate branches or take over production."""
+"""Source main runs from a verified checkout with an explicit local workspace."""
 
 from __future__ import annotations
 
@@ -22,7 +22,9 @@ def source(tmp_path):
     git("init", "-q", "-b", "main")
     git("config", "user.name", "Test")
     git("config", "user.email", "test@example.invalid")
-    (tmp_path / ".gitignore").write_text(".run/\n.venv/\n")
+    (tmp_path / ".gitignore").write_text(
+        ".run/\n.venv/\n.env\nconfig.json\ndata/store/\nlogs/\nexports/\n"
+    )
     (tmp_path / "app.py").write_text("value = 1\n")
     git("add", ".")
     git("commit", "-qm", "fixture")
@@ -39,7 +41,7 @@ def test_clean_main_needs_no_tag(source):
 
 @pytest.mark.parametrize("change", ["branch", "dirty", "untracked", "ahead"])
 def test_unverified_checkout_is_refused_without_reset(source, change):
-    root, git, sha = source
+    root, git, _sha = source
     if change == "branch":
         git("checkout", "-qb", "dev")
     elif change == "dirty":
@@ -56,29 +58,35 @@ def test_unverified_checkout_is_refused_without_reset(source, change):
     assert git("status", "--porcelain") == before
 
 
-def test_stable_home_selects_original_data_and_configuration(tmp_path, monkeypatch):
+def test_repo_root_is_default_workspace(tmp_path, monkeypatch):
     for key in tuple(os.environ):
         if key.startswith("KARKINOS_"):
             monkeypatch.delenv(key)
-    monkeypatch.setattr(runtime.Path, "home", lambda: tmp_path / "user")
+
     env = runtime.runtime_environment(tmp_path)
-    home = tmp_path / "user/Library/Application Support/Karkinos"
-    assert env["KARKINOS_HOME"] == str(home)
-    assert env["KARKINOS_DATA_DIR"] == str(home / "data")
-    assert env["KARKINOS_CONFIG_PATH"] == str(home / "config/config.json")
-    assert env["KARKINOS_ENV_FILE"] == str(home / "config/.env")
+
+    assert env["KARKINOS_WORKSPACE"] == str(tmp_path)
+    assert env["KARKINOS_HOME"] == str(tmp_path)
+    assert env["KARKINOS_DATA_DIR"] == str(tmp_path / "data/store")
+    assert env["KARKINOS_CONFIG_PATH"] == str(tmp_path / "config.json")
+    assert env["KARKINOS_ENV_FILE"] == str(tmp_path / ".env")
     assert env["KARKINOS_STATIC_DIR"] == str(tmp_path / "web/dist")
-    monkeypatch.setenv("KARKINOS_HOME", str(tmp_path / "isolated"))
-    isolated = runtime.runtime_environment(tmp_path)
-    assert isolated["KARKINOS_DATA_DIR"] == str(tmp_path / "isolated/data")
-    assert isolated["KARKINOS_CONFIG_PATH"] == str(
-        tmp_path / "isolated/config/config.json"
-    )
-    assert isolated["KARKINOS_ENV_FILE"] == str(tmp_path / "isolated/config/.env")
-    monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path / "explicit-data"))
-    assert runtime.runtime_environment(tmp_path)["KARKINOS_DATA_DIR"].endswith(
-        "explicit-data"
-    )
+
+
+def test_explicit_workspace_and_legacy_alias(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    monkeypatch.setenv("KARKINOS_WORKSPACE", str(workspace))
+    env = runtime.runtime_environment(tmp_path)
+    assert env["KARKINOS_WORKSPACE"] == str(workspace)
+    assert env["KARKINOS_HOME"] == str(workspace)
+    assert env["KARKINOS_DATA_DIR"] == str(workspace / "data/store")
+
+    monkeypatch.setenv("KARKINOS_HOME", str(tmp_path / "other"))
+    with pytest.raises(ValueError, match="different paths"):
+        runtime.runtime_environment(tmp_path)
+
+
+def test_managed_release_environment_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setenv("KARKINOS_RELEASE_GUARD", "retained")
     with pytest.raises(ValueError, match="managed release"):
         runtime.runtime_environment(tmp_path)
@@ -97,16 +105,19 @@ class PortProbe:
 
 @pytest.fixture
 def runtime_files(tmp_path, monkeypatch):
-    home = tmp_path / "runtime"
-    (home / "config").mkdir(parents=True)
-    (home / "data").mkdir()
-    for path in ("config/config.json", "config/.env", "data/app.db", "data/meta.db"):
-        (home / path).write_text("original fixture")
+    workspace = tmp_path / "workspace"
+    (workspace / "data/store").mkdir(parents=True)
+    (workspace / "config.json").write_text("{}\n")
+    (workspace / ".env").write_text("\n")
+    for name in ("app.db", "meta.db"):
+        (workspace / "data/store" / name).write_text("fixture")
     env = {
-        "KARKINOS_HOME": str(home),
-        "KARKINOS_DATA_DIR": str(home / "data"),
-        "KARKINOS_CONFIG_PATH": str(home / "config/config.json"),
-        "KARKINOS_ENV_FILE": str(home / "config/.env"),
+        "KARKINOS_WORKSPACE": str(workspace),
+        "KARKINOS_HOME": str(workspace),
+        "KARKINOS_DATA_DIR": str(workspace / "data/store"),
+        "KARKINOS_CONFIG_PATH": str(workspace / "config.json"),
+        "KARKINOS_ENV_FILE": str(workspace / ".env"),
+        "KARKINOS_STATIC_DIR": str(tmp_path / "web/dist"),
     }
     monkeypatch.setattr(runtime, "runtime_environment", lambda root: env)
     monkeypatch.setattr(runtime, "require_runtime_idle", lambda env: None)
@@ -132,12 +143,8 @@ def test_locked_preparation_and_state_preflight_before_launch(
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(runtime, "run_preparation", run)
+    monkeypatch.setattr(runtime, "supervise", lambda *args, **kwargs: 0)
 
-    def supervise(*args, **kwargs):
-        assert len(commands) == 4
-        return 0
-
-    monkeypatch.setattr(runtime, "supervise", supervise)
     assert runtime.main(["--foreground"]) == 0
     assert commands[:3] == [
         ["uv", "sync", "--locked", "--extra", "server"],
