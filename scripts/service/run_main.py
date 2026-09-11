@@ -123,7 +123,7 @@ def runtime_environment(root: Path) -> dict[str, str]:
                 "KARKINOS_WORKSPACE and legacy KARKINOS_HOME select different paths"
             )
 
-    selected = configured_workspace or legacy_home or str(DEFAULT_ROOT.resolve())
+    selected = configured_workspace or legacy_home or str(root.resolve())
     workspace = _absolute_path(selected, "KARKINOS_WORKSPACE")
     env["KARKINOS_WORKSPACE"] = workspace
     # Compatibility for runtime code not yet renamed from HOME to WORKSPACE.
