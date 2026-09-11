@@ -5,9 +5,8 @@ umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEFAULT_KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
-KARKINOS_HOME_PATH="${KARKINOS_HOME:-${DEFAULT_KARKINOS_HOME}}"
-PRODUCTION_CONTROL="${KARKINOS_HOME_PATH}/current/bin/karkinosctl"
+KARKINOS_WORKSPACE_PATH="${KARKINOS_WORKSPACE:-${KARKINOS_HOME:-${REPO_ROOT}}}"
+PRODUCTION_CONTROL="${KARKINOS_WORKSPACE_PATH}/current/bin/karkinosctl"
 PRODUCTION_SERVICE_PORT="${KARKINOS_BACKEND_PORT:-}"
 
 production_service_port_is_valid() {
@@ -20,20 +19,18 @@ production_service_port_is_valid() {
 
 require_packaged_release_control() {
 	local release_dir release_name release_control
-	if [[ "${KARKINOS_HOME_PATH}" != /* || ! -L "${KARKINOS_HOME_PATH}/current" ]]; then
+	if [[ "${KARKINOS_WORKSPACE_PATH}" != /* || ! -L "${KARKINOS_WORKSPACE_PATH}/current" ]]; then
 		return 1
 	fi
-	release_dir="$(CDPATH='' cd -- "${KARKINOS_HOME_PATH}/current" 2>/dev/null && pwd -P)" || return 1
+	release_dir="$(CDPATH='' cd -- "${KARKINOS_WORKSPACE_PATH}/current" 2>/dev/null && pwd -P)" || return 1
 	release_name="${release_dir##*/}"
 	release_control="${release_dir}/bin/karkinosctl"
-	[[ "${release_dir}" == "${KARKINOS_HOME_PATH}/releases/${release_name}" &&
+	[[ "${release_dir}" == "${KARKINOS_WORKSPACE_PATH}/releases/${release_name}" &&
 		"${release_name}" =~ ^sha-[0-9a-f]{40}$ &&
 		-f "${release_dir}/release.json" && ! -L "${release_dir}/release.json" &&
 		-d "${release_dir}/bin" && ! -L "${release_dir}/bin" &&
 		-f "${release_control}" && ! -L "${release_control}" &&
 		-x "${release_control}" ]] || return 1
-	# Execute the physical path that was just validated, so a concurrent current
-	# pointer switch cannot redirect this invocation to an unvalidated tree.
 	PRODUCTION_CONTROL="${release_control}"
 }
 
@@ -41,36 +38,27 @@ usage() {
 	cat <<'EOF'
 Usage:
   ./scripts/start_server.sh [dev] [extra server args...]
-  ./scripts/start_server.sh main [--no-update|--restart|--status|--logs] [--follow]
   ./scripts/start_server.sh main [--foreground] [--init]
   ./scripts/start_server.sh prod
 
 Modes:
-  main  Fetch main and prepare it in an isolated source directory, without a tag.
-        Starts in the background; returns after service readiness.
-        The calling checkout may be on any branch and have local changes.
-        --no-update starts the prepared version without fetching or building.
-        --restart restarts the prepared version without updating it.
-        --status shows the selected version and running service.
-        --logs shows recent logs; add --follow to keep watching.
-        Logs: $KARKINOS_HOME/logs/main.log (20 MiB, three archives).
-        Default home: ~/Library/Application Support/Karkinos.
-        --foreground follows logs in the terminal; Ctrl+C stops the service.
-        --init explicitly creates a new empty account; not for upgrades.
+  main  Run the current clean main checkout as the user runtime.
+        The repository root is the default workspace. Set KARKINOS_WORKSPACE
+        to an explicit absolute directory to keep user state elsewhere.
+        Configuration defaults to <workspace>/config, data to <workspace>/data,
+        logs to <workspace>/logs, and internal process state to <workspace>/.run/main.
+        --foreground follows the service in this terminal; Ctrl+C stops it.
+        --init explicitly creates a new empty workspace; not for upgrades.
   dev   Run the current source tree with reload plus the Vite frontend.
-        Uses an isolated empty development account under .run/dev-home.
-        Set KARKINOS_DEV_HOME to select another dedicated development home.
-        It defaults to backend port 8001; production uses its persisted port.
-  prod  Start the supervised immutable release selected by
-        ~/Library/Application Support/Karkinos/current.
+        Uses the isolated disposable workspace .run/dev by default.
+        Set KARKINOS_DEV_WORKSPACE to another dedicated absolute directory.
+        It defaults to backend port 8001.
+  prod  Start an already installed immutable release selected by
+        <workspace>/current. KARKINOS_HOME remains a legacy compatibility alias.
 
 The live scheduler always starts with the backend. It has no independent off
 switch. Automatic trading remains a separate default-off runtime control and
 does not gain broker, execution, or capital authority from this command.
-
-Production never runs from the source checkout and never changes current.
-Use candidate for tag-free isolation, update for a published stable tag, and
-bootstrap for the one-time legacy handoff.
 EOF
 }
 
@@ -85,7 +73,8 @@ main)
 	if [[ "${1:-}" == "main" ]]; then
 		shift
 	fi
-	exec python3 "${SCRIPT_DIR}/service/source_main.py" "$@"
+	export KARKINOS_WORKSPACE="${KARKINOS_WORKSPACE_PATH}"
+	exec python3 "${SCRIPT_DIR}/service/run_main.py" "$@"
 	;;
 dev)
 	if [[ "${1:-}" == "dev" ]]; then
@@ -115,8 +104,8 @@ prod)
 		exit 2
 	fi
 	if ! require_packaged_release_control; then
-		echo "Error: production requires the packaged immutable release controller." >&2
-		echo "Stage and bootstrap or update a verified CI release before starting production." >&2
+		echo "Error: production requires the packaged immutable release controller under the selected workspace." >&2
+		echo "Set KARKINOS_WORKSPACE to the installed runtime workspace." >&2
 		exit 1
 	fi
 	service_args=(service-start)
@@ -157,12 +146,13 @@ EOF
 	exit 1
 fi
 
-RUN_DIR="${REPO_ROOT}/.run"
-LOG_DIR="${REPO_ROOT}/logs"
-PID_FILE="${RUN_DIR}/dev-server.pid"
-WEB_PID_FILE="${RUN_DIR}/web.pid"
-LOG_FILE="${LOG_DIR}/dev-server.log"
-WEB_LOG_FILE="${LOG_DIR}/web.log"
+DEV_WORKSPACE="${KARKINOS_WORKSPACE:-${REPO_ROOT}/.run/dev}"
+RUN_DIR="${DEV_WORKSPACE}/run"
+LOG_DIR="${DEV_WORKSPACE}/logs"
+PID_FILE="${RUN_DIR}/backend.pid"
+WEB_PID_FILE="${RUN_DIR}/frontend.pid"
+LOG_FILE="${LOG_DIR}/backend.log"
+WEB_LOG_FILE="${LOG_DIR}/frontend.log"
 LOG_MAX_BYTES="${KARKINOS_LOG_MAX_BYTES:-20971520}"
 STARTUP_HEALTH_TIMEOUT_SECONDS="${KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-60}"
 FRONTEND_STARTUP_TIMEOUT_SECONDS="${KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS:-30}"
@@ -397,7 +387,7 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}"
-chmod 700 "${RUN_DIR}" "${LOG_DIR}"
+chmod 700 "${DEV_WORKSPACE}" "${RUN_DIR}" "${LOG_DIR}"
 
 for pid_file in "${PID_FILE}" "${WEB_PID_FILE}"; do
 	if [[ ! -f "${pid_file}" ]]; then
@@ -407,7 +397,7 @@ for pid_file in "${PID_FILE}" "${WEB_PID_FILE}"; do
 	IFS=$'\t' read -r existing_pid _ <<<"${existing_record}"
 	if [[ "${existing_pid}" =~ ^[0-9]+$ ]] && kill -0 "${existing_pid}" >/dev/null 2>&1; then
 		echo "Error: a tracked development process is already running with PID ${existing_pid}." >&2
-		echo "Stop it explicitly with ./scripts/stop_server.sh." >&2
+		echo "Stop it explicitly with ./scripts/stop_server.sh dev." >&2
 		exit 1
 	fi
 	rm -f "${pid_file}"
@@ -475,9 +465,9 @@ trap - EXIT INT TERM
 
 cat <<EOF
 Karkinos development environment started.
+Workspace: ${DEV_WORKSPACE}
 Backend:  ${PRODUCT_ENTRY_URL}
 Frontend: ${HOT_RELOAD_URL}
 
-Stable production, if loaded, remains isolated on its own port and release.
-Use ./scripts/stop_server.sh to stop Karkinos development services.
+Use ./scripts/stop_server.sh dev to stop Karkinos development services.
 EOF
