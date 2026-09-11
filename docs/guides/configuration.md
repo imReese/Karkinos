@@ -2,9 +2,9 @@
 
 [文档入口](../README.md)
 
-## Workspace
+## 本地 Workspace
 
-源码运行默认把 Git checkout 根目录作为 workspace：
+源码运行默认把 Git checkout 根目录作为 Karkinos 的本地 workspace：
 
 ```text
 Karkinos/
@@ -13,10 +13,25 @@ Karkinos/
 ├── data/store/
 ├── logs/
 ├── exports/
-└── .run/main/
+└── .run/
+    ├── source.lock
+    ├── main/
+    └── dev/
 ```
 
-创建配置：
+`main`、`dev` 和其他源码分支共用同一份：
+
+```text
+config.json
+.env
+data/store/
+logs/
+exports/
+```
+
+`.run/<branch>` 只保存分支相关的 PID / control 等临时运行状态；`.run/source.lock` 防止两个 source backend 同时打开同一份本地数据。
+
+创建本地配置：
 
 ```bash
 cp config.example.json config.json
@@ -24,24 +39,19 @@ cp .env.example .env
 uv run python -m server --check-config
 ```
 
-使用 checkout 外的持久化 workspace：
+启动默认 `main`：
 
 ```bash
-export KARKINOS_WORKSPACE=/absolute/path/to/workspace
+./scripts/start_server.sh
 ```
 
-该目录需要自己的 `config.json` 和 `.env`。`KARKINOS_HOME` 仅保留为旧 managed installation 的兼容别名；新源码运行使用 `KARKINOS_WORKSPACE`。
+启动 `dev`：
 
-开发模式与用户 workspace 分离，默认使用：
-
-```text
-.run/dev/
-├── config/config.json
-├── config/.env
-├── data/
-├── logs/
-└── run/
+```bash
+./scripts/start_server.sh dev
 ```
+
+选择源码分支只改变代码，不切换配置和数据库。
 
 ## 配置优先级
 
@@ -55,11 +65,12 @@ export KARKINOS_WORKSPACE=/absolute/path/to/workspace
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `KARKINOS_WORKSPACE` | 用户运行 workspace；源码模式默认是 checkout 根目录 |
+| `KARKINOS_WORKSPACE` | 高级覆盖：显式绝对本地 workspace；默认是仓库根目录 |
 | `KARKINOS_CONFIG_PATH` | 高级覆盖：`config.json` 的绝对路径 |
 | `KARKINOS_DATA_DIR` | 高级覆盖：本地运行数据绝对路径 |
 | `KARKINOS_ENV_FILE` | 高级覆盖：环境文件绝对路径 |
-| `KARKINOS_DEV_WORKSPACE` | 独立开发 workspace；默认 `.run/dev` |
+
+普通源码使用不需要设置这些路径变量。
 
 ## `server`
 
@@ -81,19 +92,13 @@ live_poll_interval
 tushare_token_env
 ```
 
-默认数据源是 AKShare，无需 Token。源码 workspace 中可以交互配置：
+默认数据源是 AKShare，无需 Token。当前本地 workspace 可以交互配置：
 
 ```bash
 uv run python scripts/data/configure_data_source.py
 ```
 
-开发 workspace 需要显式选择其独立配置：
-
-```bash
-uv run python scripts/data/configure_data_source.py \
-  --config-path .run/dev/config/config.json \
-  --env-file .run/dev/config/.env
-```
+`dev` 和 `main` 使用同一份 `config.json` / `.env`，因此不再需要单独配置开发数据源。
 
 TuShare Token 使用环境变量：
 
@@ -164,9 +169,20 @@ AI 配置不授予金融事实、Portfolio、Risk、Accounting 或资本权限�
 | `KARKINOS_TELEGRAM_CHAT_ID` | Telegram 目标 |
 | `KARKINOS_WECHAT_SENDKEY` | Server酱凭证 |
 
+## 分支与持久化数据
+
+源码分支共享 `data/store`。因此涉及数据库 schema 的开发改动必须：
+
+- 使用明确 migration；
+- 保持升级边界可检测；
+- 不让旧代码静默误读新 schema；
+- 在破坏性变更前提供明确备份 / migration 路径。
+
+持久化兼容规则见 [Engineering](../ENGINEERING.md)。
+
 ## 安全
 
-- 用户 workspace 与 `.run/dev` 开发 workspace 分离。
 - 不提交 `config.json`、真实 `.env`、API Key、券商凭证或私钥。
 - 不在 CLI 参数传递 secret/token。
 - 不保存真实账户导出、截图或运行数据库到 Git。
+- 切换源码分支前停止当前 source runtime；启动脚本不会自动 reset、stash 或丢弃本地改动。
