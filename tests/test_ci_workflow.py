@@ -53,12 +53,12 @@ def test_full_ci_protects_real_verification_layers_without_acceptance_audit() ->
     assert '-m "not acceptance"' in text
 
 
-def test_release_entry_accepts_only_stable_semver(tag: str = "v1.2.3") -> None:
+def test_release_entry_accepts_stable_semver() -> None:
     release = _workflow(".github/workflows/release.yml")
     step = release["jobs"]["verify_main_code_ci"]["steps"][0]
     result = subprocess.run(
         ["bash", "-c", step["run"]],
-        env={"GITHUB_REF_NAME": tag},
+        env={"GITHUB_REF_NAME": "v1.2.3"},
         capture_output=True,
         text=True,
         check=False,
@@ -88,6 +88,7 @@ def test_release_and_candidate_verify_exact_main_code_ci() -> None:
         text = Path(path).read_text(encoding="utf-8")
         assert "tools/verify_release_source_ci.py" in text
         assert '--required-job "Code CI gate"' in text
+        assert 'Repository acceptance audit' not in text
 
 
 def test_candidate_and_release_never_persist_checkout_credentials() -> None:
