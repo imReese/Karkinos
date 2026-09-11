@@ -22,7 +22,11 @@ def resolve_workspace() -> Path:
     legacy = os.environ.get("KARKINOS_HOME")
     if configured and legacy and _resolved_path(configured) != _resolved_path(legacy):
         raise RuntimeError("KARKINOS_WORKSPACE and legacy KARKINOS_HOME disagree")
-    return _resolved_path(configured or legacy) if configured or legacy else Path.cwd().resolve()
+    return (
+        _resolved_path(configured or legacy)
+        if configured or legacy
+        else Path.cwd().resolve()
+    )
 
 
 def resolve_runtime_home() -> Path:
@@ -32,12 +36,12 @@ def resolve_runtime_home() -> Path:
 
 
 def resolve_data_dir() -> str:
-    """Return the writable data directory, defaulting to ``<workspace>/data``."""
+    """Return writable data, defaulting to ``<workspace>/data/store``."""
 
     configured = os.environ.get("KARKINOS_DATA_DIR")
     if configured:
         return str(_resolved_path(configured))
-    return str(resolve_workspace() / "data")
+    return str(resolve_workspace() / "data" / "store")
 
 
 def resolve_release_root() -> Path:
