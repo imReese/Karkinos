@@ -10,38 +10,57 @@ def _resolved_path(value: str) -> Path:
     return Path(value).expanduser().resolve()
 
 
-def resolve_workspace() -> Path:
-    """Return the local Karkinos workspace.
+def _explicit_runtime_root() -> Path | None:
+    workspace = os.environ.get("KARKINOS_WORKSPACE")
+    legacy_home = os.environ.get("KARKINOS_HOME")
+    if workspace and legacy_home:
+        resolved_workspace = _resolved_path(workspace)
+        resolved_home = _resolved_path(legacy_home)
+        if resolved_workspace != resolved_home:
+            raise RuntimeError(
+                "KARKINOS_WORKSPACE and legacy KARKINOS_HOME disagree"
+            )
+        return resolved_workspace
+    if workspace:
+        return _resolved_path(workspace)
+    if legacy_home:
+        return _resolved_path(legacy_home)
+    return None
 
-    ``KARKINOS_WORKSPACE`` is canonical. ``KARKINOS_HOME`` remains a temporary
-    compatibility alias for existing managed installations. Without either
-    override, the current working directory is the workspace.
+
+def resolve_workspace() -> Path:
+    """Return the selected workspace, or cwd for plain local execution."""
+
+    return _explicit_runtime_root() or Path.cwd().resolve()
+
+
+def resolve_runtime_home() -> Path | None:
+    """Return an explicitly selected runtime root, if one exists.
+
+    Plain ``python -m server`` execution intentionally has no implicit runtime
+    home. Its config, dotenv, and data paths therefore keep their cwd-relative
+    defaults. Source launchers export ``KARKINOS_WORKSPACE`` explicitly.
     """
 
-    configured = os.environ.get("KARKINOS_WORKSPACE")
-    legacy = os.environ.get("KARKINOS_HOME")
-    if configured and legacy and _resolved_path(configured) != _resolved_path(legacy):
-        raise RuntimeError("KARKINOS_WORKSPACE and legacy KARKINOS_HOME disagree")
-    return (
-        _resolved_path(configured or legacy)
-        if configured or legacy
-        else Path.cwd().resolve()
-    )
-
-
-def resolve_runtime_home() -> Path:
-    """Compatibility alias for callers not yet renamed to workspace terminology."""
-
-    return resolve_workspace()
+    return _explicit_runtime_root()
 
 
 def resolve_data_dir() -> str:
-    """Return writable data, defaulting to ``<workspace>/data/store``."""
+    """Return writable data while preserving plain and legacy defaults."""
 
     configured = os.environ.get("KARKINOS_DATA_DIR")
     if configured:
         return str(_resolved_path(configured))
-    return str(resolve_workspace() / "data" / "store")
+
+    workspace = os.environ.get("KARKINOS_WORKSPACE")
+    if workspace:
+        return str(_resolved_path(workspace) / "data" / "store")
+
+    legacy_home = os.environ.get("KARKINOS_HOME")
+    if legacy_home:
+        return str(_resolved_path(legacy_home) / "data")
+
+    return "data/store"
 
 
 def resolve_release_root() -> Path:
