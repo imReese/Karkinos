@@ -40,7 +40,9 @@ def _require_private_tree(workspace: Path) -> None:
             if stat.S_ISLNK(info.st_mode) or (
                 stat.S_ISREG(info.st_mode) and info.st_nlink != 1
             ):
-                raise ValueError(f"development workspace contains a linked path: {path}")
+                raise ValueError(
+                    f"development workspace contains a linked path: {path}"
+                )
             if not stat.S_ISREG(info.st_mode) and not stat.S_ISDIR(info.st_mode):
                 raise ValueError(
                     f"development workspace contains a special file: {path}"
@@ -61,9 +63,7 @@ def _durable_user_paths(environ: Mapping[str, str]) -> tuple[Path, ...]:
     return tuple(paths)
 
 
-def _require_separate_workspace(
-    workspace: Path, environ: Mapping[str, str]
-) -> None:
+def _require_separate_workspace(workspace: Path, environ: Mapping[str, str]) -> None:
     for path in _durable_user_paths(environ):
         if _overlaps(workspace, path):
             raise ValueError(
@@ -110,9 +110,10 @@ def prepare_environment(
     configured_workspace = environ.get("KARKINOS_DEV_WORKSPACE")
     legacy_dev_home = environ.get("KARKINOS_DEV_HOME")
     if configured_workspace and legacy_dev_home:
-        if Path(configured_workspace).expanduser().resolve() != Path(
-            legacy_dev_home
-        ).expanduser().resolve():
+        if (
+            Path(configured_workspace).expanduser().resolve()
+            != Path(legacy_dev_home).expanduser().resolve()
+        ):
             raise ValueError(
                 "KARKINOS_DEV_WORKSPACE and legacy KARKINOS_DEV_HOME disagree"
             )
@@ -208,9 +209,7 @@ def main() -> int:
         parser.error("a development command is required after --")
     try:
         env = prepare_environment(args.repo, os.environ, command)
-        print(
-            f"Development workspace: {env['KARKINOS_DEV_WORKSPACE']}", flush=True
-        )
+        print(f"Development workspace: {env['KARKINOS_DEV_WORKSPACE']}", flush=True)
         os.execvpe(command[0], command, env)
     except (OSError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
