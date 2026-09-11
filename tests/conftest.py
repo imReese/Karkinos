@@ -1,4 +1,4 @@
-"""pytest 共享配置。"""
+"""pytest shared configuration."""
 
 from __future__ import annotations
 
@@ -31,12 +31,7 @@ def pytest_collection_modifyitems(config, items) -> None:
 
 def _is_acceptance_test(path: str) -> bool:
     filename = path.rsplit("/", 1)[-1]
-    return filename in {
-        "test_acceptance_audit.py",
-        "test_acceptance_audit_cli.py",
-        "test_decision_cockpit_acceptance.py",
-        "test_profit_discipline_smoke.py",
-    }
+    return "acceptance" in filename or filename == "test_profit_discipline_smoke.py"
 
 
 def _is_api_contract_test(path: str) -> bool:
@@ -44,7 +39,6 @@ def _is_api_contract_test(path: str) -> bool:
     return filename in {
         "test_server_db.py",
         "test_server_routes.py",
-        "test_ci_workflow.py",
     } or (
         "/tests/server/" in path
         and filename
