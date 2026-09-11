@@ -47,7 +47,9 @@ def _source_repo(
 
     (repo / "config.json").write_text("{}\n", encoding="utf-8")
     (repo / ".env").write_text("KARKINOS_DATA_SOURCE=akshare\n", encoding="utf-8")
-    (repo / "pyproject.toml").write_text("[project]\nname='fixture'\n", encoding="utf-8")
+    (repo / "pyproject.toml").write_text(
+        "[project]\nname='fixture'\n", encoding="utf-8"
+    )
     (repo / "app.py").write_text("value = 1\n", encoding="utf-8")
     (repo / ".gitignore").write_text(
         ".env\nconfig.json\ndata/store/\nlogs/\nexports/\n.run/\n"
@@ -201,9 +203,7 @@ def _prod_repo(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
     calls = tmp_path / "controller.log"
     _write_executable(
         release / "bin/karkinosctl",
-        "#!/usr/bin/env bash\n"
-        "set -eu\n"
-        f'printf "%s\\n" "$*" >>"{calls}"\n',
+        "#!/usr/bin/env bash\n" "set -eu\n" f'printf "%s\\n" "$*" >>"{calls}"\n',
     )
     (home / "current").symlink_to(Path("releases") / release.name)
     env = {**os.environ, "KARKINOS_HOME": str(home)}
@@ -355,9 +355,7 @@ def test_dev_preserves_existing_listener_without_starting_processes(tmp_path: Pa
 
 
 def test_backend_readiness_timeout_cleans_tracked_process(tmp_path: Path):
-    repo, env, _calls = _source_repo(
-        tmp_path, current_branch="dev", health_ready=False
-    )
+    repo, env, _calls = _source_repo(tmp_path, current_branch="dev", health_ready=False)
     env["KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS"] = "1"
     result = subprocess.run(
         ["bash", "scripts/start_server.sh", "dev"],
