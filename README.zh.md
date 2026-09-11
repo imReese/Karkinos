@@ -1,28 +1,25 @@
-<table width="100%">
-<tr>
-<td align="center">
+<div align="center">
 
 <h1>Karkinos</h1>
 
-<strong>面向中国市场、本地优先的量化研究与投资平台。</strong>
+<p><strong>面向中国市场、本地优先的量化研究与投资平台。</strong></p>
 
-<br><br>
+<p><em>投资是一种慢性病。这是你的手术刀。</em></p>
 
-<em>投资是一种慢性病。这是你的手术刀。</em>
+<p>
+  <a href="https://github.com/imReese/Karkinos/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/imReese/Karkinos/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/imReese/Karkinos/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/imReese/Karkinos"></a>
+</p>
 
-<br><br>
+<p>
+  <a href="docs/README.md">文档</a> ·
+  <a href="docs/ARCHITECTURE.md">架构</a> ·
+  <a href="https://github.com/imReese/Karkinos/releases">Releases</a> ·
+  <a href="README.md">English</a>
+</p>
 
-<a href="docs/README.md">文档</a> · <a href="docs/PLAN.md">计划</a> · <a href="https://github.com/imReese/Karkinos/releases">Releases</a> · <a href="README.md">English</a>
-
-<br><br>
-
-<a href="https://github.com/imReese/Karkinos/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/imReese/Karkinos/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-<a href="https://github.com/imReese/Karkinos/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag"></a>
-<a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/imReese/Karkinos"></a>
-
-</td>
-</tr>
-</table>
+</div>
 
 Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风险、模拟、会计和归因连接成一条本地优先的工作流。
 
