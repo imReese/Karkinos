@@ -51,18 +51,11 @@ Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风�
 
 ### Docker Compose
 
-克隆稳定分支，并从模板创建本地配置：
-
 ```bash
 git clone --branch main --depth 1 https://github.com/imReese/Karkinos.git
 cd Karkinos
 cp config.example.json config.json
 cp .env.example .env
-```
-
-启动应用：
-
-```bash
 docker compose up --build -d
 ```
 
@@ -72,49 +65,55 @@ Docker Compose 将数据库保存在 `karkinos-data` Docker volume 中，并以�
 
 ### 源码运行
 
-适合不使用 Docker、希望直接从 checkout 运行完整应用的场景。先选择一个明确的持久化运行目录：
+普通源码运行直接把 Git clone 下来的仓库根目录作为 Karkinos workspace，不依赖 macOS / Linux / Windows 各自的系统应用数据目录。
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
 cd Karkinos
 git switch main
-
-export KARKINOS_HOME="/absolute/path/to/your/karkinos-workspace"
-mkdir -p "$KARKINOS_HOME/config"
-cp config.example.json "$KARKINOS_HOME/config/config.json"
-cp .env.example "$KARKINOS_HOME/config/.env"
-
+cp config.example.json config.json
+cp .env.example .env
 ./scripts/start_server.sh main --init
 ```
 
-打开 `http://127.0.0.1:8000`。
-
-`--init` 只用于创建新的空运行环境。后续启动使用：
+打开 `http://127.0.0.1:8000`。`--init` 只用于第一次创建空 workspace；后续启动使用：
 
 ```bash
 ./scripts/start_server.sh main
 ```
 
-当前源码运行模式会把配置、数据库、日志以及受管理的 source state 保存在所选择的 `KARKINOS_HOME` 下。生命周期命令见 [scripts/README.md](scripts/README.md)。
+源码 workspace 的用户状态保持在一个明确的位置：
+
+```text
+Karkinos/
+├── config.json
+├── .env
+├── data/store/      # 数据库和本地数据
+├── logs/
+├── exports/
+└── .run/main/       # 内部进程状态
+```
+
+`config.json`、`.env`、运行数据、logs、exports 和 `.run/` 都被 Git 忽略。如需把用户状态放到 checkout 外，可显式设置绝对路径 `KARKINOS_WORKSPACE`，并把对应的 `config.json` / `.env` 放到该 workspace。`KARKINOS_HOME` 仅作为旧 managed installation 的兼容别名保留。
+
+生命周期命令见 [scripts/README.md](scripts/README.md)。
 
 ### Python / pip 源码安装
 
 Karkinos 可以从本仓库源码安装为 Python package。PyPI 上名为 `karkinos` 的项目与本仓库无关，因此**不要执行 `pip install karkinos`**。
 
-在 Karkinos 源码 checkout 中安装：
-
 ```bash
 python -m pip install ".[server]"
 ```
 
-如果需要完整 Web 应用，再构建一次前端：
+如果需要 Web UI：
 
 ```bash
 npm ci --prefix web
 npm --prefix web run build
 ```
 
-创建本地运行配置，并从仓库根目录启动：
+然后从 workspace 根目录创建配置并启动：
 
 ```bash
 cp config.example.json config.json
@@ -122,7 +121,7 @@ cp .env.example .env
 python -m server
 ```
 
-打开 `http://127.0.0.1:8000`。这种直接 Python 运行方式默认把本地数据写入 `data/store`，除非显式设置 `KARKINOS_DATA_DIR`。
+打开 `http://127.0.0.1:8000`。默认可写数据目录是 `data/store`。
 
 ### Native Release
 
@@ -134,11 +133,11 @@ python -m server
 
 默认行情数据源是 **AKShare**，无需 Token。TuShare、AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
 
-用户配置和金融 / 研究状态属于需要长期保留的本地数据。源码开发状态与用户运行环境分离，不能拿开发沙箱存放真实 Karkinos 数据。
+用户配置和金融 / 研究状态属于需要长期保留的本地数据。源码开发状态与用户 workspace 分离，不能拿开发沙箱存放真实 Karkinos 数据。
 
 ## 开发 Karkinos
 
-开发流程和普通使用分开。源码开发使用长期存在的 `dev` 分支，以及可丢弃的独立开发沙箱。
+开发流程和普通使用分开。源码开发使用长期存在的 `dev` 分支，以及可丢弃的独立开发 workspace。
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -147,13 +146,13 @@ git switch dev
 ./scripts/start_server.sh dev
 ```
 
-开发启动器创建 `.run/dev-home`，并启动：
+开发启动器创建 `.run/dev`，并启动：
 
 - Web：`http://127.0.0.1:5173`
 - API：`http://127.0.0.1:8001`
 - Health：`http://127.0.0.1:8001/api/health`
 
-开发配置和数据全部留在 `.run/dev-home`。该目录是可丢弃的开发沙箱，绝不能指向真实用户运行目录。
+开发配置、数据、logs 和进程状态全部留在 `.run/dev`。该目录是可丢弃的开发沙箱，绝不能指向真实用户 workspace。只有需要单独开发目录时才设置绝对路径 `KARKINOS_DEV_WORKSPACE`。
 
 贡献流程、测试和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
 
