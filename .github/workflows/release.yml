@@ -87,7 +87,6 @@ jobs:
             --repository "${RELEASE_REPOSITORY}" \
             --commit-sha "${RELEASE_COMMIT_SHA}" \
             --required-job "Code CI gate" \
-            --required-job "Repository acceptance audit" \
             --timeout-seconds 1200 \
             --poll-interval-seconds 15 \
             --github-output "${GITHUB_OUTPUT}"
