@@ -1,4 +1,4 @@
-"""Prepare an explicitly separate account and environment for source development."""
+"""Prepare an explicitly isolated workspace for source development."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-DEV_MARKER = ".karkinos-dev-home"
-DEV_MARKER_CONTENT = "karkinos.dev-home.v1\n"
+DEV_MARKER = ".karkinos-dev-workspace"
+DEV_MARKER_CONTENT = "karkinos.dev-workspace.v1\n"
 MANAGED_MARKERS = (
     "current",
     ".service-config.json",
@@ -30,45 +30,50 @@ def _overlaps(first: Path, second: Path) -> bool:
     return first == second or first in second.parents or second in first.parents
 
 
-def _require_private_tree(home: Path) -> None:
-    if not home.exists():
+def _require_private_tree(workspace: Path) -> None:
+    if not workspace.exists():
         return
-    for directory, directories, files in os.walk(home, followlinks=False):
+    for directory, directories, files in os.walk(workspace, followlinks=False):
         for name in [*directories, *files]:
             path = Path(directory) / name
             info = path.lstat()
             if stat.S_ISLNK(info.st_mode) or (
                 stat.S_ISREG(info.st_mode) and info.st_nlink != 1
             ):
-                raise ValueError(f"development home contains a linked path: {path}")
+                raise ValueError(f"development workspace contains a linked path: {path}")
             if not stat.S_ISREG(info.st_mode) and not stat.S_ISDIR(info.st_mode):
-                raise ValueError(f"development home contains a special file: {path}")
+                raise ValueError(
+                    f"development workspace contains a special file: {path}"
+                )
 
 
-def _require_separate_home(home: Path, environ: Mapping[str, str]) -> None:
-    default_home = Path(environ.get("HOME", str(Path.home()))) / (
-        "Library/Application Support/Karkinos"
+def _durable_user_paths(environ: Mapping[str, str]) -> tuple[Path, ...]:
+    paths: list[Path] = []
+    configured_workspace = environ.get("KARKINOS_WORKSPACE") or environ.get(
+        "KARKINOS_HOME"
     )
-    protected_paths = [default_home]
-    protected_paths.extend(
-        Path(value).expanduser()
-        for name in (
-            "KARKINOS_HOME",
-            "KARKINOS_DATA_DIR",
-            "KARKINOS_CONFIG_PATH",
-            "KARKINOS_ENV_FILE",
-        )
-        if (value := environ.get(name))
-    )
-    for path in protected_paths:
-        if _overlaps(home, path.resolve()):
+    if configured_workspace:
+        root = Path(configured_workspace).expanduser().resolve()
+        paths.extend((root / "config", root / "data", root / "logs", root / "exports"))
+    for name in ("KARKINOS_DATA_DIR", "KARKINOS_CONFIG_PATH", "KARKINOS_ENV_FILE"):
+        if value := environ.get(name):
+            paths.append(Path(value).expanduser().resolve())
+    return tuple(paths)
+
+
+def _require_separate_workspace(
+    workspace: Path, environ: Mapping[str, str]
+) -> None:
+    for path in _durable_user_paths(environ):
+        if _overlaps(workspace, path):
             raise ValueError(
-                "KARKINOS_DEV_HOME overlaps a daily-service path; "
+                "KARKINOS_DEV_WORKSPACE overlaps durable user data; "
                 "choose a separate empty development directory"
             )
-    for directory in (home, *home.parents, home / "data"):
-        if any(os.path.lexists(directory / marker) for marker in MANAGED_MARKERS):
-            raise ValueError(f"development path belongs to a managed home: {directory}")
+    if any(os.path.lexists(workspace / marker) for marker in MANAGED_MARKERS):
+        raise ValueError(
+            f"development workspace belongs to a managed runtime: {workspace}"
+        )
 
 
 def _require_env_file_args(arguments: Sequence[str], env_file: Path) -> None:
@@ -102,40 +107,45 @@ def prepare_environment(
     arguments: Sequence[str] = (),
 ) -> dict[str, str]:
     root = root.resolve()
-    configured_home = environ.get("KARKINOS_DEV_HOME")
-    if configured_home is not None and (
-        not configured_home or not Path(configured_home).expanduser().is_absolute()
+    configured_workspace = environ.get("KARKINOS_DEV_WORKSPACE")
+    legacy_dev_home = environ.get("KARKINOS_DEV_HOME")
+    if configured_workspace and legacy_dev_home:
+        if Path(configured_workspace).expanduser().resolve() != Path(
+            legacy_dev_home
+        ).expanduser().resolve():
+            raise ValueError(
+                "KARKINOS_DEV_WORKSPACE and legacy KARKINOS_DEV_HOME disagree"
+            )
+    selected = configured_workspace or legacy_dev_home
+    if selected is not None and (
+        not selected or not Path(selected).expanduser().is_absolute()
     ):
-        raise ValueError("KARKINOS_DEV_HOME must be a nonempty absolute path")
-    selected_home = (
-        Path(configured_home).expanduser()
-        if configured_home
-        else root / ".run/dev-home"
-    )
-    if selected_home.is_symlink():
-        raise ValueError("KARKINOS_DEV_HOME must not be a symlink")
-    home = selected_home.resolve()
-    _require_separate_home(home, environ)
-    _require_private_tree(home)
-    env_file = home / "config/.env"
+        raise ValueError("KARKINOS_DEV_WORKSPACE must be a nonempty absolute path")
+    selected_workspace = Path(selected).expanduser() if selected else root / ".run/dev"
+    if selected_workspace.is_symlink():
+        raise ValueError("KARKINOS_DEV_WORKSPACE must not be a symlink")
+    workspace = selected_workspace.resolve()
+    _require_separate_workspace(workspace, environ)
+    _require_private_tree(workspace)
+    env_file = workspace / "config/.env"
     _require_env_file_args(arguments, env_file)
-    marker = home / DEV_MARKER
+    marker = workspace / DEV_MARKER
     if marker.exists():
         if marker.read_text(encoding="utf-8") != DEV_MARKER_CONTENT:
-            raise ValueError("development home ownership marker is invalid")
-    elif home.exists() and any(home.iterdir()):
+            raise ValueError("development workspace ownership marker is invalid")
+    elif workspace.exists() and any(workspace.iterdir()):
         raise ValueError(
-            "KARKINOS_DEV_HOME is not an initialized development home or an empty "
-            "directory; no existing account was opened"
+            "KARKINOS_DEV_WORKSPACE is neither an initialized development "
+            "workspace nor an empty directory"
         )
-    home.mkdir(mode=0o700, parents=True, exist_ok=True)
-    for name in ("config", "data", "logs"):
-        (home / name).mkdir(mode=0o700, exist_ok=True)
+    workspace.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for name in ("config", "data", "logs", "run"):
+        (workspace / name).mkdir(mode=0o700, exist_ok=True)
     for path, content in (
-        (home / "config/config.json", "{}\n"),
+        (workspace / "config/config.json", "{}\n"),
         (
             env_file,
-            "# Dedicated development settings; daily-account files are not used.\n",
+            "# Dedicated development settings; user workspace files are not used.\n",
         ),
         (marker, DEV_MARKER_CONTENT),
     ):
@@ -167,14 +177,16 @@ def prepare_environment(
     }
     result.update(
         {
-            "KARKINOS_DEV_HOME": str(home),
-            "KARKINOS_HOME": str(home),
-            "KARKINOS_DATA_DIR": str(home / "data"),
-            "KARKINOS_CONFIG_PATH": str(home / "config/config.json"),
+            "KARKINOS_DEV_WORKSPACE": str(workspace),
+            "KARKINOS_DEV_HOME": str(workspace),
+            "KARKINOS_WORKSPACE": str(workspace),
+            # Compatibility for code paths not yet renamed from HOME to WORKSPACE.
+            "KARKINOS_HOME": str(workspace),
+            "KARKINOS_DATA_DIR": str(workspace / "data"),
+            "KARKINOS_CONFIG_PATH": str(workspace / "config/config.json"),
             "KARKINOS_ENV_FILE": str(env_file),
             "KARKINOS_STATIC_DIR": str(root / "web/dist"),
             "KARKINOS_RELEASE_ROOT": str(root),
-            # Explicit empty identity also prevents dotenv from restoring a release.
             "KARKINOS_RELEASE_SHA": "",
             "KARKINOS_ARTIFACT_FINGERPRINT": "",
             "UV_PROJECT_ENVIRONMENT": str(root / ".venv"),
@@ -196,7 +208,9 @@ def main() -> int:
         parser.error("a development command is required after --")
     try:
         env = prepare_environment(args.repo, os.environ, command)
-        print(f"Development account: {env['KARKINOS_DEV_HOME']}", flush=True)
+        print(
+            f"Development workspace: {env['KARKINOS_DEV_WORKSPACE']}", flush=True
+        )
         os.execvpe(command[0], command, env)
     except (OSError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
