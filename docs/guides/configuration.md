@@ -2,7 +2,21 @@
 
 [文档入口](../README.md)
 
-## 快速开始
+## Workspace
+
+源码运行默认把 Git checkout 根目录作为 workspace：
+
+```text
+Karkinos/
+├── config.json
+├── .env
+├── data/store/
+├── logs/
+├── exports/
+└── .run/main/
+```
+
+创建配置：
 
 ```bash
 cp config.example.json config.json
@@ -10,7 +24,24 @@ cp .env.example .env
 uv run python -m server --check-config
 ```
 
-示例：[`config.example.json`](../../config.example.json) · [`.env.example`](../../.env.example)
+使用 checkout 外的持久化 workspace：
+
+```bash
+export KARKINOS_WORKSPACE=/absolute/path/to/workspace
+```
+
+该目录需要自己的 `config.json` 和 `.env`。`KARKINOS_HOME` 仅保留为旧 managed installation 的兼容别名；新源码运行使用 `KARKINOS_WORKSPACE`。
+
+开发模式与用户 workspace 分离，默认使用：
+
+```text
+.run/dev/
+├── config/config.json
+├── config/.env
+├── data/
+├── logs/
+└── run/
+```
 
 ## 配置优先级
 
@@ -24,9 +55,11 @@ uv run python -m server --check-config
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `KARKINOS_CONFIG_PATH` | `config.json` 路径 |
-| `KARKINOS_DATA_DIR` | 本地运行数据目录 |
-| `KARKINOS_ENV_FILE` | 环境文件路径 |
+| `KARKINOS_WORKSPACE` | 用户运行 workspace；源码模式默认是 checkout 根目录 |
+| `KARKINOS_CONFIG_PATH` | 高级覆盖：`config.json` 的绝对路径 |
+| `KARKINOS_DATA_DIR` | 高级覆盖：本地运行数据绝对路径 |
+| `KARKINOS_ENV_FILE` | 高级覆盖：环境文件绝对路径 |
+| `KARKINOS_DEV_WORKSPACE` | 独立开发 workspace；默认 `.run/dev` |
 
 ## `server`
 
@@ -48,11 +81,27 @@ live_poll_interval
 tushare_token_env
 ```
 
-TuShare Token：
+默认数据源是 AKShare，无需 Token。源码 workspace 中可以交互配置：
+
+```bash
+uv run python scripts/data/configure_data_source.py
+```
+
+开发 workspace 需要显式选择其独立配置：
+
+```bash
+uv run python scripts/data/configure_data_source.py \
+  --config-path .run/dev/config/config.json \
+  --env-file .run/dev/config/.env
+```
+
+TuShare Token 使用环境变量：
 
 ```text
 KARKINOS_TUSHARE_TOKEN
 ```
+
+Token 写入 `.env`，不写入 `config.json`。
 
 ## `ai`
 
@@ -117,6 +166,7 @@ AI 配置不授予金融事实、Portfolio、Risk、Accounting 或资本权限�
 
 ## 安全
 
+- 用户 workspace 与 `.run/dev` 开发 workspace 分离。
 - 不提交 `config.json`、真实 `.env`、API Key、券商凭证或私钥。
 - 不在 CLI 参数传递 secret/token。
-- 不保存真实账户导出、截图或运行数据库到仓库。
+- 不保存真实账户导出、截图或运行数据库到 Git。
