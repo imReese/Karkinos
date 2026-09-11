@@ -9,6 +9,7 @@ services:
       - ./config.json:/app/config.json:ro
     environment:
       - TZ=Asia/Shanghai
+      - KARKINOS_WORKSPACE=/app
       - KARKINOS_TUSHARE_TOKEN=${KARKINOS_TUSHARE_TOKEN:-}
       - KARKINOS_HOST=${KARKINOS_HOST:-0.0.0.0}
       - KARKINOS_PORT=8000
