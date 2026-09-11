@@ -123,7 +123,7 @@ def _source_repo(
         f"  exit {frontend_exit}\n"
         "fi\n"
         'if [[ "$*" == *"/api/settings/live/status"* ]]; then\n'
-        '  printf \'{"running":true}\'\n'
+        "  printf '{\"running\":true}'\n"
         f"  exit {health_exit}\n"
         "fi\n"
         "printf '%s' "
@@ -251,7 +251,9 @@ def test_arbitrary_branch_snapshot_keeps_current_checkout_untouched(tmp_path: Pa
     assert _git(repo, "branch", "--show-current") == "dev"
     snapshot = repo / ".run/feature/research/code"
     assert snapshot.is_dir()
-    assert (snapshot / ".karkinos-source-branch").read_text().strip() == "feature/research"
+    assert (
+        snapshot / ".karkinos-source-branch"
+    ).read_text().strip() == "feature/research"
     recorded = (tmp_path / "python-calls.log").read_text(encoding="utf-8")
     assert f"source-root={snapshot}" in recorded
     assert "branch=feature/research" in recorded
@@ -330,9 +332,7 @@ def test_missing_snapshot_branch_fails_without_switching(tmp_path: Path):
 
 
 def test_backend_readiness_timeout_cleans_dev_process(tmp_path: Path):
-    repo, env, _calls = _source_repo(
-        tmp_path, current_branch="dev", health_ready=False
-    )
+    repo, env, _calls = _source_repo(tmp_path, current_branch="dev", health_ready=False)
     env["KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS"] = "1"
     result = subprocess.run(
         ["bash", "scripts/start_server.sh", "dev"],
