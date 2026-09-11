@@ -40,15 +40,105 @@ Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风�
 
 ## 使用 Karkinos
 
-发布版本是普通用户的运行入口。当前已发布安装包提供 macOS Apple Silicon 和 Intel 架构版本；可用安装包和经过验证的安装资产见 [Releases](https://github.com/imReese/Karkinos/releases)。
+根据你的运行方式选择入口：
 
-用户配置以及金融 / 研究状态属于需要长期保留的本地数据，与源码开发状态分离。`.run/dev-home` 是可丢弃的开发沙箱，不能用于存放真实 Karkinos 数据。
+| 方式 | 适合场景 | 环境要求 |
+| --- | --- | --- |
+| **Docker Compose** | 隔离运行完整 Web + API | Docker / Docker Compose |
+| **源码运行** | 从 Git checkout 直接运行完整本地应用 | Python 3.12+、Node.js 24.x、`uv`、Git、POSIX shell |
+| **Python / pip 源码安装** | 手动 Python/API 运行和本地集成 | Python 3.12+；完整 Web 还需要 Node.js 24.x |
+| **Native Release** | 使用经过验证的原生发布包 | 当前提供 macOS arm64 / x86_64 |
 
-当前运行与发布生命周期细节见 [scripts/README.md](scripts/README.md)。
+### Docker Compose
+
+克隆稳定分支，并从模板创建本地配置：
+
+```bash
+git clone --branch main --depth 1 https://github.com/imReese/Karkinos.git
+cd Karkinos
+cp config.example.json config.json
+cp .env.example .env
+```
+
+启动应用：
+
+```bash
+docker compose up --build -d
+```
+
+打开 `http://127.0.0.1:8000`。
+
+Docker Compose 将数据库保存在 `karkinos-data` Docker volume 中，并以只读方式挂载 `config.json`。如需 TuShare、AI 或通知凭证，在启动前编辑 `.env`。
+
+### 源码运行
+
+适合不使用 Docker、希望直接从 checkout 运行完整应用的场景。先选择一个明确的持久化运行目录：
+
+```bash
+git clone https://github.com/imReese/Karkinos.git
+cd Karkinos
+git switch main
+
+export KARKINOS_HOME="/absolute/path/to/your/karkinos-workspace"
+mkdir -p "$KARKINOS_HOME/config"
+cp config.example.json "$KARKINOS_HOME/config/config.json"
+cp .env.example "$KARKINOS_HOME/config/.env"
+
+./scripts/start_server.sh main --init
+```
+
+打开 `http://127.0.0.1:8000`。
+
+`--init` 只用于创建新的空运行环境。后续启动使用：
+
+```bash
+./scripts/start_server.sh main
+```
+
+当前源码运行模式会把配置、数据库、日志以及受管理的 source state 保存在所选择的 `KARKINOS_HOME` 下。生命周期命令见 [scripts/README.md](scripts/README.md)。
+
+### Python / pip 源码安装
+
+Karkinos 可以从本仓库源码安装为 Python package。PyPI 上名为 `karkinos` 的项目与本仓库无关，因此**不要执行 `pip install karkinos`**。
+
+在 Karkinos 源码 checkout 中安装：
+
+```bash
+python -m pip install ".[server]"
+```
+
+如果需要完整 Web 应用，再构建一次前端：
+
+```bash
+npm ci --prefix web
+npm --prefix web run build
+```
+
+创建本地运行配置，并从仓库根目录启动：
+
+```bash
+cp config.example.json config.json
+cp .env.example .env
+python -m server
+```
+
+打开 `http://127.0.0.1:8000`。这种直接 Python 运行方式默认把本地数据写入 `data/store`，除非显式设置 `KARKINOS_DATA_DIR`。
+
+### Native Release
+
+稳定版本会发布经过验证的原生 archive 和 container image。当前原生 archive 提供 **macOS arm64** 和 **macOS x86_64**，可用产物见 [Releases](https://github.com/imReese/Karkinos/releases)。
+
+发布资产中的 `bootstrap_installer.sh` 用于受管理的 release/update handoff，不是通用的跨平台包管理器。Linux 和 Windows 当前优先使用 Docker 或源码运行方式。
+
+### 配置
+
+默认行情数据源是 **AKShare**，无需 Token。TuShare、AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
+
+用户配置和金融 / 研究状态属于需要长期保留的本地数据。源码开发状态与用户运行环境分离，不能拿开发沙箱存放真实 Karkinos 数据。
 
 ## 开发 Karkinos
 
-源码开发需要 **Python 3.12+**、**Node.js 24.x**、**uv** 和 **Git**。
+开发流程和普通使用分开。源码开发使用长期存在的 `dev` 分支，以及可丢弃的独立开发沙箱。
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -57,29 +147,15 @@ git switch dev
 ./scripts/start_server.sh dev
 ```
 
-开发启动器会在 `.run/dev-home` 下创建独立环境，并启动：
+开发启动器创建 `.run/dev-home`，并启动：
 
 - Web：`http://127.0.0.1:5173`
 - API：`http://127.0.0.1:8001`
 - Health：`http://127.0.0.1:8001/api/health`
 
-开发配置和数据全部保留在开发沙箱中：
+开发配置和数据全部留在 `.run/dev-home`。该目录是可丢弃的开发沙箱，绝不能指向真实用户运行目录。
 
-```text
-.run/dev-home/config/config.json
-.run/dev-home/config/.env
-.run/dev-home/data/
-```
-
-默认数据源是 **AKShare**，无需 Token。开发沙箱创建后，可交互选择 AKShare 或配置 TuShare：
-
-```bash
-uv run python scripts/data/configure_data_source.py \
-  --config-path .run/dev-home/config/config.json \
-  --env-file .run/dev-home/config/.env
-```
-
-TuShare 凭证写入开发环境的 `.env`，不会写入 `config.json`。AI Provider、通知、费用、Server 和其他开发选项见 [配置指南](docs/guides/configuration.md)。
+贡献流程、测试和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
 
 ## 资源
 
@@ -90,6 +166,6 @@ TuShare 凭证写入开发环境的 `.env`，不会写入 `config.json`。AI Pro
 ---
 
 <div align="center">
-<sub>Python · FastAPI · SQLite · React · TypeScript · Vite</sub><br>
+<sub>Python · FastAPI · SQLite · React · TypeScript · Vite · Docker</sub><br>
 <sub>Karkinos 是量化研究与投资软件，不构成投资建议，也不保证任何收益。</sub>
 </div>
