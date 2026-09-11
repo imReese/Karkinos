@@ -2,35 +2,109 @@
 
 Run repository commands from the repository root.
 
-The stable lifecycle entry points are:
-
 ```bash
-./scripts/start_server.sh dev
 ./scripts/start_server.sh main
+./scripts/start_server.sh dev
 ./scripts/start_server.sh prod
-./scripts/stop_server.sh dev
 ./scripts/stop_server.sh main
+./scripts/stop_server.sh dev
 ./scripts/stop_server.sh prod
 ./scripts/stop_server.sh all
 ```
 
-Commands below script subdirectories are specialized development, maintenance,
-CI, data, or release tools rather than the primary user interface.
+## Source user runtime
+
+`main` runs the current clean `main` checkout. It does not fetch another copy of
+the repository or create a nested source checkout.
+
+For the normal clone-based workflow, the repository root is the workspace:
+
+```text
+Karkinos/
+├── config.json
+├── .env
+├── data/store/
+├── logs/
+├── exports/
+└── .run/main/
+```
+
+Create a new empty workspace once:
+
+```bash
+git switch main
+cp config.example.json config.json
+cp .env.example .env
+./scripts/start_server.sh main --init
+```
+
+Later starts use:
+
+```bash
+./scripts/start_server.sh main
+```
+
+Run in the current terminal for debugging:
+
+```bash
+./scripts/start_server.sh main --foreground
+```
+
+Stop only the source user runtime:
+
+```bash
+./scripts/stop_server.sh main
+```
+
+`main` requires a clean local `main` at the same commit as `origin/main`. It
+installs locked backend dependencies, builds the frontend, runs the persistent
+state preflight, then starts the API and research worker.
+
+### Workspace override
+
+`KARKINOS_WORKSPACE` selects a different absolute workspace without changing the
+source checkout:
+
+```bash
+export KARKINOS_WORKSPACE=/absolute/path/to/workspace
+```
+
+The selected workspace contains `config.json`, `.env`, `data/store`, `logs`,
+`exports`, and `.run/main`. `KARKINOS_HOME` remains only as a compatibility alias
+for older managed installations; new source usage should use
+`KARKINOS_WORKSPACE`.
+
+`KARKINOS_DATA_DIR`, `KARKINOS_CONFIG_PATH`, and `KARKINOS_ENV_FILE` remain
+advanced explicit overrides and must be absolute in the managed source runtime.
+
+`--init` is only for a genuinely new empty data store. It is not an upgrade or
+repair operation.
 
 ## Development runtime
 
-Start the normal development environment:
+Development is separate from the user workspace:
 
 ```bash
+git switch dev
 ./scripts/start_server.sh dev
 ```
 
-The development runtime uses a dedicated local home, separate configuration and
-account data, a reloadable backend, and the Vite frontend. The usual frontend URL
-is:
+The default development workspace is:
 
 ```text
-http://127.0.0.1:5173
+.run/dev/
+├── config/
+├── data/
+├── logs/
+└── run/
+```
+
+It starts:
+
+```text
+Web     http://127.0.0.1:5173
+API     http://127.0.0.1:8001
+Health  http://127.0.0.1:8001/api/health
 ```
 
 Stop it with:
@@ -39,107 +113,36 @@ Stop it with:
 ./scripts/stop_server.sh dev
 ```
 
-The default development home is `.run/dev-home`. Use an absolute
-`KARKINOS_DEV_HOME` when a different dedicated development directory is needed.
-Do not point development at a normal user or production account directory.
+Use an absolute `KARKINOS_DEV_WORKSPACE` only when a different disposable
+workspace is needed. Development strips user runtime paths and credentials before
+launching. Never point it at real portfolio/account data.
 
-## Managed `main` runtime
+## Installed native runtime
 
-Start the verified source from remote `main` while keeping the normal account
-state outside the source checkout:
-
-```bash
-./scripts/start_server.sh main
-```
-
-The command prepares the exact remote `main` source under `$KARKINOS_HOME/source`
-and uses the existing runtime data and configuration under `$KARKINOS_HOME`.
-Preparing source does not copy private account data into the checkout.
-
-Common controls:
+`prod` controls an already installed immutable release under the selected
+workspace:
 
 ```bash
-./scripts/start_server.sh main --status
-./scripts/start_server.sh main --logs
-./scripts/start_server.sh main --logs --follow
-./scripts/start_server.sh main --no-update
-./scripts/start_server.sh main --restart
-./scripts/start_server.sh main --foreground
-./scripts/stop_server.sh main
+KARKINOS_WORKSPACE=/absolute/installed/workspace ./scripts/start_server.sh prod
+KARKINOS_WORKSPACE=/absolute/installed/workspace ./scripts/stop_server.sh prod
 ```
 
-An existing account normally requires its expected configuration and databases
-to exist. Missing account state fails explicitly rather than silently creating a
-new empty account.
-
-### New local account
-
-Only when intentionally creating a new account, prepare configuration and use
-`--init`:
-
-```bash
-export KARKINOS_HOME="${HOME}/Library/Application Support/Karkinos"
-mkdir -p "$KARKINOS_HOME/config"
-test -e "$KARKINOS_HOME/config/config.json" || cp config.example.json "$KARKINOS_HOME/config/config.json"
-test -e "$KARKINOS_HOME/config/.env" || cp .env.example "$KARKINOS_HOME/config/.env"
-./scripts/start_server.sh main --init
-```
-
-Do not use `--init` as an upgrade or repair command for an existing account.
-
-## Runtime paths
-
-The managed `main` runtime uses these defaults:
-
-| Variable | Default |
-| --- | --- |
-| `KARKINOS_HOME` | `~/Library/Application Support/Karkinos` |
-| `KARKINOS_DATA_DIR` | `$KARKINOS_HOME/data` |
-| `KARKINOS_CONFIG_PATH` | `$KARKINOS_HOME/config/config.json` |
-| `KARKINOS_ENV_FILE` | `$KARKINOS_HOME/config/.env` |
-
-Explicit overrides should use absolute paths for managed runtime data.
-
-## Legacy immutable-release runtime
-
-`prod` is the existing immutable-release runtime and is retained for supported
-installations and maintenance:
-
-```bash
-./scripts/start_server.sh prod
-./scripts/stop_server.sh prod
-```
-
-Do not expand release or production-orchestration machinery merely because this
-mode exists. Current development scope is defined in
-[docs/PLAN.md](../docs/PLAN.md).
-
-Release-specific scripts and workflows are maintainer tooling. Use their
-`--help`, tests, and workflow definitions when maintaining them rather than
-copying their implementation details into this guide.
+Native release/bootstrap tooling is currently macOS-specific maintenance
+infrastructure. It is not the normal source-development path and should not shape
+the source workspace model.
 
 ## Specialized scripts
 
-Subdirectories under `scripts/` contain focused tools for tasks such as:
-
-```text
-data configuration / ingestion
-CI and repository checks
-maintenance and migration
-release verification
-local service control
-```
-
-Prefer the documented top-level lifecycle commands for ordinary use. A
-specialized script is not automatically a stable public interface merely because
-it exists in the repository.
+Subdirectories under `scripts/` contain focused tools for data ingestion,
+configuration, CI, maintenance, migration, and release verification. A script is
+not automatically a stable user interface merely because it exists.
 
 ## Safety
 
-- Do not run development against a normal or production account directory.
-- Do not commit runtime databases, private logs, `.env`, credentials, account
-  exports, or screenshots with personal financial data.
+- User and development workspaces are separate.
+- Do not commit runtime databases, `.env`, credentials, private logs, account
+  exports, or screenshots containing financial information.
 - Do not repair financial state by manually editing SQLite unless a documented
   migration or recovery procedure explicitly requires it.
-- Status and process readiness do not imply that market data, portfolio evidence,
-  risk, or capital actions are financially ready.
+- Process readiness does not imply market-data, portfolio, risk, or capital
+  readiness.
