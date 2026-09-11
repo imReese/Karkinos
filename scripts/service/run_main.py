@@ -107,7 +107,11 @@ def _absolute_path(value: str, name: str) -> str:
 def runtime_environment(root: Path) -> dict[str, str]:
     env = dict(os.environ)
     if any(
-        key.startswith("KARKINOS_RELEASE_") or key == "KARKINOS_ARTIFACT_FINGERPRINT"
+        (
+            key.startswith("KARKINOS_RELEASE_")
+            and key != "KARKINOS_RELEASE_ROOT"
+        )
+        or key == "KARKINOS_ARTIFACT_FINGERPRINT"
         for key in env
     ):
         raise ValueError("source runtime cannot inherit managed release environment")
