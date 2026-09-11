@@ -2,65 +2,47 @@
 
 # Karkinos
 
-**Local-first quantitative research and investing platform for the China market.**
+**Local-first quantitative research and investing platform for China markets.**
 
-*Investing is a chronic condition. Here is your scalpel.*
+[Documentation](docs/README.md) · [Plan](docs/PLAN.md) · [Releases](https://github.com/imReese/Karkinos/releases) · [简体中文](README.zh.md)
 
-[简体中文](README.zh.md) · [Documentation](docs/README.md) · [Releases](https://github.com/imReese/Karkinos/releases)
-
-[![Dev CI](https://github.com/imReese/Karkinos/actions/workflows/dev-ci.yml/badge.svg?branch=dev)](https://github.com/imReese/Karkinos/actions/workflows/dev-ci.yml)
+[![CI](https://github.com/imReese/Karkinos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/imReese/Karkinos/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag)](https://github.com/imReese/Karkinos/releases)
 [![License](https://img.shields.io/github/license/imReese/Karkinos)](LICENSE)
 
 </div>
 
-Karkinos turns China-market data into point-in-time research evidence, portfolio targets,
-simulation results, accounting state, attribution, and continuous research feedback.
+Karkinos connects point-in-time market data, reproducible research, portfolio construction,
+risk, simulation, accounting, and attribution in one local-first workflow.
 
-## What works today
+## Highlights
 
-- **Data** — China-market provider integration, local persistence, trading calendars, and point-in-time research inputs.
+- **Point-in-time data** — research inputs reflect information available at the modeled decision time.
 - **Research** — backtesting, transaction-cost modeling, parameter exploration, out-of-sample evaluation, and robustness analysis.
-- **Portfolio** — portfolio targets, valuation, fees, return accounting, and reconciliation workflows.
-- **Evaluation** — backtest, paper, shadow, and risk-gated simulation workflows.
-- **AI-assisted research** — optional API-backed research assistance with deterministic quantitative and financial results.
+- **Portfolio & risk** — published forecasts become portfolio targets, explicit risk decisions, and rebalance plans before execution.
+- **Evaluation** — backtest, paper, and shadow workflows connect research expectations with later outcomes.
+- **China-market semantics** — trading calendars, suspensions, price limits, lot rules, fees, and taxes are first-class concerns.
+- **Local-first** — core research artifacts, portfolio state, financial state, and primary calculations remain locally owned.
+- **AI-assisted research** — optional AI can accelerate research iteration while deterministic code owns quantitative and financial results.
 - **Web application** — FastAPI backend with a React / TypeScript interface and local runtime.
 
-Current development focus: [docs/PLAN.md](docs/PLAN.md)
-
-## Workflow
+## Research-to-portfolio loop
 
 ```mermaid
-flowchart TD
-    A[Market Data] --> B[PIT Dataset]
-    B --> C[Research / Evaluation]
-    C --> D[Published Forecast]
-    D --> E[Portfolio Target]
-    E --> F[Risk Decision]
-    F --> G[Rebalance Plan]
+flowchart LR
+    A[Market Data] --> B[PIT Dataset] --> C[Research]
+    C --> D[Published Forecast] --> E[Portfolio Target]
+    E --> F[Risk Decision] --> G[Rebalance Plan]
     G --> H[Simulation / Paper / Shadow]
     G --> I[Human-supervised Execution]
     H --> J[Outcome]
-    I --> K[Fills / Financial Events]
-    K --> L[Accounting]
-    J --> M[Attribution]
-    L --> M
-    M --> N[Alpha / Model Health]
-    N --> C
+    I --> K[Accounting]
+    J --> L[Attribution]
+    K --> L
+    L --> M[Alpha / Model Health] --> C
 ```
 
-## Core properties
-
-- **Point-in-time research** — research inputs reflect information available at the modeled decision time.
-- **Reproducible evidence** — results remain tied to data, assumptions, parameters, and time boundaries.
-- **After-cost evaluation** — fees, taxes, turnover, liquidity, and execution assumptions are part of research where they matter.
-- **Portfolio before orders** — predictive output becomes portfolio intent before execution intent.
-- **China-market semantics** — calendars, suspensions, price limits, lot rules, and other market constraints are first-class inputs.
-- **Continuous feedback** — outcomes feed attribution and Alpha / Model health back into research.
-- **AI-assisted, not AI-authoritative** — AI may accelerate research iteration; Karkinos owns quantitative and financial truth.
-- **Local-first ownership** — core research artifacts, portfolio state, and primary calculations remain locally owned.
-
-## Quick start
+## Development quick start
 
 Requirements: **Python 3.12+**, **Node.js 24.x**, **uv**, and **Git**.
 
@@ -73,27 +55,24 @@ git switch dev
 
 Open `http://127.0.0.1:5173`.
 
-Stop the development runtime:
-
 ```bash
 ./scripts/stop_server.sh dev
 ```
 
-Runtime and maintenance commands: [scripts/README.md](scripts/README.md)
+Packaged builds: [Releases](https://github.com/imReese/Karkinos/releases) · Runtime and maintenance commands: [scripts/README.md](scripts/README.md)
 
 ## Documentation
 
 - [Goal](docs/GOAL.md) — product direction and boundaries
 - [Architecture](docs/ARCHITECTURE.md) — domain ownership and system design
 - [Plan](docs/PLAN.md) — current development focus
-- [Engineering](docs/ENGINEERING.md) — current codebase and engineering constraints
+- [Engineering](docs/ENGINEERING.md) — codebase reality and engineering constraints
 - [Guides](docs/guides/) — configuration and financial semantics
-- [References](docs/REFERENCES.md) — upstream quantitative design references
 
 ## Project
 
-**Technology:** Python · FastAPI · SQLite · React · TypeScript · Vite
+Python · FastAPI · SQLite · React · TypeScript · Vite
 
-**Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) · **Security:** [SECURITY.md](SECURITY.md) · **License:** [MIT](LICENSE)
+[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT License](LICENSE)
 
 Karkinos is research and investing software, not investment advice or a guarantee of returns.
