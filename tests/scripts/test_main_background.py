@@ -62,9 +62,7 @@ def source(tmp_path):
             time.sleep(0.05)
     """)
     driver = root / "scripts/service/run_main.py"
-    driver.write_text(
-        textwrap.dedent(
-            f"""
+    driver.write_text(textwrap.dedent(f"""
             import os, sys
             from pathlib import Path
             sys.path.insert(0, {str(REPO)!r})
@@ -93,9 +91,7 @@ def source(tmp_path):
             if '--startup-fd' in sys.argv:
                 (runtime.ROOT / 'supervisor.pid').write_text(str(os.getpid()))
             raise SystemExit(runtime.main())
-            """
-        )
-    )
+            """))
     env = {k: v for k, v in os.environ.items() if not k.startswith("KARKINOS_")}
     with socket.socket() as port:
         port.bind(("127.0.0.1", 0))
