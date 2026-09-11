@@ -1,12 +1,10 @@
-"""Safety contracts for the branch-selected source stop command."""
+"""Safety contracts for source snapshot and dev shutdown."""
 
 from __future__ import annotations
 
 import os
 import subprocess
 from pathlib import Path
-
-import pytest
 
 SCRIPT = Path("scripts/stop_server.sh")
 
@@ -20,7 +18,7 @@ def _repo(
     tmp_path: Path,
     *,
     resident_service_loaded: bool = False,
-    main_exit: int = 0,
+    source_exit: int = 0,
 ) -> tuple[Path, dict[str, str], Path]:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
@@ -50,7 +48,7 @@ def _repo(
         f'printf "python3 %s\\n" "$*" >>"{calls}"\n'
         f'printf "workspace=%s branch=%s\\n" "${{KARKINOS_WORKSPACE:-}}" '
         f'"${{KARKINOS_SOURCE_BRANCH:-}}" >>"{calls}"\n'
-        f"exit {main_exit}\n",
+        f"exit {source_exit}\n",
     )
     _write_executable(
         bin_dir / "ps",
@@ -81,7 +79,6 @@ def _repo(
     _write_executable(
         bin_dir / "pgrep",
         "#!/usr/bin/env bash\n"
-        "set -eu\n"
         f'printf "pgrep %s\\n" "$*" >>"{calls}"\n'
         "exit 1\n",
     )
@@ -89,7 +86,6 @@ def _repo(
     _write_executable(
         bin_dir / "launchctl",
         "#!/usr/bin/env bash\n"
-        "set -eu\n"
         'if [[ "${1:-}" == "print" ]]; then\n'
         f'  [[ -f "{state_file}" ]]\n'
         "  exit $?\n"
@@ -157,7 +153,7 @@ def _stop(
     )
 
 
-def test_default_stop_targets_main_in_repo_local_workspace(tmp_path: Path):
+def test_default_stop_targets_main_snapshot_in_repo_workspace(tmp_path: Path):
     repo, env, calls = _repo(tmp_path)
     result = _stop(repo, env)
     assert result.returncode == 0, result.stderr
@@ -166,7 +162,18 @@ def test_default_stop_targets_main_in_repo_local_workspace(tmp_path: Path):
     assert f"workspace={repo} branch=main" in recorded
 
 
-def test_stop_development_branch_signals_only_owned_pid_records(tmp_path: Path):
+def test_arbitrary_snapshot_branch_uses_control_driver_not_dev_pid_files(
+    tmp_path: Path,
+):
+    repo, env, calls = _repo(tmp_path)
+    result = _stop(repo, env, "feature/research")
+    assert result.returncode == 0, result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert f"python3 {repo}/scripts/service/run_main.py --stop" in recorded
+    assert f"workspace={repo} branch=feature/research" in recorded
+
+
+def test_dev_stop_signals_only_owned_pid_records(tmp_path: Path):
     repo, env, calls = _repo(tmp_path)
     started = "Sun Aug 30 22:00:00 2026"
     backend_pid = 4201
@@ -199,26 +206,7 @@ def test_stop_development_branch_signals_only_owned_pid_records(tmp_path: Path):
     assert "pgrep -P" in recorded
 
 
-def test_stop_arbitrary_branch_uses_nested_branch_runtime_path(tmp_path: Path):
-    repo, env, _calls = _repo(tmp_path)
-    started = "Sun Aug 30 22:00:00 2026"
-    pid = 4210
-    _register_process(
-        env,
-        pid,
-        command=f"python {repo}/scripts/service/run_dev.py --reload",
-        started_at=started,
-    )
-    _pid(repo / ".run/feature/research/backend.pid", pid, started)
-
-    result = _stop(repo, env, "feature/research")
-
-    assert result.returncode == 0, result.stderr
-    assert not _alive(env, pid)
-    assert not (repo / ".run/feature/research/backend.pid").exists()
-
-
-def test_stop_rejects_reused_pid_with_changed_start_identity(tmp_path: Path):
+def test_dev_stop_rejects_reused_pid_identity(tmp_path: Path):
     repo, env, calls = _repo(tmp_path)
     pid = 4203
     _register_process(
@@ -239,52 +227,8 @@ def test_stop_rejects_reused_pid_with_changed_start_identity(tmp_path: Path):
     assert "kill -TERM 4203" not in calls.read_text(encoding="utf-8")
 
 
-def test_stop_rejects_pid_whose_command_is_not_owned(tmp_path: Path):
-    repo, env, calls = _repo(tmp_path)
-    pid = 4204
-    started = "Sun Aug 30 22:00:00 2026"
-    _register_process(
-        env,
-        pid,
-        command="/usr/local/bin/unrelated-worker --serve",
-        started_at=started,
-    )
-    pid_file = repo / ".run/dev/backend.pid"
-    _pid(pid_file, pid, started)
-
-    result = _stop(repo, env, "dev")
-
-    assert result.returncode == 1
-    assert "no longer belongs to Karkinos dev backend" in result.stderr
-    assert "no process was signaled" in result.stderr
-    assert _alive(env, pid)
-    assert pid_file.exists()
-    assert "kill -TERM 4204" not in calls.read_text(encoding="utf-8")
-
-
-def test_stop_all_attempts_main_and_all_tracked_development_branches(tmp_path: Path):
-    repo, env, calls = _repo(tmp_path)
-    started = "Sun Aug 30 22:00:00 2026"
-    for branch, pid in (("dev", 4301), ("feature/research", 4302)):
-        _register_process(
-            env,
-            pid,
-            command=f"python {repo}/scripts/service/run_dev.py --reload",
-            started_at=started,
-        )
-        _pid(repo / ".run" / branch / "backend.pid", pid, started)
-
-    result = _stop(repo, env, "all")
-
-    assert result.returncode == 0, result.stderr
-    assert not _alive(env, 4301)
-    assert not _alive(env, 4302)
-    recorded = calls.read_text(encoding="utf-8")
-    assert f"python3 {repo}/scripts/service/run_main.py --stop" in recorded
-
-
-def test_main_stop_failure_propagates(tmp_path: Path):
-    repo, env, _calls = _repo(tmp_path, main_exit=7)
+def test_snapshot_stop_failure_propagates(tmp_path: Path):
+    repo, env, _calls = _repo(tmp_path, source_exit=7)
     result = _stop(repo, env)
     assert result.returncode == 7
 
