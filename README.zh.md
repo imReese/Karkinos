@@ -49,7 +49,7 @@ Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风�
 
 ### 源码运行
 
-对于日常本地使用，Git 仓库根目录就是 Karkinos 的本地状态目录。所有源码分支共用同一份 `config.json`、`.env`、`data/store`、`logs` 和 `exports`；选择 Git 分支只决定运行哪一套代码。
+对于日常本地使用，Git 仓库根目录保存 Karkinos 的本地状态。不同源码分支共用同一份 `config.json`、`.env`、`data/store`、`logs` 和 `exports`；选择分支只决定运行哪一套代码。
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
@@ -59,7 +59,7 @@ cp .env.example .env
 ./scripts/start_server.sh --init
 ```
 
-默认分支是 `main`，后续启动直接执行：
+默认运行 `main`，后续启动直接执行：
 
 ```bash
 ./scripts/start_server.sh
@@ -67,41 +67,49 @@ cp .env.example .env
 
 打开 `http://127.0.0.1:8000`。
 
-本地目录结构在 macOS 和 Linux 的源码工作流中保持一致：
+启动脚本**不会切换当前 Git checkout**。稳定分支通过 `git archive` 物化成 `.run/<branch>/code` 下的可丢弃代码快照，长期本地状态始终留在仓库根目录：
 
 ```text
 Karkinos/
 ├── config.json
 ├── .env
-├── data/store/      # 数据库和本地数据
+├── data/store/          # 数据库和本地数据
 ├── logs/
 ├── exports/
 └── .run/
-    ├── source.lock  # 同一时间只允许一个 source backend
-    ├── main/        # 只保存 main 的进程 / control 状态
-    └── dev/         # 只保存 dev 的进程状态
+    ├── source.lock      # 同一时间只允许一个 source backend
+    ├── main/
+    │   └── code/        # 缓存的 main 源码快照及派生依赖
+    └── dev/             # 仅保存 dev 的 PID / 进程状态
 ```
 
-本地配置、数据、logs、exports 和 `.run/` 都被 Git 忽略。代码可以切换或替换，本地状态保持不变。
+`config.json`、`.env`、运行数据、logs、exports 和 `.run/` 都被 Git 忽略。
 
-启动脚本可以直接选择分支：
+你可以一直停留在 `dev` 上开发，同时运行稳定 `main`：
 
 ```bash
+git switch dev
+
+# 运行当前 dev working tree，包括本地未提交的开发改动
 ./scripts/start_server.sh dev
-./scripts/start_server.sh --branch dev
-./scripts/start_server.sh feature/my-research-change
+
+# 停止 dev，再运行本地已经 fetch 到的 main 快照
+./scripts/stop_server.sh dev
+./scripts/start_server.sh
 ```
 
-脚本会安全切换到目标分支。如果 checkout 中存在未提交 / 未跟踪的源码改动，或者还有 Karkinos source runtime 正在使用当前 checkout，切换会直接拒绝；脚本不会自动 reset、stash 或丢弃任何改动。
+当前 checkout 仍然保持在 `dev`。`main` 和其他稳定分支快照不会读取 dev working tree 中未提交的改动。
 
-`main` 使用稳定源码运行方式，默认端口 `8000`。其他分支使用开发运行方式：后端 reload 默认端口 `8001`，Vite 默认端口 `5173`。**这些分支仍然共用同一份本地配置和数据。** 同一时间只允许一个 source backend 打开这套本地状态。
-
-停止默认 `main` 或某个开发分支：
+运行其他已经提交的分支也不需要切换 checkout：
 
 ```bash
-./scripts/stop_server.sh
-./scripts/stop_server.sh dev
+./scripts/start_server.sh feature/my-research-change
+./scripts/stop_server.sh feature/my-research-change
 ```
+
+分支快照使用本地已经存在的最新 ref。需要刷新 `origin/main` 或其他远端分支时，先执行 `git fetch origin`；只有 ref 指向新的 commit 时才会重建缓存快照。
+
+`dev` 是唯一特殊的源码模式：它直接运行当前 `dev` working tree，后端 reload 默认端口 `8001`，Vite 默认端口 `5173`。稳定分支快照在 `8000` 提供完整应用。所有源码模式仍然共用同一份本地配置和数据，同一时间只允许一个 source backend 打开这套状态。
 
 由于不同分支共用同一份数据库，涉及 schema 的开发必须使用明确 migration，并遵守 [docs/ENGINEERING.md](docs/ENGINEERING.md) 中的持久化兼容规则。
 
@@ -158,9 +166,10 @@ python -m server
 
 ## 开发 Karkinos
 
-`dev` 是长期存在的开发分支。checkout 状态允许安全切换时，启动脚本会自动选择它：
+`dev` 是长期存在的开发分支。只需要手动切过去一次，然后一直留在这里开发：
 
 ```bash
+git switch dev
 ./scripts/start_server.sh dev
 ```
 
@@ -170,7 +179,7 @@ python -m server
 - API：`http://127.0.0.1:8001`
 - Health：`http://127.0.0.1:8001/api/health`
 
-现在不再使用独立的 dev-home。`dev` 有意与 `main` 共用仓库根目录下的 `config.json`、`.env` 和 `data/store`；`.run/dev` 只保存可丢弃的进程状态。切换到其他源码分支前，先执行 `./scripts/stop_server.sh dev`。
+开发模式有意复用仓库根目录下的 `config.json`、`.env` 和 `data/store`；`.run/dev` 只保存可丢弃的进程状态。即使 checkout 一直停在 `dev`，默认的 `./scripts/start_server.sh` 仍可以运行缓存的 `main` 快照，不会切分支、清理或覆盖 dev working tree。
 
 贡献流程、测试、migration 规则和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
 
