@@ -18,16 +18,23 @@ Usage:
   ./scripts/start_server.sh prod
 
 Source branches:
-  main is the default. The launcher safely switches this checkout to the selected
-  branch, then runs it against the same local config.json, .env, data/store,
-  logs, and exports. Runtime process state alone is separated under .run/<branch>.
+  main is the default. The launcher never switches the current Git checkout.
 
-  main        Stable source runtime on port 8000. Supports --init and --foreground.
-  dev/other   Development runtime with backend reload on port 8001 and Vite on 5173.
+  main        Run a cached code snapshot of the locally fetched main branch.
+              Serves the Web app and API on port 8000. Supports --init and
+              --foreground.
+  dev         Run the current dev working tree with backend reload on port 8001
+              and Vite on port 5173. Local uncommitted development edits are used.
+  <branch>    Run a cached code snapshot of that branch without touching the
+              current checkout.
 
-The launcher never resets, stashes, or discards local changes. Branch switching
-is refused while the checkout is dirty or another source runtime is using it.
-Only one source backend may use the shared local workspace at a time.
+All source branches share the repository-local config.json, .env, data/store,
+logs, and exports. Only code, dependencies, and process state are branch-specific
+under .run/<branch>. Only one source backend may use the shared workspace at a
+time.
+
+Snapshot branches use the latest ref already available locally. Run `git fetch
+origin` when you want to refresh origin/main or another remote branch.
 
 prod controls an already installed immutable release and is retained only for
 legacy/native release maintenance.
@@ -68,44 +75,6 @@ source_runtime_is_running() {
 	return 1
 }
 
-switch_branch_if_needed() {
-	local target="$1"
-	shift
-	git check-ref-format --branch "${target}" >/dev/null 2>&1 || {
-		echo "Error: invalid Git branch '${target}'." >&2
-		exit 2
-	}
-
-	local current
-	current="$(git -C "${REPO_ROOT}" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-	if [[ "${current}" == "${target}" ]]; then
-		return 0
-	fi
-	if source_runtime_is_running; then
-		echo "Error: a Karkinos source runtime is still using this checkout." >&2
-		echo "Stop it before switching from '${current:-detached HEAD}' to '${target}'." >&2
-		exit 1
-	fi
-	if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain --untracked-files=normal)" ]]; then
-		echo "Error: the Git checkout has local changes." >&2
-		echo "Commit, stash, or discard them yourself before switching branches." >&2
-		exit 1
-	fi
-
-	if git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/heads/${target}"; then
-		git -C "${REPO_ROOT}" switch "${target}"
-	elif git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/remotes/origin/${target}"; then
-		git -C "${REPO_ROOT}" switch --track -c "${target}" "origin/${target}"
-	else
-		echo "Error: branch '${target}' is not available locally or under origin/." >&2
-		echo "Fetch it explicitly, then retry." >&2
-		exit 1
-	fi
-
-	# Continue with the launcher belonging to the selected code branch.
-	exec bash "${REPO_ROOT}/scripts/start_server.sh" "${target}" "$@"
-}
-
 require_source_workspace() {
 	if [[ "${SOURCE_WORKSPACE}" != /* ]]; then
 		echo "Error: KARKINOS_WORKSPACE must be an absolute path when set." >&2
@@ -121,6 +90,92 @@ require_source_workspace() {
 		echo "Create it with: cp .env.example .env" >&2
 		exit 1
 	fi
+}
+
+validate_branch_name() {
+	git check-ref-format --branch "$1" >/dev/null 2>&1 || {
+		echo "Error: invalid Git branch '$1'." >&2
+		exit 2
+	}
+}
+
+resolve_branch_ref() {
+	local branch="$1"
+	if git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+		printf '%s\n' "refs/remotes/origin/${branch}"
+		return 0
+	fi
+	if git -C "${REPO_ROOT}" show-ref --verify --quiet "refs/heads/${branch}"; then
+		printf '%s\n' "refs/heads/${branch}"
+		return 0
+	fi
+	echo "Error: branch '${branch}' is not available locally or under origin/." >&2
+	echo "Fetch it explicitly, then retry." >&2
+	return 1
+}
+
+prepare_branch_snapshot() {
+	local branch="$1"
+	local ref sha runtime_dir code_dir marker temporary previous
+	ref="$(resolve_branch_ref "${branch}")" || exit 1
+	sha="$(git -C "${REPO_ROOT}" rev-parse "${ref}^{commit}")"
+	runtime_dir="${SOURCE_WORKSPACE}/.run/${branch}"
+	code_dir="${runtime_dir}/code"
+	marker="${code_dir}/.karkinos-source-sha"
+
+	if [[ -f "${marker}" && -f "${code_dir}/pyproject.toml" &&
+		"$(cat "${marker}")" == "${sha}" ]]; then
+		SNAPSHOT_ROOT="${code_dir}"
+		SNAPSHOT_SHA="${sha}"
+		return 0
+	fi
+
+	if source_runtime_is_running; then
+		echo "Error: a Karkinos source runtime is running; snapshot refresh was refused." >&2
+		echo "Stop it before refreshing branch '${branch}'." >&2
+		exit 1
+	fi
+	if ! command -v tar >/dev/null 2>&1; then
+		echo "Error: tar is required to materialize a branch snapshot." >&2
+		exit 1
+	fi
+
+	mkdir -p "${runtime_dir}"
+	temporary="${runtime_dir}/code.tmp.$$"
+	previous="${runtime_dir}/code.old.$$"
+	rm -rf "${temporary}" "${previous}"
+	mkdir -p "${temporary}"
+	if ! git -C "${REPO_ROOT}" archive "${sha}" | tar -xf - -C "${temporary}"; then
+		rm -rf "${temporary}"
+		echo "Error: failed to materialize branch '${branch}' at ${sha}." >&2
+		exit 1
+	fi
+	printf '%s\n' "${sha}" >"${temporary}/.karkinos-source-sha"
+	printf '%s\n' "${branch}" >"${temporary}/.karkinos-source-branch"
+
+	if [[ -e "${code_dir}" ]]; then
+		mv "${code_dir}" "${previous}"
+	fi
+	mv "${temporary}" "${code_dir}"
+	rm -rf "${previous}"
+
+	SNAPSHOT_ROOT="${code_dir}"
+	SNAPSHOT_SHA="${sha}"
+}
+
+export_source_workspace() {
+	local source_root="$1"
+	local branch="$2"
+	export KARKINOS_WORKSPACE="${SOURCE_WORKSPACE}"
+	# Temporary compatibility for runtime code still reading the older name.
+	export KARKINOS_HOME="${SOURCE_WORKSPACE}"
+	export KARKINOS_DATA_DIR="${SOURCE_WORKSPACE}/data/store"
+	export KARKINOS_CONFIG_PATH="${SOURCE_WORKSPACE}/config.json"
+	export KARKINOS_ENV_FILE="${SOURCE_WORKSPACE}/.env"
+	export KARKINOS_STATIC_DIR="${source_root}/web/dist"
+	export KARKINOS_RELEASE_ROOT="${source_root}"
+	export KARKINOS_SOURCE_ROOT="${source_root}"
+	export KARKINOS_SOURCE_BRANCH="${branch}"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -162,23 +217,29 @@ elif [[ -n "${1:-}" && "${1}" != -* ]]; then
 	TARGET_BRANCH="$1"
 	shift
 fi
-
-switch_branch_if_needed "${TARGET_BRANCH}" "$@"
+validate_branch_name "${TARGET_BRANCH}"
 require_source_workspace
 
-export KARKINOS_WORKSPACE="${SOURCE_WORKSPACE}"
-# Temporary compatibility for runtime code still reading the older name.
-export KARKINOS_HOME="${SOURCE_WORKSPACE}"
-export KARKINOS_DATA_DIR="${KARKINOS_DATA_DIR:-${SOURCE_WORKSPACE}/data/store}"
-export KARKINOS_CONFIG_PATH="${KARKINOS_CONFIG_PATH:-${SOURCE_WORKSPACE}/config.json}"
-export KARKINOS_ENV_FILE="${KARKINOS_ENV_FILE:-${SOURCE_WORKSPACE}/.env}"
-export KARKINOS_STATIC_DIR="${REPO_ROOT}/web/dist"
-export KARKINOS_SOURCE_BRANCH="${TARGET_BRANCH}"
+mkdir -p "${SOURCE_WORKSPACE}/data/store" "${SOURCE_WORKSPACE}/logs" \
+	"${SOURCE_WORKSPACE}/exports" "${SOURCE_WORKSPACE}/.run"
 
-if [[ "${TARGET_BRANCH}" == "main" ]]; then
+if [[ "${TARGET_BRANCH}" != "dev" ]]; then
+	prepare_branch_snapshot "${TARGET_BRANCH}"
+	export_source_workspace "${SNAPSHOT_ROOT}" "${TARGET_BRANCH}"
+	export KARKINOS_SOURCE_SHA="${SNAPSHOT_SHA}"
+	export KARKINOS_SOURCE_SNAPSHOT=1
 	exec python3 "${SCRIPT_DIR}/service/run_main.py" "$@"
 fi
 
+CURRENT_BRANCH="$(git -C "${REPO_ROOT}" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+if [[ "${CURRENT_BRANCH}" != "dev" ]]; then
+	echo "Error: the dev runtime uses the current working tree, but this checkout is '${CURRENT_BRANCH:-detached HEAD}'." >&2
+	echo "Switch to dev yourself before starting the development runtime." >&2
+	exit 1
+fi
+
+unset KARKINOS_SOURCE_SNAPSHOT KARKINOS_SOURCE_SHA
+export_source_workspace "${REPO_ROOT}" "dev"
 cd "${REPO_ROOT}"
 
 if ! command -v uv >/dev/null 2>&1; then
@@ -204,13 +265,12 @@ EOF
 	exit 1
 fi
 
-BRANCH_SLUG="${TARGET_BRANCH//\//-}"
-RUNTIME_DIR="${SOURCE_WORKSPACE}/.run/${TARGET_BRANCH}"
+RUNTIME_DIR="${SOURCE_WORKSPACE}/.run/dev"
 LOG_DIR="${SOURCE_WORKSPACE}/logs"
 PID_FILE="${RUNTIME_DIR}/backend.pid"
 WEB_PID_FILE="${RUNTIME_DIR}/frontend.pid"
-LOG_FILE="${LOG_DIR}/${BRANCH_SLUG}-backend.log"
-WEB_LOG_FILE="${LOG_DIR}/${BRANCH_SLUG}-frontend.log"
+LOG_FILE="${LOG_DIR}/dev-backend.log"
+WEB_LOG_FILE="${LOG_DIR}/dev-frontend.log"
 LOG_MAX_BYTES="${KARKINOS_LOG_MAX_BYTES:-20971520}"
 STARTUP_HEALTH_TIMEOUT_SECONDS="${KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-60}"
 FRONTEND_STARTUP_TIMEOUT_SECONDS="${KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS:-30}"
@@ -444,7 +504,7 @@ if ! command -v curl >/dev/null 2>&1; then
 	exit 1
 fi
 
-mkdir -p "${RUNTIME_DIR}" "${LOG_DIR}" "${SOURCE_WORKSPACE}/data/store" "${SOURCE_WORKSPACE}/exports"
+mkdir -p "${RUNTIME_DIR}" "${LOG_DIR}"
 chmod 700 "${RUNTIME_DIR}" "${LOG_DIR}" "${SOURCE_WORKSPACE}/data/store"
 
 for pid_file in "${PID_FILE}" "${WEB_PID_FILE}"; do
@@ -454,7 +514,7 @@ for pid_file in "${PID_FILE}" "${WEB_PID_FILE}"; do
 	existing_record="$(cat "${pid_file}")"
 	IFS=$'\t' read -r existing_pid _ <<<"${existing_record}"
 	if [[ "${existing_pid}" =~ ^[0-9]+$ ]] && kill -0 "${existing_pid}" >/dev/null 2>&1; then
-		echo "Error: branch '${TARGET_BRANCH}' already has a tracked development process with PID ${existing_pid}." >&2
+		echo "Error: dev already has a tracked process with PID ${existing_pid}." >&2
 		exit 1
 	fi
 	rm -f "${pid_file}"
@@ -481,7 +541,7 @@ WEB_LAUNCH_PID=""
 trap cleanup_failed_startup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-echo "Starting branch '${TARGET_BRANCH}' backend on ${PRODUCT_ENTRY_URL}"
+echo "Starting current dev backend on ${PRODUCT_ENTRY_URL}"
 if command -v setsid >/dev/null 2>&1; then
 	setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
 		uv run --locked --extra server "${REPO_ROOT}/.venv/bin/python" "${SCRIPT_DIR}/service/run_dev.py" "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
@@ -521,11 +581,11 @@ wait_for_frontend
 trap - EXIT INT TERM
 
 cat <<EOF
-Karkinos branch '${TARGET_BRANCH}' started.
+Karkinos dev runtime started from the current working tree.
 Workspace: ${SOURCE_WORKSPACE}
 Backend:   ${PRODUCT_ENTRY_URL}
 Frontend:  ${HOT_RELOAD_URL}
 
-config.json, .env, data/store, logs, and exports are shared across source branches.
-Use ./scripts/stop_server.sh ${TARGET_BRANCH} to stop this runtime.
+config.json, .env, data/store, logs, and exports are shared with snapshot branches.
+Use ./scripts/stop_server.sh dev to stop the development runtime.
 EOF
