@@ -1,250 +1,136 @@
+<div align="center">
+
 # Karkinos
 
-> Investing is a chronic condition. Here is your scalpel.
+**Local-first quantitative research and investing platform for the China market.**
 
-[简体中文](README.zh.md)
+*Investing is a chronic condition. Here is your scalpel.*
 
-Karkinos is a **local-first quantitative research and investing platform for the China market**.
+[简体中文](README.zh.md) · [Documentation](docs/README.md) · [Releases](https://github.com/imReese/Karkinos/releases)
 
-It is built around a simple idea: investment research should be reproducible,
-falsifiable, cost-aware, and connected to portfolio decisions without turning
-the product into an unattended trading bot.
+[![Dev CI](https://github.com/imReese/Karkinos/actions/workflows/dev-ci.yml/badge.svg?branch=dev)](https://github.com/imReese/Karkinos/actions/workflows/dev-ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag)](https://github.com/imReese/Karkinos/releases)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Node.js](https://img.shields.io/badge/Node.js-24.x-5FA04E?logo=nodedotjs&logoColor=white)](web/package.json)
+[![License](https://img.shields.io/github/license/imReese/Karkinos)](LICENSE)
 
-Karkinos helps turn market data into research evidence, forecasts, portfolio
-decisions, simulation results, and explainable investment actions while keeping
-financial state and capital authority explicit.
+</div>
 
-## Why Karkinos
+Karkinos connects China-market data, point-in-time research, portfolio construction,
+risk, simulation, accounting, attribution, and optional AI-assisted research in one
+local-first workflow.
 
-Many quantitative tools make it easy to produce a backtest and much harder to
-answer the questions that matter afterward:
+## Latest
 
-* Did the strategy use information that was actually available at the time?
-* Does the result survive out-of-sample evaluation and realistic costs?
-* Is the apparent edge distinct from market or factor exposure?
-* How should multiple forecasts affect the portfolio?
-* What changed between research expectations and simulated or realized results?
-* When should an edge be reduced, quarantined, or retired?
+| | |
+| --- | --- |
+| **Latest release** | [GitHub Releases](https://github.com/imReese/Karkinos/releases) |
+| **Current focus** | [Engineering Reset and platform reliability](docs/PLAN.md) |
+| **Development** | `dev` is the active development branch; verified commits are promoted to `main` |
 
-Karkinos is designed around that full research lifecycle rather than around
-strategy count, infrastructure complexity, or broker connectivity.
+## What works today
 
-## Core workflow
+| Area | Available today |
+| --- | --- |
+| **Data** | China-market provider integration, local persistence, trading calendars, and point-in-time research inputs |
+| **Research** | Strategy research, backtesting, transaction-cost modeling, parameter exploration, out-of-sample and robustness evaluation |
+| **Portfolio & Accounting** | Portfolio views, valuation, fees, return accounting, local financial state, and reconciliation workflows |
+| **Evaluation** | Backtest, paper, shadow, and risk-gated simulation workflows |
+| **AI-assisted Research** | Optional API-backed research assistance; canonical quantitative and financial results remain deterministic |
+| **Web App** | FastAPI backend with a React / TypeScript interface and local runtime |
+
+## How Karkinos works
 
 ```text
 Market Data
--> Point-in-time Dataset
--> Research
--> Forecast
--> Portfolio Target
--> Rebalance Plan
--> Risk
--> Simulation / Paper / Shadow
--> Human-supervised Action
--> Accounting / Reconciliation
--> Attribution
--> Edge Monitoring / Retirement
+    |
+    v
+PIT Dataset
+    |
+    v
+Research / Evaluation
+    |
+    v
+Published Forecast
+    |
+    v
+Portfolio Target
+    |
+    v
+Risk Decision
+    |
+    v
+Rebalance Plan
+   /            \
+  v              v
+Simulation /    Human-supervised
+Paper / Shadow   Execution
+  |              |
+  v              v
+Outcome      Fills / Financial Events
+   \            /
+    v          v
+ Accounting / Attribution
+          |
+          v
+   Alpha / Model Health
+          |
+          +--------------------> Research
 ```
 
-The center of the product is the path from **trustworthy data to trustworthy
-investment decisions**.
+## Why Karkinos
 
-Automated trading is not the product goal.
-
-## Current capabilities
-
-The repository currently includes foundations for:
-
-* China-market data integration and local market-data persistence;
-* quantitative strategies, backtesting, transaction-cost modeling, parameter
-  exploration, and out-of-sample evaluation;
-* reproducible research and point-in-time data workflows;
-* portfolio, valuation, fee, return-accounting, and reconciliation workflows;
-* risk-gated simulation, paper, and shadow evaluation;
-* locally owned financial state and user configuration;
-* optional AI-assisted research whose output remains non-authoritative;
-* a FastAPI backend and React/TypeScript web application.
-
-Some areas of the existing codebase are intentionally being simplified. The
-current engineering scope is defined only in
-[docs/PLAN.md](docs/PLAN.md).
-
-## Design principles
-
-### Research before automation
-
-An Alpha, model, score, ranking, probability, or expected return expresses an
-investment view. It does not automatically become an order.
-
-Research evidence, portfolio construction, risk, execution, and accounting are
-separate responsibilities.
-
-### Point-in-time by default
-
-Research must distinguish what happened from when that information became
-available.
-
-Historical universe membership, corporate actions, suspensions, price limits,
-trading calendars, and other China-market constraints must not be reconstructed
-using future information.
-
-### Reproducible evidence
-
-Meaningful research results should remain traceable to the data, assumptions,
-parameters, time boundaries, and implementation that produced them.
-
-A backtest is evidence only when its inputs and financial assumptions are
-credible.
-
-### Local-first ownership
-
-Core research, portfolio state, financial state, and primary calculations are
-owned locally by default.
-
-External providers may supply data, models, notifications, or optional
-capabilities, but they do not become the source of authority for the core
-workflow.
-
-Local-first does not mean offline-only.
-
-### Human-supervised capital
-
-Real-money automation is not the default product mode.
-
-Research code, AI, providers, and UI state cannot grant themselves capital
-authority or bypass portfolio and risk boundaries.
+- **Point-in-time research** — use information available at the modeled decision time.
+- **Reproducible evidence** — bind results to data, assumptions, parameters, and time boundaries.
+- **After-cost evaluation** — include fees, taxes, turnover, liquidity, and execution assumptions where they matter.
+- **Portfolio before orders** — predictive output becomes portfolio intent before it becomes execution intent.
+- **China-market semantics** — calendars, suspensions, price limits, lot rules, and other market constraints are first-class concerns.
+- **Continuous feedback** — outcomes feed attribution and Alpha / Model health back into research.
+- **AI-assisted, not AI-authoritative** — AI can accelerate research iteration without owning market facts, financial state, or capital authority.
+- **Local-first ownership** — core research artifacts, portfolio state, and primary calculations remain locally owned.
 
 ## Quick start
 
-### Requirements
-
-* Python 3.12+
-* Node.js 24.x
-* [uv](https://docs.astral.sh/uv/)
-* Git
-
-### Development
-
-Clone the repository and switch to the normal development branch:
+Requirements: **Python 3.12+**, **Node.js 24.x**, **uv**, and **Git**.
 
 ```bash
 git clone https://github.com/imReese/Karkinos.git
 cd Karkinos
 git switch dev
-```
-
-Start the development environment:
-
-```bash
 ./scripts/start_server.sh dev
 ```
 
-Then open:
+Open:
 
 ```text
 http://127.0.0.1:5173
 ```
 
-The development runtime uses a dedicated local environment and does not need to
-reuse a normal Karkinos account.
-
-Stop it with:
+Stop the development runtime with:
 
 ```bash
 ./scripts/stop_server.sh dev
 ```
 
-For the managed `main` runtime, logs, status commands, existing-account startup,
-or the legacy immutable-release workflow, see
-[scripts/README.md](scripts/README.md).
-
-## Development checks
-
-Install the locked development environment:
-
-```bash
-uv sync --locked --extra server --extra dev
-```
-
-Run the backend test suite:
-
-```bash
-uv run --locked python -m pytest
-```
-
-Run the main frontend checks:
-
-```bash
-npm --prefix web run format:check
-npm --prefix web run test
-npm --prefix web run build
-```
-
-Run narrow checks first when working on a focused change. The repository CI is
-the authoritative full verification path.
+Runtime and maintenance commands: [scripts/README.md](scripts/README.md)
 
 ## Documentation
 
-Start with [docs/README.md](docs/README.md).
+- [Goal](docs/GOAL.md) — product direction and boundaries
+- [Architecture](docs/ARCHITECTURE.md) — domain ownership and system design
+- [Plan](docs/PLAN.md) — current development focus
+- [Engineering](docs/ENGINEERING.md) — current codebase and engineering constraints
+- [Guides](docs/guides/) — configuration and financial semantics
+- [References](docs/REFERENCES.md) — upstream quantitative design references
 
-The canonical engineering documents are intentionally small:
+## Project
 
-* [Goal](docs/GOAL.md) — product purpose and hard boundaries.
-* [Architecture](docs/ARCHITECTURE.md) — durable domain and ownership rules.
-* [Plan](docs/PLAN.md) — current development scope.
-* [Engineering](docs/ENGINEERING.md) — current codebase reality, structural debt,
-  and engineering guidance.
-* [References](docs/REFERENCES.md) — mature open-source designs used for
-  conceptual comparison.
+**Technology:** Python · FastAPI · SQLite · React · TypeScript · Vite
 
-Stable operational and financial notes live under
-[docs/guides/](docs/guides/).
+**Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 
-Implementation history belongs in Git rather than in parallel roadmaps or
-implementation diaries.
+**Security:** [SECURITY.md](SECURITY.md)
 
-## Project status
+**License:** [MIT](LICENSE)
 
-Karkinos is under active development.
-
-`dev` is the normal development branch. `main` receives verified development
-commits through the repository promotion workflow.
-
-Current priorities are intentionally kept out of this README; see
-[docs/PLAN.md](docs/PLAN.md).
-
-## Safety
-
-Karkinos is research and investing software, not investment advice or a
-guarantee of returns.
-
-Do not commit or publish:
-
-* API keys or credentials;
-* broker passwords or private authentication material;
-* real account exports or transaction history;
-* runtime databases;
-* private logs or screenshots containing financial information.
-
-Use sanitized synthetic data for tests and public bug reports.
-
-See [SECURITY.md](SECURITY.md) for the security policy.
-
-## Contributing
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before making repository changes.
-
-Substantial quantitative-domain or architecture work should also consult
-[docs/REFERENCES.md](docs/REFERENCES.md) before introducing a new
-Karkinos-specific abstraction.
-
-## Technology
-
-Python · FastAPI · SQLite · React · TypeScript · Vite
-
-Additional data and analytical dependencies are documented in
-`pyproject.toml` and `web/package.json`.
-
-## License
-
-Karkinos is released under the [MIT License](LICENSE).
+Karkinos is research and investing software, not investment advice or a guarantee of returns.
