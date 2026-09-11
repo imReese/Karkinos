@@ -1,28 +1,25 @@
-<table width="100%">
-<tr>
-<td align="center">
+<div align="center">
 
 <h1>Karkinos</h1>
 
-<strong>Local-first quantitative research and investing platform for China markets.</strong>
+<p><strong>Local-first quantitative research and investing platform for China markets.</strong></p>
 
-<br><br>
+<p><em>Investing is a chronic condition. Here is your scalpel.</em></p>
 
-<em>Investing is a chronic condition. Here is your scalpel.</em>
+<p>
+  <a href="https://github.com/imReese/Karkinos/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/imReese/Karkinos/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/imReese/Karkinos/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/imReese/Karkinos"></a>
+</p>
 
-<br><br>
+<p>
+  <a href="docs/README.md">Documentation</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="https://github.com/imReese/Karkinos/releases">Releases</a> ·
+  <a href="README.zh.md">简体中文</a>
+</p>
 
-<a href="docs/README.md">Documentation</a> · <a href="docs/PLAN.md">Plan</a> · <a href="https://github.com/imReese/Karkinos/releases">Releases</a> · <a href="README.zh.md">简体中文</a>
-
-<br><br>
-
-<a href="https://github.com/imReese/Karkinos/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/imReese/Karkinos/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-<a href="https://github.com/imReese/Karkinos/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/imReese/Karkinos?display_name=tag"></a>
-<a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/imReese/Karkinos"></a>
-
-</td>
-</tr>
-</table>
+</div>
 
 Karkinos connects point-in-time market data, reproducible research, portfolio construction,
 risk, simulation, accounting, and attribution in one local-first workflow.
