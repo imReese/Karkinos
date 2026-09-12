@@ -1,0 +1,186 @@
+name: Retire acceptance residuals
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/retire-acceptance-residuals.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: retire-acceptance-residuals
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: ${{ github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/dev' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact dev head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: dev
+          persist-credentials: true
+
+      - name: Remove retired milestone-audit residuals
+        shell: python
+        run: |
+          from __future__ import annotations
+
+          import re
+          from pathlib import Path
+
+          def read(path: str) -> str:
+              return Path(path).read_text(encoding="utf-8")
+
+          def write(path: str, text: str) -> None:
+              Path(path).write_text(text, encoding="utf-8")
+
+          def regex_once(path: str, pattern: str, replacement: str) -> None:
+              text = read(path)
+              updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one regex match, got {count}")
+              write(path, updated)
+
+          def remove_once(path: str, fragment: str) -> None:
+              text = read(path)
+              count = text.count(fragment)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one exact fragment, got {count}")
+              write(path, text.replace(fragment, "", 1))
+
+          regex_once(
+              "tests/test_server_routes.py",
+              r"\ndef test_acceptance_audit_route_returns_single_instrument_loop_manifest\(\):\n.*?(?=\ndef test_app_registers_execution_reconciliation_route\(\):)",
+              '''\n\ndef test_app_does_not_register_retired_acceptance_audit_route():
+              from server.app import create_app
+
+              app = create_app({"live_auto_start": False})
+
+              assert all(
+                  not (
+                      isinstance(route, APIRoute)
+                      and route.path.startswith("/api/acceptance-audits")
+                  )
+                  for route in registered_app_routes(app)
+              )
+
+'''.replace("              ", ""),
+          )
+
+          regex_once(
+              "tests/test_operations_today.py",
+              r"\ndef test_operations_today_acceptance_audit_subsystem_uses_audit_export\(\) -> None:\n.*?(?=\ndef test_operations_today_surfaces_broker_adapter_evidence_without_activation\(\) -> None:)",
+              '''\n\ndef test_operations_today_excludes_retired_acceptance_audit_subsystem() -> None:
+              summary = build_operations_today_summary(
+                  decision_payload=_decision(),
+                  trading_plan={
+                      **_plan(order_intent_count=0),
+                      "manual_ready_count": 0,
+                      "conclusion_status": "no_manual_action",
+                  },
+                  daily_operations=_operations(manual_ready_count=0),
+                  order_facts=[],
+                  fill_facts=[],
+                  generated_at="2026-07-01T09:32:00+08:00",
+              )
+
+              assert all(
+                  item["id"] != "acceptance_audit" for item in summary["subsystems"]
+              )
+
+'''.replace("              ", ""),
+          )
+
+          regex_once(
+              "web/src/features/backtest/api-governance-contracts.ts",
+              r"\nexport type AcceptanceAuditCriterion = \{.*?\n\};\n\nexport type AcceptanceAuditSummary = \{.*?\n\};\n\nexport type AcceptanceAuditExport = \{.*?\n\};\n",
+              "\n",
+          )
+
+          for fragment in (
+              "  AcceptanceAuditCriterion,\n",
+              "  AcceptanceAuditExport,\n",
+              "  AcceptanceAuditSummary,\n",
+          ):
+              remove_once("web/src/features/backtest/api-contracts.ts", fragment)
+
+          architecture = "web/src/features/backtest/backtest-architecture.test.ts"
+          for fragment in (
+              "AcceptanceAuditCriterion\n",
+              "AcceptanceAuditExport\n",
+              "AcceptanceAuditSummary\n",
+              "useSingleInstrumentStrategyLoopAcceptanceAuditQuery\n",
+              "      '/api/acceptance-audits/single_instrument_strategy_loop',\n",
+              "      \"['acceptance-audit', 'single_instrument_strategy_loop']\",\n",
+          ):
+              remove_once(architecture, fragment)
+
+          page_test = "web/src/features/backtest/components/backtest-page.test.tsx"
+          regex_once(
+              page_test,
+              r"\nconst singleInstrumentAcceptanceAudit = \{.*?\n\};\n",
+              "\n",
+          )
+          for fragment in (
+              "  acceptanceAudit = singleInstrumentAcceptanceAudit,\n",
+              "  acceptanceAudit?: unknown;\n",
+              "    '/api/acceptance-audits/single_instrument_strategy_loop',\n",
+              "  expect(await screen.findByText('Acceptance audit coverage')).toBeTruthy();\n",
+              "  expect(await screen.findByText('10/10 criteria verified')).toBeTruthy();\n",
+              "  expect(\n    await screen.findByText('single_instrument_strategy_loop'),\n  ).toBeTruthy();\n",
+              "  await waitFor(() =>\n    expect(fetchMock).toHaveBeenCalledWith(\n      expect.stringContaining(\n        '/api/acceptance-audits/single_instrument_strategy_loop',\n      ),\n      expect.any(Object),\n    ),\n  );\n",
+          ):
+              remove_once(page_test, fragment)
+          remove_once(
+              page_test,
+              "      if (\n        url.includes('/api/acceptance-audits/single_instrument_strategy_loop')\n      ) {\n        return jsonResponse(acceptanceAudit);\n      }\n",
+          )
+
+          source_roots = [Path("analytics"), Path("server"), Path("web/src/features/backtest")]
+          forbidden = (
+              "AcceptanceAudit",
+              "acceptance_audit",
+              "/api/acceptance-audits/",
+              "useSingleInstrumentStrategyLoopAcceptanceAuditQuery",
+          )
+          residuals: list[str] = []
+          for root in source_roots:
+              for path in root.rglob("*"):
+                  if not path.is_file() or path.suffix not in {".py", ".ts", ".tsx"}:
+                      continue
+                  if ".test." in path.name or path.name.startswith("test_"):
+                      continue
+                  text = path.read_text(encoding="utf-8")
+                  if any(token in text for token in forbidden):
+                      residuals.append(str(path))
+          if residuals:
+              raise SystemExit("retired acceptance audit remains in production sources: " + ", ".join(sorted(residuals)))
+
+          for path in (
+              architecture,
+              page_test,
+              "web/src/features/backtest/api-contracts.ts",
+              "web/src/features/backtest/api-governance-contracts.ts",
+          ):
+              text = read(path)
+              for token in forbidden + ("singleInstrumentAcceptanceAudit", "acceptanceAudit"):
+                  if token in text:
+                      raise SystemExit(f"{path}: stale token remains: {token}")
+
+      - name: Commit cleanup and remove this one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- .github/workflows/retire-acceptance-residuals.yml
+          git config user.name "Reese"
+          git config user.email "63846933+imReese@users.noreply.github.com"
+          git add --all
+          git diff --cached --check
+          git commit -m "refactor: finish milestone audit retirement"
+          git push origin HEAD:dev
