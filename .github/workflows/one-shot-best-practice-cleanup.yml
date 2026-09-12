@@ -54,21 +54,22 @@ jobs:
 
                   backend = '''      - run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not trading_safety"
           '''
-                  backend_full = '''      - name: Run backend test suite
-                  env:
-                    CI_MODE: ${{ needs.plan.outputs.mode }}
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    if [[ "${CI_MODE}" == full ]]; then
-                      mkdir -p reports/ci
-                      uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \\
-                        --cov --cov-report=term --cov-report=xml
-                    else
-                      uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \\
-                        -m "not trading_safety"
-                    fi
-          '''
+                  backend_full = (
+                      '      - name: Run backend test suite\n'
+                      '        env:\n'
+                      '          CI_MODE: $' + '{{ needs.plan.outputs.mode }}\n'
+                      '        shell: bash\n'
+                      '        run: |\n'
+                      '          set -euo pipefail\n'
+                      '          if [[ "${CI_MODE}" == full ]]; then\n'
+                      '            mkdir -p reports/ci\n'
+                      '            uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \\\n'
+                      '              --cov --cov-report=term --cov-report=xml\n'
+                      '          else\n'
+                      '            uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \\\n'
+                      '              -m "not trading_safety"\n'
+                      '          fi\n'
+                  )
                   if text.count(backend) != 1:
                       raise SystemExit('unexpected backend pytest command')
                   text = text.replace(backend, backend_full, 1)
@@ -83,6 +84,7 @@ jobs:
           grep -q 'ubuntu-24.04' .workflow-staging/ci.yml
           grep -q 'shellcheck scripts/start_server.sh' .workflow-staging/ci.yml
           grep -q -- '--cov --cov-report=term --cov-report=xml' .workflow-staging/ci.yml
+          grep -Fq 'CI_MODE: ${{ needs.plan.outputs.mode }}' .workflow-staging/ci.yml
           grep -q 'gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f' .workflow-staging/ci.yml
           ! grep -R 'ubuntu-latest' .workflow-staging
       - name: Commit staging blobs
