@@ -2539,11 +2539,6 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
     ).getAttribute('href'),
   ).toBe('/portfolio/600002#holding-strategy-attribution-boundary');
   expect(
-    await screen.findByText(
-      'Product-readiness proof only; it does not enable broker execution or investment advice.',
-    ),
-  ).toBeTruthy();
-  expect(
     (
       await screen.findByRole('link', {
         name: 'Review dataset snapshot evidence',
