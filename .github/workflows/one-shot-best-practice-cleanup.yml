@@ -1,6 +1,6 @@
 name: One-shot engineering best-practice cleanup
 
-# Temporary migration workflow; self-deletes after a successful verified commit.
+# Temporary migration workflow; self-deletes after successful validation.
 on:
   push:
     branches: [dev]
