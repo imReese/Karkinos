@@ -1,34 +1,136 @@
 name: CI
 
 on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
   workflow_dispatch:
     inputs:
+      mode:
+        description: Verification mode
+        required: true
+        type: choice
+        options: [full]
       commit_sha:
-        description: Exact main/dev checkout SHA to validate
+        description: Exact dev commit SHA to verify
         required: true
         type: string
       base_sha:
-        description: Base SHA used to validate ancestry and changed-file quality
+        description: Exact main SHA used as the verification base
         required: true
         type: string
-  push:
-    branches: [main]
 
 permissions:
   contents: read
 
 env:
   UV_VERSION: "0.11.28"
-  CI_COMMIT_SHA: ${{ inputs.commit_sha || github.sha }}
-  CI_BASE_SHA: ${{ inputs.base_sha || github.event.before }}
 
 concurrency:
-  group: full-ci-${{ github.workflow }}-${{ inputs.commit_sha || github.sha }}
-  cancel-in-progress: false
+  group: ci-${{ github.event_name }}-${{ inputs.commit_sha || github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
-  verify-source:
-    name: Verify exact source
+  plan:
+    name: Verification plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      base_sha: ${{ steps.plan.outputs.base_sha }}
+      commit_sha: ${{ steps.plan.outputs.commit_sha }}
+      backend: ${{ steps.plan.outputs.backend }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      trading: ${{ steps.plan.outputs.trading }}
+      dependencies: ${{ steps.plan.outputs.dependencies }}
+      docker: ${{ steps.plan.outputs.docker }}
+      workflow: ${{ steps.plan.outputs.workflow }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+      - name: Build verification plan
+        id: plan
+        shell: bash
+        env:
+          DISPATCH_MODE: ${{ inputs.mode || '' }}
+          DISPATCH_COMMIT_SHA: ${{ inputs.commit_sha || '' }}
+          DISPATCH_BASE_SHA: ${{ inputs.base_sha || '' }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        run: |
+          set -euo pipefail
+          commit_sha="$(git rev-parse HEAD)"
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            test "${DISPATCH_MODE}" = full
+            [[ "${DISPATCH_COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]
+            [[ "${DISPATCH_BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+            test "${GITHUB_REF}" = refs/heads/dev
+            test "${GITHUB_SHA}" = "${DISPATCH_COMMIT_SHA}"
+            test "${commit_sha}" = "${DISPATCH_COMMIT_SHA}"
+            git merge-base --is-ancestor "${DISPATCH_BASE_SHA}" "${DISPATCH_COMMIT_SHA}"
+            {
+              echo "mode=full"
+              echo "base_sha=${DISPATCH_BASE_SHA}"
+              echo "commit_sha=${DISPATCH_COMMIT_SHA}"
+              echo "backend=true"
+              echo "frontend=true"
+              echo "trading=true"
+              echo "dependencies=true"
+              echo "docker=true"
+              echo "workflow=true"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          test "${commit_sha}" = "${GITHUB_SHA}"
+          if [[ "${GITHUB_EVENT_NAME}" == pull_request ]]; then
+            base_ref="${PR_BASE_SHA}"
+          else
+            test "${GITHUB_REF}" = refs/heads/dev
+            base_ref=origin/main
+          fi
+          python scripts/ci/classify_dev_changes.py \
+            --base "${base_ref}" \
+            --head "${commit_sha}" \
+            --github-output "${RUNNER_TEMP}/scope"
+          {
+            echo "mode=incremental"
+            echo "commit_sha=${commit_sha}"
+            cat "${RUNNER_TEMP}/scope"
+          } >> "${GITHUB_OUTPUT}"
+
+  python-quality:
+    name: Python quality
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ needs.plan.outputs.commit_sha }}
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - name: Check changed Python files and stable boundaries
+        run: uv run --locked python scripts/ci/check_python_quality.py --base "${{ needs.plan.outputs.base_sha }}" --head "${{ needs.plan.outputs.commit_sha }}"
+
+  repository-integrity:
+    name: Repository integrity
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -36,59 +138,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
-          fetch-depth: 0
-      - name: Verify checkout identity and ancestry
-        shell: bash
-        run: |
-          set -euo pipefail
-          expected_sha="${CI_COMMIT_SHA}"
-          base_sha="${CI_BASE_SHA}"
-          [[ "${expected_sha}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${base_sha}" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "${expected_sha}"
-          case "${GITHUB_REF}" in
-            refs/heads/main|refs/heads/dev) ;;
-            *) echo "Full CI must run from main or dev." >&2; exit 1 ;;
-          esac
-          test "${GITHUB_SHA}" = "${expected_sha}"
-          if [[ "${base_sha}" != 0000000000000000000000000000000000000000 ]]; then
-            git merge-base --is-ancestor "${base_sha}" "${expected_sha}"
-          fi
-
-  python-quality:
-    name: Python changed-file quality
-    needs: verify-source
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
-          fetch-depth: 0
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-      - run: python -m pip install "uv==${UV_VERSION}"
-      - run: uv sync --locked --extra dev
-      - name: Check Python quality and stable boundaries
-        run: uv run --locked python scripts/ci/check_python_quality.py --base "${CI_BASE_SHA}" --head "${CI_COMMIT_SHA}"
-
-  repository-integrity:
-    name: Repository integrity
-    needs: verify-source
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
-      - name: Check public shell entrypoint syntax
+          ref: ${{ needs.plan.outputs.commit_sha }}
+      - name: Check public shell entrypoints
         run: bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
       - name: Check documentation integrity
         run: python scripts/ci/check_docs_integrity.py
@@ -102,71 +153,82 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    needs: verify-source
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout full history
+      - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
-          fetch-depth: 0
+          ref: ${{ needs.plan.outputs.commit_sha }}
+          fetch-depth: ${{ needs.plan.outputs.mode == 'full' && 0 || 1 }}
       - name: Scan git history with Gitleaks
+        if: ${{ needs.plan.outputs.mode == 'full' }}
         run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --redact --verbose
       - name: Scan working tree with Gitleaks
         run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --no-git --redact --verbose
 
   backend:
     name: Backend tests
-    needs: [verify-source, python-quality, repository-integrity, secret-scan]
+    if: ${{ needs.plan.outputs.backend == 'true' }}
+    needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
+          ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
-      - run: python -m pip install "uv==${UV_VERSION}"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
       - run: uv sync --locked --extra server --extra dev
-      - name: Run backend test suite
-        run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not acceptance and not trading_safety"
+      - run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not acceptance and not trading_safety"
 
   trading-safety:
     name: Trading safety invariants
-    needs: [verify-source, python-quality, repository-integrity, secret-scan]
+    if: ${{ needs.plan.outputs.trading == 'true' }}
+    needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
+          ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
-      - run: python -m pip install "uv==${UV_VERSION}"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
       - run: uv sync --locked --extra server --extra dev
       - run: uv run --locked python -m pytest -m trading_safety
 
   frontend:
     name: Frontend checks
-    needs: [verify-source, repository-integrity, secret-scan]
+    if: ${{ needs.plan.outputs.frontend == 'true' }}
+    needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
+          ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -180,24 +242,29 @@ jobs:
 
   dependency-audit:
     name: Production dependency audit
-    needs: [verify-source, repository-integrity, secret-scan]
+    if: ${{ needs.plan.outputs.dependencies == 'true' }}
+    needs: [plan, repository-integrity, secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
+          ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.20.0"
-      - run: python -m pip install "uv==${UV_VERSION}"
       - run: uv sync --locked --extra server --extra dev
       - run: uv export --locked --extra server --no-dev --no-emit-project --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
       - run: uv run --locked --extra dev pip-audit --requirement "${RUNNER_TEMP}/requirements.txt" --progress-spinner=off
@@ -205,15 +272,16 @@ jobs:
 
   docker-runtime:
     name: Docker runtime smoke
-    needs: [verify-source, python-quality, repository-integrity, secret-scan]
+    if: ${{ needs.plan.outputs.docker == 'true' }}
+    needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
+          ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Build locked runtime image
         run: docker build --tag karkinos:ci .
       - name: Start runtime with fail-closed defaults
@@ -240,46 +308,112 @@ jobs:
 
   browser-safety:
     name: Browser safety smoke
-    needs: [verify-source, python-quality, repository-integrity, secret-scan]
+    if: ${{ needs.plan.outputs.mode == 'full' }}
+    needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ env.CI_COMMIT_SHA }}
+          ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.20.0"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: python -m pip install "uv==${UV_VERSION}"
       - run: uv sync --locked --extra server --extra dev
       - run: npm ci --prefix web
       - run: npx --prefix web playwright install --with-deps chromium
       - run: npm --prefix web run build
       - run: npm --prefix web run test:e2e
 
-  code-ci-gate:
-    name: Code CI gate
-    if: always()
-    needs: [verify-source, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety]
+  workflow-security:
+    name: Workflow security
+    if: ${{ needs.plan.outputs.workflow == 'true' }}
+    needs: [plan, repository-integrity]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.commit_sha }}
+      - name: Scan GitHub Actions with zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          advanced-security: false
+
+  dev-ci-gate:
+    name: Dev CI gate
+    if: ${{ always() && needs.plan.outputs.mode == 'incremental' }}
+    needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety, workflow-security]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require full verification success
+      - name: Require selected incremental checks to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          SCOPE: ${{ toJSON(needs.plan.outputs) }}
+        shell: python
+        run: |
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          scope = json.loads(os.environ["SCOPE"])
+          optional = {
+              "backend": "backend",
+              "trading-safety": "trading",
+              "frontend": "frontend",
+              "dependency-audit": "dependencies",
+              "docker-runtime": "docker",
+              "workflow-security": "workflow",
+              "browser-safety": None,
+          }
+          failed = []
+          for name, job in results.items():
+              result = job.get("result") if isinstance(job, dict) else None
+              if name in optional:
+                  selected = "false" if optional[name] is None else scope.get(optional[name])
+                  expected = "success" if selected == "true" else "skipped"
+              else:
+                  expected = "success"
+              if result != expected:
+                  failed.append(name)
+          if failed:
+              raise SystemExit("Dev CI checks did not succeed: " + ", ".join(sorted(failed)))
+
+  full-ci-gate:
+    name: Full CI gate
+    if: ${{ always() && needs.plan.outputs.mode == 'full' }}
+    needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety, workflow-security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require complete full verification
         env:
           RESULTS: ${{ toJSON(needs) }}
         shell: python
         run: |
           import json, os
           results = json.loads(os.environ["RESULTS"])
-          failed = sorted(name for name, job in results.items() if not isinstance(job, dict) or job.get("result") != "success")
+          failed = sorted(
+              name
+              for name, job in results.items()
+              if not isinstance(job, dict) or job.get("result") != "success"
+          )
           if failed:
               raise SystemExit("Full CI checks did not succeed: " + ", ".join(failed))

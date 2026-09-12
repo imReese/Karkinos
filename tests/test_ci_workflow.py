@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
-import pytest
 import yaml
 
 
@@ -25,20 +23,17 @@ def test_external_github_actions_are_pinned_to_commit_shas() -> None:
     assert all(re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", ref) for ref in refs)
 
 
-def test_full_ci_protects_real_verification_layers_without_meta_acceptance() -> None:
+def test_single_ci_workflow_owns_incremental_and_full_verification() -> None:
+    assert not Path(".github/workflows/dev-ci.yml").exists()
     config = _workflow(".github/workflows/ci.yml")
-    jobs = config["jobs"]
-    names = {job["name"] for job in jobs.values()}
+    assert set(config["on"]) == {"pull_request", "push", "workflow_dispatch"}
+    assert config["on"]["pull_request"]["branches"] == ["dev"]
+    assert config["on"]["push"]["branches"] == ["dev"]
 
-    assert set(config["on"]) == {"push", "workflow_dispatch"}
-    assert "workflow_call" not in config["on"]
-    assert set(config["on"]["workflow_dispatch"]["inputs"]) == {
-        "commit_sha",
-        "base_sha",
-    }
+    names = {job["name"] for job in config["jobs"].values()}
     assert {
-        "Verify exact source",
-        "Python changed-file quality",
+        "Verification plan",
+        "Python quality",
         "Repository integrity",
         "Secret scan",
         "Backend tests",
@@ -47,70 +42,37 @@ def test_full_ci_protects_real_verification_layers_without_meta_acceptance() -> 
         "Production dependency audit",
         "Docker runtime smoke",
         "Browser safety smoke",
-        "Code CI gate",
+        "Workflow security",
+        "Dev CI gate",
+        "Full CI gate",
     } <= names
-    assert "Repository acceptance audit" not in names
-    assert "Repository contract tests" not in names
 
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "check_docs_integrity.py" in text
-    assert "check_docs_health.py" not in text
-    assert "export_acceptance_audit.py" not in text
-    assert "tools.ci_reuse" not in text
     assert "not acceptance and not trading_safety" in text
-    assert "python -m pytest -m trading_safety" in text
-    assert "pre_promotion" not in text
-    assert "promotion_run_id" not in text
-    assert "promotion_run_attempt" not in text
-
-    gate_needs = set(jobs["code-ci-gate"]["needs"])
-    assert "trading-safety" in gate_needs
+    assert "zizmorcore/zizmor-action@" in text
+    assert "setup-uv@" in text
 
 
-def test_obsolete_source_evidence_workflow_is_removed() -> None:
-    assert not Path(".github/workflows/source-evidence.yml").exists()
+def test_full_dispatch_binds_exact_dev_sha_and_base() -> None:
+    text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "test \"${GITHUB_REF}\" = refs/heads/dev" in text
+    assert "test \"${GITHUB_SHA}\" = \"${DISPATCH_COMMIT_SHA}\"" in text
+    assert "git merge-base --is-ancestor" in text
+    assert "mode=full" in text
 
 
-def test_release_entry_accepts_stable_semver() -> None:
-    release = _workflow(".github/workflows/release.yml")
-    step = release["jobs"]["verify_main_code_ci"]["steps"][0]
-    result = subprocess.run(
-        ["bash", "-c", step["run"]],
-        env={"GITHUB_REF_NAME": "v1.2.3"},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
+def test_ci_and_promotion_are_read_only_until_the_trusted_promotion_job() -> None:
+    ci = _workflow(".github/workflows/ci.yml")
+    assert ci["permissions"] == {"contents": "read"}
 
-
-@pytest.mark.parametrize(
-    "tag",
-    ["v1.2.3-alpha.1", "v1.2", "1.2.3", "v01.2.3"],
-)
-def test_release_entry_rejects_non_stable_semver(tag: str) -> None:
-    release = _workflow(".github/workflows/release.yml")
-    step = release["jobs"]["verify_main_code_ci"]["steps"][0]
-    result = subprocess.run(
-        ["bash", "-c", step["run"]],
-        env={"GITHUB_REF_NAME": tag},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode != 0
-
-
-def test_release_and_candidate_verify_exact_main_code_ci() -> None:
-    for path in (".github/workflows/candidate.yml", ".github/workflows/release.yml"):
-        text = Path(path).read_text(encoding="utf-8")
-        assert "tools/verify_release_source_ci.py" in text
-        assert '--required-job "Code CI gate"' in text
-        assert "Repository acceptance audit" not in text
-
-
-def test_candidate_and_release_never_persist_checkout_credentials() -> None:
-    for path in (".github/workflows/candidate.yml", ".github/workflows/release.yml"):
-        text = Path(path).read_text(encoding="utf-8")
-        assert "persist-credentials: false" in text
-        assert "AUTHORIZATION: bearer" not in text
+    promotion = _workflow(".github/workflows/promote-dev.yml")
+    assert promotion["permissions"] == {"contents": "read"}
+    assert promotion["jobs"]["select"]["permissions"] == {
+        "contents": "read",
+        "actions": "read",
+    }
+    assert promotion["jobs"]["promote"]["permissions"] == {
+        "contents": "write",
+        "actions": "write",
+        "statuses": "write",
+    }

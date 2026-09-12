@@ -1,11 +1,9 @@
 name: Promote verified dev
 
 on:
-  schedule:
-    # Daily at 02:17 Asia/Shanghai. Avoid the top of the hour because scheduled
-    # Actions can be delayed under high load.
-    - cron: "17 2 * * *"
-      timezone: "Asia/Shanghai"
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -13,12 +11,24 @@ permissions:
 
 concurrency:
   group: promote-dev-to-main
-  queue: max
+  cancel-in-progress: false
 
 jobs:
   select:
     name: Select exact green dev head
-    if: ${{ github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/main' }}
+    if: >-
+      ${{
+        github.repository == 'imReese/Karkinos' &&
+        github.ref == 'refs/heads/main' &&
+        (
+          github.event_name == 'workflow_dispatch' ||
+          (
+            github.event.workflow_run.head_branch == 'dev' &&
+            github.event.workflow_run.event == 'push' &&
+            github.event.workflow_run.conclusion == 'success'
+          )
+        )
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -41,14 +51,21 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
-      - name: Select exact successful dev head
+      - name: Select exact successful dev HEAD
         id: selection
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_DEV_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
+          EXPECTED_DEV_RUN_ATTEMPT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.run_attempt || '' }}
         shell: bash
         run: |
           set -euo pipefail
-          python -m tools.promote_dev > "${RUNNER_TEMP}/promotion-selection.json"
+          args=()
+          if [[ -n "${EXPECTED_DEV_RUN_ID}" ]]; then
+            args+=(--expected-dev-run-id "${EXPECTED_DEV_RUN_ID}")
+            args+=(--expected-dev-run-attempt "${EXPECTED_DEV_RUN_ATTEMPT}")
+          fi
+          python -m tools.promote_dev "${args[@]}" > "${RUNNER_TEMP}/promotion-selection.json"
           cat "${RUNNER_TEMP}/promotion-selection.json"
           python - <<'PY'
           import json
@@ -58,8 +75,7 @@ jobs:
           payload = json.loads(
               (Path(os.environ["RUNNER_TEMP"]) / "promotion-selection.json").read_text()
           )
-          output = Path(os.environ["GITHUB_OUTPUT"])
-          with output.open("a", encoding="utf-8") as stream:
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
               if payload.get("result") == "no_eligible_new_commit":
                   stream.write("has_candidate=false\n")
               else:
@@ -75,11 +91,11 @@ jobs:
           PY
 
   promote:
-    name: Fast-forward exact green dev head
-    if: ${{ needs.select.outputs.has_candidate == 'true' && github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/main' }}
+    name: Full-verify and fast-forward exact dev head
+    if: ${{ needs.select.outputs.has_candidate == 'true' }}
     needs: [select]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     permissions:
       contents: write
       actions: write
@@ -94,7 +110,7 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
-      - name: Revalidate exact Dev CI evidence and fast-forward main
+      - name: Verify candidate with its own CI contract, then fast-forward main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PREVIOUS_MAIN: ${{ needs.select.outputs.previous_main }}
@@ -122,34 +138,17 @@ jobs:
               token=os.environ["GITHUB_TOKEN"],
               api_version="2022-11-28",
           )
+          full = promotion.ensure_full_ci(
+              client,
+              os.environ["GITHUB_REPOSITORY"],
+              selection,
+              timeout_seconds=1800,
+          )
           result = promotion.apply(
               client,
               os.environ["GITHUB_REPOSITORY"],
               selection,
+              full=full,
           )
           print(json.dumps(result, sort_keys=True, indent=2))
           PY
-
-  repair-followup:
-    name: Repair missing post-promotion dispatches
-    if: ${{ needs.select.outputs.has_candidate == 'false' && github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/main' }}
-    needs: [select]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - name: Checkout trusted main automation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-      - name: Repair only missing exact-main runs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m tools.promote_dev --repair-followup
