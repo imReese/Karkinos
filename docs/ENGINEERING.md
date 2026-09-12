@@ -63,9 +63,11 @@ Rules:
 - Remove obsolete callers and paths when safe.
 - Prefer fewer concepts after simplification.
 
-## 4. Tests, CI, and promotion
+## 4. Tests, CI, promotion, and governance
 
-Test layers:
+### Test layers
+
+Product-facing test layers:
 
 1. deterministic unit tests for formulas and domain rules;
 2. integration tests for persistence, providers, and boundaries;
@@ -74,6 +76,8 @@ Test layers:
 5. high-value end-to-end product journeys.
 
 There is no separate pytest `acceptance` layer. Historical files whose names contain `acceptance` now participate in the normal product suite. Tests that only encode milestone completion, repository shape, or obsolete private structure should be deleted or reclassified when encountered. Tests that protect real financial, research, persistence, or user behavior remain product tests regardless of their history.
+
+Repository/workflow/ruleset contracts belong under `tests/engineering/`. They protect the engineering system rather than investment behavior and must not be presented as product-test coverage.
 
 Focused Python checks:
 
@@ -105,6 +109,17 @@ npm --prefix web run build
 
 The full run is created against `ref=dev` and verifies the requested SHA and its `main` base before executing checks. This keeps the workflow definition and the code being validated on the same commit and prevents an older `main` workflow contract from authorizing newer `dev` source.
 
+The incremental classifier is a cost optimizer, not a correctness authority. These checks are mandatory on every dev commit:
+
+- Python quality;
+- repository integrity;
+- secret scanning;
+- `Trading safety invariants`.
+
+Classification may add or skip expensive backend integration, frontend, dependency, Docker, browser, and workflow checks. It must not decide whether financial safety is required.
+
+### Promotion authority
+
 `.github/workflows/promote-dev.yml` is a privileged default-branch controller. It is event-driven from a successful `CI` push run on `dev` (with manual dispatch as an owner fallback). The controller:
 
 1. selects only the exact current green `dev` head;
@@ -116,6 +131,25 @@ The full run is created against `ref=dev` and verifies the requested SHA and its
 
 A red, pending, replaced, or divergent candidate is not promoted. There is no post-promotion repair workflow and no successful partial state that requires an automatic follow-up dispatch.
 
+Keep the promotion controller narrow. It owns selection, authorization, non-force fast-forward, and post-write confirmation. Artifact building, versioning, migrations, installed-runtime state, and release publication belong elsewhere.
+
+### Candidate and stable release authority
+
+`candidate.yml` consumes the same exact-SHA authorization used for promotion. A promoted SHA must be tied back to the `dev` `workflow_dispatch` run whose `Full CI gate` succeeded. Candidate building does not invent a separate `main` CI result.
+
+`candidate.yml` builds the release bytes once and records their provenance. `release.yml` verifies the stable SemVer tag, reuses the same Full CI evidence, verifies the candidate manifest/attestations, and publishes those already-built bytes. Stable release is authorization and publication, not a source rebuild and not a second code-CI authority.
+
+The source evidence identity is therefore:
+
+```text
+dev SHA
+  -> workflow_dispatch Full CI gate
+  -> trusted fast-forward to main
+  -> candidate build for the same SHA
+  -> immutable candidate manifest/artifacts
+  -> stable SemVer publication of the same bytes
+```
+
 ### Branch and tag protection
 
 Repository-managed desired-state files live under `.github/rulesets/`:
@@ -123,13 +157,11 @@ Repository-managed desired-state files live under `.github/rulesets/`:
 - `main.json` requires both `Full CI gate` and `Main promotion gate`, rejects deletion and non-fast-forward updates, and has no bypass actor;
 - `tags-v.json` makes `v*` release tags immutable after creation by rejecting update, deletion, and non-fast-forward mutation, with no bypass actor.
 
-These JSON files document the intended GitHub server configuration; changing a tracked file does not itself mutate the repository ruleset through the GitHub API. The active server ruleset must be checked during governance/bootstrap changes before claiming the protection is live.
+These JSON files are declarative desired state only. Changing a tracked file does not mutate the repository ruleset through the GitHub API and must never be described as if protection were already installed.
 
-### Release workflows
+`tools/verify_repository_rulesets.py` reads the tracked desired state and compares it with GitHub's live server configuration. `.github/workflows/governance.yml` runs that comparison on a low-frequency schedule and on manual dispatch. It is intentionally read-only and is not part of code CI.
 
-`release.yml` owns stable release publication from an explicit SemVer tag. The existing `candidate.yml` remains only because the installed native-runtime maintenance path still has real consumers for candidate-by-commit packages and candidate provenance. It is not part of normal `dev -> main` promotion and must not become a second code-CI authority. Remove it only together with the native updater/artifact contract that consumes it; do not break a supported update path merely to reduce workflow count.
-
-Expensive browser E2E belongs to full verification (and release-specific artifact smoke where applicable), not the normal incremental development loop.
+Applying or changing GitHub rulesets is an explicit repository-owner operation. After any change, read the server state back and require the drift verifier to pass before claiming the protection is live. Normal CI must not silently repair repository security configuration.
 
 ### Python tooling authority
 
@@ -139,7 +171,19 @@ Expensive browser E2E belongs to full verification (and release-specific artifac
 - Pyright configuration is editor assistance only and must not be treated as a competing CI gate.
 - Extend mypy coverage by stable domain boundary rather than enabling repository-wide strictness and compensating with broad ignores.
 
-## 5. Quality gaps
+## 5. Runtime and release separation
+
+Treat these as separate lifecycles:
+
+| Lifecycle | Owns | Must not own |
+| --- | --- | --- |
+| Development | source checkout, hot development, local validation | stable release artifacts |
+| Installed runtime | user config/data/logs/process lifecycle | Git branch or CI authorization |
+| Release engineering | commit identity, version, artifacts, provenance | user runtime state |
+
+A helper that simultaneously knows branch identity, local user data, process state, GitHub run IDs, and release version is a design smell. Prefer explicit boundaries over a universal lifecycle controller.
+
+## 6. Quality gaps
 
 - Ruff lint coverage is intentionally narrow and can broaden incrementally after existing code is clean.
 - Static typing coverage is uneven; `data`, `backtest`, `analytics`, and application/server boundaries should be added deliberately.
