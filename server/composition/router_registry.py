@@ -7,7 +7,6 @@ from collections.abc import Callable, Iterable
 from fastapi import APIRouter, FastAPI
 
 from server.routes import (
-    acceptance_audit,
     account_strategy,
     account_truth,
     ai_external_analysis_reviews,
@@ -106,7 +105,6 @@ def router_factories() -> tuple[RouterFactory, ...]:
     return (
         service_health.create_router,
         market.create_router,
-        acceptance_audit.create_router,
         account_strategy.create_router,
         account_truth.create_router,
         build_external_research_router,
