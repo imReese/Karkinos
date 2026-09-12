@@ -682,7 +682,6 @@ const holdingStrategyAttributionResponse = {
   ],
 };
 
-
 const strategyCatalog = [
   {
     strategy_id: 'dual_ma',
