@@ -436,7 +436,6 @@ def _decision_account_truth_evidence(
     }
 
 
-
 def test_app_does_not_register_retired_acceptance_audit_route():
     from server.app import create_app
 
