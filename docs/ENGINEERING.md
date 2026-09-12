@@ -61,6 +61,7 @@ Rules:
 - Do not add speculative services, workers, repositories, schemas, tables, or extension points.
 - Do not keep permanent compatibility wrappers without a real consumer.
 - Remove obsolete callers and paths when safe.
+- Retired project-governance components must not be restored to satisfy stale tests; remove or update stale contracts instead.
 - Prefer fewer concepts after simplification.
 
 ## 4. Tests, CI, promotion, and governance
