@@ -7,7 +7,6 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from analytics.acceptance_audit_report import build_acceptance_audit_export
 from server.services.broker_adapter_readiness import (
     build_broker_adapter_readiness,
 )
@@ -127,9 +126,6 @@ def _build_today_operations_from_facts(
         paper_shadow_run=paper_shadow_run,
         automation_runs=automation_runs,
         execution_reconciliation_open_items=execution_reconciliation_open_items,
-        acceptance_audit_export=build_acceptance_audit_export(
-            selected_audit="operations_runbook",
-        ),
         broker_adapter_readiness=broker_adapter_readiness,
         citic_source_follow_up=citic_source_follow_up,
         daily_candidate_schedule=daily_candidate_schedule,
