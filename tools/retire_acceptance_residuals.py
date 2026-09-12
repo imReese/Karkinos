@@ -22,14 +22,14 @@ def regex_once(path: str, pattern: str, replacement: str) -> None:
     write(path, updated)
 
 
-def remove_once(path: str, fragment: str) -> None:
+def remove_exact(path: str, fragment: str, *, expected_count: int = 1) -> None:
     text = read(path)
     count = text.count(fragment)
-    if count != 1:
+    if count != expected_count:
         raise SystemExit(
-            f"{path}: expected one exact fragment, got {count}: {fragment!r}"
+            f"{path}: expected {expected_count} exact fragment(s), got {count}: {fragment!r}"
         )
-    write(path, text.replace(fragment, "", 1))
+    write(path, text.replace(fragment, ""))
 
 
 def main() -> int:
@@ -85,7 +85,7 @@ def main() -> int:
         "  AcceptanceAuditExport,\n",
         "  AcceptanceAuditSummary,\n",
     ):
-        remove_once("web/src/features/backtest/api-contracts.ts", fragment)
+        remove_exact("web/src/features/backtest/api-contracts.ts", fragment)
 
     architecture = "web/src/features/backtest/backtest-architecture.test.ts"
     for fragment in (
@@ -96,7 +96,7 @@ def main() -> int:
         "      '/api/acceptance-audits/single_instrument_strategy_loop',\n",
         "      \"['acceptance-audit', 'single_instrument_strategy_loop']\",\n",
     ):
-        remove_once(architecture, fragment)
+        remove_exact(architecture, fragment)
 
     page_test = "web/src/features/backtest/components/backtest-page.test.tsx"
     regex_once(
@@ -107,14 +107,18 @@ def main() -> int:
     for fragment in (
         "  acceptanceAudit = singleInstrumentAcceptanceAudit,\n",
         "  acceptanceAudit?: unknown;\n",
-        "    '/api/acceptance-audits/single_instrument_strategy_loop',\n",
         "  expect(await screen.findByText('Acceptance audit coverage')).toBeTruthy();\n",
         "  expect(await screen.findByText('10/10 criteria verified')).toBeTruthy();\n",
         "  expect(\n    await screen.findByText('single_instrument_strategy_loop'),\n  ).toBeTruthy();\n",
         "  await waitFor(() =>\n    expect(fetchMock).toHaveBeenCalledWith(\n      expect.stringContaining(\n        '/api/acceptance-audits/single_instrument_strategy_loop',\n      ),\n      expect.any(Object),\n    ),\n  );\n",
     ):
-        remove_once(page_test, fragment)
-    remove_once(
+        remove_exact(page_test, fragment)
+    remove_exact(
+        page_test,
+        "    '/api/acceptance-audits/single_instrument_strategy_loop',\n",
+        expected_count=2,
+    )
+    remove_exact(
         page_test,
         "      if (\n        url.includes('/api/acceptance-audits/single_instrument_strategy_loop')\n      ) {\n        return jsonResponse(acceptanceAudit);\n      }\n",
     )
