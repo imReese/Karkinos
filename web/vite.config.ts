@@ -59,12 +59,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: process.env.KARKINOS_DEV_BACKEND_URL ?? 'http://127.0.0.1:8001',
+        target: process.env.KARKINOS_DEV_BACKEND_URL ?? 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
       '/ws': {
         target: (
-          process.env.KARKINOS_DEV_BACKEND_URL ?? 'http://127.0.0.1:8001'
+          process.env.KARKINOS_DEV_BACKEND_URL ?? 'http://127.0.0.1:8000'
         ).replace(/^http/, 'ws'),
         ws: true,
         changeOrigin: true,
