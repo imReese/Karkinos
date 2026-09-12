@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify_main_code_ci:
     name: Verify exact promotion Full CI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       actions: read
@@ -108,7 +108,7 @@ jobs:
   release:
     name: Publish release image
     needs: [verify_main_code_ci]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: stable
     concurrency:
