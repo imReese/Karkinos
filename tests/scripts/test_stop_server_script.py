@@ -1,4 +1,4 @@
-"""Safety contracts for source snapshot and dev shutdown."""
+"""Safety contracts for source snapshot, dev, and resident shutdown."""
 
 from __future__ import annotations
 
@@ -17,7 +17,9 @@ def _write_executable(path: Path, content: str) -> None:
 def _repo(
     tmp_path: Path,
     *,
-    resident_service_loaded: bool = False,
+    resident_api_loaded: bool = False,
+    resident_worker_loaded: bool = False,
+    controller_available: bool = True,
     source_exit: int = 0,
 ) -> tuple[Path, dict[str, str], Path]:
     repo = tmp_path / "repo"
@@ -28,9 +30,12 @@ def _repo(
     calls = tmp_path / "calls.log"
     bash_env = tmp_path / "bash-env"
     home = tmp_path / "home"
-    installed = tmp_path / "installed"
-    state_file = tmp_path / "launchd-loaded"
-    plist = home / "Library/LaunchAgents/com.karkinos.daily-candidate.plist"
+    installed = home / "Library/Application Support/Karkinos"
+    api_state = tmp_path / "launchd-api-loaded"
+    worker_state = tmp_path / "launchd-worker-loaded"
+    plist_dir = home / "Library/LaunchAgents"
+    api_plist = plist_dir / "com.karkinos.daily-candidate.plist"
+    worker_plist = plist_dir / "com.karkinos.research-worker.plist"
 
     service.mkdir(parents=True)
     bin_dir.mkdir()
@@ -84,38 +89,53 @@ def _repo(
     _write_executable(
         bin_dir / "launchctl",
         "#!/usr/bin/env bash\n"
-        'if [[ "${1:-}" == "print" ]]; then\n'
-        f'  [[ -f "{state_file}" ]]\n'
-        "  exit $?\n"
-        "fi\n"
-        "exit 2\n",
-    )
-
-    release = installed / "releases" / f"sha-{'a' * 40}"
-    (release / "bin").mkdir(parents=True)
-    (release / "release.json").write_text("{}\n", encoding="utf-8")
-    _write_executable(
-        release / "bin/karkinosctl",
-        "#!/usr/bin/env bash\n"
         "set -eu\n"
-        f'printf "controller %s\\n" "$*" >>"{calls}"\n'
-        f'rm -f "{state_file}" "{plist}"\n',
+        f'printf "launchctl %s\\n" "$*" >>"{calls}"\n'
+        'target="${2:-}"\n'
+        'case "${target}" in\n'
+        f'  */com.karkinos.daily-candidate) state="{api_state}" ;;\n'
+        f'  */com.karkinos.research-worker) state="{worker_state}" ;;\n'
+        "  *) exit 2 ;;\n"
+        "esac\n"
+        'case "${1:-}" in\n'
+        '  print) [[ -f "${state}" ]] ;;\n'
+        '  bootout) rm -f "${state}" ;;\n'
+        "  *) exit 2 ;;\n"
+        "esac\n",
     )
-    (installed / "current").symlink_to(Path("releases") / release.name)
 
-    if resident_service_loaded:
-        state_file.touch()
-        plist.parent.mkdir(parents=True)
-        plist.write_text("fixture\n", encoding="utf-8")
+    if controller_available:
+        release = installed / "releases" / f"sha-{'a' * 40}"
+        (release / "bin").mkdir(parents=True)
+        (release / "release.json").write_text("{}\n", encoding="utf-8")
+        _write_executable(
+            release / "bin/karkinosctl",
+            "#!/usr/bin/env bash\n"
+            "set -eu\n"
+            f'printf "controller %s\\n" "$*" >>"{calls}"\n'
+            '[[ "${1:-}" == "service-stop" ]] || exit 2\n'
+            f'rm -f "{api_state}" "{worker_state}" "{api_plist}" "{worker_plist}"\n',
+        )
+        (installed / "current").symlink_to(Path("releases") / release.name)
+
+    if resident_api_loaded or resident_worker_loaded:
+        plist_dir.mkdir(parents=True, exist_ok=True)
+    if resident_api_loaded:
+        api_state.touch()
+        api_plist.write_text("fixture\n", encoding="utf-8")
+    if resident_worker_loaded:
+        worker_state.touch()
+        worker_plist.write_text("fixture\n", encoding="utf-8")
 
     env = {
         **os.environ,
         "HOME": str(home),
-        "KARKINOS_HOME": str(installed),
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "BASH_ENV": str(bash_env),
         "KARKINOS_TEST_PROCESS_STATE": str(process_state),
     }
+    env.pop("KARKINOS_HOME", None)
+    env.pop("KARKINOS_WORKSPACE", None)
     return repo, env, calls
 
 
@@ -151,13 +171,51 @@ def _stop(
     )
 
 
-def test_default_stop_targets_main_snapshot_in_repo_workspace(tmp_path: Path):
-    repo, env, calls = _repo(tmp_path)
+def test_default_stop_needs_no_all_and_stops_source_and_resident(tmp_path: Path):
+    repo, env, calls = _repo(
+        tmp_path,
+        resident_api_loaded=True,
+        resident_worker_loaded=True,
+    )
+    started = "Sun Aug 30 22:00:00 2026"
+    backend_pid = 4201
+    frontend_pid = 4202
+    _register_process(
+        env,
+        backend_pid,
+        command=f"python {repo}/scripts/service/run_dev.py --reload",
+        started_at=started,
+    )
+    _register_process(
+        env,
+        frontend_pid,
+        command=f"{repo}/web/node_modules/.bin/vite --host 127.0.0.1",
+        started_at=started,
+    )
+    _pid(repo / ".run/dev/backend.pid", backend_pid, started)
+    _pid(repo / ".run/dev/frontend.pid", frontend_pid, started)
+
     result = _stop(repo, env)
+
     assert result.returncode == 0, result.stderr
+    assert "Karkinos runtimes stopped" in result.stdout
+    assert not _alive(env, backend_pid)
+    assert not _alive(env, frontend_pid)
     recorded = calls.read_text(encoding="utf-8")
+    assert "kill -TERM 4201" in recorded
+    assert "kill -TERM 4202" in recorded
     assert f"python3 {repo}/scripts/service/run_main.py --stop" in recorded
     assert f"workspace={repo} branch=main" in recorded
+    assert "controller service-stop" in recorded
+
+
+def test_all_remains_compatibility_alias_for_default_stop(tmp_path: Path):
+    repo, env, calls = _repo(tmp_path)
+    result = _stop(repo, env, "all")
+    assert result.returncode == 0, result.stderr
+    assert f"python3 {repo}/scripts/service/run_main.py --stop" in calls.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_arbitrary_snapshot_branch_uses_control_driver_not_dev_pid_files(
@@ -202,6 +260,7 @@ def test_dev_stop_signals_only_owned_pid_records(tmp_path: Path):
     assert "kill -TERM 4201" in recorded
     assert "kill -TERM 4202" in recorded
     assert "pgrep -P" in recorded
+    assert "controller service-stop" not in recorded
 
 
 def test_dev_stop_rejects_reused_pid_identity(tmp_path: Path):
@@ -225,22 +284,41 @@ def test_dev_stop_rejects_reused_pid_identity(tmp_path: Path):
     assert "kill -TERM 4203" not in calls.read_text(encoding="utf-8")
 
 
-def test_snapshot_stop_failure_propagates(tmp_path: Path):
+def test_targeted_snapshot_stop_failure_propagates(tmp_path: Path):
     repo, env, _calls = _repo(tmp_path, source_exit=7)
-    result = _stop(repo, env)
+    result = _stop(repo, env, "main")
     assert result.returncode == 7
 
 
-def test_prod_uses_installed_release_controller(tmp_path: Path):
-    repo, env, calls = _repo(tmp_path, resident_service_loaded=True)
+def test_prod_uses_default_installed_home_and_release_controller(tmp_path: Path):
+    repo, env, calls = _repo(tmp_path, resident_api_loaded=True)
     result = _stop(repo, env, "prod")
     assert result.returncode == 0, result.stderr
-    assert "Karkinos production service stopped" in result.stdout
+    assert "Karkinos resident service stopped" in result.stdout
     assert "controller service-stop" in calls.read_text(encoding="utf-8")
 
 
+def test_prod_without_controller_boots_out_both_exact_launch_agents(tmp_path: Path):
+    repo, env, calls = _repo(
+        tmp_path,
+        resident_api_loaded=True,
+        resident_worker_loaded=True,
+        controller_available=False,
+    )
+    result = _stop(repo, env, "prod")
+    assert result.returncode == 0, result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "launchctl bootout gui/" in recorded
+    assert "com.karkinos.research-worker" in recorded
+    assert "com.karkinos.daily-candidate" in recorded
+    plist_dir = Path(env["HOME"]) / "Library/LaunchAgents"
+    assert not (plist_dir / "com.karkinos.research-worker.plist").exists()
+    assert not (plist_dir / "com.karkinos.daily-candidate.plist").exists()
+    assert "controller service-stop" not in recorded
+
+
 def test_prod_rejects_invalid_service_port_before_controller(tmp_path: Path):
-    repo, env, calls = _repo(tmp_path, resident_service_loaded=True)
+    repo, env, calls = _repo(tmp_path, resident_api_loaded=True)
     env["KARKINOS_BACKEND_PORT"] = "65536"
     result = _stop(repo, env, "prod")
     assert result.returncode == 1
@@ -250,9 +328,10 @@ def test_prod_rejects_invalid_service_port_before_controller(tmp_path: Path):
 
 
 def test_help_never_stops_anything(tmp_path: Path):
-    repo, env, calls = _repo(tmp_path, resident_service_loaded=True)
+    repo, env, calls = _repo(tmp_path, resident_api_loaded=True)
     result = _stop(repo, env, "--help")
     assert result.returncode == 0
     assert "Usage:" in result.stdout
     recorded = calls.read_text(encoding="utf-8") if calls.exists() else ""
     assert "controller service-stop" not in recorded
+    assert "launchctl bootout" not in recorded
