@@ -117,7 +117,7 @@ git switch dev
 
 分支快照使用本地已经存在的最新 ref。需要刷新 `origin/main` 或其他远端分支时，先执行 `git fetch origin`；只有 ref 指向新的 commit 时才会重建缓存快照。
 
-`dev` 是唯一特殊的源码模式：它直接运行当前 `dev` working tree，后端 reload 默认端口 `8001`，Vite 默认端口 `5173`。稳定分支快照在 `8000` 提供完整应用。所有源码模式仍然共用同一份本地配置和数据，同一时间只允许一个 source backend 打开这套状态。
+`dev` 现在只在代码来源上特殊：它直接运行当前 `dev` working tree，并开启 backend reload；dev 和稳定源码后端统一使用 `8000`，Vite 继续使用 `5173`。由于共用本地状态，同一时间只允许一个 source backend 打开这套 workspace。
 
 由于不同分支共用同一份数据库，涉及 schema 的开发必须使用明确 migration，并遵守 [docs/ENGINEERING.md](docs/ENGINEERING.md) 中的持久化兼容规则。
 
@@ -184,8 +184,8 @@ git switch dev
 开发环境启动：
 
 - Web：`http://127.0.0.1:5173`
-- API：`http://127.0.0.1:8001`
-- Health：`http://127.0.0.1:8001/api/health`
+- API：`http://127.0.0.1:8000`
+- Health：`http://127.0.0.1:8000/api/health`
 
 开发模式有意复用仓库根目录下的 `config.json`、`.env` 和 `data/store`；`.run/dev` 只保存可丢弃的进程状态。即使 checkout 一直停在 `dev`，默认的 `./scripts/start_server.sh` 仍可以运行缓存的 `main` 快照，不会切分支、清理或覆盖 dev working tree。
 
