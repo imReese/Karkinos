@@ -1,0 +1,41 @@
+name: One-shot frontend closeout formatting
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/one-shot-prettier-closeout.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: ${{ github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/dev' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact dev head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          persist-credentials: true
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --prefix web
+      - name: Format only cleanup-touched frontend test
+        run: npx --prefix web prettier --write src/features/backtest/components/backtest-page.test.tsx
+      - name: Commit formatting and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          rm -- .github/workflows/one-shot-prettier-closeout.yml
+          git config user.name "Reese"
+          git config user.email "63846933+imReese@users.noreply.github.com"
+          git add --all
+          git diff --cached --check
+          git commit -m "style: format backtest cleanup"
+          git push origin HEAD:dev
