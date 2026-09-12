@@ -187,7 +187,7 @@ A helper that simultaneously knows branch identity, local user data, process sta
 
 - Ruff lint coverage is intentionally narrow and can broaden incrementally after existing code is clean.
 - Static typing coverage is uneven; `data`, `backtest`, `analytics`, and application/server boundaries should be added deliberately.
-- Milestone/acceptance audit infrastructure is retired; any production dependency on milestone-completion evidence is a regression, not a compatibility requirement.
+- Milestone/acceptance audit infrastructure is retired; routes, UI contracts, and Operations projections must not depend on milestone-completion evidence.
 - Native candidate/release machinery remains large for the current local-first product and is retained only where installed-runtime compatibility still consumes it.
 - Container base images and the Gitleaks container are version-tag pinned rather than digest pinned; third-party GitHub Actions are full-SHA pinned.
 - Local Markdown links are a hard repository check; external-link health still lacks a low-frequency scheduled/manual audit.
