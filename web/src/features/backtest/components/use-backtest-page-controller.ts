@@ -13,7 +13,6 @@ import {
   useBacktestRiskPreviewMutation,
   useBacktestStrategiesQuery,
   useRunBacktestMutation,
-  useSingleInstrumentStrategyLoopAcceptanceAuditQuery,
   useStrategyPromotionReadinessQuery,
   useStrategySignalPreviewMutation,
   useStrategyValidationQuery,
@@ -69,8 +68,6 @@ export function useBacktestPageController() {
     useUpdateScopedAccountStrategyAssignmentMutation();
   const validation = useStrategyValidationQuery(promotionEvidenceOpen);
   const readiness = useStrategyPromotionReadinessQuery();
-  const singleInstrumentAudit =
-    useSingleInstrumentStrategyLoopAcceptanceAuditQuery(latestReport !== null);
   const searchDefaults = useMemo(() => currentBacktestSearchDefaults(), []);
   const [startDate, setStartDate] = useState('2025-01-02');
   const [endDate, setEndDate] = useState(() => todayDate());
@@ -299,7 +296,6 @@ export function useBacktestPageController() {
     setStrategy,
     setSymbol,
     signalPreview,
-    singleInstrumentAudit,
     startDate,
     strategies,
     strategy,
