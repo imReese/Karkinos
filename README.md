@@ -118,7 +118,7 @@ Pass `dev`, `main`, another branch name, or `prod` only when you want a targeted
 
 Snapshot branches use the latest branch ref already available locally. Run `git fetch origin` when you want to refresh `origin/main` or another remote branch. The cached snapshot is rebuilt only when that ref points to a new commit.
 
-`dev` is intentionally special: it runs the current `dev` working tree with backend reload on `8001` and Vite on `5173`. Stable snapshots serve the built application on `8000`. All source modes still use the same local config and data, and only one source backend may open the shared workspace at a time.
+`dev` is intentionally special only in how code is selected: it runs the current `dev` working tree with backend reload and Vite on `5173`. Both dev and stable source backends use port `8000`; only one source backend may run against the shared workspace at a time.
 
 Because branches share the same databases, schema-changing development must use explicit migrations and preserve the persisted-data compatibility rules in [docs/ENGINEERING.md](docs/ENGINEERING.md).
 
@@ -185,8 +185,8 @@ git switch dev
 Development starts:
 
 - Web app: `http://127.0.0.1:5173`
-- API: `http://127.0.0.1:8001`
-- Health: `http://127.0.0.1:8001/api/health`
+- API: `http://127.0.0.1:8000`
+- Health: `http://127.0.0.1:8000/api/health`
 
 Development deliberately reuses the repository-local `config.json`, `.env`, and `data/store`. `.run/dev` contains only disposable process state. The default `./scripts/start_server.sh` can still run the cached `main` snapshot without changing or cleaning the dev checkout.
 
