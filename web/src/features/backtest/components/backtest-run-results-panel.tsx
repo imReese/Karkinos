@@ -26,7 +26,6 @@ export function BacktestRunResultsPanel() {
     riskPreview,
     runContextSourceLabel,
     signalPreview,
-    singleInstrumentAudit,
     summary,
   } = useBacktestPage();
   return (
@@ -125,9 +124,6 @@ export function BacktestRunResultsPanel() {
                 </div>
               </section>
               <SingleInstrumentLoopReadinessCard
-                acceptanceAudit={singleInstrumentAudit.data?.audits[0] ?? null}
-                auditError={singleInstrumentAudit.isError}
-                auditLoading={singleInstrumentAudit.isLoading}
                 attributionPreviewResult={attributionPreview.data ?? null}
                 paperShadowPreviewResult={paperShadowPreview.data ?? null}
                 preview={signalPreview.data ?? null}
