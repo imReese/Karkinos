@@ -9,7 +9,6 @@ import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
-from analytics.acceptance_audit_report import build_acceptance_audit_export
 from server.db import AppDatabase
 from server.routes import operations as operations_routes
 from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
@@ -446,23 +445,7 @@ def test_today_operations_route_returns_read_only_runbook(monkeypatch):
     assert response["paper_shadow"]["next_manual_review_step"] == (
         "run_paper_shadow_daily"
     )
-    acceptance_audit = next(
-        item for item in response["subsystems"] if item["id"] == "acceptance_audit"
-    )
-    audit = build_acceptance_audit_export(selected_audit="operations_runbook")[
-        "audits"
-    ][0]
-    expected_detail_status = (
-        f"operations_runbook:{audit['completed_count']}/{audit['required_count']}"
-    )
-    assert acceptance_audit["status"] == "pass"
-    assert acceptance_audit["detail_status"] == expected_detail_status
-    assert acceptance_audit["next_action"] == "none"
-    assert acceptance_audit["last_run_at"]
-    assert any(
-        "manual confirmation remains" in limitation
-        for limitation in acceptance_audit["limitations"]
-    )
+    assert all(item["id"] != "acceptance_audit" for item in response["subsystems"])
     pilot_readiness = response["controlled_per_order_pilot_readiness"]
     assert pilot_readiness["schema_version"] == (
         "karkinos.controlled_per_order_pilot_readiness.v1"
