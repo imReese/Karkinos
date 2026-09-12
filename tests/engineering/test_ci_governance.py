@@ -167,9 +167,10 @@ def test_ruleset_verifier_ignores_server_metadata_but_not_security_drift() -> No
         "current_user_can_bypass": "never",
     }
     actual = rulesets.canonical_ruleset(server)
-    assert rulesets.verify({desired["name"]: desired}, {actual["name"]: actual})[
-        "in_sync"
-    ] is True
+    assert (
+        rulesets.verify({desired["name"]: desired}, {actual["name"]: actual})["in_sync"]
+        is True
+    )
 
     drifted = json.loads(json.dumps(actual))
     checks = next(
