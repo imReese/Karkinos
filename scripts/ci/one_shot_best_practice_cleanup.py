@@ -55,11 +55,7 @@ replace_once(
     '    "docs/ARCHITECTURE.md",\n    "docs/PLAN.md",',
     '    "docs/ARCHITECTURE.md",\n    "docs/PRODUCT_DESIGN.md",\n    "docs/PLAN.md",',
 )
-replace_once(
-    "scripts/ci/classify_dev_changes.py",
-    '    "design.md",\n',
-    "",
-)
+replace_once("scripts/ci/classify_dev_changes.py", '    "design.md",\n', "")
 
 # Pin Linux hosted runner major version everywhere; macOS runners remain unchanged.
 workflow_dir = ROOT / ".github/workflows"
@@ -81,6 +77,33 @@ replace_once(
     f"FROM python:3.12.13-slim-trixie@{PYTHON_DIGEST}",
 )
 replace_once("Dockerfile", "ARG VERSION=0.3.2", "ARG VERSION=dev")
+
+# Fix existing shell issues rather than suppressing ShellCheck diagnostics.
+replace_once(
+    "scripts/start_server.sh",
+    "\tNO_PROXY=127.0.0.1,localhost\n\tno_proxy=127.0.0.1,localhost\n",
+    "\t\"NO_PROXY=127.0.0.1,localhost\"\n\t\"no_proxy=127.0.0.1,localhost\"\n",
+)
+replace_once(
+    "scripts/start_server.sh",
+    "\tlocal archived_log=\"${log_file}.$(date '+%Y%m%d-%H%M%S').$$\"\n",
+    "\tlocal archived_log\n\tarchived_log=\"${log_file}.$(date '+%Y%m%d-%H%M%S').$$\"\n",
+)
+replace_once(
+    "scripts/start_server.sh",
+    "\tfor pid in \"${launch_pids[@]}\"; do\n\t\tkill -0 \"${pid}\" >/dev/null 2>&1 && kill -KILL \"${pid}\" >/dev/null 2>&1 || true\n\tdone\n",
+    "\tfor pid in \"${launch_pids[@]}\"; do\n\t\tif kill -0 \"${pid}\" >/dev/null 2>&1; then\n\t\t\tkill -KILL \"${pid}\" >/dev/null 2>&1 || true\n\t\tfi\n\tdone\n",
+)
+replace_once(
+    "scripts/stop_server.sh",
+    '\t\tbranch="${runtime#${SOURCE_WORKSPACE}/.run/}"\n',
+    '\t\tbranch="${runtime#"${SOURCE_WORKSPACE}"/.run/}"\n',
+)
+replace_once(
+    "scripts/release/bootstrap_installer.sh",
+    'TEMP_PARENT="$(CDPATH= cd -P -- "${TEMP_PARENT_INPUT}" && pwd -P)" ||\n',
+    'TEMP_PARENT="$(CDPATH=\'\' cd -P -- "${TEMP_PARENT_INPUT}" && pwd -P)" ||\n',
+)
 
 ci_path = ROOT / ".github/workflows/ci.yml"
 ci = ci_path.read_text(encoding="utf-8")
