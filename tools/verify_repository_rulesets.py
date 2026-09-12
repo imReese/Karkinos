@@ -117,7 +117,9 @@ def canonical_ruleset(payload: Mapping[str, Any]) -> dict[str, Any]:
     name = payload.get("name")
     target = payload.get("target")
     enforcement = payload.get("enforcement")
-    if not all(isinstance(value, str) and value for value in (name, target, enforcement)):
+    if not all(
+        isinstance(value, str) and value for value in (name, target, enforcement)
+    ):
         raise RulesetVerificationError("repository_ruleset_identity_invalid")
 
     include = ref_name.get("include", [])
@@ -196,7 +198,9 @@ def fetch_actual(
     return actual
 
 
-def verify(desired: Mapping[str, dict[str, Any]], actual: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
+def verify(
+    desired: Mapping[str, dict[str, Any]], actual: Mapping[str, dict[str, Any]]
+) -> dict[str, Any]:
     missing = sorted(set(desired) - set(actual))
     drifted = sorted(
         name for name in set(desired) & set(actual) if desired[name] != actual[name]
@@ -217,10 +221,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--desired-dir", type=Path, default=Path(".github/rulesets"))
-    parser.add_argument("--api-url", default=os.environ.get("GITHUB_API_URL", "https://api.github.com"))
+    parser.add_argument(
+        "--api-url", default=os.environ.get("GITHUB_API_URL", "https://api.github.com")
+    )
     args = parser.parse_args(argv)
 
-    if "/" not in args.repository or args.repository.startswith("/") or args.repository.endswith("/"):
+    if (
+        "/" not in args.repository
+        or args.repository.startswith("/")
+        or args.repository.endswith("/")
+    ):
         print("repository_ruleset_repository_invalid", file=sys.stderr)
         return 1
 
