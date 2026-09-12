@@ -308,8 +308,8 @@ NO_PROXY_ENV=(
 	-u all_proxy
 	-u ALL_PROXY
 	-u DEFAULT_PROXY_URL
-	NO_PROXY=127.0.0.1,localhost
-	no_proxy=127.0.0.1,localhost
+	"NO_PROXY=127.0.0.1,localhost"
+	"no_proxy=127.0.0.1,localhost"
 )
 
 require_positive_integer() {
@@ -364,7 +364,8 @@ rotate_log_if_needed() {
 	if ((current_size < LOG_MAX_BYTES)); then
 		return
 	fi
-	local archived_log="${log_file}.$(date '+%Y%m%d-%H%M%S').$$"
+	local archived_log
+	archived_log="${log_file}.$(date '+%Y%m%d-%H%M%S').$$"
 	mv -- "${log_file}" "${archived_log}"
 	echo "Archived oversized log: ${archived_log}"
 }
@@ -437,7 +438,9 @@ cleanup_launch() {
 		sleep 0.1
 	done
 	for pid in "${launch_pids[@]}"; do
-		kill -0 "${pid}" >/dev/null 2>&1 && kill -KILL "${pid}" >/dev/null 2>&1 || true
+		if kill -0 "${pid}" >/dev/null 2>&1; then
+			kill -KILL "${pid}" >/dev/null 2>&1 || true
+		fi
 	done
 	wait "${launch_pid}" >/dev/null 2>&1 || true
 	rm -f "${pid_file}"

@@ -275,7 +275,7 @@ stop_other_snapshots() {
 	while IFS= read -r socket; do
 		[[ -n "${socket}" ]] || continue
 		runtime="${socket%/control.sock}"
-		branch="${runtime#${SOURCE_WORKSPACE}/.run/}"
+		branch="${runtime#"${SOURCE_WORKSPACE}"/.run/}"
 		[[ "${branch}" != "dev" && "${branch}" != "main" ]] || continue
 		stop_snapshot_branch "${branch}" || status=1
 	done < <(find "${SOURCE_WORKSPACE}/.run" -type s -name control.sock -print 2>/dev/null || true)
