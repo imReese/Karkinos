@@ -1,15 +1,9 @@
 repos:
   - repo: local
     hooks:
-      - id: ruff-check-locked
-        name: Ruff check (uv locked)
-        entry: uv run --locked --extra dev ruff check --fix --exit-non-zero-on-fix
-        language: system
-        types: [python]
-        require_serial: true
-      - id: ruff-format-locked
-        name: Ruff format (uv locked)
-        entry: uv run --locked --extra dev ruff format
+      - id: ruff-correctness-locked
+        name: Ruff correctness (uv locked)
+        entry: uv run --locked --extra dev ruff check
         language: system
         types: [python]
         require_serial: true
@@ -26,6 +20,18 @@ repos:
         language: system
         pass_filenames: false
         files: ^((core|domain|data|strategy|risk|execution|account_truth|notification|backtest)/.*\.py|tools/check_python_architecture\.py|tests/scripts/test_check_python_architecture\.py)$
+      - id: isort-locked
+        name: isort (uv locked)
+        entry: uv run --locked --extra dev isort
+        language: system
+        types: [python]
+        require_serial: true
+      - id: black-locked
+        name: black (uv locked)
+        entry: uv run --locked --extra dev black
+        language: system
+        types: [python]
+        require_serial: true
       - id: prettier-locked
         name: prettier (web lockfile)
         entry: web/node_modules/.bin/prettier --write
