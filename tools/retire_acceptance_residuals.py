@@ -18,7 +18,7 @@ def regex_once(path: str, pattern: str, replacement: str) -> None:
     text = read(path)
     updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
     if count != 1:
-        raise SystemExit(f"{path}: expected one regex match, got {count}")
+        raise SystemExit(f"{path}: expected one regex match, got {count}: {pattern!r}")
     write(path, updated)
 
 
@@ -26,7 +26,9 @@ def remove_once(path: str, fragment: str) -> None:
     text = read(path)
     count = text.count(fragment)
     if count != 1:
-        raise SystemExit(f"{path}: expected one exact fragment, got {count}")
+        raise SystemExit(
+            f"{path}: expected one exact fragment, got {count}: {fragment!r}"
+        )
     write(path, text.replace(fragment, "", 1))
 
 
