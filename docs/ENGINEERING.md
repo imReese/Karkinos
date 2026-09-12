@@ -78,6 +78,8 @@ Product-facing test layers:
 
 There is no separate pytest `acceptance` layer. Historical files whose names contain `acceptance` now participate in the normal product suite. Tests that only encode milestone completion, repository shape, or obsolete private structure should be deleted or reclassified when encountered. Tests that protect real financial, research, persistence, or user behavior remain product tests regardless of their history.
 
+Frontend regression tests assert current user-visible product and evidence contracts. Retired milestone-readiness copy is not a compatibility surface and must not be reintroduced only to satisfy stale assertions.
+
 Repository/workflow/ruleset contracts belong under `tests/engineering/`. They protect the engineering system rather than investment behavior and must not be presented as product-test coverage.
 
 Focused Python checks:
