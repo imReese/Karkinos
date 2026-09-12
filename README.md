@@ -108,6 +108,14 @@ Run another committed branch without switching the checkout:
 ./scripts/stop_server.sh feature/my-research-change
 ```
 
+To stop every Karkinos runtime the local launcher knows it owns—dev, tracked stable snapshots, and a legacy/native resident service when present—no mode argument is required:
+
+```bash
+./scripts/stop_server.sh
+```
+
+Pass `dev`, `main`, another branch name, or `prod` only when you want a targeted stop.
+
 Snapshot branches use the latest branch ref already available locally. Run `git fetch origin` when you want to refresh `origin/main` or another remote branch. The cached snapshot is rebuilt only when that ref points to a new commit.
 
 `dev` is intentionally special: it runs the current `dev` working tree with backend reload on `8001` and Vite on `5173`. Stable snapshots serve the built application on `8000`. All source modes still use the same local config and data, and only one source backend may open the shared workspace at a time.
