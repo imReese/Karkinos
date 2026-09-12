@@ -28,7 +28,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci --prefix web
       - name: Format only cleanup-touched frontend test
-        run: npx --prefix web prettier --write src/features/backtest/components/backtest-page.test.tsx
+        working-directory: web
+        run: npx prettier --write src/features/backtest/components/backtest-page.test.tsx
       - name: Commit formatting and remove one-shot workflow
         run: |
           set -euo pipefail
