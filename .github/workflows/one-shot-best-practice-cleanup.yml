@@ -1,0 +1,57 @@
+name: One-shot engineering best-practice cleanup
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/one-shot-best-practice-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: ${{ github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/dev' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current dev
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.28"
+          enable-cache: true
+      - name: Apply exact cleanup
+        run: python scripts/ci/one_shot_best_practice_cleanup.py
+      - name: Validate documentation and shell entrypoints
+        run: |
+          set -euo pipefail
+          python scripts/ci/check_docs_integrity.py
+          bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+          shellcheck scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+      - name: Validate engineering contracts
+        run: |
+          set -euo pipefail
+          uv sync --locked --extra server --extra dev
+          uv run --locked python -m pytest tests/engineering
+          uv run --locked python -m pytest tests/scripts/test_classify_dev_changes.py
+      - name: Commit cleanup and remove one-shot tooling
+        run: |
+          set -euo pipefail
+          rm -- .github/workflows/one-shot-best-practice-cleanup.yml
+          rm -- scripts/ci/one_shot_best_practice_cleanup.py
+          git config user.name "Reese"
+          git config user.email "63846933+imReese@users.noreply.github.com"
+          git add --all
+          git diff --cached --check
+          git commit -m "chore: harden docs and CI reproducibility"
+          git push origin HEAD:dev
