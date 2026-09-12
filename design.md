@@ -1,20 +1,74 @@
 # Karkinos Product Design
 
-## 1. Product model
+This document defines the long-term product model, information architecture, interaction hierarchy, financial semantics, and UI invariants of Karkinos.
 
-Karkinos 围绕量化研究、组合管理、风险控制和评估闭环组织。
+It is intentionally not a record of individual visual audits, component tokens, page-specific redesigns, implementation cleanup, or one-off UI issues. Those belong in code, issues, and pull requests.
 
-核心界面必须回答：
+The purpose of this document is to define how Karkinos should present investment state, research evidence, financial state, risk, and user authority consistently across the product.
 
-1. 当前组合状态和表现是什么？
-2. 数据截至什么时间，当前估值是否可用？
-3. 最近有哪些研究结果和 Published Forecast？
-4. Portfolio Target 与 Current Financial Book 有什么差异？
-5. Risk 是否允许当前计划继续？
-6. Backtest / Paper / Shadow 的结果与研究预期为什么不同？
-7. 当前是否存在需要用户处理的事项？
+---
 
-## 2. Information architecture
+## 1. Product Model
+
+Karkinos is organized around a closed investment workflow spanning quantitative research, portfolio management, risk control, execution planning, and outcome evaluation.
+
+The product is not designed around a brokerage account homepage, and it is not an AI-first chat interface.
+
+Its core surfaces must allow the user to answer:
+
+1. What is the current portfolio state and performance?
+2. As of when is the underlying data valid, and is the current valuation usable?
+3. What research results and Published Forecasts are currently available?
+4. How does the Portfolio Target differ from the Current Financial Book?
+5. Does Risk allow the current plan to proceed?
+6. Why do Backtest, Paper, or Shadow outcomes differ from research expectations?
+7. Is there anything the user can or should act on now?
+
+The interface should optimize for answering these questions, not for exposing every subsystem or internal state.
+
+---
+
+## 2. Core Investment Flow
+
+The primary investment lifecycle is:
+
+```text
+Experiment
+    ↓
+Research Evidence
+    ↓
+Published Forecast
+    ↓
+Portfolio Target
+    ↓
+Risk Decision
+    ↓
+Rebalance Plan
+    ↓
+Paper / Shadow
+    ↓
+Attribution / Alpha Health
+```
+
+Each stage represents a distinct object or decision boundary.
+
+Downstream state must remain traceable to the upstream evidence and decisions that produced it.
+
+A later stage must not silently rewrite the meaning or identity of an earlier stage.
+
+In particular:
+
+- an Experiment is not a Published Forecast;
+- a Forecast is not a Portfolio Target;
+- a Portfolio Target is not an approved Rebalance Plan;
+- a Rebalance Plan is not execution authority;
+- successful Paper or Shadow evaluation does not grant financial authority.
+
+---
+
+## 3. Information Architecture
+
+The target navigation follows the investment workflow rather than backend module boundaries.
 
 ```text
 Overview
@@ -44,13 +98,19 @@ System
   Settings
 ```
 
-真实交易能力必须接入 Portfolio、Risk、Execution 和 Accounting 边界，不作为产品导航中心。
+Backtests belong to Research because they are part of the historical evidence used to evaluate an Experiment.
 
-## 3. Overview
+Evaluate is reserved for forward-time or realized outcome evaluation.
 
-Overview 是投资状态摘要，不是系统监控页。
+Real trading capability, if introduced, must integrate with the existing Portfolio, Risk, Execution, and Accounting boundaries. It must not become the organizing center of the product.
 
-一级信息：
+---
+
+## 4. Overview
+
+Overview is an investment-state summary, not a system monitoring dashboard.
+
+### Primary information
 
 ```text
 Portfolio value
@@ -63,7 +123,7 @@ User attention
 Valuation usability
 ```
 
-二级信息：
+### Secondary information
 
 ```text
 Realized / unrealized P&L
@@ -73,7 +133,7 @@ Recent activity
 Data details
 ```
 
-默认首屏顺序：
+The default information hierarchy is:
 
 ```text
 Portfolio summary
@@ -82,22 +142,28 @@ Holdings
 Attention / data status
 ```
 
-约束：
+### Invariants
 
-- 总资产是首屏第一视觉层级；
-- Performance 是首页主图；
-- Holdings 是首页第二核心区域；
-- 正常数据状态使用单行摘要；
-- 只有影响估值或用户动作的异常进入一级警告；
-- 系统健康、refresh attempt、fingerprint、内部状态机字段进入 Data Details 或 Operations；
-- 无用户动作时显示明确空状态，不使用系统信息填充 Today Queue；
-- Overview 不重复 Portfolio、Risk、Operations 的完整工作区。
+- Total portfolio value is the highest-priority financial figure.
+- Performance is the primary chart on the page.
+- Holdings are the second major content area.
+- Healthy data state should normally be represented by a compact summary.
+- Only conditions that materially affect valuation or require user action should become primary warnings.
+- System health, refresh attempts, fingerprints, internal state-machine fields, and similar technical evidence belong in Data Details or Operations.
+- When there is no user action to take, the product must show an explicit empty state rather than filling the Attention area with system information.
+- Overview must not duplicate the full Portfolio, Risk, Data, or Operations workspaces.
 
-## 4. Data
+Overview should answer:
 
-Data 展示数据是否适合估值、研究和决策。
+> What do I own, how is it performing, can I trust the current valuation, and is there anything I need to do?
 
-核心字段：
+---
+
+## 5. Data
+
+Data surfaces determine whether available information is suitable for valuation, research, and investment decisions.
+
+Core evidence includes:
 
 ```text
 as_of
@@ -111,11 +177,19 @@ blocker
 safe next action
 ```
 
-Provider 调用细节、内部重试和运行日志默认进入详细视图。
+Provider-specific request details, retry history, transport errors, and low-level execution logs belong in detailed or operational views by default.
 
-## 5. Research
+A data source being reachable does not imply that its data is sufficiently fresh, complete, authoritative, or appropriate for a particular decision.
 
-Research 以 Experiment 和 evidence 为核心。
+The UI must communicate the decision-relevant state rather than merely exposing infrastructure health.
+
+---
+
+## 6. Research
+
+Research is centered on Experiments and evidence.
+
+The core research model is:
 
 ```text
 Dataset
@@ -126,16 +200,23 @@ Research Evidence
 Published Forecast
 ```
 
-约束：
+### Invariants
 
-- Candidate Experiment 与 Published Forecast 必须明确区分；
-- AI 仅作为研究入口，不获得额外金融 authority；
-- 研究结果必须可追溯至 Dataset、参数和 Evaluation；
-- chart 消费平台计算结果，不在浏览器重新计算 canonical metrics。
+- Candidate Experiments and Published Forecasts must be visually and semantically distinct.
+- AI may assist with research ideation, experiment creation, analysis, and explanation, but it receives no additional financial authority.
+- Research results must remain traceable to their Dataset, parameters, model or alpha identity, and Evaluation.
+- Historical performance must clearly distinguish in-sample and out-of-sample evidence where applicable.
+- After-cost diagnostics must be treated as first-class research evidence.
+- Charts consume platform-produced research artifacts and canonical metrics rather than independently recomputing them in the browser.
+- Promotion, quarantine, retirement, and other lifecycle states must not erase underlying experiment lineage.
 
-## 6. Portfolio
+A polished chart is not evidence by itself. The product should make the provenance and quality of the underlying evidence inspectable.
 
-Portfolio 必须明确区分：
+---
+
+## 7. Portfolio
+
+Portfolio management must preserve the distinction between:
 
 ```text
 Published Forecast
@@ -145,39 +226,87 @@ Risk Decision
 Rebalance Plan
 ```
 
-约束：
+A **Financial Book** is the canonical accounting boundary for cash, positions, fees, P&L, and valuation within a single execution environment.
 
-- Target 必须可追溯到 Forecast、Portfolio Policy、风险暴露和成本假设；
-- Risk block 不得被隐藏或改写为来源不明的 Target；
-- 当前持仓优先使用可比较的 table；
-- 市值、仓位、P&L、收益率和定价状态使用一致语义。
+Examples of separate environments may include actual, paper, shadow, or other explicitly modeled books.
 
-## 7. Evaluate
+### Invariants
+
+- A Portfolio Target must be traceable to the Published Forecast, Portfolio Policy, risk exposures, constraints, and cost assumptions that produced it.
+- A Risk block must never be hidden, silently overridden, or converted into a Target of unclear provenance.
+- Current holdings should normally be presented as comparable tabular records rather than isolated cards.
+- Market value, position size, P&L, returns, pricing state, and related financial metrics must use consistent semantics throughout the product.
+- Complex portfolio optimization should remain comparable with an appropriate simple baseline.
+- The UI must not present an optimizer result as self-evidently correct merely because it is mathematically optimal under one model.
+
+Portfolio is where research intent becomes an explicit financial proposal. It is not where evidence, risk, and accounting boundaries should collapse into one object.
+
+---
+
+## 8. Evaluate
+
+Evaluate covers forward-time and realized outcome analysis.
 
 ```text
-Backtest      Historical simulation
 Paper         Forward-time simulated execution
 Shadow        Observation of target / plan outcomes
 Attribution   Outcome decomposition
-Alpha Health  Evidence decay / persistence
+Alpha Health  Evidence persistence or decay
 ```
 
-Outcome 必须可追溯至 Dataset、Experiment、Forecast 和 Portfolio Target。
+Backtest remains part of Research because it is historical simulation evidence.
 
-## 8. Financial state
+Outcome evaluation must remain traceable to:
 
-现金、持仓、费用、PnL 和估值必须来自明确的 Financial Book。
+```text
+Dataset
+Experiment
+Published Forecast
+Portfolio Target
+Risk Decision
+Rebalance Plan
+```
 
-约束：
+Evaluation should help explain not only whether an outcome was good or bad, but why it differed from expectation.
 
-- Backtest、Paper、Shadow 和实际账户状态不得混为同一账户；
-- 比较不同环境时必须显示 book / environment identity；
-- canonical financial metrics 不在前端重复定义；
-- 财务指标缺少可靠口径时显示 unavailable，不推导近似值。
+Where relevant, the product should distinguish effects attributable to:
 
-## 9. Market, pricing and status semantics
+```text
+Market movement
+Factor / exposure drift
+Alpha decay
+Portfolio construction
+Execution cost
+Slippage
+Tradability constraints
+Partial or missing fills
+Residual / unexplained effects
+```
 
-以下概念必须独立表达：
+A loss or underperformance event should be drillable into these contributing layers rather than presented as a single unexplained number.
+
+---
+
+## 9. Financial State
+
+Cash, positions, fees, P&L, and valuation must come from an explicit Financial Book.
+
+### Invariants
+
+- Backtest, Paper, Shadow, and actual account state must never be presented as one account.
+- When comparing environments, the relevant book or environment identity must remain visible.
+- Canonical financial metrics must not be redefined independently in frontend code.
+- When a financial metric lacks a reliable accounting basis, the product should show it as unavailable rather than infer an approximate value and present it as canonical.
+- Derived values must remain distinguishable from directly accounted values where that distinction is material.
+- Financial identities and cutoffs must survive navigation between surfaces.
+
+Accounting ambiguity must fail closed.
+
+---
+
+## 10. Market, Pricing, and Status Semantics
+
+The following concepts must remain independent:
 
 ```text
 market_session
@@ -190,17 +319,17 @@ decision_readiness
 user_attention
 ```
 
-状态约束：
+### Market semantics
 
-- Market session 使用交易日历，不使用 wall-clock age 代替交易日语义；
-- market closed + latest completed session data 可作为正常估值状态；
-- cache 表示存储来源，不表示 freshness；
-- refresh failure 不自动否定仍然有效的 published valuation；
-- valuation usability 与 decision readiness 分离；
-- system-only 状态不自动进入 user attention；
-- 缺失、冲突或不具 authority 的数据保持 fail-closed。
+- Market-session state must be derived from the relevant trading calendar rather than approximated from wall-clock age.
+- A closed market with valid data from the latest completed trading session may represent a healthy valuation state.
+- Cache describes storage or retrieval origin; it does not imply freshness.
+- A failed refresh attempt does not automatically invalidate a previously published valuation that remains valid for its intended use.
+- Valuation usability and decision readiness are separate concepts.
+- System-only state does not automatically become user attention.
+- Missing, conflicting, non-authoritative, or otherwise unsafe data must remain fail-closed.
 
-定价展示：
+### Pricing semantics
 
 ```text
 Stock          Realtime quote / session close
@@ -209,11 +338,17 @@ Open-end fund  Published NAV / estimated NAV
 Manual mark    Explicit manual valuation
 ```
 
-开放式基金不得使用“实时行情”描述 Published NAV。
+An open-end fund must not describe a Published NAV as a realtime market quote.
 
-## 10. Status and evidence
+Likewise, estimated values must remain distinguishable from published or authoritative values.
 
-摘要状态优先表达：
+The UI should describe the economic meaning of a price, not merely the API field from which it originated.
+
+---
+
+## 11. Status and Evidence
+
+Summary state should prioritize:
 
 ```text
 what
@@ -222,7 +357,7 @@ usable or blocked
 safe next action
 ```
 
-Evidence detail 可包含：
+Detailed evidence may include:
 
 ```text
 snapshot identity
@@ -233,19 +368,24 @@ refresh history
 blocker detail
 ```
 
-约束：
+### Invariants
 
-- 同一概念只保留一个用户可见主状态；
-- 正常状态不使用大面积 success banner；
-- warning / danger 必须对应实际影响；
-- 状态不能只依赖颜色表达；
-- 技术证据默认通过 disclosure、drawer 或详细页访问。
+- Each concept should have one primary user-visible status.
+- Healthy state should not require large success banners.
+- Warning and danger states must correspond to real user or financial impact.
+- Status must never depend on color alone.
+- Technical evidence should normally be accessible through progressive disclosure, drawers, or detailed views.
+- Full fingerprints and low-level identities should not dominate primary views when a human-readable summary is sufficient.
 
-## 11. User attention
+Evidence should be available without turning every surface into an audit console.
 
-只有用户现在能够或应该处理的事项进入 Attention Queue。
+---
 
-允许：
+## 12. User Attention
+
+Only items that the user can or should act on now belong in the Attention Queue.
+
+### Appropriate attention items
 
 ```text
 Manual confirmation
@@ -255,7 +395,7 @@ Ledger reconciliation
 Strategy / forecast review
 ```
 
-排除：
+### Items that do not belong in Attention by default
 
 ```text
 Healthy subsystem status
@@ -267,9 +407,17 @@ Non-actionable refresh failures
 Expected external publication wait
 ```
 
-同一根因产生的多个下游 blocker 必须合并为一个用户事项。
+If multiple downstream blockers share one root cause, they should normally be consolidated into one actionable user item.
 
-## 12. Interaction hierarchy
+For example, a single missing pricing input should not produce separate top-level warnings for valuation, target generation, risk, rebalance, and decision readiness if the user can resolve all of them through the same underlying action.
+
+Attention represents actionable work, not system verbosity.
+
+---
+
+## 13. Interaction Hierarchy
+
+Product actions belong to distinct authority levels:
 
 ```text
 read / query
@@ -280,74 +428,164 @@ financial mutation
 authority mutation
 ```
 
-更高 authority 的操作必须具有更明确的确认、风险和审计边界。
+These levels must remain visibly and behaviorally distinct.
 
-## 13. Visual system
+### Read / query
 
-继续使用 Catppuccin Latte / Mocha，并采用克制、原生、专业金融界面的视觉方向。
+Read-only interaction.
 
-布局：
+No confirmation is required and no side effect should occur.
 
-- 使用连续内容画布，不使用等权重 card wall；
-- Desktop 以主内容区 + 窄辅助栏为主；
-- 主内容区优先承载 Portfolio summary、Performance 和 Holdings；
-- 辅助栏仅承载紧凑的 Attention、Data Status 或必要摘要；
-- 模块主要通过 spacing、alignment 和 divider 分层；
-- 避免 card-in-card 和多层容器。
+### Refresh / ingestion
 
-Typography：
+Explicitly requests new or updated data.
 
-- 总资产和核心财务指标使用最高数字层级；
-- 财务数字使用 tabular numerals；
-- 标题层级稳定，不使用营销式大标题；
-- 时间、代码、identity 使用适合扫描的紧凑样式。
+The UI should expose execution state and resulting data status.
 
-Color：
+### Research mutation
 
-- Catppuccin surface 作为主要背景层级；
-- Mauve 仅用于 primary accent、selection 和主图；
-- P&L 颜色遵循统一正负语义；
-- warning / danger 只用于实际异常；
-- 禁止装饰性 glow、大面积渐变和高饱和背景。
+Creates or modifies research artifacts such as Experiments.
 
-Components：
+It does not directly alter financial state.
 
-- table：可比较记录和持仓；
-- chart：时间、收益或分布关系；
-- timeline：事件序列；
-- card：独立对象、独立动作或需要清晰边界的辅助模块；
-- badge：短状态，不承载长说明；
-- disclosure / drawer：技术证据和详细状态。
+### Portfolio proposal
 
-禁止为填充页面添加：
+Creates or modifies a proposed Target or Rebalance Plan.
+
+It represents financial intent but does not by itself imply financial execution.
+
+### Financial mutation
+
+Changes canonical financial state.
+
+Such actions require explicit preview, confirmation, and auditability.
+
+### Authority mutation
+
+Changes the system's permission to perform financially consequential actions.
+
+Authority changes require an independent, high-friction confirmation boundary and must make scope and expiry visible where applicable.
+
+Controls with materially different authority or side effects must not be presented as equivalent actions merely because they can share a visual component.
+
+Research evidence, AI output, a successful backtest, or successful Paper / Shadow evaluation must never be presented as if it automatically grants execution authority.
+
+---
+
+## 14. Visual System
+
+Karkinos continues to use Catppuccin Latte and Mocha as its visual foundation.
+
+The interface should feel restrained, native, information-dense, and appropriate for a professional financial application.
+
+Visual treatment exists to reinforce information hierarchy and meaning rather than to create decoration.
+
+### Layout
+
+- Prefer a continuous content canvas over a wall of equally weighted cards.
+- Desktop layouts should generally favor a dominant primary content area, with a compact secondary rail where supporting status or attention information is useful.
+- Portfolio summary, Performance, and Holdings should receive primary visual space on investment-focused surfaces.
+- Secondary rails should contain compact Attention, Data Status, or other genuinely supporting information.
+- Use spacing, alignment, typography, and dividers as the primary hierarchy tools.
+- Avoid unnecessary nested containers and card-in-card layouts.
+- Layout choices may vary by workspace when the underlying task requires a wide table, chart, comparison surface, or research environment.
+
+### Typography
+
+- Portfolio value and other primary financial figures receive the highest numerical hierarchy.
+- Financial numbers use tabular numerals.
+- Heading hierarchy should remain stable and utilitarian rather than promotional.
+- Time, code, identities, and other technical metadata should use compact, scannable presentation where appropriate.
+
+### Color
+
+- Catppuccin surface colors provide the primary background hierarchy.
+- Mauve should remain a restrained primary accent for selection, emphasis, and key chart elements rather than becoming a decorative fill.
+- P&L colors must use one consistent positive / negative semantic system.
+- Warning and danger colors are reserved for conditions with actual significance.
+- Avoid decorative glow, large gradients, and high-saturation background treatments.
+
+### Components
+
+Use components according to the information they represent:
 
 ```text
-Decorative sparkline
-Decorative donut chart
-Marketing quote
-Motivational slogan
+table                Comparable records and holdings
+chart                Time, return, risk, or distribution relationships
+timeline             Ordered events
+card                 Independent object, action, or bounded supporting module
+badge                Short status
+disclosure / drawer  Technical evidence and detailed state
+```
+
+Do not add decorative components merely to fill space.
+
+In particular, avoid:
+
+```text
+Decorative sparklines
+Decorative donut charts
+Marketing quotes
+Motivational slogans
 Redundant KPI cards
 System-health filler
 ```
 
-## 14. Responsive behavior
+The product should look complete because its information hierarchy is coherent, not because every empty area contains another visualization.
 
-Desktop 保留文字导航和可比较 table。
+---
 
-移动端：
+## 15. Responsive Behavior
 
-- 按任务优先级重排，不机械堆叠桌面布局；
-- 首屏优先 Portfolio summary、Performance 和 Attention；
-- Holdings 使用可扫描列表或横向精简表；
-- 技术 evidence 默认折叠；
-- 保持核心 financial semantics 与 Desktop 一致。
+Desktop should retain readable text navigation and comparison-friendly tables where appropriate.
 
-## 15. Performance and consistency
+On mobile:
 
-- 页面优先消费持久化的 canonical / derived state；
-- 普通查询不隐式触发 provider 或 AI；
-- 同一金融或研究概念在不同页面使用一致 identity、format 和 status semantics；
-- 单个 widget 失败不得吞掉其他可用页面状态；
-- 大数据表使用分页、虚拟化或服务端查询；
-- Overview 不在 React 中重新定义领域状态机；
-- 展示层不得降低 trading / risk path 的 fail-closed 要求。
+- reorder content according to task priority rather than mechanically stacking the desktop layout;
+- prioritize Portfolio Summary, Performance, and Attention in the first viewport;
+- present Holdings as a scannable list or compact horizontal table;
+- collapse technical evidence by default;
+- preserve the same financial, pricing, status, and authority semantics as desktop.
+
+Responsive design may change layout, but it must not change the meaning of financial state.
+
+---
+
+## 16. Performance and Consistency
+
+- Pages should primarily consume persisted canonical or derived state.
+- Ordinary reads must not implicitly trigger external providers, AI calls, or financially meaningful side effects.
+- The same financial or research concept must use consistent identity, formatting, and status semantics across surfaces.
+- Failure of one widget must not erase otherwise usable workspace state.
+- Large datasets should use pagination, virtualization, or server-side querying as appropriate.
+- Overview must not reimplement domain state machines in React.
+- Research charts must consume published artifacts or canonical platform outputs rather than independently recreating authoritative metrics in the browser.
+- Presentation-layer convenience must never weaken fail-closed behavior in trading, risk, accounting, or authority paths.
+- When one canonical value appears in multiple places, its meaning, formatter, as-of semantics, and status interpretation must remain consistent.
+
+---
+
+## 17. Design Change Rules
+
+This document should change only when the long-term product model, information architecture, interaction hierarchy, financial semantics, authority boundaries, status language, or major visual invariants change.
+
+The following do not belong in this document:
+
+```text
+Component token changes
+Page-specific pixel adjustments
+One-off visual audit findings
+Screenshot diffs
+Cleanup counts
+Temporary migration details
+Implementation checklists
+Individual bug fixes
+```
+
+Those belong in code, issues, pull requests, implementation plans, or focused design notes.
+
+`design.md` is the product-level contract.
+
+It should remain stable enough that developers, contributors, and coding agents can use it to answer:
+
+> Does this implementation reinforce the intended Karkinos product model, or does it accidentally turn the system into something else?
