@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify_main_code_ci:
-    name: Verify exact main Code CI
+    name: Verify exact promotion Full CI
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -76,7 +76,7 @@ jobs:
             --commit-sha "${RELEASE_COMMIT_SHA}" \
             --repo-root .
 
-      - name: Verify exact main CI evidence
+      - name: Verify exact promotion Full CI evidence
         id: ci
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -86,7 +86,9 @@ jobs:
           python tools/verify_release_source_ci.py \
             --repository "${RELEASE_REPOSITORY}" \
             --commit-sha "${RELEASE_COMMIT_SHA}" \
-            --required-job "Code CI gate" \
+            --branch dev \
+            --event workflow_dispatch \
+            --required-job "Full CI gate" \
             --timeout-seconds 1200 \
             --poll-interval-seconds 15 \
             --github-output "${GITHUB_OUTPUT}"
@@ -100,7 +102,7 @@ jobs:
             echo "### Release source CI"
             echo
             echo "- Commit: \`${VERIFIED_COMMIT_SHA}\`"
-            echo "- Reused complete main CI: ${SOURCE_CI_RUN_URL}"
+            echo "- Reused promotion Full CI: ${SOURCE_CI_RUN_URL}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   release:
