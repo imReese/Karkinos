@@ -588,7 +588,8 @@ def test_operations_today_treats_no_manual_action_scheduler_as_skipped() -> None
     assert summary["conclusion_status"] == "healthy"
 
 
-def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None:
+
+def test_operations_today_excludes_retired_acceptance_audit_subsystem() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),
         trading_plan={
@@ -600,34 +601,11 @@ def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None
         order_facts=[],
         fill_facts=[],
         generated_at="2026-07-01T09:32:00+08:00",
-        acceptance_audit_export={
-            "generated_at": "2026-07-01T09:30:00Z",
-            "selected_audit": "operations_runbook",
-            "overall_is_complete": True,
-            "audits": [
-                {
-                    "key": "operations_runbook",
-                    "required_count": 19,
-                    "completed_count": 19,
-                    "is_complete": True,
-                    "limitations": [
-                        "Completion does not enable automatic real-money trading; manual confirmation remains the live-like default."
-                    ],
-                }
-            ],
-        },
     )
 
-    audit = next(
-        item for item in summary["subsystems"] if item["id"] == "acceptance_audit"
+    assert all(
+        item["id"] != "acceptance_audit" for item in summary["subsystems"]
     )
-    assert audit["status"] == "pass"
-    assert audit["last_run_at"] == "2026-07-01T09:30:00Z"
-    assert audit["next_action"] == "none"
-    assert audit["detail_status"] == "operations_runbook:19/19"
-    assert audit["limitations"] == [
-        "Completion does not enable automatic real-money trading; manual confirmation remains the live-like default."
-    ]
 
 
 def test_operations_today_surfaces_broker_adapter_evidence_without_activation() -> None:

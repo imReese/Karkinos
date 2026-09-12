@@ -115,9 +115,6 @@ function dependencyCycle(graph: Map<string, string[]>) {
 }
 
 const PUBLIC_API_EXPORTS = `
-AcceptanceAuditCriterion
-AcceptanceAuditExport
-AcceptanceAuditSummary
 AccountStrategyAssignment
 AccountStrategyAssignmentUpdate
 AccountStrategyAttributionSummary
@@ -175,7 +172,6 @@ useBacktestStrategiesQuery
 useRunBacktestCompareMutation
 useRunBacktestMutation
 useRunBacktestSweepMutation
-useSingleInstrumentStrategyLoopAcceptanceAuditQuery
 useStrategyLearningReviewQuery
 useStrategyPromotionReadinessQuery
 useStrategySignalPreviewMutation
@@ -295,7 +291,6 @@ test('backtest request URLs stay at the reviewed contract', () => {
 
   expect(urls).toEqual(
     [
-      '/api/acceptance-audits/single_instrument_strategy_loop',
       '/api/account-strategy',
       '/api/account-strategy',
       '/api/account-strategy/assignments',
@@ -335,7 +330,6 @@ test('backtest query and invalidation keys stay at the reviewed contract', () =>
 
   expect(queryKeys).toEqual(
     [
-      "['acceptance-audit', 'single_instrument_strategy_loop']",
       "['account-strategy-assignment']",
       "['account-strategy-assignments']",
       "['account-strategy-assignments']",
