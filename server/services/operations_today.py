@@ -17,9 +17,6 @@ from server.services.operations_today_scheduler import (
     scheduler_summary as _scheduler_summary,
 )
 from server.services.operations_today_subsystems import (
-    acceptance_audit_subsystem as _acceptance_audit_subsystem,
-)
-from server.services.operations_today_subsystems import (
     account_truth_subsystem as _account_truth_subsystem,
 )
 from server.services.operations_today_subsystems import (
@@ -72,7 +69,6 @@ def build_operations_today_summary(
     paper_shadow_run: dict[str, Any] | None = None,
     automation_runs: Iterable[dict[str, Any]] | None = None,
     execution_reconciliation_open_items: Iterable[dict[str, Any]] | None = None,
-    acceptance_audit_export: dict[str, Any] | None = None,
     broker_adapter_readiness: dict[str, Any] | None = None,
     citic_source_follow_up: dict[str, Any] | None = None,
     daily_candidate_schedule: dict[str, Any] | None = None,
@@ -122,10 +118,6 @@ def build_operations_today_summary(
             daily_candidate_schedule=daily_candidate_schedule,
         ),
         _execution_reconciliation_subsystem(execution_reconciliation),
-        _acceptance_audit_subsystem(
-            daily_operations,
-            acceptance_audit_export=acceptance_audit_export,
-        ),
         _broker_adapter_readiness_subsystem(broker_adapter_readiness),
     ]
     health = _health_summary(subsystems)
