@@ -1,6 +1,5 @@
 import { useCopy } from '../../../shared/i18n/context';
 import type {
-  AcceptanceAuditSummary,
   BacktestAttributionPreviewResponse,
   BacktestPaperShadowPreviewResponse,
   BacktestReport,
@@ -19,18 +18,12 @@ export function SingleInstrumentLoopReadinessCard({
   riskPreviewResult,
   paperShadowPreviewResult,
   attributionPreviewResult,
-  acceptanceAudit,
-  auditLoading,
-  auditError,
 }: {
   report: BacktestReport;
   preview: StrategySignalPreviewResponse | null;
   riskPreviewResult: BacktestRiskPreviewResponse | null;
   paperShadowPreviewResult: BacktestPaperShadowPreviewResponse | null;
   attributionPreviewResult: BacktestAttributionPreviewResponse | null;
-  acceptanceAudit: AcceptanceAuditSummary | null;
-  auditLoading: boolean;
-  auditError: boolean;
 }) {
   const labels = useCopy().backtest.page;
   const steps: LoopStep[] = [
@@ -131,18 +124,6 @@ export function SingleInstrumentLoopReadinessCard({
             : attributionPreviewResult?.status !== 'ready_for_review_linkage'
               ? labels.singleInstrumentLoopNextAttribution
               : labels.singleInstrumentLoopNextComplete;
-  const auditCoverageLabel = acceptanceAudit
-    ? `${acceptanceAudit.completed_count}/${acceptanceAudit.required_count} ${labels.singleInstrumentLoopAuditVerified}`
-    : auditLoading
-      ? labels.singleInstrumentLoopAuditLoading
-      : labels.singleInstrumentLoopAuditUnavailable;
-  const auditDisplayName =
-    acceptanceAudit?.key ?? labels.singleInstrumentLoopAuditFallbackKey;
-  const auditCardState = acceptanceAudit?.is_complete
-    ? 'complete'
-    : auditError
-      ? 'error'
-      : 'pending';
 
   return (
     <section className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
@@ -190,40 +171,6 @@ export function SingleInstrumentLoopReadinessCard({
         >
           {labels.singleInstrumentLoopEvidenceCta}
         </a>
-      </div>
-      <div
-        className={`mt-3 grid gap-2 rounded-2xl border px-3 py-2.5 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${
-          auditCardState === 'complete'
-            ? 'border-[color-mix(in_srgb,var(--app-success)_28%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)]'
-            : auditCardState === 'error'
-              ? 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]'
-              : 'border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)]'
-        }`}
-      >
-        <div className="min-w-0">
-          <div className="app-kicker app-type-overline">
-            {labels.singleInstrumentLoopAuditCoverage}
-          </div>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-            <span
-              className={`font-semibold ${
-                auditCardState === 'complete'
-                  ? 'text-[var(--app-success)]'
-                  : auditCardState === 'error'
-                    ? 'text-[var(--app-warning)]'
-                    : 'text-[var(--app-muted)]'
-              }`}
-            >
-              {auditCoverageLabel}
-            </span>
-            <code className="app-type-micro min-w-0 break-all rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-2.5 py-1 font-semibold text-[var(--app-muted)]">
-              {auditDisplayName}
-            </code>
-          </div>
-        </div>
-        <p className="app-muted min-w-0 text-xs leading-5 sm:max-w-sm sm:text-right">
-          {labels.singleInstrumentLoopAuditBoundary}
-        </p>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {steps.map((step) => (
