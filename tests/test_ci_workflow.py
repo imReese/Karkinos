@@ -57,7 +57,7 @@ def test_full_ci_protects_real_verification_layers_without_meta_acceptance() -> 
     assert "check_docs_health.py" not in text
     assert "export_acceptance_audit.py" not in text
     assert "tools.ci_reuse" not in text
-    assert 'not acceptance and not trading_safety' in text
+    assert "not acceptance and not trading_safety" in text
     assert "python -m pytest -m trading_safety" in text
     assert "pre_promotion" not in text
     assert "promotion_run_id" not in text

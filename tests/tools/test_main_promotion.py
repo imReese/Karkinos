@@ -65,13 +65,19 @@ class FakeClient:
                         "repository": {"full_name": REPO},
                         "head_repository": {"full_name": REPO},
                         "html_url": f"https://github.com/{REPO}/actions/runs/107",
-                        "status": "in_progress" if self.state == "pending" else "completed",
+                        "status": (
+                            "in_progress" if self.state == "pending" else "completed"
+                        ),
                         "conclusion": None if self.state == "pending" else self.state,
                     }
                 ],
             }
         if branch == "main" and (event, commit_sha) in self.main_runs:
-            path = ".github/workflows/ci.yml" if workflow_id == 8 else ".github/workflows/candidate.yml"
+            path = (
+                ".github/workflows/ci.yml"
+                if workflow_id == 8
+                else ".github/workflows/candidate.yml"
+            )
             return {
                 "total_count": 1,
                 "workflow_runs": [
@@ -239,9 +245,10 @@ def test_schedule_uses_timezone_off_peak_and_no_stale_reusable_ci():
     assert set(config["jobs"]) == {"select", "promote", "repair-followup"}
     assert "full-verification" not in config["jobs"]
     assert "verification-receipt" not in config["jobs"]
-    assert "./.github/workflows/ci.yml" not in Path(
-        ".github/workflows/promote-dev.yml"
-    ).read_text()
+    assert (
+        "./.github/workflows/ci.yml"
+        not in Path(".github/workflows/promote-dev.yml").read_text()
+    )
 
     select_job = config["jobs"]["select"]
     assert select_job["permissions"] == {"contents": "read", "actions": "read"}
