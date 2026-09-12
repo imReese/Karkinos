@@ -194,11 +194,10 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --locked --extra server --extra dev
-      - run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not acceptance and not trading_safety"
+      - run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not trading_safety"
 
   trading-safety:
     name: Trading safety invariants
-    if: ${{ needs.plan.outputs.trading == 'true' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -368,7 +367,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require selected incremental checks to pass
+      - name: Require baseline and selected incremental checks to pass
         env:
           RESULTS: ${{ toJSON(needs) }}
           SCOPE: ${{ toJSON(needs.plan.outputs) }}
@@ -379,7 +378,6 @@ jobs:
           scope = json.loads(os.environ["SCOPE"])
           optional = {
               "backend": "backend",
-              "trading-safety": "trading",
               "frontend": "frontend",
               "dependency-audit": "dependencies",
               "docker-runtime": "docker",
