@@ -6,25 +6,30 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SOURCE_WORKSPACE="${KARKINOS_WORKSPACE:-${REPO_ROOT}}"
-INSTALLED_HOME="${KARKINOS_HOME:-${KARKINOS_WORKSPACE:-${REPO_ROOT}}}"
+DEFAULT_INSTALLED_HOME="${HOME}/Library/Application Support/Karkinos"
+INSTALLED_HOME="${KARKINOS_HOME:-${DEFAULT_INSTALLED_HOME}}"
 LAUNCH_AGENT_LABEL="com.karkinos.daily-candidate"
+WORKER_LAUNCH_AGENT_LABEL="com.karkinos.research-worker"
 LAUNCH_AGENT_TARGET="gui/$(id -u)/${LAUNCH_AGENT_LABEL}"
+WORKER_LAUNCH_AGENT_TARGET="gui/$(id -u)/${WORKER_LAUNCH_AGENT_LABEL}"
 LAUNCH_AGENT_PLIST="${HOME}/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist"
+WORKER_LAUNCH_AGENT_PLIST="${HOME}/Library/LaunchAgents/${WORKER_LAUNCH_AGENT_LABEL}.plist"
 PACKAGED_RELEASE_CONTROL="${INSTALLED_HOME}/current/bin/karkinosctl"
 PRODUCTION_SERVICE_PORT="${KARKINOS_BACKEND_PORT:-}"
 
 usage() {
 	cat <<'EOF'
 Usage:
-  ./scripts/stop_server.sh [branch]
+  ./scripts/stop_server.sh
+  ./scripts/stop_server.sh <branch>
   ./scripts/stop_server.sh --branch <branch>
-  ./scripts/stop_server.sh all
   ./scripts/stop_server.sh prod
 
-main is the default. dev stops the current-working-tree development runtime.
-Other branch names stop their stable snapshot runtime. Source branches share
-config.json, .env, data/store, logs, and exports; only code/dependencies/process
-state are branch-specific. Unknown listeners are never signaled.
+With no arguments, stop every known Karkinos runtime: the dev working tree,
+all tracked stable source snapshots, and the legacy/native resident service when
+present. Branch/prod arguments remain available for targeted shutdown.
+
+Unknown listeners and unrelated processes are never signaled.
 EOF
 }
 
@@ -53,10 +58,78 @@ packaged_release_control_is_valid() {
 	PACKAGED_RELEASE_CONTROL="${release_control}"
 }
 
-resident_service_is_loaded() {
+launch_agent_is_loaded() {
+	local target="$1"
 	[[ "$(uname -s)" == "Darwin" ]] || return 1
 	command -v launchctl >/dev/null 2>&1 || return 1
-	launchctl print "${LAUNCH_AGENT_TARGET}" >/dev/null 2>&1
+	launchctl print "${target}" >/dev/null 2>&1
+}
+
+resident_service_is_loaded() {
+	launch_agent_is_loaded "${LAUNCH_AGENT_TARGET}" ||
+		launch_agent_is_loaded "${WORKER_LAUNCH_AGENT_TARGET}"
+}
+
+resident_service_state_exists() {
+	resident_service_is_loaded ||
+		[[ -f "${LAUNCH_AGENT_PLIST}" || -L "${LAUNCH_AGENT_PLIST}" ||
+			-f "${WORKER_LAUNCH_AGENT_PLIST}" || -L "${WORKER_LAUNCH_AGENT_PLIST}" ]]
+}
+
+wait_until_launch_agent_stops() {
+	local target="$1"
+	local deadline=$((SECONDS + 10))
+	while ((SECONDS < deadline)); do
+		if ! launch_agent_is_loaded "${target}"; then
+			return 0
+		fi
+		sleep 0.25
+	done
+	return 1
+}
+
+stop_exact_launch_agent() {
+	local target="$1"
+	local label="$2"
+	if ! launch_agent_is_loaded "${target}"; then
+		return 0
+	fi
+	if ! launchctl bootout "${target}"; then
+		echo "Error: launchctl could not stop ${label}." >&2
+		return 1
+	fi
+	if ! wait_until_launch_agent_stops "${target}"; then
+		echo "Error: ${label} remained loaded after launchctl bootout." >&2
+		return 1
+	fi
+}
+
+remove_stale_launch_agent_plist() {
+	local path="$1"
+	if [[ -L "${path}" ]]; then
+		echo "Error: refusing to remove symlinked LaunchAgent plist: ${path}" >&2
+		return 1
+	fi
+	[[ -f "${path}" ]] || return 0
+	rm -f -- "${path}"
+}
+
+stop_resident_without_controller() {
+	if [[ "$(uname -s)" != "Darwin" ]] || ! command -v launchctl >/dev/null 2>&1; then
+		echo "Error: resident Karkinos state exists but launchctl is unavailable." >&2
+		return 1
+	fi
+
+	local status=0
+	# Stop the worker first so it cannot outlive the API service during cleanup.
+	stop_exact_launch_agent "${WORKER_LAUNCH_AGENT_TARGET}" "${WORKER_LAUNCH_AGENT_LABEL}" || status=1
+	stop_exact_launch_agent "${LAUNCH_AGENT_TARGET}" "${LAUNCH_AGENT_LABEL}" || status=1
+	if ((status != 0)); then
+		return "${status}"
+	fi
+	remove_stale_launch_agent_plist "${WORKER_LAUNCH_AGENT_PLIST}" || status=1
+	remove_stale_launch_agent_plist "${LAUNCH_AGENT_PLIST}" || status=1
+	return "${status}"
 }
 
 stop_resident_service() {
@@ -64,16 +137,25 @@ stop_resident_service() {
 		echo "Error: KARKINOS_BACKEND_PORT must be an integer from 1 through 65535." >&2
 		return 1
 	fi
-	if ! packaged_release_control_is_valid; then
-		echo "Error: production service state has no packaged immutable release controller." >&2
-		echo "Set KARKINOS_HOME to the installed runtime." >&2
+	if packaged_release_control_is_valid; then
+		local -a service_args=(service-stop)
+		if [[ -n "${PRODUCTION_SERVICE_PORT}" ]]; then
+			service_args+=(--service-port "${PRODUCTION_SERVICE_PORT}")
+		fi
+		"${PACKAGED_RELEASE_CONTROL}" "${service_args[@]}"
+		return
+	fi
+	stop_resident_without_controller
+}
+
+stop_resident_if_present() {
+	if ! resident_service_state_exists; then
+		return 0
+	fi
+	if ! stop_resident_service; then
 		return 1
 	fi
-	local -a service_args=(service-stop)
-	if [[ -n "${PRODUCTION_SERVICE_PORT}" ]]; then
-		service_args+=(--service-port "${PRODUCTION_SERVICE_PORT}")
-	fi
-	"${PACKAGED_RELEASE_CONTROL}" "${service_args[@]}"
+	echo "Karkinos resident service stopped."
 }
 
 is_number() {
@@ -185,7 +267,7 @@ stop_dev() {
 	return "${status}"
 }
 
-stop_all_snapshots() {
+stop_other_snapshots() {
 	local status=0 socket runtime branch
 	if [[ ! -d "${SOURCE_WORKSPACE}/.run" ]]; then
 		return 0
@@ -194,15 +276,44 @@ stop_all_snapshots() {
 		[[ -n "${socket}" ]] || continue
 		runtime="${socket%/control.sock}"
 		branch="${runtime#${SOURCE_WORKSPACE}/.run/}"
-		[[ "${branch}" != "dev" ]] || continue
+		[[ "${branch}" != "dev" && "${branch}" != "main" ]] || continue
 		stop_snapshot_branch "${branch}" || status=1
 	done < <(find "${SOURCE_WORKSPACE}/.run" -type s -name control.sock -print 2>/dev/null || true)
 	return "${status}"
 }
 
+stop_everything() {
+	local status=0
+	stop_dev || status=1
+	# Always ask main to stop; request_stop is a safe no-op when it is not running.
+	stop_snapshot_branch main || status=1
+	stop_other_snapshots || status=1
+	stop_resident_if_present || status=1
+	if ((status != 0)); then
+		return "${status}"
+	fi
+	echo "Karkinos runtimes stopped. Unknown listeners were not touched."
+}
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 	usage
 	exit 0
+fi
+
+# Backward-compatible alias; no argument is the normal stop-everything command.
+if [[ "${1:-}" == "all" ]]; then
+	shift
+	(($# == 0)) || {
+		usage >&2
+		exit 2
+	}
+	stop_everything
+	exit $?
+fi
+
+if (($# == 0)); then
+	stop_everything
+	exit $?
 fi
 
 if [[ "${1:-}" == "prod" ]]; then
@@ -211,41 +322,27 @@ if [[ "${1:-}" == "prod" ]]; then
 		usage >&2
 		exit 2
 	}
-	if packaged_release_control_is_valid ||
-		resident_service_is_loaded ||
-		[[ -f "${LAUNCH_AGENT_PLIST}" ]]; then
+	if resident_service_state_exists; then
 		stop_resident_service
-		echo "Karkinos production service stopped."
+		echo "Karkinos resident service stopped."
 	else
-		echo "Karkinos production service is not running."
+		echo "Karkinos resident service is not running."
 	fi
 	exit 0
 fi
 
-TARGET_BRANCH="main"
+TARGET_BRANCH=""
 if [[ "${1:-}" == "--branch" ]]; then
 	(($# == 2)) || {
 		usage >&2
 		exit 2
 	}
 	TARGET_BRANCH="$2"
-elif [[ -n "${1:-}" ]]; then
-	(($# == 1)) || {
-		usage >&2
-		exit 2
-	}
+elif (($# == 1)); then
 	TARGET_BRANCH="$1"
-fi
-
-if [[ "${TARGET_BRANCH}" == "all" ]]; then
-	EXIT_STATUS=0
-	stop_dev || EXIT_STATUS=1
-	stop_all_snapshots || EXIT_STATUS=1
-	if ((EXIT_STATUS != 0)); then
-		exit "${EXIT_STATUS}"
-	fi
-	echo "Karkinos source runtimes stopped."
-	exit 0
+else
+	usage >&2
+	exit 2
 fi
 
 git check-ref-format --branch "${TARGET_BRANCH}" >/dev/null 2>&1 || {
