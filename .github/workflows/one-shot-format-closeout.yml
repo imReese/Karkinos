@@ -1,0 +1,44 @@
+name: One-shot closeout formatting
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/one-shot-format-closeout.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: ${{ github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/dev' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact dev head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.28"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - name: Format only cleanup-touched Python files
+        run: uv run --locked black server/services/operations_today_subsystems.py tests/test_operations_today.py tests/test_server_routes.py
+      - name: Commit formatting and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          rm -- .github/workflows/one-shot-format-closeout.yml
+          git config user.name "Reese"
+          git config user.email "63846933+imReese@users.noreply.github.com"
+          git add --all
+          git diff --cached --check
+          git commit -m "style: format milestone audit cleanup"
+          git push origin HEAD:dev
