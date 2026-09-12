@@ -1,7 +1,7 @@
 name: One-shot engineering best-practice cleanup
 
-# Temporary migration workflow. It validates all intended changes, then commits
-# only non-workflow files because GITHUB_TOKEN cannot modify workflow files.
+# Temporary bridge: materialize validated workflow contents as ordinary files so
+# the GitHub connector can publish them atomically and remove this workflow.
 on:
   push:
     branches: [dev]
@@ -12,53 +12,86 @@ permissions:
   contents: write
 
 jobs:
-  cleanup:
+  stage-workflows:
     if: ${{ github.repository == 'imReese/Karkinos' && github.ref == 'refs/heads/dev' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - name: Checkout current dev
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: dev
-          fetch-depth: 0
           persist-credentials: true
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-      - name: Set up uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: "0.11.28"
-          enable-cache: true
-      - name: Apply exact cleanup
-        run: python scripts/ci/one_shot_best_practice_cleanup.py
-      - name: Validate documentation and shell entrypoints
+      - name: Materialize hardened workflow blobs
+        shell: python
         run: |
-          set -euo pipefail
-          python scripts/ci/check_docs_integrity.py
-          bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
-          shellcheck scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
-      - name: Validate engineering contracts
-        run: |
-          set -euo pipefail
-          uv sync --locked --extra server --extra dev
-          uv run --locked python -m pytest tests/engineering
-          uv run --locked python -m pytest tests/scripts/test_classify_dev_changes.py
-      - name: Commit verified non-workflow changes
+          from pathlib import Path
+
+          source = Path('.github/workflows')
+          target = Path('.workflow-staging')
+          target.mkdir(exist_ok=False)
+
+          names = ('candidate.yml', 'ci.yml', 'governance.yml', 'promote-dev.yml', 'release.yml')
+          for name in names:
+              text = (source / name).read_text(encoding='utf-8')
+              text = text.replace('runs-on: ubuntu-latest', 'runs-on: ubuntu-24.04')
+              if name == 'ci.yml':
+                  gitleaks = 'ghcr.io/gitleaks/gitleaks:v8.30.1'
+                  pinned = gitleaks + '@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f'
+                  if text.count(gitleaks) != 2:
+                      raise SystemExit('unexpected Gitleaks invocation count')
+                  text = text.replace(gitleaks, pinned)
+
+                  shell_step = '''      - name: Check public shell entrypoints
+                  run: bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+          '''
+                  shell_hardened = shell_step + '''      - name: Check public shell entrypoints with ShellCheck
+                  run: shellcheck scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+          '''
+                  if text.count(shell_step) != 1:
+                      raise SystemExit('unexpected shell entrypoint step')
+                  text = text.replace(shell_step, shell_hardened, 1)
+
+                  backend = '''      - run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not trading_safety"
+          '''
+                  backend_full = '''      - name: Run backend test suite
+                  env:
+                    CI_MODE: ${{ needs.plan.outputs.mode }}
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    if [[ "${CI_MODE}" == full ]]; then
+                      mkdir -p reports/ci
+                      uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \\
+                        --cov --cov-report=term --cov-report=xml
+                    else
+                      uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \\
+                        -m "not trading_safety"
+                    fi
+          '''
+                  if text.count(backend) != 1:
+                      raise SystemExit('unexpected backend pytest command')
+                  text = text.replace(backend, backend_full, 1)
+
+              if 'ubuntu-latest' in text:
+                  raise SystemExit(f'floating runner remains in {name}')
+              (target / name).write_text(text, encoding='utf-8')
+      - name: Verify staged workflow invariants
         shell: bash
         run: |
           set -euo pipefail
-          # Workflow changes were validated above but are applied atomically by the
-          # GitHub connector after this commit, because Actions tokens cannot write them.
-          git restore --source=HEAD --worktree -- .github/workflows
-          rm -- scripts/ci/one_shot_best_practice_cleanup.py
+          grep -q 'ubuntu-24.04' .workflow-staging/ci.yml
+          grep -q 'shellcheck scripts/start_server.sh' .workflow-staging/ci.yml
+          grep -q -- '--cov --cov-report=term --cov-report=xml' .workflow-staging/ci.yml
+          grep -q 'gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f' .workflow-staging/ci.yml
+          ! grep -R 'ubuntu-latest' .workflow-staging
+      - name: Commit staging blobs
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "Reese"
           git config user.email "63846933+imReese@users.noreply.github.com"
-          git add -u -- .
-          git add -- docs
+          git add -- .workflow-staging
           git diff --cached --check
-          test -z "$(git diff --cached --name-only | grep '^\.github/workflows/' || true)"
-          git commit -m "chore: harden docs and runtime tooling"
+          git commit -m "chore: stage hardened workflow blobs"
           git push origin HEAD:dev
