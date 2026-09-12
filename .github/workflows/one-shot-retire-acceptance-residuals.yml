@@ -26,6 +26,7 @@ jobs:
       - name: Commit cleanup and remove one-shot migration files
         run: |
           set -euo pipefail
+          python -c 'from pathlib import Path; paths=[Path("server/services/operations_today_subsystems.py"), Path("web/src/features/backtest/api-governance-contracts.ts")]; [p.write_text(p.read_text(encoding="utf-8").rstrip()+"\n", encoding="utf-8") for p in paths]'
           rm -- tools/retire_acceptance_residuals.py
           rm -- .github/workflows/one-shot-retire-acceptance-residuals.yml
           git config user.name "Reese"
