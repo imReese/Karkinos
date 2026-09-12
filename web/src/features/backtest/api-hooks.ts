@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient, postJson, putJson } from '../../shared/api/client';
 import type {
-  AcceptanceAuditExport,
   AccountStrategyAssignment,
   AccountStrategyAssignmentUpdate,
   AccountStrategyAttributionSummary,
@@ -99,20 +98,6 @@ export function useStrategyLearningReviewQuery() {
         '/api/strategy-learning/review-queue',
       ),
     staleTime: 10_000,
-  });
-}
-
-export function useSingleInstrumentStrategyLoopAcceptanceAuditQuery(
-  enabled = true,
-) {
-  return useQuery({
-    queryKey: ['acceptance-audit', 'single_instrument_strategy_loop'],
-    queryFn: () =>
-      apiClient<AcceptanceAuditExport>(
-        '/api/acceptance-audits/single_instrument_strategy_loop',
-      ),
-    staleTime: 60_000,
-    enabled,
   });
 }
 
