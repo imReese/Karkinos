@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that a release commit already passed the complete main CI gate."""
+"""Verify exact-SHA CI evidence for promotion candidates and stable releases."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ _PENDING_STATUSES = {
 
 
 class SourceCIVerificationError(RuntimeError):
-    """Raised when release CI evidence is missing, unsafe, or inconclusive."""
+    """Raised when source CI evidence is missing, unsafe, or inconclusive."""
 
 
 @dataclass(frozen=True)
@@ -462,7 +462,7 @@ def main() -> int:
     parser.add_argument("--workflow-file", default="ci.yml")
     parser.add_argument("--workflow-name", default="CI")
     parser.add_argument("--workflow-path", default=".github/workflows/ci.yml")
-    parser.add_argument("--branch", default="main")
+    parser.add_argument("--branch", default="dev")
     parser.add_argument(
         "--event", action="append", choices=("push", "workflow_dispatch")
     )
@@ -481,9 +481,7 @@ def main() -> int:
         print("release_source_ci_commit_sha_invalid", file=sys.stderr)
         return 1
 
-    required_jobs = tuple(
-        args.required_jobs or ("Code CI gate", "Repository acceptance audit")
-    )
+    required_jobs = tuple(args.required_jobs or ("Full CI gate",))
     try:
         client = GitHubActionsClient(
             api_url=os.environ.get("GITHUB_API_URL", "https://api.github.com"),
@@ -498,7 +496,7 @@ def main() -> int:
             workflow_name=args.workflow_name,
             workflow_path=args.workflow_path,
             branch=args.branch,
-            event=tuple(args.event or ("push", "workflow_dispatch")),
+            event=tuple(args.event or ("workflow_dispatch",)),
             commit_sha=args.commit_sha,
             required_job_names=required_jobs,
             timeout_seconds=args.timeout_seconds,
