@@ -63,7 +63,7 @@ Rules:
 - Remove obsolete callers and paths when safe.
 - Prefer fewer concepts after simplification.
 
-## 4. Tests and validation
+## 4. Tests, CI, and promotion
 
 Test layers:
 
@@ -73,9 +73,7 @@ Test layers:
 4. simulation correctness tests;
 5. high-value end-to-end product journeys.
 
-Legacy acceptance/governance tests are not CI authority during the Engineering Reset.
-
-Remove tests that only preserve obsolete file structure, private symbols, deleted abstractions, or project-management acceptance criteria.
+Legacy acceptance/governance tests are not CI authority during the Engineering Reset. Tests that only encode milestone completion, repository shape, or obsolete private structure should be deleted or reclassified when encountered. Tests that protect real financial, research, persistence, or user behavior remain product tests regardless of their history.
 
 Focused Python checks:
 
@@ -84,7 +82,7 @@ uv run python scripts/ci/check_python_quality.py --base <base-ref-or-sha>
 uv run python -m pytest <relevant-tests>
 ```
 
-Product Python suite:
+Current broad Python product suite:
 
 ```bash
 uv run python -m pytest -m "not acceptance"
@@ -98,21 +96,55 @@ npm --prefix web run test
 npm --prefix web run build
 ```
 
-CI ownership:
+### CI authority
 
-- `.github/workflows/dev-ci.yml` — incremental `dev` verification; the final `Dev CI gate` is the promotion evidence.
-- `.github/workflows/promote-dev.yml` — trusted default-branch controller; it revalidates the exact current green `dev` head, publishes the branch-protection gate, and performs a non-force fast-forward only.
-- `.github/workflows/ci.yml` — full `main` verification after promotion or explicit exact-SHA manual verification.
-- `.github/workflows/candidate.yml` / `release.yml` — build and release provenance; they verify exact successful `main` CI before publishing artifacts.
+`.github/workflows/ci.yml` is the single code-verification authority. It has two modes:
 
-Promotion intentionally does **not** execute the `main` branch's reusable CI definition against newer `dev` source. CI definitions are versioned with the code they validate. If the current `dev` head is pending or red, promotion waits; it never falls back to an older green ancestor.
+- ordinary pull requests and pushes to `dev` run conservative incremental verification and finish at `Dev CI gate`;
+- promotion dispatches the exact current `dev` SHA in full mode, runs every required product/security check including browser E2E, and finishes at `Full CI gate`.
+
+The full run is created against `ref=dev` and verifies the requested SHA and its `main` base before executing checks. This keeps the workflow definition and the code being validated on the same commit and prevents an older `main` workflow contract from authorizing newer `dev` source.
+
+`.github/workflows/promote-dev.yml` is a privileged default-branch controller. It is event-driven from a successful `CI` push run on `dev` (with manual dispatch as an owner fallback). The controller:
+
+1. selects only the exact current green `dev` head;
+2. never falls back to an older green ancestor;
+3. checks out and executes only trusted `main` controller code;
+4. dispatches and waits for that candidate SHA's own `Full CI gate` before any branch write;
+5. revalidates incremental CI evidence, full CI evidence, `dev`, `main`, and fast-forward ancestry;
+6. publishes `Main promotion gate` and updates `main` with `force=false` only after all checks still agree.
+
+A red, pending, replaced, or divergent candidate is not promoted. There is no post-promotion repair workflow and no successful partial state that requires an automatic follow-up dispatch.
+
+### Branch and tag protection
+
+Repository-managed desired-state files live under `.github/rulesets/`:
+
+- `main.json` requires both `Full CI gate` and `Main promotion gate`, rejects deletion and non-fast-forward updates, and has no bypass actor;
+- `tags-v.json` makes `v*` release tags immutable after creation by rejecting update, deletion, and non-fast-forward mutation, with no bypass actor.
+
+These JSON files document the intended GitHub server configuration; changing a tracked file does not itself mutate the repository ruleset through the GitHub API. The active server ruleset must be checked during governance/bootstrap changes before claiming the protection is live.
+
+### Release workflows
+
+`release.yml` owns stable release publication from an explicit SemVer tag. The existing `candidate.yml` remains only because the installed native-runtime maintenance path still has real consumers for candidate-by-commit packages and candidate provenance. It is not part of normal `dev -> main` promotion and must not become a second code-CI authority. Remove it only together with the native updater/artifact contract that consumes it; do not break a supported update path merely to reduce workflow count.
+
+Expensive browser E2E belongs to full verification (and release-specific artifact smoke where applicable), not the normal incremental development loop.
+
+### Python tooling authority
+
+- Ruff supplies the current correctness baseline.
+- Black and isort remain the repository formatter/import-order authority until a dedicated mechanical Ruff-format migration is performed; do not mix that repository-wide rewrite into unrelated CI or product changes.
+- mypy is the CI type-checking authority.
+- Pyright configuration is editor assistance only and must not be treated as a competing CI gate.
+- Extend mypy coverage by stable domain boundary rather than enabling repository-wide strictness and compensating with broad ignores.
 
 ## 5. Quality gaps
 
-- Ruff is primarily a correctness baseline.
-- Static typing coverage is uneven.
-- Dependency checks cover only part of the repository.
-- Historical acceptance/release/fixture tests still exist outside the primary product gate.
-- Runtime and release machinery remain large for the current product scope.
-- Containerized Gitleaks is version-tag pinned rather than digest pinned; third-party GitHub Actions themselves are full-SHA pinned.
-- Green CI does not prove clear ownership or correct real-world product behavior.
+- Ruff lint coverage is intentionally narrow and can broaden incrementally after existing code is clean.
+- Static typing coverage is uneven; `data`, `backtest`, `analytics`, and application/server boundaries should be added deliberately.
+- Historical acceptance/release fixtures and project-governance helpers still exist outside the primary product authority and should be removed when they have no real consumer.
+- Native candidate/release machinery remains large for the current local-first product and is retained only where installed-runtime compatibility still consumes it.
+- Container base images and the Gitleaks container are version-tag pinned rather than digest pinned; third-party GitHub Actions are full-SHA pinned.
+- Local Markdown links are a hard repository check; external-link health still lacks a low-frequency scheduled/manual audit.
+- Green CI does not prove clear domain ownership or correct real-world investment behavior.
