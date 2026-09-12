@@ -288,7 +288,9 @@ def test_run_snapshot_change_is_rechecked_before_acceptance() -> None:
 def test_workflow_identity_mismatch_fails_closed(field, value, error) -> None:
     payload = _workflow_payload(**{field: value})
     with pytest.raises(SourceCIVerificationError, match=error):
-        validate_workflow_identity(payload, expected_name="CI", expected_path=_WORKFLOW_PATH)
+        validate_workflow_identity(
+            payload, expected_name="CI", expected_path=_WORKFLOW_PATH
+        )
 
 
 @pytest.mark.parametrize(
@@ -300,7 +302,10 @@ def test_workflow_identity_mismatch_fails_closed(field, value, error) -> None:
         ({"event": "push"}, "run_identity_mismatch"),
         ({"path": ".github/workflows/other.yml"}, "run_path_mismatch"),
         ({"repository": {"full_name": "other/repository"}}, "run_repository_mismatch"),
-        ({"head_repository": {"full_name": "fork/repository"}}, "run_head_repository_mismatch"),
+        (
+            {"head_repository": {"full_name": "fork/repository"}},
+            "run_head_repository_mismatch",
+        ),
     ),
 )
 def test_run_identity_mismatch_fails_closed(overrides, error) -> None:
