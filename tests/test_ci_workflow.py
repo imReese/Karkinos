@@ -25,17 +25,24 @@ def test_external_github_actions_are_pinned_to_commit_shas() -> None:
     assert all(re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", ref) for ref in refs)
 
 
-def test_full_ci_protects_real_verification_layers_without_acceptance_audit() -> None:
+def test_full_ci_protects_real_verification_layers_without_meta_acceptance() -> None:
     config = _workflow(".github/workflows/ci.yml")
     jobs = config["jobs"]
     names = {job["name"] for job in jobs.values()}
 
+    assert set(config["on"]) == {"push", "workflow_dispatch"}
+    assert "workflow_call" not in config["on"]
+    assert set(config["on"]["workflow_dispatch"]["inputs"]) == {
+        "commit_sha",
+        "base_sha",
+    }
     assert {
         "Verify exact source",
         "Python changed-file quality",
         "Repository integrity",
         "Secret scan",
         "Backend tests",
+        "Trading safety invariants",
         "Frontend checks",
         "Production dependency audit",
         "Docker runtime smoke",
@@ -50,7 +57,18 @@ def test_full_ci_protects_real_verification_layers_without_acceptance_audit() ->
     assert "check_docs_health.py" not in text
     assert "export_acceptance_audit.py" not in text
     assert "tools.ci_reuse" not in text
-    assert '-m "not acceptance"' in text
+    assert 'not acceptance and not trading_safety' in text
+    assert "python -m pytest -m trading_safety" in text
+    assert "pre_promotion" not in text
+    assert "promotion_run_id" not in text
+    assert "promotion_run_attempt" not in text
+
+    gate_needs = set(jobs["code-ci-gate"]["needs"])
+    assert "trading-safety" in gate_needs
+
+
+def test_obsolete_source_evidence_workflow_is_removed() -> None:
+    assert not Path(".github/workflows/source-evidence.yml").exists()
 
 
 def test_release_entry_accepts_stable_semver() -> None:

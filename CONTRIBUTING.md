@@ -2,8 +2,9 @@
 
 ## Branches
 
-`dev` is the normal development branch. `main` receives verified development
-commits through the repository promotion workflow.
+`dev` is the normal development branch. `main` receives only the exact current
+`dev` head after its official `Dev CI gate` succeeds and the trusted promotion
+workflow revalidates that run and fast-forwards the ref.
 
 Maintainers may work directly on `dev`. External contributions should use a
 feature branch or fork and open a pull request targeting `dev`.
@@ -28,7 +29,7 @@ financial-semantic changes without a concrete reason.
 git switch dev
 git pull --ff-only origin dev
 uv sync --locked --extra server --extra dev
-npm --prefix web ci
+npm ci --prefix web
 ```
 
 For the normal development runtime:
@@ -69,15 +70,18 @@ npm --prefix web run test
 npm --prefix web run build
 ```
 
-Use the full Python suite when the affected boundary or regression risk justifies
-it:
+Use the primary Python product suite when the affected boundary or regression
+risk justifies it:
 
 ```bash
-uv run --locked python -m pytest
+uv run --locked python -m pytest -m "not acceptance"
 ```
 
-`.github/workflows/dev-ci.yml` defines branch verification. Full `main`
-verification is defined by `.github/workflows/ci.yml`.
+`.github/workflows/dev-ci.yml` defines incremental verification for `dev`.
+`.github/workflows/ci.yml` defines full verification for `main` and explicit
+exact-SHA manual checks. Promotion does not run an older `main` CI definition
+against newer `dev` source; it promotes only an exact successful `dev` SHA, then
+dispatches that SHA's `main` CI and candidate workflows after the fast-forward.
 
 Do not weaken assertions, typing, financial invariants, or fail-closed behavior
 merely to make a check pass.

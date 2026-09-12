@@ -144,11 +144,9 @@ AI 配置不授予金融事实、Portfolio、Risk、Accounting 或资本权限�
 
 已确认的真实券商费用由 Accounting 记录，不被估算配置覆盖。
 
-## Maintenance-only
+## 冻结的兼容配置
 
-`account_truth` 及 broker / controlled-execution 配置默认关闭，当前仅维护兼容。
-
-见 [Account Truth import](account-truth-import.md) 和 [PLAN.md](../PLAN.md)。
+历史 account / broker / controlled-execution 配置可能仍存在于代码中，用于兼容已有数据和安全修复，但它们不是当前产品配置面，也不作为新功能继续扩展。当前范围以 [PLAN.md](../PLAN.md) 为准。
 
 ## 常用环境变量
 

@@ -14,7 +14,6 @@
 
 - [Configuration](guides/configuration.md)
 - [Return accounting](guides/return-accounting.md)
-- [Account Truth import](guides/account-truth-import.md)
 - [Legacy Strategy compatibility](guides/strategy-compatibility.md)
 
 ## Repository documentation

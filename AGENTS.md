@@ -86,7 +86,7 @@ Test count is not a project goal. Do not mechanically add tests for reversible, 
 
 Run the narrowest relevant checks first and broaden verification only when the affected boundary, a failure, or unresolved risk requires it.
 
-Use `docs/ENGINEERING.md` for the current test strategy and local validation commands. `.github/workflows/ci.yml` is authoritative for full CI behavior.
+Use `docs/ENGINEERING.md` for the current test strategy and local validation commands. `.github/workflows/ci.yml` is authoritative for full `main` CI behavior.
 
 Changes to runtime or UI behavior should validate the corresponding real product journey when practical rather than relying only on mocked contracts.
 
@@ -100,7 +100,7 @@ Report only checks that actually ran.
 
 Development changes should normally be based on the latest `dev` and integrate into `dev`. Isolated Git worktrees or temporary agent workspaces are workspace-isolation mechanisms only; they do not define a separate development workflow.
 
-A trusted promotion workflow selects an exactly verified `dev` commit and fast-forwards it to `main`. Do not bypass that workflow by sending ordinary development changes directly to `main`.
+The trusted promotion workflow may fast-forward only the **current** `dev` head after that exact SHA's official `Dev CI gate` succeeds. A red or pending tip waits; never promote an older green ancestor and never run stale `main` CI definitions against newer `dev` source as authorization.
 
 Never force-push, reset, or delete `dev` or `main`.
 
