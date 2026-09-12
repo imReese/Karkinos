@@ -116,7 +116,6 @@ def main() -> int:
     remove_exact(
         page_test,
         "    '/api/acceptance-audits/single_instrument_strategy_loop',\n",
-        expected_count=2,
     )
     remove_exact(
         page_test,
