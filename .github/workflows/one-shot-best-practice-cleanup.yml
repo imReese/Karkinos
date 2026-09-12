@@ -1,6 +1,7 @@
 name: One-shot engineering best-practice cleanup
 
-# Temporary migration workflow; self-deletes in the validated commit object.
+# Temporary migration workflow. It validates all intended changes, then commits
+# only non-workflow files because GITHUB_TOKEN cannot modify workflow files.
 on:
   push:
     branches: [dev]
@@ -21,7 +22,7 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -45,86 +46,18 @@ jobs:
           uv sync --locked --extra server --extra dev
           uv run --locked python -m pytest tests/engineering
           uv run --locked python -m pytest tests/scripts/test_classify_dev_changes.py
-      - name: Create validated commit object
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit verified non-workflow changes
         shell: bash
         run: |
           set -euo pipefail
-          rm -- .github/workflows/one-shot-best-practice-cleanup.yml
+          # Workflow changes were validated above but are applied atomically by the
+          # GitHub connector after this commit, because Actions tokens cannot write them.
+          git restore --source=HEAD --worktree -- .github/workflows
           rm -- scripts/ci/one_shot_best_practice_cleanup.py
-          git add --all
+          git config user.name "Reese"
+          git config user.email "63846933+imReese@users.noreply.github.com"
+          git add -A -- AGENTS.md Dockerfile design.md docs scripts
           git diff --cached --check
-          python - <<'PY'
-          import base64
-          import json
-          import os
-          import subprocess
-          import urllib.request
-          from pathlib import Path
-
-          repo = os.environ["GITHUB_REPOSITORY"]
-          token = os.environ["GITHUB_TOKEN"]
-          api = f"https://api.github.com/repos/{repo}"
-
-          def git(*args: str) -> str:
-              return subprocess.check_output(["git", *args], text=True).strip()
-
-          def request(path: str, payload: dict) -> dict:
-              body = json.dumps(payload, separators=(",", ":")).encode()
-              req = urllib.request.Request(
-                  api + path,
-                  data=body,
-                  method="POST",
-                  headers={
-                      "Authorization": f"Bearer {token}",
-                      "Accept": "application/vnd.github+json",
-                      "X-GitHub-Api-Version": "2022-11-28",
-                      "Content-Type": "application/json",
-                      "User-Agent": "karkinos-one-shot-cleanup",
-                  },
-              )
-              with urllib.request.urlopen(req, timeout=30) as response:
-                  return json.load(response)
-
-          parent = git("rev-parse", "HEAD")
-          base_tree = git("rev-parse", "HEAD^{tree}")
-          raw = subprocess.check_output(
-              ["git", "diff", "--cached", "--name-only", "-z", "HEAD"]
-          )
-          paths = [p.decode() for p in raw.split(b"\0") if p]
-          if not paths:
-              raise SystemExit("no staged cleanup changes")
-
-          entries = []
-          for path in paths:
-              index_line = subprocess.run(
-                  ["git", "ls-files", "-s", "--", path],
-                  check=True,
-                  capture_output=True,
-                  text=True,
-              ).stdout.strip()
-              if not index_line:
-                  entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
-                  continue
-              mode = index_line.split(maxsplit=1)[0]
-              content = Path(path).read_bytes()
-              blob = request(
-                  "/git/blobs",
-                  {"content": base64.b64encode(content).decode(), "encoding": "base64"},
-              )
-              entries.append({"path": path, "mode": mode, "type": "blob", "sha": blob["sha"]})
-
-          tree = request("/git/trees", {"base_tree": base_tree, "tree": entries})
-          commit = request(
-              "/git/commits",
-              {
-                  "message": "chore: harden docs and CI reproducibility",
-                  "tree": tree["sha"],
-                  "parents": [parent],
-              },
-          )
-          print(f"VALIDATED_PARENT_SHA={parent}")
-          print(f"VALIDATED_COMMIT_SHA={commit['sha']}")
-          print("VALIDATED_PATHS=" + ",".join(paths))
-          PY
+          test -z "$(git diff --cached --name-only | grep '^\.github/workflows/' || true)"
+          git commit -m "chore: harden docs and runtime tooling"
+          git push origin HEAD:dev
