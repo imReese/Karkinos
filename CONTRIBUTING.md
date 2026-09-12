@@ -72,16 +72,16 @@ npm --prefix web run test
 npm --prefix web run build
 ```
 
-Use the current broad Python product suite when the affected boundary or
-regression risk justifies it:
+Use the broad Python product suite when the affected boundary or regression
+risk justifies it:
 
 ```bash
-uv run --locked python -m pytest -m "not acceptance"
+uv run --locked python -m pytest
 ```
 
-The `acceptance` marker is a legacy project/release-review exclusion during the
-Engineering Reset, not a second CI authority. New product tests should use
-behavioral/domain semantics instead of project-management acceptance criteria.
+There is no separate pytest `acceptance` layer. Historical acceptance-named
+tests run as normal product tests; delete or reclassify tests that only encode
+project-management completion criteria rather than supported behavior.
 
 `.github/workflows/ci.yml` is the single code-verification workflow. Pull
 requests and pushes to `dev` run its conservative incremental mode and finish at

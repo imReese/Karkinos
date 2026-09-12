@@ -73,7 +73,7 @@ Test layers:
 4. simulation correctness tests;
 5. high-value end-to-end product journeys.
 
-Legacy acceptance/governance tests are not CI authority during the Engineering Reset. Tests that only encode milestone completion, repository shape, or obsolete private structure should be deleted or reclassified when encountered. Tests that protect real financial, research, persistence, or user behavior remain product tests regardless of their history.
+There is no separate pytest `acceptance` layer. Historical files whose names contain `acceptance` now participate in the normal product suite. Tests that only encode milestone completion, repository shape, or obsolete private structure should be deleted or reclassified when encountered. Tests that protect real financial, research, persistence, or user behavior remain product tests regardless of their history.
 
 Focused Python checks:
 
@@ -85,7 +85,7 @@ uv run python -m pytest <relevant-tests>
 Current broad Python product suite:
 
 ```bash
-uv run python -m pytest -m "not acceptance"
+uv run python -m pytest
 ```
 
 Web:
@@ -143,7 +143,7 @@ Expensive browser E2E belongs to full verification (and release-specific artifac
 
 - Ruff lint coverage is intentionally narrow and can broaden incrementally after existing code is clean.
 - Static typing coverage is uneven; `data`, `backtest`, `analytics`, and application/server boundaries should be added deliberately.
-- Historical acceptance/release fixtures and project-governance helpers still exist outside the primary product authority and should be removed when they have no real consumer.
+- Historical acceptance/release fixtures and project-governance helpers still exist and should be removed when they have no real consumer; they no longer receive a separate pytest exemption.
 - Native candidate/release machinery remains large for the current local-first product and is retained only where installed-runtime compatibility still consumes it.
 - Container base images and the Gitleaks container are version-tag pinned rather than digest pinned; third-party GitHub Actions are full-SHA pinned.
 - Local Markdown links are a hard repository check; external-link health still lacks a low-frequency scheduled/manual audit.

@@ -15,9 +15,7 @@ def pytest_collection_modifyitems(config, items) -> None:
     for item in items:
         path = str(item.path).replace("\\", "/")
         name = item.name
-        if _is_acceptance_test(path):
-            item.add_marker(pytest.mark.acceptance)
-        elif _is_api_contract_test(path):
+        if _is_api_contract_test(path):
             item.add_marker(pytest.mark.api_contract)
         else:
             item.add_marker(pytest.mark.unit)
@@ -27,11 +25,6 @@ def pytest_collection_modifyitems(config, items) -> None:
 
         if _is_slow_test(path, name):
             item.add_marker(pytest.mark.slow)
-
-
-def _is_acceptance_test(path: str) -> bool:
-    filename = path.rsplit("/", 1)[-1]
-    return "acceptance" in filename or filename == "test_profit_discipline_smoke.py"
 
 
 def _is_api_contract_test(path: str) -> bool:
