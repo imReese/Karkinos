@@ -107,6 +107,14 @@ git switch dev
 ./scripts/stop_server.sh feature/my-research-change
 ```
 
+如果要停止本机上 Karkinos 已知并拥有的所有运行实例——dev、已跟踪的稳定分支快照，以及仍存在时的旧 native/LaunchAgent resident service——不需要再写 `all`：
+
+```bash
+./scripts/stop_server.sh
+```
+
+只有在需要定向停止时，才传 `dev`、`main`、其他分支名或 `prod`。
+
 分支快照使用本地已经存在的最新 ref。需要刷新 `origin/main` 或其他远端分支时，先执行 `git fetch origin`；只有 ref 指向新的 commit 时才会重建缓存快照。
 
 `dev` 是唯一特殊的源码模式：它直接运行当前 `dev` working tree，后端 reload 默认端口 `8001`，Vite 默认端口 `5173`。稳定分支快照在 `8000` 提供完整应用。所有源码模式仍然共用同一份本地配置和数据，同一时间只允许一个 source backend 打开这套状态。
