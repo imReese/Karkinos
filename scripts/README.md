@@ -68,12 +68,6 @@ Later stable starts use:
 ./scripts/start_server.sh
 ```
 
-Stop the default snapshot with:
-
-```bash
-./scripts/stop_server.sh
-```
-
 ### Development
 
 `dev` is the only source mode that runs the current working tree directly. Switch to `dev` yourself and keep developing there:
@@ -91,12 +85,6 @@ API     http://127.0.0.1:8001
 Health  http://127.0.0.1:8001/api/health
 ```
 
-Stop it with:
-
-```bash
-./scripts/stop_server.sh dev
-```
-
 The development runtime uses the same `config.json`, `.env`, and `data/store` as stable snapshots. `.run/dev` contains only PID/process state. Schema-changing development must therefore use explicit migrations and preserve persisted-data compatibility.
 
 You can remain on `dev` and run stable `main` without switching branches:
@@ -108,14 +96,32 @@ You can remain on `dev` and run stable `main` without switching branches:
 
 ### Stop commands
 
+The normal stop command takes no mode argument:
+
 ```bash
-./scripts/stop_server.sh                     # main snapshot
-./scripts/stop_server.sh dev                 # current dev runtime
-./scripts/stop_server.sh feature/research-ui # another snapshot
-./scripts/stop_server.sh all                 # all tracked source runtimes
+./scripts/stop_server.sh
 ```
 
-Unknown listeners are never killed by a port sweep.
+It stops every Karkinos runtime the launcher can identify as its own:
+
+```text
+current dev working-tree runtime
+tracked stable source snapshots
+legacy/native macOS resident service, when present
+```
+
+`all` is retained only as a compatibility alias; new usage should omit it. Targeted shutdown remains available when needed:
+
+```bash
+./scripts/stop_server.sh dev
+./scripts/stop_server.sh main
+./scripts/stop_server.sh feature/research-ui
+./scripts/stop_server.sh prod
+```
+
+Source state and installed native state are resolved separately. The source workspace defaults to the repository root. The old macOS `~/Library/Application Support/Karkinos` location is consulted only as a legacy/native installed-runtime cleanup target; it is not the source workspace model.
+
+The resident-service stop path prefers the existing immutable release controller. If that controller is unavailable but the exact Karkinos LaunchAgent labels remain, the stop command removes only those exact `com.karkinos.daily-candidate` and `com.karkinos.research-worker` jobs. Unknown listeners and unrelated processes are never killed by a port sweep.
 
 ## Local paths
 
