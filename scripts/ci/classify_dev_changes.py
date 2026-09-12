@@ -1,4 +1,4 @@
-"""Select dev checks from an exact diff, broadening unknown scopes safely."""
+"""Select incremental CI domains from an exact diff, broadening unknown scopes safely."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sys
 from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CHECKS = ("backend", "frontend", "trading", "dependencies", "docker")
+CHECKS = ("backend", "frontend", "trading", "dependencies", "docker", "workflow")
 DOCUMENTATION_FILES = {
     "AGENTS.md",
     "CLAUDE.md",
@@ -46,35 +46,15 @@ def changed_paths(root: Path, *, base: str, head: str) -> tuple[str, list[str]]:
     return base_sha, [path.decode("utf-8") for path in paths.split(b"\0") if path]
 
 
-def _tests_are_referenced(root: Path, selected: set[str]) -> bool:
-    """Broaden explicit imports, plugin declarations, and file references alike."""
-    stems = {path: PurePosixPath(path).stem for path in selected}
-    for source in (root / "tests").rglob("*.py"):
-        other = source.relative_to(root).as_posix()
-        referenced = [stem for path, stem in stems.items() if path != other]
-        if not referenced:
-            continue
-        if source.is_symlink():
-            return True
-        text = source.read_text(encoding="utf-8")
-        if any(stem in text for stem in referenced):
-            return True
-    return False
+def classify_paths(root: Path, paths: list[str]) -> dict[str, bool]:
+    """Classify by product domain; never maintain a source-to-test selector graph."""
 
-
-def classify_paths(root: Path, paths: list[str]) -> dict[str, object]:
     checks = dict.fromkeys(CHECKS, False)
-    selected_tests: set[str] = set()
-    broad_backend = False
     for path in paths:
         name = PurePosixPath(path)
         if name.is_absolute() or ".." in name.parts or not name.parts:
             raise ValueError("invalid_changed_path")
-        if path.startswith("web/"):
-            checks["frontend"] = True
-            if path in {"web/package.json", "web/package-lock.json"}:
-                checks["dependencies"] = True
-            continue
+
         if (
             path == "LICENSE"
             or path in DOCUMENTATION_FILES
@@ -82,29 +62,45 @@ def classify_paths(root: Path, paths: list[str]) -> dict[str, object]:
             or (path.startswith("docs/") and name.suffix == ".md")
         ):
             continue
+
+        if path.startswith(".github/workflows/"):
+            return dict.fromkeys(CHECKS, True)
+
+        if path == ".github/dependabot.yml":
+            checks["dependencies"] = True
+            checks["workflow"] = True
+            continue
+
+        if path.startswith("web/"):
+            checks["frontend"] = True
+            if path in {"web/package.json", "web/package-lock.json"}:
+                checks["dependencies"] = True
+            continue
+
         if name.suffix == ".py" and not path.startswith("scripts/ci/"):
-            checks["backend"] = checks["trading"] = True
+            checks["backend"] = True
+            checks["trading"] = True
             if path.startswith("server/"):
                 checks["docker"] = True
-            if (
-                path.startswith("tests/")
-                and name.name.startswith("test_")
-                and (root / path).is_file()
-                and not (root / path).is_symlink()
-            ):
-                selected_tests.add(path)
-            else:
-                broad_backend = True
             continue
-        # Runtime/configuration, shared fixtures, deletions, and new file types
-        # have no proven narrow impact boundary. Keep their checks comprehensive.
-        checks = dict.fromkeys(CHECKS, True)
-        broad_backend = True
 
-    if selected_tests and not broad_backend:
-        broad_backend = _tests_are_referenced(root, selected_tests)
-    backend_tests = ["tests"] if broad_backend else sorted(selected_tests)
-    return {**checks, "backend_tests": backend_tests}
+        if path in {"pyproject.toml", "uv.lock"}:
+            checks["backend"] = True
+            checks["trading"] = True
+            checks["dependencies"] = True
+            checks["docker"] = True
+            continue
+
+        if path == "Dockerfile" or path == ".dockerignore":
+            checks["docker"] = True
+            continue
+
+        # Runtime/configuration, CI helpers, shared fixtures, deletions, and new
+        # file types have no proven narrow impact boundary. Fail safe by running
+        # every incremental domain instead of maintaining a brittle selector map.
+        return dict.fromkeys(CHECKS, True)
+
+    return checks
 
 
 def main(argv: list[str] | None = None) -> int:
