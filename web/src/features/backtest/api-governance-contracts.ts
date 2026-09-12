@@ -159,28 +159,3 @@ export type AccountStrategyAssignmentUpdate = {
   effective_from?: string | null;
   notes?: string;
 };
-
-export type AcceptanceAuditCriterion = {
-  key: string;
-  checkbox_text: string;
-  evidence_paths: string[];
-  validation_commands: string[];
-  is_complete: boolean;
-};
-
-export type AcceptanceAuditSummary = {
-  key: string;
-  name: string;
-  required_count: number;
-  completed_count: number;
-  is_complete: boolean;
-  criteria: AcceptanceAuditCriterion[];
-  limitations: string[];
-};
-
-export type AcceptanceAuditExport = {
-  generated_at: string;
-  selected_audit: string;
-  audits: AcceptanceAuditSummary[];
-  overall_is_complete: boolean;
-};

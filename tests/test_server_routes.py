@@ -436,64 +436,17 @@ def _decision_account_truth_evidence(
     }
 
 
-def test_acceptance_audit_route_returns_single_instrument_loop_manifest():
-    from server.routes import acceptance_audit as acceptance_audit_routes
 
-    router = acceptance_audit_routes.create_router()
-    endpoint = _backtest_route(
-        router,
-        "/api/acceptance-audits/{audit_key}",
-        "GET",
-    ).endpoint
-
-    response = asyncio.run(endpoint("single_instrument_strategy_loop"))
-    audit = response["audits"][0]
-
-    assert response["selected_audit"] == "single_instrument_strategy_loop"
-    assert response["overall_is_complete"] is True
-    assert audit["key"] == "single_instrument_strategy_loop"
-    assert audit["required_count"] == 10
-    assert audit["completed_count"] == audit["required_count"]
-    assert {criterion["key"] for criterion in audit["criteria"]} >= {
-        "dataset_snapshot_and_strategy_registry",
-        "web_paper_shadow_attribution_boundary",
-    }
-
-
-def test_acceptance_audit_route_returns_per_order_pilot_readiness_manifest():
-    from server.routes import acceptance_audit as acceptance_audit_routes
-
-    router = acceptance_audit_routes.create_router()
-    endpoint = _backtest_route(
-        router,
-        "/api/acceptance-audits/{audit_key}",
-        "GET",
-    ).endpoint
-
-    response = asyncio.run(endpoint("controlled_per_order_pilot_readiness"))
-    audit = response["audits"][0]
-
-    assert response["selected_audit"] == "controlled_per_order_pilot_readiness"
-    assert response["overall_is_complete"] is True
-    assert audit["key"] == "controlled_per_order_pilot_readiness"
-    assert audit["required_count"] == 8
-    assert audit["completed_count"] == audit["required_count"]
-    assert {criterion["key"] for criterion in audit["criteria"]} >= {
-        "source_failure_and_contract_drift_fail_closed",
-        "scoped_read_only_gate_matrix_surfaces_contract_failure",
-        "review_entry_only_not_release_or_execution_authority",
-    }
-
-
-def test_app_registers_acceptance_audit_route():
+def test_app_does_not_register_retired_acceptance_audit_route():
     from server.app import create_app
 
     app = create_app({"live_auto_start": False})
 
-    assert any(
-        isinstance(route, APIRoute)
-        and route.path == "/api/acceptance-audits/{audit_key}"
-        and "GET" in route.methods
+    assert all(
+        not (
+            isinstance(route, APIRoute)
+            and route.path.startswith("/api/acceptance-audits")
+        )
         for route in registered_app_routes(app)
     )
 

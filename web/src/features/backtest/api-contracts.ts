@@ -515,9 +515,6 @@ export type StrategyPromotionReadiness = {
 };
 
 export type {
-  AcceptanceAuditCriterion,
-  AcceptanceAuditExport,
-  AcceptanceAuditSummary,
   AccountStrategyAssignment,
   AccountStrategyAssignmentUpdate,
   AccountStrategyAttributionSummary,

@@ -194,8 +194,6 @@ def _attention_resolution_condition(
         "inspect_scheduler_failure": "new_recognized_terminal_scheduler_run_required",
         "review_scheduler_run": "new_recognized_terminal_scheduler_run_required",
         "resolve_kill_switch": "kill_switch_clear_and_new_scheduler_evidence_required",
-        "review_acceptance_audit_gaps": "complete_acceptance_audit_evidence_required",
-        "export_acceptance_audit": "complete_acceptance_audit_evidence_required",
         "provide_citic_account_truth_evidence_or_reject_source": (
             "complete_account_truth_evidence_or_explicit_source_rejection_required"
         ),
@@ -223,7 +221,6 @@ def _attention_resolution_condition(
         "paper_shadow": "new_terminal_paper_shadow_run_evidence_required",
         "scheduler": "new_recognized_terminal_scheduler_run_required",
         "execution_reconciliation": "canonical_execution_reconciliation_must_close",
-        "acceptance_audit": "complete_acceptance_audit_evidence_required",
         "broker_adapter_evidence": "explicit_provider_authorization_and_new_release_evidence_required",
     }
     return by_subsystem.get(
