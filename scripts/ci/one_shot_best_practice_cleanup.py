@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+SELF = Path(__file__).resolve()
 
 NODE_DIGEST = "sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf"
 PYTHON_DIGEST = "sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36"
@@ -122,6 +122,8 @@ replace_once(
 # No stale product-design path or floating Linux runner may remain.
 stale_design = []
 for path in ROOT.rglob("*"):
+    if path.resolve() == SELF:
+        continue
     if not path.is_file() or ".git" in path.parts or "node_modules" in path.parts:
         continue
     if path.suffix not in {".md", ".py", ".yml", ".yaml", ".toml"}:
