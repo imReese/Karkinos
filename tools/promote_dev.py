@@ -1,4 +1,4 @@
-"""Promote an exact, verified dev commit by fast-forward; never merge or force."""
+"""Promote the exact current dev head after its Dev CI gate succeeds."""
 
 from __future__ import annotations
 
@@ -15,8 +15,10 @@ from urllib.request import Request
 from tools import verify_release_source_ci as ci
 
 SHA = re.compile(r"[0-9a-f]{40}")
-REQUIRED_JOBS = ("Code CI gate", "Repository acceptance audit")
-MAX_COMMITS = 100
+DEV_WORKFLOW_FILE = "dev-ci.yml"
+DEV_WORKFLOW_NAME = "Dev CI"
+DEV_WORKFLOW_PATH = ".github/workflows/dev-ci.yml"
+REQUIRED_JOBS = ("Dev CI gate",)
 PROMOTION_GATE = "Main promotion gate"
 
 
@@ -35,20 +37,7 @@ class Selection:
     run_attempt: int
 
 
-@dataclass(frozen=True)
-class FullVerification:
-    """Output and execution identity from the trusted reusable CI caller."""
-
-    commit_sha: str
-    workflow_sha: str
-    run_id: int
-    run_attempt: int
-
-
 class Client(ci.GitHubActionsClient):
-    def workflow_run(self, run_id: int) -> dict:
-        return dict(self._get_json(f"/repos/{self._repository}/actions/runs/{run_id}"))
-
     def ref(self, branch: str) -> str:
         value = self._get_json(f"/repos/{self._repository}/git/ref/heads/{branch}")
         if value.get("ref") != f"refs/heads/{branch}":
@@ -69,15 +58,6 @@ class Client(ci.GitHubActionsClient):
             if result.get("merge_base_commit", {}).get("sha") != base:
                 raise ci.SourceCIVerificationError("promotion_merge_base_mismatch")
         return status
-
-    def parent(self, sha: str) -> str | None:
-        commit = self._get_json(
-            f"/repos/{self._repository}/git/commits/{checked_sha(sha)}"
-        )
-        if commit.get("sha") != sha or not isinstance(commit.get("parents"), list):
-            raise ci.SourceCIVerificationError("promotion_commit_identity_mismatch")
-        parents = commit["parents"]
-        return checked_sha(parents[0].get("sha")) if parents else None
 
     def write(self, suffix: str, payload: dict, *, method: str) -> None:
         request = Request(
@@ -103,21 +83,24 @@ class Client(ci.GitHubActionsClient):
             ) from exc
 
 
-def latest_run(client: Client, repository: str, branch: str, sha: str, event="push"):
+def latest_dev_run(client: Client, repository: str, sha: str):
     workflow_id = ci.validate_workflow_identity(
-        client.workflow("ci.yml"),
-        expected_name="CI",
-        expected_path=".github/workflows/ci.yml",
+        client.workflow(DEV_WORKFLOW_FILE),
+        expected_name=DEV_WORKFLOW_NAME,
+        expected_path=DEV_WORKFLOW_PATH,
     )
     return ci.select_latest_exact_run(
         client.workflow_runs(
-            workflow_id=workflow_id, branch=branch, event=event, commit_sha=sha
+            workflow_id=workflow_id,
+            branch="dev",
+            event="push",
+            commit_sha=sha,
         ),
         repository=repository,
         workflow_id=workflow_id,
-        workflow_path=".github/workflows/ci.yml",
-        branch=branch,
-        event=event,
+        workflow_path=DEV_WORKFLOW_PATH,
+        branch="dev",
+        event="push",
         commit_sha=sha,
     )
 
@@ -126,9 +109,9 @@ def verified_dev(client: Client, repository: str, sha: str):
     return ci.wait_for_verified_source_ci(
         client,
         repository=repository,
-        workflow_file="ci.yml",
-        workflow_name="CI",
-        workflow_path=".github/workflows/ci.yml",
+        workflow_file=DEV_WORKFLOW_FILE,
+        workflow_name=DEV_WORKFLOW_NAME,
+        workflow_path=DEV_WORKFLOW_PATH,
         branch="dev",
         event="push",
         commit_sha=sha,
@@ -139,34 +122,29 @@ def verified_dev(client: Client, repository: str, sha: str):
 
 
 def select(client: Client, repository: str) -> Selection | None:
-    main, dev = client.ref("main"), client.ref("dev")
+    """Select only the current dev head; never promote an older green ancestor."""
+
+    main = client.ref("main")
+    dev = client.ref("dev")
     if main == dev:
         return None
     if client.relation(main, dev) != "ahead":
         raise ci.SourceCIVerificationError("promotion_dev_must_contain_main")
-    candidate = dev
-    seen = set()
-    for _ in range(MAX_COMMITS):
-        if candidate in seen:
-            raise ci.SourceCIVerificationError("promotion_history_cycle")
-        seen.add(candidate)
-        if candidate == main or client.relation(main, candidate) != "ahead":
-            return None
-        run = latest_run(client, repository, "dev", candidate)
-        if run is not None:
-            if run.get("status") == "completed" and run.get("conclusion") == "success":
-                evidence = verified_dev(client, repository, candidate)
-                return Selection(
-                    main, dev, candidate, evidence.run_id, evidence.run_attempt
-                )
-            if run.get("status") not in ci._PENDING_STATUSES | {"completed"}:
-                raise ci.SourceCIVerificationError("promotion_ci_state_invalid")
-        candidate = client.parent(candidate)
-        if candidate is None:
-            return None
-    raise ci.SourceCIVerificationError(
-        "promotion_history_limit; no unbounded search performed"
-    )
+
+    run = latest_dev_run(client, repository, dev)
+    if run is None:
+        return None
+    status = run.get("status")
+    conclusion = run.get("conclusion")
+    if status in ci._PENDING_STATUSES:
+        return None
+    if status != "completed":
+        raise ci.SourceCIVerificationError("promotion_ci_state_invalid")
+    if conclusion != "success":
+        return None
+
+    evidence = verified_dev(client, repository, dev)
+    return Selection(main, dev, dev, evidence.run_id, evidence.run_attempt)
 
 
 def ensure_followup(
@@ -174,16 +152,10 @@ def ensure_followup(
     repository: str,
     sha: str,
     base: str,
-    *,
-    full: FullVerification | None = None,
 ) -> list[str]:
-    """GITHUB_TOKEN pushes do not trigger CI: dispatch missing exact-main runs.
+    """Dispatch missing exact-main CI/candidate runs after a GITHUB_TOKEN ref write."""
 
-    Retrying after a successful ref write but failed dispatch repairs only the
-    missing dispatch. Existing pending/failed/successful runs are never hidden
-    by an automatic retry. Their normal Actions rerun remains an owner action.
-    """
-    requested = []
+    requested: list[str] = []
     for filename, name in (("ci.yml", "CI"), ("candidate.yml", "Release Candidate")):
         if client.ref("main") != sha:
             raise ci.SourceCIVerificationError("promotion_main_changed_before_dispatch")
@@ -194,12 +166,13 @@ def ensure_followup(
         )
         runs = []
         for event in ("push", "workflow_dispatch"):
-            payload = client.workflow_runs(
-                workflow_id=workflow_id, branch="main", event=event, commit_sha=sha
-            )
-            # Validate even existing runs; an unrelated green run is not evidence.
             latest = ci.select_latest_exact_run(
-                payload,
+                client.workflow_runs(
+                    workflow_id=workflow_id,
+                    branch="main",
+                    event=event,
+                    commit_sha=sha,
+                ),
                 repository=repository,
                 workflow_id=workflow_id,
                 workflow_path=f".github/workflows/{filename}",
@@ -211,12 +184,10 @@ def ensure_followup(
                 runs.append(latest)
         if runs:
             continue
+
         inputs = {"commit_sha": sha}
         if filename == "ci.yml":
             inputs["base_sha"] = base
-            if full is not None:
-                inputs["promotion_run_id"] = str(full.run_id)
-                inputs["promotion_run_attempt"] = str(full.run_attempt)
         client.write(
             f"actions/workflows/{filename}/dispatches",
             {"ref": "main", "inputs": inputs},
@@ -226,57 +197,14 @@ def ensure_followup(
     return requested
 
 
-def verify_full_run(
-    client: Client, repository: str, selection: Selection, full: FullVerification
-) -> str:
-    if checked_sha(full.commit_sha) != selection.commit_sha:
-        raise ci.SourceCIVerificationError("promotion_verified_sha_mismatch")
-    checked_sha(full.workflow_sha)
-    if any(
-        type(value) is not int or value <= 0
-        for value in (full.run_id, full.run_attempt)
-    ):
-        raise ci.SourceCIVerificationError("promotion_full_run_identity_invalid")
-    run = client.workflow_run(full.run_id)
-    expected = {
-        "id": full.run_id,
-        "run_attempt": full.run_attempt,
-        "path": ".github/workflows/promote-dev.yml",
-        "head_branch": "main",
-        "head_sha": full.workflow_sha,
-    }
-    if (
-        any(run.get(key) != value for key, value in expected.items())
-        or run.get("repository", {}).get("full_name") != repository
-        or run.get("head_repository", {}).get("full_name") != repository
-        or run.get("event") not in {"schedule", "workflow_dispatch", "push"}
-        or run.get("status") not in {"in_progress", "completed"}
-        or (run.get("status") == "completed" and run.get("conclusion") != "success")
-    ):
-        raise ci.SourceCIVerificationError("promotion_full_run_identity_mismatch")
-    ci.verify_required_jobs(
-        client.workflow_run_jobs(run_id=full.run_id),
-        required_job_names=(
-            "Full pre-promotion verification / Code CI gate",
-            f"Verified source {selection.commit_sha}",
-        ),
-        commit_sha=full.workflow_sha,
-    )
-    snapshot_keys = (*expected, "status", "conclusion", "event")
-    confirmed = client.workflow_run(full.run_id)
-    if any(confirmed.get(key) != run.get(key) for key in snapshot_keys) or any(
-        confirmed.get(key, {}).get("full_name") != repository
-        for key in ("repository", "head_repository")
-    ):
-        raise ci.SourceCIVerificationError("promotion_full_run_changed")
-    return f"https://github.com/{repository}/actions/runs/{full.run_id}/attempts/{full.run_attempt}"
+def apply(client: Client, repository: str, selection: Selection) -> dict:
+    """Revalidate exact Dev CI evidence, publish the gate, then fast-forward main."""
 
-
-def apply(
-    client: Client, repository: str, selection: Selection, *, full: FullVerification
-) -> dict:
     for sha in (selection.previous_main, selection.observed_dev, selection.commit_sha):
         checked_sha(sha)
+    if selection.commit_sha != selection.observed_dev:
+        raise ci.SourceCIVerificationError("promotion_candidate_must_be_dev_head")
+
     evidence = verified_dev(client, repository, selection.commit_sha)
     if (evidence.run_id, evidence.run_attempt) != (
         selection.run_id,
@@ -285,39 +213,42 @@ def apply(
         raise ci.SourceCIVerificationError("promotion_ci_attempt_changed")
     if client.ref("dev") != selection.observed_dev:
         raise ci.SourceCIVerificationError("promotion_dev_changed; retry selection")
+
     current = client.ref("main")
     if current not in {selection.previous_main, selection.commit_sha}:
         raise ci.SourceCIVerificationError("promotion_main_changed; retry selection")
-    if client.relation(selection.commit_sha, selection.observed_dev) not in {
-        "ahead",
-        "identical",
-    }:
-        raise ci.SourceCIVerificationError("promotion_candidate_not_on_dev")
-    verification_url = verify_full_run(client, repository, selection, full)
+    if client.relation(selection.previous_main, selection.commit_sha) != "ahead":
+        raise ci.SourceCIVerificationError("promotion_not_fast_forward")
+
     changed = current != selection.commit_sha
     if changed:
-        if client.relation(current, selection.commit_sha) != "ahead":
-            raise ci.SourceCIVerificationError("promotion_not_fast_forward")
+        verification_url = (
+            f"https://github.com/{repository}/actions/runs/"
+            f"{selection.run_id}/attempts/{selection.run_attempt}"
+        )
         client.write(
             f"statuses/{selection.commit_sha}",
             {
                 "state": "success",
                 "context": PROMOTION_GATE,
-                "description": "Exact candidate passed the complete reusable CI",
+                "description": "Exact dev HEAD passed Dev CI",
                 "target_url": verification_url,
             },
             method="POST",
         )
-        # The server checks fast-forward atomically. Never reset, merge, or force.
         client.write(
             "git/refs/heads/main",
             {"sha": selection.commit_sha, "force": False},
             method="PATCH",
         )
+
     if client.ref("main") != selection.commit_sha:
         raise ci.SourceCIVerificationError("promotion_main_write_not_confirmed")
     requested = ensure_followup(
-        client, repository, selection.commit_sha, selection.previous_main, full=full
+        client,
+        repository,
+        selection.commit_sha,
+        selection.previous_main,
     )
     return {**asdict(selection), "main_updated": changed, "dispatched": requested}
 
@@ -326,18 +257,13 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Rejected legacy option; ref writes require full workflow evidence",
-    )
-    parser.add_argument(
         "--repair-followup",
         action="store_true",
         help="Dispatch missing current-main checks without moving a ref",
     )
     args = parser.parse_args(argv)
     try:
-        if (args.apply or args.repair_followup) and (
+        if args.repair_followup and (
             os.environ.get("GITHUB_REF") != "refs/heads/main"
             or args.repository != os.environ.get("GITHUB_REPOSITORY")
         ):
@@ -348,29 +274,24 @@ def main(argv=None) -> int:
             token=os.environ.get("GITHUB_TOKEN", ""),
             api_version="2022-11-28",
         )
-        if args.apply:
-            raise ci.SourceCIVerificationError(
-                "promotion_apply_requires_full_workflow_evidence"
-            )
         if args.repair_followup:
             current = client.ref("main")
             verified_dev(client, args.repository, current)
-            print(
-                json.dumps(
-                    {
-                        "dispatched": ensure_followup(
-                            client, args.repository, current, current
-                        )
-                    },
-                    sort_keys=True,
+            result = {
+                "dispatched": ensure_followup(
+                    client,
+                    args.repository,
+                    current,
+                    current,
                 )
-            )
-            return 0
-        selection = select(client, args.repository)
-        if selection is None:
-            result = {"result": "no_eligible_new_commit"}
+            }
         else:
-            result = {"dry_run": True, **asdict(selection)}
+            selection = select(client, args.repository)
+            result = (
+                {"result": "no_eligible_new_commit"}
+                if selection is None
+                else {"dry_run": True, **asdict(selection)}
+            )
         output = json.dumps(result, sort_keys=True, indent=2)
         print(output)
         summary = os.environ.get("GITHUB_STEP_SUMMARY")

@@ -11,7 +11,7 @@
 | `backtest/` | backtest and simulation | coupled to legacy strategy/execution assumptions |
 | `execution/` | costs, Order/Fill contracts, simulation/paper execution | Simulation and Execution ownership still mixed |
 | `risk/` | financial and pre-trade risk | keep financial policy separate from operational readiness |
-| `account_truth/` | account, broker, evidence, reconciliation, execution-edge machinery | much larger than current scope |
+| `account_truth/` | legacy account/broker/reconciliation compatibility | larger than current scope; freeze rather than expand |
 | `server/` | HTTP, composition, persistence, use cases, workers, runtime services | broad ownership and coupling |
 | `server/ai_runtime/` | AI-assisted research/orchestration | must consume stable platform capabilities |
 | `web/` | user interaction and presentation | derived from canonical platform semantics |
@@ -98,10 +98,14 @@ npm --prefix web run test
 npm --prefix web run build
 ```
 
-CI:
+CI ownership:
 
-- `.github/workflows/dev-ci.yml` — development branch verification.
-- `.github/workflows/ci.yml` — full verification.
+- `.github/workflows/dev-ci.yml` — incremental `dev` verification; the final `Dev CI gate` is the promotion evidence.
+- `.github/workflows/promote-dev.yml` — trusted default-branch controller; it revalidates the exact current green `dev` head, publishes the branch-protection gate, and performs a non-force fast-forward only.
+- `.github/workflows/ci.yml` — full `main` verification after promotion or explicit exact-SHA manual verification.
+- `.github/workflows/candidate.yml` / `release.yml` — build and release provenance; they verify exact successful `main` CI before publishing artifacts.
+
+Promotion intentionally does **not** execute the `main` branch's reusable CI definition against newer `dev` source. CI definitions are versioned with the code they validate. If the current `dev` head is pending or red, promotion waits; it never falls back to an older green ancestor.
 
 ## 5. Quality gaps
 
@@ -110,4 +114,5 @@ CI:
 - Dependency checks cover only part of the repository.
 - Historical acceptance/release/fixture tests still exist outside the primary product gate.
 - Runtime and release machinery remain large for the current product scope.
+- Containerized Gitleaks is version-tag pinned rather than digest pinned; third-party GitHub Actions themselves are full-SHA pinned.
 - Green CI does not prove clear ownership or correct real-world product behavior.

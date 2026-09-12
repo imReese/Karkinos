@@ -1,52 +1,16 @@
 name: CI
 
 on:
-  workflow_call:
-    inputs:
-      commit_sha:
-        required: true
-        type: string
-      base_sha:
-        required: true
-        type: string
-      pre_promotion:
-        type: boolean
-        default: false
-      force_full:
-        type: boolean
-        default: false
-      promotion_run_id:
-        type: string
-        default: ""
-      promotion_run_attempt:
-        type: string
-        default: ""
-    outputs:
-      verified_sha:
-        description: Exact checkout that passed full verification
-        value: ${{ jobs.code-ci-gate.outputs.verified_sha }}
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: Exact main or dev checkout SHA to validate
+        description: Exact main/dev checkout SHA to validate
         required: true
         type: string
       base_sha:
-        description: Base SHA used to validate ancestry
+        description: Base SHA used to validate ancestry and changed-file quality
         required: true
         type: string
-      force_full:
-        description: Compatibility input; full CI always runs full verification
-        type: boolean
-        default: false
-      promotion_run_id:
-        description: Compatibility input retained for promotion dispatches
-        type: string
-        default: ""
-      promotion_run_attempt:
-        description: Compatibility input retained for promotion dispatches
-        type: string
-        default: ""
   push:
     branches: [main]
 
@@ -57,7 +21,6 @@ env:
   UV_VERSION: "0.11.28"
   CI_COMMIT_SHA: ${{ inputs.commit_sha || github.sha }}
   CI_BASE_SHA: ${{ inputs.base_sha || github.event.before }}
-  CI_PRE_PROMOTION: ${{ inputs.pre_promotion || false }}
 
 concurrency:
   group: full-ci-${{ github.workflow }}-${{ inputs.commit_sha || github.sha }}
@@ -84,15 +47,13 @@ jobs:
           [[ "${expected_sha}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${base_sha}" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "${expected_sha}"
+          case "${GITHUB_REF}" in
+            refs/heads/main|refs/heads/dev) ;;
+            *) echo "Full CI must run from main or dev." >&2; exit 1 ;;
+          esac
+          test "${GITHUB_SHA}" = "${expected_sha}"
           if [[ "${base_sha}" != 0000000000000000000000000000000000000000 ]]; then
             git merge-base --is-ancestor "${base_sha}" "${expected_sha}"
-          fi
-          if [[ "${CI_PRE_PROMOTION}" != true ]]; then
-            case "${GITHUB_REF}" in
-              refs/heads/main|refs/heads/dev) ;;
-              *) echo "Full CI must run from main/dev unless used for trusted pre-promotion verification." >&2; exit 1 ;;
-            esac
-            test "${GITHUB_SHA}" = "${expected_sha}"
           fi
 
   python-quality:
@@ -174,7 +135,26 @@ jobs:
       - run: python -m pip install "uv==${UV_VERSION}"
       - run: uv sync --locked --extra server --extra dev
       - name: Run backend test suite
-        run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not acceptance"
+        run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not acceptance and not trading_safety"
+
+  trading-safety:
+    name: Trading safety invariants
+    needs: [verify-source, python-quality, repository-integrity, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ env.CI_COMMIT_SHA }}
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - run: python -m pip install "uv==${UV_VERSION}"
+      - run: uv sync --locked --extra server --extra dev
+      - run: uv run --locked python -m pytest -m trading_safety
 
   frontend:
     name: Frontend checks
@@ -289,25 +269,17 @@ jobs:
   code-ci-gate:
     name: Code CI gate
     if: always()
-    needs: [verify-source, python-quality, repository-integrity, secret-scan, backend, frontend, dependency-audit, docker-runtime, browser-safety]
+    needs: [verify-source, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    outputs:
-      verified_sha: ${{ steps.gate.outputs.verified_sha }}
     steps:
       - name: Require full verification success
-        id: gate
         env:
           RESULTS: ${{ toJSON(needs) }}
         shell: python
         run: |
-          import json, os, re
+          import json, os
           results = json.loads(os.environ["RESULTS"])
           failed = sorted(name for name, job in results.items() if not isinstance(job, dict) or job.get("result") != "success")
           if failed:
               raise SystemExit("Full CI checks did not succeed: " + ", ".join(failed))
-          sha = os.environ["CI_COMMIT_SHA"]
-          if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
-              raise SystemExit("Invalid verified SHA")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"verified_sha={sha}\n")
