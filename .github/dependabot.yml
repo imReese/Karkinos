@@ -8,6 +8,8 @@ updates:
       day: monday
       time: "09:00"
       timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       python-minor-and-patch:
@@ -25,6 +27,8 @@ updates:
       day: monday
       time: "09:15"
       timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       npm-minor-and-patch:
@@ -42,6 +46,8 @@ updates:
       day: monday
       time: "09:30"
       timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       actions-minor-and-patch:
@@ -59,6 +65,8 @@ updates:
       day: monday
       time: "09:45"
       timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       docker-minor-and-patch:

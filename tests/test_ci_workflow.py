@@ -55,8 +55,8 @@ def test_single_ci_workflow_owns_incremental_and_full_verification() -> None:
 
 def test_full_dispatch_binds_exact_dev_sha_and_base() -> None:
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "test \"${GITHUB_REF}\" = refs/heads/dev" in text
-    assert "test \"${GITHUB_SHA}\" = \"${DISPATCH_COMMIT_SHA}\"" in text
+    assert 'test "${GITHUB_REF}" = refs/heads/dev' in text
+    assert 'test "${GITHUB_SHA}" = "${DISPATCH_COMMIT_SHA}"' in text
     assert "git merge-base --is-ancestor" in text
     assert "mode=full" in text
 
