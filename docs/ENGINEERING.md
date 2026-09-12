@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `core/` | shared time, event, value primitives | keep ownership narrow |
 | `data/` | providers, market identity, calendar, ingestion, storage, dataset work | provider/storage/dataset responsibilities mixed |
-| `analytics/` | metrics, PIT/OOS/robustness research, acceptance/governance | research and project-governance concerns mixed |
+| `analytics/` | metrics, PIT/OOS/robustness research and evaluation | keep research evidence separate from portfolio and execution authority |
 | `strategy/` | legacy strategy and signal abstraction | signal-centric relative to Research -> Forecast -> Portfolio |
 | `backtest/` | backtest and simulation | coupled to legacy strategy/execution assumptions |
 | `execution/` | costs, Order/Fill contracts, simulation/paper execution | Simulation and Execution ownership still mixed |
@@ -17,7 +17,7 @@
 | `web/` | user interaction and presentation | derived from canonical platform semantics |
 | `scripts/`, release, CI | development and operations | larger than current local-first core requires |
 
-Reset classification: **KEEP / SIMPLIFY / FREEZE / DELETE / REPLACE**.
+Legacy-area classification when needed: **KEEP / SIMPLIFY / FREEZE / DELETE / REPLACE**.
 
 ## 2. Ownership and compatibility
 
@@ -187,7 +187,7 @@ A helper that simultaneously knows branch identity, local user data, process sta
 
 - Ruff lint coverage is intentionally narrow and can broaden incrementally after existing code is clean.
 - Static typing coverage is uneven; `data`, `backtest`, `analytics`, and application/server boundaries should be added deliberately.
-- Historical acceptance/release fixtures and project-governance helpers still exist and should be removed when they have no real consumer; they no longer receive a separate pytest exemption.
+- Milestone/acceptance audit infrastructure is retired; any production dependency on milestone-completion evidence is a regression, not a compatibility requirement.
 - Native candidate/release machinery remains large for the current local-first product and is retained only where installed-runtime compatibility still consumes it.
 - Container base images and the Gitleaks container are version-tag pinned rather than digest pinned; third-party GitHub Actions are full-SHA pinned.
 - Local Markdown links are a hard repository check; external-link health still lacks a low-frequency scheduled/manual audit.
