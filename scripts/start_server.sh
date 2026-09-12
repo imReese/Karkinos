@@ -23,7 +23,7 @@ Source branches:
   main        Run a cached code snapshot of the locally fetched main branch.
               Serves the Web app and API on port 8000. Supports --init and
               --foreground.
-  dev         Run the current dev working tree with backend reload on port 8001
+  dev         Run the current dev working tree with backend reload on port 8000
               and Vite on port 5173. Local uncommitted development edits are used.
   <branch>    Run a cached code snapshot of that branch without touching the
               current checkout.
@@ -279,7 +279,7 @@ FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
 
 SERVER_ARGS=(--reload --reload-exclude 'tests/**' --reload-exclude 'web/**' "$@")
 BACKEND_HOST="127.0.0.1"
-BACKEND_PORT="${KARKINOS_DEV_BACKEND_PORT:-8001}"
+BACKEND_PORT="${KARKINOS_DEV_BACKEND_PORT:-8000}"
 for ((i = 0; i < ${#SERVER_ARGS[@]}; i++)); do
 	case "${SERVER_ARGS[$i]}" in
 	--host)
