@@ -109,7 +109,7 @@ def _source_repo(
         "#!/usr/bin/env bash\n"
         "set -eu\n"
         'case "$*" in\n'
-        '  *TCP:8001*) printf "%s\\n" "${KARKINOS_TEST_DEV_LISTENER:-}" ;;\n'
+        '  *TCP:8000*) printf "%s\\n" "${KARKINOS_TEST_DEV_LISTENER:-}" ;;\n'
         '  *TCP:5173*) printf "%s\\n" "${KARKINOS_TEST_FRONTEND_LISTENER:-}" ;;\n'
         "esac\n",
     )
@@ -292,7 +292,7 @@ def test_dev_uses_current_dirty_working_tree_and_shared_local_state(tmp_path: Pa
         recorded = calls.read_text(encoding="utf-8")
         assert f"workspace={repo}" in recorded
         assert "branch=dev" in recorded
-        assert "vite-backend=http://127.0.0.1:8001" in recorded
+        assert "vite-backend=http://127.0.0.1:8000" in recorded
         assert (repo / ".run/dev/backend.pid").is_file()
         assert (repo / ".run/dev/frontend.pid").is_file()
         assert not (repo / ".run/dev/config").exists()
