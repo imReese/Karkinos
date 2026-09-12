@@ -81,11 +81,13 @@ Local uncommitted dev edits are intentionally included. Development starts:
 
 ```text
 Web     http://127.0.0.1:5173
-API     http://127.0.0.1:8001
-Health  http://127.0.0.1:8001/api/health
+API     http://127.0.0.1:8000
+Health  http://127.0.0.1:8000/api/health
 ```
 
 The development runtime uses the same `config.json`, `.env`, and `data/store` as stable snapshots. `.run/dev` contains only PID/process state. Schema-changing development must therefore use explicit migrations and preserve persisted-data compatibility.
+
+Dev and stable source backends both use port `8000` by default. `KARKINOS_DEV_BACKEND_PORT` remains available as an explicit development override, but the normal local workflow uses one backend port and relies on `.run/source.lock` to keep source runtimes mutually exclusive.
 
 You can remain on `dev` and run stable `main` without switching branches:
 
