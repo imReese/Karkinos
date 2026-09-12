@@ -3,8 +3,10 @@
 ## Branches
 
 `dev` is the normal development branch. `main` receives only the exact current
-`dev` head after its official `Dev CI gate` succeeds and the trusted promotion
-workflow revalidates that run and fast-forwards the ref.
+`dev` head after that SHA passes both the incremental `Dev CI gate` and the
+exact-SHA `Full CI gate`. The trusted promotion controller then revalidates the
+CI evidence, branch refs, and fast-forward ancestry before publishing
+`Main promotion gate` and updating `main` with `force=false`.
 
 Maintainers may work directly on `dev`. External contributions should use a
 feature branch or fork and open a pull request targeting `dev`.
@@ -70,18 +72,32 @@ npm --prefix web run test
 npm --prefix web run build
 ```
 
-Use the primary Python product suite when the affected boundary or regression
-risk justifies it:
+Use the current broad Python product suite when the affected boundary or
+regression risk justifies it:
 
 ```bash
 uv run --locked python -m pytest -m "not acceptance"
 ```
 
-`.github/workflows/dev-ci.yml` defines incremental verification for `dev`.
-`.github/workflows/ci.yml` defines full verification for `main` and explicit
-exact-SHA manual checks. Promotion does not run an older `main` CI definition
-against newer `dev` source; it promotes only an exact successful `dev` SHA, then
-dispatches that SHA's `main` CI and candidate workflows after the fast-forward.
+The `acceptance` marker is a legacy project/release-review exclusion during the
+Engineering Reset, not a second CI authority. New product tests should use
+behavioral/domain semantics instead of project-management acceptance criteria.
+
+`.github/workflows/ci.yml` is the single code-verification workflow. Pull
+requests and pushes to `dev` run its conservative incremental mode and finish at
+`Dev CI gate`. Promotion dispatches the exact current `dev` SHA through the same
+workflow in full mode; that candidate's own CI definition must finish at
+`Full CI gate` before `main` can move.
+
+`.github/workflows/promote-dev.yml` is the privileged controller. It executes
+trusted default-branch controller code only; it does not checkout or execute
+candidate code with write credentials. It never falls back to an older green
+ancestor and every branch/status write is preceded by exact evidence and ref
+revalidation.
+
+`candidate.yml` is currently retained only for the installed native-runtime
+candidate/update path. It is not a code-CI or promotion authority. Stable
+publication remains an explicit SemVer-tag operation in `release.yml`.
 
 Do not weaken assertions, typing, financial invariants, or fail-closed behavior
 merely to make a check pass.

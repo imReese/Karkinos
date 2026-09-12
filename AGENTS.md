@@ -86,7 +86,7 @@ Test count is not a project goal. Do not mechanically add tests for reversible, 
 
 Run the narrowest relevant checks first and broaden verification only when the affected boundary, a failure, or unresolved risk requires it.
 
-Use `docs/ENGINEERING.md` for the current test strategy and local validation commands. `.github/workflows/ci.yml` is authoritative for full `main` CI behavior.
+Use `docs/ENGINEERING.md` for the current test strategy and local validation commands. `.github/workflows/ci.yml` is the single CI authority for both incremental `dev` verification and exact-SHA full verification before promotion.
 
 Changes to runtime or UI behavior should validate the corresponding real product journey when practical rather than relying only on mocked contracts.
 
@@ -100,7 +100,11 @@ Report only checks that actually ran.
 
 Development changes should normally be based on the latest `dev` and integrate into `dev`. Isolated Git worktrees or temporary agent workspaces are workspace-isolation mechanisms only; they do not define a separate development workflow.
 
-The trusted promotion workflow may fast-forward only the **current** `dev` head after that exact SHA's official `Dev CI gate` succeeds. A red or pending tip waits; never promote an older green ancestor and never run stale `main` CI definitions against newer `dev` source as authorization.
+The trusted promotion workflow may fast-forward only the **current** `dev` head. That exact SHA must first have a successful incremental `Dev CI gate` and then a successful exact-SHA `Full CI gate` produced by the candidate SHA's own `ci.yml`. A red or pending tip waits; never promote an older green ancestor and never run stale `main` CI definitions against newer `dev` source as authorization.
+
+The privileged promotion controller must execute trusted `main` controller code only. It may inspect GitHub metadata, dispatch the candidate's CI, publish the promotion status, and perform the non-force ref update; it must not checkout or execute candidate code with write credentials.
+
+Immediately before moving `main`, revalidate the exact incremental/full CI evidence, current `dev`, current `main`, and fast-forward ancestry. Any disagreement fails closed.
 
 Never force-push, reset, or delete `dev` or `main`.
 
