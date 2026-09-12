@@ -156,7 +156,10 @@ def select(
         return None
     if expected_run_id is not None and run.get("id") != expected_run_id:
         raise ci.SourceCIVerificationError("promotion_trigger_run_changed")
-    if expected_run_attempt is not None and run.get("run_attempt") != expected_run_attempt:
+    if (
+        expected_run_attempt is not None
+        and run.get("run_attempt") != expected_run_attempt
+    ):
         raise ci.SourceCIVerificationError("promotion_trigger_attempt_changed")
 
     status = run.get("status")

@@ -1,6 +1,6 @@
 name: Promote verified dev
 
-on:
+on: # zizmor: ignore[dangerous-triggers] trusted controller checks out main only and validates exact upstream CI identity
   workflow_run:
     workflows: [CI]
     types: [completed]

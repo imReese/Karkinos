@@ -67,10 +67,9 @@ def run_checks(root: Path, files: list[str]) -> int:
         checks.extend(
             [
                 ("Ruff", [python, "-m", "ruff", "check", "--", *files]),
-                ("Black", [python, "-m", "black", "--check", "--diff", "--", *files]),
                 (
-                    "isort",
-                    [python, "-m", "isort", "--check-only", "--diff", "--", *files],
+                    "Ruff format",
+                    [python, "-m", "ruff", "format", "--check", "--diff", "--", *files],
                 ),
             ]
         )
