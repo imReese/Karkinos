@@ -22,11 +22,10 @@ def test_vite_config_splits_application_features_for_start_build():
     assert "feature-account" in chunk_config
 
 
-def test_vite_dev_proxy_targets_the_isolated_source_backend():
+def test_vite_dev_proxy_targets_the_source_backend():
     config = Path("web/vite.config.ts").read_text()
 
     assert "process.env.KARKINOS_DEV_BACKEND_URL" in config
-    assert "'http://127.0.0.1:8001'" in config
+    assert "'http://127.0.0.1:8000'" in config
     assert ").replace(/^http/, 'ws')" in config
-    assert "target: 'http://127.0.0.1:8000'" not in config
-    assert "target: 'ws://127.0.0.1:8000'" not in config
+    assert "127.0.0.1:8001" not in config
