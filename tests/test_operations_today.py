@@ -588,7 +588,6 @@ def test_operations_today_treats_no_manual_action_scheduler_as_skipped() -> None
     assert summary["conclusion_status"] == "healthy"
 
 
-
 def test_operations_today_excludes_retired_acceptance_audit_subsystem() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),
@@ -603,9 +602,7 @@ def test_operations_today_excludes_retired_acceptance_audit_subsystem() -> None:
         generated_at="2026-07-01T09:32:00+08:00",
     )
 
-    assert all(
-        item["id"] != "acceptance_audit" for item in summary["subsystems"]
-    )
+    assert all(item["id"] != "acceptance_audit" for item in summary["subsystems"])
 
 
 def test_operations_today_surfaces_broker_adapter_evidence_without_activation() -> None:

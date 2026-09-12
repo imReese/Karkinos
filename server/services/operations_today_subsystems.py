@@ -435,7 +435,6 @@ def _scheduler_retry_limitations(retry_state: Any) -> list[str]:
     return [f"Scheduler retry attempt {attempt} of {max_attempts}{suffix}"]
 
 
-
 citic_source_follow_up_attention = _citic_source_follow_up_attention
 broker_adapter_readiness_subsystem = _broker_adapter_readiness_subsystem
 broker_adapter_readiness_unavailable = _broker_adapter_readiness_unavailable
