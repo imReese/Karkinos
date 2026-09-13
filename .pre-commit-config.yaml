@@ -38,6 +38,12 @@ repos:
         language: system
         files: ^web/.*\.(ts|tsx|js|jsx|css|md|json)$
         require_serial: true
+      - id: shellcheck
+        name: ShellCheck
+        entry: shellcheck
+        language: system
+        types: [shell]
+        require_serial: true
       - id: documentation-integrity
         name: documentation integrity
         entry: python scripts/ci/check_docs_integrity.py
