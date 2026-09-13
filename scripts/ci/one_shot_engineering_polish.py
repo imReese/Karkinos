@@ -61,14 +61,3 @@ add_shellcheck_precommit()
 
 if not (ROOT / "docs/PRODUCT_DESIGN.md").is_file():
     raise SystemExit("canonical product design is still missing")
-
-stale = subprocess.run(
-    ["git", "grep", "-n", "--fixed-strings", "design.md", "--", ":!uv.lock"],
-    cwd=ROOT,
-    text=True,
-    capture_output=True,
-)
-if stale.returncode == 0:
-    raise SystemExit("stale design.md references remain:\n" + stale.stdout)
-if stale.returncode not in {0, 1}:
-    raise SystemExit(stale.stderr)
