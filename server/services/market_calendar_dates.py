@@ -15,6 +15,75 @@ from server.services.market_hours import get_shanghai_now
 POST_CLOSE_INGESTION_TIME = time(16, 0)
 
 
+def project_market_session(
+    db: Any,
+    now: datetime | None = None,
+    *,
+    calendar_reader: Any = None,
+) -> dict[str, Any]:
+    """Describe the SSE session using persisted, officially verified calendar facts."""
+    current = get_shanghai_now(now)
+    reader = calendar_reader or getattr(db, "get_market_calendar_snapshot_sync", None)
+    row = reader(exchange="SSE", year=current.year) if callable(reader) else None
+    validation = validate_verified_market_calendar(row)
+    result: dict[str, Any] = {
+        "status": "unknown",
+        "calendar_available": row is not None,
+        "calendar_verified": validation.verified,
+        "latest_completed_trade_date": None,
+        "expected_quote_date": None,
+        "next_trading_date": None,
+        "calendar_evidence_refs": [],
+        "blockers": list(validation.blockers),
+    }
+    if not validation.verified:
+        return result
+    days = _calendar_days(row)
+    today = current.date().isoformat()
+    trading_day = next(day for day in days if day["date"] == today)["is_trading_day"]
+    clock = current.time()
+    if not trading_day:
+        status = "non_trading_day"
+    elif time(9, 30) <= clock < time(11, 30) or time(13) <= clock < time(15):
+        status = "open"
+    elif time(11, 30) <= clock < time(13):
+        status = "break"
+    else:
+        status = "closed"
+    cutoff = (
+        today if clock >= time(15) else (current.date() - timedelta(days=1)).isoformat()
+    )
+    completed = _trading_dates_on_or_before(row, cutoff)
+    refs = [validation.evidence_ref]
+    if not completed and callable(reader):
+        previous = reader(exchange="SSE", year=current.year - 1)
+        previous_validation = validate_verified_market_calendar(previous)
+        if previous_validation.verified:
+            completed = _trading_dates_on_or_before(previous, cutoff)
+            refs.append(previous_validation.evidence_ref)
+    next_dates = sorted(
+        day["date"] for day in days if day["is_trading_day"] and day["date"] > today
+    )
+    if not next_dates and callable(reader):
+        following = reader(exchange="SSE", year=current.year + 1)
+        if validate_verified_market_calendar(following).verified:
+            next_dates = sorted(
+                day["date"]
+                for day in _calendar_days(following)
+                if day["is_trading_day"]
+            )
+    latest = completed[-1] if completed else None
+    result.update(
+        status=status,
+        latest_completed_trade_date=latest,
+        expected_quote_date=today if trading_day and clock >= time(9, 30) else latest,
+        next_trading_date=next_dates[0] if next_dates else None,
+        calendar_evidence_refs=refs,
+        blockers=[] if latest else ["latest_completed_trading_session_unavailable"],
+    )
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class VerifiedClosedTradingDate:
     trade_date: str
@@ -82,22 +151,32 @@ def _trading_dates_on_or_before(
 ) -> list[str]:
     if row is None:
         return []
-    try:
-        days = json.loads(str(row.get("days_json") or "[]"))
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return []
     return sorted(
         str(day.get("date"))
-        for day in days
+        for day in _calendar_days(row)
         if isinstance(day, dict)
         and day.get("is_trading_day") is True
         and str(day.get("date") or "") <= cutoff_date
     )
 
 
+def _calendar_days(row: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if row is None:
+        return []
+    value = row.get("days", row.get("days_json"))
+    if isinstance(value, list):
+        return value
+    try:
+        decoded = json.loads(str(value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return decoded if isinstance(decoded, list) else []
+
+
 __all__ = [
     "POST_CLOSE_INGESTION_TIME",
     "VerifiedClosedTradingDate",
     "latest_verified_closed_trading_date",
+    "project_market_session",
     "resolve_latest_verified_closed_trading_date",
 ]

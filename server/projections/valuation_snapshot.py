@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -17,11 +17,11 @@ from server.contracts.quote_ingestion import (
 from server.ledger.models import LedgerEntry
 from server.projections.quote_status import (
     expected_quote_date,
-    parse_quote_timestamp,
-    quote_is_stale,
+    quote_freshness_reason,
     quote_valuation_status,
 )
 from server.projections.service import build_portfolio_projection
+from server.services.market_calendar_dates import project_market_session
 from server.services.market_hours import get_shanghai_now
 from server.services.position_presence import is_economically_zero_quantity
 from server.valuation_snapshot_contract import validate_valuation_snapshot
@@ -317,33 +317,21 @@ def _freeze_current_quote_freshness(
     quotes: list[dict[str, Any]],
     *,
     now: datetime,
+    market_session: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Freeze one wall-clock decision into otherwise persisted quote facts."""
-
-    expected_date = expected_quote_date(now)
+    """Freeze session and valuation freshness into persisted quote facts."""
     frozen: list[dict[str, Any]] = []
     for raw in quotes:
         quote = dict(raw)
         if quote_valuation_status(quote) != "complete":
             frozen.append(quote)
             continue
-        timestamp = parse_quote_timestamp(
-            quote.get("quote_timestamp") or quote.get("timestamp")
-        )
-        stale_reason: str | None = None
-        if timestamp is None:
-            stale_reason = "invalid_quote_timestamp"
-        elif timestamp > now + timedelta(minutes=1):
-            stale_reason = "quote_timestamp_after_valuation_clock"
-        elif quote_is_stale(
-            {**quote, "timestamp": timestamp.isoformat()},
+        stale_reason = quote_freshness_reason(
+            quote,
             now=now,
-        ):
-            stale_reason = (
-                "quote_older_than_expected_session"
-                if timestamp.date() < expected_date
-                else "quote_older_than_live_ttl"
-            )
+            market_session=market_session,
+            for_valuation=True,
+        )
         if stale_reason is not None:
             quote.setdefault("observed_quote_status", quote.get("quote_status"))
             quote["quote_status"] = "stale"
@@ -621,7 +609,11 @@ def build_current_valuation_snapshot(
 ) -> dict[str, Any]:
     """Build an immutable valuation identity, persisting only when requested."""
     frozen_now = get_shanghai_now(now)
-    valuation_expected_date = expected_quote_date(frozen_now).isoformat()
+    market_session = project_market_session(db, frozen_now)
+    valuation_expected_date = (
+        market_session["expected_quote_date"]
+        or expected_quote_date(frozen_now).isoformat()
+    )
     ledger_identity = ledger_identity_from_rows(
         _load_ledger_rows(db, candidate_rows=candidate_ledger_rows)
     )
@@ -645,6 +637,7 @@ def build_current_valuation_snapshot(
             *missing_quotes,
         ],
         now=frozen_now,
+        market_session=market_session,
     )
     quote_set_fingerprint = _fingerprint(quotes)
     ledger_fingerprint = ledger_identity["ledger_fingerprint"]
@@ -666,6 +659,11 @@ def build_current_valuation_snapshot(
             {str(row["fetch_run_id"]) for row in quotes if row.get("fetch_run_id")}
         ),
     }
+    if market_session["calendar_available"]:
+        metadata["valuation_calendar_evidence_refs"] = market_session[
+            "calendar_evidence_refs"
+        ]
+        metadata["valuation_calendar_blockers"] = market_session["blockers"]
     payload = {
         "as_of": as_of,
         "trade_date": trade_date,

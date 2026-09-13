@@ -31,10 +31,13 @@ from server.projections.portfolio_quotes import (
     using_persistent_cache,
 )
 from server.projections.quote_status import (
+    current_quote_valuation_evidence,
+    quote_pricing_semantics,
     quote_valuation_blocker,
     quote_valuation_status,
 )
 from server.services.asset_metadata import resolve_asset_metadata
+from server.services.market_calendar_dates import project_market_session
 from server.services.position_presence import classify_position_presence
 from server.services.valuation_snapshot import valuation_identity_fields
 
@@ -69,7 +72,13 @@ def build_portfolio_snapshot_sync(
         if now is None
         else ports.current_valuation_snapshot(state, now=now)
     )
-    latest_quotes = quotes_from_valuation_snapshot(valuation_snapshot)
+    market_session = project_market_session(getattr(state, "db", None), now)
+    latest_quotes = {
+        symbol: current_quote_valuation_evidence(
+            quote, now=now, market_session=market_session
+        )
+        for symbol, quote in quotes_from_valuation_snapshot(valuation_snapshot).items()
+    }
     portfolio, instruments = ports.resolve_projection_sources(
         state,
         latest_quotes=latest_quotes,
@@ -122,6 +131,7 @@ def build_portfolio_snapshot_sync(
         )
         raw_instrument_type = (
             getattr(instrument, "instrument_type", None)
+            or (quote or {}).get("instrument_type")
             or getattr(instrument, "asset_class", None)
             or ledger_asset_classes.get(symbol)
         )
@@ -188,9 +198,7 @@ def build_portfolio_snapshot_sync(
             name=metadata.display_name,
             display_name=metadata.display_name,
             asset_class=metadata.asset_class,
-            instrument_type=(
-                getattr(getattr(instrument, "instrument_type", None), "value", None)
-            ),
+            instrument_type=instrument_type or None,
             quantity=quantity,
             available_qty=float(pos.available_qty),
             frozen_qty=float(pos.frozen_qty),
@@ -214,6 +222,12 @@ def build_portfolio_snapshot_sync(
             refresh_policy=refresh_policy(now),
             using_persistent_cache=using_persistent_cache(quote),
             nav_date=None if quote is None else quote.get("nav_date"),
+            **quote_pricing_semantics(
+                quote,
+                instrument_type=instrument_type,
+                asset_class=metadata.asset_class,
+                market_session=market_session,
+            ),
             valuation_available=valuation_available,
             valuation_blockers=(
                 []

@@ -1192,8 +1192,15 @@ def test_scheduler_backfill_never_refreshes_a_frozen_daily_batch_remotely():
 def test_scheduler_post_close_promotes_new_stock_bar_into_current_quote(
     tmp_path,
     held: bool,
+    monkeypatch,
 ):
     from server.scheduler import TradingScheduler
+
+    valuation_now = datetime(2026, 5, 29, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: valuation_now,
+    )
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

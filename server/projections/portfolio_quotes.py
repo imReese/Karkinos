@@ -30,6 +30,7 @@ from server.projections.portfolio_read_snapshot_persistence import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
+from server.projections.quote_status import quote_freshness_reason
 from server.projections.quote_status import quote_is_stale as _quote_is_stale
 from server.projections.quote_status import quote_status as _quote_status
 from server.projections.service import build_portfolio_projection_from_db
@@ -409,11 +410,15 @@ def quote_stale_reason(
     if _quote_status(state, quote, now=now) != "stale":
         return None
 
-    policy = refresh_policy(now)
-    if policy == "cache_only":
-        return "market_closed_cache_only"
-
-    return "quote_older_than_expected_session"
+    return (
+        quote_freshness_reason(
+            quote,
+            now=now,
+            db=getattr(state, "db", None),
+            live_poll_interval=getattr(state.config, "live_poll_interval", 60),
+        )
+        or "quote_older_than_expected_session"
+    )
 
 
 def response_quote_status(
