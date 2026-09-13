@@ -84,7 +84,9 @@ def _non_trading_schedule() -> dict:
     }
 
 
-def test_operations_today_suppresses_staleness_only_on_a_non_trading_day() -> None:
+def test_operations_today_does_not_clear_account_staleness_on_a_non_trading_day() -> (
+    None
+):
     summary = build_operations_today_summary(
         decision_payload=_stale_account_truth_decision(),
         trading_plan={
@@ -110,15 +112,17 @@ def test_operations_today_suppresses_staleness_only_on_a_non_trading_day() -> No
     scheduler = next(
         item for item in summary["subsystems"] if item["id"] == "scheduler"
     )
-    assert account_truth["status"] == "skipped"
-    assert account_truth["next_action"] == "none"
-    assert account_truth["detail_status"] == "stale_non_trading_day"
+    assert account_truth["status"] == "blocked"
+    assert account_truth["next_action"] == "refresh_account_truth_snapshot"
+    assert account_truth["detail_status"] == "stale"
     assert account_truth["last_run_at"] == "2026-07-03T08:45:00+08:00"
     assert scheduler["status"] == "skipped"
     assert scheduler["detail_status"] == "not_trading_day"
+    assert any(
+        item["subsystem_id"] == "account_truth" for item in summary["attention_items"]
+    )
     assert all(
-        item["subsystem_id"] not in {"account_truth", "scheduler"}
-        for item in summary["attention_items"]
+        item["subsystem_id"] != "scheduler" for item in summary["attention_items"]
     )
 
 
@@ -1343,6 +1347,9 @@ def test_operations_today_marks_running_paper_shadow_run_as_waiting() -> None:
     assert subsystem["status"] == "degraded"
     assert subsystem["next_action"] == "wait_for_paper_shadow_run"
     assert subsystem["detail_status"] == "running"
+    assert all(
+        item["subsystem_id"] != "paper_shadow" for item in summary["attention_items"]
+    )
 
 
 def test_operations_today_treats_accepted_paper_shadow_review_as_gate_passed() -> None:

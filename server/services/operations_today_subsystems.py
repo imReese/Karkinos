@@ -127,17 +127,15 @@ def _market_subsystem(decision_payload: dict[str, Any]) -> dict[str, Any]:
 
 def _account_truth_subsystem(
     decision_payload: dict[str, Any],
-    *,
-    daily_candidate_schedule: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     account_truth = _nested(decision_payload, "summary", "account_truth")
     gate_status = _status(account_truth.get("gate_status"))
     stale_only = _account_truth_is_stale_only(account_truth)
     if gate_status in _BLOCKING_ACCOUNT_STATUSES:
-        if stale_only and _is_non_trading_day(daily_candidate_schedule):
-            operation_status = "skipped"
-            next_action = "none"
-            detail_status = "stale_non_trading_day"
+        if account_truth.get("has_evidence") is False:
+            operation_status = "blocked"
+            next_action = "attach_account_truth_evidence"
+            detail_status = "missing"
         elif stale_only:
             operation_status = "blocked"
             next_action = "refresh_account_truth_snapshot"

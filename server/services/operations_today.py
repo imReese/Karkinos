@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Iterable
 
-from server.models import DailyOperationsSummary
+from server.models import (
+    CurrentHoldingMarketEvidenceReviewResponse,
+    DailyOperationsSummary,
+)
 from server.services.citic_source_follow_up import build_citic_source_follow_up
 from server.services.operations_today_paper_shadow import (
     paper_shadow_run_summary as _paper_shadow_run_summary,
@@ -105,10 +108,7 @@ def build_operations_today_summary(
     )
     subsystems = [
         _market_subsystem(decision_payload),
-        _account_truth_subsystem(
-            decision_payload,
-            daily_candidate_schedule=daily_candidate_schedule,
-        ),
+        _account_truth_subsystem(decision_payload),
         _strategy_subsystem(decision_payload, daily_operations),
         _risk_subsystem(trading_plan, daily_operations),
         _daily_plan_subsystem(trading_plan),
@@ -159,3 +159,87 @@ def build_operations_today_summary(
             "Broker integration remains disabled; live-like workflows require manual confirmation.",
         ],
     }
+
+
+def build_overview_attention_items(
+    *,
+    operations: dict[str, Any],
+    market_evidence_review: CurrentHoldingMarketEvidenceReviewResponse,
+    trading_plan: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Project actionable work while retaining subsystem health in Operations."""
+    plan = trading_plan or operations.get("daily_plan") or {}
+    blockers = _list_of_dicts(plan.get("blocker_summary"))
+    plan_roots = {str(blocker.get("category") or "") for blocker in blockers}
+    items = [
+        item
+        for item in _list_of_dicts(operations.get("attention_items"))
+        if item.get("next_action")
+        not in {
+            None,
+            "",
+            "none",
+            "wait_for_paper_shadow_run",
+            "await_explicit_real_broker_environment_confirmation",
+        }
+    ]
+    scheduler = operations.get("scheduler")
+    if isinstance(scheduler, dict) and not scheduler.get("run_id"):
+        items = [item for item in items if item.get("subsystem_id") != "scheduler"]
+    if (
+        plan.get("candidate_pool_count") == 0
+        and plan.get("order_intent_count") == 0
+        and not _int(
+            (operations.get("daily_operations") or {}).get("pending_manual_order_count")
+        )
+    ):
+        items = [
+            item
+            for item in items
+            if not (
+                item.get("subsystem_id") == "account_truth"
+                and item.get("next_action") == "attach_account_truth_evidence"
+                and (item.get("evidence") or {}).get("status") == "missing"
+            )
+        ]
+
+    # A watchlist refresh diagnostic is not a current-holding valuation blocker.
+    # Preserve it when a current plan independently requires that market input.
+    holding_items = [
+        item
+        for item in market_evidence_review.items
+        if item.next_manual_action != "none" and item.requires_user_attention
+    ]
+    holding_blocked = market_evidence_review.status == "blocked_identity"
+    if holding_blocked or holding_items:
+        items = [item for item in items if item.get("subsystem_id") != "market_data"]
+        items[:0] = _attention_items(
+            [
+                {
+                    "id": "market_data",
+                    "status": (
+                        "blocked" if holding_blocked else "manual_action_required"
+                    ),
+                    "target": "market",
+                    "last_run_at": market_evidence_review.valuation_as_of,
+                    "next_action": market_evidence_review.next_manual_action,
+                    "detail_status": market_evidence_review.status,
+                    "evidence_fingerprint": market_evidence_review.review_fingerprint,
+                }
+            ]
+        )
+    elif "market_data" not in plan_roots:
+        items = [item for item in items if item.get("subsystem_id") != "market_data"]
+
+    present = {str(item.get("subsystem_id") or "") for item in items}
+    represented_roots = present & {"account_truth", "market_data", "risk"}
+    if plan_roots and plan_roots <= represented_roots:
+        items = [
+            item
+            for item in items
+            if not (
+                item.get("subsystem_id") == "daily_trading_plan"
+                and item.get("next_action") == "resolve_daily_plan_blockers"
+            )
+        ]
+    return items

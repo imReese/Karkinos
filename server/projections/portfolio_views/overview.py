@@ -13,7 +13,7 @@ from server.models import (
     TodayPnlBreakdown,
     TodayPnlContributor,
 )
-from server.projections.portfolio_application import (
+from server.projections.portfolio_assets import (
     normalize_asset_class as _normalize_asset_class,
 )
 from server.services.daily_operations import build_daily_operations_summary
@@ -26,6 +26,11 @@ def overview_today_pnl_update(
     daily_positions = [item for group in live_holdings.groups for item in group.items]
     if snapshot is not None:
         daily_positions.extend(snapshot.closed_positions)
+    return overview_position_pnl_update(daily_positions)
+
+
+def overview_position_pnl_update(daily_positions) -> dict[str, object]:
+    """Aggregate the canonical after-cost daily marks without revaluing holdings."""
     if any(position.today_change is None for position in daily_positions):
         return {
             "today_pnl": None,
