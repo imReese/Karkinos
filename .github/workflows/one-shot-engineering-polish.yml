@@ -21,26 +21,14 @@ jobs:
           ref: dev
           fetch-depth: 0
           persist-credentials: true
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-      - name: Set up uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: "0.11.28"
-          enable-cache: true
       - name: Apply engineering polish
         run: python scripts/ci/one_shot_engineering_polish.py
-      - name: Refresh locked development dependencies
-        run: uv lock
       - name: Validate documentation and shell entrypoints
         run: |
           set -euo pipefail
-          uv sync --locked --extra dev
           python scripts/ci/check_docs_integrity.py
           bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
-          uv run --locked --extra dev shellcheck scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+          shellcheck scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
           git diff --check
       - name: Commit polish and remove one-shot tooling
         run: |
