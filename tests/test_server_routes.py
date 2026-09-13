@@ -35,6 +35,7 @@ def _persisted_quote(
     asset_class: str,
     timestamp: str | None = None,
     previous_close: float | None = None,
+    quote_status: str = "live",
 ) -> dict[str, object]:
     """Build explicit persisted market evidence for route-test holdings."""
 
@@ -47,7 +48,7 @@ def _persisted_quote(
         "previous_close_date": quote_timestamp.split("T", 1)[0],
         "timestamp": quote_timestamp,
         "source": "persisted_route_test_quote",
-        "quote_status": "live",
+        "quote_status": quote_status,
     }
 
 
@@ -1684,7 +1685,7 @@ def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
     assert response.has_persistent_cache is True
 
 
-def test_market_data_health_preserves_cache_source_health(monkeypatch):
+def test_market_data_health_keeps_expired_cache_stale(monkeypatch):
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -1725,9 +1726,9 @@ def test_market_data_health_preserves_cache_source_health(monkeypatch):
 
     response = asyncio.run(health_route.endpoint())
 
-    assert response.quotes[0].quote_status == "cache"
-    assert response.source_health == "cache"
-    assert response.provider_status == "cache"
+    assert response.quotes[0].quote_status == "stale"
+    assert response.source_health == "stale"
+    assert response.provider_status == "stale"
     assert response.next_action == "refresh_quotes_or_check_source"
 
 
@@ -4576,6 +4577,8 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
                     "price": 2.2503,
                     "volume": None,
                     "timestamp": "2026-04-22",
+                    "quote_status": "confirmed",
+                    "nav_date": "2026-04-22",
                     "previous_close": 2.2606,
                     "previous_close_date": "2026-04-21",
                 }
@@ -4598,6 +4601,8 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
                     "price": 2.2503,
                     "volume": None,
                     "timestamp": "2026-04-22",
+                    "quote_status": "confirmed",
+                    "nav_date": "2026-04-22",
                     "previous_close": 2.2606,
                     "previous_close_date": "2026-04-21",
                 }
@@ -5728,6 +5733,7 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
                     "019999",
                     price=1.126,
                     asset_class="fund",
+                    quote_status="confirmed",
                 )
             ],
         ),
@@ -5843,6 +5849,7 @@ def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
                     "029999",
                     price=1.2,
                     asset_class="fund",
+                    quote_status="confirmed",
                 )
             ],
         ),
@@ -7357,7 +7364,7 @@ def test_quote_status_allows_live_provider_lag_with_asset_specific_windows():
     )
     assert (
         portfolio_routes._quote_stale_reason(fake_state, stale_stock_quote, now=now)
-        == "quote_older_than_expected_session"
+        == "quote_older_than_live_ttl"
     )
 
 
@@ -8242,11 +8249,13 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
                     "示例成长混合C",
                     price=1.0,
                     asset_class="fund",
+                    quote_status="confirmed",
                 ),
                 _persisted_quote(
                     "示例科技混合C",
                     price=1.0,
                     asset_class="fund",
+                    quote_status="confirmed",
                 ),
             ],
         ),
@@ -14712,7 +14721,9 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
     assert response.groups[0].items[0].quote_timestamp == "2026-04-22T15:00:00"
     assert response.groups[0].items[0].quote_source == "akshare"
     assert response.groups[0].items[0].quote_age_seconds is not None
-    assert response.groups[0].items[0].stale_reason == "market_closed_cache_only"
+    assert (
+        response.groups[0].items[0].stale_reason == "quote_older_than_expected_session"
+    )
     assert response.groups[0].items[0].refresh_policy == "cache_only"
     assert overview.quote_status == "missing"
     assert overview.quote_age_seconds is not None

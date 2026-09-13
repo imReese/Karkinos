@@ -15,6 +15,7 @@ from server.persistence.valuation_publication_recovery import (
 )
 from server.projections.quote_status import parse_quote_timestamp, quote_is_stale
 from server.projections.valuation_snapshot import valuation_snapshot_from_row
+from server.services.market_calendar_dates import project_market_session
 
 
 def _state(
@@ -69,6 +70,17 @@ def build_system_readiness(
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA query_only=ON")
             conn.execute("BEGIN")
+
+            def read_calendar(*, exchange: str, year: int) -> dict[str, Any] | None:
+                calendar = conn.execute(
+                    "SELECT * FROM market_calendar_snapshots WHERE exchange = ? AND year = ?",
+                    (exchange, year),
+                ).fetchone()
+                return dict(calendar) if calendar is not None else None
+
+            market_session = project_market_session(
+                None, current, calendar_reader=read_calendar
+            )
             controls = {
                 row["key"]: {
                     **json.loads(row["value_json"]),
@@ -87,6 +99,11 @@ def build_system_readiness(
             )
             publication = controls.get("valuation_snapshot_publication", {})
             attempt = controls.get("valuation_snapshot_publication_attempt")
+            refresh_row = conn.execute(
+                "SELECT run_id, started_at, finished_at, status, error_message "
+                "FROM quote_fetch_runs ORDER BY started_at DESC, id DESC LIMIT 1"
+            ).fetchone()
+            refresh_attempt = dict(refresh_row) if refresh_row is not None else attempt
             row = conn.execute(
                 "SELECT * FROM valuation_snapshots WHERE snapshot_id = ?",
                 (publication.get("snapshot_id"),),
@@ -108,6 +125,8 @@ def build_system_readiness(
                             "timestamp": q.get("quote_timestamp") or q.get("timestamp"),
                         },
                         now=current,
+                        market_session=market_session,
+                        for_valuation=True,
                     )
                     for q in valuation["quotes"]
                 )
@@ -127,12 +146,18 @@ def build_system_readiness(
                 )
             else:
                 failure_codes.append("valuation_unavailable")
+            refresh_failed = (refresh_attempt or {}).get("status") in {
+                "failed",
+                "error",
+                "partial",
+            }
             states["market_data"] = _state(
-                "degraded" if failures or failure_codes else "ready",
-                latest_attempt=attempt,
+                "degraded" if failures or failure_codes or refresh_failed else "ready",
+                latest_attempt=refresh_attempt,
                 blockers=sorted(
                     set(
                         failure_codes
+                        + (["latest_refresh_attempt_failed"] if refresh_failed else [])
                         + (
                             ["valuation_publication_recovery_required"]
                             if failures

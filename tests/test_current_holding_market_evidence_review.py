@@ -232,6 +232,19 @@ def test_review_keeps_unknown_quote_status_explicit() -> None:
     )
 
 
+def test_review_does_not_clear_unavailable_valuation_with_confirmed_quote_label() -> (
+    None
+):
+    position = _position("UNAVAILABLE", quantity=1, quote_status="confirmed")
+    position = position.model_copy(update={"valuation_available": False})
+
+    report = build_current_holding_market_evidence_review(_snapshot([position]))
+
+    assert report.review_required_count == 1
+    assert report.items[0].review_reason == "quote_missing_or_error"
+    assert report.items[0].blocks_authoritative_decisions is True
+
+
 def test_review_groups_non_stock_and_non_fund_holdings_in_other_lane() -> None:
     report = build_current_holding_market_evidence_review(
         _snapshot(
@@ -263,3 +276,45 @@ def test_review_groups_non_stock_and_non_fund_holdings_in_other_lane() -> None:
     }
     assert report.quote_refresh_symbols == ["510300"]
     assert report.confirmed_fund_nav_refresh_symbols == []
+
+
+def test_published_nav_wait_preserves_decision_block_without_user_attention() -> None:
+    position = _position(
+        "FUND",
+        quantity=100,
+        quote_status="stale",
+        asset_class="fund",
+        quote_source="eastmoney_fund_page",
+    ).model_copy(
+        update={
+            "pricing_kind": "published_nav",
+            "pricing_authority": "authoritative",
+            "pricing_as_of": "2026-07-17",
+            "valuation_available": True,
+        }
+    )
+    report = build_current_holding_market_evidence_review(_snapshot([position]))
+    assert report.review_required_count == 1
+    assert report.items[0].blocks_authoritative_decisions is True
+    assert report.items[0].requires_user_attention is False
+    missing = position.model_copy(
+        update={
+            "valuation_available": False,
+            "valuation_blockers": ["quote_older_than_expected_session"],
+        }
+    )
+    missing_report = build_current_holding_market_evidence_review(_snapshot([missing]))
+    assert missing_report.items[0].requires_user_attention is True
+
+
+def test_authoritative_cached_close_is_not_user_attention() -> None:
+    position = _position("STOCK", quantity=100, quote_status="cache").model_copy(
+        update={
+            "pricing_kind": "session_close",
+            "pricing_authority": "authoritative",
+            "valuation_available": True,
+        }
+    )
+    report = build_current_holding_market_evidence_review(_snapshot([position]))
+    assert report.items[0].requires_user_attention is False
+    assert report.items[0].blocks_authoritative_decisions is True

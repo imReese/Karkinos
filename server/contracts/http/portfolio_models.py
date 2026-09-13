@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,9 @@ class PositionResponse(BaseModel):
     refresh_policy: str | None = None
     using_persistent_cache: bool = False
     nav_date: str | None = None
+    pricing_kind: str = "unknown"
+    pricing_as_of: str | None = None
+    pricing_authority: str = "unknown"
     valuation_available: bool = True
     valuation_blockers: list[str] = Field(default_factory=list)
 
@@ -76,6 +79,7 @@ class CurrentHoldingMarketEvidenceReviewItem(BaseModel):
     next_manual_action: str
     explicit_refresh_eligible: bool = True
     blocks_authoritative_decisions: bool = True
+    requires_user_attention: bool = True
 
 
 class CurrentHoldingMarketEvidenceLane(BaseModel):
@@ -209,6 +213,9 @@ class LiveHoldingItemResponse(BaseModel):
     refresh_policy: str | None = None
     using_persistent_cache: bool = False
     nav_date: str | None = None
+    pricing_kind: str = "unknown"
+    pricing_as_of: str | None = None
+    pricing_authority: str = "unknown"
     valuation_available: bool = True
     valuation_blockers: list[str] = Field(default_factory=list)
 
@@ -281,6 +288,9 @@ class AccountOverview(BaseModel):
     unrealized_pnl: float | None
     realized_pnl: float
     cash_ratio: float | None
+    cumulative_pnl: float | None = None
+    cumulative_return: float | None = None
+    latest_session_date: str | None = None
     today_pnl: float | None = None
     today_pnl_breakdown: TodayPnlBreakdown | None = None
     today_contributors: list[TodayPnlContributor] = Field(default_factory=list)
@@ -313,11 +323,37 @@ class AccountOverview(BaseModel):
     valuation_blockers: list[str] = Field(default_factory=list)
 
 
+class OverviewMarketSession(BaseModel):
+    status: Literal["open", "break", "closed", "non_trading_day", "unknown"]
+    calendar_verified: bool
+    latest_completed_trade_date: str | None = None
+    expected_quote_date: str | None = None
+    next_trading_date: str | None = None
+    blockers: list[str] = Field(default_factory=list)
+
+
+class OverviewRefreshHealth(BaseModel):
+    status: Literal["healthy", "degraded", "running", "unknown"]
+    latest_attempt: dict[str, Any] | None = None
+    blockers: list[str] = Field(default_factory=list)
+
+
+class OverviewState(BaseModel):
+    market_session: OverviewMarketSession
+    valuation_usability: Literal["usable", "degraded", "unavailable"]
+    pricing_as_of: str | None = None
+    refresh_health: OverviewRefreshHealth
+    decision_readiness: Literal["ready", "blocked", "unknown"]
+    user_attention: list[dict[str, Any]] = Field(default_factory=list)
+    attention_status: Literal["available", "unavailable"]
+
+
 class AccountStateResponse(BaseModel):
     summary: AccountOverview
     snapshot: PortfolioSnapshot
     risks: list["RiskSummaryItem"]
     next_step: str
+    overview: OverviewState | None = None
 
 
 class RiskSummaryItem(BaseModel):

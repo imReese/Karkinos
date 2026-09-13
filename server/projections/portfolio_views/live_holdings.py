@@ -50,13 +50,18 @@ from server.projections.portfolio_read_snapshot_persistence import (
     portfolio_read_snapshot_for_state,
 )
 from server.projections.quote_status import (
+    current_quote_valuation_evidence,
+)
+from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
 from server.projections.quote_status import (
+    quote_pricing_semantics,
     quote_valuation_blocker,
     quote_valuation_status,
 )
 from server.services.asset_metadata import resolve_asset_metadata
+from server.services.market_calendar_dates import project_market_session
 from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 from server.services.position_presence import (
     is_economically_zero_quantity,
@@ -205,7 +210,13 @@ def build_live_holdings_response(
 ) -> LiveHoldingsResponse:
     resolved_now = now or get_shanghai_now()
     valuation_snapshot = valuation_snapshot or _current_valuation_snapshot(state)
-    latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
+    market_session = project_market_session(getattr(state, "db", None), resolved_now)
+    latest_quotes = {
+        symbol: current_quote_valuation_evidence(
+            quote, now=resolved_now, market_session=market_session
+        )
+        for symbol, quote in _quotes_from_valuation_snapshot(valuation_snapshot).items()
+    }
     portfolio, instruments = _resolve_projection_sources(
         state,
         latest_quotes=latest_quotes,
@@ -234,7 +245,9 @@ def build_live_holdings_response(
         latest_quote = latest_quotes.get(symbol, {})
         instrument_type = _live_instrument_type(
             getattr(getattr(instrument, "instrument_type", None), "value", None)
+            or latest_quote.get("instrument_type")
             or getattr(getattr(instrument, "asset_class", None), "value", None)
+            or latest_quote.get("asset_class")
         )
         asset_class = _normalize_asset_class(
             latest_quote.get("asset_class")
@@ -310,9 +323,7 @@ def build_live_holdings_response(
                 name=metadata.display_name,
                 display_name=metadata.display_name,
                 asset_class=metadata.asset_class,
-                instrument_type=getattr(
-                    getattr(instrument, "instrument_type", None), "value", None
-                ),
+                instrument_type=instrument_type or None,
                 quantity=quantity,
                 avg_cost=avg_cost,
                 market_value=market_value,
@@ -332,6 +343,12 @@ def build_live_holdings_response(
                 refresh_policy=_refresh_policy(resolved_now),
                 using_persistent_cache=_using_persistent_cache(latest_quote),
                 nav_date=latest_quote.get("nav_date"),
+                **quote_pricing_semantics(
+                    latest_quote,
+                    instrument_type=instrument_type,
+                    asset_class=metadata.asset_class,
+                    market_session=market_session,
+                ),
                 valuation_available=valuation_available,
                 valuation_blockers=(
                     []

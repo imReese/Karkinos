@@ -25,6 +25,15 @@ class _TransactionValuationFacts:
     def list_quote_selection_candidates_sync(self) -> list[dict[str, Any]]:
         return list_quote_selection_candidates_on_connection(self._conn)
 
+    def get_market_calendar_snapshot_sync(
+        self, *, exchange: str, year: int
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT * FROM market_calendar_snapshots WHERE exchange = ? AND year = ?",
+            (exchange, year),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
     def get_latest_daily_close_before_sync(
         self,
         symbol: str,

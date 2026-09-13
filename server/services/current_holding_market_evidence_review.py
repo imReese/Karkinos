@@ -136,7 +136,13 @@ def _review_item(position: Any) -> CurrentHoldingMarketEvidenceReviewItem | None
         quote_status = "confirmed_nav_missing"
         review_reason = "confirmed_nav_missing"
         next_action = "wait_for_confirmed_nav_then_run_explicit_refresh"
-    elif raw_status in _CONFIRMED_STATUSES:
+    elif getattr(position, "valuation_available", True) is False:
+        quote_status = raw_status or "missing"
+        review_reason = "quote_missing_or_error"
+        next_action = "inspect_data_source_then_run_explicit_refresh"
+    elif raw_status in _CONFIRMED_STATUSES and not getattr(
+        position, "valuation_blockers", []
+    ):
         return None
     elif raw_status == "confirmed_nav_missing":
         quote_status = raw_status
@@ -171,6 +177,14 @@ def _review_item(position: Any) -> CurrentHoldingMarketEvidenceReviewItem | None
         nav_date=getattr(position, "nav_date", None),
         review_reason=review_reason,
         next_manual_action=next_action,
+        requires_user_attention=not (
+            getattr(position, "pricing_kind", None)
+            in {"published_nav", "session_close"}
+            and getattr(position, "pricing_authority", None) == "authoritative"
+            and getattr(position, "valuation_available", False) is True
+            and not getattr(position, "valuation_blockers", [])
+            and raw_status in _STALE_OR_CACHED_STATUSES
+        ),
     )
 
 
