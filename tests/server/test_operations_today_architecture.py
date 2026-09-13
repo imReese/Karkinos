@@ -113,4 +113,7 @@ def test_operations_today_facade_only_owns_top_level_composition() -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
 
-    assert definitions == {"build_operations_today_summary"}
+    assert definitions == {
+        "build_operations_today_summary",
+        "build_overview_attention_items",
+    }

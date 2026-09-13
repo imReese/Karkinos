@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from server.contracts.http.portfolio_models import (
+    OverviewMarketSession,
+    OverviewRefreshHealth,
+    OverviewState,
+)
 from server.models import AccountOverview, PortfolioSnapshot, RiskSummaryItem
 
 
@@ -68,6 +74,11 @@ def build_account_state_projection(
         missing_price_symbols=snapshot.missing_price_symbols,
         valuation_blockers=snapshot.valuation_blockers,
     )
+    summary.cumulative_pnl = (
+        summary.realized_pnl + summary.unrealized_pnl
+        if summary.unrealized_pnl is not None
+        else None
+    )
     if not valuation_complete:
         next_step = "补齐并复核市场数据证据"
     elif any(item.level in {"medium", "high"} for item in risks):
@@ -79,4 +90,86 @@ def build_account_state_projection(
         snapshot=snapshot,
         risks=risks,
         next_step=next_step,
+    )
+
+
+def build_overview_state(
+    snapshot: PortfolioSnapshot,
+    *,
+    market_session: dict[str, Any],
+    refresh_health: OverviewRefreshHealth,
+    operations: dict[str, Any] | None,
+    user_attention: list[dict[str, Any]],
+) -> OverviewState:
+    """Describe independent uses of one account valuation without granting authority."""
+    usable = (
+        snapshot.valuation_status == "complete"
+        and not snapshot.valuation_blockers
+        and snapshot.total_equity is not None
+    )
+    dates = [
+        position.pricing_as_of
+        for position in snapshot.positions
+        if position.pricing_as_of
+    ]
+    plan = (operations or {}).get("daily_plan") or {}
+    required_gates = {"market_data", "account_truth", "risk", "paper_shadow"}
+    gate_states = {
+        item.get("id"): item.get("status")
+        for item in (operations or {}).get("subsystems", [])
+        if item.get("id") in required_gates
+    }
+    decision_readiness = "unknown"
+    if (
+        not usable
+        or int(plan.get("blocked_count") or 0) > 0
+        or any(status == "blocked" for status in gate_states.values())
+    ):
+        decision_readiness = "blocked"
+    elif (
+        int(plan.get("manual_ready_count") or 0) > 0
+        and market_session.get("calendar_verified")
+        and set(gate_states) == required_gates
+        and all(status == "pass" for status in gate_states.values())
+    ):
+        decision_readiness = "ready"
+    return OverviewState(
+        market_session=OverviewMarketSession.model_validate(market_session),
+        valuation_usability=(
+            "usable" if usable else "degraded" if snapshot.positions else "unavailable"
+        ),
+        pricing_as_of=min(dates) if dates else snapshot.valuation_trade_date,
+        refresh_health=refresh_health,
+        decision_readiness=decision_readiness,
+        user_attention=user_attention,
+        attention_status="available" if operations is not None else "unavailable",
+    )
+
+
+def read_overview_refresh_health(db: Any) -> OverviewRefreshHealth:
+    """A later attempt is operational evidence, never a valuation override."""
+    reader = getattr(db, "list_quote_fetch_runs", None)
+    if not callable(reader):
+        return OverviewRefreshHealth(status="unknown")
+    runs = reader(limit=1)
+    attempt = runs[0] if runs else None
+    if not isinstance(attempt, dict):
+        return OverviewRefreshHealth(status="unknown")
+    status = str(attempt.get("status") or "")
+    return OverviewRefreshHealth(
+        status=(
+            "degraded"
+            if status in {"failed", "error", "blocked", "partial"}
+            else (
+                "running"
+                if status in {"running", "pending"}
+                else (
+                    "healthy"
+                    if status in {"success", "ready", "complete", "succeeded"}
+                    else "unknown"
+                )
+            )
+        ),
+        latest_attempt=attempt,
+        blockers=list(attempt.get("blockers") or []),
     )

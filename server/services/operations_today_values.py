@@ -125,6 +125,12 @@ def _attention_items(subsystems: list[dict[str, Any]]) -> list[dict[str, Any]]:
         subsystem_id = str(subsystem.get("id") or "unknown")
         target = str(subsystem.get("target") or subsystem_id)
         next_action = str(subsystem.get("next_action") or "none")
+        if next_action in {
+            "none",
+            "wait_for_paper_shadow_run",
+            "await_explicit_real_broker_environment_confirmation",
+        }:
+            continue
         resolution_condition = _attention_resolution_condition(
             subsystem_id=subsystem_id,
             next_action=next_action,

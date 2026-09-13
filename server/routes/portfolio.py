@@ -40,10 +40,10 @@ from server.models import (
     PortfolioSnapshot,
     TradeCreate,
 )
-from server.projections.historical_coverage_persistence import read_historical_coverage
-from server.projections.portfolio_application import (
-    build_account_state_response as _build_account_state_response,
+from server.projections.account_state import (
+    build_overview_account_state_response as _build_account_state_response,
 )
+from server.projections.historical_coverage_persistence import read_historical_coverage
 from server.projections.portfolio_application import (
     build_portfolio_snapshot as _build_portfolio_snapshot,
 )

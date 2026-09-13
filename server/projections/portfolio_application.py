@@ -141,7 +141,10 @@ async def build_account_state_response(
     now: datetime | None = None,
 ) -> AccountStateResponse:
     """Project canonical Account State from one exact Portfolio snapshot."""
-    resolved_snapshot = snapshot or await build_portfolio_snapshot(state, now=now)
+    frozen_now = get_shanghai_now(now)
+    resolved_snapshot = snapshot or await build_portfolio_snapshot(
+        state, now=frozen_now
+    )
     risks = build_risk_summary(
         resolved_snapshot,
         collect_latest_quote_timestamps(state),
@@ -151,6 +154,7 @@ async def build_account_state_response(
         summary=with_overview_quote_metadata(
             projection.summary,
             resolved_snapshot,
+            now=frozen_now,
         ),
         snapshot=projection.snapshot,
         risks=projection.risks,
