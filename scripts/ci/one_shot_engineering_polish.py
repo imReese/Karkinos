@@ -9,33 +9,29 @@ ROOT = Path(__file__).resolve().parents[2]
 def ensure_replace(path: str, old: str, new: str) -> None:
     file = ROOT / path
     text = file.read_text(encoding="utf-8")
+    if new in text:
+        return
     old_count = text.count(old)
-    new_count = text.count(new)
-    if old_count == 1 and new_count == 0:
+    if old_count == 1:
         file.write_text(text.replace(old, new, 1), encoding="utf-8")
         return
-    if old_count == 0 and new_count >= 1:
-        return
     raise SystemExit(
-        f"{path}: unexpected migration state old={old_count} new={new_count}: {old[:80]!r}"
+        f"{path}: unexpected migration state old={old_count}: {old[:80]!r}"
     )
 
 
 def ensure_replace_all(path: str, old: str, new: str, *, minimum: int = 1) -> int:
     file = ROOT / path
     text = file.read_text(encoding="utf-8")
-    old_count = text.count(old)
-    new_count = text.count(new)
-    if old_count:
-        if old_count < minimum:
-            raise SystemExit(
-                f"{path}: expected at least {minimum} old matches, got {old_count}"
-            )
-        file.write_text(text.replace(old, new), encoding="utf-8")
-        return old_count
-    if new_count >= minimum:
+    if text.count(new) >= minimum:
         return 0
-    raise SystemExit(f"{path}: neither old nor desired state found: {old[:80]!r}")
+    old_count = text.count(old)
+    if old_count < minimum:
+        raise SystemExit(
+            f"{path}: expected at least {minimum} old matches, got {old_count}: {old[:80]!r}"
+        )
+    file.write_text(text.replace(old, new), encoding="utf-8")
+    return old_count
 
 
 def restore_product_design() -> None:
@@ -71,7 +67,6 @@ def restore_product_design() -> None:
     raise SystemExit("could not recover canonical product design from repository history")
 
 
-# 1. Complete the already-started canonical product-design migration.
 restore_product_design()
 ensure_replace(
     "docs/PRODUCT_DESIGN.md",
@@ -99,7 +94,6 @@ ensure_replace(
     '    "docs/ARCHITECTURE.md",\n    "docs/PRODUCT_DESIGN.md",\n    "docs/PLAN.md",',
 )
 
-# 2. Pin the Linux runner major version across maintained workflows.
 workflow_dir = ROOT / ".github/workflows"
 runner_replacements = 0
 for workflow in sorted(workflow_dir.glob("*.yml")):
@@ -112,7 +106,6 @@ for workflow in sorted(workflow_dir.glob("*.yml")):
         )
         runner_replacements += count
 
-# 3. Pin image identities and remove misleading default release version.
 ensure_replace(
     "Dockerfile",
     "FROM node:24.20.0-alpine3.24 AS frontend-build",
@@ -131,7 +124,6 @@ ensure_replace_all(
     minimum=2,
 )
 
-# 4. Add reproducible ShellCheck via the Python dev lock and enforce it in CI/local hooks.
 ensure_replace(
     "pyproject.toml",
     '    "pip-audit==2.10.1",\n    "pre-commit>=4.6.2",',
@@ -148,7 +140,6 @@ ensure_replace(
     "      - name: Set up Python\n        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0\n        with:\n          python-version: \"3.12.13\"\n      - name: Set up uv\n        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1\n        with:\n          version: ${{ env.UV_VERSION }}\n          enable-cache: true\n      - run: uv sync --locked --extra dev\n      - name: Check public shell entrypoints\n        run: bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh\n      - name: Check public shell entrypoints with ShellCheck\n        run: uv run --locked --extra dev shellcheck scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh\n",
 )
 
-# 5. Remove dormant coverage policy instead of pretending it is enforced by CI.
 pyproject = ROOT / "pyproject.toml"
 text = pyproject.read_text(encoding="utf-8")
 text = text.replace('    "pytest-cov>=7.1.0",\n', "")
@@ -159,7 +150,6 @@ if "pytest-cov" in text or "[tool.coverage." in text or "fail_under = 85" in tex
     raise SystemExit("coverage policy was not fully retired")
 pyproject.write_text(text, encoding="utf-8")
 
-# Keep engineering documentation aligned with the enforced state.
 ensure_replace(
     "docs/ENGINEERING.md",
     "- Container base images and the Gitleaks container are version-tag pinned rather than digest pinned; third-party GitHub Actions are full-SHA pinned.\n",
@@ -171,7 +161,6 @@ ensure_replace(
     "- mypy is the CI type-checking authority.\n- ShellCheck is the shell static-analysis authority for maintained public runtime/release entrypoints.\n",
 )
 
-# Guard against stale references and accidental rollback of the requested invariants.
 checks = {
     "design.md reference": "design.md",
     "ubuntu-latest runner": "runs-on: ubuntu-latest",
