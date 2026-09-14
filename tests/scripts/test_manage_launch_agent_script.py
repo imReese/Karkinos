@@ -369,7 +369,7 @@ def test_service_mutation_rejects_direct_lock_bypass(tmp_path: Path, command: st
     assert result.returncode == 1
     assert "must run through the locked Karkinos release controller" in result.stderr
     assert (
-        "Use ./scripts/start_server.sh prod or ./scripts/stop_server.sh"
+        "Use the installed current/bin/karkinosctl service-start or service-stop"
         in result.stderr
     )
     assert _plist(env).is_file()

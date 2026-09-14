@@ -1,7 +1,7 @@
 """Backtest CLI for Karkinos.
 
-This is a developer/operations tool. The production Web service entry point is
-`python -m server` or `./scripts/start_server.sh`.
+This is a developer/operations tool. Use `./scripts/dev` for the development Web
+service or the installed release's `karkinosctl` for the packaged runtime.
 """
 
 from __future__ import annotations

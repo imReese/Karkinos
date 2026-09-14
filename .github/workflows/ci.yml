@@ -115,9 +115,9 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Check public shell entrypoints
-        run: bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+        run: bash -n scripts/dev scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
       - name: Check public shell entrypoints with ShellCheck
-        run: shellcheck scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+        run: shellcheck scripts/dev scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
       - name: Check documentation integrity
         run: python scripts/ci/check_docs_integrity.py
       - name: Check tracked private artifacts

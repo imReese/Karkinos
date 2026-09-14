@@ -178,9 +178,20 @@ Treat these as separate lifecycles:
 | --- | --- | --- |
 | Development | source checkout, hot development, local validation | stable release artifacts |
 | Installed runtime | user config/data/logs/process lifecycle | Git branch or CI authorization |
-| Release engineering | commit identity, version, artifacts, provenance | user runtime state |
+| Container runtime | image and isolated persistent volume | source checkout management |
+| Candidate build | exact promoted commit, artifact bytes, provenance | source-promotion authorization |
+| Stable release | immutable tag and publication of candidate bytes | rebuilding candidates or changing user state |
 
-A helper that simultaneously knows branch identity, local user data, process state, GitHub run IDs, and release version is a design smell. Prefer explicit boundaries over a universal lifecycle controller.
+`./scripts/dev` runs the current checkout in the foreground with backend reload
+and Vite. Development config, data, and logs live under
+`~/.karkinos/development`; `KARKINOS_DEV_HOME` explicitly selects another isolated
+development workspace. Use standard Git worktrees or separate clones for other
+branches and historical commits.
+
+Installed runtimes use their immutable release's `karkinosctl` to start, stop,
+and report status. Existing macOS installations retain
+`~/Library/Application Support/Karkinos`; changing the development layout does
+not move or copy installed financial state. Docker keeps its separate data volume.
 
 ## 6. Quality gaps
 

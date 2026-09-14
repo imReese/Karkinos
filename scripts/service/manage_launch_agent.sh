@@ -53,7 +53,7 @@ Safety boundary:
   - Scheduler readiness does not establish financial readiness.
   - No command submits broker orders or changes capital authority.
   - Mutating commands are internal to the locked release controller. Use
-    ./scripts/start_server.sh prod and ./scripts/stop_server.sh prod as the public entrypoints.
+    the installed current/bin/karkinosctl service-start and service-stop commands.
 EOF
 }
 
@@ -67,14 +67,14 @@ require_release_controller() {
 		-L "${KARKINOS_HOME_PATH}/.release.lock" ||
 		! -f "${KARKINOS_HOME_PATH}/.release.lock" ]]; then
 		echo "Error: service mutation must run through the locked Karkinos release controller." >&2
-		echo "Use ./scripts/start_server.sh prod or ./scripts/stop_server.sh prod." >&2
+		echo "Use the installed current/bin/karkinosctl service-start or service-stop command." >&2
 		exit 1
 	fi
 	IFS=' ' read -r recorded_pid recorded_nonce extra <"${KARKINOS_HOME_PATH}/.release.lock" || true
 	if [[ "${recorded_pid}" != "${owner_pid}" ||
 		"${recorded_nonce}" != "${nonce}" || -n "${extra:-}" ]]; then
 		echo "Error: service mutation must run through the locked Karkinos release controller." >&2
-		echo "Use ./scripts/start_server.sh prod or ./scripts/stop_server.sh prod." >&2
+		echo "Use the installed current/bin/karkinosctl service-start or service-stop command." >&2
 		exit 1
 	fi
 }
