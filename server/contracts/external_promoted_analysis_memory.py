@@ -97,8 +97,7 @@ class ExternalPromotedAnalysisMemoryRevocationRequest:
             EXTERNAL_PROMOTED_ANALYSIS_MEMORY_REVOCATION_CONFIRMATION
         ):
             raise ValueError(
-                "explicit promoted-analysis memory revocation confirmation is "
-                "required"
+                "explicit promoted-analysis memory revocation confirmation is required"
             )
 
     @property

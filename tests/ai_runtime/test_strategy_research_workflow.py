@@ -965,8 +965,9 @@ async def test_iteration_exports_exact_parent_feedback_and_one_draft_contract(
     assert len(result["drafts"]) == 1
     assert result["iteration_context"] == iteration_context
     assert result["drafts"][0]["iteration_context"] == iteration_context
-    assert result["drafts"][0]["iteration_context_fingerprint"] == (
-        iteration_context["context_fingerprint"]
+    assert (
+        result["drafts"][0]["iteration_context_fingerprint"]
+        == (iteration_context["context_fingerprint"])
     )
     external = json.loads(transport.calls[0]["payload"]["messages"][1]["content"])
     assert external["iteration_context"] == iteration_context
@@ -1196,8 +1197,9 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert critique["status"] == "completed"
     assert critique["artifact"]["trade_plan_created"] is False
     assert critique["artifact"]["authority_effect"] == "none"
-    assert critique["artifact"]["canonical_binding_echo"]["total_return"] == (
-        backtest["canonical_backtest"]["total_return"]
+    assert (
+        critique["artifact"]["canonical_binding_echo"]["total_return"]
+        == (backtest["canonical_backtest"]["total_return"])
     )
     assert len(transport.calls) == 2
     assert all(call["payload"].get("tools") is None for call in transport.calls)
@@ -1296,8 +1298,9 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     external_oos = critique_input["critique_input"]["canonical_backtest"][
         "oos_validation"
     ]
-    assert external_oos["validation_mode"] == (
-        backtest["canonical_backtest"]["oos_validation"]["validation_mode"]
+    assert (
+        external_oos["validation_mode"]
+        == (backtest["canonical_backtest"]["oos_validation"]["validation_mode"])
     )
     assert external_oos["fold_count"] == len(
         backtest["canonical_backtest"]["oos_validation"]["folds"]

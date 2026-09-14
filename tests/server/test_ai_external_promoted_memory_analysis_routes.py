@@ -191,8 +191,7 @@ def test_external_promoted_memory_get_routes_are_lazy(monkeypatch):
         "/api/ai/external-promoted-memory-analyses/ai-external-promoted-fixture"
     )
     replayed = client.get(
-        "/api/ai/external-promoted-memory-analyses/"
-        "ai-external-promoted-fixture/replay"
+        "/api/ai/external-promoted-memory-analyses/ai-external-promoted-fixture/replay"
     )
 
     assert listed.status_code == fetched.status_code == replayed.status_code == 200
@@ -238,8 +237,7 @@ def test_main_app_registers_external_promoted_memory_analysis_routes():
     }
 
     assert (
-        "/api/ai/external-reviewed-memory-retrievals/{retrieval_id}/"
-        "external-analyses",
+        "/api/ai/external-reviewed-memory-retrievals/{retrieval_id}/external-analyses",
         "POST",
     ) in routes
     assert ("/api/ai/external-promoted-memory-analyses", "GET") in routes

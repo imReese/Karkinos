@@ -626,7 +626,9 @@ def current_equity_series_point(
         bucket = (
             "stocks"
             if asset_class == "stock"
-            else "funds" if asset_class in {"fund", "etf"} else "others"
+            else "funds"
+            if asset_class in {"fund", "etf"}
+            else "others"
         )
         if (
             quote is None

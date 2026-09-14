@@ -826,9 +826,7 @@ def test_manual_ticket_dry_run_records_current_account_truth_rejection(
     }
     service = _gateway_service(
         db=db,
-        current_per_order_confirmation_provider=lambda _order_id: (
-            blocked_confirmation
-        ),
+        current_per_order_confirmation_provider=lambda _order_id: blocked_confirmation,
     )
 
     try:
@@ -1199,8 +1197,9 @@ def test_manual_execution_evidence_record_requires_matching_preview_fingerprint(
     assert payload["submitted_to_broker"] is False
     assert payload["does_not_mutate_oms"] is True
     assert payload["does_not_mutate_production_ledger"] is True
-    assert payload["validation"]["required_gate_summary"] == (
-        result["validation"]["required_gate_summary"]
+    assert (
+        payload["validation"]["required_gate_summary"]
+        == (result["validation"]["required_gate_summary"])
     )
     assert payload["validation"]["required_gate_summary"]["gates"]["risk"] == {
         "status": "pass",
@@ -1278,9 +1277,7 @@ def test_manual_execution_preview_fingerprint_tracks_current_gate_drift(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
         trading_controls=TradingControlState(db=db),
-        current_per_order_confirmation_provider=lambda _order_id: (
-            current_confirmation
-        ),
+        current_per_order_confirmation_provider=lambda _order_id: current_confirmation,
     )
     service.create_manual_ticket(order["order_id"], actor="test")
 
@@ -1298,7 +1295,7 @@ def test_manual_execution_preview_fingerprint_tracks_current_gate_drift(
     current_confirmation["current_dossier"]["dossier_fingerprint"] = "5" * 64
     current_confirmation["current_dossier"]["gateway_gates"]["gates"]["risk"][
         "source_fingerprint"
-    ] = ("6" * 64)
+    ] = "6" * 64
     changed = service.preview_manual_execution_record(
         order["order_id"],
         fill_price="1688.00",

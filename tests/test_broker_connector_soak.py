@@ -201,8 +201,9 @@ def test_healthy_snapshot_is_sanitized_persisted_and_reused(tmp_path) -> None:
     assert summary["remaining_trading_days"] == 20
     assert status["promotion_ready"] is False
     assert status["healthy_day_evidence_requirement"] == ("accepted_v2_source_sequence")
-    assert "latest_source_sequence_not_accepted:fixture-readonly-soak" in (
-        status["promotion_blockers"]
+    assert (
+        "latest_source_sequence_not_accepted:fixture-readonly-soak"
+        in (status["promotion_blockers"])
     )
     assert "account_truth_reconciliation_not_linked" in status["promotion_blockers"]
 
@@ -708,8 +709,9 @@ def test_legacy_boolean_healthy_record_is_observed_but_never_qualified(
     assert summary["healthy_trading_day_count"] == 0
     assert summary["latest_source_sequence_accepted"] is False
     assert summary["operational_soak_complete"] is False
-    assert "latest_source_sequence_not_accepted:legacy-readonly-soak" in (
-        status["promotion_blockers"]
+    assert (
+        "latest_source_sequence_not_accepted:legacy-readonly-soak"
+        in (status["promotion_blockers"])
     )
 
 
@@ -751,8 +753,9 @@ def test_twenty_unsequenced_healthy_days_cannot_complete_operations_soak(
     assert summary["remaining_trading_days"] == 20
     assert summary["operational_soak_complete"] is False
     assert status["operational_soak_complete"] is False
-    assert "latest_source_sequence_not_accepted:fixture-readonly-soak" in (
-        status["promotion_blockers"]
+    assert (
+        "latest_source_sequence_not_accepted:fixture-readonly-soak"
+        in (status["promotion_blockers"])
     )
     assert status["promotion_ready"] is False
     assert status["owner_acceptance_recorded"] is False

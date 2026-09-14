@@ -265,10 +265,13 @@ def test_quote_instant_index_migration_backfills_legacy_snapshots(
         quote_instant = conn.execute(
             "SELECT quote_instant_utc FROM quote_snapshots"
         ).fetchone()[0]
-        indexes = {row[0] for row in conn.execute("""
+        indexes = {
+            row[0]
+            for row in conn.execute("""
                 SELECT name FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'quote_snapshots'
-                """).fetchall()}
+                """).fetchall()
+        }
     assert quote_instant == "2026-08-27T07:00:00.000000+00:00"
     assert "idx_quote_snapshots_identity_instant" in indexes
     assert "idx_quote_snapshots_missing_instant" in indexes

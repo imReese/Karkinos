@@ -110,9 +110,13 @@ async def test_promoted_memory_analysis_uses_current_tools_and_preserves_thinkin
             )
             conn.execute(f"INSERT INTO {table} (marker) VALUES ('protected')")
 
-    retrieval, _, promotion, current_records, retrievals = (
-        await _prepared_promoted_retrieval(db_path)
-    )
+    (
+        retrieval,
+        _,
+        promotion,
+        current_records,
+        retrievals,
+    ) = await _prepared_promoted_retrieval(db_path)
     with closing(sqlite3.connect(db_path)) as conn:
         legacy_count_before = conn.execute(
             "SELECT COUNT(*) FROM ai_external_memory_informed_analyses"
@@ -257,9 +261,13 @@ async def test_invalid_output_and_revoked_source_fail_closed_without_history_los
     tmp_path,
 ):
     db_path = tmp_path / "external-promoted-memory-fail-closed.db"
-    retrieval, promotions, promotion, current_records, retrievals = (
-        await _prepared_promoted_retrieval(db_path)
-    )
+    (
+        retrieval,
+        promotions,
+        promotion,
+        current_records,
+        retrievals,
+    ) = await _prepared_promoted_retrieval(db_path)
     transport = EvidenceAwareTransport(invalid_stage="external_current_evidence_claim")
     service = _service(db_path, retrievals, transport)
     request = _request(retrieval.stored.retrieval_id)

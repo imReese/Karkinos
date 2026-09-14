@@ -176,7 +176,7 @@ def test_external_memory_get_routes_do_not_initialize_or_load_provider(monkeypat
         "/api/ai/external-memory-informed-analyses/ai-external-memory-fixture"
     )
     replayed = client.get(
-        "/api/ai/external-memory-informed-analyses/" "ai-external-memory-fixture/replay"
+        "/api/ai/external-memory-informed-analyses/ai-external-memory-fixture/replay"
     )
 
     assert listed.status_code == 200

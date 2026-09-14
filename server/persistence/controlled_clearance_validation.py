@@ -134,7 +134,7 @@ def _validate_order_and_terminal_lifecycle(
         for field, expected in expected_terminal_fields.items():
             if str(terminal_lifecycle.get(field) or "") != str(expected or ""):
                 blockers.append(
-                    "controlled_submission_terminal_" f"lifecycle_{field}_changed"
+                    f"controlled_submission_terminal_lifecycle_{field}_changed"
                 )
     elif requested["terminal_status"] == "cancelled":
         blockers.append("controlled_submission_terminal_lifecycle_missing")

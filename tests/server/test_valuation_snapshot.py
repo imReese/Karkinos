@@ -224,13 +224,13 @@ def test_qualification_rejects_tampered_persisted_valuation_content(tmp_path):
         conn.execute("DROP TRIGGER valuation_snapshots_update_guard")
         quotes = json.loads(
             conn.execute(
-                "SELECT quotes_json FROM valuation_snapshots " "WHERE snapshot_id = ?",
+                "SELECT quotes_json FROM valuation_snapshots WHERE snapshot_id = ?",
                 (snapshot["snapshot_id"],),
             ).fetchone()[0]
         )
         quotes[0]["price"] = 999.0
         conn.execute(
-            "UPDATE valuation_snapshots SET quotes_json = ? " "WHERE snapshot_id = ?",
+            "UPDATE valuation_snapshots SET quotes_json = ? WHERE snapshot_id = ?",
             (json.dumps(quotes), snapshot["snapshot_id"]),
         )
         conn.commit()

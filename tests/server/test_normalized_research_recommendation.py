@@ -214,9 +214,9 @@ def test_duplicate_or_broken_lineage_cannot_publish_research_winner() -> None:
 def test_broken_parent_lineage_cannot_publish_research_winner() -> None:
     first = _candidate(1, total_return=0.05)
     second = _candidate(2, total_return=0.08)
-    second["comparison"]["iteration_lineage"][
-        "parent_candidate_id"
-    ] = "candidate-from-another-run"
+    second["comparison"]["iteration_lineage"]["parent_candidate_id"] = (
+        "candidate-from-another-run"
+    )
 
     result = build_normalized_research_recommendation(
         run_id="run-normalized",

@@ -29,11 +29,11 @@ from server.services.daily_decision_evidence_collection import (
 )
 from server.services.daily_decision_evidence_composition import (
     bind_promoted_strategy_scan,
+    promoted_scan_cache_key,
 )
 from server.services.daily_decision_evidence_composition import (
     build_daily_decision_evidence_automation_service as compose_daily_decision_evidence_automation_service,
 )
-from server.services.daily_decision_evidence_composition import promoted_scan_cache_key
 from server.services.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
     DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION,

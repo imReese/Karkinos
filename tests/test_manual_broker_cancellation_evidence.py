@@ -217,8 +217,8 @@ def test_preview_and_export_bind_exact_partial_fill_without_mutation(tmp_path) -
     assert preview["order"]["lifecycle_status"] == "partially_filled"
     assert preview["order"]["filled_quantity"] == "40"
     assert preview["order"]["remaining_quantity"] == "60"
-    assert preview["lifecycle_evidence"]["observation_id"] == (
-        lifecycle["observation_id"]
+    assert (
+        preview["lifecycle_evidence"]["observation_id"] == (lifecycle["observation_id"])
     )
     assert preview["safety"]["provider_contact_performed"] is False
     assert preview["safety"]["broker_cancel_performed"] is False
@@ -294,8 +294,9 @@ def test_newer_lifecycle_evidence_invalidates_reviewed_ticket(tmp_path) -> None:
             acknowledgement=MANUAL_BROKER_CANCELLATION_ACKNOWLEDGEMENT,
         )
 
-    assert "manual_broker_cancel_ticket_fingerprint_mismatch" in (
-        exc_info.value.evidence["blockers"]
+    assert (
+        "manual_broker_cancel_ticket_fingerprint_mismatch"
+        in (exc_info.value.evidence["blockers"])
     )
     assert exc_info.value.evidence["export_performed"] is False
 

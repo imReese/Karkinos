@@ -367,7 +367,7 @@ class ExternalPromotedMemoryAnalysisReviewStore:
             for key, value in expected.items():
                 if payload.get(key) != value:
                     errors.append(
-                        "external promoted-memory analysis review " f"{key} drifted"
+                        f"external promoted-memory analysis review {key} drifted"
                     )
             for key in (
                 "memory_artifact_created",

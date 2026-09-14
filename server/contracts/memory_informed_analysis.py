@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from server.ai_runtime.contracts import JsonObject, WorkflowStatus, content_fingerprint
 
 MEMORY_INFORMED_ANALYSIS_CONFIRMATION = (
-    "run_offline_memory_informed_fixture_with_current_evidence_"
-    "without_trade_authority"
+    "run_offline_memory_informed_fixture_with_current_evidence_without_trade_authority"
 )
 MEMORY_INFORMED_ANALYSIS_CONTRACT_VERSION = (
     "karkinos.ai.memory_informed_fixture_analysis.v1"

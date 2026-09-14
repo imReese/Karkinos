@@ -9378,8 +9378,9 @@ def test_decision_today_attaches_latest_after_cost_oos_validation(monkeypatch):
     assert candidate_evidence["cost_impact"]["total_commission"] == 12.3
     assert candidate_evidence["cost_impact"]["total_slippage"] == 4.5
     assert candidate_evidence["uncertainty"]["status"] == "review_required"
-    assert "Backtest evidence is not a profitability claim." in (
-        candidate_evidence["uncertainty"]["factors"]
+    assert (
+        "Backtest evidence is not a profitability claim."
+        in (candidate_evidence["uncertainty"]["factors"])
     )
 
 
@@ -9605,8 +9606,9 @@ def test_decision_today_requires_review_when_candidate_quote_is_stale(monkeypatc
         "refresh_or_confirm_market_data",
         "review_strategy_advancement_evidence",
     ]
-    assert "quote_older_than_expected_session" in (
-        candidate["evidence"]["certainty"]["uncertain_reasons"]
+    assert (
+        "quote_older_than_expected_session"
+        in (candidate["evidence"]["certainty"]["uncertain_reasons"])
     )
 
 
@@ -14184,8 +14186,12 @@ def test_portfolio_live_holdings_fails_closed_when_only_runtime_quote_exists(
         db=SimpleNamespace(
             list_latest_quotes_sync=lambda: [],
             get_latest_quotes_sync=lambda: [],
-            get_latest_daily_close_before_sync=lambda symbol, trade_date, *, instrument_type: None,
-            get_latest_quote_before_date_sync=lambda symbol, trade_date, *, instrument_type: None,
+            get_latest_daily_close_before_sync=lambda symbol, trade_date, *, instrument_type: (
+                None
+            ),
+            get_latest_quote_before_date_sync=lambda symbol, trade_date, *, instrument_type: (
+                None
+            ),
             get_total_deposits=lambda: 0.0,
         ),
     )

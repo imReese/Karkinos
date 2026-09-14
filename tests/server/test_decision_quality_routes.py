@@ -210,8 +210,9 @@ def test_quality_get_is_read_only_and_capture_is_restart_safe_and_idempotent(
             ]
             == before["quality"]
         )
-        assert conn.execute("SELECT COUNT(*) FROM event_log").fetchone()[0] == (
-            before["events"]
+        assert (
+            conn.execute("SELECT COUNT(*) FROM event_log").fetchone()[0]
+            == (before["events"])
         )
 
     request = _capture_body(preview["current_target"]["target_fingerprint"])
@@ -242,14 +243,17 @@ def test_quality_get_is_read_only_and_capture_is_restart_safe_and_idempotent(
             ).fetchone()[0]
             == 1
         )
-        assert conn.execute("SELECT COUNT(*) FROM ledger_entries").fetchone()[0] == (
-            before["ledger"]
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ledger_entries").fetchone()[0]
+            == (before["ledger"])
         )
-        assert conn.execute("SELECT COUNT(*) FROM risk_decisions").fetchone()[0] == (
-            before["risk"]
+        assert (
+            conn.execute("SELECT COUNT(*) FROM risk_decisions").fetchone()[0]
+            == (before["risk"])
         )
-        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == (
-            before["orders"]
+        assert (
+            conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+            == (before["orders"])
         )
 
 
@@ -300,8 +304,9 @@ def test_quality_capture_rejects_drift_and_latest_day_replaces_old_score(
     assert blocked["report"]["evaluated_day_count"] == 1
     assert blocked["report"]["total_capture_count"] == 2
     assert blocked["report"]["score_percent"] == 0
-    assert blocked["report"]["latest_by_day"][0]["snapshot_id"] == (
-        blocked["capture"]["snapshot_id"]
+    assert (
+        blocked["report"]["latest_by_day"][0]["snapshot_id"]
+        == (blocked["capture"]["snapshot_id"])
     )
 
 

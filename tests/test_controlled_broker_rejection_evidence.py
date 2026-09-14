@@ -268,8 +268,9 @@ def test_export_rechecks_fingerprint_and_rejects_persisted_evidence_drift(
             acknowledgement=CONTROLLED_BROKER_REJECTION_EXPORT_ACKNOWLEDGEMENT,
         )
 
-    assert "controlled_broker_rejection_fingerprint_mismatch" in (
-        exc_info.value.evidence["blockers"]
+    assert (
+        "controlled_broker_rejection_fingerprint_mismatch"
+        in (exc_info.value.evidence["blockers"])
     )
     assert exc_info.value.evidence["export_performed"] is False
 
@@ -458,8 +459,9 @@ def test_review_record_rechecks_evidence_under_write_lock(tmp_path: Path) -> Non
             acknowledgement=CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
         )
 
-    assert "controlled_broker_rejection_fingerprint_mismatch" in (
-        exc_info.value.evidence["blockers"]
+    assert (
+        "controlled_broker_rejection_fingerprint_mismatch"
+        in (exc_info.value.evidence["blockers"])
     )
     with sqlite3.connect(env["db"]._path) as conn:
         assert (

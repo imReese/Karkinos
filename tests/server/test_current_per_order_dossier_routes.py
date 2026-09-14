@@ -128,8 +128,7 @@ def test_current_confirmation_route_rejects_credentials_stale_dossier_and_missin
 ) -> None:
     client, service = _client(monkeypatch)
     path = (
-        "/api/automation/controlled-bridge/orders/OMS-1/"
-        "dossier/current/confirmations"
+        "/api/automation/controlled-bridge/orders/OMS-1/dossier/current/confirmations"
     )
 
     credentials = client.post(

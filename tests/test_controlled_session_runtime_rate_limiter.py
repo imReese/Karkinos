@@ -458,11 +458,13 @@ def test_newer_blocked_gate_snapshot_wins_inside_admission_transaction(
     with pytest.raises(ControlledSessionRateAdmissionRejected) as exc_info:
         _admit(service)
 
-    assert "runtime_live_gate_snapshot_not_clear" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_live_gate_snapshot_not_clear"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
-    assert "runtime_live_gate_snapshot_changed_before_admission" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_live_gate_snapshot_changed_before_admission"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert exc_info.value.evidence["runtime_live_gates_verified"] is False
     assert exc_info.value.evidence["authorizes_broker_submission"] is False
@@ -496,11 +498,13 @@ def test_preview_then_automatic_trading_disable_is_rejected_atomically(
         _admit(service)
 
     assert preview["status"] == "ready_for_atomic_admission"
-    assert "automatic_trading_disabled" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "automatic_trading_disabled"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
-    assert "automatic_trading_control_revision_mismatch" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "automatic_trading_control_revision_mismatch"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert db.list_controlled_session_rate_admissions_sync() == []
 
@@ -541,17 +545,21 @@ def test_quick_disable_reenable_rejects_old_session_until_new_issuance(
 
     assert preview["automatic_trading_revision"] == 1
     assert updated["revision"] == 3
-    assert "automatic_trading_control_revision_mismatch" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "automatic_trading_control_revision_mismatch"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
-    assert "automatic_trading_control_fingerprint_mismatch" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "automatic_trading_control_fingerprint_mismatch"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
-    assert "runtime_automatic_trading_session_binding_revision_mismatch" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_automatic_trading_session_binding_revision_mismatch"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
-    assert "runtime_automatic_trading_session_predates_last_disable" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_automatic_trading_session_predates_last_disable"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert db.list_controlled_session_rate_admissions_sync() == []
 
@@ -600,8 +608,9 @@ def test_sliding_window_limit_and_exact_boundary(tmp_path) -> None:
     with pytest.raises(ControlledSessionRateAdmissionRejected) as exc_info:
         _admit(service, order_id="OMS-3", request_id="3" * 64)
 
-    assert "runtime_order_rate_limit_reached" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_order_rate_limit_reached"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert exc_info.value.evidence["admitted_before"] == 2
     current_time[0] = NOW + timedelta(seconds=60)
@@ -659,8 +668,9 @@ def test_overlapping_sessions_share_strictest_account_rate(tmp_path) -> None:
             request_id="2" * 64,
         )
 
-    assert "runtime_order_rate_limit_reached" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_order_rate_limit_reached"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert len(db.list_controlled_session_rate_admissions_sync()) == 1
 
@@ -714,11 +724,13 @@ def test_order_and_request_reuse_fail_closed_and_are_audited(tmp_path) -> None:
     with pytest.raises(ControlledSessionRateAdmissionRejected) as request_error:
         _admit(service, order_id="OMS-2", request_id="1" * 64)
 
-    assert "runtime_rate_order_already_admitted" in (
-        order_error.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_rate_order_already_admitted"
+        in (order_error.value.evidence["transaction_blockers"])
     )
-    assert "runtime_rate_request_id_reused" in (
-        request_error.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_rate_request_id_reused"
+        in (request_error.value.evidence["transaction_blockers"])
     )
     assert len(db.list_controlled_session_rate_admissions_sync()) == 1
     assert (

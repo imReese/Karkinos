@@ -281,7 +281,9 @@ def run_state_clone_gate(
         report["network_isolation"] = (
             "os_profiles_asgi_denied_tcp_listener_only"
             if native is not None
-            else "os_process_tree_denied" if network_isolation else "not_checked"
+            else "os_process_tree_denied"
+            if network_isolation
+            else "not_checked"
         )
         report["release_eligible"] = False
         if native is not None:

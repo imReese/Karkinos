@@ -163,7 +163,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         symbol=str(signal.symbol),
         title=f"建议增持 {signal.symbol}",
         detail=(
-            f"{signal.strategy_id} 触发，目标仓位 20%，" f"dataset={meta['dataset_id']}"
+            f"{signal.strategy_id} 触发，目标仓位 20%，dataset={meta['dataset_id']}"
         ),
         direction="buy",
         urgency="high",

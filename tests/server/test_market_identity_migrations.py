@@ -237,14 +237,11 @@ def test_database_schema_init_replays_daily_close_migration_idempotently(
 
     with sqlite3.connect(app.path) as conn:
         assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
-        assert (
-            conn.execute("""
+        assert conn.execute("""
             SELECT symbol, instrument_type, trade_date, close_price
             FROM daily_close_snapshots_v2
             ORDER BY symbol, instrument_type, trade_date
-            """).fetchall()
-            == [
-                ("019999", "open_end_fund", "2026-09-03", 1.25),
-                ("600001", "stock", "2026-09-03", 22.72),
-            ]
-        )
+            """).fetchall() == [
+            ("019999", "open_end_fund", "2026-09-03", 1.25),
+            ("600001", "stock", "2026-09-03", 22.72),
+        ]

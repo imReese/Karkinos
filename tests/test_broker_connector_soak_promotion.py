@@ -378,8 +378,9 @@ def test_phase_run_must_reference_exact_selected_observations(tmp_path) -> None:
     dossier = env["service"].preview_dossier(CONNECTOR_ID)
 
     assert dossier["operational_evidence"]["phase_coverage"]["intraday"] == []
-    assert "runbook_phase_coverage_incomplete:intraday:0/20" in (
-        dossier["review_blockers"]
+    assert (
+        "runbook_phase_coverage_incomplete:intraday:0/20"
+        in (dossier["review_blockers"])
     )
     assert dossier["promotion_ready"] is False
 

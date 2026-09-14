@@ -136,8 +136,7 @@ def test_build_readiness_uses_an_explicit_frozen_clock(tmp_path, monkeypatch):
         lambda state: _score(),
     )
     monkeypatch.setattr(
-        "server.services.account_truth_evidence_readiness."
-        "build_citic_source_follow_up",
+        "server.services.account_truth_evidence_readiness.build_citic_source_follow_up",
         lambda path: _follow_up(),
     )
     monkeypatch.setattr(
@@ -721,8 +720,9 @@ def test_scope_review_inheritance_fails_closed_on_source_fact_drift(tmp_path):
     )
 
     assert still_blocked["status"] == "blocked"
-    assert "account_truth_evidence_scope_review_lineage_drift" in (
-        still_blocked["blockers"]
+    assert (
+        "account_truth_evidence_scope_review_lineage_drift"
+        in (still_blocked["blockers"])
     )
 
 

@@ -419,7 +419,7 @@ def _read_persisted_market_revision(
                         symbol, {dataset_identity} frequency, dataset_id, row_count,
                         start_date, end_date, last_updated
                     FROM {dataset_table}
-                    ORDER BY symbol, {('instrument_type,' if has_typed_bars else '')}
+                    ORDER BY symbol, {("instrument_type," if has_typed_bars else "")}
                              frequency
                     """).fetchall()
                 query_count += 1

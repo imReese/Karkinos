@@ -271,8 +271,9 @@ def _source_records(
                 "exchange"
             ] not in {"SSE", "SZSE", "BSE"}:
                 raise ValueError("unsupported source identity")
-            first, last = date.fromisoformat(row["valid_from"]), date.fromisoformat(
-                row["valid_to"]
+            first, last = (
+                date.fromisoformat(row["valid_from"]),
+                date.fromisoformat(row["valid_to"]),
             )
             if first > last:
                 raise ValueError("invalid source interval")

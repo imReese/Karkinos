@@ -171,8 +171,7 @@ async def test_retrieves_exact_promoted_analysis_with_current_evidence_only(
         )
         assert (
             conn.execute(
-                "SELECT COUNT(*) FROM "
-                "ai_external_promoted_analysis_memory_retrievals"
+                "SELECT COUNT(*) FROM ai_external_promoted_analysis_memory_retrievals"
             ).fetchone()[0]
             == 1
         )
@@ -218,8 +217,7 @@ async def test_retrieval_is_restart_concurrency_and_request_idempotent(tmp_path)
     with closing(sqlite3.connect(db_path)) as conn:
         assert (
             conn.execute(
-                "SELECT COUNT(*) FROM "
-                "ai_external_promoted_analysis_memory_retrievals"
+                "SELECT COUNT(*) FROM ai_external_promoted_analysis_memory_retrievals"
             ).fetchone()[0]
             == 1
         )
@@ -256,8 +254,7 @@ async def test_source_revocation_and_report_drift_hide_retrieved_content(tmp_pat
     with closing(sqlite3.connect(db_path)) as conn:
         assert (
             conn.execute(
-                "SELECT COUNT(*) FROM "
-                "ai_external_promoted_analysis_memory_retrievals"
+                "SELECT COUNT(*) FROM ai_external_promoted_analysis_memory_retrievals"
             ).fetchone()[0]
             == 1
         )
@@ -312,8 +309,7 @@ async def test_partial_current_evidence_blocks_and_later_drift_invalidates(tmp_p
     with closing(sqlite3.connect(db_path)) as conn:
         assert (
             conn.execute(
-                "SELECT COUNT(*) FROM "
-                "ai_external_promoted_analysis_memory_retrievals"
+                "SELECT COUNT(*) FROM ai_external_promoted_analysis_memory_retrievals"
             ).fetchone()[0]
             == 0
         )
@@ -390,8 +386,7 @@ async def test_duplicate_current_tool_mapping_fails_closed(tmp_path):
     with closing(sqlite3.connect(db_path)) as conn:
         assert (
             conn.execute(
-                "SELECT COUNT(*) FROM "
-                "ai_external_promoted_analysis_memory_retrievals"
+                "SELECT COUNT(*) FROM ai_external_promoted_analysis_memory_retrievals"
             ).fetchone()[0]
             == 0
         )

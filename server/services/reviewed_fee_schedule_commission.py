@@ -120,8 +120,7 @@ class _NotionalBoundedCommissionCalculator(CommissionCalculator):
             or gross_amount > self._maximum_gross_amount
         ):
             raise ReviewedFeeScheduleRejected(
-                "reviewed_fee_schedule_notional_envelope_exceeded:"
-                f"{self._asset_class}"
+                f"reviewed_fee_schedule_notional_envelope_exceeded:{self._asset_class}"
             )
         return self._calculator.breakdown(side, price, quantity)
 
@@ -147,7 +146,7 @@ class _UncoveredAssetCommissionCalculator(CommissionCalculator):
         quantity: Decimal,
     ) -> FeeBreakdown:
         raise ReviewedFeeScheduleRejected(
-            "reviewed_fee_schedule_notional_envelope_missing:" f"{self._asset_class}"
+            f"reviewed_fee_schedule_notional_envelope_missing:{self._asset_class}"
         )
 
 

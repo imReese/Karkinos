@@ -65,9 +65,13 @@ def _memory_revocation_request(**overrides):
 
 
 async def _accepted_review(db_path):
-    analyses, analysis, transport, source_promotions, source_promotion = (
-        await _completed_analysis(db_path)
-    )
+    (
+        analyses,
+        analysis,
+        transport,
+        source_promotions,
+        source_promotion,
+    ) = await _completed_analysis(db_path)
     reviews = _review_service(db_path, analyses)
     review = reviews.review(
         analysis.analysis.record.analysis_id,
@@ -170,14 +174,13 @@ async def test_promotes_exact_reviewed_analysis_without_authority_or_legacy_muta
         )
         assert (
             conn.execute(
-                "SELECT COUNT(*) "
-                "FROM ai_external_promoted_analysis_memory_promotions"
+                "SELECT COUNT(*) FROM ai_external_promoted_analysis_memory_promotions"
             ).fetchone()[0]
             == 1
         )
         assert (
             conn.execute(
-                "SELECT COUNT(*) " "FROM ai_external_promoted_analysis_memory_events"
+                "SELECT COUNT(*) FROM ai_external_promoted_analysis_memory_events"
             ).fetchone()[0]
             == 1
         )
@@ -283,8 +286,7 @@ async def test_source_revocation_invalidates_memory_without_deleting_history(
     with closing(sqlite3.connect(db_path)) as conn:
         assert (
             conn.execute(
-                "SELECT COUNT(*) "
-                "FROM ai_external_promoted_analysis_memory_promotions"
+                "SELECT COUNT(*) FROM ai_external_promoted_analysis_memory_promotions"
             ).fetchone()[0]
             == 1
         )

@@ -150,7 +150,7 @@ def test_promoted_analysis_memory_routes_are_explicit_local_and_read_lazy(
     client, initialize_calls = _client(monkeypatch, service)
 
     promoted = client.post(
-        "/api/ai/external-promoted-memory-analysis-reviews/review/" "memory-promotions",
+        "/api/ai/external-promoted-memory-analysis-reviews/review/memory-promotions",
         json=_promotion_payload(),
     )
     assert promoted.status_code == 200
@@ -167,7 +167,7 @@ def test_promoted_analysis_memory_routes_are_explicit_local_and_read_lazy(
     assert promoted.json()["authority_effect"] == "none"
 
     revoked = client.post(
-        "/api/ai/external-promoted-analysis-memory-promotions/promotion/" "revocations",
+        "/api/ai/external-promoted-analysis-memory-promotions/promotion/revocations",
         json=_revocation_payload(),
     )
     listed = client.get(
@@ -201,7 +201,7 @@ def test_promoted_analysis_memory_routes_map_domain_errors(monkeypatch):
     client, _ = _client(monkeypatch, service)
 
     response = client.post(
-        "/api/ai/external-promoted-memory-analysis-reviews/review/" "memory-promotions",
+        "/api/ai/external-promoted-memory-analysis-reviews/review/memory-promotions",
         json=_promotion_payload(),
     )
     assert response.status_code == 409
@@ -232,7 +232,7 @@ def test_main_app_registers_promoted_analysis_memory_routes():
         "GET",
     ) in routes
     assert (
-        "/api/ai/external-promoted-analysis-memory-promotions/{promotion_id}/" "replay",
+        "/api/ai/external-promoted-analysis-memory-promotions/{promotion_id}/replay",
         "GET",
     ) in routes
     assert (

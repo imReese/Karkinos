@@ -352,11 +352,14 @@ def normalize_schema_sql(value: Any) -> str:
 
 
 def read_schema_contract(conn: sqlite3.Connection) -> dict[str, Any]:
-    table_names = tuple(str(row[0]) for row in conn.execute("""
+    table_names = tuple(
+        str(row[0])
+        for row in conn.execute("""
             SELECT name FROM sqlite_master
             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
             ORDER BY name
-            """).fetchall())
+            """).fetchall()
+    )
     tables: dict[str, tuple[tuple[Any, ...], ...]] = {}
     indexes: dict[str, tuple[Any, ...]] = {}
     unique_constraints: dict[str, tuple[tuple[tuple[str | None, int], ...], ...]] = {}

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from server.contracts.external_research import (
     EXTERNAL_BACKTEST_REPORT_CONTRACT,
     EXTERNAL_BACKTEST_REPORT_PROMPT,
+    ExternalBacktestReportRejected,
 )
 from server.contracts.external_research import (
     EXTERNAL_REPORT_MAX_OUTPUT_TOKENS as _REPORT_MAX_OUTPUT_TOKENS,
@@ -17,7 +18,6 @@ from server.contracts.external_research import (
 from server.contracts.external_research import (
     EXTERNAL_RESEARCH_EVIDENCE_TOOL as _RESEARCH_TOOL,
 )
-from server.contracts.external_research import ExternalBacktestReportRejected
 
 from .contracts import (
     ArtifactDraft,

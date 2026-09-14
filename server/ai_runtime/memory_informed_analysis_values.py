@@ -119,8 +119,7 @@ def load_memory_informed_current_records_value(
             or record.ledger_fingerprint != context.ledger_fingerprint
         ):
             raise EvidenceIdentityMismatch(
-                "current evidence financial identity drifted:"
-                f"{reference.reference_id}"
+                f"current evidence financial identity drifted:{reference.reference_id}"
             )
         if not record.authoritative:
             raise EvidenceIdentityMismatch(

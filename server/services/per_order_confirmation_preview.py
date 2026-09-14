@@ -295,8 +295,7 @@ class PerOrderConfirmationPreviewMixin:
         if str(decision.get("input_fingerprint") or "") != input_fingerprint:
             blockers.append("capital_evaluation_fingerprint_mismatch")
         expected_batch_ref = (
-            "execution_batch_reconciliation:"
-            f"{prior_batch_reconciliation_fingerprint}"
+            f"execution_batch_reconciliation:{prior_batch_reconciliation_fingerprint}"
         )
         capital_refs = {
             str(item)

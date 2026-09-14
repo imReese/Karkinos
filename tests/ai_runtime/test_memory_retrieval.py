@@ -300,8 +300,7 @@ async def test_current_evidence_drift_invalidates_and_hides_memory(tmp_path):
     )
     with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute(
-            "UPDATE ai_canonical_evidence SET payload_json = ? "
-            "WHERE reference_id = ?",
+            "UPDATE ai_canonical_evidence SET payload_json = ? WHERE reference_id = ?",
             ('{"tampered":true}', current_records[0].reference_id),
         )
 

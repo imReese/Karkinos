@@ -223,7 +223,9 @@ def project_account_truth_evidence_scope(
     observed_window_status = (
         "available"
         if timestamps_valid and event_count_matches
-        else "missing" if not unique_events else "blocked"
+        else "missing"
+        if not unique_events
+        else "blocked"
     )
     blockers = [
         "account_truth_account_scope_unbound",

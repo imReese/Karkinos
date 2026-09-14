@@ -144,7 +144,7 @@ def test_memory_informed_get_routes_do_not_initialize_schema(monkeypatch):
         "/api/ai/memory-informed-fixture-analyses/ai-memory-analysis-fixture"
     )
     replayed = client.get(
-        "/api/ai/memory-informed-fixture-analyses/" "ai-memory-analysis-fixture/replay"
+        "/api/ai/memory-informed-fixture-analyses/ai-memory-analysis-fixture/replay"
     )
 
     assert listed.status_code == 200

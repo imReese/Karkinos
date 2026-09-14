@@ -478,8 +478,9 @@ def test_source_drift_expiry_and_key_rotation_fail_closed(tmp_path) -> None:
         soak_promotion_provider=lambda _: _soak_promotion(),
         clock=lambda: NOW,
     )
-    assert "controlled_broker_write_release_operator_key_changed" in (
-        rotated_service.resolve_release_evidence(release_id)["blockers"]
+    assert (
+        "controlled_broker_write_release_operator_key_changed"
+        in (rotated_service.resolve_release_evidence(release_id)["blockers"])
     )
 
     expired_service = ControlledBrokerWriteReleaseService(

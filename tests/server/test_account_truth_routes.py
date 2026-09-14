@@ -1249,8 +1249,9 @@ def test_account_truth_scope_review_is_exact_append_only_and_revocable(
     )
     assert revoked["status"] == "revoked"
     assert revoked["readiness"]["evidence_scope"]["status"] == "blocked"
-    assert "account_truth_evidence_scope_review_revoked" in (
-        revoked["readiness"]["evidence_scope"]["blockers"]
+    assert (
+        "account_truth_evidence_scope_review_revoked"
+        in (revoked["readiness"]["evidence_scope"]["blockers"])
     )
     assert _ledger_entry_count(db._path) == ledger_count_before
     with sqlite3.connect(db._path) as conn:

@@ -342,8 +342,9 @@ def test_record_signal_review_outcome_is_evidence_bound_and_journaled(
         "decision.outcome_review.recorded"
     )
     assert journal_entry["latest_event"]["source"] == "decision_outcome_reviews"
-    assert journal_entry["latest_event"]["payload"]["target_fingerprint"] == (
-        preview["target_fingerprint"]
+    assert (
+        journal_entry["latest_event"]["payload"]["target_fingerprint"]
+        == (preview["target_fingerprint"])
     )
 
 
@@ -399,8 +400,9 @@ def test_signal_review_preview_is_read_only_and_record_is_idempotent(
             ).fetchone()[0]
             == 1
         )
-        assert conn.execute("SELECT COUNT(*) FROM ledger_entries").fetchone()[0] == (
-            before["ledger"]
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ledger_entries").fetchone()[0]
+            == (before["ledger"])
         )
 
 
@@ -575,9 +577,11 @@ def test_signal_review_binds_canonical_contribution_and_exposes_later_drift(
     db.publish_current_valuation_snapshot_sync()
     revalidated = asyncio.run(get_endpoint(result["review"]["review_id"]))
     assert revalidated["target_binding_valid"] is False
-    assert revalidated["review"]["stored_target_fingerprint"] == (
-        preview["target_fingerprint"]
+    assert (
+        revalidated["review"]["stored_target_fingerprint"]
+        == (preview["target_fingerprint"])
     )
-    assert revalidated["current_target"]["target_fingerprint"] != (
-        preview["target_fingerprint"]
+    assert (
+        revalidated["current_target"]["target_fingerprint"]
+        != (preview["target_fingerprint"])
     )

@@ -231,11 +231,11 @@ def _apply_controlled_submission_clearance_terminal_schema(
                     account_truth_source_fingerprint,
                     clearance_reconciliation_run_id, operator_id,
                     operator_approval_id, status,
-                    {legacy('terminal_status', "'filled'")}, fill_count,
-                    fill_quantity, {legacy('cancelled_quantity', "'0'")},
-                    {legacy('lifecycle_observation_id', "''")},
-                    {legacy('lifecycle_evidence_fingerprint', "''")},
-                    {legacy('lifecycle_source_sequence', '0')},
+                    {legacy("terminal_status", "'filled'")}, fill_count,
+                    fill_quantity, {legacy("cancelled_quantity", "'0'")},
+                    {legacy("lifecycle_observation_id", "''")},
+                    {legacy("lifecycle_evidence_fingerprint", "''")},
+                    {legacy("lifecycle_source_sequence", "0")},
                     cleared_at_epoch_ms, cleared_at, payload_json, created_at
                 FROM {legacy_table}
                 """)

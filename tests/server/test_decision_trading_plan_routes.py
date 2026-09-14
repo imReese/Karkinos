@@ -192,13 +192,15 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
     )
     monkeypatch.setattr(
         "server.projections.valuation_snapshot.get_shanghai_now",
-        lambda now=None: now
-        or datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai")),
+        lambda now=None: (
+            now or datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai"))
+        ),
     )
     monkeypatch.setattr(
         "server.projections.quote_status.get_shanghai_now",
-        lambda now=None: now
-        or datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai")),
+        lambda now=None: (
+            now or datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai"))
+        ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(

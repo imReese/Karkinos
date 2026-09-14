@@ -173,7 +173,7 @@ def test_empty_watchlist_waits_and_reinitializes_until_assets_appear() -> None:
             ),
             runtime_context_factory=lambda config: next(runtimes),
             feeds=feeds,
-            poll_watchlist_quotes=lambda feed: (polls.append("poll") or ([], "run")),
+            poll_watchlist_quotes=lambda feed: polls.append("poll") or ([], "run"),
         ),
     )
 
@@ -213,7 +213,7 @@ def test_initialization_failure_waits_and_observes_recovered_config(caplog) -> N
                 watchlist=[symbol],
             ),
             feeds=feeds,
-            poll_watchlist_quotes=lambda feed: (polls.append("poll") or ([], "run")),
+            poll_watchlist_quotes=lambda feed: polls.append("poll") or ([], "run"),
         ),
     )
 
@@ -253,7 +253,7 @@ def test_runtime_failure_closes_feed_waits_and_reinitializes(caplog) -> None:
             ),
             runtime_context_factory=lambda config: _runtime(watchlist=[symbol]),
             feeds=feeds,
-            poll_watchlist_quotes=lambda feed: (polls.append("poll") or ([], "run")),
+            poll_watchlist_quotes=lambda feed: polls.append("poll") or ([], "run"),
             evaluate_controlled_session_pauses=(evaluate_controlled_session_pauses),
         ),
     )
@@ -345,7 +345,7 @@ def test_empty_watchlist_is_initialized_idle() -> None:
             ),
             runtime_context_factory=lambda config: _runtime(watchlist=[]),
             feeds=feeds,
-            poll_watchlist_quotes=lambda feed: (polls.append("poll") or ([], "run")),
+            poll_watchlist_quotes=lambda feed: polls.append("poll") or ([], "run"),
         ),
     )
 
@@ -382,7 +382,7 @@ def test_activation_guard_blocks_iterations_until_removed_without_restart() -> N
             ),
             runtime_context_factory=lambda config: _runtime(watchlist=[symbol]),
             feeds=feeds,
-            poll_watchlist_quotes=lambda feed: (polls.append("poll") or ([], "run")),
+            poll_watchlist_quotes=lambda feed: polls.append("poll") or ([], "run"),
             evaluate_controlled_session_pauses=lambda: pause_checks.append("check"),
         ),
     )

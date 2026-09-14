@@ -149,8 +149,7 @@ def _pre_valuation_blockers(
             requested.get(request_field) or ""
         ):
             blockers.append(
-                "controlled_ledger_correction_pre_valuation_"
-                f"{valuation_field}_changed"
+                f"controlled_ledger_correction_pre_valuation_{valuation_field}_changed"
             )
     return blockers
 

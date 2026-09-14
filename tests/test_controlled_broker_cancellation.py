@@ -642,8 +642,9 @@ def test_lifecycle_drift_and_terminal_evidence_fail_closed_without_gateway_call(
     with pytest.raises(ControlledBrokerCancellationRejected) as exc_info:
         _cancel(env, preview, approval)
 
-    assert "controlled_broker_cancel_fingerprint_mismatch" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_broker_cancel_fingerprint_mismatch"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert env["gateway"].cancel_calls == 0
     current = env["service"].preview(submit_intent_id=env["submit_intent_id"])
@@ -706,8 +707,9 @@ def test_wrong_signature_and_sensitive_gateway_fields_are_sanitized(tmp_path) ->
             operator_proof_signature_base64=signature_base64,
             acknowledgement=CONTROLLED_BROKER_CANCELLATION_ACKNOWLEDGEMENT,
         )
-    assert "controlled_broker_cancel_operator_approval_blocked" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_broker_cancel_operator_approval_blocked"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert signature_base64 not in str(exc_info.value.evidence)
     assert env["gateway"].cancel_calls == 0

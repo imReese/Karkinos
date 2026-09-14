@@ -126,8 +126,9 @@ def test_unknown_and_sensitive_fields_are_rejected_without_value_echo() -> None:
     preview = preview_broker_adapter_conformance_result(payload)
 
     assert preview["recordable"] is False
-    assert "broker_adapter_conformance_auth_material_not_allowed" in (
-        preview["record_blockers"]
+    assert (
+        "broker_adapter_conformance_auth_material_not_allowed"
+        in (preview["record_blockers"])
     )
     assert "must-never-enter-conformance-evidence" not in json.dumps(preview)
 
@@ -163,14 +164,15 @@ def test_explicit_record_is_idempotent_restart_safe_and_latest_failure_wins(
     assert first["status"] == "passed"
     assert first["persisted"] is True
     assert replay["reused"] is True
-    assert "broker_adapter_conformance_run_id_conflict" in (
-        conflict.value.evidence["blockers"]
+    assert (
+        "broker_adapter_conformance_run_id_conflict"
+        in (conflict.value.evidence["blockers"])
     )
     assert clear["status"] == "clear"
     assert failed["status"] == "blocked"
     assert blocked["status"] == "blocked"
-    assert "broker_adapter_conformance_latest_report_not_passed" in (
-        blocked["blockers"]
+    assert (
+        "broker_adapter_conformance_latest_report_not_passed" in (blocked["blockers"])
     )
 
 
@@ -200,11 +202,11 @@ def test_manifest_drift_and_report_tampering_fail_closed(tmp_path) -> None:
     )
 
     assert "broker_adapter_conformance_manifest_mismatch" in drifted["blockers"]
-    assert "broker_adapter_conformance_report_integrity_invalid" in (
-        tampered["blockers"]
+    assert (
+        "broker_adapter_conformance_report_integrity_invalid" in (tampered["blockers"])
     )
-    assert "broker_adapter_conformance_report_structure_invalid" in (
-        tampered["blockers"]
+    assert (
+        "broker_adapter_conformance_report_structure_invalid" in (tampered["blockers"])
     )
 
 
@@ -220,8 +222,9 @@ def test_wrong_acknowledgement_and_read_only_lookup_have_no_report(tmp_path) -> 
     repository = BrokerAdapterConformanceRepository(tmp_path / "record.db")
     with pytest.raises(BrokerAdapterConformanceRejected) as rejected:
         repository.record_report(conformance_preview(), acknowledgement="")
-    assert "broker_adapter_conformance_acknowledgement_mismatch" in (
-        rejected.value.evidence["blockers"]
+    assert (
+        "broker_adapter_conformance_acknowledgement_mismatch"
+        in (rejected.value.evidence["blockers"])
     )
     assert repository.get_latest("fixture-release-reviewed-v1")["status"] == (
         "not_found"
@@ -245,8 +248,9 @@ def test_release_acceptance_requires_and_exactly_binds_latest_conformance(
             reason_ref="fixture-review-approved",
             acknowledgement=BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
         )
-    assert "broker_adapter_release_conformance_blocked" in (
-        missing.value.evidence["blockers"]
+    assert (
+        "broker_adapter_release_conformance_blocked"
+        in (missing.value.evidence["blockers"])
     )
 
     conformance_repository = BrokerAdapterConformanceRepository(db_path)

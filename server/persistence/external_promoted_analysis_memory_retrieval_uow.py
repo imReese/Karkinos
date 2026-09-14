@@ -184,7 +184,7 @@ class ExternalPromotedAnalysisMemoryRetrievalStore:
             row = None
         if row is None:
             raise LookupError(
-                "promoted-analysis memory retrieval not found: " f"{retrieval_id}"
+                f"promoted-analysis memory retrieval not found: {retrieval_id}"
             )
         return retrieval_from_row(row)
 

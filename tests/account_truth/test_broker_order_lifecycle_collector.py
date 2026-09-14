@@ -300,8 +300,9 @@ def test_same_cursor_with_different_evidence_is_blocked(tmp_path) -> None:
     )
 
     assert result["run_status"] == "blocked"
-    assert "broker_order_lifecycle_collector_cursor_evidence_conflict" in (
-        result["blockers"]
+    assert (
+        "broker_order_lifecycle_collector_cursor_evidence_conflict"
+        in (result["blockers"])
     )
     assert state["last_cursor"] == 1
 
@@ -347,8 +348,9 @@ def test_gap_and_out_of_order_cursor_do_not_advance_state(tmp_path) -> None:
         == "not_found"
     )
     assert out_of_order["run_status"] == "blocked"
-    assert "broker_order_lifecycle_collector_cursor_out_of_order" in (
-        out_of_order["blockers"]
+    assert (
+        "broker_order_lifecycle_collector_cursor_out_of_order"
+        in (out_of_order["blockers"])
     )
 
 
@@ -554,11 +556,13 @@ def test_preview_drift_and_wrong_acknowledgement_are_rejected(tmp_path) -> None:
             acknowledgement=(BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT),
         )
 
-    assert "broker_order_lifecycle_collector_acknowledgement_mismatch" in (
-        wrong_ack.value.evidence["blockers"]
+    assert (
+        "broker_order_lifecycle_collector_acknowledgement_mismatch"
+        in (wrong_ack.value.evidence["blockers"])
     )
-    assert "broker_order_lifecycle_collector_preview_fingerprint_drift" in (
-        drift.value.evidence["blockers"]
+    assert (
+        "broker_order_lifecycle_collector_preview_fingerprint_drift"
+        in (drift.value.evidence["blockers"])
     )
 
 
@@ -677,8 +681,9 @@ def test_prepared_restart_recovery_reblocks_until_cursor_commit(tmp_path) -> Non
 
     assert prepared["run_status"] == "prepared"
     assert before_collector["status"] == "recovery_pending"
-    assert "broker_order_lifecycle_collector_recovery_pending" in (
-        before_collector["blockers"]
+    assert (
+        "broker_order_lifecycle_collector_recovery_pending"
+        in (before_collector["blockers"])
     )
     assert recovered["run_status"] == "recorded"
     assert after_recovery["collector_evidence"]["status"] == "healthy"
@@ -719,8 +724,9 @@ def test_direct_import_cannot_bypass_existing_collector_scope(tmp_path) -> None:
     )
 
     assert resolved["collector_evidence"]["status"] == "unbound"
-    assert "broker_order_lifecycle_collector_observation_not_bound" in (
-        resolved["collector_evidence"]["blockers"]
+    assert (
+        "broker_order_lifecycle_collector_observation_not_bound"
+        in (resolved["collector_evidence"]["blockers"])
     )
     assert blockers == ["controlled_submission_clearance_lifecycle_collector_unhealthy"]
 
@@ -761,8 +767,9 @@ def test_partial_poll_batch_reblocks_previously_healthy_collector_scope(
     assert partial["run_status"] == "blocked"
     assert "broker_order_lifecycle_collector_partial_batch" in partial["blockers"]
     assert resolved["collector_evidence"]["status"] == "blocked"
-    assert "broker_order_lifecycle_collector_latest_run_blocked" in (
-        resolved["collector_evidence"]["blockers"]
+    assert (
+        "broker_order_lifecycle_collector_latest_run_blocked"
+        in (resolved["collector_evidence"]["blockers"])
     )
 
 

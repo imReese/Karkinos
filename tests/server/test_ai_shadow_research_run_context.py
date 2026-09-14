@@ -4,13 +4,13 @@ import sqlite3
 
 import pytest
 
-from server.db import AppDatabase
 from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
     SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     ShadowResearchRejected,
 )
+from server.db import AppDatabase
 from server.persistence.ai_shadow_research import ShadowResearchStore
 from server.projections.daily_strategy_artifacts import build_daily_strategy_selection
 from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline

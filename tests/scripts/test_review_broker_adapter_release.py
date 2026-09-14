@@ -109,15 +109,14 @@ def test_cli_wrong_acknowledgement_fails_without_acceptance(tmp_path, capsys) ->
 
     assert code == 2
     assert rejected["status"] == "rejected"
-    assert "broker_adapter_release_review_acknowledgement_mismatch" in (
-        rejected["blockers"]
+    assert (
+        "broker_adapter_release_review_acknowledgement_mismatch"
+        in (rejected["blockers"])
     )
     assert (
         BrokerAdapterReleaseReviewRepository(
             db_path,
             ensure_schema=False,
-        ).get_status(
-            "fixture-release-reviewed-v1"
-        )["status"]
+        ).get_status("fixture-release-reviewed-v1")["status"]
         == "not_found"
     )

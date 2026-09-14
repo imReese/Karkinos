@@ -402,7 +402,7 @@ def test_backtest_attribution_preview_summarizes_preview_evidence_without_writes
     ]
     assert response["review_linkage_candidate"] == {
         "candidate_id": (
-            "review-linkage:" "dual_ma:600000:preview-run-001:0001:buy_candidate"
+            "review-linkage:dual_ma:600000:preview-run-001:0001:buy_candidate"
         ),
         "strategy_id": "dual_ma",
         "symbol": "600000",
@@ -414,7 +414,7 @@ def test_backtest_attribution_preview_summarizes_preview_evidence_without_writes
             "paper_shadow_order:paper-shadow-preview:dual_ma:600000:buy:100:10"
         ),
         "paper_shadow_fill_ref": (
-            "paper_shadow_fill:" "paper-shadow-preview:dual_ma:600000:buy:100:10:fill:1"
+            "paper_shadow_fill:paper-shadow-preview:dual_ma:600000:buy:100:10:fill:1"
         ),
         "recommended_review_action": "review_and_link_evidence_manually",
         "manual_confirmation_required": True,

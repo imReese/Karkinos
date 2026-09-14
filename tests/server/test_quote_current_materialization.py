@@ -54,11 +54,14 @@ def test_initialization_creates_an_empty_complete_materialization(tmp_path) -> N
 
     with sqlite3.connect(database.path) as conn:
         state = assert_quote_current_materialization_on_connection(conn)
-        indexes = {str(row[0]) for row in conn.execute("""
+        indexes = {
+            str(row[0])
+            for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'quote_snapshots'
-                """).fetchall()}
+                """).fetchall()
+        }
     assert state.snapshot_cutoff_id == 0
     assert state.revision == 0
     assert "idx_quote_snapshots_symbol_instant" in indexes

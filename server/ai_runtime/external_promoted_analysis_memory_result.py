@@ -126,9 +126,7 @@ class ExternalPromotedAnalysisMemoryPromotionResult:
     @property
     def effective_status(self) -> ExternalPromotedAnalysisMemoryEffectiveStatus:
         if not self.historical_record_valid:
-            return (
-                ExternalPromotedAnalysisMemoryEffectiveStatus.INVALIDATED_BY_SOURCE_DRIFT
-            )
+            return ExternalPromotedAnalysisMemoryEffectiveStatus.INVALIDATED_BY_SOURCE_DRIFT
         if self.revoked:
             return ExternalPromotedAnalysisMemoryEffectiveStatus.REVOKED
         return ExternalPromotedAnalysisMemoryEffectiveStatus.RECALL_ELIGIBLE

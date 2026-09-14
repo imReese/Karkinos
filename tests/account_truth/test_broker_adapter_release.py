@@ -151,12 +151,14 @@ def test_write_capability_boundary_violation_and_auth_material_fail_closed() -> 
     auth_preview = preview_manifest(contains_auth_material)
 
     assert writable_preview["validation_status"] == "blocked"
-    assert "broker_adapter_release_write_capability_present" in (
-        writable_preview["blockers"]
+    assert (
+        "broker_adapter_release_write_capability_present"
+        in (writable_preview["blockers"])
     )
     assert auth_preview["recordable"] is False
-    assert "broker_adapter_release_auth_material_not_allowed" in (
-        auth_preview["record_blockers"]
+    assert (
+        "broker_adapter_release_auth_material_not_allowed"
+        in (auth_preview["record_blockers"])
     )
     assert "must-not-enter-evidence" not in json.dumps(auth_preview)
 
@@ -249,15 +251,19 @@ def test_rejection_and_revocation_are_append_only_and_fail_closed(tmp_path) -> N
             preview=preview,
             review_id="fixture-release-review-illegal-resume",
         )
-    assert "broker_adapter_release_revoked_requires_new_release" in (
-        resumed.value.evidence["blockers"]
+    assert (
+        "broker_adapter_release_revoked_requires_new_release"
+        in (resumed.value.evidence["blockers"])
     )
 
     with sqlite3.connect(db_path) as conn:
-        decisions = [str(row[0]) for row in conn.execute("""
+        decisions = [
+            str(row[0])
+            for row in conn.execute("""
                 SELECT decision FROM broker_adapter_release_review_events
                 ORDER BY id
-                """).fetchall()]
+                """).fetchall()
+        ]
     assert decisions == ["accepted", "revoked"]
 
 
@@ -285,8 +291,8 @@ def test_review_event_tampering_blocks_collector_binding(tmp_path) -> None:
     verification = repository.verify_collector_binding(collector_binding())
 
     assert verification["status"] == "blocked"
-    assert "broker_adapter_release_review_integrity_invalid" in (
-        verification["blockers"]
+    assert (
+        "broker_adapter_release_review_integrity_invalid" in (verification["blockers"])
     )
 
 
@@ -317,11 +323,13 @@ def test_preview_drift_and_wrong_acknowledgement_are_rejected(tmp_path) -> None:
             acknowledgement=BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
         )
 
-    assert "broker_adapter_release_review_acknowledgement_mismatch" in (
-        wrong_ack.value.evidence["blockers"]
+    assert (
+        "broker_adapter_release_review_acknowledgement_mismatch"
+        in (wrong_ack.value.evidence["blockers"])
     )
-    assert "broker_adapter_release_preview_fingerprint_drift" in (
-        integrity.value.evidence["blockers"]
+    assert (
+        "broker_adapter_release_preview_fingerprint_drift"
+        in (integrity.value.evidence["blockers"])
     )
 
 
@@ -336,11 +344,13 @@ def test_semantic_blockers_cannot_be_removed_before_acceptance(tmp_path) -> None
     with pytest.raises(BrokerAdapterReleaseRejected) as integrity:
         accept_release(repository, preview=tampered_preview)
 
-    assert "broker_adapter_release_preview_validation_drift:blockers" in (
-        integrity.value.evidence["blockers"]
+    assert (
+        "broker_adapter_release_preview_validation_drift:blockers"
+        in (integrity.value.evidence["blockers"])
     )
-    assert "broker_adapter_release_preview_validation_drift:validation_status" in (
-        integrity.value.evidence["blockers"]
+    assert (
+        "broker_adapter_release_preview_validation_drift:validation_status"
+        in (integrity.value.evidence["blockers"])
     )
 
 

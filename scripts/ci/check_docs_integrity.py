@@ -76,8 +76,7 @@ def check_local_links(path: Path) -> list[str]:
 
         if not resolved.exists():
             errors.append(
-                f"{path.relative_to(REPO_ROOT)} has a broken local link: "
-                f"{raw_target}"
+                f"{path.relative_to(REPO_ROOT)} has a broken local link: {raw_target}"
             )
 
     return errors

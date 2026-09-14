@@ -108,8 +108,9 @@ def test_citic_lineage_exposes_partial_semantic_match_without_event_identity() -
     assert assessment["canonical_events_with_broker_order_identity_count"] == 0
     assert assessment["broker_order_identity_matched_event_count"] == 0
     assert assessment["exact_event_identity_matched_event_count"] == 0
-    assert "citic_canonical_lineage_broker_order_identity_not_preserved" in (
-        assessment["blockers"]
+    assert (
+        "citic_canonical_lineage_broker_order_identity_not_preserved"
+        in (assessment["blockers"])
     )
     assert (
         "citic_canonical_lineage_event_identity_not_preserved" in assessment["blockers"]

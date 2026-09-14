@@ -46,7 +46,7 @@ def read_historical_price_observations(
                 FROM market_store.market_bars_v2
                 WHERE symbol IN ({placeholders}) AND frequency = '1d'
                   AND substr(timestamp, 1, 10) BETWEEN ? AND ?""",
-            f"""SELECT symbol, {_normalized_type_sql('COALESCE(instrument_type, asset_class)')} AS instrument_type,
+            f"""SELECT symbol, {_normalized_type_sql("COALESCE(instrument_type, asset_class)")} AS instrument_type,
                        substr(timestamp, 1, 10) AS trade_date, timestamp, price,
                        quote_source AS source, created_at AS captured_at,
                        'quote' AS kind, 'quote_snapshots:' || id AS evidence_ref,
@@ -416,8 +416,7 @@ def _attached_table_exists(
 ) -> bool:
     return (
         conn.execute(
-            f"SELECT 1 FROM {schema}.sqlite_master "
-            "WHERE type = 'table' AND name = ?",
+            f"SELECT 1 FROM {schema}.sqlite_master WHERE type = 'table' AND name = ?",
             (table,),
         ).fetchone()
         is not None

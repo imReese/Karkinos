@@ -302,8 +302,7 @@ def test_current_qualification_attempt_is_explanatory_only(monkeypatch) -> None:
         "qualification_runs": [],
     }
     monkeypatch.setattr(
-        "server.composition.ai_application_services."
-        "build_shadow_research_read_service",
+        "server.composition.ai_application_services.build_shadow_research_read_service",
         lambda _state: SimpleNamespace(status=lambda: status),
     )
 
@@ -322,8 +321,7 @@ def test_new_qualification_failure_does_not_override_active_promoted_strategy(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "server.composition.ai_application_services."
-        "build_shadow_research_read_service",
+        "server.composition.ai_application_services.build_shadow_research_read_service",
         lambda _state: pytest.fail("current research must not replace active strategy"),
     )
     db = SimpleNamespace(

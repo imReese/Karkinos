@@ -184,7 +184,9 @@ def _build(
             item.gap_position = (
                 "leading"
                 if item.valuation_date < min(dates)
-                else "trailing" if item.valuation_date > max(dates) else "internal"
+                else "trailing"
+                if item.valuation_date > max(dates)
+                else "internal"
             )
     unknown = sum(item.requirement == "unknown" for item in items)
     unavailable = sum(
@@ -205,7 +207,11 @@ def _build(
         status=(
             "empty"
             if not entries
-            else "unknown" if unknown else "incomplete" if unavailable else "complete"
+            else "unknown"
+            if unknown
+            else "incomplete"
+            if unavailable
+            else "complete"
         ),
         confirmed_gap_dates=len({item.valuation_date for item in gaps}),
         confirmed_gap_instrument_dates=len(gaps),
@@ -288,7 +294,11 @@ def _evidence_status(key, rows, incidents):
         else (
             "available"
             if values
-            else "invalid" if invalid else "unverified" if rows else "missing"
+            else "invalid"
+            if invalid
+            else "unverified"
+            if rows
+            else "missing"
         )
     )
     return status, sorted(reasons), sorted(refs)

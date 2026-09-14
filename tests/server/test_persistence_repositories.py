@@ -494,16 +494,17 @@ def test_app_database_instrument_and_event_facades_delegate_to_repositories(
     monkeypatch.setattr(
         database._instrument_metadata,
         "upsert_metadata",
-        lambda **payload: calls.append(("instrument_upsert", payload))
-        or expected_instrument,
+        lambda **payload: (
+            calls.append(("instrument_upsert", payload)) or expected_instrument
+        ),
     )
     monkeypatch.setattr(
         database._instrument_metadata,
         "get_metadata",
-        lambda symbol, asset_type=None: calls.append(
-            ("instrument_get", (symbol, asset_type))
-        )
-        or expected_instrument,
+        lambda symbol, asset_type=None: (
+            calls.append(("instrument_get", (symbol, asset_type)))
+            or expected_instrument
+        ),
     )
     monkeypatch.setattr(
         database._instrument_metadata,

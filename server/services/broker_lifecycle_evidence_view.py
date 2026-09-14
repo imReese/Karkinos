@@ -207,7 +207,9 @@ def _health_payload(
         "registration_status": (
             "registered_enabled"
             if registered and enabled
-            else "registered_disabled" if registered else "not_registered"
+            else "registered_disabled"
+            if registered
+            else "not_registered"
         ),
         "enabled": enabled,
         "status": status,

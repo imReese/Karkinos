@@ -106,8 +106,9 @@ def test_query_window_batch_assessment_identifies_contiguous_reviewed_windows() 
     assert assessment["declared_windows_contiguous"] is True
     assert assessment["declared_windows_non_overlapping"] is True
     assert assessment["complete_account_coverage_proven"] is False
-    assert "citic_query_window_batch_complete_account_coverage_unproven" in (
-        assessment["blockers"]
+    assert (
+        "citic_query_window_batch_complete_account_coverage_unproven"
+        in (assessment["blockers"])
     )
 
 

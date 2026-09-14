@@ -1847,10 +1847,10 @@ def test_public_candidate_wires_fetch_workflow_to_local_candidate_operations(
     monkeypatch.setattr(
         manage_release,
         "run_candidate",
-        lambda actual_home, *, commit_sha, port: events.append(
-            ("run", actual_home, commit_sha, port)
-        )
-        or {"status": "candidate_exited", "commit_sha": commit_sha, "returncode": 0},
+        lambda actual_home, *, commit_sha, port: (
+            events.append(("run", actual_home, commit_sha, port))
+            or {"status": "candidate_exited", "commit_sha": commit_sha, "returncode": 0}
+        ),
     )
     monkeypatch.setattr(
         manage_release,
@@ -1903,10 +1903,9 @@ def test_public_update_wires_verified_sha_to_transactional_deploy(
     monkeypatch.setattr(
         manage_release,
         "_service_manager_hooks",
-        lambda actual_home, manager, *, port: events.append(
-            ("service", actual_home, manager, port)
-        )
-        or service_hooks,
+        lambda actual_home, manager, *, port: (
+            events.append(("service", actual_home, manager, port)) or service_hooks
+        ),
     )
     monkeypatch.setattr(
         manage_release,

@@ -247,7 +247,7 @@ def _candidate_review_gates(dataset_snapshot: dict[str, Any]) -> list[dict[str, 
             "status": "waiting",
             "severity": "warning",
             "summary": (
-                "Paper/shadow preview waits for data, account-truth, and risk " "gates."
+                "Paper/shadow preview waits for data, account-truth, and risk gates."
             ),
             "required_action": "run_paper_shadow_preview_after_gates",
             "evidence_ref": None,

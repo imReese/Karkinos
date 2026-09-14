@@ -45,8 +45,7 @@ def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
 
     @router.post(
-        "/api/ai/external-reviewed-memory-retrievals/{retrieval_id}/"
-        "external-analyses"
+        "/api/ai/external-reviewed-memory-retrievals/{retrieval_id}/external-analyses"
     )
     async def start_external_promoted_memory_analysis(
         retrieval_id: str,

@@ -85,8 +85,7 @@ class ControlledSessionEnvelopeEvidenceMixin:
         if str(decision.get("input_fingerprint") or "") != input_fingerprint:
             blockers.append("capital_evaluation_fingerprint_mismatch")
         expected_batch_ref = (
-            "execution_batch_reconciliation:"
-            f"{prior_batch_reconciliation_fingerprint}"
+            f"execution_batch_reconciliation:{prior_batch_reconciliation_fingerprint}"
         )
         capital_refs = {
             str(item)
@@ -112,7 +111,7 @@ class ControlledSessionEnvelopeEvidenceMixin:
         if expected_gateway_refs != recorded_gateway_refs:
             blockers.append("capital_execution_gateway_verification_refs_mismatch")
         expected_account_truth_ref = (
-            "session_start_account_truth:" f"{session_start_account_truth_fingerprint}"
+            f"session_start_account_truth:{session_start_account_truth_fingerprint}"
         )
         recorded_account_truth_refs = {
             ref

@@ -662,11 +662,13 @@ def test_partial_lifecycle_race_rejects_signed_clearance_inside_transaction(
     with pytest.raises(ControlledSubmissionReconciliationClearanceRejected) as exc:
         _record(env, preview, approval)
 
-    assert "controlled_submission_clearance_review_blocked" in (
-        exc.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_submission_clearance_review_blocked"
+        in (exc.value.evidence["rejection_reasons"])
     )
-    assert "controlled_submission_clearance_terminal_outcome_required" in (
-        exc.value.evidence["review_blockers"]
+    assert (
+        "controlled_submission_clearance_terminal_outcome_required"
+        in (exc.value.evidence["review_blockers"])
     )
     assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
         "submitted"
@@ -704,11 +706,13 @@ def test_collector_disconnect_race_rejects_signed_clearance_inside_transaction(
 
     assert healthy["run_status"] == "recorded"
     assert disconnected["run_status"] == "blocked"
-    assert "controlled_submission_clearance_review_blocked" in (
-        exc.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_submission_clearance_review_blocked"
+        in (exc.value.evidence["rejection_reasons"])
     )
-    assert "controlled_submission_terminal_clearance_lifecycle_collector_unhealthy" in (
-        exc.value.evidence["review_blockers"]
+    assert (
+        "controlled_submission_terminal_clearance_lifecycle_collector_unhealthy"
+        in (exc.value.evidence["review_blockers"])
     )
     reconciliation = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
         run_date="2026-07-14"
@@ -781,8 +785,9 @@ def test_collector_failure_after_clearance_reblocks_next_order_transaction(
         "controlled_submission_terminal_clearance_lifecycle_collector_unhealthy"
     )
     assert next_attempt["prepared"]["status"] == "rejected"
-    assert "controlled_broker_submit_lifecycle_clearance_invalidated" in (
-        next_attempt["prepared"]["blockers"]
+    assert (
+        "controlled_broker_submit_lifecycle_clearance_invalidated"
+        in (next_attempt["prepared"]["blockers"])
     )
     assert (
         env["db"].get_oms_order_sync(next_attempt["order"]["order_id"])["status"]
@@ -879,8 +884,9 @@ def test_newer_partial_lifecycle_fact_reblocks_preview_and_submit_transaction(
     )
 
     assert prepared["status"] == "rejected"
-    assert "controlled_broker_submit_lifecycle_clearance_invalidated" in (
-        prepared["blockers"]
+    assert (
+        "controlled_broker_submit_lifecycle_clearance_invalidated"
+        in (prepared["blockers"])
     )
     assert env["db"].get_oms_order_sync(next_order["order_id"])["status"] == (
         "manually_confirmed"
@@ -1023,11 +1029,13 @@ def test_terminal_lifecycle_drift_is_rechecked_inside_clearance_transaction(
             acknowledgement=CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
         )
 
-    assert "controlled_submission_clearance_transaction_rejected" in (
-        exc.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_submission_clearance_transaction_rejected"
+        in (exc.value.evidence["rejection_reasons"])
     )
-    assert "controlled_submission_terminal_outcome_changed" in (
-        exc.value.evidence["transaction_blockers"]
+    assert (
+        "controlled_submission_terminal_outcome_changed"
+        in (exc.value.evidence["transaction_blockers"])
     )
     assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
         "submitted"
@@ -1183,8 +1191,9 @@ def test_superseded_reconciliation_item_invalidates_signed_preview(tmp_path) -> 
     with pytest.raises(ControlledSubmissionReconciliationClearanceRejected) as exc_info:
         _record(env, preview, approval)
 
-    assert "controlled_submission_clearance_review_blocked" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_submission_clearance_review_blocked"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
     assert env["db"].get_ledger_entries_sync() == []
@@ -1208,11 +1217,13 @@ def test_client_order_identity_drift_invalidates_signed_preview(tmp_path) -> Non
     with pytest.raises(ControlledSubmissionReconciliationClearanceRejected) as exc_info:
         _record(env, preview, approval)
 
-    assert "controlled_submission_clearance_review_blocked" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_submission_clearance_review_blocked"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
-    assert "controlled_submission_clearance_client_order_identity_mismatch" in (
-        exc_info.value.evidence["review_blockers"]
+    assert (
+        "controlled_submission_clearance_client_order_identity_mismatch"
+        in (exc_info.value.evidence["review_blockers"])
     )
     assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
     assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
@@ -1250,8 +1261,9 @@ def test_wrong_signature_domain_is_rejected_and_audited(tmp_path) -> None:
             acknowledgement=CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
         )
 
-    assert "controlled_submission_clearance_operator_approval_blocked" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_submission_clearance_operator_approval_blocked"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert signature_base64 not in str(exc_info.value.evidence)
     assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
@@ -1508,11 +1520,13 @@ def test_ledger_identity_race_rejects_whole_posting_transaction(
             acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
         )
 
-    assert "controlled_ledger_posting_transaction_rejected" in (
-        exc.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_ledger_posting_transaction_rejected"
+        in (exc.value.evidence["rejection_reasons"])
     )
-    assert "controlled_ledger_posting_pre_ledger_cutoff_changed" in (
-        exc.value.evidence["transaction_blockers"]
+    assert (
+        "controlled_ledger_posting_pre_ledger_cutoff_changed"
+        in (exc.value.evidence["transaction_blockers"])
     )
     assert all(
         row["source"] != "controlled_submission_ledger_posting"
@@ -1584,8 +1598,9 @@ def test_account_truth_review_race_rejects_whole_posting_transaction(
             acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
         )
 
-    assert "controlled_ledger_posting_account_truth_review_changed" in (
-        exc.value.evidence["transaction_blockers"]
+    assert (
+        "controlled_ledger_posting_account_truth_review_changed"
+        in (exc.value.evidence["transaction_blockers"])
     )
     assert all(
         row["source"] != "controlled_submission_ledger_posting"
@@ -1777,7 +1792,8 @@ def test_clearance_allows_only_exact_unposted_controlled_order_delta(tmp_path) -
     assert exact["account_truth"]["status"] == "expected_controlled_ledger_delta"
     assert len(exact["expected_ledger_delta_fingerprint"]) == 64
     assert unrelated["review_ready"] is False
-    assert "controlled_submission_clearance_account_truth_status_invalid" in (
-        unrelated["blockers"]
+    assert (
+        "controlled_submission_clearance_account_truth_status_invalid"
+        in (unrelated["blockers"])
     )
     assert env["db"].get_ledger_entries_sync() == []

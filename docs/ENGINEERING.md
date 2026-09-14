@@ -82,11 +82,14 @@ Frontend regression tests assert current user-visible product and evidence contr
 
 Repository/workflow/ruleset contracts belong under `tests/engineering/`. They protect the engineering system rather than investment behavior and must not be presented as product-test coverage.
 
-Focused Python checks:
+Python quality and focused tests:
 
 ```bash
-uv run python scripts/ci/check_python_quality.py --base <base-ref-or-sha>
-uv run python -m pytest <relevant-tests>
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked mypy
+uv run --locked python tools/check_python_architecture.py
+uv run --locked python -m pytest <relevant-tests>
 ```
 
 Current broad Python product suite:
@@ -173,8 +176,7 @@ Applying or changing GitHub rulesets is an explicit repository-owner operation. 
 
 ### Python tooling authority
 
-- Ruff supplies the current correctness baseline.
-- Black and isort remain the repository formatter/import-order authority until a dedicated mechanical Ruff-format migration is performed; do not mix that repository-wide rewrite into unrelated CI or product changes.
+- Ruff owns Python lint, import organization, and formatting across the repository.
 - mypy is the CI type-checking authority.
 - Pyright configuration is editor assistance only and must not be treated as a competing CI gate.
 - Extend mypy coverage by stable domain boundary rather than enabling repository-wide strictness and compensating with broad ignores.

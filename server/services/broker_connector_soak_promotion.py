@@ -12,15 +12,13 @@ from server.services.broker_connector_soak_promotion_evidence import (
 )
 from server.services.broker_connector_soak_promotion_values import (
     aware_utc,
-)
-from server.services.broker_connector_soak_promotion_values import (
-    connector_id as connector_identity,
-)
-from server.services.broker_connector_soak_promotion_values import (
     event_response,
     fingerprint,
     safety_flags,
     without_volatile_age,
+)
+from server.services.broker_connector_soak_promotion_values import (
+    connector_id as connector_identity,
 )
 from server.services.operator_approval import resolve_operator_approval
 

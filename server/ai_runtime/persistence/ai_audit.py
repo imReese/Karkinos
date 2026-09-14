@@ -525,7 +525,7 @@ class AiAuditStore:
     def list_artifacts(self, workflow_id: str) -> tuple[StoredArtifact, ...]:
         with self._connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM ai_artifacts WHERE workflow_id = ? " "ORDER BY rowid",
+                "SELECT * FROM ai_artifacts WHERE workflow_id = ? ORDER BY rowid",
                 (workflow_id,),
             ).fetchall()
         return tuple(_artifact_from_row(row) for row in rows)

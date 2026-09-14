@@ -192,8 +192,9 @@ def test_transaction_blocks_sequence_conflict_and_order_identity_drift(
     )
 
     assert sequence_conflict["validation_status"] == "blocked"
-    assert "broker_order_lifecycle_source_sequence_evidence_conflict" in (
-        sequence_conflict["blockers"]
+    assert (
+        "broker_order_lifecycle_source_sequence_evidence_conflict"
+        in (sequence_conflict["blockers"])
     )
     assert identity_drift["validation_status"] == "blocked"
     assert "broker_order_lifecycle_order_identity_drift" in identity_drift["blockers"]
@@ -250,8 +251,9 @@ def test_preview_blocks_credentials_and_inconsistent_fill_totals() -> None:
     mismatch_preview = _preview(mismatch_payload)
 
     assert credential_preview["validation_status"] == "blocked"
-    assert "broker_order_lifecycle_credentials_not_allowed" in (
-        credential_preview["blockers"]
+    assert (
+        "broker_order_lifecycle_credentials_not_allowed"
+        in (credential_preview["blockers"])
     )
     assert mismatch_preview["validation_status"] == "blocked"
     assert "broker_order_lifecycle_fill_sum_mismatch" in mismatch_preview["blockers"]
@@ -290,8 +292,9 @@ def test_record_rejects_in_memory_preview_drift_and_sanitizes_local_path(
     with pytest.raises(BrokerOrderLifecycleEvidenceRejected) as exc_info:
         _record(repository, drifted)
 
-    assert "broker_order_lifecycle_preview_fingerprint_drift" in (
-        exc_info.value.evidence["blockers"]
+    assert (
+        "broker_order_lifecycle_preview_fingerprint_drift"
+        in (exc_info.value.evidence["blockers"])
     )
     assert preview["source_name"] == "broker local exact-order lifecycle export"
     assert repository.list_observations() == []

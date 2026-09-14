@@ -475,10 +475,9 @@ def test_stable_bootstrap_preflights_then_uses_proven_sha(
     callbacks = update_workflow.LegacyBootstrapWorkflowCallbacks(
         preflight=lambda: events.append(("preflight",)),
         stage=lambda archive, sha: events.append(("stage", archive.exists(), sha)),
-        bootstrap=lambda sha, confirmation, timeout: events.append(
-            ("bootstrap", sha, confirmation, timeout)
-        )
-        or "bootstrapped",
+        bootstrap=lambda sha, confirmation, timeout: (
+            events.append(("bootstrap", sha, confirmation, timeout)) or "bootstrapped"
+        ),
         discard=lambda sha: events.append(("discard", sha)),
     )
     monkeypatch.setattr(release_fetch, "fetch_stable_native", fetch)

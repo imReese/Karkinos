@@ -97,10 +97,8 @@ def controlled_lifecycle_invalidated_clearance_rows(
                 lifecycle_blockers.append(
                     "controlled_submission_terminal_clearance_observation_changed"
                 )
-            if (
-                persisted_evidence_fingerprint
-                and persisted_evidence_fingerprint
-                != str(terminal.get("evidence_fingerprint") or "")
+            if persisted_evidence_fingerprint and persisted_evidence_fingerprint != str(
+                terminal.get("evidence_fingerprint") or ""
             ):
                 lifecycle_blockers.append(
                     "controlled_submission_terminal_clearance_evidence_changed"

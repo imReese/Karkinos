@@ -141,8 +141,7 @@ class AnalysisReviewPersistenceMixin:
                 created_at=created_at,
             )
             row = conn.execute(
-                "SELECT * FROM ai_research_task_analysis_reviews "
-                "WHERE review_id = ?",
+                "SELECT * FROM ai_research_task_analysis_reviews WHERE review_id = ?",
                 (review_id,),
             ).fetchone()
         if row is None:

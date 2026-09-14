@@ -28,8 +28,6 @@ dev = [
     "pytest-xdist>=3.8.0",
     "pip-audit==2.10.1",
     "pre-commit>=4.6.2",
-    "isort>=9.0.1",
-    "black>=26.5.1",
     "mypy>=1.18.2",
     "ruff>=0.16.6",
 ]
@@ -80,9 +78,10 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-# Start with correctness rules that are clean across the existing repository.
-# Broader style cleanup remains incremental through Black and isort.
-select = ["E9", "F63", "F7", "F82"]
+select = ["E9", "F63", "F7", "F82", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "domain", "data", "strategy", "execution", "risk", "backtest", "analytics", "account_truth", "server"]
 
 [tool.pyright]
 include = [
@@ -116,18 +115,6 @@ warn_redundant_casts = true
 warn_unreachable = true
 warn_unused_configs = true
 warn_unused_ignores = true
-
-# === isort 配置 ===
-# 与 black 兼容的关键设置
-[tool.isort]
-profile = "black"
-line_length = 88
-known_first_party = ["core", "domain", "data", "strategy", "execution", "risk", "backtest", "analytics", "account_truth", "server"]
-
-# === black 配置 ===
-[tool.black]
-line-length = 88
-target-version = ["py312"]
 
 [tool.coverage.run]
 source = [

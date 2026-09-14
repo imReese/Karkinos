@@ -51,14 +51,12 @@ from server.projections.portfolio_read_snapshot_persistence import (
 )
 from server.projections.quote_status import (
     current_quote_valuation_evidence,
-)
-from server.projections.quote_status import (
-    parse_quote_timestamp as _parse_quote_timestamp,
-)
-from server.projections.quote_status import (
     quote_pricing_semantics,
     quote_valuation_blocker,
     quote_valuation_status,
+)
+from server.projections.quote_status import (
+    parse_quote_timestamp as _parse_quote_timestamp,
 )
 from server.services.asset_metadata import resolve_asset_metadata
 from server.services.market_calendar_dates import project_market_session

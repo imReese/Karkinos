@@ -314,7 +314,9 @@ def certainty_evidence(
     posture = (
         "manual_confirmation_allowed"
         if status == "pass"
-        else "blocked" if status == "blocked" else "review_required"
+        else "blocked"
+        if status == "blocked"
+        else "review_required"
     )
     return {
         "status": status,

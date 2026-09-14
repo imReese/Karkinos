@@ -199,8 +199,7 @@ def _record_gateway_source_evidence(
                         "estimated_price": 4.0,
                         "strategy_refs": [f"strategy:{strategy_id}"],
                         "strategy_advancement_refs": [
-                            "strategy_advancement:"
-                            f"{strategy_advancement_fingerprint}"
+                            f"strategy_advancement:{strategy_advancement_fingerprint}"
                         ],
                         "risk_refs": ["risk:decision-1"],
                         "account_truth_refs": [
@@ -612,7 +611,7 @@ def _ready_environment(
         acknowledgement=EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
     )
     batch_ref = (
-        "execution_batch_reconciliation:" f"{batch['batch_reconciliation_fingerprint']}"
+        f"execution_batch_reconciliation:{batch['batch_reconciliation_fingerprint']}"
     )
     oms = OmsService(db=db)
     order = oms.create_order_intent(
@@ -700,7 +699,7 @@ def _ready_environment(
             "risk:decision-1",
             "paper_shadow:run-1",
             batch_ref,
-            ("execution_gateway_verification:" f"{GATEWAY_VERIFICATION_FINGERPRINT}"),
+            (f"execution_gateway_verification:{GATEWAY_VERIFICATION_FINGERPRINT}"),
         ),
         evidence_connector_id="fixture-readonly-confirmation",
         execution_gateway_id="fixture-execution-disabled",
@@ -1063,7 +1062,7 @@ def test_paper_shadow_source_lineage_drift_invalidates_exact_dossier(
 
     drifted = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
 
-    blocker = "gateway_evidence_lineage_mismatch:paper_shadow:" f"{blocker_suffix}"
+    blocker = f"gateway_evidence_lineage_mismatch:paper_shadow:{blocker_suffix}"
     assert blocker in drifted["review_blockers"]
     assert blocker in drifted["hard_submission_blockers"]
     assert drifted["dossier_fingerprint"] != before["dossier_fingerprint"]
@@ -1691,8 +1690,8 @@ def test_adapter_release_revocation_invalidates_exact_dossier_and_blocks_review(
             operator_approval_id=approval["approval_id"],
             acknowledgement=PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
         )
-    assert "dossier_fingerprint_mismatch" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "dossier_fingerprint_mismatch" in (exc_info.value.evidence["rejection_reasons"])
     )
     assert "dossier_review_blocked" in exc_info.value.evidence["rejection_reasons"]
     assert exc_info.value.evidence["authorizes_execution"] is False
@@ -1730,8 +1729,9 @@ def test_adapter_release_binding_requires_exact_capital_scope(tmp_path) -> None:
     )
     assert dossier["broker_adapter_release"]["matching_release_count"] == 0
     assert "broker_adapter_release_scope_not_found" in dossier["review_blockers"]
-    assert "broker_adapter_release_scope_not_found" in (
-        dossier["hard_submission_blockers"]
+    assert (
+        "broker_adapter_release_scope_not_found"
+        in (dossier["hard_submission_blockers"])
     )
     assert dossier["review_ready"] is False
     assert dossier["authorizes_execution"] is False
@@ -1787,11 +1787,12 @@ def test_newer_exact_release_without_collector_never_falls_back_to_old_pass(
         "fixture-per-order-adapter-release-v2"
     )
     assert binding["release"]["collector_status"] == "not_started"
-    assert "broker_adapter_release_collector_not_recorded" in (
-        dossier["review_blockers"]
+    assert (
+        "broker_adapter_release_collector_not_recorded" in (dossier["review_blockers"])
     )
-    assert "broker_adapter_release_not_observing_readonly" in (
-        dossier["hard_submission_blockers"]
+    assert (
+        "broker_adapter_release_not_observing_readonly"
+        in (dossier["hard_submission_blockers"])
     )
     assert dossier["review_ready"] is False
     assert dossier["authorizes_execution"] is False
@@ -1818,11 +1819,13 @@ def test_missing_adapter_release_evidence_fails_closed_without_provider_contact(
     assert binding["release"] is None
     assert binding["provider_contact_performed"] is False
     assert binding["persisted_evidence_only"] is True
-    assert "broker_adapter_readiness_evidence_store_unavailable" in (
-        dossier["review_blockers"]
+    assert (
+        "broker_adapter_readiness_evidence_store_unavailable"
+        in (dossier["review_blockers"])
     )
-    assert "broker_adapter_release_scope_not_found" in (
-        dossier["hard_submission_blockers"]
+    assert (
+        "broker_adapter_release_scope_not_found"
+        in (dossier["hard_submission_blockers"])
     )
     assert dossier["review_ready"] is False
     assert dossier["authorizes_execution"] is False
@@ -1915,9 +1918,9 @@ def test_recorded_confirmation_resolves_current_sources_for_submit_boundary(
 
     resolved = service.resolve_confirmation(confirmation["confirmation_id"])
 
-    assert (
-        resolved["status"] == "current_verified_non_authorizing_confirmation"
-    ), resolved["unexpected_hard_blockers"]
+    assert resolved["status"] == "current_verified_non_authorizing_confirmation", (
+        resolved["unexpected_hard_blockers"]
+    )
     assert resolved["confirmation_id"] == confirmation["confirmation_id"]
     assert (
         resolved["prior_batch_reconciliation_fingerprint"]
@@ -2334,9 +2337,7 @@ def test_recorded_runtime_verification_resolves_into_exact_per_order_dossier(
         ref
         for ref in env["capital_context"].evidence_refs
         if not ref.startswith("execution_gateway_verification:")
-    ) + (
-        "execution_gateway_verification:" f"{verification['verification_fingerprint']}",
-    )
+    ) + (f"execution_gateway_verification:{verification['verification_fingerprint']}",)
     current_context = replace(
         env["capital_context"],
         evidence_refs=evidence_refs,

@@ -198,9 +198,9 @@ db.finish_quote_fetch_run(run_id="bound-close-conflict", finished_at="2026-09-04
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(child.stdout, selectors.EVENT_READ)
-            assert selector.select(
-                timeout=10
-            ), "publication did not reach the crash point"
+            assert selector.select(timeout=10), (
+                "publication did not reach the crash point"
+            )
         assert child.stdout.readline().strip() == "publication-paused"
         with sqlite3.connect(db.path) as conn:
             assert (

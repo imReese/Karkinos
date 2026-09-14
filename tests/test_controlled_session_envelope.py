@@ -300,7 +300,7 @@ def _ready_environment(tmp_path) -> dict:
         acknowledgement=EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
     )
     batch_ref = (
-        "execution_batch_reconciliation:" f"{batch['batch_reconciliation_fingerprint']}"
+        f"execution_batch_reconciliation:{batch['batch_reconciliation_fingerprint']}"
     )
     oms = OmsService(db=db)
     orders: list[dict] = []
@@ -396,10 +396,7 @@ def _ready_environment(tmp_path) -> dict:
                 f"execution_gateway_verification:{fingerprint}"
                 for fingerprint in gateway_verification_fingerprints.values()
             ),
-            (
-                "session_start_account_truth:"
-                f"{session_start_account_truth_fingerprint}"
-            ),
+            (f"session_start_account_truth:{session_start_account_truth_fingerprint}"),
         ),
         evidence_connector_id="fixture-readonly-session",
         execution_gateway_id="fixture-execution-session-disabled",
@@ -619,8 +616,8 @@ def test_per_symbol_runtime_limits_fail_closed(
 
     assert expected_blocker in envelope["review_blockers"]
     assert envelope["per_symbol_runtime_limits"]["status"] == "blocked"
-    assert "per_symbol_runtime_limits_not_bound" in (
-        envelope["hard_submission_blockers"]
+    assert (
+        "per_symbol_runtime_limits_not_bound" in (envelope["hard_submission_blockers"])
     )
     assert envelope["runtime_session_status"] == "not_issued"
     assert envelope["authorizes_execution"] is False
@@ -659,8 +656,9 @@ def test_per_symbol_runtime_limit_change_invalidates_signed_envelope(tmp_path) -
             operator_approval_id=approval["approval_id"],
             acknowledgement=CONTROLLED_SESSION_ACKNOWLEDGEMENT,
         )
-    assert "envelope_fingerprint_mismatch" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "envelope_fingerprint_mismatch"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert "operator_approval_blocked" in (exc_info.value.evidence["rejection_reasons"])
     assert exc_info.value.evidence["authorizes_execution"] is False

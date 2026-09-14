@@ -137,8 +137,9 @@ def test_budget_amount_rounds_up_while_capacity_rounds_down(tmp_path) -> None:
     with pytest.raises(ControlledSessionBudgetReservationRejected) as exc_info:
         _record(service, attestation_id)
 
-    assert "atomic_capital_budget_unavailable" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "atomic_capital_budget_unavailable"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert db.list_controlled_session_budget_reservations_sync() == []
 
@@ -319,8 +320,9 @@ def test_overlapping_legacy_reservation_without_symbol_evidence_fails_closed(
     with pytest.raises(ControlledSessionBudgetReservationRejected) as exc_info:
         _record(service, second_id)
 
-    assert "atomic_existing_symbol_budget_evidence_missing:510300.SH" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "atomic_existing_symbol_budget_evidence_missing:510300.SH"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert len(db.list_controlled_session_budget_reservations_sync()) == 1
 
@@ -389,11 +391,13 @@ def test_reservation_revalidates_attestation_and_expiry(tmp_path) -> None:
             acknowledgement=CONTROLLED_SESSION_BUDGET_RESERVATION_ACKNOWLEDGEMENT,
         )
 
-    assert "budget_reservation_fingerprint_mismatch" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "budget_reservation_fingerprint_mismatch"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
-    assert "attestation:account_truth_source_changed" in (
-        exc_info.value.evidence["review_blockers"]
+    assert (
+        "attestation:account_truth_source_changed"
+        in (exc_info.value.evidence["review_blockers"])
     )
     assert exc_info.value.evidence["authorizes_execution"] is False
 
