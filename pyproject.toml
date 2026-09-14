@@ -13,7 +13,7 @@ dependencies = [
     "akshare>=1.18.94",
     "tushare>=1.4.29",
     "pandas>=3.0.5",
-    "numpy>=2.5.2",
+    "numpy>=2.5.3",
     "pyarrow>=25.0.1",
     "httpx>=0.28.1",
     "cryptography>=50.0.1",
@@ -31,7 +31,7 @@ dev = [
     "isort>=9.0.1",
     "black>=26.5.1",
     "mypy>=1.18.2",
-    "ruff>=0.16.6",
+    "ruff>=0.16.7",
 ]
 server = [
     "fastapi>=0.141.1",
