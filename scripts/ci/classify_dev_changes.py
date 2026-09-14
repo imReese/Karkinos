@@ -15,7 +15,6 @@ DOCUMENTATION_FILES = {
     "CLAUDE.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
-    "design.md",
     "scripts/release/BOOTSTRAP_INSTALLER.md",
 }
 

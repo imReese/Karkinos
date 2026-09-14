@@ -24,7 +24,7 @@ jobs:
   source:
     name: Verify candidate source
     if: ${{ github.event.repository.fork == false }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
@@ -304,7 +304,7 @@ jobs:
     name: Build candidate container image
     if: ${{ github.event.repository.fork == false }}
     needs: source
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -388,7 +388,7 @@ jobs:
     name: Persist candidate manifest
     if: ${{ github.event.repository.fork == false }}
     needs: [source, native, image]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:

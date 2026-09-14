@@ -34,7 +34,7 @@ concurrency:
 jobs:
   plan:
     name: Verification plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
@@ -106,7 +106,7 @@ jobs:
   python-quality:
     name: Python quality
     needs: plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout exact source
@@ -134,7 +134,7 @@ jobs:
   repository-integrity:
     name: Repository integrity
     needs: plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout exact source
@@ -144,6 +144,8 @@ jobs:
           ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Check public shell entrypoints
         run: bash -n scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
+      - name: Check public shell entrypoints with ShellCheck
+        run: shellcheck scripts/start_server.sh scripts/stop_server.sh scripts/service/manage_launch_agent.sh scripts/release/bootstrap_installer.sh
       - name: Check documentation integrity
         run: python scripts/ci/check_docs_integrity.py
       - name: Check tracked private artifacts
@@ -157,7 +159,7 @@ jobs:
   secret-scan:
     name: Secret scan
     needs: plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout exact source
@@ -168,15 +170,15 @@ jobs:
           fetch-depth: 0
       - name: Scan git history with Gitleaks
         if: ${{ needs.plan.outputs.mode == 'full' }}
-        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --redact --verbose
+        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo --redact --verbose
       - name: Scan working tree with Gitleaks
-        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source /repo --no-git --redact --verbose
+        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo --no-git --redact --verbose
 
   backend:
     name: Backend tests
     if: ${{ needs.plan.outputs.backend == 'true' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Checkout exact source
@@ -194,12 +196,25 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --locked --extra server --extra dev
-      - run: uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 -m "not trading_safety"
+      - name: Run backend test suite
+        env:
+          CI_MODE: ${{ needs.plan.outputs.mode }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${CI_MODE}" == full ]]; then
+            mkdir -p reports/ci
+            uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
+              --cov --cov-report=term --cov-report=xml
+          else
+            uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
+              -m "not trading_safety"
+          fi
 
   trading-safety:
     name: Trading safety invariants
     needs: [plan, python-quality, repository-integrity, secret-scan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout exact source
@@ -223,7 +238,7 @@ jobs:
     name: Frontend checks
     if: ${{ needs.plan.outputs.frontend == 'true' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout exact source
@@ -246,7 +261,7 @@ jobs:
     name: Production dependency audit
     if: ${{ needs.plan.outputs.dependencies == 'true' }}
     needs: [plan, repository-integrity, secret-scan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout exact source
@@ -276,7 +291,7 @@ jobs:
     name: Docker runtime smoke
     if: ${{ needs.plan.outputs.docker == 'true' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout exact source
@@ -312,7 +327,7 @@ jobs:
     name: Browser safety smoke
     if: ${{ needs.plan.outputs.mode == 'full' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout exact source
@@ -345,7 +360,7 @@ jobs:
     name: Workflow security
     if: ${{ needs.plan.outputs.workflow == 'true' }}
     needs: [plan, repository-integrity]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -364,7 +379,7 @@ jobs:
     name: Dev CI gate
     if: ${{ always() && needs.plan.outputs.mode == 'incremental' }}
     needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety, workflow-security]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require baseline and selected incremental checks to pass
@@ -401,7 +416,7 @@ jobs:
     name: Full CI gate
     if: ${{ always() && needs.plan.outputs.mode == 'full' }}
     needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety, workflow-security]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require complete full verification
