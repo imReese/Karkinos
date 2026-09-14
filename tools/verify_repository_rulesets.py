@@ -110,7 +110,9 @@ def canonical_ruleset(payload: Mapping[str, Any]) -> dict[str, Any]:
             normalized["parameters"] = parameters
         normalized_rules.append(normalized)
 
-    bypass = payload.get("bypass_actors", [])
+    if "bypass_actors" not in payload:
+        raise RulesetVerificationError("repository_ruleset_bypass_unobservable")
+    bypass = payload["bypass_actors"]
     if not isinstance(bypass, list):
         raise RulesetVerificationError("repository_ruleset_bypass_invalid")
 

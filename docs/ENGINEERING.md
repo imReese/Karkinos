@@ -172,6 +172,8 @@ These JSON files are declarative desired state only. Changing a tracked file doe
 
 `tools/verify_repository_rulesets.py` reads the tracked desired state and compares it with GitHub's live server configuration. `.github/workflows/governance.yml` runs that comparison on a low-frequency schedule and on manual dispatch. It is intentionally read-only and is not part of code CI.
 
+GitHub may return HTTP 200 while hiding `bypass_actors` from a read-only API caller. A missing field is unobservable, not an empty bypass list: the verifier fails with `repository_ruleset_bypass_unobservable` and cannot claim synchronization. A complete owner audit requires API credentials with write access to the ruleset so that GitHub returns this field; the audit itself only reads state. Governance keeps its read-only workflow permissions and does not receive an additional secret or permission to make this check pass.
+
 Applying or changing GitHub rulesets is an explicit repository-owner operation. After any change, read the server state back and require the drift verifier to pass before claiming the protection is live. Normal CI must not silently repair repository security configuration.
 
 ### Python tooling authority

@@ -191,3 +191,42 @@ def test_ruleset_verifier_ignores_server_metadata_but_not_security_drift() -> No
     checks.pop()
     with pytest.raises(rulesets.RulesetVerificationError):
         rulesets.verify({desired["name"]: desired}, {drifted["name"]: drifted})
+
+
+def test_ruleset_verifier_rejects_unobservable_bypass_actors() -> None:
+    server = _ruleset(".github/rulesets/main.json")
+    del server["bypass_actors"]
+
+    with pytest.raises(
+        rulesets.RulesetVerificationError,
+        match="^repository_ruleset_bypass_unobservable$",
+    ):
+        rulesets.canonical_ruleset(server)
+
+
+def test_ruleset_verifier_accepts_explicitly_empty_bypass_actors() -> None:
+    desired = rulesets.canonical_ruleset(_ruleset(".github/rulesets/main.json"))
+    actual = rulesets.canonical_ruleset({**desired, "bypass_actors": []})
+
+    assert rulesets.verify({desired["name"]: desired}, {actual["name"]: actual})[
+        "in_sync"
+    ]
+
+
+def test_ruleset_verifier_rejects_added_bypass_actor() -> None:
+    desired = rulesets.canonical_ruleset(_ruleset(".github/rulesets/main.json"))
+    actual = rulesets.canonical_ruleset(
+        {
+            **desired,
+            "bypass_actors": [
+                {
+                    "actor_id": 5,
+                    "actor_type": "RepositoryRole",
+                    "bypass_mode": "always",
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(rulesets.RulesetVerificationError, match="drifted_rulesets"):
+        rulesets.verify({desired["name"]: desired}, {actual["name"]: actual})
