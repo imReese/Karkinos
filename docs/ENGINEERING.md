@@ -105,6 +105,12 @@ npm --prefix web run build
 
 ### CI authority
 
+The promotion contract is being migrated with expand -> migrate -> contract.
+`Promotion Gate` verifies every source check on each dev commit. The legacy gate
+names and full dispatch interface remain temporarily available for the controller
+currently installed on `main`; they are removed after the owner migrates the live
+ruleset and fast-forwards the verified replacement controller.
+
 `.github/workflows/ci.yml` is the single code-verification authority. It has two modes:
 
 - ordinary pull requests and pushes to `dev` run conservative incremental verification and finish at `Dev CI gate`;

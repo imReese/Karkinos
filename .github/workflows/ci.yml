@@ -40,12 +40,6 @@ jobs:
       mode: ${{ steps.plan.outputs.mode }}
       base_sha: ${{ steps.plan.outputs.base_sha }}
       commit_sha: ${{ steps.plan.outputs.commit_sha }}
-      backend: ${{ steps.plan.outputs.backend }}
-      frontend: ${{ steps.plan.outputs.frontend }}
-      trading: ${{ steps.plan.outputs.trading }}
-      dependencies: ${{ steps.plan.outputs.dependencies }}
-      docker: ${{ steps.plan.outputs.docker }}
-      workflow: ${{ steps.plan.outputs.workflow }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,35 +66,25 @@ jobs:
             test "${GITHUB_SHA}" = "${DISPATCH_COMMIT_SHA}"
             test "${commit_sha}" = "${DISPATCH_COMMIT_SHA}"
             git merge-base --is-ancestor "${DISPATCH_BASE_SHA}" "${DISPATCH_COMMIT_SHA}"
-            {
-              echo "mode=full"
-              echo "base_sha=${DISPATCH_BASE_SHA}"
-              echo "commit_sha=${DISPATCH_COMMIT_SHA}"
-              echo "backend=true"
-              echo "frontend=true"
-              echo "trading=true"
-              echo "dependencies=true"
-              echo "docker=true"
-              echo "workflow=true"
-            } >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-
-          test "${commit_sha}" = "${GITHUB_SHA}"
-          if [[ "${GITHUB_EVENT_NAME}" == pull_request ]]; then
-            base_ref="${PR_BASE_SHA}"
+            mode=full
+            base_sha="${DISPATCH_BASE_SHA}"
           else
-            test "${GITHUB_REF}" = refs/heads/dev
-            base_ref=origin/main
+            test "${commit_sha}" = "${GITHUB_SHA}"
+            if [[ "${GITHUB_EVENT_NAME}" == pull_request ]]; then
+              base_ref="${PR_BASE_SHA}"
+            else
+              test "${GITHUB_REF}" = refs/heads/dev
+              base_ref=origin/main
+            fi
+            base_sha="$(git rev-parse --verify --end-of-options "${base_ref}^{commit}")"
+            git merge-base --is-ancestor "${base_sha}" "${commit_sha}"
+            # Preserve the old controller's mode contract during gate migration.
+            mode=incremental
           fi
-          python scripts/ci/classify_dev_changes.py \
-            --base "${base_ref}" \
-            --head "${commit_sha}" \
-            --github-output "${RUNNER_TEMP}/scope"
           {
-            echo "mode=incremental"
+            echo "mode=${mode}"
+            echo "base_sha=${base_sha}"
             echo "commit_sha=${commit_sha}"
-            cat "${RUNNER_TEMP}/scope"
           } >> "${GITHUB_OUTPUT}"
 
   python-quality:
@@ -169,14 +153,12 @@ jobs:
           ref: ${{ needs.plan.outputs.commit_sha }}
           fetch-depth: 0
       - name: Scan git history with Gitleaks
-        if: ${{ needs.plan.outputs.mode == 'full' }}
         run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo --redact --verbose
       - name: Scan working tree with Gitleaks
         run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo --no-git --redact --verbose
 
   backend:
     name: Backend tests
-    if: ${{ needs.plan.outputs.backend == 'true' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -197,19 +179,12 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --extra server --extra dev
       - name: Run backend test suite
-        env:
-          CI_MODE: ${{ needs.plan.outputs.mode }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${CI_MODE}" == full ]]; then
-            mkdir -p reports/ci
-            uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
-              --cov --cov-report=term --cov-report=xml
-          else
-            uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
-              -m "not trading_safety"
-          fi
+          mkdir -p reports/ci
+          uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
+            --cov --cov-report=term --cov-report=xml
 
   trading-safety:
     name: Trading safety invariants
@@ -236,7 +211,6 @@ jobs:
 
   frontend:
     name: Frontend checks
-    if: ${{ needs.plan.outputs.frontend == 'true' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -259,7 +233,6 @@ jobs:
 
   dependency-audit:
     name: Production dependency audit
-    if: ${{ needs.plan.outputs.dependencies == 'true' }}
     needs: [plan, repository-integrity, secret-scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -289,7 +262,6 @@ jobs:
 
   docker-runtime:
     name: Docker runtime smoke
-    if: ${{ needs.plan.outputs.docker == 'true' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -325,7 +297,6 @@ jobs:
 
   browser-safety:
     name: Browser safety smoke
-    if: ${{ needs.plan.outputs.mode == 'full' }}
     needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -358,7 +329,6 @@ jobs:
 
   workflow-security:
     name: Workflow security
-    if: ${{ needs.plan.outputs.workflow == 'true' }}
     needs: [plan, repository-integrity]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -375,61 +345,51 @@ jobs:
         with:
           advanced-security: false
 
-  dev-ci-gate:
-    name: Dev CI gate
-    if: ${{ always() && needs.plan.outputs.mode == 'incremental' }}
+  promotion-gate:
+    name: Promotion Gate
+    if: ${{ always() }}
     needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety, workflow-security]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Require baseline and selected incremental checks to pass
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-          SCOPE: ${{ toJSON(needs.plan.outputs) }}
-        shell: python
-        run: |
-          import json, os
-          results = json.loads(os.environ["RESULTS"])
-          scope = json.loads(os.environ["SCOPE"])
-          optional = {
-              "backend": "backend",
-              "frontend": "frontend",
-              "dependency-audit": "dependencies",
-              "docker-runtime": "docker",
-              "workflow-security": "workflow",
-              "browser-safety": None,
-          }
-          failed = []
-          for name, job in results.items():
-              result = job.get("result") if isinstance(job, dict) else None
-              if name in optional:
-                  selected = "false" if optional[name] is None else scope.get(optional[name])
-                  expected = "success" if selected == "true" else "skipped"
-              else:
-                  expected = "success"
-              if result != expected:
-                  failed.append(name)
-          if failed:
-              raise SystemExit("Dev CI checks did not succeed: " + ", ".join(sorted(failed)))
-
-  full-ci-gate:
-    name: Full CI gate
-    if: ${{ always() && needs.plan.outputs.mode == 'full' }}
-    needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety, workflow-security]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Require complete full verification
+      - name: Require every verification job to succeed
         env:
           RESULTS: ${{ toJSON(needs) }}
         shell: python
         run: |
           import json, os
           results = json.loads(os.environ["RESULTS"])
+          if not isinstance(results, dict) or not results:
+              raise SystemExit("Promotion check results are missing or invalid")
           failed = sorted(
               name
               for name, job in results.items()
               if not isinstance(job, dict) or job.get("result") != "success"
           )
           if failed:
-              raise SystemExit("Full CI checks did not succeed: " + ", ".join(failed))
+              raise SystemExit("Promotion checks did not succeed: " + ", ".join(failed))
+
+  # Keep these contexts until the trusted main controller has migrated.
+  dev-ci-gate:
+    name: Dev CI gate
+    if: ${{ always() && needs.plan.outputs.mode == 'incremental' }}
+    needs: [plan, promotion-gate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require Promotion Gate success
+        env:
+          PROMOTION_RESULT: ${{ needs.promotion-gate.result }}
+        run: test "${PROMOTION_RESULT}" = success
+
+  full-ci-gate:
+    name: Full CI gate
+    if: ${{ always() && needs.plan.outputs.mode == 'full' }}
+    needs: [plan, promotion-gate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require Promotion Gate success
+        env:
+          PROMOTION_RESULT: ${{ needs.promotion-gate.result }}
+        run: test "${PROMOTION_RESULT}" = success
