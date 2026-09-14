@@ -6,11 +6,12 @@ import pytest
 
 from tools import release_image_plan
 from tools.release_image_plan import (
-    assert_immutable_image_tags_absent,
+    assert_immutable_image_tags_compatible,
     build_release_image_plan,
 )
 
 _SHA = "a" * 40
+_DIGEST = "sha256:" + "b" * 64
 
 
 def _plan(tag: str, *, existing_tags: tuple[str, ...] = ("v0.2.3",)):
@@ -95,11 +96,18 @@ def test_release_versions_must_match_exactly() -> None:
         )
 
 
-def test_registry_preflight_allows_fresh_immutable_tags(monkeypatch) -> None:
-    inspected: list[list[str]] = []
+@pytest.mark.parametrize("already_published", [False, True])
+def test_registry_preflight_allows_missing_or_same_digest_tags(
+    monkeypatch, already_published: bool
+) -> None:
+    inspected: list[str] = []
 
-    def missing_manifest(command, **kwargs):
-        inspected.append(command)
+    def inspect_manifest(command, **kwargs):
+        inspected.append(command[-1])
+        if already_published:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=f"Digest: {_DIGEST}\n", stderr=""
+            )
         return subprocess.CompletedProcess(
             command,
             1,
@@ -107,57 +115,34 @@ def test_registry_preflight_allows_fresh_immutable_tags(monkeypatch) -> None:
             stderr=f"ERROR: {command[-1]}: not found\n",
         )
 
-    monkeypatch.setattr(release_image_plan.subprocess, "run", missing_manifest)
+    monkeypatch.setattr(release_image_plan.subprocess, "run", inspect_manifest)
 
     plan = _plan("v0.3.0")
-    assert_immutable_image_tags_absent(plan)
+    assert_immutable_image_tags_compatible(plan, _DIGEST)
 
-    assert inspected == [
-        [
-            "docker",
-            "buildx",
-            "imagetools",
-            "inspect",
-            "--raw",
-            "ghcr.io/imreese/karkinos:v0.3.0",
-        ],
-        [
-            "docker",
-            "buildx",
-            "imagetools",
-            "inspect",
-            "--raw",
-            f"ghcr.io/imreese/karkinos:sha-{_SHA}",
-        ],
-    ]
+    assert inspected == list(plan.immutable_image_tags)
 
 
-def test_registry_preflight_rejects_existing_version_tag(monkeypatch) -> None:
-    def existing_manifest(command, **kwargs):
-        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+@pytest.mark.parametrize("conflicting_tag", [0, 1])
+def test_registry_preflight_rejects_conflicting_version_or_sha_tag(
+    monkeypatch, conflicting_tag: int
+) -> None:
+    plan = _plan("v0.3.0")
 
-    monkeypatch.setattr(release_image_plan.subprocess, "run", existing_manifest)
-
-    with pytest.raises(ValueError, match="immutable_release_image_tag_already_exists"):
-        assert_immutable_image_tags_absent(_plan("v0.3.0"))
-
-
-def test_registry_preflight_rejects_existing_sha_tag(monkeypatch) -> None:
-    results = iter(
-        (
-            subprocess.CompletedProcess((), 1, stdout="", stderr="manifest unknown"),
-            subprocess.CompletedProcess((), 0, stdout="{}", stderr=""),
+    def inspect_manifest(command, **kwargs):
+        digest = (
+            "sha256:" + "c" * 64
+            if command[-1] == plan.immutable_image_tags[conflicting_tag]
+            else _DIGEST
         )
-    )
+        return subprocess.CompletedProcess(
+            command, 0, stdout=f"Digest: {digest}\n", stderr=""
+        )
 
-    monkeypatch.setattr(
-        release_image_plan.subprocess,
-        "run",
-        lambda command, **kwargs: next(results),
-    )
+    monkeypatch.setattr(release_image_plan.subprocess, "run", inspect_manifest)
 
-    with pytest.raises(ValueError, match=f"sha-{_SHA}"):
-        assert_immutable_image_tags_absent(_plan("v0.3.0"))
+    with pytest.raises(ValueError, match="immutable_release_image_tag_digest_conflict"):
+        assert_immutable_image_tags_compatible(plan, _DIGEST)
 
 
 @pytest.mark.parametrize(
@@ -178,7 +163,7 @@ def test_registry_preflight_fails_closed_when_lookup_is_inconclusive(
     monkeypatch.setattr(release_image_plan.subprocess, "run", inconclusive)
 
     with pytest.raises(RuntimeError, match="preflight_inconclusive"):
-        assert_immutable_image_tags_absent(_plan("v0.3.0"))
+        assert_immutable_image_tags_compatible(_plan("v0.3.0"), _DIGEST)
 
 
 @pytest.mark.parametrize(
@@ -197,4 +182,4 @@ def test_registry_preflight_fails_closed_when_inspector_cannot_run(
     monkeypatch.setattr(release_image_plan.subprocess, "run", failed_inspector)
 
     with pytest.raises(RuntimeError, match="preflight_inconclusive"):
-        assert_immutable_image_tags_absent(_plan("v0.3.0"))
+        assert_immutable_image_tags_compatible(_plan("v0.3.0"), _DIGEST)

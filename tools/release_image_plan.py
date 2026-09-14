@@ -24,16 +24,12 @@ _MISSING_MANIFEST_MARKERS = (
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
-def _inspect_registry(image_tag: str, *, raw: bool = False):
+def _inspect_registry(image_tag: str):
     if not image_tag or any(character.isspace() for character in image_tag):
         raise ValueError("release_image_tag_invalid")
     try:
-        command = ["docker", "buildx", "imagetools", "inspect"]
-        if raw:
-            command.append("--raw")
-        command.append(image_tag)
         return subprocess.run(
-            command,
+            ["docker", "buildx", "imagetools", "inspect", image_tag],
             check=False,
             capture_output=True,
             text=True,
@@ -56,22 +52,6 @@ def _registry_digest(image_tag: str, result) -> str:
             f"immutable_release_image_tag_digest_unavailable:{image_tag}"
         )
     return matches[0]
-
-
-def assert_registry_image_tag_absent(image_tag: str) -> None:
-    """Reject an image reference unless the registry proves it is missing."""
-    result = _inspect_registry(image_tag, raw=True)
-    if result.returncode == 0:
-        raise ValueError(f"immutable_release_image_tag_already_exists:{image_tag}")
-
-    failure = f"{result.stdout}\n{result.stderr}".lower()
-    image_not_found = f"{image_tag.lower()}: not found" in failure
-    if not image_not_found and not any(
-        marker in failure for marker in _MISSING_MANIFEST_MARKERS
-    ):
-        raise RuntimeError(
-            f"immutable_release_image_tag_preflight_inconclusive:{image_tag}"
-        )
 
 
 @dataclass(frozen=True)
@@ -157,13 +137,6 @@ def assert_registry_image_tag_compatible(image_tag: str, expected_digest: str) -
         raise ValueError(f"immutable_release_image_tag_digest_conflict:{image_tag}")
 
 
-def assert_immutable_image_tags_absent(plan: ReleaseImagePlan) -> None:
-    """Reject a release when either write-once identity tag may already exist."""
-
-    for image_tag in plan.immutable_image_tags:
-        assert_registry_image_tag_absent(image_tag)
-
-
 def assert_immutable_image_tags_compatible(
     plan: ReleaseImagePlan, expected_digest: str
 ) -> None:
@@ -241,10 +214,6 @@ def main() -> int:
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--github-output", type=Path)
     parser.add_argument(
-        "--verify-immutable-image-tags-absent",
-        action="store_true",
-    )
-    parser.add_argument(
         "--verify-immutable-image-tags-compatible",
         action="store_true",
     )
@@ -261,13 +230,6 @@ def main() -> int:
             lock_version=_read_json_version(repo_root / "web/package-lock.json"),
             existing_tags=_git_tags(repo_root),
         )
-        if (
-            args.verify_immutable_image_tags_absent
-            and args.verify_immutable_image_tags_compatible
-        ):
-            raise ValueError("release_image_tag_preflight_modes_conflict")
-        if args.verify_immutable_image_tags_absent:
-            assert_immutable_image_tags_absent(plan)
         if args.verify_immutable_image_tags_compatible:
             if args.expected_image_digest is None:
                 raise ValueError("release_image_digest_required")
