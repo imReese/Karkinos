@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import urllib.request
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -13,12 +15,9 @@ _REPOSITORY = "imReese/Karkinos"
 _PAYLOAD = b"candidate artifact zip"
 
 
-def _run(
-    *, run_id: int, run_attempt: int, created_at: str, updated_at: str
-) -> dict[str, object]:
+def _run(run_id: int = 101, **overrides) -> dict[str, object]:
     return {
         "id": run_id,
-        "run_attempt": run_attempt,
         "name": "Release Candidate",
         "path": ".github/workflows/candidate.yml@refs/heads/main",
         "head_sha": _SHA,
@@ -28,244 +27,211 @@ def _run(
         "conclusion": "success",
         "repository": {"full_name": _REPOSITORY},
         "head_repository": {"full_name": _REPOSITORY},
-        "created_at": created_at,
-        "updated_at": updated_at,
+        "updated_at": "2026-08-30T00:04:00Z",
+        **overrides,
     }
 
 
-def _artifact(*, run_id: int, run_attempt: int, artifact_id: int) -> dict[str, object]:
+def _artifact(run_id: int = 101, **overrides) -> dict[str, object]:
     return {
-        "id": artifact_id,
-        "name": f"karkinos-candidate-{_SHA}-{run_id}-{run_attempt}",
+        "id": 701,
+        "name": f"karkinos-candidate-{_SHA}",
         "expired": False,
         "size_in_bytes": len(_PAYLOAD),
         "digest": f"sha256:{hashlib.sha256(_PAYLOAD).hexdigest()}",
-        "archive_download_url": (
-            f"https://api.github.com/repos/{_REPOSITORY}/actions/artifacts/"
-            f"{artifact_id}/zip"
-        ),
-        "created_at": "2026-08-30T00:02:00Z",
-        "updated_at": "2026-08-30T00:02:01Z",
         "workflow_run": {
             "id": run_id,
             "head_sha": _SHA,
             "head_branch": "main",
         },
+        **overrides,
     }
 
 
-def _install_successful_api(
+def _install_api(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    initial_runs: list[dict[str, object]],
-    selected_run: dict[str, object],
-    artifacts: list[dict[str, object]],
-    confirmed_artifact: dict[str, object],
-    final_runs: list[dict[str, object]] | None = None,
-) -> None:
-    run_pages = iter((initial_runs, final_runs or initial_runs))
-    monkeypatch.setattr(
-        download_candidate,
-        "_workflow_run_pages",
-        lambda **_kwargs: next(run_pages),
-    )
-    monkeypatch.setattr(
-        download_candidate,
-        "_successful_workflow_attempts",
-        lambda runs, **_kwargs: runs,
-    )
-    monkeypatch.setattr(
-        download_candidate,
-        "_artifact_pages",
-        lambda **_kwargs: artifacts,
-    )
+    runs: list[dict[str, object]] | None = None,
+    artifacts: list[dict[str, object]] | None = None,
+    payload: bytes = _PAYLOAD,
+) -> list[str]:
+    calls: list[str] = []
 
-    def request(url: str, _token: str) -> object:
-        if "/actions/artifacts/" in url:
-            return confirmed_artifact
-        if f"/actions/runs/{selected_run['id']}" in url:
-            return selected_run
+    def request(url: str, token: str) -> object:
+        assert token == "test-token"
+        calls.append(url)
+        parsed = urlsplit(url)
+        query = parse_qs(parsed.query)
+        if parsed.path.endswith("/actions/workflows/candidate.yml/runs"):
+            assert query["head_sha"] == [_SHA]
+            assert query["branch"] == ["main"]
+            values = runs if runs is not None else [_run()]
+            return {"total_count": len(values), "workflow_runs": values}
+        if "/actions/runs/" in parsed.path and parsed.path.endswith("/artifacts"):
+            assert query["name"] == [f"karkinos-candidate-{_SHA}"]
+            values = artifacts if artifacts is not None else [_artifact()]
+            return {"total_count": len(values), "artifacts": values}
         raise AssertionError(url)
 
+    def download(url: str, token: str) -> bytes:
+        assert token == "test-token"
+        assert url == (
+            f"https://api.github.com/repos/{_REPOSITORY}/actions/artifacts/701/zip"
+        )
+        return payload
+
     monkeypatch.setattr(download_candidate, "_request", request)
-    monkeypatch.setattr(download_candidate, "_download", lambda *_args: _PAYLOAD)
+    monkeypatch.setattr(download_candidate, "_download", download)
+    return calls
 
 
-def test_fetch_selects_latest_successful_rerun_and_ignores_old_attempt_artifact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    independently_queued = _run(
-        run_id=102,
-        run_attempt=1,
-        created_at="2026-08-30T00:00:00Z",
-        updated_at="2026-08-30T00:03:00Z",
-    )
-    latest_rerun = _run(
-        run_id=101,
-        run_attempt=2,
-        created_at="2026-08-30T00:00:00Z",
-        updated_at="2026-08-30T00:04:00Z",
-    )
-    old_attempt = _artifact(run_id=101, run_attempt=1, artifact_id=700)
-    selected_artifact = _artifact(run_id=101, run_attempt=2, artifact_id=701)
-    _install_successful_api(
-        monkeypatch,
-        initial_runs=[independently_queued, latest_rerun],
-        selected_run=latest_rerun,
-        artifacts=[old_attempt, selected_artifact],
-        confirmed_artifact=selected_artifact,
-    )
-    archive = tmp_path / "candidate.zip"
-    receipt = tmp_path / "candidate-selection.json"
-
-    assert (
-        download_candidate.fetch_candidate(
-            repository=_REPOSITORY,
-            commit_sha=_SHA,
-            output=archive,
-            metadata_output=receipt,
-            token="secret",
-            api_url="https://api.github.com",
-        )
-        == archive
-    )
-    assert archive.read_bytes() == _PAYLOAD
-    selection = download_candidate.read_candidate_selection(
-        receipt,
-        expected_repository=_REPOSITORY,
-        expected_commit_sha=_SHA,
-    )
-    assert selection["workflow"]["run_id"] == 101
-    assert selection["workflow"]["run_attempt"] == 2
-    assert selection["artifact"]["id"] == 701
-    assert selection["artifact"]["digest"] == (
-        f"sha256:{hashlib.sha256(_PAYLOAD).hexdigest()}"
-    )
-
-
-def test_fetch_rejects_duplicate_artifact_for_selected_attempt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    run = _run(
-        run_id=101,
-        run_attempt=2,
-        created_at="2026-08-30T00:00:00Z",
-        updated_at="2026-08-30T00:04:00Z",
-    )
-    artifact = _artifact(run_id=101, run_attempt=2, artifact_id=701)
-    monkeypatch.setattr(download_candidate, "_workflow_run_pages", lambda **_: [run])
-    monkeypatch.setattr(
-        download_candidate, "_successful_workflow_attempts", lambda runs, **_: runs
-    )
-    monkeypatch.setattr(
-        download_candidate, "_artifact_pages", lambda **_: [artifact, dict(artifact)]
-    )
-
-    with pytest.raises(ValueError, match="candidate_artifact_missing_or_ambiguous"):
-        download_candidate.fetch_candidate(
-            repository=_REPOSITORY,
-            commit_sha=_SHA,
-            output=tmp_path / "candidate.zip",
-            token="secret",
-            api_url="https://api.github.com",
-        )
-
-
-def test_fetch_fails_if_newer_successful_run_appears_during_download(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    selected_run = _run(
-        run_id=101,
-        run_attempt=2,
-        created_at="2026-08-30T00:00:00Z",
-        updated_at="2026-08-30T00:04:00Z",
-    )
-    newer_run = _run(
-        run_id=103,
-        run_attempt=1,
-        created_at="2026-08-30T00:04:01Z",
-        updated_at="2026-08-30T00:05:00Z",
-    )
-    artifact = _artifact(run_id=101, run_attempt=2, artifact_id=701)
-    _install_successful_api(
-        monkeypatch,
-        initial_runs=[selected_run],
-        selected_run=selected_run,
-        artifacts=[artifact],
-        confirmed_artifact=artifact,
-        final_runs=[selected_run, newer_run],
-    )
-    archive = tmp_path / "candidate.zip"
-    receipt = tmp_path / "candidate-selection.json"
-
-    with pytest.raises(ValueError, match="candidate_artifact_selection_changed"):
-        download_candidate.fetch_candidate(
-            repository=_REPOSITORY,
-            commit_sha=_SHA,
-            output=archive,
-            metadata_output=receipt,
-            token="secret",
-            api_url="https://api.github.com",
-        )
-    assert not archive.exists()
-    assert not receipt.exists()
-
-
-def test_fetch_fails_if_selected_artifact_identity_changes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    run = _run(
-        run_id=101,
-        run_attempt=2,
-        created_at="2026-08-30T00:00:00Z",
-        updated_at="2026-08-30T00:04:00Z",
-    )
-    artifact = _artifact(run_id=101, run_attempt=2, artifact_id=701)
-    changed = dict(artifact)
-    changed["digest"] = "sha256:" + "b" * 64
-    _install_successful_api(
-        monkeypatch,
-        initial_runs=[run],
-        selected_run=run,
-        artifacts=[artifact],
-        confirmed_artifact=changed,
-    )
-
-    with pytest.raises(ValueError, match="candidate_artifact_remote_identity_changed"):
-        download_candidate.fetch_candidate(
-            repository=_REPOSITORY,
-            commit_sha=_SHA,
-            output=tmp_path / "candidate.zip",
-            token="secret",
-            api_url="https://api.github.com",
-        )
-
-
-def test_selection_receipt_rejects_attempt_or_artifact_tampering(
-    tmp_path: Path,
-) -> None:
-    run = _run(
-        run_id=101,
-        run_attempt=2,
-        created_at="2026-08-30T00:00:00Z",
-        updated_at="2026-08-30T00:04:00Z",
-    )
-    artifact = _artifact(run_id=101, run_attempt=2, artifact_id=701)
-    selection = download_candidate._selection_payload(
+def _fetch(output: Path) -> Path:
+    return download_candidate.fetch_candidate(
         repository=_REPOSITORY,
         commit_sha=_SHA,
-        run=run,
-        artifact=artifact,
+        output=output,
+        token="test-token",
+        api_url="https://api.github.com",
     )
-    selection["workflow"]["run_attempt"] = 3
+
+
+def test_fetch_downloads_exact_sha_bundle_without_persisting_actions_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _install_api(
+        monkeypatch,
+        runs=[
+            _run(updated_at="2026-08-30T00:03:00Z"),
+            _run(102, event="workflow_run"),
+            _run(103, conclusion="failure", updated_at="2026-08-30T00:05:00Z"),
+        ],
+        artifacts=[
+            _artifact(
+                102,
+                archive_download_url="https://untrusted.example/token-collector",
+            )
+        ],
+    )
+    archive = tmp_path / "candidate.zip"
+    assert _fetch(archive) == archive
+    assert archive.read_bytes() == _PAYLOAD
+    assert list(tmp_path.iterdir()) == [archive]
+    assert "/actions/runs/102/artifacts?" in calls[1]
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"head_sha": "b" * 40},
+        {"head_branch": "dev"},
+        {"path": ".github/workflows/other.yml"},
+        {"repository": {"full_name": "other/Karkinos"}},
+        {"head_repository": {"full_name": "other/Karkinos"}},
+        {"event": "pull_request"},
+    ],
+)
+def test_fetch_rejects_unrelated_workflow_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, overrides: dict
+) -> None:
+    _install_api(monkeypatch, runs=[_run(**{"event": "workflow_run", **overrides})])
+    with pytest.raises(ValueError, match="candidate_artifact_workflow_run_invalid"):
+        _fetch(tmp_path / "candidate.zip")
+    assert not list(tmp_path.iterdir())
+
+
+def test_fetch_does_not_recover_historical_attempts_of_an_unsuccessful_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_api(monkeypatch, runs=[_run(conclusion="failure", run_attempt=3)])
+    with pytest.raises(ValueError, match="candidate_successful_workflow_run_missing"):
+        _fetch(tmp_path / "candidate.zip")
+
+
+@pytest.mark.parametrize("artifacts", [[], [_artifact(), _artifact()]])
+def test_fetch_requires_one_matching_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, artifacts: list[dict]
+) -> None:
+    _install_api(monkeypatch, artifacts=artifacts)
+    with pytest.raises(ValueError, match="candidate_artifact_missing_or_ambiguous"):
+        _fetch(tmp_path / "candidate.zip")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"expired": True},
+        {"size_in_bytes": download_candidate._MAX_ARCHIVE_BYTES + 1},
+        {"digest": "invalid"},
+        {"workflow_run": {"id": 102, "head_sha": _SHA, "head_branch": "main"}},
+        {"workflow_run": {"id": 101, "head_sha": "b" * 40, "head_branch": "main"}},
+    ],
+)
+def test_fetch_rejects_expired_or_unbound_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, overrides: dict
+) -> None:
+    _install_api(monkeypatch, artifacts=[_artifact(**overrides)])
+    with pytest.raises(ValueError, match="candidate_artifact_expired_or_invalid"):
+        _fetch(tmp_path / "candidate.zip")
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        (_PAYLOAD[:-1], "candidate_artifact_download_size_mismatch"),
+        (b"x" * len(_PAYLOAD), "candidate_artifact_download_digest_mismatch"),
+    ],
+)
+def test_fetch_rejects_damaged_download_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: bytes, error: str
+) -> None:
+    _install_api(monkeypatch, payload=payload)
+    with pytest.raises(ValueError, match=error):
+        _fetch(tmp_path / "candidate.zip")
+    assert not list(tmp_path.iterdir())
+
+
+def _legacy_selection() -> dict:
+    return {
+        "schema_version": "karkinos.candidate_artifact_selection.v1",
+        "repository": _REPOSITORY,
+        "commit_sha": _SHA,
+        "workflow": {
+            "name": "Release Candidate",
+            "path": ".github/workflows/candidate.yml",
+            "event": "push",
+            "branch": "main",
+            "run_id": 101,
+            "run_attempt": 2,
+            "completed_at": "2026-08-30T00:04:00Z",
+        },
+        "artifact": {
+            "id": 701,
+            "name": f"karkinos-candidate-{_SHA}-101-2",
+            "digest": f"sha256:{hashlib.sha256(_PAYLOAD).hexdigest()}",
+            "size_in_bytes": len(_PAYLOAD),
+        },
+    }
+
+
+def test_legacy_selection_reader_preserves_published_v2_release_compatibility(
+    tmp_path: Path,
+) -> None:
+    selection = _legacy_selection()
     receipt = tmp_path / "candidate-selection.json"
     receipt.write_text(json.dumps(selection), encoding="utf-8")
-
+    assert (
+        download_candidate.read_candidate_selection(
+            receipt, expected_repository=_REPOSITORY, expected_commit_sha=_SHA
+        )
+        == selection
+    )
+    selection["workflow"]["run_attempt"] = 3
+    receipt.write_text(json.dumps(selection), encoding="utf-8")
     with pytest.raises(ValueError, match="candidate_selection_artifact_invalid"):
         download_candidate.read_candidate_selection(
-            receipt,
-            expected_repository=_REPOSITORY,
-            expected_commit_sha=_SHA,
+            receipt, expected_repository=_REPOSITORY, expected_commit_sha=_SHA
         )
 
 
@@ -279,44 +245,30 @@ def test_workflow_run_listing_fails_closed_when_pagination_changes(
         )
     )
     monkeypatch.setattr(download_candidate, "_request", lambda *_args: next(responses))
-
     with pytest.raises(ValueError, match="candidate_workflow_run_listing_changed"):
         download_candidate._workflow_run_pages(
             api_url="https://api.github.com",
             repository=_REPOSITORY,
             commit_sha=_SHA,
-            token="secret",
+            token="test-token",
         )
 
 
-def test_successful_attempt_remains_selectable_after_a_later_failed_rerun(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    current = _run(
-        run_id=101,
-        run_attempt=3,
-        created_at="2026-08-30T00:00:00Z",
-        updated_at="2026-08-30T00:06:00Z",
+def test_download_redirect_keeps_tokens_on_the_api_origin_only() -> None:
+    handler = download_candidate._SafeRedirectHandler()
+    request = urllib.request.Request(
+        "https://api.github.com/artifacts/701/zip",
+        headers={"Authorization": "Bearer test-token"},
     )
-    current["conclusion"] = "failure"
-    attempts = {
-        1: dict(current, run_attempt=1, updated_at="2026-08-30T00:02:00Z"),
-        2: dict(current, run_attempt=2, updated_at="2026-08-30T00:04:00Z"),
-        3: current,
-    }
-    attempts[1]["conclusion"] = "failure"
-    attempts[2]["conclusion"] = "success"
-
-    def request(url: str, _token: str) -> object:
-        return attempts[int(url.rsplit("/", 1)[1])]
-
-    monkeypatch.setattr(download_candidate, "_request", request)
-    successful = download_candidate._successful_workflow_attempts(
-        [current],
-        api_url="https://api.github.com",
-        repository=_REPOSITORY,
-        commit_sha=_SHA,
-        token="secret",
+    same_origin = handler.redirect_request(
+        request, None, 302, "", {}, "https://api.github.com/download/701"
     )
-
-    assert [(item["id"], item["run_attempt"]) for item in successful] == [(101, 2)]
+    assert same_origin.get_header("Authorization") == "Bearer test-token"
+    cross_origin = handler.redirect_request(
+        request, None, 302, "", {}, "https://storage.example/download/701"
+    )
+    assert cross_origin.get_header("Authorization") is None
+    with pytest.raises(ValueError, match="candidate_artifact_redirect_invalid"):
+        handler.redirect_request(
+            request, None, 302, "", {}, "http://storage.example/download/701"
+        )

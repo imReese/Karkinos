@@ -6,15 +6,6 @@ on:
   push:
     branches: [dev]
   workflow_dispatch:
-    inputs:
-      commit_sha:
-        description: Exact dev commit SHA to verify
-        required: true
-        type: string
-      base_sha:
-        description: Exact main SHA used as the verification base
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -23,7 +14,7 @@ env:
   UV_VERSION: "0.11.28"
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ inputs.commit_sha || github.event.pull_request.head.sha || github.sha }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
@@ -40,36 +31,24 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+          ref: ${{ github.sha }}
       - name: Build verification plan
         id: plan
         shell: bash
         env:
-          DISPATCH_COMMIT_SHA: ${{ inputs.commit_sha || '' }}
-          DISPATCH_BASE_SHA: ${{ inputs.base_sha || '' }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
         run: |
           set -euo pipefail
           commit_sha="$(git rev-parse HEAD)"
-          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
-            [[ "${DISPATCH_COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]
-            [[ "${DISPATCH_BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
-            test "${GITHUB_REF}" = refs/heads/dev
-            test "${GITHUB_SHA}" = "${DISPATCH_COMMIT_SHA}"
-            test "${commit_sha}" = "${DISPATCH_COMMIT_SHA}"
-            git merge-base --is-ancestor "${DISPATCH_BASE_SHA}" "${DISPATCH_COMMIT_SHA}"
-            base_sha="${DISPATCH_BASE_SHA}"
+          test "${commit_sha}" = "${GITHUB_SHA}"
+          if [[ "${GITHUB_EVENT_NAME}" == pull_request ]]; then
+            base_ref="${PR_BASE_SHA}"
           else
-            test "${commit_sha}" = "${GITHUB_SHA}"
-            if [[ "${GITHUB_EVENT_NAME}" == pull_request ]]; then
-              base_ref="${PR_BASE_SHA}"
-            else
-              test "${GITHUB_REF}" = refs/heads/dev
-              base_ref=origin/main
-            fi
-            base_sha="$(git rev-parse --verify --end-of-options "${base_ref}^{commit}")"
-            git merge-base --is-ancestor "${base_sha}" "${commit_sha}"
+            test "${GITHUB_REF}" = refs/heads/dev
+            base_ref=origin/main
           fi
+          base_sha="$(git rev-parse --verify --end-of-options "${base_ref}^{commit}")"
+          git merge-base --is-ancestor "${base_sha}" "${commit_sha}"
           {
             echo "base_sha=${base_sha}"
             echo "commit_sha=${commit_sha}"
@@ -314,16 +293,3 @@ jobs:
           )
           if failed:
               raise SystemExit("Promotion checks did not succeed: " + ", ".join(failed))
-
-  # Candidate and release workflows still consume this dispatch context.
-  full-ci-gate:
-    name: Full CI gate
-    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
-    needs: promotion-gate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Require Promotion Gate success
-        env:
-          PROMOTION_RESULT: ${{ needs.promotion-gate.result }}
-        run: test "${PROMOTION_RESULT}" = success

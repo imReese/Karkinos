@@ -1,0 +1,59 @@
+{
+  "schema_version": "karkinos.release_candidate.v2",
+  "commit_sha": "d25ded9225e7557c6b26aa782db57b27f46ea094",
+  "version": "0.3.9",
+  "source_ci": {
+    "workflow": "CI",
+    "workflow_path": ".github/workflows/ci.yml",
+    "event": "push",
+    "branch": "main",
+    "run_id": 34014578501,
+    "run_attempt": 1
+  },
+  "candidate_workflow": {
+    "workflow": "Release Candidate",
+    "workflow_path": ".github/workflows/candidate.yml",
+    "event": "push",
+    "branch": "main",
+    "run_id": 34014578588,
+    "run_attempt": 1
+  },
+  "image": {
+    "reference": "ghcr.io/imreese/karkinos",
+    "digest": "sha256:2b8c955ecef6e91c70466deb78ed25a3049a08dddf98739fc738186b12b037fd",
+    "workflow_run_id": 34014578588,
+    "workflow_run_attempt": 1,
+    "candidate_tag": "candidate-sha-d25ded9225e7557c6b26aa782db57b27f46ea094-run-34014578588-attempt-1",
+    "candidate_reference": "ghcr.io/imreese/karkinos:candidate-sha-d25ded9225e7557c6b26aa782db57b27f46ea094-run-34014578588-attempt-1"
+  },
+  "native_artifacts": [
+    {
+      "architecture": "arm64",
+      "filename": "karkinos-0.3.9-macos-arm64.tar.gz",
+      "sha256": "6cb41050dfa6582df19cc02eb15cbca45c5948808bd33efc9ec918189da9c322"
+    },
+    {
+      "architecture": "x86_64",
+      "filename": "karkinos-0.3.9-macos-x86_64.tar.gz",
+      "sha256": "94a6fb2d2c4b73c89e689ef2bfec206e31fa095ac55ac7660244e62ff878aabb"
+    }
+  ],
+  "source_fingerprints": {
+    "pyproject": "6a703484262756ceb69fe69fe0f27d3e01f0bd159cf15871db7dc9f6cb7207f4",
+    "uv_lock": "dcb3f7c045b522223d5c7bf79c5124617f901bab9a06f6026d1aaaa9f201e819",
+    "web_package": "0fd47489e647c30bd070354453cd870cc21e137c6f169c1920ec0d0e5f03ddbb",
+    "web_lock": "b311b876a925af19d4a488c776ef5b0b99d8a8483a9276455db72a410a7c4fee",
+    "candidate_workflow": "f0f79565f5ad1fb312cfc1f271da0a67f33cfb39f7ec682e832815253414b111",
+    "dockerfile": "0159bce80a18dd90ef98a011ce7cee0161bffd01470a28d97e8294dde7990c1d"
+  },
+  "toolchain": {
+    "python": "3.12.13",
+    "node": "24.20.0",
+    "uv": "0.11.28"
+  },
+  "promotion": {
+    "method": "digest_and_bytes_only",
+    "rebuild_forbidden": true,
+    "stable_environment_required": true
+  }
+}

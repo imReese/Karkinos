@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch one immutable candidate bundle from GitHub Actions."""
+"""Download an exact-SHA candidate bundle from GitHub Actions."""
 
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ _MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 _MAX_EXTRACTED_BYTES = 4 * 1024 * 1024 * 1024
 _MAX_ZIP_MEMBERS = 200_000
 _MAX_ACTIONS_RECORDS = 10_000
-_MAX_WORKFLOW_ATTEMPTS = 100
 _CANDIDATE_WORKFLOW_NAME = "Release Candidate"
 _CANDIDATE_WORKFLOW_PATH = ".github/workflows/candidate.yml"
 _SELECTION_SCHEMA = "karkinos.candidate_artifact_selection.v1"
@@ -329,214 +328,51 @@ def _timestamp(value: object, error: str) -> datetime:
     return parsed
 
 
-def _workflow_run_identity(
-    run: object, *, repository: str, commit_sha: str, require_success: bool = True
-) -> tuple[object, ...]:
-    if not isinstance(run, dict):
-        raise ValueError("candidate_artifact_workflow_run_invalid")
-    run_id = run.get("id")
-    run_attempt = run.get("run_attempt")
-    path = run.get("path")
-    repository_summary = run.get("repository")
-    head_repository = run.get("head_repository")
-    status = run.get("status")
-    conclusion = run.get("conclusion")
-    if (
-        type(run_id) is not int
-        or run_id <= 0
-        or type(run_attempt) is not int
-        or run_attempt <= 0
-        or run.get("name") != _CANDIDATE_WORKFLOW_NAME
-        or not isinstance(path, str)
-        or path.split("@", 1)[0] != _CANDIDATE_WORKFLOW_PATH
-        or run.get("head_sha") != commit_sha
-        or run.get("head_branch") != "main"
-        or run.get("event") not in {"push", "workflow_dispatch"}
-        or not isinstance(status, str)
-        or (conclusion is not None and not isinstance(conclusion, str))
-        or not isinstance(repository_summary, dict)
-        or repository_summary.get("full_name") != repository
-        or not isinstance(head_repository, dict)
-        or head_repository.get("full_name") != repository
-    ):
-        raise ValueError("candidate_artifact_workflow_run_invalid")
-    if require_success and (status != "completed" or conclusion != "success"):
-        raise ValueError("candidate_artifact_workflow_run_invalid")
-    created_at = _timestamp(
-        run.get("created_at"), "candidate_artifact_workflow_run_invalid"
-    )
-    updated_at = _timestamp(
-        run.get("updated_at"), "candidate_artifact_workflow_run_invalid"
-    )
-    if updated_at < created_at:
-        raise ValueError("candidate_artifact_workflow_run_invalid")
-    return (
-        run_id,
-        run_attempt,
-        run["event"],
-        run["head_sha"],
-        run["head_branch"],
-        status,
-        conclusion,
-        path,
-        created_at,
-        updated_at,
-    )
-
-
-def _successful_workflow_attempts(
-    runs: list[object],
-    *,
-    api_url: str,
-    repository: str,
-    commit_sha: str,
-    token: str,
-) -> list[object]:
-    successful: list[object] = []
-    seen_run_ids: set[int] = set()
-    for run in runs:
-        summary_identity = _workflow_run_identity(
-            run,
-            repository=repository,
-            commit_sha=commit_sha,
-            require_success=False,
-        )
-        run_id = summary_identity[0]
-        run_attempt = summary_identity[1]
-        assert isinstance(run_id, int)
-        assert isinstance(run_attempt, int)
-        if run_id in seen_run_ids:
-            raise ValueError("candidate_workflow_run_listing_ambiguous")
-        seen_run_ids.add(run_id)
-        if run_attempt > _MAX_WORKFLOW_ATTEMPTS:
-            raise ValueError("candidate_workflow_run_attempts_too_many")
-        for attempt in range(1, run_attempt + 1):
-            attempt_run = _request(
-                f"{api_url}/repos/{repository}/actions/runs/{run_id}/attempts/{attempt}",
-                token,
-            )
-            attempt_identity = _workflow_run_identity(
-                attempt_run,
-                repository=repository,
-                commit_sha=commit_sha,
-                require_success=False,
-            )
-            if attempt_identity[0] != run_id or attempt_identity[1] != attempt:
-                raise ValueError("candidate_artifact_workflow_run_invalid")
-            if attempt_identity[5:7] == ("completed", "success"):
-                successful.append(attempt_run)
-    return successful
-
-
 def _select_workflow_run(
     runs: list[object], *, repository: str, commit_sha: str
 ) -> dict[str, object]:
-    matches: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    matches: list[tuple[datetime, int, dict[str, object]]] = []
+    seen: set[int] = set()
     for run in runs:
         if not isinstance(run, dict):
             raise ValueError("candidate_workflow_run_listing_invalid")
-        if run.get("head_sha") != commit_sha:
-            raise ValueError("candidate_workflow_run_listing_invalid")
-        identity = _workflow_run_identity(
-            run, repository=repository, commit_sha=commit_sha
+        run_id = run.get("id")
+        path = run.get("path")
+        repository_summary = run.get("repository")
+        head_repository = run.get("head_repository")
+        if (
+            type(run_id) is not int
+            or run_id <= 0
+            or run.get("name") != _CANDIDATE_WORKFLOW_NAME
+            or not isinstance(path, str)
+            or path.split("@", 1)[0] != _CANDIDATE_WORKFLOW_PATH
+            or run.get("head_sha") != commit_sha
+            or run.get("head_branch") != "main"
+            or run.get("event") not in {"push", "workflow_dispatch", "workflow_run"}
+            or not isinstance(repository_summary, dict)
+            or repository_summary.get("full_name") != repository
+            or not isinstance(head_repository, dict)
+            or head_repository.get("full_name") != repository
+        ):
+            raise ValueError("candidate_artifact_workflow_run_invalid")
+        if run_id in seen:
+            raise ValueError("candidate_workflow_run_listing_ambiguous")
+        seen.add(run_id)
+        if run.get("status") != "completed" or run.get("conclusion") != "success":
+            continue
+        completed_at = _timestamp(
+            run.get("updated_at"), "candidate_artifact_workflow_run_invalid"
         )
-        matches.append((identity, run))
+        matches.append((completed_at, run_id, run))
     if not matches:
         raise ValueError("candidate_successful_workflow_run_missing")
-    # Completion time makes a later rerun win even though its run id is unchanged.
-    # Run id and attempt are deterministic tie-breakers for independently queued runs.
-    return max(matches, key=lambda item: (item[0][-1], item[0][0], item[0][1]))[1]
-
-
-def _artifact_identity(
-    artifact: object,
-    *,
-    expected_name: str,
-    expected_run_id: int,
-    commit_sha: str,
-) -> tuple[object, ...]:
-    if not isinstance(artifact, dict):
-        raise ValueError("candidate_artifact_expired_or_invalid")
-    workflow_run = artifact.get("workflow_run")
-    digest = artifact.get("digest")
-    digest_match = (
-        _ARTIFACT_DIGEST.fullmatch(digest) if isinstance(digest, str) else None
-    )
-    download_url = artifact.get("archive_download_url")
-    artifact_id = artifact.get("id")
-    size = artifact.get("size_in_bytes")
-    if (
-        artifact.get("name") != expected_name
-        or type(artifact.get("expired")) is not bool
-        or artifact.get("expired")
-        or type(artifact_id) is not int
-        or artifact_id <= 0
-        or type(size) is not int
-        or size <= 0
-        or size > _MAX_ARCHIVE_BYTES
-        or not isinstance(workflow_run, dict)
-        or workflow_run.get("head_sha") != commit_sha
-        or workflow_run.get("head_branch") != "main"
-        or workflow_run.get("id") != expected_run_id
-        or not isinstance(download_url, str)
-        or digest_match is None
-    ):
-        raise ValueError("candidate_artifact_expired_or_invalid")
-    _require_https_url(download_url, "candidate_artifact_download_url_invalid")
-    created_at = _timestamp(
-        artifact.get("created_at"), "candidate_artifact_expired_or_invalid"
-    )
-    updated_at = _timestamp(
-        artifact.get("updated_at"), "candidate_artifact_expired_or_invalid"
-    )
-    if updated_at < created_at:
-        raise ValueError("candidate_artifact_expired_or_invalid")
-    return (
-        artifact_id,
-        expected_name,
-        digest,
-        size,
-        download_url,
-        created_at,
-        updated_at,
-        expected_run_id,
-        commit_sha,
-    )
-
-
-def _selection_payload(
-    *,
-    repository: str,
-    commit_sha: str,
-    run: dict[str, object],
-    artifact: dict[str, object],
-) -> dict[str, object]:
-    return {
-        "schema_version": _SELECTION_SCHEMA,
-        "repository": repository,
-        "commit_sha": commit_sha,
-        "workflow": {
-            "name": _CANDIDATE_WORKFLOW_NAME,
-            "path": _CANDIDATE_WORKFLOW_PATH,
-            "event": run["event"],
-            "branch": "main",
-            "run_id": run["id"],
-            "run_attempt": run["run_attempt"],
-            "completed_at": run["updated_at"],
-        },
-        "artifact": {
-            "id": artifact["id"],
-            "name": artifact["name"],
-            "digest": artifact["digest"],
-            "size_in_bytes": artifact["size_in_bytes"],
-        },
-    }
+    return max(matches, key=lambda item: (item[0], item[1]))[2]
 
 
 def read_candidate_selection(
     path: Path, *, expected_repository: str, expected_commit_sha: str
 ) -> dict[str, object]:
-    """Validate a persisted GitHub Actions run/artifact selection receipt."""
+    """Read the legacy selection receipt shipped with published v2 releases."""
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
         raise ValueError("candidate_selection_invalid")
     try:
@@ -608,7 +444,6 @@ def fetch_candidate(
     output: Path,
     token: str,
     api_url: str,
-    metadata_output: Path | None = None,
 ) -> Path:
     if _FULL_SHA.fullmatch(commit_sha) is None:
         raise ValueError("candidate_commit_sha_invalid")
@@ -620,29 +455,22 @@ def fetch_candidate(
         api_url.rstrip("/"), "candidate_artifact_api_url_invalid"
     )
     output = output.expanduser().absolute()
-    workflow_runs = _successful_workflow_attempts(
+    _reject_symlink_ancestors(output.parent)
+    if os.path.lexists(output):
+        raise ValueError("candidate_output_already_exists")
+    run = _select_workflow_run(
         _workflow_run_pages(
             api_url=api_url,
             repository=repository,
             commit_sha=commit_sha,
             token=token,
         ),
-        api_url=api_url,
         repository=repository,
         commit_sha=commit_sha,
-        token=token,
     )
-    selected_run = _select_workflow_run(
-        workflow_runs, repository=repository, commit_sha=commit_sha
-    )
-    selected_run_identity = _workflow_run_identity(
-        selected_run, repository=repository, commit_sha=commit_sha
-    )
-    run_id = selected_run["id"]
-    run_attempt = selected_run["run_attempt"]
+    run_id = run["id"]
     assert isinstance(run_id, int)
-    assert isinstance(run_attempt, int)
-    name = f"karkinos-candidate-{commit_sha}-{run_id}-{run_attempt}"
+    name = f"karkinos-candidate-{commit_sha}"
     matches = [
         item
         for item in _artifact_pages(
@@ -657,138 +485,44 @@ def fetch_candidate(
     if len(matches) != 1:
         raise ValueError("candidate_artifact_missing_or_ambiguous")
     artifact = matches[0]
-    artifact_identity = _artifact_identity(
-        artifact,
-        expected_name=name,
-        expected_run_id=run_id,
-        commit_sha=commit_sha,
-    )
-    workflow_run = _request(
-        f"{api_url}/repos/{repository}/actions/runs/{run_id}/attempts/{run_attempt}",
-        token,
+    artifact_id = artifact.get("id")
+    size = artifact.get("size_in_bytes")
+    digest = artifact.get("digest")
+    workflow_run = artifact.get("workflow_run")
+    digest_match = (
+        _ARTIFACT_DIGEST.fullmatch(digest) if isinstance(digest, str) else None
     )
     if (
-        _workflow_run_identity(
-            workflow_run, repository=repository, commit_sha=commit_sha
-        )
-        != selected_run_identity
+        type(artifact_id) is not int
+        or artifact_id <= 0
+        or artifact.get("expired") is not False
+        or type(size) is not int
+        or not 0 < size <= _MAX_ARCHIVE_BYTES
+        or digest_match is None
+        or not isinstance(workflow_run, dict)
+        or workflow_run.get("id") != run_id
+        or workflow_run.get("head_sha") != commit_sha
+        or workflow_run.get("head_branch") != "main"
     ):
-        raise ValueError("candidate_artifact_workflow_run_invalid")
-    download_url = artifact["archive_download_url"]
-    artifact_digest = artifact["digest"]
-    assert isinstance(download_url, str)
-    assert isinstance(artifact_digest, str)
-    digest_match = _ARTIFACT_DIGEST.fullmatch(artifact_digest)
-    assert digest_match is not None
-    _require_https_url(download_url, "candidate_artifact_download_url_invalid")
-    _reject_symlink_ancestors(output.parent)
-    if os.path.lexists(output):
-        raise ValueError("candidate_output_already_exists")
-    resolved_metadata: Path | None = None
-    if metadata_output is not None:
-        resolved_metadata = metadata_output.expanduser().absolute()
-        if resolved_metadata == output:
-            raise ValueError("candidate_selection_output_invalid")
-        _reject_symlink_ancestors(resolved_metadata.parent)
-        if os.path.lexists(resolved_metadata):
-            raise ValueError("candidate_selection_output_already_exists")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    if resolved_metadata is not None:
-        resolved_metadata.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(f".{output.name}.download-{uuid.uuid4().hex}")
-    metadata_temporary = (
-        resolved_metadata.with_name(
-            f".{resolved_metadata.name}.selection-{uuid.uuid4().hex}"
-        )
-        if resolved_metadata is not None
-        else None
+        raise ValueError("candidate_artifact_expired_or_invalid")
+    # Construct the API endpoint so artifact metadata cannot redirect the token.
+    payload = _download(
+        f"{api_url}/repos/{repository}/actions/artifacts/{artifact_id}/zip", token
     )
+    if len(payload) != size:
+        raise ValueError("candidate_artifact_download_size_mismatch")
+    if hashlib.sha256(payload).hexdigest() != digest_match.group(1):
+        raise ValueError("candidate_artifact_download_digest_mismatch")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.download-{uuid.uuid4().hex}")
     try:
-        payload = _download(download_url, token)
-        if len(payload) != artifact["size_in_bytes"]:
-            raise ValueError("candidate_artifact_download_size_mismatch")
-        if hashlib.sha256(payload).hexdigest() != digest_match.group(1):
-            raise ValueError("candidate_artifact_download_digest_mismatch")
-        confirmed_artifact = _request(
-            f"{api_url}/repos/{repository}/actions/artifacts/{artifact['id']}", token
-        )
-        if (
-            _artifact_identity(
-                confirmed_artifact,
-                expected_name=name,
-                expected_run_id=run_id,
-                commit_sha=commit_sha,
-            )
-            != artifact_identity
-        ):
-            raise ValueError("candidate_artifact_remote_identity_changed")
-        confirmed_run = _request(
-            f"{api_url}/repos/{repository}/actions/runs/{run_id}/attempts/{run_attempt}",
-            token,
-        )
-        if (
-            _workflow_run_identity(
-                confirmed_run, repository=repository, commit_sha=commit_sha
-            )
-            != selected_run_identity
-        ):
-            raise ValueError("candidate_artifact_workflow_run_changed")
-        latest_run = _select_workflow_run(
-            _successful_workflow_attempts(
-                _workflow_run_pages(
-                    api_url=api_url,
-                    repository=repository,
-                    commit_sha=commit_sha,
-                    token=token,
-                ),
-                api_url=api_url,
-                repository=repository,
-                commit_sha=commit_sha,
-                token=token,
-            ),
-            repository=repository,
-            commit_sha=commit_sha,
-        )
-        if (
-            _workflow_run_identity(
-                latest_run, repository=repository, commit_sha=commit_sha
-            )
-            != selected_run_identity
-        ):
-            raise ValueError("candidate_artifact_selection_changed")
         with temporary.open("xb") as stream:
             stream.write(payload)
-        if metadata_temporary is not None:
-            selection = _selection_payload(
-                repository=repository,
-                commit_sha=commit_sha,
-                run=selected_run,
-                artifact=artifact,
-            )
-            metadata_temporary.write_text(
-                json.dumps(selection, ensure_ascii=False, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            read_candidate_selection(
-                metadata_temporary,
-                expected_repository=repository,
-                expected_commit_sha=commit_sha,
-            )
         if os.path.lexists(output):
             raise ValueError("candidate_output_already_exists")
-        if resolved_metadata is not None and os.path.lexists(resolved_metadata):
-            raise ValueError("candidate_selection_output_already_exists")
         os.replace(temporary, output)
-        if resolved_metadata is not None and metadata_temporary is not None:
-            try:
-                os.replace(metadata_temporary, resolved_metadata)
-            except BaseException:
-                output.unlink(missing_ok=True)
-                raise
     finally:
         temporary.unlink(missing_ok=True)
-        if metadata_temporary is not None:
-            metadata_temporary.unlink(missing_ok=True)
     return output
 
 
@@ -801,7 +535,6 @@ def main() -> int:
     fetch.add_argument("--repository", required=True)
     fetch.add_argument("--commit-sha", required=True)
     fetch.add_argument("--output", type=Path, required=True)
-    fetch.add_argument("--metadata-output", type=Path)
     fetch.add_argument("--token", default=os.environ.get("GH_TOKEN", ""))
     fetch.add_argument(
         "--api-url", default=os.environ.get("GITHUB_API_URL", "https://api.github.com")
@@ -834,11 +567,6 @@ def main() -> int:
             output=args.output.expanduser().absolute(),
             token=args.token,
             api_url=args.api_url,
-            metadata_output=(
-                args.metadata_output.expanduser().absolute()
-                if args.metadata_output is not None
-                else None
-            ),
         )
         print(
             json.dumps({"status": "downloaded", "archive": str(output)}, sort_keys=True)
