@@ -1330,7 +1330,7 @@ def test_market_context_index_does_not_invalidate_account_valuation(tmp_path):
     current = _current_valuation_snapshot(SimpleNamespace(db=db))
 
     assert current["snapshot_id"] == published["snapshot_id"]
-    assert current["valuation_policy"] == "karkinos.persisted_valuation.v5"
+    assert current["valuation_policy"] == VALUATION_POLICY_VERSION
     assert [quote["symbol"] for quote in current["quotes"]] == ["603659"]
 
 
