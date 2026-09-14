@@ -50,11 +50,20 @@ def test_single_ci_workflow_verifies_every_dev_push_and_pull_request() -> None:
 
 def test_trading_safety_always_contributes_to_promotion_gate() -> None:
     config = _workflow(".github/workflows/ci.yml")
-    trading_id, trading = _named_job(config, "Trading safety invariants")
+    python_id, python = _named_job(config, "Python tests")
+    trading = next(
+        step
+        for step in python["steps"]
+        if step.get("name") == "Trading safety invariants"
+    )
     _, gate = _named_job(config, "Promotion Gate")
     assert gate["if"] == "${{ always() }}"
-    assert trading_id in gate["needs"]
-    assert "if" not in trading
+    assert python_id in gate["needs"]
+    assert python["needs"] == "plan"
+    assert "if" not in python
+    assert trading["if"] == "${{ !cancelled() }}"
+    assert python.get("continue-on-error", "false") == "false"
+    assert trading.get("continue-on-error", "false") == "false"
 
 
 def test_promotion_gate_rejects_unsuccessful_dependencies_and_empty_results(
@@ -204,16 +213,21 @@ def test_ruleset_verifier_rejects_unobservable_bypass_actors() -> None:
         rulesets.canonical_ruleset(server)
 
 
-def test_ruleset_verifier_accepts_explicitly_empty_bypass_actors() -> None:
+@pytest.mark.parametrize("scope", ["observable", "owner"])
+def test_ruleset_verifier_accepts_explicitly_empty_bypass_actors(scope) -> None:
     desired = rulesets.canonical_ruleset(_ruleset(".github/rulesets/main.json"))
     actual = rulesets.canonical_ruleset({**desired, "bypass_actors": []})
 
-    assert rulesets.verify({desired["name"]: desired}, {actual["name"]: actual})[
-        "in_sync"
-    ]
+    result = rulesets.verify(
+        {desired["name"]: desired}, {actual["name"]: actual}, scope=scope
+    )
+    assert result["in_sync"]
+    assert result["complete_audit"]
+    assert result["unobservable_fields"] == []
 
 
-def test_ruleset_verifier_rejects_added_bypass_actor() -> None:
+@pytest.mark.parametrize("scope", ["observable", "owner"])
+def test_ruleset_verifier_rejects_added_bypass_actor(scope) -> None:
     desired = rulesets.canonical_ruleset(_ruleset(".github/rulesets/main.json"))
     actual = rulesets.canonical_ruleset(
         {
@@ -229,4 +243,94 @@ def test_ruleset_verifier_rejects_added_bypass_actor() -> None:
     )
 
     with pytest.raises(rulesets.RulesetVerificationError, match="drifted_rulesets"):
-        rulesets.verify({desired["name"]: desired}, {actual["name"]: actual})
+        rulesets.verify(
+            {desired["name"]: desired}, {actual["name"]: actual}, scope=scope
+        )
+
+
+def test_observable_audit_reports_hidden_bypass_without_inventing_empty_list() -> None:
+    desired = rulesets.load_desired(Path(".github/rulesets"))
+    actual = json.loads(json.dumps(desired))
+    del actual["main-verified-fast-forward"]["bypass_actors"]
+    actual = {
+        name: rulesets.canonical_ruleset(payload, scope="observable")
+        for name, payload in actual.items()
+    }
+    assert "bypass_actors" not in actual["main-verified-fast-forward"]
+
+    result = rulesets.verify(desired, actual, scope="observable")
+    assert result["in_sync"]
+    assert result["complete_audit"] is False
+    assert result["unobservable_fields"] == ["bypass_actors"]
+    with pytest.raises(
+        rulesets.RulesetVerificationError,
+        match="^repository_ruleset_bypass_unobservable$",
+    ):
+        rulesets.verify(desired, actual, scope="owner")
+
+
+@pytest.mark.parametrize("field", ["target", "enforcement", "conditions", "rules"])
+def test_observable_audit_still_rejects_visible_drift_with_hidden_bypass(field) -> None:
+    desired = rulesets.load_desired(Path(".github/rulesets"))
+    actual = json.loads(json.dumps(desired))
+    main = actual["main-verified-fast-forward"]
+    del main["bypass_actors"]
+    main[field] = {
+        "target": "tag",
+        "enforcement": "disabled",
+        "conditions": {"ref_name": {"include": ["refs/heads/other"], "exclude": []}},
+        "rules": [],
+    }[field]
+
+    with pytest.raises(rulesets.RulesetVerificationError) as exc:
+        rulesets.verify(desired, actual, scope="observable")
+    report = json.loads(str(exc.value))
+    assert report["drifted_rulesets"] == [main["name"]]
+    assert report["complete_audit"] is False
+    assert report["unobservable_fields"] == ["bypass_actors"]
+
+
+@pytest.mark.parametrize("bypass", [None, {}, "hidden"])
+def test_observable_audit_rejects_malformed_visible_bypass(bypass) -> None:
+    server = _ruleset(".github/rulesets/main.json")
+    server["bypass_actors"] = bypass
+    with pytest.raises(
+        rulesets.RulesetVerificationError,
+        match="^repository_ruleset_bypass_invalid$",
+    ):
+        rulesets.canonical_ruleset(server, scope="observable")
+
+
+@pytest.mark.parametrize("scope", [None, "owner", "observable"])
+def test_ruleset_audit_cli_scope_with_hidden_api_bypass(
+    scope, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    desired = rulesets.load_desired(Path(".github/rulesets"))
+    summaries = [
+        {"id": index, "name": name} for index, name in enumerate(desired, start=1)
+    ]
+    responses = {"/rulesets": summaries}
+    for summary in summaries:
+        detail = dict(desired[summary["name"]])
+        del detail["bypass_actors"]
+        responses[f"/rulesets/{summary['id']}"] = detail
+
+    def get_json(url, token):
+        return responses[url.removeprefix("https://api.github.com/repos/test/repo")]
+
+    monkeypatch.setattr(rulesets, "_get_json", get_json)
+    argv = ["--repository", "test/repo", "--api-url", "https://api.github.com"]
+    if scope:
+        argv.extend(["--scope", scope])
+    code = rulesets.main(argv)
+    output = capsys.readouterr()
+    if scope == "observable":
+        assert code == 0
+        report = json.loads(output.out)
+        assert report["scope"] == "observable"
+        assert report["in_sync"]
+        assert report["complete_audit"] is False
+        assert report["unobservable_fields"] == ["bypass_actors"]
+    else:
+        assert code == 1
+        assert output.err.strip() == "repository_ruleset_bypass_unobservable"

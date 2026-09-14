@@ -23,8 +23,11 @@ jobs:
         (
           github.event_name == 'workflow_dispatch' ||
           (
+            github.event_name == 'workflow_run' &&
+            github.event.workflow_run.name == 'CI' &&
             github.event.workflow_run.head_branch == 'dev' &&
-            github.event.workflow_run.event == 'push'
+            github.event.workflow_run.event == 'push' &&
+            github.event.workflow_run.conclusion == 'success'
           )
         )
       }}

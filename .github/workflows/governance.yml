@@ -31,4 +31,4 @@ jobs:
       - name: Compare tracked desired state with GitHub server rulesets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python tools/verify_repository_rulesets.py --repository "${GITHUB_REPOSITORY}"
+        run: python tools/verify_repository_rulesets.py --repository "${GITHUB_REPOSITORY}" --scope observable

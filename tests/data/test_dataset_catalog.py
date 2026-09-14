@@ -46,6 +46,7 @@ def _inputs():
     )
 
 
+@pytest.mark.product_smoke
 def test_publish_reopen_replay_and_availability_cutoff(tmp_path):
     catalog = DatasetCatalog(tmp_path)
     manifest = catalog.publish_daily(**_inputs())

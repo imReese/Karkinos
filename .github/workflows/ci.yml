@@ -141,8 +141,8 @@ jobs:
         run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo --no-git --redact --verbose
 
   backend:
-    name: Backend tests
-    needs: [plan, python-quality, repository-integrity, secret-scan]
+    name: Python tests
+    needs: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -161,36 +161,29 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --locked --extra server --extra dev
-      - name: Run backend test suite
+      - name: Backend tests
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p reports/ci
           uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
-            --cov --cov-report=term --cov-report=xml
-
-  trading-safety:
-    name: Trading safety invariants
-    needs: plan
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Checkout exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.plan.outputs.commit_sha }}
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-      - name: Set up uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
-      - run: uv sync --locked --extra server --extra dev
-      - run: uv run --locked python -m pytest -m trading_safety
+            -m "not trading_safety and not product_smoke" \
+            --cov --cov-report= --cov-fail-under=0
+      - name: Trading safety invariants
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run --locked python -m pytest -m trading_safety
+          --cov --cov-append --cov-report= --cov-fail-under=0
+      - name: Python product smoke
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run --locked python -m pytest -m product_smoke
+          --cov --cov-append --cov-report= --cov-fail-under=0
+      - name: Check Python coverage
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --locked coverage report
+          uv run --locked coverage xml
 
   frontend:
     name: Frontend checks
@@ -244,11 +237,6 @@ jobs:
       - run: npm ci --prefix web
       - run: npx --prefix web playwright install --with-deps chromium
       - run: npm --prefix web run build
-      - name: Verify research replay and risk workflow
-        run: >-
-          uv run --locked python -m pytest
-          tests/test_profit_discipline_smoke.py
-          tests/data/test_dataset_catalog.py::test_publish_reopen_replay_and_availability_cutoff
       - name: Verify runtime review surfaces and fail-closed execution
         run: >-
           npm --prefix web run test:e2e -- safety-surfaces.spec.ts
@@ -275,7 +263,7 @@ jobs:
   promotion-gate:
     name: Promotion Gate
     if: ${{ always() }}
-    needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, product-smoke, workflow-security]
+    needs: [plan, python-quality, repository-integrity, secret-scan, backend, frontend, product-smoke, workflow-security]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
