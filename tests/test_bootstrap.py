@@ -1510,8 +1510,9 @@ def test_create_runtime_context_supports_env_data_dir(monkeypatch):
 
     create_runtime_context(BacktestConfig())
 
-    assert resolve_data_dir() == "/tmp/karkinos-data"
-    assert created["store_path"] == "/tmp/karkinos-data"
+    expected_path = str(Path("/tmp/karkinos-data").resolve())
+    assert resolve_data_dir() == expected_path
+    assert created["store_path"] == expected_path
 
 
 def test_create_app_accepts_config_overrides():
