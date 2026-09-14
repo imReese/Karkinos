@@ -18,3 +18,12 @@ condition = "AND"
 regexTarget = "line"
 regexes = ['''does not start a broker client, retain credentials, submit/cancel orders, or''']
 paths = ['''docs/config-reference\.en\.md''']
+
+[[allowlists]]
+description = "Historical milestone criterion name is not an API key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+commits = ["f7eb66829b4c9c9acad9b5ab8c128dd92cf367b6"]
+regexTarget = "line"
+regexes = ['''key="per_order_stage1_drift_fails_closed",''']
+paths = ['''^analytics/acceptance_audit\.py$''']
