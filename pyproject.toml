@@ -105,7 +105,10 @@ executionEnvironments = [{ root = ".", extraPaths = ["."] }]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["core", "domain", "risk", "execution", "notification"]
+files = [
+    "core", "domain", "risk", "execution", "notification",
+    "analytics/metrics.py", "backtest/metrics.py", "server/config_types.py",
+]
 check_untyped_defs = true
 ignore_missing_imports = true
 no_implicit_optional = true
