@@ -13,7 +13,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -75,7 +75,9 @@ def _sorted_json(values: list[Any]) -> list[Any]:
     return sorted(values, key=lambda value: json.dumps(value, sort_keys=True))
 
 
-def canonical_ruleset(payload: Mapping[str, Any]) -> dict[str, Any]:
+def canonical_ruleset(
+    payload: Mapping[str, Any], *, scope: Literal["observable", "owner"] = "owner"
+) -> dict[str, Any]:
     """Return the security-relevant subset used for desired-state comparison."""
 
     conditions = payload.get("conditions")
@@ -110,10 +112,9 @@ def canonical_ruleset(payload: Mapping[str, Any]) -> dict[str, Any]:
             normalized["parameters"] = parameters
         normalized_rules.append(normalized)
 
-    if "bypass_actors" not in payload:
+    if "bypass_actors" not in payload and scope == "owner":
         raise RulesetVerificationError("repository_ruleset_bypass_unobservable")
-    bypass = payload["bypass_actors"]
-    if not isinstance(bypass, list):
+    if "bypass_actors" in payload and not isinstance(payload["bypass_actors"], list):
         raise RulesetVerificationError("repository_ruleset_bypass_invalid")
 
     name = payload.get("name")
@@ -129,11 +130,10 @@ def canonical_ruleset(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(include, list) or not isinstance(exclude, list):
         raise RulesetVerificationError("repository_ruleset_ref_values_invalid")
 
-    return {
+    canonical = {
         "name": name,
         "target": target,
         "enforcement": enforcement,
-        "bypass_actors": _sorted_json(bypass),
         "conditions": {
             "ref_name": {
                 "include": sorted(include),
@@ -142,6 +142,9 @@ def canonical_ruleset(payload: Mapping[str, Any]) -> dict[str, Any]:
         },
         "rules": _sorted_json(normalized_rules),
     }
+    if "bypass_actors" in payload:
+        canonical["bypass_actors"] = _sorted_json(payload["bypass_actors"])
+    return canonical
 
 
 def load_desired(directory: Path) -> dict[str, dict[str, Any]]:
@@ -171,7 +174,11 @@ def load_desired(directory: Path) -> dict[str, dict[str, Any]]:
 
 
 def fetch_actual(
-    *, api_url: str, repository: str, token: str
+    *,
+    api_url: str,
+    repository: str,
+    token: str,
+    scope: Literal["observable", "owner"] = "owner",
 ) -> dict[str, dict[str, Any]]:
     base = f"{_validate_api_url(api_url)}/repos/{repository}"
     collection = _get_json(f"{base}/rulesets", token)
@@ -189,7 +196,7 @@ def fetch_actual(
         detail = _get_json(f"{base}/rulesets/{ruleset_id}", token)
         if not isinstance(detail, dict):
             raise RulesetVerificationError("repository_ruleset_detail_invalid")
-        canonical = canonical_ruleset(detail)
+        canonical = canonical_ruleset(detail, scope=scope)
         if canonical["name"] != name:
             raise RulesetVerificationError("repository_ruleset_name_changed")
         if name in actual:
@@ -201,14 +208,31 @@ def fetch_actual(
 
 
 def verify(
-    desired: Mapping[str, dict[str, Any]], actual: Mapping[str, dict[str, Any]]
+    desired: Mapping[str, dict[str, Any]],
+    actual: Mapping[str, dict[str, Any]],
+    *,
+    scope: Literal["observable", "owner"] = "owner",
 ) -> dict[str, Any]:
-    missing = sorted(set(desired) - set(actual))
-    drifted = sorted(
-        name for name in set(desired) & set(actual) if desired[name] != actual[name]
+    unobservable = (
+        ["bypass_actors"]
+        if any("bypass_actors" not in ruleset for ruleset in actual.values())
+        else []
     )
+    if unobservable and scope == "owner":
+        raise RulesetVerificationError("repository_ruleset_bypass_unobservable")
+    missing = sorted(set(desired) - set(actual))
+    drifted = []
+    for name in sorted(set(desired) & set(actual)):
+        expected = dict(desired[name])
+        if "bypass_actors" not in actual[name]:
+            expected.pop("bypass_actors")
+        if expected != actual[name]:
+            drifted.append(name)
     result = {
         "schema_version": "karkinos.repository_ruleset_drift.v1",
+        "scope": scope,
+        "complete_audit": not unobservable,
+        "unobservable_fields": unobservable,
         "desired_rulesets": sorted(desired),
         "missing_rulesets": missing,
         "drifted_rulesets": drifted,
@@ -223,6 +247,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--desired-dir", type=Path, default=Path(".github/rulesets"))
+    parser.add_argument(
+        "--scope",
+        choices=("observable", "owner"),
+        default="owner",
+        help="owner requires complete visibility; observable reports hidden fields",
+    )
     parser.add_argument(
         "--api-url", default=os.environ.get("GITHUB_API_URL", "https://api.github.com")
     )
@@ -242,8 +272,9 @@ def main(argv: list[str] | None = None) -> int:
             api_url=args.api_url,
             repository=quote(args.repository, safe="/"),
             token=os.environ.get("GITHUB_TOKEN", ""),
+            scope=args.scope,
         )
-        result = verify(desired, actual)
+        result = verify(desired, actual, scope=args.scope)
     except RulesetVerificationError as exc:
         print(str(exc), file=sys.stderr)
         return 1

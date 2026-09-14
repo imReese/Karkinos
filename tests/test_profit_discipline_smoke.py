@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 
 from analytics.report import generate_report
 from backtest.engine import BacktestEngine
@@ -61,6 +62,7 @@ def _fixture_bars() -> pd.DataFrame:
     )
 
 
+@pytest.mark.product_smoke
 def test_profit_discipline_smoke_path_reaches_risk_journal_and_action_queue(
     tmp_path,
 ) -> None:

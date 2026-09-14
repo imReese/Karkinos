@@ -118,6 +118,14 @@ and a small product smoke suite. Trading safety runs independently of quality
 results once source identity is established. No path classifier can skip these
 correctness checks.
 
+One Python job runs three disjoint groups: ordinary tests with
+`-m "not trading_safety and not product_smoke"`, Trading safety with
+`-m trading_safety`, and Python product smoke with `-m product_smoke`.
+Each test runs once. The job accumulates coverage locally and enforces the existing
+85% threshold after all three groups. A failed group does not skip the remaining
+groups and still fails the job. Dedicated smoke tests must not also carry the
+trading-safety marker. The small browser safety smoke remains a separate job.
+
 `.github/workflows/nightly.yml` owns the complete browser suite, Docker runtime
 smoke, dependency audits, and full Git-history secret scanning. Commit CI scans
 all unpromoted commits and the working tree for secrets. Nightly failures remain
@@ -132,6 +140,8 @@ It has no separate verification mode. Promotion uses the commit's dev push gate.
 `.github/workflows/promote-dev.yml` is the sole privileged source-promotion controller.
 It executes trusted default-branch code and reads candidate metadata through the
 GitHub API; candidate source never executes with branch-write credentials.
+Automatic promotion starts only after successful `CI` from a push to `dev`.
+Manual dispatch retains the same controller-side verification.
 
 Promotion requires only the exact current `dev` HEAD, a successful `Promotion Gate`
 from that commit's own dev push CI, and `main` ancestry. Immediately before writing,
@@ -172,7 +182,17 @@ These JSON files are declarative desired state only. Changing a tracked file doe
 
 `tools/verify_repository_rulesets.py` reads the tracked desired state and compares it with GitHub's live server configuration. `.github/workflows/governance.yml` runs that comparison on a low-frequency schedule and on manual dispatch. It is intentionally read-only and is not part of code CI.
 
-GitHub may return HTTP 200 while hiding `bypass_actors` from a read-only API caller. A missing field is unobservable, not an empty bypass list: the verifier fails with `repository_ruleset_bypass_unobservable` and cannot claim synchronization. A complete owner audit requires API credentials with write access to the ruleset so that GitHub returns this field; the audit itself only reads state. Governance keeps its read-only workflow permissions and does not receive an additional secret or permission to make this check pass.
+GitHub may return HTTP 200 while hiding `bypass_actors` from a read-only API caller.
+Scheduled governance uses `--scope observable` to compare all visible fields.
+Hidden bypass configuration is never treated as an empty list: the report sets
+`complete_audit = false` and `unobservable_fields = ["bypass_actors"]`. Visible
+drift still fails the audit, including bypass drift when that field is available.
+
+Manual `--scope owner` is the default and requires complete visibility. It fails
+with `repository_ruleset_bypass_unobservable` when bypass configuration is hidden.
+An owner audit needs credentials with ruleset write access for GitHub to return
+this field, but the audit itself only reads state. Governance keeps read-only
+workflow permissions and receives no additional secret.
 
 Applying or changing GitHub rulesets is an explicit repository-owner operation. After any change, read the server state back and require the drift verifier to pass before claiming the protection is live. Normal CI must not silently repair repository security configuration.
 

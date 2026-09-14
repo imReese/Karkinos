@@ -128,15 +128,20 @@ branch or tag protection.
 tracked desired rulesets with the GitHub server and reports drift. Normal CI and
 scheduled automation must never silently repair repository security settings.
 Applying or changing rulesets is an explicit repository-owner operation; after
-such a change, read the server state back and require the governance verifier to
-pass before claiming the protection is live.
+such a change, read the server state back and require a complete owner audit to
+pass before claiming the protection is live. Scheduled governance uses
+`--scope observable`; hidden `bypass_actors` is reported as unobservable with
+`complete_audit = false`, never assumed empty. All visible drift still fails.
 
-Local/manual drift check:
+Strict local/manual audit (requires credentials that can observe bypass actors):
 
 ```bash
 GITHUB_TOKEN=... python tools/verify_repository_rulesets.py \
-  --repository imReese/Karkinos
+  --repository imReese/Karkinos --scope owner
 ```
+
+Owner scope is the default and fails closed if `bypass_actors` is unavailable.
+Do not add an Administration-write secret to the scheduled workflow.
 
 ## Tests
 
