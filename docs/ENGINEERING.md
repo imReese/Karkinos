@@ -109,10 +109,17 @@ npm --prefix web run build
 source-verification contract: `Promotion Gate`. Every dependency must succeed;
 failed, cancelled, skipped, or missing results block the gate.
 
-All source checks run without a path classifier: Python quality, repository
-integrity, secret scanning, backend tests with coverage, trading safety, frontend,
-workflow security, dependency audit, Docker and browser checks. Trading safety
-runs independently of quality results once source identity is established.
+Every commit runs Python quality, repository integrity, secret scanning, the
+backend suite with coverage, trading safety, frontend checks, workflow security,
+and a small product smoke suite. Trading safety runs independently of quality
+results once source identity is established. No path classifier can skip these
+correctness checks.
+
+`.github/workflows/nightly.yml` owns the complete browser suite, Docker runtime
+smoke, dependency audits, and full Git-history secret scanning. Commit CI scans
+all unpromoted commits and the working tree for secrets. Nightly failures remain
+visible in Actions and are fixed through normal development; the workflow cannot
+write branches or change promotion authority.
 
 Manual dispatch verifies an explicit dev SHA and main base for debugging. It runs
 the same checks as an ordinary push. A temporary `Full CI gate` dispatch alias
