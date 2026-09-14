@@ -304,8 +304,7 @@ def quote_pricing_semantics(
     elif is_fund:
         observed_status = str(row.get("observed_quote_status") or status).lower()
         if (
-            row.get("nav_date")
-            or source in {"eastmoney_fund_page", "tushare_fund_nav"}
+            source in {"eastmoney_fund_page", "tushare_fund_nav"}
             or observed_status == "confirmed"
         ):
             kind, authority = "published_nav", "authoritative"

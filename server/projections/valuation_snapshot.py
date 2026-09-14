@@ -26,7 +26,7 @@ from server.services.market_hours import get_shanghai_now
 from server.services.position_presence import is_economically_zero_quantity
 from server.valuation_snapshot_contract import validate_valuation_snapshot
 
-VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v5"
+VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v6"
 _VALUATION_SCOPE_POLICY = "current_nonzero_positions.v1"
 _VALUATION_FRESHNESS_POLICY = "expected_session_and_live_ttl.v1"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
@@ -54,7 +54,7 @@ def _fingerprint(value: Any) -> str:
 def _valuation_snapshot_identity_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """Return the complete v5 content-addressed identity payload."""
+    """Return the complete content-addressed identity payload."""
 
     return {
         "valuation_policy": payload["valuation_policy"],

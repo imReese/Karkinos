@@ -302,6 +302,9 @@ def test_fund_without_confirmed_nav_identity_and_manual_mark_fail_closed():
     )
     assert quote_pricing_semantics(fund)["pricing_authority"] == "missing"
     assert quote_valuation_status(fund) == "degraded"
+    dated_fund = {**fund, "nav_date": "2026-09-11"}
+    assert quote_pricing_semantics(dated_fund)["pricing_authority"] == "missing"
+    assert quote_valuation_status(dated_fund) == "degraded"
     manual = _quote(quote_source="manual_mark")
     assert quote_pricing_semantics(manual)["pricing_authority"] == "non_authoritative"
     assert quote_valuation_status(manual) == "degraded"
@@ -313,3 +316,47 @@ def test_fund_without_confirmed_nav_identity_and_manual_mark_fail_closed():
     }
     assert quote_pricing_semantics(manual_fund)["pricing_kind"] == "manual_mark"
     assert quote_valuation_status(manual_fund) == "degraded"
+
+
+def test_readiness_reassesses_authority_without_invalidating_legacy_identity(tmp_path):
+    import sqlite3
+
+    from server.contracts.content_identity import content_fingerprint
+    from server.db import AppDatabase
+    from server.persistence.financial_facts_valuation import (
+        insert_valuation_snapshot_on_connection,
+    )
+    from server.projections.system_readiness import build_system_readiness
+    from server.projections.valuation_snapshot import (
+        _valuation_snapshot_identity_payload,
+    )
+
+    legacy = build_current_valuation_snapshot(
+        CalendarDb(quote=_quote(quote_source="manual_mark")), now=SATURDAY
+    )
+    assert legacy["status"] == "degraded"
+    legacy["valuation_policy"] = "karkinos.persisted_valuation.v5"
+    legacy["status"] = "complete"
+    legacy["snapshot_id"] = "valuation-" + content_fingerprint(
+        _valuation_snapshot_identity_payload(legacy)
+    )
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db.path) as conn:
+        conn.row_factory = sqlite3.Row
+        insert_valuation_snapshot_on_connection(
+            conn, legacy, created_at=SATURDAY.isoformat()
+        )
+    db.set_runtime_control_sync(
+        "valuation_snapshot_publication",
+        {"status": "ready", "snapshot_id": legacy["snapshot_id"]},
+    )
+
+    readiness = build_system_readiness(db.path, now=SATURDAY)
+
+    assert readiness["valuation_snapshot_id"] == legacy["snapshot_id"]
+    assert readiness["subsystems"]["valuation_read"]["status"] == "degraded"
+    assert readiness["subsystems"]["valuation_read"]["blockers"] == [
+        "valuation_incomplete"
+    ]
+    assert db.get_valuation_snapshot_sync(legacy["snapshot_id"])["status"] == "complete"

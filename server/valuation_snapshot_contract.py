@@ -32,10 +32,34 @@ def _quote_timestamp(row: dict[str, Any]) -> str:
     return str(row.get("quote_timestamp") or row.get("timestamp") or "")
 
 
-def _snapshot_status(quotes: list[dict[str, Any]]) -> str:
+def _v5_quote_status(quote: dict[str, Any]) -> str:
+    """Validate historical v5 content using its original classification policy."""
+    status = str(quote.get("quote_status") or "live").strip().lower()
+    if status in {"missing", "error"}:
+        return "missing"
+    if (
+        status
+        in {
+            "stale",
+            "estimated",
+            "confirmed_nav_missing",
+            "confirmed_fund_nav_missing_estimate_only",
+        }
+        or quote.get("valuation_baseline_status") == "missing"
+    ):
+        return "degraded"
+    return "complete"
+
+
+def _snapshot_status(quotes: list[dict[str, Any]], *, valuation_policy: str) -> str:
     if not quotes:
         return "complete"
-    statuses = {quote_valuation_status(row) for row in quotes}
+    classify = (
+        _v5_quote_status
+        if valuation_policy == "karkinos.persisted_valuation.v5"
+        else quote_valuation_status
+    )
+    statuses = {classify(row) for row in quotes}
     if "missing" in statuses:
         return "missing"
     if "degraded" in statuses:
@@ -77,15 +101,17 @@ def validate_valuation_snapshot(payload: dict[str, Any]) -> None:
     ):
         raise ValueError("valuation snapshot ledger fingerprint is invalid")
 
-    is_v5 = metadata.get("valuation_freshness_policy") is not None
-    if is_v5:
+    has_freshness_policy = metadata.get("valuation_freshness_policy") is not None
+    if has_freshness_policy:
         if metadata.get("valuation_scope_policy") != _VALUATION_SCOPE_POLICY:
             raise ValueError("valuation snapshot scope policy drifted")
         if metadata.get("valuation_freshness_policy") != _VALUATION_FRESHNESS_POLICY:
             raise ValueError("valuation snapshot freshness policy drifted")
         if metadata.get("quote_count") != len(quotes):
             raise ValueError("valuation snapshot quote count drifted")
-        if payload.get("status") != _snapshot_status(quotes):
+        if payload.get("status") != _snapshot_status(
+            quotes, valuation_policy=str(payload.get("valuation_policy") or "")
+        ):
             raise ValueError("valuation snapshot status drifted")
         if payload.get("trade_date") != _snapshot_trade_date(
             quotes,

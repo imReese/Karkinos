@@ -19,7 +19,12 @@ from server.projections.portfolio_read_snapshot_persistence import (
     _ledger_instrument_keys,
     get_or_build_portfolio_read_snapshot,
 )
+from server.projections.quote_status import (
+    current_quote_valuation_evidence,
+    quote_valuation_status,
+)
 from server.projections.valuation_snapshot import ledger_identity_from_rows
+from server.valuation_snapshot_contract import validate_valuation_snapshot
 
 
 def _ledger_rows() -> list[dict[str, object]]:
@@ -80,9 +85,11 @@ def _create_published_valuation(
     ledger_rows: list[dict[str, object]],
     *,
     persisted_facts_only: bool,
+    quotes: list[dict[str, object]] | None = None,
 ) -> str:
     identity = ledger_identity_from_rows(deepcopy(ledger_rows))
-    quotes = [{"symbol": "600001", "price": 11.0}]
+    if quotes is None:
+        quotes = [{"symbol": "600001", "price": 11.0}]
     quote_set_fingerprint = content_fingerprint(quotes)
     metadata = {
         "quote_count": 1,
@@ -210,19 +217,86 @@ def _create_published_valuation(
     return snapshot_id
 
 
-def _state(tmp_path: Path, *, persisted_facts_only: bool = True):
+def _state(
+    tmp_path: Path,
+    *,
+    persisted_facts_only: bool = True,
+    quotes: list[dict[str, object]] | None = None,
+):
     ledger_rows = _ledger_rows()
     app_path = tmp_path / "app.db"
     snapshot_id = _create_published_valuation(
         app_path,
         ledger_rows,
         persisted_facts_only=persisted_facts_only,
+        quotes=quotes,
     )
     database = _ReadOnlyDatabase(app_path, ledger_rows)
     database.valuation_snapshot_id = snapshot_id
     state = AppState()
     state.db = database  # type: ignore[assignment]
     return state, database
+
+
+@pytest.mark.parametrize(
+    "quote_fields, current_status",
+    [
+        (
+            {
+                "instrument_type": "open_end_fund",
+                "quote_source": "unknown_provider",
+                "quote_status": "live",
+                "nav_date": "2026-08-30",
+            },
+            "degraded",
+        ),
+        (
+            {
+                "instrument_type": "stock",
+                "quote_source": "manual_mark",
+                "quote_status": "live",
+            },
+            "degraded",
+        ),
+        (
+            {"instrument_type": "stock", "quote_status": "unknown"},
+            "missing",
+        ),
+    ],
+)
+def test_v5_snapshot_keeps_identity_while_current_authority_remains_strict(
+    tmp_path, quote_fields, current_status
+):
+    quote = {
+        "symbol": "600001",
+        "price": 11.0,
+        "previous_close": 10.0,
+        "timestamp": "2026-08-30T15:00:00+08:00",
+        **quote_fields,
+    }
+    state, database = _state(tmp_path, quotes=[quote])
+
+    snapshot = get_or_build_portfolio_read_snapshot(state)
+
+    assert snapshot.identity.valuation_snapshot_id == database.valuation_snapshot_id
+    assert snapshot.identity.policy_version == "karkinos.persisted_valuation.v5"
+    assert snapshot.published_valuation["status"] == "complete"
+    assert (
+        quote_valuation_status(
+            current_quote_valuation_evidence(
+                dict(snapshot.published_valuation["quotes"][0])
+            )
+        )
+        == current_status
+    )
+    assert snapshot.write_performed is False
+
+    payload = dict(snapshot.published_valuation)
+    payload["quotes"] = [quote]
+    payload["metadata"] = dict(payload["metadata"])
+    payload["valuation_policy"] = "karkinos.persisted_valuation.v6"
+    with pytest.raises(ValueError, match="valuation snapshot status drifted"):
+        validate_valuation_snapshot(payload)
 
 
 def _write_bar_revision(path: Path, *, dataset_id: str) -> None:

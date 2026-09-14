@@ -13,7 +13,11 @@ from server.persistence.valuation_publication_recovery import (
     affected_publications,
     unresolved_publications,
 )
-from server.projections.quote_status import parse_quote_timestamp, quote_is_stale
+from server.projections.quote_status import (
+    parse_quote_timestamp,
+    quote_is_stale,
+    quote_valuation_status,
+)
 from server.projections.valuation_snapshot import valuation_snapshot_from_row
 from server.services.market_calendar_dates import project_market_session
 
@@ -132,7 +136,9 @@ def build_system_readiness(
                 )
                 if stale:
                     failure_codes.append("valuation_stale")
-                if valuation["status"] != "complete":
+                if valuation["status"] != "complete" or any(
+                    quote_valuation_status(q) != "complete" for q in valuation["quotes"]
+                ):
                     failure_codes.append("valuation_incomplete")
                 states["valuation_read"] = _state(
                     "degraded" if failure_codes else "ready",
