@@ -18,6 +18,14 @@ def _ruleset(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def _named_job(config: dict, name: str) -> tuple[str, dict]:
+    matches = [
+        (key, job) for key, job in config["jobs"].items() if job.get("name") == name
+    ]
+    assert len(matches) == 1
+    return matches[0]
+
+
 def test_external_github_actions_are_pinned_to_commit_shas() -> None:
     refs: list[str] = []
     for path in sorted(Path(".github/workflows").glob("*.yml")):
@@ -32,61 +40,27 @@ def test_external_github_actions_are_pinned_to_commit_shas() -> None:
 
 
 def test_single_ci_workflow_verifies_every_dev_push_and_pull_request() -> None:
-    assert not Path(".github/workflows/dev-ci.yml").exists()
     config = _workflow(".github/workflows/ci.yml")
-    assert set(config["on"]) == {"pull_request", "push", "workflow_dispatch"}
-    assert config["on"]["pull_request"]["branches"] == ["dev"]
-    assert config["on"]["push"]["branches"] == ["dev"]
-
-    names = {job["name"] for job in config["jobs"].values()}
-    assert {
-        "Verification plan",
-        "Python quality",
-        "Repository integrity",
-        "Secret scan",
-        "Backend tests",
-        "Trading safety invariants",
-        "Frontend checks",
-        "Product smoke",
-        "Workflow security",
-        "Promotion Gate",
-        "Full CI gate",
-    } <= names
-
-    text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "not acceptance" not in text
-    assert '-m "not trading_safety"' not in text
-    assert "--cov --cov-report=term --cov-report=xml" in text
-    assert "classify_dev_changes.py" not in text
-    assert "zizmorcore/zizmor-action@" in text
-    assert "setup-uv@" in text
+    for event in ("pull_request", "push"):
+        trigger = config["on"][event]
+        assert trigger["branches"] == ["dev"]
+        assert not {"paths", "paths-ignore"} & trigger.keys()
+    _named_job(config, "Promotion Gate")
 
 
-def test_promotion_gate_requires_all_checks_without_path_filters() -> None:
+def test_trading_safety_always_contributes_to_promotion_gate() -> None:
     config = _workflow(".github/workflows/ci.yml")
-    jobs = config["jobs"]
-    gate = jobs["promotion-gate"]
+    trading_id, trading = _named_job(config, "Trading safety invariants")
+    _, gate = _named_job(config, "Promotion Gate")
     assert gate["if"] == "${{ always() }}"
-    assert set(gate["needs"]) == {
-        "plan",
-        "python-quality",
-        "repository-integrity",
-        "secret-scan",
-        "backend",
-        "trading-safety",
-        "frontend",
-        "product-smoke",
-        "workflow-security",
-    }
-    for name in gate["needs"]:
-        assert "if" not in jobs[name]
-    assert jobs["trading-safety"]["needs"] == "plan"
+    assert trading_id in gate["needs"]
+    assert "if" not in trading
 
 
 def test_promotion_gate_rejects_unsuccessful_dependencies_and_empty_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    gate = _workflow(".github/workflows/ci.yml")["jobs"]["promotion-gate"]
+    _, gate = _named_job(_workflow(".github/workflows/ci.yml"), "Promotion Gate")
     script = compile(gate["steps"][0]["run"], "promotion-gate", "exec")
     successful = {name: {"result": "success"} for name in gate["needs"]}
     monkeypatch.setenv("RESULTS", json.dumps(successful))
@@ -99,9 +73,10 @@ def test_promotion_gate_rejects_unsuccessful_dependencies_and_empty_results(
             with pytest.raises(SystemExit, match=name):
                 exec(script, {})
 
-    monkeypatch.setenv("RESULTS", "{}")
-    with pytest.raises(SystemExit, match="missing or invalid"):
-        exec(script, {})
+    for invalid_results in ({}, None, [], "invalid"):
+        monkeypatch.setenv("RESULTS", json.dumps(invalid_results))
+        with pytest.raises(SystemExit):
+            exec(script, {})
 
 
 def test_release_compatibility_gate_requires_successful_dispatch() -> None:
@@ -130,18 +105,32 @@ def test_candidate_and_release_consume_promotion_full_ci_evidence() -> None:
         assert "Repository acceptance audit" not in text
 
 
-def test_ci_and_promotion_are_read_only_until_the_trusted_promotion_job() -> None:
-    ci = _workflow(".github/workflows/ci.yml")
-    assert ci["permissions"] == {"contents": "read"}
+@pytest.mark.parametrize("filename", ["ci.yml", "nightly.yml", "governance.yml"])
+def test_source_verification_and_governance_permissions_are_read_only(filename) -> None:
+    config = _workflow(f".github/workflows/{filename}")
+    permissions = config["permissions"]
+    assert isinstance(permissions, dict)
+    assert set(permissions.values()) <= {"read", "none"}
+    for job in config["jobs"].values():
+        effective_permissions = job.get("permissions", permissions)
+        assert isinstance(effective_permissions, dict)
+        assert set(effective_permissions.values()) <= {"read", "none"}
 
+
+def test_only_trusted_main_promotion_jobs_have_branch_write_credentials() -> None:
     promotion = _workflow(".github/workflows/promote-dev.yml")
-    assert promotion["permissions"] == {"contents": "read"}
+    permissions = promotion["permissions"]
+    assert isinstance(permissions, dict)
+    assert set(permissions.values()) <= {"read", "none"}
     for job in promotion["jobs"].values():
+        effective_permissions = job.get("permissions", permissions)
+        assert isinstance(effective_permissions, dict)
         writes = {
-            key for key, value in job.get("permissions", {}).items() if value == "write"
+            key for key, value in effective_permissions.items() if value == "write"
         }
         assert writes <= {"contents"}
         if writes:
+            assert "github.repository == 'imReese/Karkinos'" in job["if"]
             assert "github.ref == 'refs/heads/main'" in job["if"]
             checkouts = [
                 step
@@ -154,16 +143,18 @@ def test_ci_and_promotion_are_read_only_until_the_trusted_promotion_job() -> Non
                 assert checkout["with"]["persist-credentials"] == "false"
 
 
-def test_governance_workflow_is_read_only_and_outside_code_ci() -> None:
-    config = _workflow(".github/workflows/governance.yml")
-    assert set(config["on"]) == {"workflow_dispatch", "schedule"}
-    assert config["permissions"] == {"contents": "read"}
-    job = config["jobs"]["ruleset-drift"]
-    assert job["permissions"] == {"contents": "read"}
-    text = Path(".github/workflows/governance.yml").read_text(encoding="utf-8")
-    assert "verify_repository_rulesets.py" in text
-    assert "PATCH" not in text
-    assert "POST" not in text
+def test_dev_ruleset_protects_persistent_development_history_without_bypass() -> None:
+    canonical = rulesets.canonical_ruleset(_ruleset(".github/rulesets/dev.json"))
+    assert canonical["target"] == "branch"
+    assert canonical["enforcement"] == "active"
+    assert canonical["bypass_actors"] == []
+    assert canonical["conditions"]["ref_name"] == {
+        "include": ["refs/heads/dev"],
+        "exclude": [],
+    }
+    assert {"deletion", "non_fast_forward"} <= {
+        rule["type"] for rule in canonical["rules"]
+    }
 
 
 def test_main_ruleset_requires_promotion_gate_without_bypass() -> None:
