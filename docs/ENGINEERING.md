@@ -112,7 +112,7 @@ npm --prefix web run build
 
 The full run is created against `ref=dev` and verifies the requested SHA and its `main` base before executing checks. This keeps the workflow definition and the code being validated on the same commit and prevents an older `main` workflow contract from authorizing newer `dev` source.
 
-The incremental classifier is a cost optimizer, not a correctness authority. These checks are mandatory on every dev commit:
+The incremental classifier is a cost optimizer, not a correctness authority. Full CI additionally runs the complete backend suite with coverage and enforces the configured coverage threshold. These checks are mandatory on every dev commit:
 
 - Python quality;
 - repository integrity;
@@ -192,6 +192,6 @@ A helper that simultaneously knows branch identity, local user data, process sta
 - Static typing coverage is uneven; `data`, `backtest`, `analytics`, and application/server boundaries should be added deliberately.
 - Milestone/acceptance audit infrastructure is retired; routes, UI contracts, and Operations projections must not depend on milestone-completion evidence.
 - Native candidate/release machinery remains large for the current local-first product and is retained only where installed-runtime compatibility still consumes it.
-- Container base images and the Gitleaks container are version-tag pinned rather than digest pinned; third-party GitHub Actions are full-SHA pinned.
+- Container base images and the Gitleaks container are tag-plus-digest pinned; third-party GitHub Actions are full-SHA pinned.
 - Local Markdown links are a hard repository check; external-link health still lacks a low-frequency scheduled/manual audit.
 - Green CI does not prove clear domain ownership or correct real-world investment behavior.

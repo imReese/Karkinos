@@ -584,7 +584,7 @@ Individual bug fixes
 
 Those belong in code, issues, pull requests, implementation plans, or focused design notes.
 
-`design.md` is the product-level contract.
+`PRODUCT_DESIGN.md` is the product-level contract.
 
 It should remain stable enough that developers, contributors, and coding agents can use it to answer:
 

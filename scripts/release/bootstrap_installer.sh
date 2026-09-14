@@ -319,7 +319,7 @@ while [[ "${TEMP_PARENT_INPUT}" != "/" && "${TEMP_PARENT_INPUT}" == */ ]]; do
 done
 require_absolute_path "${TEMP_PARENT_INPUT}" "TMPDIR"
 [[ -d "${TEMP_PARENT_INPUT}" ]] || die "TMPDIR must be an existing directory."
-TEMP_PARENT="$(CDPATH= cd -P -- "${TEMP_PARENT_INPUT}" && pwd -P)" ||
+TEMP_PARENT="$(CDPATH='' cd -P -- "${TEMP_PARENT_INPUT}" && pwd -P)" ||
 	die "unable to resolve TMPDIR."
 require_absolute_path "${TEMP_PARENT}" "resolved TMPDIR"
 [[ -d "${TEMP_PARENT}" && ! -L "${TEMP_PARENT}" ]] ||

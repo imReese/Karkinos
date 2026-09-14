@@ -14,7 +14,7 @@ Start at `docs/README.md` and read only what the task requires.
 * Codebase ownership, technical debt, and engineering quality: `docs/ENGINEERING.md`
 * Mature-project design references: `docs/REFERENCES.md`
 
-For UI work, consult `design.md` when relevant.
+For UI work, consult `docs/PRODUCT_DESIGN.md` when relevant.
 
 For user-facing behavior or runtime operations, consult `README.md` and `scripts/README.md`.
 
