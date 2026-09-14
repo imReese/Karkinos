@@ -147,15 +147,22 @@ def test_ci_and_promotion_are_read_only_until_the_trusted_promotion_job() -> Non
 
     promotion = _workflow(".github/workflows/promote-dev.yml")
     assert promotion["permissions"] == {"contents": "read"}
-    assert promotion["jobs"]["select"]["permissions"] == {
-        "contents": "read",
-        "actions": "read",
-    }
-    assert promotion["jobs"]["promote"]["permissions"] == {
-        "contents": "write",
-        "actions": "write",
-        "statuses": "write",
-    }
+    for job in promotion["jobs"].values():
+        writes = {
+            key for key, value in job.get("permissions", {}).items() if value == "write"
+        }
+        assert writes <= {"contents"}
+        if writes:
+            assert "github.ref == 'refs/heads/main'" in job["if"]
+            checkouts = [
+                step
+                for step in job["steps"]
+                if step.get("uses", "").startswith("actions/checkout@")
+            ]
+            assert checkouts
+            for checkout in checkouts:
+                assert checkout["with"]["ref"] == "${{ github.sha }}"
+                assert checkout["with"]["persist-credentials"] == "false"
 
 
 def test_governance_workflow_is_read_only_and_outside_code_ci() -> None:
@@ -170,7 +177,7 @@ def test_governance_workflow_is_read_only_and_outside_code_ci() -> None:
     assert "POST" not in text
 
 
-def test_main_ruleset_requires_code_and_promotion_evidence() -> None:
+def test_main_ruleset_requires_promotion_gate_without_bypass() -> None:
     desired = _ruleset(".github/rulesets/main.json")
     canonical = rulesets.canonical_ruleset(desired)
     assert canonical["target"] == "branch"
@@ -187,8 +194,7 @@ def test_main_ruleset_requires_code_and_promotion_evidence() -> None:
     assert required["strict_required_status_checks_policy"] is True
     assert required["do_not_enforce_on_create"] is False
     assert required["required_status_checks"] == [
-        {"context": "Full CI gate", "integration_id": 15368},
-        {"context": "Main promotion gate", "integration_id": 15368},
+        {"context": "Promotion Gate", "integration_id": 15368},
     ]
 
 

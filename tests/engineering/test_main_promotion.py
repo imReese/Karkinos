@@ -1,267 +1,233 @@
-"""Promotion protects exact-SHA verification and fast-forward semantics."""
+"""Only the current verified dev head may fast-forward main."""
 
 from __future__ import annotations
 
-from pathlib import Path
+from copy import deepcopy
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
-import yaml
 
 from tools import promote_dev as promotion
-from tools import verify_release_source_ci as ci
 
-REPO = "imReese/Karkinos"
-A, B, C = (letter * 40 for letter in "abc")
+REPOSITORY = "imReese/Karkinos"
+MAIN, DEV, OTHER = (letter * 40 for letter in "abc")
 
 
-class FakeClient:
+class FakeClient(promotion.Client):
     def __init__(self):
-        self.refs = {"main": A, "dev": B}
-        self.dev_state = "success"
-        self.full_state = "missing"
-        self.dev_attempt = 1
-        self.full_attempt = 1
-        self.writes: list[tuple[str, dict, str]] = []
-
-    def ref(self, branch):
-        return self.refs[branch]
-
-    def relation(self, base, head):
-        if base == head:
-            return "identical"
-        if (base, head) == (A, B):
-            return "ahead"
-        return "diverged"
-
-    def workflow(self, filename):
-        assert filename == "ci.yml"
-        return {
-            "id": 7,
-            "name": "CI",
+        self.repository = REPOSITORY
+        self.refs = {"main": MAIN, "dev": DEV}
+        self.run = {
+            "id": 107,
+            "check_suite_id": 207,
             "path": ".github/workflows/ci.yml",
-            "state": "active",
+            "head_sha": DEV,
+            "head_branch": "dev",
+            "event": "push",
+            "repository": {"full_name": REPOSITORY},
+            "head_repository": {"full_name": REPOSITORY},
+            "status": "completed",
+            "conclusion": "success",
         }
-
-    def workflow_runs(self, *, workflow_id, branch, event, commit_sha):
-        assert workflow_id == 7
-        if branch != "dev" or commit_sha != B:
-            return {"total_count": 0, "workflow_runs": []}
-        if event == "push":
-            state = self.dev_state
-            run_id = 107
-            attempt = self.dev_attempt
-        elif event == "workflow_dispatch":
-            state = self.full_state
-            run_id = 207
-            attempt = self.full_attempt
-            if state == "missing":
-                return {"total_count": 0, "workflow_runs": []}
-        else:
-            return {"total_count": 0, "workflow_runs": []}
-        return {
-            "total_count": 1,
-            "workflow_runs": [
-                {
-                    "id": run_id,
-                    "run_number": run_id,
-                    "run_attempt": attempt,
-                    "workflow_id": 7,
-                    "path": ".github/workflows/ci.yml",
-                    "head_branch": "dev",
-                    "head_sha": B,
-                    "event": event,
-                    "repository": {"full_name": REPO},
-                    "head_repository": {"full_name": REPO},
-                    "html_url": f"https://github.com/{REPO}/actions/runs/{run_id}",
-                    "status": "in_progress" if state == "pending" else "completed",
-                    "conclusion": None if state == "pending" else state,
-                }
-            ],
-        }
-
-    def workflow_run_jobs(self, *, run_id):
-        if run_id == 107:
-            name = "Dev CI gate"
-            state = self.dev_state
-        elif run_id == 207:
-            name = "Full CI gate"
-            state = self.full_state
-        else:
-            raise AssertionError(run_id)
-        return {
-            "total_count": 1,
-            "jobs": [
-                {
-                    "id": run_id + 1,
-                    "name": name,
-                    "head_sha": B,
-                    "status": "completed",
-                    "conclusion": state,
-                }
-            ],
-        }
-
-    def write(self, suffix, payload, *, method):
-        self.writes.append((suffix, payload, method))
-        if suffix == "actions/workflows/ci.yml/dispatches":
-            assert method == "POST"
-            assert payload == {
-                "ref": "dev",
-                "inputs": {"mode": "full", "commit_sha": B, "base_sha": A},
+        self.checks = [
+            {
+                "id": 307,
+                "name": "Promotion Gate",
+                "head_sha": DEV,
+                "check_suite": {"id": 207},
+                "app": {"id": 15368, "slug": "github-actions"},
+                "status": "completed",
+                "conclusion": "success",
             }
-            self.full_state = "success"
-        elif suffix == "git/refs/heads/main":
-            assert method == "PATCH"
-            assert payload == {"sha": B, "force": False}
-            self.refs["main"] = B
+        ]
+        self.run_count = 1
+        self.ancestor = True
+        self.ref_reads = {"main": 0, "dev": 0}
+        self.changed_ref = None
+        self.check_reads = 0
+        self.fail_gate_on_recheck = False
+        self.reject_write = False
+        self.confirm_write = True
+        self.writes = []
+
+    def request(self, path, payload=None):
+        parsed = urlsplit(path)
+        endpoint = parsed.path.removeprefix(f"/repos/{REPOSITORY}/").lstrip("/")
+        query = parse_qs(parsed.query)
+        if payload is not None:
+            self.writes.append((endpoint, deepcopy(payload)))
+            assert endpoint == "git/refs/heads/main"
+            if self.reject_write:
+                raise promotion.PromotionError("GitHub rejected the update: HTTP 403")
+            if self.confirm_write:
+                self.refs["main"] = payload["sha"]
+            return {"ref": "refs/heads/main", "object": {"sha": payload["sha"]}}
+        if endpoint.startswith("git/ref/heads/"):
+            branch = endpoint.rsplit("/", 1)[1]
+            self.ref_reads[branch] += 1
+            sha = self.refs[branch]
+            if branch == self.changed_ref and self.ref_reads[branch] > 1:
+                sha = OTHER
+            return {
+                "ref": f"refs/heads/{branch}",
+                "object": {"type": "commit", "sha": sha},
+            }
+        if endpoint == "actions/workflows/ci.yml/runs":
+            assert query["head_sha"] == [DEV]
+            assert query["branch"] == ["dev"]
+            assert query["event"] == ["push"]
+            assert "status" not in query
+            return {
+                "total_count": self.run_count,
+                "workflow_runs": [deepcopy(self.run)] if self.run_count else [],
+            }
+        if endpoint == "check-suites/207/check-runs":
+            self.check_reads += 1
+            checks = deepcopy(self.checks)
+            if self.fail_gate_on_recheck and self.check_reads > 1:
+                checks[0]["conclusion"] = "failure"
+            return {"total_count": len(checks), "check_runs": checks}
+        if endpoint == f"compare/{MAIN}...{DEV}":
+            return {
+                "status": "ahead" if self.ancestor else "diverged",
+                "merge_base_commit": {"sha": MAIN if self.ancestor else OTHER},
+            }
+        raise AssertionError(f"Unexpected API request: {path}")
 
 
-def test_selects_only_current_green_dev_head():
+def test_preview_never_writes():
     client = FakeClient()
-    assert promotion.select(client, REPO) == promotion.Selection(A, B, B, 107, 1)
+    promotion.promote(client)
+    assert client.writes == []
+    assert client.refs["main"] == MAIN
+
+
+def test_promotes_current_verified_dev_head_with_non_force_update():
+    client = FakeClient()
+    promotion.promote(client, apply=True)
+    assert client.writes == [("git/refs/heads/main", {"sha": DEV, "force": False})]
+    assert client.refs["main"] == DEV
+    assert client.ref_reads["dev"] >= 2
+    assert client.ref_reads["main"] >= 3
+
+
+def test_already_promoted_main_needs_no_write():
+    client = FakeClient()
+    client.refs["main"] = DEV
+    promotion.promote(client, apply=True)
     assert client.writes == []
 
 
-@pytest.mark.parametrize("state", ["failure", "cancelled", "pending"])
-def test_non_green_dev_head_is_not_promoted(state):
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "skipped", "neutral"])
+def test_unsuccessful_gate_blocks_promotion(conclusion):
     client = FakeClient()
-    client.dev_state = state
-    assert promotion.select(client, REPO) is None
+    client.checks[0]["conclusion"] = conclusion
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
     assert client.writes == []
 
 
-def test_workflow_run_identity_is_bound_to_the_selected_dev_ci_attempt():
+def test_latest_pending_run_cannot_fall_back_to_an_older_green_run():
     client = FakeClient()
-    with pytest.raises(ci.SourceCIVerificationError, match="trigger_run_changed"):
-        promotion.select(client, REPO, expected_run_id=999, expected_run_attempt=1)
-    with pytest.raises(ci.SourceCIVerificationError, match="trigger_attempt_changed"):
-        promotion.select(client, REPO, expected_run_id=107, expected_run_attempt=2)
-
-
-def test_branch_divergence_fails_closed(monkeypatch):
-    client = FakeClient()
-    monkeypatch.setattr(client, "relation", lambda *_: "diverged")
-    with pytest.raises(ci.SourceCIVerificationError, match="must_contain_main"):
-        promotion.select(client, REPO)
-
-
-def test_missing_full_ci_is_dispatched_against_dev_before_any_main_write():
-    client = FakeClient()
-    selected = promotion.select(client, REPO)
-    assert selected is not None
-    full = promotion.ensure_full_ci(client, REPO, selected, timeout_seconds=1)
-    assert full.commit_sha == B
-    assert client.refs["main"] == A
-    assert client.writes == [
-        (
-            "actions/workflows/ci.yml/dispatches",
-            {
-                "ref": "dev",
-                "inputs": {"mode": "full", "commit_sha": B, "base_sha": A},
-            },
-            "POST",
-        )
-    ]
-
-
-def test_failed_existing_full_ci_is_not_silently_replaced():
-    client = FakeClient()
-    client.full_state = "failure"
-    selected = promotion.select(client, REPO)
-    assert selected is not None
-    with pytest.raises(ci.SourceCIVerificationError, match="run_not_success"):
-        promotion.ensure_full_ci(client, REPO, selected, timeout_seconds=1)
+    client.run_count = 2
+    client.run.update(status="in_progress", conclusion=None)
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
     assert client.writes == []
 
 
-def test_apply_requires_full_ci_then_posts_gate_and_non_force_fast_forwards():
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("head_sha", OTHER),
+        ("head_branch", "feature/untrusted"),
+        ("event", "pull_request"),
+        ("path", ".github/workflows/unrelated.yml"),
+        ("repository", {"full_name": "someone/Karkinos"}),
+        ("head_repository", {"full_name": "someone/Karkinos"}),
+    ],
+)
+def test_unrelated_or_untrusted_ci_run_cannot_authorize_promotion(field, value):
     client = FakeClient()
-    client.full_state = "success"
-    selected = promotion.select(client, REPO)
-    assert selected is not None
-    full = promotion.ensure_full_ci(client, REPO, selected, timeout_seconds=1)
-
-    result = promotion.apply(client, REPO, selected, full=full)
-
-    assert result["main_updated"] is True
-    assert result["full_ci_run_id"] == 207
-    assert client.refs["main"] == B
-    assert client.writes == [
-        (
-            f"statuses/{B}",
-            {
-                "state": "success",
-                "context": "Main promotion gate",
-                "description": "Exact dev HEAD passed complete Full CI",
-                "target_url": f"https://github.com/{REPO}/actions/runs/207",
-            },
-            "POST",
-        ),
-        ("git/refs/heads/main", {"sha": B, "force": False}, "PATCH"),
-    ]
-
-
-@pytest.mark.parametrize("change", ["main", "dev", "dev_attempt", "full_attempt"])
-def test_changed_authorization_stops_before_promotion_write(change):
-    client = FakeClient()
-    client.full_state = "success"
-    selected = promotion.select(client, REPO)
-    assert selected is not None
-    full = promotion.ensure_full_ci(client, REPO, selected, timeout_seconds=1)
-    client.writes.clear()
-    if change == "main":
-        client.refs["main"] = C
-    elif change == "dev":
-        client.refs["dev"] = C
-    elif change == "dev_attempt":
-        client.dev_attempt = 2
-    else:
-        client.full_attempt = 2
-
-    with pytest.raises(ci.SourceCIVerificationError):
-        promotion.apply(client, REPO, selected, full=full)
+    client.run[field] = value
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
     assert client.writes == []
 
 
-def test_server_rejection_never_falls_back_to_force(monkeypatch):
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("name", "Unrelated gate"),
+        ("head_sha", OTHER),
+        ("check_suite", {"id": 999}),
+        ("app", {"id": 999, "slug": "github-actions"}),
+        ("app", {"id": 15368, "slug": "untrusted"}),
+        ("status", "queued"),
+    ],
+)
+def test_check_identity_and_completion_are_verified(field, value):
     client = FakeClient()
-    client.full_state = "success"
-    selected = promotion.select(client, REPO)
-    assert selected is not None
-    full = promotion.ensure_full_ci(client, REPO, selected, timeout_seconds=1)
-    calls = []
-
-    def reject(*args, **kwargs):
-        calls.append((args, kwargs))
-        raise ci.SourceCIVerificationError("promotion_write_rejected:403")
-
-    monkeypatch.setattr(client, "write", reject)
-    with pytest.raises(ci.SourceCIVerificationError, match="403"):
-        promotion.apply(client, REPO, selected, full=full)
-    assert len(calls) == 1
-    assert calls[0][0][0] == f"statuses/{B}"
+    client.checks[0][field] = value
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.writes == []
 
 
-def test_privileged_promotion_is_event_driven_and_never_checks_out_dev():
-    config = yaml.load(
-        Path(".github/workflows/promote-dev.yml").read_text(), Loader=yaml.BaseLoader
-    )
-    triggers = config["on"]
-    assert set(triggers) == {"workflow_run", "workflow_dispatch"}
-    assert triggers["workflow_run"] == {"workflows": ["CI"], "types": ["completed"]}
-    assert "schedule" not in triggers
+@pytest.mark.parametrize("count", [0, 2])
+def test_missing_or_ambiguous_gate_blocks_promotion(count):
+    client = FakeClient()
+    client.checks = client.checks * count
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.writes == []
 
-    text = Path(".github/workflows/promote-dev.yml").read_text()
-    assert "ref: ${{ github.sha }}" in text
-    assert "ref: dev" not in text
-    assert "repair-followup" not in text
-    assert "candidate.yml" not in text
 
-    select_job = config["jobs"]["select"]
-    assert select_job["permissions"] == {"contents": "read", "actions": "read"}
-    promote_job = config["jobs"]["promote"]
-    assert promote_job["permissions"] == {
-        "contents": "write",
-        "actions": "write",
-        "statuses": "write",
-    }
+def test_current_dev_without_ci_cannot_use_an_ancestor_gate():
+    client = FakeClient()
+    client.run_count = 0
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.writes == []
+
+
+def test_main_must_be_an_ancestor_of_candidate():
+    client = FakeClient()
+    client.ancestor = False
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.writes == []
+
+
+@pytest.mark.parametrize("branch", ["main", "dev"])
+def test_changed_refs_before_write_abort_promotion(branch):
+    client = FakeClient()
+    client.changed_ref = branch
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.writes == []
+
+
+def test_gate_must_still_succeed_before_the_write():
+    client = FakeClient()
+    client.fail_gate_on_recheck = True
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.writes == []
+
+
+def test_server_rejection_does_not_attempt_force_or_protection_changes():
+    client = FakeClient()
+    client.reject_write = True
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.writes == [("git/refs/heads/main", {"sha": DEV, "force": False})]
+    assert client.refs["main"] == MAIN
+
+
+def test_successful_http_response_does_not_replace_post_write_verification():
+    client = FakeClient()
+    client.confirm_write = False
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.writes == [("git/refs/heads/main", {"sha": DEV, "force": False})]
