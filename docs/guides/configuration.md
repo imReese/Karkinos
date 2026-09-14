@@ -4,56 +4,27 @@
 
 ## 本地 Workspace
 
-源码运行默认把 Git 仓库根目录作为 Karkinos 的本地 workspace：
+`./scripts/dev` 运行当前 checkout，使用独立的开发 workspace：
 
 ```text
-Karkinos/
-├── config.json
-├── .env
-├── data/store/
-├── logs/
-├── exports/
-└── .run/
-    ├── source.lock
-    ├── main/
-    │   └── code/
-    └── dev/
+~/.karkinos/development/
+├── config/
+│   ├── config.json
+│   └── .env
+├── data/
+└── logs/
 ```
 
-不同源码分支共用同一份：
-
-```text
-config.json
-.env
-data/store/
-logs/
-exports/
-```
-
-稳定分支的代码快照和派生依赖保存在 `.run/<branch>/code`；`dev` 直接使用当前 working tree。`.run/source.lock` 防止两个 source backend 同时打开同一份本地数据。
-
-创建本地配置：
-
-```bash
-cp config.example.json config.json
-cp .env.example .env
-uv run python -m server --check-config
-```
-
-启动默认 `main` 快照：
-
-```bash
-./scripts/start_server.sh
-```
-
-在 `dev` checkout 上启动开发环境：
+在 `dev` checkout 上启动开发环境；首次使用时创建空开发配置：
 
 ```bash
 git switch dev
-./scripts/start_server.sh dev
+./scripts/dev
 ```
 
-启动 `main` 或其他稳定分支不会切换当前 Git checkout。
+可用 `KARKINOS_DEV_HOME` 指定另一份隔离的开发 workspace。运行其他分支或历史提交使用 Git worktree 或独立 clone，并为同时运行的开发实例选择不同 workspace 和端口。
+
+已安装的 macOS runtime 继续使用 `~/Library/Application Support/Karkinos`，由不可变 release 中的 `karkinosctl` 管理。开发与安装环境不共用账户数据库、迁移状态、配置或日志；此布局不会自动搬迁已有数据。
 
 ## 配置优先级
 
@@ -67,12 +38,13 @@ git switch dev
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `KARKINOS_WORKSPACE` | 高级覆盖：显式绝对 workspace；源码默认是仓库根目录 |
+| `KARKINOS_DEV_HOME` | `./scripts/dev` 使用的独立开发 workspace |
+| `KARKINOS_WORKSPACE` | 手动运行服务时的显式绝对 workspace |
 | `KARKINOS_CONFIG_PATH` | 高级覆盖：`config.json` 的绝对路径 |
 | `KARKINOS_DATA_DIR` | 高级覆盖：本地运行数据绝对路径 |
 | `KARKINOS_ENV_FILE` | 高级覆盖：环境文件绝对路径 |
 
-普通源码使用不需要设置这些路径变量。启动脚本会把仓库根目录中的配置和数据路径显式传给目标代码快照。
+`./scripts/dev` 清除继承的 `KARKINOS_*` 设置，再根据开发 workspace 固定配置、数据、报告和环境文件路径。开发专用设置与凭据放在自己的 `config/.env`，避免继承安装环境的路径或权限开关。手动执行 `python -m server` 或集成脚本时，应明确选择所需的配置和状态路径。
 
 ## `server`
 
@@ -97,10 +69,12 @@ tushare_token_env
 默认数据源是 AKShare，无需 Token。当前本地 workspace 可以交互配置：
 
 ```bash
-uv run python scripts/data/configure_data_source.py
+uv run python scripts/data/configure_data_source.py \
+  --config-path ~/.karkinos/development/config/config.json \
+  --env-file ~/.karkinos/development/config/.env
 ```
 
-`dev`、`main` 和其他源码分支使用同一份 `config.json` / `.env`，因此不需要为开发分支复制数据源配置。
+使用自定义 `KARKINOS_DEV_HOME` 时，相应调整这两个配置路径。
 
 TuShare Token 使用环境变量：
 
@@ -171,7 +145,7 @@ AI 配置不授予金融事实、Portfolio、Risk、Accounting 或资本权限�
 
 ## 分支与持久化数据
 
-源码分支共享 `data/store`。因此涉及数据库 schema 的开发改动必须：
+开发与安装环境的状态相互隔离。任何涉及已有数据库 schema 的改动仍必须：
 
 - 使用明确 migration；
 - 保持升级边界可检测；
@@ -185,5 +159,5 @@ AI 配置不授予金融事实、Portfolio、Risk、Accounting 或资本权限�
 - 不提交 `config.json`、真实 `.env`、API Key、券商凭证或私钥。
 - 不在 CLI 参数传递 secret/token。
 - 不保存真实账户导出、截图或运行数据库到 Git。
-- `dev` 可以包含未提交开发改动；稳定分支快照不会读取这些 working-tree 改动。
-- 同一时间只允许一个 source backend 使用共享本地数据。
+- 开发环境运行当前 working tree；安装环境运行不可变 release。
+- 同一开发 workspace 同时只运行一个实例；并行开发使用独立状态目录。

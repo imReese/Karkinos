@@ -36,10 +36,13 @@ npm ci --prefix web
 For the normal development runtime:
 
 ```bash
-./scripts/start_server.sh dev
+./scripts/dev
 ```
 
-See [scripts/README.md](scripts/README.md) for runtime commands.
+Development uses its own config, data, and logs under
+`~/.karkinos/development`. Set `KARKINOS_DEV_HOME` to use another isolated
+development workspace. Use a Git worktree or separate clone to run another
+source revision. See [scripts/README.md](scripts/README.md) for runtime commands.
 
 ## Validation
 

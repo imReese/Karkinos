@@ -43,84 +43,44 @@ risk, simulation, accounting, and attribution in one local-first workflow.
 
 | Method | Best for | Requirements |
 | --- | --- | --- |
-| **Source runtime** | Normal local use and development | Python 3.12+, Node.js 24.x, `uv`, Git, POSIX shell |
+| **Development runtime** | Current source checkout | Python 3.12+, Node.js 24.x, `uv`, Git, POSIX shell |
 | **Docker Compose** | Isolated Web + API runtime | Docker / Docker Compose |
 | **Python / pip from source** | Manual Python/API integration | Python 3.12+; Node.js 24.x for the Web UI |
 | **Native release** | Verified packaged runtime | Currently macOS arm64 / x86_64 |
 
-### Source runtime
+### Development runtime
 
-For the normal local workflow, the repository root owns the local Karkinos state. Source branches share the same `config.json`, `.env`, `data/store`, `logs`, and `exports`; selecting a branch only changes the code being run.
+Run the current checkout in the foreground:
 
 ```bash
-git clone https://github.com/imReese/Karkinos.git
+git clone --branch dev https://github.com/imReese/Karkinos.git
 cd Karkinos
-cp config.example.json config.json
-cp .env.example .env
-./scripts/start_server.sh --init
+uv sync --locked --extra server --extra dev
+npm ci --prefix web
+./scripts/dev
 ```
 
-`main` is the default, so later starts are simply:
+Open `http://127.0.0.1:5173`; the API runs on `http://127.0.0.1:8000`.
+Press Ctrl-C to stop both processes. Backend reload and Vite use the current
+checkout, including uncommitted changes.
 
-```bash
-./scripts/start_server.sh
-```
-
-Open `http://127.0.0.1:8000`.
-
-The launcher does **not** switch the current Git checkout. Stable branches are materialized as disposable code snapshots under `.run/<branch>/code` with `git archive`, while persistent local state stays in the repository root:
+Development state is isolated under `~/.karkinos/development/`:
 
 ```text
-Karkinos/
-├── config.json
-├── .env
-├── data/store/          # databases and local data
-├── logs/
-├── exports/
-└── .run/
-    ├── source.lock      # one source backend at a time
-    ├── main/
-    │   └── code/        # cached main source snapshot + derived dependencies
-    └── dev/             # dev PID / process state only
+config/config.json   # created with safe defaults on first start
+config/.env          # optional development credentials
+data/                # development databases
+logs/                # development logs
 ```
 
-`config.json`, `.env`, runtime data, logs, exports, and `.run/` are ignored by Git.
+The launcher never copies existing account data or reads the repository's
+`config.json` or `.env`. Existing development databases use the application's
+normal migrations; a failed migration blocks startup. Use `--home /absolute/path`
+or `KARKINOS_DEV_HOME` for another development directory.
 
-You can stay on `dev` while running stable `main`:
-
-```bash
-git switch dev
-
-# run the current dev working tree, including local uncommitted edits
-./scripts/start_server.sh dev
-
-# stop dev, then run the locally fetched main snapshot
-./scripts/stop_server.sh dev
-./scripts/start_server.sh
-```
-
-The current checkout remains on `dev`. `main` and other stable branch snapshots do not read uncommitted working-tree changes.
-
-Run another committed branch without switching the checkout:
-
-```bash
-./scripts/start_server.sh feature/my-research-change
-./scripts/stop_server.sh feature/my-research-change
-```
-
-To stop every Karkinos runtime the local launcher knows it owns—dev, tracked stable snapshots, and a legacy/native resident service when present—no mode argument is required:
-
-```bash
-./scripts/stop_server.sh
-```
-
-Pass `dev`, `main`, another branch name, or `prod` only when you want a targeted stop.
-
-Snapshot branches use the latest branch ref already available locally. Run `git fetch origin` when you want to refresh `origin/main` or another remote branch. The cached snapshot is rebuilt only when that ref points to a new commit.
-
-`dev` is intentionally special only in how code is selected: it runs the current `dev` working tree with backend reload and Vite on `5173`. Both dev and stable source backends use port `8000`; only one source backend may run against the shared workspace at a time.
-
-Because branches share the same databases, schema-changing development must use explicit migrations and preserve the persisted-data compatibility rules in [docs/ENGINEERING.md](docs/ENGINEERING.md).
+For another branch or historical commit, use a separate Git worktree or clone
+and run its `scripts/dev`. Use separate development homes for independent state.
+Karkinos does not create branch snapshots or switch your checkout.
 
 Lifecycle details: [scripts/README.md](scripts/README.md).
 
@@ -175,27 +135,15 @@ The default market-data provider is **AKShare** and requires no token. TuShare, 
 
 ## Development
 
-`dev` is the persistent development branch. Switch to it yourself once and keep working there:
-
-```bash
-git switch dev
-./scripts/start_server.sh dev
-```
-
-Development starts:
-
-- Web app: `http://127.0.0.1:5173`
-- API: `http://127.0.0.1:8000`
-- Health: `http://127.0.0.1:8000/api/health`
-
-Development deliberately reuses the repository-local `config.json`, `.env`, and `data/store`. `.run/dev` contains only disposable process state. The default `./scripts/start_server.sh` can still run the cached `main` snapshot without changing or cleaning the dev checkout.
-
-For contribution workflow, tests, migration rules, and engineering constraints, see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ENGINEERING.md](docs/ENGINEERING.md).
+Changes integrate on `dev`. After installing the locked dependencies above,
+`./scripts/dev` runs the current checkout with isolated development state.
+For contribution workflow, tests, migration rules, and engineering constraints,
+see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ENGINEERING.md](docs/ENGINEERING.md).
 
 ## Resources
 
-**Product** — [Goal](docs/GOAL.md) · [Architecture](docs/ARCHITECTURE.md) · [Plan](docs/PLAN.md)  
-**Engineering** — [Engineering](docs/ENGINEERING.md) · [Guides](docs/guides/) · [Contributing](CONTRIBUTING.md)  
+**Product** — [Goal](docs/GOAL.md) · [Architecture](docs/ARCHITECTURE.md) · [Plan](docs/PLAN.md)
+**Engineering** — [Engineering](docs/ENGINEERING.md) · [Guides](docs/guides/) · [Contributing](CONTRIBUTING.md)
 **Project** — [Releases](https://github.com/imReese/Karkinos/releases) · [Security](SECURITY.md) · [MIT License](LICENSE)
 
 ---

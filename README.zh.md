@@ -42,86 +42,44 @@ Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风�
 
 | 方式 | 适合场景 | 环境要求 |
 | --- | --- | --- |
-| **源码运行** | 日常本地使用和开发 | Python 3.12+、Node.js 24.x、`uv`、Git、POSIX shell |
+| **开发运行** | 当前源码 checkout | Python 3.12+、Node.js 24.x、`uv`、Git、POSIX shell |
 | **Docker Compose** | 隔离运行 Web + API | Docker / Docker Compose |
 | **Python / pip 源码安装** | 手动 Python/API 集成 | Python 3.12+；完整 Web 还需要 Node.js 24.x |
 | **Native Release** | 使用经过验证的原生发布包 | 当前提供 macOS arm64 / x86_64 |
 
-### 源码运行
+### 开发运行
 
-对于日常本地使用，Git 仓库根目录保存 Karkinos 的本地状态。不同源码分支共用同一份 `config.json`、`.env`、`data/store`、`logs` 和 `exports`；选择分支只决定运行哪一套代码。
+在前台运行当前 checkout：
 
 ```bash
-git clone https://github.com/imReese/Karkinos.git
+git clone --branch dev https://github.com/imReese/Karkinos.git
 cd Karkinos
-cp config.example.json config.json
-cp .env.example .env
-./scripts/start_server.sh --init
+uv sync --locked --extra server --extra dev
+npm ci --prefix web
+./scripts/dev
 ```
 
-默认运行 `main`，后续启动直接执行：
+打开 `http://127.0.0.1:5173`，API 位于 `http://127.0.0.1:8000`。
+按 Ctrl-C 停止两个进程。Backend reload 与 Vite 使用当前源码，包括尚未提交的修改。
 
-```bash
-./scripts/start_server.sh
-```
-
-打开 `http://127.0.0.1:8000`。
-
-启动脚本**不会切换当前 Git checkout**。稳定分支通过 `git archive` 物化成 `.run/<branch>/code` 下的可丢弃代码快照，长期本地状态始终留在仓库根目录：
+开发状态独立存放在 `~/.karkinos/development/`：
 
 ```text
-Karkinos/
-├── config.json
-├── .env
-├── data/store/          # 数据库和本地数据
-├── logs/
-├── exports/
-└── .run/
-    ├── source.lock      # 同一时间只允许一个 source backend
-    ├── main/
-    │   └── code/        # 缓存的 main 源码快照及派生依赖
-    └── dev/             # 仅保存 dev 的 PID / 进程状态
+config/config.json   # 首次启动创建安全默认配置
+config/.env          # 可选的开发环境凭证
+data/                # 开发数据库
+logs/                # 开发日志
 ```
 
-`config.json`、`.env`、运行数据、logs、exports 和 `.run/` 都被 Git 忽略。
+启动器不会复制现有账户数据，也不会读取仓库根目录的 `config.json` 或 `.env`。
+现有开发数据库沿用应用的正常 migration，失败时阻止启动。
+使用 `--home /absolute/path` 或 `KARKINOS_DEV_HOME` 指定其他开发目录。
 
-你可以一直停留在 `dev` 上开发，同时运行稳定 `main`：
+运行其他分支或历史提交时，使用独立 Git worktree 或 clone，再执行其中的
+`scripts/dev`；需要独立状态时指定不同的开发目录。
+Karkinos 不再创建分支快照或切换 checkout。
 
-```bash
-git switch dev
-
-# 运行当前 dev working tree，包括本地未提交的开发改动
-./scripts/start_server.sh dev
-
-# 停止 dev，再运行本地已经 fetch 到的 main 快照
-./scripts/stop_server.sh dev
-./scripts/start_server.sh
-```
-
-当前 checkout 仍然保持在 `dev`。`main` 和其他稳定分支快照不会读取 dev working tree 中未提交的改动。
-
-运行其他已经提交的分支也不需要切换 checkout：
-
-```bash
-./scripts/start_server.sh feature/my-research-change
-./scripts/stop_server.sh feature/my-research-change
-```
-
-如果要停止本机上 Karkinos 已知并拥有的所有运行实例——dev、已跟踪的稳定分支快照，以及仍存在时的旧 native/LaunchAgent resident service——不需要再写 `all`：
-
-```bash
-./scripts/stop_server.sh
-```
-
-只有在需要定向停止时，才传 `dev`、`main`、其他分支名或 `prod`。
-
-分支快照使用本地已经存在的最新 ref。需要刷新 `origin/main` 或其他远端分支时，先执行 `git fetch origin`；只有 ref 指向新的 commit 时才会重建缓存快照。
-
-`dev` 现在只在代码来源上特殊：它直接运行当前 `dev` working tree，并开启 backend reload；dev 和稳定源码后端统一使用 `8000`，Vite 继续使用 `5173`。由于共用本地状态，同一时间只允许一个 source backend 打开这套 workspace。
-
-由于不同分支共用同一份数据库，涉及 schema 的开发必须使用明确 migration，并遵守 [docs/ENGINEERING.md](docs/ENGINEERING.md) 中的持久化兼容规则。
-
-生命周期细节见 [scripts/README.md](scripts/README.md)。
+生命周期说明见 [scripts/README.md](scripts/README.md)。
 
 ### Docker Compose
 
@@ -174,27 +132,14 @@ python -m server
 
 ## 开发 Karkinos
 
-`dev` 是长期存在的开发分支。只需要手动切过去一次，然后一直留在这里开发：
-
-```bash
-git switch dev
-./scripts/start_server.sh dev
-```
-
-开发环境启动：
-
-- Web：`http://127.0.0.1:5173`
-- API：`http://127.0.0.1:8000`
-- Health：`http://127.0.0.1:8000/api/health`
-
-开发模式有意复用仓库根目录下的 `config.json`、`.env` 和 `data/store`；`.run/dev` 只保存可丢弃的进程状态。即使 checkout 一直停在 `dev`，默认的 `./scripts/start_server.sh` 仍可以运行缓存的 `main` 快照，不会切分支、清理或覆盖 dev working tree。
-
-贡献流程、测试、migration 规则和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
+修改集成到 `dev`。安装上述锁定依赖后，`./scripts/dev` 使用独立开发状态运行当前源码。
+贡献流程、测试、migration 规则和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md)
+与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
 
 ## 资源
 
-**产品** — [Goal](docs/GOAL.md) · [Architecture](docs/ARCHITECTURE.md) · [Plan](docs/PLAN.md)  
-**工程** — [Engineering](docs/ENGINEERING.md) · [Guides](docs/guides/) · [贡献](CONTRIBUTING.md)  
+**产品** — [Goal](docs/GOAL.md) · [Architecture](docs/ARCHITECTURE.md) · [Plan](docs/PLAN.md)
+**工程** — [Engineering](docs/ENGINEERING.md) · [Guides](docs/guides/) · [贡献](CONTRIBUTING.md)
 **项目** — [Releases](https://github.com/imReese/Karkinos/releases) · [安全](SECURITY.md) · [MIT License](LICENSE)
 
 ---
