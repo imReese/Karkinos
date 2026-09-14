@@ -13,6 +13,22 @@ export type Position = {
   broker_cost_basis_difference?: number | null;
   broker_cost_basis_method?: string | null;
   broker_cost_basis_status?: string | null;
+  pricing_kind?:
+    | 'realtime_quote'
+    | 'session_close'
+    | 'published_nav'
+    | 'estimated_nav'
+    | 'nav_pending'
+    | 'manual_mark'
+    | 'unavailable'
+    | 'unknown';
+  pricing_as_of?: string | null;
+  pricing_authority?:
+    | 'authoritative'
+    | 'non_authoritative'
+    | 'missing'
+    | 'conflicting'
+    | 'unknown';
   latest_price?: number | null;
   market_value: number | null;
   unrealized_pnl: number | null;

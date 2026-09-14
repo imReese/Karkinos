@@ -31,6 +31,7 @@ const PRICE_STRUCTURE_FILES = [
   'features/market/components/price-structure-loading-state.tsx',
 ];
 const PRODUCTION_FILES = [
+  'shared/portfolio-evidence/position-pricing.tsx',
   ...POSITIONS_TABLE_FILES,
   ...PORTFOLIO_PAGE_FILES,
   ...PRICE_STRUCTURE_FILES,
@@ -105,10 +106,14 @@ test('financial evidence remains provider-free and fails closed', () => {
   const positionsSource = familySource(POSITIONS_TABLE_FILES);
   const portfolioSource = familySource(PORTFOLIO_PAGE_FILES);
   const chartSource = familySource(PRICE_STRUCTURE_FILES);
-  expect(positionsSource).toContain('quoteNeedsReview(position.quote_status)');
-  expect(positionsSource).toContain(
-    '? formatPublicStatus(position.quote_status',
-  );
+  const pricingSource = familySource([
+    'shared/portfolio-evidence/position-pricing.tsx',
+  ]);
+  expect(positionsSource).toContain('<PositionPricing');
+  expect(pricingSource).toContain("position.pricing_kind ?? 'unknown'");
+  expect(pricingSource).toContain('position.pricing_authority');
+  expect(pricingSource).not.toContain('quote_age_seconds');
+  expect(pricingSource).not.toContain('using_persistent_cache');
   expect(positionsSource).not.toContain('useRefreshMarketQuotesMutation');
   expect(portfolioSource).toContain(
     'const primaryPortfolioQueriesSettled = snapshot.data !== undefined',

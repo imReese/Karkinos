@@ -1,7 +1,6 @@
 import type { MouseEvent } from 'react';
 
 import type { Position } from '../api';
-import { quoteNeedsReview } from '../position-observation';
 
 export type PositionsTableVariant = 'full' | 'dashboard' | 'history';
 
@@ -19,7 +18,6 @@ export type PositionsTableModel = {
   weightBySymbol: Record<string, number | null | undefined>;
   variant: PositionsTableVariant;
   onOpenPosition?: (symbol: string) => void;
-  hasQuotesNeedingReview: boolean;
   showFullColumns: boolean;
   showHistoryColumns: boolean;
 };
@@ -37,9 +35,6 @@ export function buildPositionsTableModel({
     weightBySymbol,
     variant,
     onOpenPosition,
-    hasQuotesNeedingReview: positions.some((position) =>
-      quoteNeedsReview(position.quote_status),
-    ),
     showFullColumns: variant === 'full',
     showHistoryColumns: variant === 'history',
   };
@@ -47,21 +42,6 @@ export function buildPositionsTableModel({
 
 export function holdingDetailHref(symbol: string) {
   return `/portfolio/${encodeURIComponent(symbol)}`;
-}
-
-export function formatPositionAge(seconds: number | null | undefined) {
-  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
-    return '--';
-  }
-  if (seconds < 60) {
-    return `${Math.max(0, Math.round(seconds))}s`;
-  }
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-  const hours = Math.round(minutes / 60);
-  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
 export function resolvePositionName(position: Position) {

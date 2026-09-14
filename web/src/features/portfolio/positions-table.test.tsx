@@ -38,6 +38,9 @@ const basePosition: Position = {
   realized_pnl: 120,
   commission_paid: 5,
   quote_status: 'confirmed',
+  pricing_kind: 'session_close',
+  pricing_authority: 'authoritative',
+  pricing_as_of: '2026-09-11',
 };
 
 function renderTable(ui: ReactElement) {
@@ -102,8 +105,9 @@ test('keeps the overview dashboard table compact', () => {
   expect(headers).toEqual([
     'Symbol',
     'Market Value',
-    'Today PnL',
+    'Weight',
     'Unrealized',
+    'Price / NAV',
     'Quote State',
   ]);
   expect(within(table).queryByRole('button')).toBeNull();
@@ -118,7 +122,8 @@ test('uses a watchlist-density mobile row for the overview dashboard', () => {
   expect(row.className).toContain('py-2.5');
   expect(row.textContent).toContain('贵州茅台');
   expect(row.textContent).toContain('¥96,000.00');
-  expect(row.textContent).toContain('Today PnL: ¥30.00');
+  expect(row.textContent).toContain('Session close · 09/11');
+  expect(row.textContent).toContain('1,600.0000');
   expect(row.textContent).toContain('Unrealized ¥6,000.00');
   expect(within(row).queryByText('Weight')).toBeNull();
 });
@@ -171,26 +176,18 @@ test('shows stale quote reason as compact visible evidence', () => {
   ).not.toContain('truncate');
 });
 
-test('uses the available dashboard evidence width before truncating a stale reason', () => {
+test('valid cached storage retains session-close pricing without a freshness warning', () => {
   renderTable(
     <PositionsTable
       positions={[
-        {
-          ...basePosition,
-          quote_status: 'stale',
-          stale_reason: 'market_closed_cache_only',
-        },
+        { ...basePosition, quote_status: 'cached', quote_age_seconds: 97200 },
       ]}
       variant="dashboard"
     />,
   );
-
-  const staleReason = within(
-    screen.getByTestId('positions-table-desktop'),
-  ).getByText('Market closed; using cached quote');
-  expect(staleReason.className).toContain('max-w-full');
-  expect(staleReason.className).toContain('whitespace-normal');
-  expect(staleReason.className).not.toContain('truncate');
+  const table = screen.getByTestId('positions-table-desktop');
+  expect(within(table).getByText('Session close · 09/11')).toBeTruthy();
+  expect(within(table).queryByText(/cache|27h|update required/i)).toBeNull();
 });
 
 test('provides a task-focused mobile holdings list without table-width dependence', () => {

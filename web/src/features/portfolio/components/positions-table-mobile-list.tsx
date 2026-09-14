@@ -3,16 +3,12 @@ import {
   formatCurrency,
   formatDate,
   formatPercent,
-  formatTimestamp,
+  formatPrice,
 } from '../../../shared/format';
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
-import { formatPublicStatus } from '../../../shared/public-labels';
-import { formatStaleReason } from '../../../shared/stale-reason';
-import { StatusBadge } from '../../../shared/ui/workbench';
-import { quoteNeedsReview } from '../position-observation';
+import { PositionPricing } from '../../../shared/portfolio-evidence/position-pricing';
 import {
-  formatPositionAge,
   handlePositionLinkClick,
   holdingDetailHref,
   resolvePositionAssetClass,
@@ -49,11 +45,6 @@ export function PositionsTableMobileList({
     >
       {model.positions.map((position) => {
         const displayName = resolvePositionName(position);
-        const needsReview = quoteNeedsReview(position.quote_status);
-        const staleReason = formatStaleReason(
-          position.stale_reason,
-          copy.common.staleReasons,
-        );
         return (
           <li className="min-w-0 max-w-full" key={position.symbol}>
             <a
@@ -113,14 +104,6 @@ export function PositionsTableMobileList({
                   </div>
                   {model.variant === 'dashboard' ? (
                     <>
-                      <div
-                        className={`mt-1 text-xs font-semibold tabular-nums ${resolvePositionTone(
-                          position.today_change,
-                        )}`}
-                      >
-                        <span className="sr-only">{labels.todayChange}: </span>
-                        {formatCurrency(position.today_change)}
-                      </div>
                       <div
                         className={`mt-0.5 text-[length:var(--app-font-size-micro)] tabular-nums ${resolvePositionTone(
                           position.unrealized_pnl,
@@ -220,23 +203,10 @@ export function PositionsTableMobileList({
                       : 'mt-3 border-t border-[var(--app-divider)] pt-2'
                   }`}
                 >
-                  <StatusBadge tone={needsReview ? 'warning' : 'success'}>
-                    {position.quote_status
-                      ? formatPublicStatus(position.quote_status, locale)
-                      : '--'}
-                  </StatusBadge>
-                  <span className="min-w-0 truncate text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
-                    {formatPositionAge(position.quote_age_seconds)} ·{' '}
-                    {formatTimestamp(position.quote_timestamp)}
+                  <PositionPricing position={position} locale={locale} />
+                  <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-[var(--app-text-secondary)]">
+                    {formatPrice(position.latest_price)}
                   </span>
-                  {position.stale_reason ? (
-                    <span
-                      className="min-w-0 truncate text-[length:var(--app-font-size-micro)] text-[var(--app-warning-text)]"
-                      title={staleReason}
-                    >
-                      {staleReason}
-                    </span>
-                  ) : null}
                 </div>
               ) : null}
             </a>
