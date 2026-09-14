@@ -47,6 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onMobileNavToggle={shell.toggleMobileNav}
             onThemeChange={shell.setTheme}
             status={shell.status}
+            showFinancialStatus={shell.showFinancialStatus}
             theme={shell.theme}
           />
 

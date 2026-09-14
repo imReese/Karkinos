@@ -12,12 +12,14 @@ import {
   TradingNavIcon,
 } from './app-shell-icons';
 
+export const OVERVIEW_ROUTE = '/overview';
+
 export const NAVIGATION_GROUPS = [
   {
     key: 'portfolio',
     label: { en: 'Portfolio', zh: '组合管理' },
     items: [
-      { to: '/overview', key: 'overview', icon: OverviewNavIcon },
+      { to: OVERVIEW_ROUTE, key: 'overview', icon: OverviewNavIcon },
       { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
       { to: '/activity', key: 'activity', icon: ActivityNavIcon },
       { to: '/market', key: 'market', icon: MarketNavIcon },

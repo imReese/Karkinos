@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { installOverviewFixture, overviewFixture } from './overview-fixture';
 
 const overviewAcceptanceViewports = [
   { width: 1440, height: 900 },
@@ -392,7 +393,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await page.setViewportSize({ width: 1440, height: 900 });
 
   await page.goto('/overview');
-  const overviewPrimary = page.getByTestId('overview-daily-workbench');
+  const overviewPrimary = page.getByTestId('overview-financial-canvas');
   const overviewQueue = page.getByTestId('overview-today-queue');
   const overviewHoldings = page.getByTestId('overview-holdings-section');
   const overviewPerformance = page.getByTestId('overview-performance-card');
@@ -407,8 +408,8 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const overviewHoldingsBox = (await overviewHoldings.boundingBox())!;
   expect(overviewHoldingsBox.x).toBeLessThan(overviewQueueBox.x);
   expect(overviewHoldingsBox.width).toBeGreaterThan(overviewQueueBox.width);
-  expect((await overviewPerformance.boundingBox())!.y).toBeGreaterThan(
-    Math.max(overviewQueueBox.y, overviewHoldingsBox.y),
+  expect((await overviewPerformance.boundingBox())!.y).toBeLessThan(
+    overviewHoldingsBox.y,
   );
 
   await page.goto('/risk');
@@ -480,65 +481,27 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await expect(page.getByTestId('backtest-mobile-workspace-tabs')).toBeHidden();
 });
 
-test('overview preserves the queue-to-holdings hierarchy across all acceptance viewports', async ({
+test('overview prioritizes summary, performance and holdings across all viewports', async ({
   page,
 }) => {
-  test.setTimeout(60_000);
-  const snapshotResponse = await page.request.get('/api/portfolio');
-  expect(snapshotResponse.ok()).toBeTruthy();
-  const snapshot = (await snapshotResponse.json()) as Record<string, unknown>;
-  const persistedPositions = Array.isArray(snapshot.positions)
-    ? (snapshot.positions as Record<string, unknown>[])
-    : [];
-  const positions = [
-    ...persistedPositions,
-    {
-      asset_class: 'fund',
-      available_qty: 1,
-      avg_cost: 1,
-      commission_paid: 0,
-      display_name: 'Persisted stale quote fixture',
-      frozen_qty: 0,
-      latest_price: 1,
-      market_value: 1,
-      quantity: 1,
-      quote_age_seconds: 90_000,
-      quote_status: 'stale',
-      realized_pnl: 0,
-      stale_reason: 'market_closed_cache_only',
-      symbol: 'TEST-STALE',
-      today_change: 0,
-      unrealized_pnl: 0,
-      using_persistent_cache: true,
-    },
-  ];
-  await page.route('**/api/portfolio', async (route) => {
-    await route.fulfill({
-      json: {
-        ...snapshot,
-        positions,
-      },
-    });
-  });
-  await page.route('**/api/portfolio/market-evidence-review', async (route) => {
-    await route.fulfill({
-      status: 503,
-      body: 'persisted evidence unavailable',
-    });
-  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installOverviewFixture(page);
   await page.setViewportSize(overviewAcceptanceViewports[0]);
   await page.goto('/overview');
-  await expect(page.getByTestId('overview-holdings-section')).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(page.getByTestId('overview-summary')).toBeVisible();
 
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
-
-    const queue = page.getByTestId('overview-today-queue');
-    const holdings = page.getByTestId('overview-holdings-section');
-    const queueBox = (await queue.boundingBox())!;
-    const holdingsBox = (await holdings.boundingBox())!;
+    const summary = (await page.getByTestId('overview-summary').boundingBox())!;
+    const performance = (await page
+      .getByTestId('overview-performance-card')
+      .boundingBox())!;
+    const queue = (await page
+      .getByTestId('overview-today-queue')
+      .boundingBox())!;
+    const holdings = (await page
+      .getByTestId('overview-holdings-section')
+      .boundingBox())!;
     const overflow = await page.evaluate(() => {
       const content = document.querySelector(
         '.app-shell-content',
@@ -550,69 +513,31 @@ test('overview preserves the queue-to-holdings hierarchy across all acceptance v
         content: content.scrollWidth - content.clientWidth,
       };
     });
-
-    expect(overflow.document, JSON.stringify(viewport)).toBe(0);
-    expect(overflow.content, JSON.stringify(viewport)).toBe(0);
-    expect(holdingsBox.y, JSON.stringify(viewport)).toBeLessThan(1100);
+    expect(overflow, JSON.stringify(viewport)).toEqual({
+      document: 0,
+      content: 0,
+    });
+    expect(performance.y).toBeGreaterThanOrEqual(summary.y + summary.height);
+    expect(holdings.y).toBeGreaterThan(performance.y);
     if (viewport.width >= 1280) {
-      expect(holdingsBox.x, JSON.stringify(viewport)).toBeLessThan(queueBox.x);
-      expect(holdingsBox.width, JSON.stringify(viewport)).toBeGreaterThan(
-        queueBox.width,
-      );
+      expect(holdings.x).toBeLessThan(queue.x);
+      expect(holdings.width).toBeGreaterThan(queue.width);
     } else {
-      expect(queueBox.y, JSON.stringify(viewport)).toBeLessThan(holdingsBox.y);
-    }
-
-    if (viewport.width === 390) {
-      const content = page.locator('.app-shell-content');
-      const supportMetrics = page.locator('.account-support-metric-strip');
-      const safeNext = queue.getByRole('listitem').first().getByRole('link');
-      await expect(safeNext).toBeVisible();
-
-      const [contentBox, safeNextBox, supportMetricGeometry] =
-        await Promise.all([
-          content.boundingBox(),
-          safeNext.boundingBox(),
-          supportMetrics.evaluate((element) => ({
-            clientWidth: element.clientWidth,
-            scrollWidth: element.scrollWidth,
-            itemTops: Array.from(element.children).map((item) =>
-              Math.round(item.getBoundingClientRect().top),
-            ),
-          })),
-        ]);
-
-      expect(new Set(supportMetricGeometry.itemTops).size).toBe(1);
-      expect(supportMetricGeometry.scrollWidth).toBeGreaterThan(
-        supportMetricGeometry.clientWidth,
+      expect(queue.y).toBeGreaterThanOrEqual(
+        performance.y + performance.height,
       );
-      expect(safeNextBox!.y + safeNextBox!.height).toBeLessThanOrEqual(
-        contentBox!.y + contentBox!.height,
-      );
+      expect(queue.y).toBeLessThan(holdings.y);
     }
-
-    if (viewport.width === 834) {
-      const staleReasons = page.getByTestId('position-quote-stale-reason');
-      await expect(staleReasons.first()).toBeVisible();
-      expect(await staleReasons.count()).toBeGreaterThan(0);
-      expect(
-        await staleReasons.evaluateAll((elements) =>
-          elements.every((element) => {
-            const style = getComputedStyle(element);
-            return (
-              element.scrollWidth <= element.clientWidth + 1 &&
-              style.whiteSpace === 'normal' &&
-              style.textOverflow !== 'ellipsis'
-            );
-          }),
-        ),
-      ).toBe(true);
-    }
-
-    const additionalReviewItems = page.getByTestId('overview-today-queue-more');
-    if ((await additionalReviewItems.count()) > 0) {
-      await expect(additionalReviewItems).not.toHaveAttribute('open', '');
-    }
+    await expect(page.getByTestId('overview-data-status')).toContainText(
+      'Current valuation usable',
+    );
+    await expect(page.getByTestId('overview-today-queue')).toContainText(
+      'No items need your attention today.',
+    );
+    await expect(page.getByTestId('overview-data-details')).not.toHaveAttribute(
+      'open',
+      '',
+    );
   }
 });
 
@@ -1342,122 +1267,75 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   expect(analysisRequestCount.liveHoldings).toBe(1);
 });
 
-test('overview initial load preserves account, queue, and holdings hierarchy', async ({
+test('overview loads one account projection before history without fabricated financial values', async ({
   page,
 }) => {
-  let explainabilityRequestCount = 0;
-  let releasePrimaryResponses = () => {};
-  const primaryResponsesHeld = new Promise<void>((resolve) => {
-    releasePrimaryResponses = resolve;
+  const requestedPaths: string[] = [];
+  let releaseAccount = () => {};
+  const held = new Promise<void>((resolve) => {
+    releaseAccount = resolve;
   });
-  const holdPrimaryResponse = async (route: Route) => {
-    const response = await route.fetch();
-    await primaryResponsesHeld;
-    await route.fulfill({ response });
-  };
-
-  await page.route('**/api/portfolio/overview', holdPrimaryResponse);
-  await page.route('**/api/portfolio', holdPrimaryResponse);
+  await installOverviewFixture(page);
+  await page.route('**/api/portfolio/state', async (route) => {
+    await held;
+    await route.fulfill({ json: overviewFixture() });
+  });
   page.on('request', (request) => {
-    const pathname = new URL(request.url()).pathname;
-    if (pathname === '/api/portfolio/explainability') {
-      explainabilityRequestCount += 1;
-    }
+    requestedPaths.push(new URL(request.url()).pathname);
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/overview');
-
-  const loadingWorkspace = page.getByTestId('overview-loading-workspace');
-  const summary = page.getByTestId('overview-loading-summary');
-  const queue = page.getByTestId('overview-loading-queue');
-  const holdings = page.getByTestId('overview-loading-holdings');
-
-  await expect(loadingWorkspace).toBeVisible();
-  await expect(summary).toBeVisible();
-  await expect(
-    page
-      .getByTestId('overview-loading-supporting-metrics')
-      .locator(':scope > *'),
-  ).toHaveCount(5);
-  await expect(queue.getByRole('heading', { level: 2 })).toBeVisible();
-  await expect(holdings.getByRole('heading', { level: 2 })).toBeVisible();
-  await expect(loadingWorkspace).not.toContainText(/[¥$€£]|\d+[,.]\d{2}/);
-  expect(explainabilityRequestCount).toBe(0);
-
-  const loadingGeometry = await page.evaluate(() => {
-    const summary = document.querySelector(
-      '[data-testid="overview-loading-summary"]',
-    )!;
-    const queue = document.querySelector(
-      '[data-testid="overview-loading-queue"]',
-    )!;
-    const holdings = document.querySelector(
-      '[data-testid="overview-loading-holdings"]',
-    )!;
-    return {
-      documentOverflow:
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-      holdingsTop: holdings.getBoundingClientRect().top,
-      queueTop: queue.getBoundingClientRect().top,
-      summaryBottom: summary.getBoundingClientRect().bottom,
-    };
-  });
-  expect(loadingGeometry.documentOverflow).toBeLessThanOrEqual(0);
-  expect(loadingGeometry.queueTop).toBeGreaterThanOrEqual(
-    loadingGeometry.summaryBottom,
+  const loading = page.getByTestId('overview-loading-workspace');
+  await expect(loading).toBeVisible();
+  await expect(loading).not.toContainText(/[¥$€£]|\d+[,\.]\d{2}/);
+  await expect(page.getByTestId('overview-summary')).toHaveCount(0);
+  expect(requestedPaths).not.toContain('/api/portfolio/equity-curve/series');
+  releaseAccount();
+  await expect(page.getByTestId('overview-total-value')).toContainText(
+    '100,500.00',
   );
-  expect(loadingGeometry.holdingsTop).toBeGreaterThan(loadingGeometry.queueTop);
-
-  releasePrimaryResponses();
-  await expect(page.getByTestId('account-metrics-rail')).toBeVisible();
-  await expect(page.getByTestId('overview-daily-workbench')).toBeVisible();
-  expect(explainabilityRequestCount).toBe(0);
-
-  await page.getByRole('tab', { name: /Return calendar|收益日历/ }).click();
-  await expect.poll(() => explainabilityRequestCount).toBe(1);
+  await expect
+    .poll(() => requestedPaths.includes('/api/portfolio/equity-curve/series'))
+    .toBe(true);
+  for (const path of [
+    '/api/portfolio/overview',
+    '/api/portfolio',
+    '/api/portfolio/explainability',
+    '/api/operations/today',
+    '/api/decision/today',
+  ]) {
+    expect(requestedPaths).not.toContain(path);
+  }
 });
 
-test('overview persisted snapshot fallback contains its mobile metric scroller', async ({
+test('overview preserves usable account values when performance history fails', async ({
   page,
 }) => {
-  let releaseOverviewResponse = () => {};
-  const overviewResponseHeld = new Promise<void>((resolve) => {
-    releaseOverviewResponse = resolve;
-  });
-
-  await page.route('**/api/portfolio/overview', async (route) => {
-    const response = await route.fetch();
-    await overviewResponseHeld;
-    await route.fulfill({ response });
-  });
+  await installOverviewFixture(page);
+  await page.route('**/api/portfolio/equity-curve/series**', (route) =>
+    route.fulfill({ status: 503, body: 'sanitized-history-unavailable' }),
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/overview');
-
-  const fallback = page.getByTestId('overview-persisted-snapshot-summary');
-  await expect(fallback).toBeVisible({ timeout: 15_000 });
-
-  const geometry = await page.evaluate(() => {
-    const content = document.querySelector('.app-shell-content') as HTMLElement;
-    const metricStrip = document.querySelector(
-      '[data-testid="overview-persisted-snapshot-summary"] .account-support-metric-strip',
-    ) as HTMLElement;
-    return {
-      contentOverflow: content.scrollWidth - content.clientWidth,
-      documentOverflow:
+  await expect(page.getByTestId('overview-total-value')).toContainText(
+    '100,500.00',
+  );
+  await expect(page.getByTestId('overview-data-status')).toContainText(
+    'Current valuation usable',
+  );
+  await expect(
+    page
+      .getByTestId('overview-performance-card')
+      .getByRole('button', { name: /Retry/ }),
+  ).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('overview-holdings-section')).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
         document.documentElement.scrollWidth -
         document.documentElement.clientWidth,
-      metricStripOverflow: metricStrip.scrollWidth - metricStrip.clientWidth,
-      metricStripOverflowX: getComputedStyle(metricStrip).overflowX,
-    };
-  });
-  releaseOverviewResponse();
-  expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
-  expect(geometry.contentOverflow).toBeLessThanOrEqual(0);
-  expect(geometry.metricStripOverflow).toBeGreaterThan(0);
-  expect(geometry.metricStripOverflowX).toBe('auto');
-
-  await expect(fallback).toBeHidden({ timeout: 15_000 });
+    ),
+  ).toBe(0);
 });
 
 test('risk initial load preserves priorities, metrics, and controlled-action hierarchy', async ({
@@ -2284,18 +2162,14 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
         expect(
           queueBox?.y ?? Number.POSITIVE_INFINITY,
           `${path} ${theme} queue first-screen priority`,
-        ).toBeLessThan(680);
+        ).toBeLessThan(844);
         const holdingsBox = await page
           .getByTestId('overview-holdings-section')
           .boundingBox();
-        expect(holdingsBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(1100);
-        const additionalReviewItems = page.getByTestId(
-          'overview-today-queue-more',
-        );
-        if ((await additionalReviewItems.count()) > 0) {
-          await expect(additionalReviewItems).toBeVisible();
-          await expect(additionalReviewItems).not.toHaveAttribute('open', '');
-        }
+        expect(holdingsBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(1400);
+        await expect(
+          page.getByTestId('overview-data-details'),
+        ).not.toHaveAttribute('open', '');
       }
       expect(geometry.contentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(
         0,
@@ -3129,75 +3003,45 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
   });
 });
 
-test('dense return evidence stays spatially stable through hover and selection', async ({
+test('overview performance range selection preserves financial identity and avoids unsupported analysis fetches', async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  await installOverviewFixture(page);
+  const requests: string[] = [];
+  page.on('request', (request) => requests.push(request.url()));
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.route('**/api/portfolio/explainability**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        equity_bridge: [],
-        recent_drivers: [],
-        positions: [],
-        timeline: [
-          {
-            date: '2026-02-10',
-            equity: 101_000,
-            delta: 800,
-            external_flow: 200,
-            market_pnl: 600,
-            events: [],
-          },
-        ],
-      }),
-    });
-  });
   await page.goto('/overview');
-
-  const calendarTab = page.getByRole('tab', {
-    name: /Return calendar|收益日历/,
+  const performance = page.getByTestId('overview-performance-card');
+  await expect(performance).toBeVisible();
+  const total = page.getByTestId('overview-total-value');
+  await expect(total).toContainText('100,500.00');
+  const range = performance.getByRole('button', {
+    name: 'Range: 6M',
+    exact: true,
   });
-  await expect(calendarTab).toBeVisible({ timeout: 30_000 });
-  await calendarTab.click();
-
-  const cell = page
-    .getByTestId('return-calendar-month-grid')
-    .getByRole('button')
-    .first();
-  await expect(cell).toBeVisible();
-  const grid = page.getByTestId('return-calendar-month-grid');
-  const localGeometry = async () => {
-    const [cellBox, gridBox] = await Promise.all([
-      cell.boundingBox(),
-      grid.boundingBox(),
-    ]);
-    if (!cellBox || !gridBox) {
-      throw new Error('Return calendar geometry is unavailable');
-    }
-    return {
-      height: cellBox.height,
-      localY: cellBox.y - gridBox.y,
-      width: cellBox.width,
-    };
-  };
-  const initialGeometry = await localGeometry();
-  const transitionProperties = await cell.evaluate(
-    (element) => getComputedStyle(element).transitionProperty,
+  await expect(range).toBeVisible();
+  await range.click();
+  await expect
+    .poll(() =>
+      requests.some((url) =>
+        url.includes('/api/portfolio/equity-curve/series?range=6m'),
+      ),
+    )
+    .toBe(true);
+  await expect(total).toContainText('100,500.00');
+  expect(
+    requests.some((url) => url.includes('/api/portfolio/explainability')),
+  ).toBe(false);
+  await page.getByTestId('overview-data-details').locator('summary').click();
+  await expect(page.getByTestId('overview-data-details')).toContainText(
+    'overview-sanitized-friday',
   );
-  expect(transitionProperties).not.toMatch(/transform|translate/);
-
-  await cell.hover();
-  await page.waitForTimeout(150);
-  const hoverGeometry = await localGeometry();
-  expect(hoverGeometry).toEqual(initialGeometry);
-
-  await cell.click();
-  await expect(cell).toHaveAttribute('aria-pressed', 'true');
-  const selectedGeometry = await localGeometry();
-  expect(selectedGeometry).toEqual(initialGeometry);
+  await expect(page.getByTestId('overview-data-details')).toContainText(
+    'Latest refresh failed',
+  );
+  await expect(page.getByTestId('overview-data-status')).toContainText(
+    'Current valuation usable',
+  );
 });
 
 test('reduced-motion preference removes branded and routine transition timing', async ({

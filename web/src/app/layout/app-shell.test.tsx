@@ -71,6 +71,7 @@ type ShellStatusMockOptions = {
   fetchImpl?: typeof fetch;
   locale?: 'en' | 'zh';
   wideStatusRail?: boolean;
+  initialPath?: '/overview' | '/portfolio';
 };
 
 function jsonResponse(body: unknown) {
@@ -238,7 +239,9 @@ function renderShell(options: ShellStatusMockOptions = {}) {
   const routeTree = rootRoute.addChildren([indexRoute, portfolioRoute]);
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: ['/overview'] }),
+    history: createMemoryHistory({
+      initialEntries: [options.initialPath ?? '/overview'],
+    }),
   });
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -284,7 +287,7 @@ test('renders portfolio workspace navigation', async () => {
   ).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
   expect(screen.queryByText('Workspace toolbar')).toBeNull();
-  expect(await screen.findByLabelText('Account Status')).toBeTruthy();
+  expect(screen.queryByLabelText('Account Status')).toBeNull();
   expect(
     screen.getByRole('link', { name: 'Public home' }).getAttribute('href'),
   ).toBe('/');
@@ -476,9 +479,9 @@ test('switches theme preference and persists it', async () => {
 });
 
 test('keeps the desktop toolbar controls in a single centered row', async () => {
-  renderShell();
+  renderShell({ initialPath: '/portfolio' });
 
-  await screen.findByText('Overview page');
+  await screen.findByText('Portfolio page');
   const toolbarShell = document.querySelector(
     '.app-toolbar-shell',
   ) as HTMLElement | null;
@@ -559,7 +562,7 @@ test('opens a keyboard-accessible route command menu', async () => {
 });
 
 test('surfaces compact persisted status in the desktop toolbar', async () => {
-  renderShell();
+  renderShell({ initialPath: '/portfolio' });
 
   const statusRail = await screen.findByLabelText('Account Status');
   expect(statusRail.className).toContain('min-[1360px]:flex');
@@ -609,11 +612,12 @@ test('defers laptop status projections until the compact status entry opens', as
     return new Response('Not found', { status: 404 });
   });
   const { matchMedia } = renderShell({
+    initialPath: '/portfolio',
     fetchImpl: fetchMock,
     wideStatusRail: false,
   });
 
-  expect(await screen.findByText('Overview page')).toBeTruthy();
+  expect(await screen.findByText('Portfolio page')).toBeTruthy();
   expect(
     fetchMock.mock.calls.some(([input]) =>
       input.toString().includes('/api/portfolio/overview'),
@@ -782,6 +786,7 @@ test('uses full language names and fluid menu width', async () => {
 
 test('shows cached quote status and valuation time from account overview', async () => {
   renderShell({
+    initialPath: '/portfolio',
     locale: 'zh',
     overview: {
       ...defaultOverview,
@@ -842,7 +847,7 @@ test('shows cached quote status and valuation time from account overview', async
   await user.click(valuationStatus);
   expect(screen.queryByText('查看估值详情')).toBeNull();
   expect(await screen.findByRole('dialog', { name: '净值' })).toBeTruthy();
-  await user.click(await screen.findByText('Overview page'));
+  await user.click(await screen.findByText('Portfolio page'));
   await waitFor(() =>
     expect(screen.queryByRole('dialog', { name: '净值' })).toBeNull(),
   );
@@ -865,7 +870,7 @@ test('keeps compact header status read-only and provider-free', async () => {
     }
     return new Response('Not found', { status: 404 });
   });
-  renderShell({ fetchImpl: fetchMock });
+  renderShell({ initialPath: '/portfolio', fetchImpl: fetchMock });
   const user = userEvent.setup();
   const marketStatus = await screen.findByTestId('status-pill-market');
   await waitFor(() =>
@@ -885,6 +890,7 @@ test('keeps compact header status read-only and provider-free', async () => {
 
 test('shows cache-only market state from data health', async () => {
   renderShell({
+    initialPath: '/portfolio',
     locale: 'zh',
     marketHealth: {
       quotes: [],
@@ -898,6 +904,7 @@ test('shows cache-only market state from data health', async () => {
 
 test('shows closed market with healthy cached quotes as available', async () => {
   renderShell({
+    initialPath: '/portfolio',
     locale: 'zh',
     marketHealth: {
       quotes: [],
@@ -916,6 +923,7 @@ test('shows closed market with healthy cached quotes as available', async () => 
 
 test('shows cache-only open-market state without claiming live quotes', async () => {
   renderShell({
+    initialPath: '/portfolio',
     locale: 'zh',
     marketHealth: {
       quotes: [],
@@ -930,6 +938,7 @@ test('shows cache-only open-market state without claiming live quotes', async ()
 
 test('shows cached market status when source health is cache during live policy', async () => {
   renderShell({
+    initialPath: '/portfolio',
     locale: 'zh',
     marketHealth: {
       market_open: true,
@@ -946,6 +955,7 @@ test('shows cached market status when source health is cache during live policy'
 
 test('does not report ready states while status queries are loading', async () => {
   renderShell({
+    initialPath: '/portfolio',
     locale: 'zh',
     fetchImpl: vi.fn(() => new Promise<Response>(() => {})),
   });
@@ -958,6 +968,7 @@ test('does not report ready states while status queries are loading', async () =
 
 test('shows degraded states when status APIs fail', async () => {
   renderShell({
+    initialPath: '/portfolio',
     locale: 'zh',
     fetchImpl: vi.fn(async () => {
       throw new Error('offline');
@@ -970,7 +981,7 @@ test('shows degraded states when status APIs fail', async () => {
 });
 
 test('shows market status details without simulated latency', async () => {
-  renderShell();
+  renderShell({ initialPath: '/portfolio' });
   const user = userEvent.setup();
 
   await user.click(await screen.findByTestId('status-pill-market'));
@@ -1003,4 +1014,17 @@ test('toggles mobile navigation from the global toolbar', async () => {
   ).toBeGreaterThan(0);
   expect(openButton.getAttribute('aria-expanded')).toBe('true');
   expect(await screen.findByLabelText('Navigation')).toBeTruthy();
+});
+
+test('Overview owns its financial status without duplicate toolbar evidence or extra status reads', async () => {
+  const fetchMock = vi.fn(async () => jsonResponse(defaultOverview));
+  renderShell({ fetchImpl: fetchMock });
+  await screen.findByText('Overview page');
+  expect(screen.queryByTestId('status-pill-market')).toBeNull();
+  expect(screen.queryByTestId('status-pill-valuation')).toBeNull();
+  expect(screen.queryByTestId('compact-status-trigger')).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(screen.getByTestId('sidebar-nav-market').getAttribute('href')).toBe(
+    '/market',
+  );
 });

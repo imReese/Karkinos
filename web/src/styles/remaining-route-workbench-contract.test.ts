@@ -147,6 +147,11 @@ const CSS = source('styles/globals.css');
 
 describe('remaining route workbench contract', () => {
   it('migrates every phase-four route to the compact workbench shell', () => {
+    expect(OVERVIEW).toContain('overview-financial-canvas');
+    expect(OVERVIEW).toContain('<OverviewSummary');
+    expect(OVERVIEW).toContain('<OverviewEquityCurve');
+    expect(OVERVIEW).toContain('<OverviewDataStatus');
+    expect(OVERVIEW).not.toContain('buildTodayQueueModel');
     expect(MARKET).toContain('data-workbench-route="market"');
     expect(ACTIVITY).toContain('data-workbench-route="activity"');
     expect(BACKTEST).toContain('data-workbench-route="backtest"');
@@ -156,7 +161,6 @@ describe('remaining route workbench contract', () => {
     expect(ACCOUNT_TRUTH).toContain('data-workbench-route="account-truth"');
 
     for (const page of [
-      OVERVIEW,
       MARKET,
       ACTIVITY,
       BACKTEST,

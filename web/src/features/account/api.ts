@@ -3,6 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../shared/api/client';
 import { visiblePersistedProjectionRefetchInterval } from '../../shared/api/query-policy';
 import type { DailyOperationsSummary } from '../../shared/contracts/daily-operations';
+import type {
+  PortfolioSnapshot,
+  OperationsAttentionItem,
+} from './account-feature-boundary';
 
 export type { DailyOperationsSummary } from '../../shared/contracts/daily-operations';
 
@@ -13,6 +17,9 @@ export type AccountOverview = {
   positions_count: number;
   unrealized_pnl: number | null;
   realized_pnl: number;
+  cumulative_pnl?: number | null;
+  cumulative_return?: number | null;
+  latest_session_date?: string | null;
   cash_ratio: number | null;
   today_pnl?: number | null;
   today_pnl_breakdown?: {
@@ -100,47 +107,29 @@ export type RiskSummaryItem = {
 
 export type AccountStateResponse = {
   summary: AccountOverview;
-  snapshot: {
-    cash: number;
-    total_equity: number | null;
-    total_deposits: number;
-    positions: Array<{
-      symbol: string;
-      name?: string | null;
-      display_name?: string | null;
-      asset_class?: string | null;
-      quantity: number;
-      available_qty: number;
-      frozen_qty: number;
-      avg_cost: number;
-      market_value: number | null;
-      unrealized_pnl: number | null;
-      realized_pnl: number;
-      commission_paid: number;
-    }>;
-    allocation: Array<{
-      symbol: string;
-      name: string;
-      weight: number;
-      value: number;
-      asset_class: string;
-    }>;
-    allocation_grouped: Array<{
-      asset_class: string;
-      name: string;
-      value: number;
-      weight: number;
-      items: Array<{
-        symbol: string;
-        name: string;
-        weight: number;
-        value: number;
-        asset_class: string;
-      }>;
-    }>;
-  };
+  snapshot: PortfolioSnapshot;
   risks: RiskSummaryItem[];
   next_step: string;
+  overview: {
+    market_session: {
+      status: 'open' | 'break' | 'closed' | 'non_trading_day' | 'unknown';
+      calendar_verified: boolean;
+      latest_completed_trade_date: string | null;
+      expected_quote_date: string | null;
+      next_trading_date: string | null;
+      blockers: string[];
+    };
+    valuation_usability: 'usable' | 'degraded' | 'unavailable';
+    pricing_as_of: string | null;
+    refresh_health: {
+      status: 'healthy' | 'degraded' | 'running' | 'unknown';
+      latest_attempt: { status: string; updated_at?: string | null } | null;
+      blockers: string[];
+    };
+    decision_readiness: 'ready' | 'blocked' | 'unknown';
+    user_attention: OperationsAttentionItem[];
+    attention_status: 'available' | 'unavailable';
+  };
 };
 
 export type ExplainabilityBridgeItem = {
@@ -318,6 +307,9 @@ export function useAccountStateQuery() {
   return useQuery({
     queryKey: ['account-state'],
     queryFn: () => apiClient<AccountStateResponse>('/api/portfolio/state'),
+    staleTime: 10_000,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
+    refetchOnWindowFocus: true,
   });
 }
 

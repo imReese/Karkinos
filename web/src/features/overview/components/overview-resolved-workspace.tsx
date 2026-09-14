@@ -1,228 +1,93 @@
-import type { Dispatch, SetStateAction } from 'react';
-
 import { useCopy } from '../../../shared/i18n/context';
-import { EvidenceState } from '../../../shared/ui/workbench';
 import {
-  OverviewCards,
-  OverviewSnapshotFallbackCards,
+  OverviewEquityCurve,
+  EquityCurveSkeleton,
+  type AccountStateResponse,
 } from '../overview-feature-boundary';
-import type {
-  EquityCurveRange,
-  PortfolioSnapshot,
-} from '../overview-feature-boundary';
-import type { OverviewAnalysisView } from '../model/overview-page-model';
-import type { OverviewWorkspaceQueries } from '../model/use-overview-page-controller';
-import { OverviewAnalysisSection } from './overview-analysis-section';
+import type { useOverviewPageController } from '../model/use-overview-page-controller';
+import { getEquityCurveErrorDetail } from '../model/overview-page-model';
+import {
+  OverviewDataDetails,
+  OverviewDataStatus,
+} from './overview-data-status';
 import { OverviewHoldingsSection } from './overview-holdings-section';
-import { OverviewReviewStrip } from './overview-review-strip';
-import {
-  DashboardDecisionQueueFallback,
-  DashboardTodayQueue,
-} from './overview-today-queue';
+import { OverviewStatusCard } from './overview-status-card';
+import { OverviewSummary } from './overview-summary';
+import { DashboardTodayQueue } from './overview-today-queue';
 
 export function OverviewResolvedWorkspace({
-  queries,
-  positions,
-  assetClassBySymbol,
-  todayPnlLabel,
-  todayPnlContext,
-  analysisView,
-  setAnalysisView,
-  equityCurveRange,
-  setEquityCurveRange,
+  controller,
+  state,
 }: {
-  queries: OverviewWorkspaceQueries;
-  positions: PortfolioSnapshot['positions'];
-  assetClassBySymbol: Record<string, string>;
-  todayPnlLabel: string;
-  todayPnlContext: string | null;
-  analysisView: OverviewAnalysisView;
-  setAnalysisView: Dispatch<SetStateAction<OverviewAnalysisView>>;
-  equityCurveRange: EquityCurveRange;
-  setEquityCurveRange: Dispatch<SetStateAction<EquityCurveRange>>;
+  controller: ReturnType<typeof useOverviewPageController>;
+  state: AccountStateResponse;
 }) {
   const copy = useCopy();
-  const {
-    overview,
-    snapshot,
-    equityCurve,
-    explainability,
-    ledgerEntries,
-    pendingOrders,
-    marketHealth,
-    holdingMarketEvidenceReview,
-    strategyContribution,
-    todayDecision,
-    tradingPlan,
-    operationsToday,
-    marketCalendar,
-  } = queries;
+  const { equityCurve, equityCurveRange, setEquityCurveRange } = controller;
   return (
-    <div className="space-y-5">
-      {overview.data ? (
-        <OverviewCards
-          overview={overview.data}
-          variant="workbench"
-          todayPnlLabel={todayPnlLabel}
-          todayPnlContext={todayPnlContext}
-        />
-      ) : snapshot.data ? (
-        <OverviewSnapshotFallbackCards
-          snapshot={snapshot.data}
-          todayPnlLabel={todayPnlLabel}
-        />
-      ) : (
-        <EvidenceState
-          kind={overview.isError ? 'error' : 'loading'}
-          title={
-            overview.isError
-              ? copy.portfolio.summary.error
-              : copy.portfolio.summary.loading
-          }
-          description={
-            overview.isError
-              ? copy.portfolio.summary.errorDetail
-              : copy.portfolio.summary.loadingDetail
-          }
-          action={
-            overview.isError ? (
-              <button
-                type="button"
-                className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
-                onClick={() => void overview.refetch()}
-              >
-                {copy.states.retry}
-              </button>
-            ) : undefined
-          }
-        />
-      )}
-
-      {overview.data && snapshot.data ? null : (
-        <DashboardDecisionQueueFallback
-          todayDecision={todayDecision.data}
-          todayDecisionLoading={todayDecision.isLoading}
-          todayDecisionError={todayDecision.isError}
-          tradingPlan={tradingPlan.data}
-          tradingPlanLoading={tradingPlan.isLoading}
-          tradingPlanError={tradingPlan.isError}
-        />
-      )}
-
-      {snapshot.data ? (
-        overview.data ? (
-          <div
-            className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(340px,0.85fr)]"
-            data-testid="overview-daily-workbench"
+    <div className="min-w-0">
+      <OverviewDataStatus state={state} />
+      <div
+        className="grid min-w-0 gap-x-8 xl:grid-cols-[minmax(0,1fr)_272px]"
+        data-testid="overview-financial-canvas"
+      >
+        <div className="min-w-0 xl:col-start-1 xl:row-start-1">
+          <OverviewSummary summary={state.summary} />
+          <section
+            className="min-w-0 border-t border-[var(--app-divider)] pt-4 pb-5"
+            data-testid="overview-performance-card"
           >
-            <div className="min-w-0 xl:order-2">
-              <DashboardTodayQueue
-                overview={overview.data}
-                marketHealth={marketHealth.data}
-                portfolioSnapshot={snapshot.data}
-                marketEvidenceReview={holdingMarketEvidenceReview.data}
-                marketEvidenceReviewLoading={
-                  holdingMarketEvidenceReview.isLoading
-                }
-                marketEvidenceReviewError={holdingMarketEvidenceReview.isError}
-                quoteDiagnostics={positions}
-                pendingOrders={pendingOrders.data ?? []}
-                pendingOrdersLoading={pendingOrders.isLoading}
-                pendingOrdersError={pendingOrders.isError}
-                strategyContribution={strategyContribution.data}
-                strategyContributionLoading={strategyContribution.isLoading}
-                strategyContributionError={strategyContribution.isError}
-                todayDecision={todayDecision.data}
-                todayDecisionLoading={todayDecision.isLoading}
-                todayDecisionError={todayDecision.isError}
-                tradingPlan={tradingPlan.data}
-                tradingPlanLoading={tradingPlan.isLoading}
-                tradingPlanError={tradingPlan.isError}
-                operationsToday={operationsToday.data}
-                operationsTodayLoading={operationsToday.isLoading}
-                operationsTodayError={operationsToday.isError}
+            {equityCurve.isLoading && !equityCurve.data ? (
+              <EquityCurveSkeleton />
+            ) : equityCurve.isError && !equityCurve.data ? (
+              <OverviewStatusCard
+                tone="danger"
+                title={copy.states.error}
+                detail={getEquityCurveErrorDetail(equityCurve.error, copy)}
+                actionLabel={copy.states.retry}
+                onAction={() => void equityCurve.refetch()}
               />
-            </div>
-            <OverviewHoldingsSection
-              positions={positions}
-              assetClassBySymbol={assetClassBySymbol}
-              className="xl:order-1"
-            />
-          </div>
-        ) : (
-          <OverviewHoldingsSection
-            positions={positions}
-            assetClassBySymbol={assetClassBySymbol}
+            ) : (
+              <>
+                {equityCurve.isError ? (
+                  <p
+                    role="status"
+                    data-testid="equity-curve-refresh-warning"
+                    className="mb-3 text-xs text-[var(--app-warning-text)]"
+                  >
+                    {copy.overview.curveRefreshError}
+                  </p>
+                ) : null}
+                <OverviewEquityCurve
+                  points={equityCurve.data ?? []}
+                  range={equityCurveRange}
+                  onRangeChange={setEquityCurveRange}
+                />
+              </>
+            )}
+          </section>
+        </div>
+        <aside className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:pt-5">
+          <DashboardTodayQueue overview={state.overview} />
+          <OverviewDataDetails
+            state={state}
+            refreshFailed={controller.account.isError}
           />
-        )
-      ) : (
-        <section
-          className="min-w-0 space-y-2"
-          data-testid="overview-holdings-section"
-        >
-          <h2 className="app-type-section-title text-[var(--app-text)]">
-            {copy.overview.dashboard.positionsPanel}
-          </h2>
-          <EvidenceState
-            kind={snapshot.isError ? 'error' : 'loading'}
-            title={
-              snapshot.isError
-                ? copy.portfolio.positionsError
-                : copy.portfolio.positionsLoading
-            }
-            description={copy.overview.dashboard.positionsDetail}
-            action={
-              snapshot.isError ? (
-                <button
-                  type="button"
-                  className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
-                  onClick={() => void snapshot.refetch()}
-                >
-                  {copy.states.retry}
-                </button>
-              ) : undefined
-            }
-          />
-        </section>
-      )}
-
-      {overview.data && snapshot.data ? (
-        <>
-          <OverviewAnalysisSection
-            analysisView={analysisView}
-            setAnalysisView={setAnalysisView}
-            equityCurveRange={equityCurveRange}
-            setEquityCurveRange={setEquityCurveRange}
-            equityCurvePoints={equityCurve.data}
-            equityCurveLoading={equityCurve.isLoading}
-            equityCurveError={equityCurve.isError}
-            equityCurveErrorValue={equityCurve.error}
-            onRetryEquityCurve={() => void equityCurve.refetch()}
-            snapshot={snapshot.data}
-            strategyContribution={strategyContribution.data}
-            strategyContributionLoading={strategyContribution.isLoading}
-            strategyContributionError={strategyContribution.isError}
-            onRetryStrategyContribution={() =>
-              void strategyContribution.refetch()
-            }
-            explainabilityTimeline={explainability.data?.timeline ?? []}
-            positions={positions}
-            marketCalendar={marketCalendar.data}
-          />
-          <OverviewReviewStrip
-            marketHealth={marketHealth.data}
-            marketHealthLoading={marketHealth.isLoading}
-            marketHealthError={marketHealth.isError}
-            orders={pendingOrders.data ?? []}
-            ordersLoading={pendingOrders.isLoading}
-            ordersError={pendingOrders.isError}
-            entries={ledgerEntries.data ?? []}
-            entriesLoading={ledgerEntries.isLoading}
-            entriesError={ledgerEntries.isError}
-            copy={copy}
-          />
-        </>
-      ) : null}
+        </aside>
+        <OverviewHoldingsSection
+          positions={state.snapshot.positions}
+          assetClassBySymbol={Object.fromEntries(
+            state.snapshot.allocation.map((item) => [
+              item.symbol,
+              item.asset_class,
+            ]),
+          )}
+          weightBySymbol={Object.fromEntries(
+            state.snapshot.allocation.map((item) => [item.symbol, item.weight]),
+          )}
+          className="xl:col-start-1 xl:row-start-2"
+        />
+      </div>
     </div>
   );
 }

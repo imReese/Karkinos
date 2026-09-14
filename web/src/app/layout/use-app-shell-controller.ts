@@ -4,6 +4,7 @@ import { useRouterState } from '@tanstack/react-router';
 
 import { usePreferences } from '../../shared/preferences/context';
 import { useCopy } from '../copy';
+import { OVERVIEW_ROUTE } from './app-shell-navigation-config';
 import { useToolbarStatusController } from './use-toolbar-status-controller';
 
 export function useAppShellController() {
@@ -22,7 +23,8 @@ export function useAppShellController() {
   const routeScrollPositionsRef = useRef(
     new Map<string, { left: number; top: number }>(),
   );
-  const status = useToolbarStatusController(copy, locale);
+  const showFinancialStatus = pathname !== OVERVIEW_ROUTE;
+  const status = useToolbarStatusController(copy, locale, showFinancialStatus);
 
   useLayoutEffect(() => {
     const content = contentRef.current;
@@ -100,6 +102,7 @@ export function useAppShellController() {
     pathname,
     setLocale,
     setTheme,
+    showFinancialStatus,
     status,
     theme,
     toggleDesktopNav: () => setDesktopNavExpanded((expanded) => !expanded),

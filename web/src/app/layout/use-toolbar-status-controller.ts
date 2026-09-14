@@ -13,7 +13,11 @@ import {
 
 const STATUS_RAIL_MEDIA_QUERY = '(min-width: 1360px)';
 
-export function useToolbarStatusController(copy: AppCopy, locale: Locale) {
+export function useToolbarStatusController(
+  copy: AppCopy,
+  locale: Locale,
+  enabled = true,
+) {
   const [statusRailVisible, setStatusRailVisible] = useState(() =>
     typeof window === 'undefined' || typeof window.matchMedia !== 'function'
       ? false
@@ -21,7 +25,8 @@ export function useToolbarStatusController(copy: AppCopy, locale: Locale) {
   );
   const [openStatusPanel, setOpenStatusPanel] =
     useState<ToolbarPopoverKey>(null);
-  const statusQueriesEnabled = statusRailVisible || openStatusPanel !== null;
+  const statusQueriesEnabled =
+    enabled && (statusRailVisible || openStatusPanel !== null);
   const accountOverview = useAccountOverviewQuery(statusQueriesEnabled);
   const marketHealth = useMarketDataHealthQuery(statusQueriesEnabled);
   const statusRailRef = useRef<HTMLDivElement | null>(null);
