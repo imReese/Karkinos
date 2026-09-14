@@ -31,7 +31,7 @@ def test_external_github_actions_are_pinned_to_commit_shas() -> None:
     assert all(re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", ref) for ref in refs)
 
 
-def test_single_ci_workflow_owns_incremental_and_full_verification() -> None:
+def test_single_ci_workflow_verifies_every_dev_push_and_pull_request() -> None:
     assert not Path(".github/workflows/dev-ci.yml").exists()
     config = _workflow(".github/workflows/ci.yml")
     assert set(config["on"]) == {"pull_request", "push", "workflow_dispatch"}
@@ -51,26 +51,76 @@ def test_single_ci_workflow_owns_incremental_and_full_verification() -> None:
         "Docker runtime smoke",
         "Browser safety smoke",
         "Workflow security",
+        "Promotion Gate",
         "Dev CI gate",
         "Full CI gate",
     } <= names
 
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "not acceptance" not in text
-    assert '-m "not trading_safety"' in text
+    assert '-m "not trading_safety"' not in text
+    assert "--cov --cov-report=term --cov-report=xml" in text
+    assert "classify_dev_changes.py" not in text
     assert "zizmorcore/zizmor-action@" in text
     assert "setup-uv@" in text
 
 
-def test_trading_safety_is_a_mandatory_dev_baseline() -> None:
+def test_promotion_gate_requires_all_checks_without_path_or_mode_filters() -> None:
     config = _workflow(".github/workflows/ci.yml")
-    trading = config["jobs"]["trading-safety"]
-    assert "if" not in trading
+    jobs = config["jobs"]
+    gate = jobs["promotion-gate"]
+    assert gate["if"] == "${{ always() }}"
+    assert set(gate["needs"]) == {
+        "plan",
+        "python-quality",
+        "repository-integrity",
+        "secret-scan",
+        "backend",
+        "trading-safety",
+        "frontend",
+        "dependency-audit",
+        "docker-runtime",
+        "browser-safety",
+        "workflow-security",
+    }
+    for name in gate["needs"]:
+        assert "if" not in jobs[name]
+        for step in jobs[name]["steps"]:
+            assert "needs.plan.outputs.mode" not in step.get("if", "")
 
-    gate = config["jobs"]["dev-ci-gate"]
-    script = gate["steps"][0]["run"]
-    assert '"trading-safety": "trading"' not in script
-    assert "trading-safety" in gate["needs"]
+
+def test_promotion_gate_rejects_unsuccessful_dependencies_and_empty_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = _workflow(".github/workflows/ci.yml")["jobs"]["promotion-gate"]
+    script = compile(gate["steps"][0]["run"], "promotion-gate", "exec")
+    successful = {name: {"result": "success"} for name in gate["needs"]}
+    monkeypatch.setenv("RESULTS", json.dumps(successful))
+    exec(script, {})
+
+    for name in gate["needs"]:
+        for outcome in ("failure", "cancelled", "skipped", None):
+            results = {**successful, name: {"result": outcome}}
+            monkeypatch.setenv("RESULTS", json.dumps(results))
+            with pytest.raises(SystemExit, match=name):
+                exec(script, {})
+
+    monkeypatch.setenv("RESULTS", "{}")
+    with pytest.raises(SystemExit, match="missing or invalid"):
+        exec(script, {})
+
+
+def test_legacy_ci_gates_require_promotion_gate_success() -> None:
+    jobs = _workflow(".github/workflows/ci.yml")["jobs"]
+    for name, mode in (("dev-ci-gate", "incremental"), ("full-ci-gate", "full")):
+        gate = jobs[name]
+        assert gate["if"] == (
+            "${{ always() && needs.plan.outputs.mode == '" + mode + "' }}"
+        )
+        assert gate["needs"] == ["plan", "promotion-gate"]
+        step = gate["steps"][0]
+        assert step["env"] == {"PROMOTION_RESULT": "${{ needs.promotion-gate.result }}"}
+        assert step["run"] == 'test "${PROMOTION_RESULT}" = success'
 
 
 def test_full_dispatch_binds_exact_dev_sha_and_base() -> None:
