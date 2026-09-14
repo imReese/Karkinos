@@ -48,6 +48,8 @@ class FakeClient(promotion.Client):
         self.fail_gate_on_recheck = False
         self.reject_write = False
         self.confirm_write = True
+        self.post_write_main = []
+        self.post_write_reads = 0
         self.writes = []
 
     def request(self, path, payload=None):
@@ -68,6 +70,14 @@ class FakeClient(promotion.Client):
             sha = self.refs[branch]
             if branch == self.changed_ref and self.ref_reads[branch] > 1:
                 sha = OTHER
+            if branch == "main" and self.writes:
+                self.post_write_reads += 1
+                if self.post_write_main:
+                    sha = self.post_write_main[0]
+                    if len(self.post_write_main) > 1:
+                        self.post_write_main.pop(0)
+                    if isinstance(sha, Exception):
+                        raise sha
             return {
                 "ref": f"refs/heads/{branch}",
                 "object": {"type": "commit", "sha": sha},
@@ -225,9 +235,52 @@ def test_server_rejection_does_not_attempt_force_or_protection_changes():
     assert client.refs["main"] == MAIN
 
 
-def test_successful_http_response_does_not_replace_post_write_verification():
+@pytest.fixture
+def confirmation_waits(monkeypatch):
+    waits = []
+
+    def wait(seconds):
+        waits.append(seconds)
+        assert len(waits) < 100, "Post-write confirmation must remain bounded"
+
+    monkeypatch.setattr("time.sleep", wait)
+    return waits
+
+
+def test_old_ref_reads_after_write_can_converge_without_another_patch(
+    confirmation_waits,
+):
+    client = FakeClient()
+    client.post_write_main = [MAIN, MAIN, DEV]
+    result = promotion.promote(client, apply=True)
+    assert result["main_updated"] is True
+    assert client.post_write_reads == 3
+    assert len(confirmation_waits) == 2
+    assert client.writes == [("git/refs/heads/main", {"sha": DEV, "force": False})]
+
+
+def test_successful_http_response_does_not_replace_bounded_post_write_verification(
+    confirmation_waits,
+):
     client = FakeClient()
     client.confirm_write = False
     with pytest.raises(promotion.PromotionError):
         promotion.promote(client, apply=True)
+    assert 1 < client.post_write_reads < 100
+    assert confirmation_waits
+    assert client.writes == [("git/refs/heads/main", {"sha": DEV, "force": False})]
+
+
+@pytest.mark.parametrize(
+    "observed", [OTHER, promotion.PromotionError("GitHub read failed: HTTP 503")]
+)
+def test_unexpected_ref_or_api_failure_after_write_fails_immediately(
+    observed, confirmation_waits
+):
+    client = FakeClient()
+    client.post_write_main = [observed, DEV]
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(client, apply=True)
+    assert client.post_write_reads == 1
+    assert confirmation_waits == []
     assert client.writes == [("git/refs/heads/main", {"sha": DEV, "force": False})]

@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from urllib.parse import urlencode
 
 GATE = "Promotion Gate"
@@ -145,8 +146,14 @@ def promote(client: Client, *, apply: bool = False) -> dict:
         raise PromotionError("promotion_refs_changed")
     if apply:
         client.request("git/refs/heads/main", {"sha": candidate, "force": False})
-        if client.ref("main") != candidate:
-            raise PromotionError("promotion_main_write_not_confirmed")
+        # GitHub may briefly serve the previous ref after acknowledging the write.
+        for attempt in range(10):
+            observed = client.ref("main")
+            if observed == candidate:
+                break
+            if observed != previous_main or attempt == 9:
+                raise PromotionError("promotion_main_write_not_confirmed")
+            time.sleep(1)
     return {"previous_main": previous_main, "dev": candidate, "main_updated": apply}
 
 
