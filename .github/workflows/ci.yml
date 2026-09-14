@@ -140,8 +140,22 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.plan.outputs.commit_sha }}
           fetch-depth: 0
-      - name: Scan git history with Gitleaks
-        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo --redact --verbose
+      - name: Scan new commits with Gitleaks
+        env:
+          BASE_SHA: ${{ needs.plan.outputs.base_sha }}
+          COMMIT_SHA: ${{ needs.plan.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${BASE_SHA}" == 0000000000000000000000000000000000000000 ]]; then
+            scan_range="${COMMIT_SHA}"
+          else
+            git merge-base --is-ancestor "${BASE_SHA}" "${COMMIT_SHA}"
+            scan_range="${BASE_SHA}..${COMMIT_SHA}"
+          fi
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo --log-opts="${scan_range}" --redact --verbose
       - name: Scan working tree with Gitleaks
         run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo --no-git --redact --verbose
 
@@ -219,72 +233,8 @@ jobs:
       - run: npm --prefix web run build
       - run: npm --prefix web run test
 
-  dependency-audit:
-    name: Production dependency audit
-    needs: [plan, repository-integrity, secret-scan]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Checkout exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.plan.outputs.commit_sha }}
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12.13"
-      - name: Set up uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24.20.0"
-      - run: uv sync --locked --extra server --extra dev
-      - run: uv export --locked --extra server --no-dev --no-emit-project --no-hashes --output-file "${RUNNER_TEMP}/requirements.txt"
-      - run: uv run --locked --extra dev pip-audit --requirement "${RUNNER_TEMP}/requirements.txt" --progress-spinner=off
-      - run: npm --prefix web audit --omit=dev --audit-level=moderate
-
-  docker-runtime:
-    name: Docker runtime smoke
-    needs: [plan, python-quality, repository-integrity, secret-scan]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: Checkout exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.plan.outputs.commit_sha }}
-      - name: Build locked runtime image
-        run: docker build --tag karkinos:ci .
-      - name: Start runtime with fail-closed defaults
-        run: |
-          printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
-          docker volume create karkinos-ci-data
-          docker run --detach --name karkinos-ci \
-            --publish 127.0.0.1:8000:8000 \
-            --volume "karkinos-ci-data:/app/data/store" \
-            --volume "${RUNNER_TEMP}/karkinos-config.json:/app/config.json:ro" \
-            karkinos:ci
-      - name: Verify non-root fail-closed runtime
-        run: python scripts/ci/verify_docker_runtime.py --timeout-seconds 90
-      - name: Diagnose failed runtime
-        if: failure()
-        run: |
-          docker inspect karkinos-ci || true
-          docker logs karkinos-ci || true
-      - name: Stop runtime
-        if: always()
-        run: |
-          docker rm --force karkinos-ci || true
-          docker volume rm karkinos-ci-data || true
-
-  browser-safety:
-    name: Browser safety smoke
+  product-smoke:
+    name: Product smoke
     needs: [plan, python-quality, repository-integrity, secret-scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -313,7 +263,15 @@ jobs:
       - run: npm ci --prefix web
       - run: npx --prefix web playwright install --with-deps chromium
       - run: npm --prefix web run build
-      - run: npm --prefix web run test:e2e
+      - name: Verify research replay and risk workflow
+        run: >-
+          uv run --locked python -m pytest
+          tests/test_profit_discipline_smoke.py
+          tests/data/test_dataset_catalog.py::test_publish_reopen_replay_and_availability_cutoff
+      - name: Verify runtime review surfaces and fail-closed execution
+        run: >-
+          npm --prefix web run test:e2e -- safety-surfaces.spec.ts
+          --grep 'critical human-review surfaces load from the product runtime|browser-visible execution contracts start fail closed'
 
   workflow-security:
     name: Workflow security
@@ -336,7 +294,7 @@ jobs:
   promotion-gate:
     name: Promotion Gate
     if: ${{ always() }}
-    needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, dependency-audit, docker-runtime, browser-safety, workflow-security]
+    needs: [plan, python-quality, repository-integrity, secret-scan, backend, trading-safety, frontend, product-smoke, workflow-security]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

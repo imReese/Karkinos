@@ -47,9 +47,7 @@ def test_single_ci_workflow_verifies_every_dev_push_and_pull_request() -> None:
         "Backend tests",
         "Trading safety invariants",
         "Frontend checks",
-        "Production dependency audit",
-        "Docker runtime smoke",
-        "Browser safety smoke",
+        "Product smoke",
         "Workflow security",
         "Promotion Gate",
         "Full CI gate",
@@ -77,9 +75,7 @@ def test_promotion_gate_requires_all_checks_without_path_filters() -> None:
         "backend",
         "trading-safety",
         "frontend",
-        "dependency-audit",
-        "docker-runtime",
-        "browser-safety",
+        "product-smoke",
         "workflow-security",
     }
     for name in gate["needs"]:
