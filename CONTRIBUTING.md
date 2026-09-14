@@ -2,11 +2,10 @@
 
 ## Branches
 
-`dev` is the normal development branch. `main` receives only the exact current
-`dev` head after that SHA passes both the incremental `Dev CI gate` and the
-exact-SHA `Full CI gate`. The trusted promotion controller then revalidates the
-CI evidence, branch refs, and fast-forward ancestry before publishing
-`Main promotion gate` and updating `main` with `force=false`.
+`dev` is the integration/development branch. `main` is the last-known-green
+source state. A trusted controller promotes only the exact current dev HEAD with
+a successful `Promotion Gate`, and only when main is its ancestor. It re-reads
+both refs before updating main with `force=false` and confirms the result.
 
 Maintainers may work directly on `dev`. External contributions should use a
 feature branch or fork and open a pull request targeting `dev`.
@@ -89,28 +88,19 @@ be used to inflate or describe product-test coverage.
 
 ## CI and promotion
 
-`.github/workflows/ci.yml` is the single code-verification workflow. Pull
-requests and pushes to `dev` run its conservative incremental mode and finish at
-`Dev CI gate`. Promotion dispatches the exact current `dev` SHA through the same
-workflow in full mode; that candidate's own CI definition must finish at
-`Full CI gate` before `main` can move.
+`.github/workflows/ci.yml` verifies every dev push and pull request. All mandatory
+checks must succeed for `Promotion Gate`, including trading safety, normal
+product tests, quality and secret scanning. A path classifier cannot skip major
+correctness suites.
 
-The incremental classifier is an execution-cost optimization only. Python
-quality, repository integrity, secret scanning, and `Trading safety invariants`
-form the mandatory baseline for every dev commit. Change classification may add
-or skip expensive integration, frontend, dependency, Docker, browser, and
-workflow checks; it must not decide whether financial safety is required.
+`.github/workflows/promote-dev.yml` executes trusted default-branch code only.
+It reads the exact current dev commit's gate through the GitHub API and never
+executes candidate code with branch-write credentials. It never falls back to
+an older green ancestor or dispatches another verification protocol.
 
-`.github/workflows/promote-dev.yml` is the privileged controller. It executes
-trusted default-branch controller code only; it does not checkout or execute
-candidate code with write credentials. It never falls back to an older green
-ancestor and every branch/status write is preceded by exact evidence and ref
-revalidation.
-
-`candidate.yml` builds artifacts only after the promoted SHA can be tied back to
-the exact `dev` `workflow_dispatch` run whose `Full CI gate` succeeded.
-`release.yml` reuses the same evidence and publishes the already-built candidate
-bytes; stable release does not establish a second code-CI authority.
+Candidate building and stable release are separate artifact lifecycles. They
+retain their existing manifest compatibility until its dedicated migration;
+that compatibility does not participate in source promotion.
 
 Do not weaken assertions, typing, financial invariants, or fail-closed behavior
 merely to make a check pass.

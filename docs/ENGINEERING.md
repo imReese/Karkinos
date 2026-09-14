@@ -105,27 +105,19 @@ npm --prefix web run build
 
 ### CI authority
 
-The promotion contract is being migrated with expand -> migrate -> contract.
-`Promotion Gate` verifies every source check on each dev commit. The legacy gate
-names and full dispatch interface remain temporarily available for the controller
-currently installed on `main`; they are removed after the owner migrates the live
-ruleset and fast-forwards the verified replacement controller.
+`.github/workflows/ci.yml` verifies pull requests and pushes to `dev` with one
+source-verification contract: `Promotion Gate`. Every dependency must succeed;
+failed, cancelled, skipped, or missing results block the gate.
 
-`.github/workflows/ci.yml` is the single code-verification authority. It has two modes:
+All source checks run without a path classifier: Python quality, repository
+integrity, secret scanning, backend tests with coverage, trading safety, frontend,
+workflow security, dependency audit, Docker and browser checks. Trading safety
+runs independently of quality results once source identity is established.
 
-- ordinary pull requests and pushes to `dev` run conservative incremental verification and finish at `Dev CI gate`;
-- promotion dispatches the exact current `dev` SHA in full mode, runs every required product/security check including browser E2E, and finishes at `Full CI gate`.
-
-The full run is created against `ref=dev` and verifies the requested SHA and its `main` base before executing checks. This keeps the workflow definition and the code being validated on the same commit and prevents an older `main` workflow contract from authorizing newer `dev` source.
-
-The incremental classifier is a cost optimizer, not a correctness authority. Full CI additionally runs the complete backend suite with coverage and enforces the configured coverage threshold. These checks are mandatory on every dev commit:
-
-- Python quality;
-- repository integrity;
-- secret scanning;
-- `Trading safety invariants`.
-
-Classification may add or skip expensive backend integration, frontend, dependency, Docker, browser, and workflow checks. It must not decide whether financial safety is required.
+Manual dispatch verifies an explicit dev SHA and main base for debugging. It runs
+the same checks as an ordinary push. A temporary `Full CI gate` dispatch alias
+remains for candidate/release consumers until their manifest migration; source
+promotion neither requests it nor depends on it.
 
 ### Promotion authority
 
@@ -139,26 +131,16 @@ the controller checks the gate again and re-reads both refs. Changed refs abort.
 The update uses `force=false` and is confirmed by reading `main` back. Red or pending
 dev never falls back to an older green ancestor.
 
-The owner must migrate the live required check and fast-forward the verified new
-controller to `main` before this replacement becomes authoritative. This bootstrap
-keeps deletion/non-fast-forward protection and no bypass actors throughout.
-
 ### Candidate and stable release authority
 
-`candidate.yml` consumes the same exact-SHA authorization used for promotion. A promoted SHA must be tied back to the `dev` `workflow_dispatch` run whose `Full CI gate` succeeded. Candidate building does not invent a separate `main` CI result.
+`candidate.yml` builds release bytes once from an exact promoted main commit and
+attests their provenance. `release.yml` verifies the stable SemVer tag, candidate
+manifest and attestations, then publishes those already-built bytes.
 
-`candidate.yml` builds the release bytes once and records their provenance. `release.yml` verifies the stable SemVer tag, reuses the same Full CI evidence, verifies the candidate manifest/attestations, and publishes those already-built bytes. Stable release is authorization and publication, not a source rebuild and not a second code-CI authority.
-
-The source evidence identity is therefore:
-
-```text
-dev SHA
-  -> workflow_dispatch Full CI gate
-  -> trusted fast-forward to main
-  -> candidate build for the same SHA
-  -> immutable candidate manifest/artifacts
-  -> stable SemVer publication of the same bytes
-```
+The artifact workflows temporarily retain their legacy source-CI lookup for the
+existing candidate manifest contract. This compatibility is confined to artifact
+production and publication; it cannot authorize a source promotion. Remove it
+with the candidate manifest migration, preserving installed updater compatibility.
 
 ### Branch and tag protection
 
