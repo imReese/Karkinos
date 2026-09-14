@@ -62,7 +62,9 @@ class StrategyLearningReviewService:
             else (
                 "blocked"
                 if critical_count
-                else "review_required" if action_items else "clear"
+                else "review_required"
+                if action_items
+                else "clear"
             )
         )
         core = {

@@ -12,17 +12,15 @@ from server.contracts.automatic_trading import (
     AUTOMATIC_TRADING_CONTROL_SCHEMA_VERSION,
     AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
     AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    automatic_trading_disable_identity,
+    automatic_trading_transition_error,
+    resolve_persisted_automatic_trading_control,
 )
 from server.contracts.automatic_trading import (
     automatic_trading_control_fingerprint as _automatic_trading_fingerprint,
 )
-from server.contracts.automatic_trading import automatic_trading_disable_identity
 from server.contracts.automatic_trading import (
     automatic_trading_evidence as _automatic_trading_evidence,
-)
-from server.contracts.automatic_trading import (
-    automatic_trading_transition_error,
-    resolve_persisted_automatic_trading_control,
 )
 
 KILL_SWITCH_EVIDENCE_SCHEMA_VERSION = "karkinos.kill_switch_evidence.v1"

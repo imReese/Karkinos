@@ -15,11 +15,11 @@ from server.services.capital_scaling_evidence_contracts import (
     CAPITAL_SCALING_ACCOUNT_TRUTH_SNAPSHOT_ENTITY_TYPE,
     CAPITAL_SCALING_ACCOUNT_TRUTH_SNAPSHOT_EVENT_TYPE,
     CAPITAL_SCALING_EVIDENCE_SOURCE,
+    MAX_SOURCE_ROWS,
 )
 from server.services.capital_scaling_evidence_contracts import (
     DISCONNECT_MARKERS as _DISCONNECT_MARKERS,
 )
-from server.services.capital_scaling_evidence_contracts import MAX_SOURCE_ROWS
 from server.services.capital_scaling_evidence_contracts import (
     POLICY_VIOLATION_GATEWAY_EVENTS as _POLICY_VIOLATION_GATEWAY_EVENTS,
 )

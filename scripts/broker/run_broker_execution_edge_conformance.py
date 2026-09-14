@@ -52,10 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 _rejection(
-                    [
-                        "broker_execution_edge_manifest_read_failed:"
-                        f"{type(exc).__name__}"
-                    ]
+                    [f"broker_execution_edge_manifest_read_failed:{type(exc).__name__}"]
                 ),
                 ensure_ascii=False,
                 sort_keys=True,

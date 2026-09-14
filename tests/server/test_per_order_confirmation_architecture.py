@@ -95,8 +95,7 @@ def test_confirmation_facade_preserves_public_contract() -> None:
         ),
         "resolve_confirmation": ("(self, confirmation_id: 'str') -> 'dict[str, Any]'"),
         "list_confirmations": (
-            "(self, order_id: 'str', *, limit: 'int' = 100) "
-            "-> 'list[dict[str, Any]]'"
+            "(self, order_id: 'str', *, limit: 'int' = 100) -> 'list[dict[str, Any]]'"
         ),
     }
     assert {

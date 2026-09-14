@@ -42,21 +42,20 @@ PUBLIC_SIGNATURES = {
         "(self, connector_id: 'str') -> 'dict[str, Any]'"
     ),
     "query_staged_fills": (
-        "(self, *, symbol: 'str | None' = None, limit: 'int' = 50) "
-        "-> 'dict[str, Any]'"
+        "(self, *, symbol: 'str | None' = None, limit: 'int' = 50) -> 'dict[str, Any]'"
     ),
     "query_order": "(self, order_id: 'str') -> 'dict[str, Any]'",
     "preview_manual_ticket": (
-        "(self, order_id: 'str', *, actor: 'str | None' = None) " "-> 'dict[str, Any]'"
+        "(self, order_id: 'str', *, actor: 'str | None' = None) -> 'dict[str, Any]'"
     ),
     "export_manual_ticket": (
-        "(self, order_id: 'str', *, actor: 'str | None' = None) " "-> 'dict[str, Any]'"
+        "(self, order_id: 'str', *, actor: 'str | None' = None) -> 'dict[str, Any]'"
     ),
     "dry_run_manual_ticket": (
-        "(self, order_id: 'str', *, actor: 'str | None' = None) " "-> 'dict[str, Any]'"
+        "(self, order_id: 'str', *, actor: 'str | None' = None) -> 'dict[str, Any]'"
     ),
     "create_manual_ticket": (
-        "(self, order_id: 'str', *, actor: 'str | None' = None) " "-> 'dict[str, Any]'"
+        "(self, order_id: 'str', *, actor: 'str | None' = None) -> 'dict[str, Any]'"
     ),
     "preview_manual_execution_record": (
         "(self, order_id: 'str', *, fill_price: 'Any', quantity: 'Any', "
@@ -71,10 +70,10 @@ PUBLIC_SIGNATURES = {
         "-> 'dict[str, Any]'"
     ),
     "submit_live_disabled": (
-        "(self, order_id: 'str', *, actor: 'str | None' = None) " "-> 'dict[str, Any]'"
+        "(self, order_id: 'str', *, actor: 'str | None' = None) -> 'dict[str, Any]'"
     ),
     "cancel_live_disabled": (
-        "(self, order_id: 'str', *, actor: 'str | None' = None) " "-> 'dict[str, Any]'"
+        "(self, order_id: 'str', *, actor: 'str | None' = None) -> 'dict[str, Any]'"
     ),
 }
 LEGACY_HELPER_NAMES = {

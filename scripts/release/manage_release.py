@@ -2102,10 +2102,12 @@ def recover_release_state(
             )
             _release_for_sha(home, journal.get("target"))  # type: ignore[arg-type]
             desired_current = _release_for_sha(
-                home, journal.get("old_current")  # type: ignore[arg-type]
+                home,
+                journal.get("old_current"),  # type: ignore[arg-type]
             )
             desired_previous = _release_for_sha(
-                home, journal.get("old_previous")  # type: ignore[arg-type]
+                home,
+                journal.get("old_previous"),  # type: ignore[arg-type]
             )
             recovery_kind = "journal"
         else:

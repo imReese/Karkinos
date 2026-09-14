@@ -11,12 +11,10 @@ from account_truth.broker_order_lifecycle_contracts import (
     BROKER_ORDER_LIFECYCLE_EVIDENCE_SCHEMA_VERSION,
     BROKER_ORDER_LIFECYCLE_EXPORT_SCHEMA_VERSION,
     BROKER_ORDER_LIFECYCLE_PREVIEW_SCHEMA_VERSION,
+    DEFAULT_MAX_SNAPSHOT_AGE_SECONDS,
 )
 from account_truth.broker_order_lifecycle_contracts import (
     BROKER_ORDER_LIFECYCLE_TOP_LEVEL_FIELDS as _TOP_LEVEL_FIELDS,
-)
-from account_truth.broker_order_lifecycle_contracts import (
-    DEFAULT_MAX_SNAPSHOT_AGE_SECONDS,
 )
 from account_truth.broker_order_lifecycle_contracts import (
     broker_order_lifecycle_safety_flags as _safety_flags,

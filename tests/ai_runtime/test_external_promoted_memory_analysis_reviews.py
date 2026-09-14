@@ -79,9 +79,13 @@ def _request(**overrides) -> HumanExternalPromotedMemoryAnalysisReviewRequest:
 
 
 async def _completed_analysis(db_path):
-    retrieval, promotions, promotion, _, retrievals = (
-        await _prepared_promoted_retrieval(db_path)
-    )
+    (
+        retrieval,
+        promotions,
+        promotion,
+        _,
+        retrievals,
+    ) = await _prepared_promoted_retrieval(db_path)
     transport = EvidenceAwareTransport()
     analyses = _analysis_service(db_path, retrievals, transport)
     analysis = analyses.start(_analysis_request(retrieval.stored.retrieval_id))
@@ -185,7 +189,7 @@ async def test_promoted_analysis_review_binds_quality_source_and_cost_without_au
         )
         assert (
             conn.execute(
-                "SELECT COUNT(*) " "FROM ai_external_promoted_memory_analysis_reviews"
+                "SELECT COUNT(*) FROM ai_external_promoted_memory_analysis_reviews"
             ).fetchone()[0]
             == 1
         )
@@ -316,7 +320,7 @@ async def test_source_revocation_invalidates_accepted_review_without_history_los
     with closing(sqlite3.connect(db_path)) as conn:
         assert (
             conn.execute(
-                "SELECT COUNT(*) " "FROM ai_external_promoted_memory_analysis_reviews"
+                "SELECT COUNT(*) FROM ai_external_promoted_memory_analysis_reviews"
             ).fetchone()[0]
             == 1
         )

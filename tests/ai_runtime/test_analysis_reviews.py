@@ -197,8 +197,7 @@ async def test_evidence_drift_blocks_memory_acceptance_but_allows_revision_recor
     service = _review_service(db_path)
     with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute(
-            "UPDATE ai_canonical_evidence SET payload_json = ? "
-            "WHERE reference_id = ?",
+            "UPDATE ai_canonical_evidence SET payload_json = ? WHERE reference_id = ?",
             ('{"tampered":true}', capture.records[0].reference_id),
         )
 
@@ -231,8 +230,7 @@ async def test_reviewed_memory_is_invalidated_after_later_evidence_drift(tmp_pat
     accepted = service.review(analysis.record.analysis_id, _review_request())
     with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute(
-            "UPDATE ai_canonical_evidence SET payload_json = ? "
-            "WHERE reference_id = ?",
+            "UPDATE ai_canonical_evidence SET payload_json = ? WHERE reference_id = ?",
             ('{"tampered":true}', capture.records[-1].reference_id),
         )
 

@@ -488,8 +488,7 @@ async def test_completed_capture_detects_tampered_evidence_on_replay(tmp_path):
     ).capture(request)
     with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute(
-            "UPDATE ai_canonical_evidence SET payload_json = ? "
-            "WHERE reference_id = ?",
+            "UPDATE ai_canonical_evidence SET payload_json = ? WHERE reference_id = ?",
             ('{"tampered":true}', result.records[0].reference_id),
         )
 

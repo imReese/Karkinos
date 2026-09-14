@@ -11,9 +11,9 @@ from analytics.strategy_advancement_gate import (
 )
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_API_SCHEMA,
     SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
     SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
-    SHADOW_RESEARCH_API_SCHEMA,
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     ShadowResearchRejected,
 )

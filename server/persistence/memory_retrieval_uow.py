@@ -35,8 +35,7 @@ class ReviewedMemoryRetrievalUnitOfWorkMixin:
         with self._connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                "SELECT * FROM ai_reviewed_memory_retrievals "
-                "WHERE idempotency_key = ?",
+                "SELECT * FROM ai_reviewed_memory_retrievals WHERE idempotency_key = ?",
                 (request.idempotency_key,),
             ).fetchone()
             if row is not None:

@@ -918,8 +918,7 @@ def test_legacy_launchd_health_binds_listener_to_launchd_process_tree(
     monkeypatch.setattr(bootstrap_legacy.platform, "system", lambda: "Darwin")
     listener_pid = "4243"
     listener_command = (
-        f"{topology.workdir}/.venv/bin/python3 -m server "
-        "--host 127.0.0.1 --port 8000"
+        f"{topology.workdir}/.venv/bin/python3 -m server --host 127.0.0.1 --port 8000"
     )
     change_start_identity = False
     process_calls = 0
@@ -1016,15 +1015,13 @@ def test_legacy_launchd_health_binds_listener_to_launchd_process_tree(
 
     listener_pid = "4243"
     listener_command = (
-        f"{topology.workdir}/.venv/bin/python3 -m unknown "
-        "--host 127.0.0.1 --port 8000"
+        f"{topology.workdir}/.venv/bin/python3 -m unknown --host 127.0.0.1 --port 8000"
     )
     with pytest.raises(ValueError, match="legacy_service_identity_mismatch"):
         hooks.preflight()
 
     listener_command = (
-        f"{topology.workdir}/.venv/bin/python3 -m server "
-        "--host 127.0.0.1 --port 8000"
+        f"{topology.workdir}/.venv/bin/python3 -m server --host 127.0.0.1 --port 8000"
     )
     process_calls = 0
     change_start_identity = True

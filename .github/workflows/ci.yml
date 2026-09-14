@@ -64,7 +64,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
           ref: ${{ needs.plan.outputs.commit_sha }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -76,11 +75,14 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --locked --extra dev
-      - name: Check changed Python files and stable boundaries
-        env:
-          BASE_SHA: ${{ needs.plan.outputs.base_sha }}
-          COMMIT_SHA: ${{ needs.plan.outputs.commit_sha }}
-        run: uv run --locked python scripts/ci/check_python_quality.py --base "${BASE_SHA}" --head "${COMMIT_SHA}"
+      - name: Check Python lint and imports
+        run: uv run --locked ruff check .
+      - name: Check Python formatting
+        run: uv run --locked ruff format --check .
+      - name: Check Python types
+        run: uv run --locked mypy
+      - name: Check Python architecture
+        run: uv run --locked python tools/check_python_architecture.py
 
   repository-integrity:
     name: Repository integrity

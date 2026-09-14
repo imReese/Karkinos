@@ -187,8 +187,9 @@ def test_closed_ledger_position_is_historical_but_not_current_across_consumers(
     )
     monkeypatch.setattr(
         "server.projections.valuation_snapshot.get_shanghai_now",
-        lambda now=None: now
-        or datetime(2026, 7, 10, 15, 5, tzinfo=ZoneInfo("Asia/Shanghai")),
+        lambda now=None: (
+            now or datetime(2026, 7, 10, 15, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
+        ),
     )
 
     portfolio_router = portfolio_routes.create_router()

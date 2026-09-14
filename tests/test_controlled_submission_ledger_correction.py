@@ -263,11 +263,13 @@ def test_ledger_drift_inside_apply_transaction_rejects_whole_correction(
             acknowledgement=(CONTROLLED_SUBMISSION_LEDGER_CORRECTION_ACKNOWLEDGEMENT),
         )
 
-    assert "controlled_ledger_correction_transaction_rejected" in (
-        exc.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_ledger_correction_transaction_rejected"
+        in (exc.value.evidence["rejection_reasons"])
     )
-    assert "controlled_ledger_correction_pre_ledger_cutoff_changed" in (
-        exc.value.evidence["transaction_blockers"]
+    assert (
+        "controlled_ledger_correction_pre_ledger_cutoff_changed"
+        in (exc.value.evidence["transaction_blockers"])
     )
     assert env["db"].list_controlled_submission_ledger_corrections_sync() == []
     ledger = env["db"].get_ledger_entries_sync(limit=20)

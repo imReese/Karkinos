@@ -105,8 +105,9 @@ async def test_promotes_exact_reviewed_report_to_non_authoritative_memory(tmp_pa
     assert payload["memory_artifact"]["requires_current_evidence_rebinding"] is True
     assert payload["memory_artifact"]["content_hidden"] is False
     memory = payload["memory_artifact"]["content"]
-    assert memory["historical_report"]["title"] == (
-        analysis.artifacts[-1].content["title"]
+    assert (
+        memory["historical_report"]["title"]
+        == (analysis.artifacts[-1].content["title"])
     )
     assert memory["automatic_recall_allowed"] is False
     assert memory["decision_input_created"] is False

@@ -389,9 +389,9 @@ def test_paper_shadow_run_reuses_clear_financial_input_after_workflow_stage_chan
     db.init_sync()
     simulation_plan = _trading_plan()
     simulation_plan["source_decision"] = "review_required"
-    simulation_plan["order_intents"][0][
-        "manual_confirmation_status"
-    ] = "paper_shadow_review_required"
+    simulation_plan["order_intents"][0]["manual_confirmation_status"] = (
+        "paper_shadow_review_required"
+    )
     simulation_plan["order_intents"][0]["submission_status"] = "paper_shadow_required"
 
     first = run_paper_shadow_from_trading_plan(
@@ -796,8 +796,9 @@ def test_paper_shadow_run_records_failed_run_when_simulation_errors(tmp_path) ->
     assert saved is not None
     assert saved["status"] == "failed"
     saved_payload = json.loads(saved["payload_json"])
-    assert saved_payload["orders"][0]["oms_transitions"] == (
-        run["orders"][0]["oms_transitions"]
+    assert (
+        saved_payload["orders"][0]["oms_transitions"]
+        == (run["orders"][0]["oms_transitions"])
     )
     assert (
         f"oms_transition:{failed_order_id}:3:rejected" in saved_payload["evidence_refs"]

@@ -236,8 +236,7 @@ async def test_later_current_evidence_drift_invalidates_without_deleting_history
     completed = service.start(_request(retrieval.stored.retrieval_id))
     with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute(
-            "UPDATE ai_canonical_evidence SET payload_json = ? "
-            "WHERE reference_id = ?",
+            "UPDATE ai_canonical_evidence SET payload_json = ? WHERE reference_id = ?",
             ('{"tampered":true}', current_records[0].reference_id),
         )
 

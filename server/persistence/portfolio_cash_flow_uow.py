@@ -176,8 +176,7 @@ class PortfolioCashFlowUnitOfWork:
                     amount=float(original["amount"]),
                     asset_class="cash",
                     note=(
-                        "Append-only reversal of canonical cash flow "
-                        f"{cash_flow_id}."
+                        f"Append-only reversal of canonical cash flow {cash_flow_id}."
                     ),
                     source="portfolio_cash_flow_correction",
                     source_ref=f"cash_flow:{cash_flow_id}",

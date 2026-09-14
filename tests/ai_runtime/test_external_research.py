@@ -38,10 +38,10 @@ from server.ai_runtime.provider_connectivity import (
     HttpJsonResponse,
     ProviderConnectivitySettings,
 )
+from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
 from server.ai_runtime.strategy_research_privacy import (
     NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
 
 NOW = "2026-07-14T05:00:00+00:00"
 VALUATION_ID = "valuation-external-report-001"

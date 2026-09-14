@@ -414,8 +414,9 @@ def test_reserved_ai_shadow_order_rechecks_daily_strategy_backup(tmp_path) -> No
         as_of_date="2026-08-12",
     )
     assert verified_blockers == []
-    assert verified_gate["promotion"]["daily_strategy_artifact_binding"] == (
-        strategy["readiness"]["daily_strategy_artifact_binding"]
+    assert (
+        verified_gate["promotion"]["daily_strategy_artifact_binding"]
+        == (strategy["readiness"]["daily_strategy_artifact_binding"])
     )
 
     backup_path = (

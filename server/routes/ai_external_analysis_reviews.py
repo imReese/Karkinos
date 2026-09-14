@@ -47,7 +47,7 @@ class HumanExternalAnalysisReviewPayload(BaseModel):
         max_length=1_000,
     )
     confirmation: Literal[
-        "record_external_analysis_review_without_memory_decision_or_trade_" "authority"
+        "record_external_analysis_review_without_memory_decision_or_trade_authority"
     ]
 
 

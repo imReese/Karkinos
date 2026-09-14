@@ -353,8 +353,9 @@ def test_unresolved_persisted_sources_prevent_scale_up_request_and_are_audited(
         )
 
     assert evaluation["decision"]["recommended_action"] == "hold"
-    assert "persisted_evidence_source_not_found:after_cost:execution-quality" in (
-        evaluation["decision"]["scale_up_blockers"]
+    assert (
+        "persisted_evidence_source_not_found:after_cost:execution-quality"
+        in (evaluation["decision"]["scale_up_blockers"])
     )
     assert exc_info.value.evidence["status"] == "rejected"
     assert exc_info.value.evidence["authority_change_applied"] is False

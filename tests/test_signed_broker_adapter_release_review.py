@@ -210,8 +210,9 @@ def test_acceptance_fails_closed_without_or_after_changed_conformance(tmp_path) 
             operator_proof_signature_base64=signature,
             acknowledgement=BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
         )
-    assert "signed_broker_adapter_review_dossier_fingerprint_mismatch" in (
-        rejected.value.evidence["blockers"]
+    assert (
+        "signed_broker_adapter_review_dossier_fingerprint_mismatch"
+        in (rejected.value.evidence["blockers"])
     )
 
 
@@ -246,8 +247,9 @@ def test_signed_rejection_and_revocation_are_safe_append_only_decisions(
     assert rejected_dossier["review_ready"] is True
     assert rejected["status"] == "rejected"
     assert accepted["status"] == "accepted"
-    assert revoke_dossier["current_review"]["review_fingerprint"] == (
-        accepted["review_fingerprint"]
+    assert (
+        revoke_dossier["current_review"]["review_fingerprint"]
+        == (accepted["review_fingerprint"])
     )
     assert revoked["status"] == "revoked"
     assert binding["status"] == "blocked"
@@ -267,8 +269,9 @@ def test_sensitive_api_key_is_blocked_without_value_echo_or_schema_creation(
     )
 
     assert dossier["review_ready"] is False
-    assert "broker_adapter_release_auth_material_not_allowed" in (
-        dossier["review_blockers"]
+    assert (
+        "broker_adapter_release_auth_material_not_allowed"
+        in (dossier["review_blockers"])
     )
     assert "must-never-leave-review-preview" not in json.dumps(dossier)
 
@@ -318,8 +321,9 @@ def test_repository_rechecks_expected_conformance_and_latest_review(tmp_path) ->
             expected_conformance_report_fingerprint=conformance["report_fingerprint"],
             expected_latest_review_fingerprint="",
         )
-    assert "broker_adapter_release_conformance_run_drift" in (
-        conformance_drift.value.evidence["blockers"]
+    assert (
+        "broker_adapter_release_conformance_run_drift"
+        in (conformance_drift.value.evidence["blockers"])
     )
 
     accepted = repository.record_review(
@@ -346,6 +350,7 @@ def test_repository_rechecks_expected_conformance_and_latest_review(tmp_path) ->
             expected_latest_review_fingerprint="f" * 64,
         )
     assert accepted["status"] == "accepted"
-    assert "broker_adapter_release_latest_review_drift" in (
-        latest_drift.value.evidence["blockers"]
+    assert (
+        "broker_adapter_release_latest_review_drift"
+        in (latest_drift.value.evidence["blockers"])
     )

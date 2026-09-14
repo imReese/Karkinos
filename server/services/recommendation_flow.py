@@ -40,7 +40,9 @@ def build_recommendation_cycle(
         title_prefix = (
             "建议增持"
             if direction == "buy"
-            else "建议减仓" if direction == "sell" else "继续观察"
+            else "建议减仓"
+            if direction == "sell"
+            else "继续观察"
         )
 
         tasks.append(

@@ -136,7 +136,7 @@ def _fake_launch_agent_repo(
     _write_executable(fake_bin / "plutil", "#!/usr/bin/env bash\nexit 0\n")
     _write_executable(
         fake_bin / "uv",
-        "#!/usr/bin/env bash\n" f"touch '{tmp_path / 'unexpected-uv'}'\n" "exit 97\n",
+        f"#!/usr/bin/env bash\ntouch '{tmp_path / 'unexpected-uv'}'\nexit 97\n",
     )
     _write_executable(
         fake_bin / "lsof",

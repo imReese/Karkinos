@@ -148,8 +148,9 @@ class ExternalReviewedMemoryRepositoryMixin:
             )
             if str(row["event_hash"]) != expected_hash:
                 errors.append("memory promotion audit event hash drifted")
-            if expected_sequence <= len(expected_types) and event_type != (
-                expected_types[expected_sequence - 1]
+            if (
+                expected_sequence <= len(expected_types)
+                and event_type != (expected_types[expected_sequence - 1])
             ):
                 errors.append("memory promotion audit event lifecycle drifted")
             if event_type == "external_reviewed_memory_promoted":

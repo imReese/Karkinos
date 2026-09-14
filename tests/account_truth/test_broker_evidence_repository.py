@@ -326,8 +326,7 @@ def test_broker_evidence_repository_reads_known_v1_import_identity(
     )
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "UPDATE broker_import_runs SET schema_version = ? "
-            "WHERE import_run_id = ?",
+            "UPDATE broker_import_runs SET schema_version = ? WHERE import_run_id = ?",
             (
                 "karkinos.account_truth.broker_evidence.v1",
                 import_run.import_run_id,

@@ -188,22 +188,25 @@ def test_unknown_sensitive_and_boundary_drift_fail_closed_without_value_echo() -
     drifted = preview_broker_execution_edge_manifest(json.dumps(drifted_manifest))
 
     assert sensitive["recordable"] is False
-    assert "broker_execution_edge_auth_material_not_allowed" in (
-        sensitive["record_blockers"]
+    assert (
+        "broker_execution_edge_auth_material_not_allowed"
+        in (sensitive["record_blockers"])
     )
     assert "must-never-enter-evidence" not in json.dumps(sensitive)
     assert drifted["recordable"] is True
     assert drifted["validation_status"] == "blocked"
-    assert "broker_execution_edge_boundary_violation:production_enabled" in (
-        drifted["blockers"]
+    assert (
+        "broker_execution_edge_boundary_violation:production_enabled"
+        in (drifted["blockers"])
     )
 
     malformed_result = result_payload(conformance_preview())
     malformed_result["real_order_side_effect_count"] = False
     malformed = preview_broker_execution_edge_conformance_result(malformed_result)
     assert malformed["recordable"] is False
-    assert "broker_execution_edge_real_order_side_effect_count_invalid" in (
-        malformed["record_blockers"]
+    assert (
+        "broker_execution_edge_real_order_side_effect_count_invalid"
+        in (malformed["record_blockers"])
     )
 
 
@@ -233,8 +236,8 @@ def test_record_is_idempotent_restart_safe_and_latest_failure_wins(tmp_path) -> 
     assert first["status"] == "passed"
     assert first["persisted"] is True
     assert replay["reused"] is True
-    assert "broker_execution_edge_run_id_conflict" in (
-        conflict.value.evidence["blockers"]
+    assert (
+        "broker_execution_edge_run_id_conflict" in (conflict.value.evidence["blockers"])
     )
     assert clear["status"] == "clear"
     assert failed["status"] == "blocked"
@@ -307,7 +310,8 @@ def test_wrong_acknowledgement_records_no_report(tmp_path) -> None:
     with pytest.raises(BrokerExecutionEdgeConformanceRejected) as rejected:
         repository.record_report(conformance_preview(), acknowledgement="")
 
-    assert "broker_execution_edge_acknowledgement_mismatch" in (
-        rejected.value.evidence["blockers"]
+    assert (
+        "broker_execution_edge_acknowledgement_mismatch"
+        in (rejected.value.evidence["blockers"])
     )
     assert repository.get_latest("fixture-execution-edge-v1")["status"] == ("not_found")

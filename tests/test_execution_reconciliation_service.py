@@ -136,13 +136,17 @@ def _record_controlled_intent(
         broker_status=(
             "accepted"
             if status == "submitted"
-            else "rejected" if status == "rejected" else "gateway_submit_exception"
+            else "rejected"
+            if status == "rejected"
+            else "gateway_submit_exception"
         ),
         result={
             "status": (
                 "accepted"
                 if status == "submitted"
-                else "rejected" if status == "rejected" else "gateway_submit_exception"
+                else "rejected"
+                if status == "rejected"
+                else "gateway_submit_exception"
             ),
             "client_order_id": f"KARK-{submit_fingerprint[:32]}",
             "order_fingerprint": order_fingerprint,
@@ -150,7 +154,9 @@ def _record_controlled_intent(
             "submitted": (
                 True
                 if status == "submitted"
-                else False if status == "rejected" else None
+                else False
+                if status == "rejected"
+                else None
             ),
         },
         actor="controlled-broker-submission",
@@ -286,8 +292,8 @@ def test_reconciliation_blocks_conflicting_controlled_order_identity(tmp_path) -
     assert item["suggested_action"] == (
         "enable_kill_switch_and_review_controlled_submission"
     )
-    assert "controlled_submission_order_identity_conflict" in (
-        payload["mismatch_reasons"]
+    assert (
+        "controlled_submission_order_identity_conflict" in (payload["mismatch_reasons"])
     )
     assert summary["broker_order_identity_match_count"] == 0
     assert summary["broker_order_identity_conflict_count"] == 1
@@ -644,9 +650,9 @@ def test_reconciliation_persists_exact_plan_paper_actual_comparison(tmp_path) ->
     current = db.get_oms_order_sync(order["order_id"])
     assert current is not None
     payload = json.loads(current["payload_json"])
-    payload["gateway_evidence"]["research_evidence"][
-        "evidence_ref"
-    ] = f"decision_action:{action['id']}"
+    payload["gateway_evidence"]["research_evidence"]["evidence_ref"] = (
+        f"decision_action:{action['id']}"
+    )
     payload["gateway_evidence"]["account_truth"]["evidence_ref"] = "account_truth:1"
     with sqlite3.connect(db.path) as conn:
         conn.execute(

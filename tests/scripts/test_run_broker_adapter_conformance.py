@@ -80,7 +80,7 @@ def test_cli_wrong_acknowledgement_records_no_report(tmp_path, capsys) -> None:
 
     assert code == 2
     assert rejected["status"] == "rejected"
-    assert "broker_adapter_conformance_acknowledgement_mismatch" in (
-        rejected["blockers"]
+    assert (
+        "broker_adapter_conformance_acknowledgement_mismatch" in (rejected["blockers"])
     )
     assert status["status"] == "not_found"

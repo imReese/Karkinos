@@ -585,8 +585,9 @@ def test_corrected_panel_rearm_is_exactly_one_bound_ten_call_envelope(
         now="2026-08-23T01:00:00+00:00",
     )
 
-    assert authorization["completed_selection_fingerprint"] == (
-        selection["selection_fingerprint"]
+    assert (
+        authorization["completed_selection_fingerprint"]
+        == (selection["selection_fingerprint"])
     )
     assert authorization["provider_calls_at_authorization"] == 14
     assert authorization["prior_provider_call_ceiling"] == 14

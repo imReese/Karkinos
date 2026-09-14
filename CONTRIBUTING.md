@@ -51,7 +51,10 @@ Run the narrowest relevant checks first.
 Python quality:
 
 ```bash
-uv run --locked python scripts/ci/check_python_quality.py --base origin/dev
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked mypy
+uv run --locked python tools/check_python_architecture.py
 ```
 
 Documentation integrity:

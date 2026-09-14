@@ -28,11 +28,14 @@ def test_app_database_initializes_quote_fetch_runs_table(tmp_path):
             FROM sqlite_master
             WHERE type = 'table' AND name = 'quote_fetch_runs'
             """).fetchone()
-        indexes = {row[0] for row in conn.execute("""
+        indexes = {
+            row[0]
+            for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'quote_fetch_runs'
-                """).fetchall()}
+                """).fetchall()
+        }
 
     assert table is not None
     assert "idx_quote_fetch_runs_started_at" in indexes
@@ -50,11 +53,14 @@ def test_app_database_initializes_valuation_snapshots_table(tmp_path):
             FROM sqlite_master
             WHERE type = 'table' AND name = 'valuation_snapshots'
             """).fetchone()
-        indexes = {row[0] for row in conn.execute("""
+        indexes = {
+            row[0]
+            for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'valuation_snapshots'
-                """).fetchall()}
+                """).fetchall()
+        }
 
     assert table is not None
     assert "idx_valuation_snapshots_as_of" in indexes
@@ -72,11 +78,14 @@ def test_app_database_initializes_event_log_table(tmp_path):
             FROM sqlite_master
             WHERE type = 'table' AND name = 'event_log'
             """).fetchone()
-        indexes = {row[0] for row in conn.execute("""
+        indexes = {
+            row[0]
+            for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'event_log'
-                """).fetchall()}
+                """).fetchall()
+        }
 
     assert table is not None
     assert "idx_event_log_type_ts" in indexes
@@ -94,11 +103,14 @@ def test_app_database_initializes_orders_table(tmp_path):
             FROM sqlite_master
             WHERE type = 'table' AND name = 'orders'
             """).fetchone()
-        indexes = {row[0] for row in conn.execute("""
+        indexes = {
+            row[0]
+            for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'orders'
-                """).fetchall()}
+                """).fetchall()
+        }
 
     assert table is not None
     assert "idx_orders_status_ts" in indexes
@@ -116,11 +128,14 @@ def test_app_database_initializes_fills_table(tmp_path):
             FROM sqlite_master
             WHERE type = 'table' AND name = 'fills'
             """).fetchone()
-        indexes = {row[0] for row in conn.execute("""
+        indexes = {
+            row[0]
+            for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'fills'
-                """).fetchall()}
+                """).fetchall()
+        }
 
     assert table is not None
     assert "idx_fills_order_ts" in indexes
@@ -138,11 +153,14 @@ def test_app_database_initializes_latest_quotes_table(tmp_path):
             FROM sqlite_master
             WHERE type = 'table' AND name = 'latest_quotes'
             """).fetchone()
-        indexes = {row[0] for row in conn.execute("""
+        indexes = {
+            row[0]
+            for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'latest_quotes'
-                """).fetchall()}
+                """).fetchall()
+        }
 
     assert table is not None
     assert "idx_latest_quotes_symbol_asset_type" in indexes
@@ -233,11 +251,14 @@ def test_app_database_initializes_instrument_metadata_table(tmp_path):
             FROM sqlite_master
             WHERE type = 'table' AND name = 'instrument_metadata'
             """).fetchone()
-        indexes = {row[0] for row in conn.execute("""
+        indexes = {
+            row[0]
+            for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'instrument_metadata'
-                """).fetchall()}
+                """).fetchall()
+        }
 
     assert table is not None
     assert "idx_instrument_metadata_symbol_asset_type" in indexes

@@ -476,8 +476,9 @@ class ExternalPromotedAnalysisMemoryStore:
             )
             if str(row["event_hash"]) != expected_hash:
                 errors.append("promoted-analysis memory audit event hash drifted")
-            if expected_sequence <= len(expected_types) and event_type != (
-                expected_types[expected_sequence - 1]
+            if (
+                expected_sequence <= len(expected_types)
+                and event_type != (expected_types[expected_sequence - 1])
             ):
                 errors.append("promoted-analysis memory audit lifecycle drifted")
             if event_type == "external_promoted_analysis_memory_promoted":

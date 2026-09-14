@@ -16,11 +16,11 @@ from server.services.daily_decision_evidence_values import (
     is_new_paper_shadow_evidence,
     latest_paper_shadow_run,
     object_list,
+    policy_allows_paper_shadow,
 )
 from server.services.daily_decision_evidence_values import (
     plan_date as resolve_plan_date,
 )
-from server.services.daily_decision_evidence_values import policy_allows_paper_shadow
 
 
 async def collect_daily_decision_evidence(
@@ -225,8 +225,7 @@ async def collect_daily_decision_evidence(
             paper_shadow_run=None,
             candidate_count=candidate_count,
             limitations=[
-                "No risk-passed order intent was available for paper/shadow "
-                "simulation."
+                "No risk-passed order intent was available for paper/shadow simulation."
             ],
         )
 

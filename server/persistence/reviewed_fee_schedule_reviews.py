@@ -55,8 +55,7 @@ class ReviewedFeeScheduleReviewStore:
             if connection is None:
                 return None
             row = connection.execute(
-                "SELECT * FROM reviewed_fee_schedule_reviews "
-                "WHERE review_id=? LIMIT 1",
+                "SELECT * FROM reviewed_fee_schedule_reviews WHERE review_id=? LIMIT 1",
                 (str(review_id),),
             ).fetchone()
         return dict(row) if row is not None else None

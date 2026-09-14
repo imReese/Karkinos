@@ -93,7 +93,7 @@ def create_router() -> APIRouter:
             _raise_domain_http_error(exc)
 
     @router.get(
-        "/api/ai/external-promoted-analysis-memory-retrievals/{retrieval_id}/" "replay"
+        "/api/ai/external-promoted-analysis-memory-retrievals/{retrieval_id}/replay"
     )
     def replay_external_promoted_analysis_memory_retrieval(
         retrieval_id: str,

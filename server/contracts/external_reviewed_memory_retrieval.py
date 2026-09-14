@@ -54,8 +54,7 @@ class HumanExternalReviewedMemoryRetrievalRequest:
                 raise ValueError(f"{field_name} must not be empty")
         if not self.promotion_ids or len(self.promotion_ids) > _MAX_PROMOTION_IDS:
             raise ValueError(
-                "promotion_ids must contain between 1 and "
-                f"{_MAX_PROMOTION_IDS} items"
+                f"promotion_ids must contain between 1 and {_MAX_PROMOTION_IDS} items"
             )
         if any(not item.strip() for item in self.promotion_ids):
             raise ValueError("promotion_ids must not contain empty values")
@@ -63,8 +62,7 @@ class HumanExternalReviewedMemoryRetrievalRequest:
             raise ValueError("promotion_ids must be unique")
         if self.confirmation != EXTERNAL_REVIEWED_MEMORY_RETRIEVAL_CONFIRMATION:
             raise ValueError(
-                "explicit promoted external-memory retrieval confirmation is "
-                "required"
+                "explicit promoted external-memory retrieval confirmation is required"
             )
 
     @property

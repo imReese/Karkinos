@@ -535,9 +535,9 @@ def test_incomplete_or_nonpassing_daily_set_is_no_selection(tmp_path) -> None:
 @pytest.mark.trading_safety
 def test_mismatched_sequential_parent_artifact_is_no_selection(tmp_path) -> None:
     _, candidates = _passed_candidates(tmp_path)
-    candidates[1]["comparison"]["iteration_lineage"][
-        "parent_draft_id"
-    ] = "unrelated-draft"
+    candidates[1]["comparison"]["iteration_lineage"]["parent_draft_id"] = (
+        "unrelated-draft"
+    )
 
     result = build_daily_strategy_selection(
         run={"run_id": "run-daily-selection", "market_date": "2026-08-11"},

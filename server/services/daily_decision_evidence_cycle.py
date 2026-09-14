@@ -82,9 +82,9 @@ def record_cycle(
         account_truth_replay=account_truth_replay,
         additional_blockers=additional_blockers or [],
     )
-    production["input_snapshot"][
-        "decision_plan_fingerprint"
-    ] = decision_plan_fingerprint
+    production["input_snapshot"]["decision_plan_fingerprint"] = (
+        decision_plan_fingerprint
+    )
     fingerprint = daily_candidate_input_fingerprint(
         {
             **production,
@@ -122,7 +122,7 @@ def record_cycle(
     row = db.upsert_automation_run_sync(
         {
             "run_id": (
-                f"automation:daily-decision-evidence:{plan_date}:" f"{fingerprint[:12]}"
+                f"automation:daily-decision-evidence:{plan_date}:{fingerprint[:12]}"
             ),
             "run_type": DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
             "run_date": plan_date,

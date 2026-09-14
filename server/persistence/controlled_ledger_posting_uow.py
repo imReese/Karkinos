@@ -153,7 +153,7 @@ def _record_controlled_ledger_posting_transaction(
                 clearance[clearance_field] or ""
             ):
                 blockers.append(
-                    "controlled_ledger_posting_clearance_" f"{request_field}_changed"
+                    f"controlled_ledger_posting_clearance_{request_field}_changed"
                 )
         if str(clearance["status"]) != "cleared":
             blockers.append("controlled_ledger_posting_clearance_not_cleared")

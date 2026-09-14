@@ -671,8 +671,9 @@ def test_daily_candidate_trial_excludes_invalid_ticket_count_without_crashing(
 
     status = DailyCandidateTrialService(db=db).get_status()
 
-    assert "manual_order_ticket_candidate_count_invalid" in (
-        status["excluded_days"][0]["blockers"]
+    assert (
+        "manual_order_ticket_candidate_count_invalid"
+        in (status["excluded_days"][0]["blockers"])
     )
 
 
@@ -737,12 +738,12 @@ def test_daily_candidate_trial_replays_final_decision_window(tmp_path) -> None:
         offset=0,
     )[0]
     payload = json.loads(row["payload_json"])
-    payload["input_snapshot"]["decision_window"][
-        "decision_generated_at"
-    ] = f"{day}T14:00:00+08:00"
-    payload["input_snapshot"]["decision_window"][
-        "plan_generated_at"
-    ] = f"{day}T14:00:01+08:00"
+    payload["input_snapshot"]["decision_window"]["decision_generated_at"] = (
+        f"{day}T14:00:00+08:00"
+    )
+    payload["input_snapshot"]["decision_window"]["plan_generated_at"] = (
+        f"{day}T14:00:01+08:00"
+    )
     payload["production_record_fingerprint"] = daily_candidate_record_fingerprint(
         payload
     )

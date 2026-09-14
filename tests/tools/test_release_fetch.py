@@ -395,9 +395,9 @@ def test_fetch_published_v2_requires_its_signed_selection(
     elif selection_state == "mismatched":
         value = json.loads(downloads[selection["id"]])
         value["workflow"]["run_id"] += 1
-        value["artifact"][
-            "name"
-        ] = f"karkinos-candidate-{_SHA}-{_CANDIDATE_RUN_ID + 1}-{_CANDIDATE_RUN_ATTEMPT}"
+        value["artifact"]["name"] = (
+            f"karkinos-candidate-{_SHA}-{_CANDIDATE_RUN_ID + 1}-{_CANDIDATE_RUN_ATTEMPT}"
+        )
         payload = json.dumps(value).encode()
         downloads[selection["id"]] = payload
         selection.update(

@@ -324,8 +324,9 @@ def test_newer_identity_drift_blocks_reconciliation_and_cannot_clear(
         "controlled_submission_order_lifecycle_evidence_blocked"
     )
     summary = payload["controlled_submission_evidence_summary"]
-    assert "broker_order_lifecycle_order_identity_drift" in (
-        summary["broker_order_lifecycle_evidence"]["blockers"]
+    assert (
+        "broker_order_lifecycle_order_identity_drift"
+        in (summary["broker_order_lifecycle_evidence"]["blockers"])
     )
     assert summary["new_submissions_blocked"] is True
     assert db.get_oms_order_sync(order["order_id"])["status"] == "submitted"

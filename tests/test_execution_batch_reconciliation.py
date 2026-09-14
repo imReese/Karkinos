@@ -208,7 +208,7 @@ def _seed_paper_run(
                     "estimated_price": "6.00",
                     "strategy_refs": [f"strategy:{strategy_id}"],
                     "strategy_advancement_refs": [
-                        "strategy_advancement:" f"{strategy_advancement_fingerprint}"
+                        f"strategy_advancement:{strategy_advancement_fingerprint}"
                     ],
                     "risk_refs": ["risk:batch-risk-1"],
                     "account_truth_refs": ["account_truth:batch-fixture"],
@@ -536,8 +536,7 @@ def test_ai_shadow_batch_detects_actual_broker_identity_drift(tmp_path) -> None:
     _seed_current_ai_shadow_comparison(db, strategy_id=strategy_id)
     with sqlite3.connect(db._path) as conn:
         conn.execute(
-            "UPDATE broker_evidence_events SET broker_order_id = ? "
-            "WHERE event_id = ?",
+            "UPDATE broker_evidence_events SET broker_order_id = ? WHERE event_id = ?",
             ("broker-order-corrected", "broker-event-prior-order-1"),
         )
         conn.commit()

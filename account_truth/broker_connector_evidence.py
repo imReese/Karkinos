@@ -133,8 +133,7 @@ def _position_payload(
 ) -> dict[str, Any]:
     return {
         "event_id": (
-            f"{snapshot.connector_id}:position:{position.symbol}:"
-            f"{snapshot.captured_at}"
+            f"{snapshot.connector_id}:position:{position.symbol}:{snapshot.captured_at}"
         ),
         "event_type": "position_snapshot",
         "occurred_at": snapshot.captured_at,

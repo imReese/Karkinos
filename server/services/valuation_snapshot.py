@@ -7,17 +7,15 @@ from typing import Any
 
 from server.projections.valuation_snapshot import (
     VALUATION_POLICY_VERSION,
-)
-from server.projections.valuation_snapshot import (
-    build_current_valuation_snapshot as _build_current_valuation_snapshot,
-)
-from server.projections.valuation_snapshot import (
     ledger_identity_from_rows,
     load_persisted_quote_rows,
     select_authoritative_quote_rows,
     validate_valuation_snapshot,
     valuation_identity_fields,
     valuation_snapshot_from_row,
+)
+from server.projections.valuation_snapshot import (
+    build_current_valuation_snapshot as _build_current_valuation_snapshot,
 )
 
 

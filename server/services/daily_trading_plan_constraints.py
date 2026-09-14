@@ -194,7 +194,9 @@ def limit_check(candidate: dict[str, Any], *, side: str) -> dict[str, Any]:
     blocked_limit = (
         "limit_up"
         if side == "buy" and limit_status == "limit_up"
-        else "limit_down" if side == "sell" and limit_status == "limit_down" else None
+        else "limit_down"
+        if side == "sell" and limit_status == "limit_down"
+        else None
     )
     return {
         "id": blocked_limit or "limit_move",

@@ -974,8 +974,7 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
         gross_amount=457,
         net_cash_impact=-464.4,
         fee_breakdown_json=(
-            '{"commission":"5","transfer_fee":"0.4",'
-            '"stamp_tax":"2","total_fee":"7.4"}'
+            '{"commission":"5","transfer_fee":"0.4","stamp_tax":"2","total_fee":"7.4"}'
         ),
         asset_class="fund",
         note="posted strategy fill fixture",

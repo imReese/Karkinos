@@ -456,8 +456,7 @@ def _parse_value(
                 "field": schema.name,
                 "code": "not_allowed",
                 "message": (
-                    f"Parameter '{schema.name}' must be one of "
-                    f"{schema.allowed_values}."
+                    f"Parameter '{schema.name}' must be one of {schema.allowed_values}."
                 ),
             }
         )

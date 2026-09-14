@@ -402,8 +402,7 @@ def test_financial_preflight_surfaces_exact_full_market_scan_blocker() -> None:
     assert result["status"] == "no_action"
     assert result["financial_gate_status"] == "blocked"
     assert (
-        "promoted_strategy_universe_scan:"
-        "full_market_daily_receipt_coverage_incomplete"
+        "promoted_strategy_universe_scan:full_market_daily_receipt_coverage_incomplete"
     ) in result["financial_blockers"]
 
 
@@ -558,8 +557,7 @@ def test_promoted_scan_cache_reopens_current_inputs_before_reuse(monkeypatch) ->
         Scanner,
     )
     monkeypatch.setattr(
-        "server.services.daily_candidate_quote_freeze."
-        "DailyCandidateQuoteFreezeService",
+        "server.services.daily_candidate_quote_freeze.DailyCandidateQuoteFreezeService",
         QuoteFreezer,
     )
     state = type(
@@ -955,8 +953,9 @@ def test_automatic_evidence_chain_runs_risk_then_idempotent_paper_shadow(
     assert ticket["account_truth_binding"]["valuation_snapshot_id"] == ("valuation-001")
     assert ticket["account_truth_binding"]["ledger_cutoff_id"] == 7
     assert ticket["account_truth_binding"]["provider_contact_performed"] is False
-    assert ticket["prior_execution_closure_fingerprint"] == (
-        first["execution_closure"]["evidence_fingerprint"]
+    assert (
+        ticket["prior_execution_closure_fingerprint"]
+        == (first["execution_closure"]["evidence_fingerprint"])
     )
     assert len(ticket["ticket_candidate_fingerprint"]) == 64
     assert ticket["manual_confirmation_required"] is True
@@ -1362,9 +1361,9 @@ def test_daily_candidate_fails_closed_when_quote_is_after_decision_time(
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     decision = _decision(risk_checked=True)
-    decision["summary"]["market_data"][
-        "latest_quote_timestamp"
-    ] = "2026-07-02T09:36:00+08:00"
+    decision["summary"]["market_data"]["latest_quote_timestamp"] = (
+        "2026-07-02T09:36:00+08:00"
+    )
 
     async def read_plan():
         return decision, _plan(risk_checked=True)
@@ -1408,9 +1407,9 @@ def test_daily_candidate_fails_closed_outside_reviewed_decision_window(
     decision = _decision(risk_checked=True)
     plan = _plan(risk_checked=True)
     decision["generated_at"] = "2026-07-02T14:00:00+08:00"
-    decision["summary"]["market_data"][
-        "latest_quote_timestamp"
-    ] = "2026-07-02T13:59:00+08:00"
+    decision["summary"]["market_data"]["latest_quote_timestamp"] = (
+        "2026-07-02T13:59:00+08:00"
+    )
     plan["generated_at"] = "2026-07-02T14:00:01+08:00"
     plan["order_intents"][0]["market_quote_timestamp"] = "2026-07-02T13:59:00+08:00"
 
@@ -1445,9 +1444,9 @@ def test_daily_candidate_fails_closed_when_quote_exceeds_reviewed_age(
     db.init_sync()
     decision = _decision(risk_checked=True)
     plan = _plan(risk_checked=True)
-    decision["summary"]["market_data"][
-        "latest_quote_timestamp"
-    ] = "2026-07-02T09:20:00+08:00"
+    decision["summary"]["market_data"]["latest_quote_timestamp"] = (
+        "2026-07-02T09:20:00+08:00"
+    )
     plan["order_intents"][0]["market_quote_timestamp"] = "2026-07-02T09:20:00+08:00"
 
     async def read_plan():

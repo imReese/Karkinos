@@ -102,8 +102,9 @@ def test_source_scope_batch_assessment_accepts_only_consistent_exact_reviews() -
     assert assessment["declared_account_value_band"] == "cny_0_20000"
     assert assessment["declared_business_types"] == ["history_trades"]
     assert assessment["complete_account_coverage_proven"] is False
-    assert "citic_source_scope_batch_complete_account_coverage_unproven" in (
-        assessment["blockers"]
+    assert (
+        "citic_source_scope_batch_complete_account_coverage_unproven"
+        in (assessment["blockers"])
     )
 
 

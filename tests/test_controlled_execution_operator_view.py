@@ -292,8 +292,8 @@ def test_operator_view_unifies_terminal_order_journey_without_reopening_cleared_
     )
     assert summary["order_journey_count"] == 1
     assert summary["attention_order_journey_count"] == 1
-    assert summary["primary_attention_order_journey"] == (
-        summary["latest_order_journey"]
+    assert (
+        summary["primary_attention_order_journey"] == (summary["latest_order_journey"])
     )
     journey = summary["latest_order_journey"]
     assert journey["status"] == "ledger_posted_account_truth_review_required"

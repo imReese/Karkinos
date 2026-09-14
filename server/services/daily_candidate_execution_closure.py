@@ -108,7 +108,9 @@ def build_daily_candidate_execution_closure(db: Any) -> dict[str, Any]:
         "status": (
             "blocked"
             if blockers
-            else "not_required" if not production_orders else "pass"
+            else "not_required"
+            if not production_orders
+            else "pass"
         ),
         "production_order_count": len(production_orders),
         "clear_order_count": sum(

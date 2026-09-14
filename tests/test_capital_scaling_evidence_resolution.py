@@ -267,16 +267,17 @@ def test_resolver_links_direct_refs_and_blocks_missing_computed_window_sources(
         "risk",
     ]
     assert resolution["unsupported_evidence_kinds"] == []
-    assert "persisted_evidence_source_not_found:after_cost:execution-quality" in (
-        resolution["blockers"]
+    assert (
+        "persisted_evidence_source_not_found:after_cost:execution-quality"
+        in (resolution["blockers"])
     )
     assert "persisted_evidence_kind_not_clear:account_truth" in resolution["blockers"]
     assert "persisted_evidence_kind_not_clear:capacity" in resolution["blockers"]
-    assert "persisted_evidence_kind_not_clear:operating_sample" in (
-        resolution["blockers"]
+    assert (
+        "persisted_evidence_kind_not_clear:operating_sample" in (resolution["blockers"])
     )
-    assert "persisted_evidence_kind_not_clear:execution_scope" in (
-        resolution["blockers"]
+    assert (
+        "persisted_evidence_kind_not_clear:execution_scope" in (resolution["blockers"])
     )
     assert resolution["all_required_sources_resolved_clear"] is False
     assert len(resolution["resolution_fingerprint"]) == 64
@@ -350,8 +351,9 @@ def test_legacy_v1_window_cannot_satisfy_execution_scope(tmp_path) -> None:
         evidence=_evidence(refs=(f"execution_scope:{legacy_window_id}",))
     )
 
-    assert "persisted_evidence_window_schema_invalid:execution_scope" in (
-        resolution["blockers"]
+    assert (
+        "persisted_evidence_window_schema_invalid:execution_scope"
+        in (resolution["blockers"])
     )
     assert resolution["all_required_sources_resolved_clear"] is False
     assert resolution["resolution_status"] == "blocked_unresolved_sources"

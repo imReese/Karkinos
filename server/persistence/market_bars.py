@@ -23,10 +23,13 @@ def read_market_bars(
 
     uri = f"{db_path.resolve().as_uri()}?mode=ro"
     with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
-        if connection.execute("""
+        if (
+            connection.execute("""
                 SELECT 1 FROM sqlite_master
                 WHERE type = 'table' AND name = 'market_bars_v2'
-                """).fetchone() is None:
+                """).fetchone()
+            is None
+        ):
             return []
         rows = connection.execute(
             """

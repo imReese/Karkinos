@@ -422,8 +422,9 @@ def test_session_issuance_transaction_requires_enabled_automatic_trading_gate(
     with pytest.raises(ControlledSessionRuntimeAuthorityRejected) as exc_info:
         _issue(env)
 
-    assert "runtime_session_automatic_trading_not_enabled" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_session_automatic_trading_not_enabled"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert env["db"].list_controlled_session_runtime_sessions_sync() == []
 
@@ -539,8 +540,9 @@ def test_wrong_action_approval_and_source_drift_fail_closed_and_are_audited(
             acknowledgement=CONTROLLED_SESSION_ISSUANCE_ACKNOWLEDGEMENT,
         )
 
-    assert "runtime_session_issue_operator_approval_blocked" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "runtime_session_issue_operator_approval_blocked"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert (
         len(
@@ -595,8 +597,9 @@ def test_public_approval_id_without_private_signature_proof_cannot_issue(
             acknowledgement=CONTROLLED_SESSION_ISSUANCE_ACKNOWLEDGEMENT,
         )
 
-    assert "runtime_session_issue_operator_approval_blocked" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "runtime_session_issue_operator_approval_blocked"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert wrong_proof not in str(exc_info.value.evidence)
     assert env["db"].list_controlled_session_runtime_sessions_sync() == []
@@ -1091,8 +1094,9 @@ def test_replacement_transaction_rechecks_newer_blocked_snapshot(tmp_path) -> No
             operator_proof_signature_base64=approval["proof_signature_base64"],
             acknowledgement=CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT,
         )
-    assert "runtime_session_replacement_recovery_snapshot_superseded" in (
-        exc_info.value.evidence["transaction_blockers"]
+    assert (
+        "runtime_session_replacement_recovery_snapshot_superseded"
+        in (exc_info.value.evidence["transaction_blockers"])
     )
     assert env["authority"].list_replacements() == []
     assert (
@@ -1144,8 +1148,9 @@ def test_replacement_rejects_wider_rate_and_wrong_operator_action(tmp_path) -> N
             operator_proof_signature_base64=wrong["proof_signature_base64"],
             acknowledgement=CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT,
         )
-    assert "runtime_session_replace_operator_approval_blocked" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "runtime_session_replace_operator_approval_blocked"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert wrong["proof_signature_base64"] not in str(exc_info.value.evidence)
     assert env["authority"].list_replacements() == []

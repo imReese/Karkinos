@@ -79,9 +79,9 @@ def runtime_quotes_from_persisted(
         str(symbol): instrument.instrument_type
         for symbol, instrument in instruments.items()
     }
-    selected: dict[str, tuple[InstrumentType, dict[str, Any], tuple[str, str, int]]] = (
-        {}
-    )
+    selected: dict[
+        str, tuple[InstrumentType, dict[str, Any], tuple[str, str, int]]
+    ] = {}
     for quote in quotes:
         symbol = str(quote.get("symbol") or "").strip()
         if not symbol:

@@ -365,8 +365,9 @@ def test_cursor_out_of_order_drill_requires_observed_sequence_block(
     result = _service(db, old_connector).run_drill(drill_type="cursor_out_of_order")
 
     assert result["drill_status"] == "passed"
-    assert "source_sequence_cursor_out_of_order" in (
-        result["first_observations"][0]["blockers"]
+    assert (
+        "source_sequence_cursor_out_of_order"
+        in (result["first_observations"][0]["blockers"])
     )
 
 
@@ -488,11 +489,13 @@ def test_karkinos_restart_checkpoint_blocks_unsequenced_snapshot(tmp_path) -> No
     ]
     assert completed["drill_status"] == "failed"
     assert "restart_checkpoint_not_prepared" in completed["blockers"]
-    assert "source_sequence_not_accepted:fixture-readonly-runbook" in (
-        completed["blockers"]
+    assert (
+        "source_sequence_not_accepted:fixture-readonly-runbook"
+        in (completed["blockers"])
     )
-    assert "replay_source_sequence_not_accepted:fixture-readonly-runbook" in (
-        completed["blockers"]
+    assert (
+        "replay_source_sequence_not_accepted:fixture-readonly-runbook"
+        in (completed["blockers"])
     )
 
 

@@ -809,8 +809,9 @@ def test_confirmation_drift_after_final_signature_blocks_before_prepare(
     with pytest.raises(ControlledBrokerSubmissionRejected) as exc_info:
         _submit(env, preview, approval)
 
-    assert "controlled_broker_submit_confirmation_changed_before_prepare" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_broker_submit_confirmation_changed_before_prepare"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert provider_calls == 2
     assert env["gateway"].submit_calls == 0
@@ -989,8 +990,9 @@ def test_wrong_final_signature_domain_and_retry_conflict_fail_closed(tmp_path) -
             operator_proof_signature_base64=signature_base64,
             acknowledgement=CONTROLLED_BROKER_SUBMISSION_ACKNOWLEDGEMENT,
         )
-    assert "controlled_broker_submit_operator_approval_blocked" in (
-        exc_info.value.evidence["rejection_reasons"]
+    assert (
+        "controlled_broker_submit_operator_approval_blocked"
+        in (exc_info.value.evidence["rejection_reasons"])
     )
     assert signature_base64 not in str(exc_info.value.evidence)
     assert env["gateway"].submit_calls == 0

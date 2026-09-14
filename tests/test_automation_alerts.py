@@ -309,7 +309,7 @@ def test_alert_scan_records_failed_paper_shadow_automation_run(tmp_path) -> None
     assert result["open_alert_count"] == 1
     alert = result["alerts"][0]
     assert alert["alert_key"] == (
-        "automation_run:automation:daily-paper-shadow:2026-07-02:" "paper_shadow_failed"
+        "automation_run:automation:daily-paper-shadow:2026-07-02:paper_shadow_failed"
     )
     assert alert["severity"] == "warning"
     assert alert["category"] == "automation_run"

@@ -138,7 +138,7 @@ def test_analysis_review_get_routes_do_not_initialize_schema(monkeypatch):
         "/api/ai/research-task-analysis-reviews/ai-analysis-review-fixture"
     )
     replayed = client.get(
-        "/api/ai/research-task-analysis-reviews/" "ai-analysis-review-fixture/replay"
+        "/api/ai/research-task-analysis-reviews/ai-analysis-review-fixture/replay"
     )
 
     assert listed.status_code == 200

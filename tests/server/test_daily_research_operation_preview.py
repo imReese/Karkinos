@@ -10,8 +10,8 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from server.db import AppDatabase
 from server.contracts.content_identity import content_fingerprint
+from server.db import AppDatabase
 from server.projections.normalized_research_operation_preview import (
     build_normalized_research_operation_preview,
 )

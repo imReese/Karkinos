@@ -74,8 +74,7 @@ class HumanExternalPromotedAnalysisMemoryRetrievalRequest:
             != EXTERNAL_PROMOTED_ANALYSIS_MEMORY_RETRIEVAL_CONFIRMATION
         ):
             raise ValueError(
-                "explicit promoted-analysis memory retrieval confirmation is "
-                "required"
+                "explicit promoted-analysis memory retrieval confirmation is required"
             )
 
     @property

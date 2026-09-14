@@ -52,8 +52,7 @@ PUBLIC_SIGNATURES = {
     "paper_shadow_allows_manual_ticket": ("(evidence: 'dict[str, Any]') -> 'bool'"),
     "latest_quote_timestamp": "(quotes: 'Any') -> 'str | None'",
     "strategy_attribution_gate_evidence": (
-        "(state: 'Any', db: 'Any', actions: 'list[dict[str, Any]]') "
-        "-> 'dict[str, Any]'"
+        "(state: 'Any', db: 'Any', actions: 'list[dict[str, Any]]') -> 'dict[str, Any]'"
     ),
 }
 

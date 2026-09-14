@@ -289,7 +289,7 @@ def test_partial_or_corrupt_query_window_store_fails_closed_without_repair(
     partial_path = tmp_path / "partial.db"
     with sqlite3.connect(partial_path) as conn:
         conn.execute(
-            "CREATE TABLE citic_source_query_window_reviews " "(id INTEGER PRIMARY KEY)"
+            "CREATE TABLE citic_source_query_window_reviews (id INTEGER PRIMARY KEY)"
         )
         conn.commit()
     before = partial_path.stat()
@@ -307,8 +307,7 @@ def test_partial_or_corrupt_query_window_store_fails_closed_without_repair(
     _record(repository, preview)
     with sqlite3.connect(corrupt_path) as conn:
         conn.execute(
-            "UPDATE citic_source_query_window_reviews "
-            "SET query_end_date = 'not-a-date'"
+            "UPDATE citic_source_query_window_reviews SET query_end_date = 'not-a-date'"
         )
         conn.commit()
 

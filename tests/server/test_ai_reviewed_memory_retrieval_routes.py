@@ -135,7 +135,7 @@ def test_retrieval_get_routes_do_not_initialize_schema(monkeypatch):
         "/api/ai/reviewed-memory-retrievals/ai-memory-retrieval-fixture"
     )
     replayed = client.get(
-        "/api/ai/reviewed-memory-retrievals/" "ai-memory-retrieval-fixture/replay"
+        "/api/ai/reviewed-memory-retrievals/ai-memory-retrieval-fixture/replay"
     )
 
     assert listed.status_code == 200

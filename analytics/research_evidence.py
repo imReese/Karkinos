@@ -217,7 +217,9 @@ def build_research_evidence_bundle(
     gate_status = (
         "blocked"
         if "blocked" in statuses
-        else "degraded" if "degraded" in statuses else "pass"
+        else "degraded"
+        if "degraded" in statuses
+        else "pass"
     )
     dataset_snapshot = _json_object(metrics_json.get("dataset_snapshot"))
     trade_statistics = _trade_statistics(context)

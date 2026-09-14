@@ -310,7 +310,9 @@ class HumanMemoryInformedFixtureAnalysisServiceBase:
         return load_memory_informed_inputs_value(**kwargs)
 
     @staticmethod
-    def load_current_binding(**kwargs: Any) -> tuple[
+    def load_current_binding(
+        **kwargs: Any,
+    ) -> tuple[
         ReviewedMemoryRetrievalResult | None,
         tuple[CanonicalEvidenceRecord, ...],
     ]:

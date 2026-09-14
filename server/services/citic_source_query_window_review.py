@@ -274,7 +274,9 @@ def citic_source_query_window_review_response(
         "active"
         if review.decision == "accepted"
         and source_review_status == "follow_up_required"
-        else "revoked" if review.decision == "revoked" else "source_closed"
+        else "revoked"
+        if review.decision == "revoked"
+        else "source_closed"
     )
     return {
         "review_id": review.review_id,

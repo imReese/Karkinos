@@ -162,7 +162,9 @@ class ControlledSessionAutomaticPauseService:
                 else (
                     "already_paused"
                     if already_paused
-                    else "pause_required" if pause_reasons else "clear_no_pause"
+                    else "pause_required"
+                    if pause_reasons
+                    else "clear_no_pause"
                 )
             ),
             "blockers": unique_blockers,

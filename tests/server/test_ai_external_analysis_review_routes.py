@@ -101,8 +101,7 @@ def _payload():
         "pricing_snapshot": None,
         "pricing_unavailable_reason": "provider pricing not yet reviewed",
         "confirmation": (
-            "record_external_analysis_review_without_memory_decision_or_trade_"
-            "authority"
+            "record_external_analysis_review_without_memory_decision_or_trade_authority"
         ),
     }
 
@@ -115,8 +114,7 @@ def test_external_analysis_review_route_requires_exact_confirmation(monkeypatch)
     payload["confirmation"] = "wrong"
 
     response = client.post(
-        "/api/ai/external-memory-informed-analyses/"
-        "ai-external-memory-fixture/reviews",
+        "/api/ai/external-memory-informed-analyses/ai-external-memory-fixture/reviews",
         json=payload,
     )
 
@@ -132,8 +130,7 @@ def test_external_analysis_review_route_records_no_authority_disposition(
     client, initialize_calls = _client(monkeypatch, service)
 
     response = client.post(
-        "/api/ai/external-memory-informed-analyses/"
-        "ai-external-memory-fixture/reviews",
+        "/api/ai/external-memory-informed-analyses/ai-external-memory-fixture/reviews",
         json=_payload(),
     )
 
@@ -158,7 +155,7 @@ def test_external_analysis_review_get_routes_are_read_only(monkeypatch):
     )
     fetched = client.get("/api/ai/external-analysis-reviews/ai-external-review-fixture")
     replayed = client.get(
-        "/api/ai/external-analysis-reviews/" "ai-external-review-fixture/replay"
+        "/api/ai/external-analysis-reviews/ai-external-review-fixture/replay"
     )
 
     assert listed.status_code == 200
@@ -178,8 +175,7 @@ def test_external_analysis_review_route_maps_gate_rejection(monkeypatch):
     )
 
     response = client.post(
-        "/api/ai/external-memory-informed-analyses/"
-        "ai-external-memory-fixture/reviews",
+        "/api/ai/external-memory-informed-analyses/ai-external-memory-fixture/reviews",
         json=_payload(),
     )
 

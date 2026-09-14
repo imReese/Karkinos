@@ -240,7 +240,7 @@ def test_legacy_v1_review_is_read_only_compatible_and_upgrades_append_only(
             ),
         )
         conn.execute(
-            "ALTER TABLE citic_source_scope_reviews " "DROP COLUMN account_value_band"
+            "ALTER TABLE citic_source_scope_reviews DROP COLUMN account_value_band"
         )
         conn.commit()
 

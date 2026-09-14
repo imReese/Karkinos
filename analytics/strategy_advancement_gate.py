@@ -34,9 +34,11 @@ from analytics.strategy_advancement_evidence import integer as _integer
 from analytics.strategy_advancement_evidence import json_list as _json_list
 from analytics.strategy_advancement_evidence import json_object as _json_object
 from analytics.strategy_advancement_evidence import mapping as _mapping
-from analytics.strategy_advancement_evidence import market_regime_robustness_check
+from analytics.strategy_advancement_evidence import (
+    market_regime_robustness_check,
+    parameter_robustness_check,
+)
 from analytics.strategy_advancement_evidence import number as _number
-from analytics.strategy_advancement_evidence import parameter_robustness_check
 from analytics.strategy_advancement_evidence import (
     payload_fingerprint as _payload_fingerprint,
 )
@@ -445,9 +447,7 @@ def build_strategy_advancement_gate(
         "account_truth_source_fingerprint"
     ) and account_capital.get(
         "account_truth_scope_fingerprint"
-    ) == candidate_fee_binding.get(
-        "account_truth_scope_fingerprint"
-    )
+    ) == candidate_fee_binding.get("account_truth_scope_fingerprint")
     account_capital_passed = is_valid_passed_research_account_capital_evidence(
         account_capital,
         expected_initial_cash=candidate.get("initial_cash"),

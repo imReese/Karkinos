@@ -56,8 +56,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--acknowledgement",
         default="",
         help=(
-            "Required with --record: "
-            f"{BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT}"
+            f"Required with --record: {BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT}"
         ),
     )
     return parser.parse_args(argv)
