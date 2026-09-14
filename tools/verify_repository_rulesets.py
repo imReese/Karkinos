@@ -221,6 +221,7 @@ def verify(
     if unobservable and scope == "owner":
         raise RulesetVerificationError("repository_ruleset_bypass_unobservable")
     missing = sorted(set(desired) - set(actual))
+    unexpected = sorted(set(actual) - set(desired))
     drifted = []
     for name in sorted(set(desired) & set(actual)):
         expected = dict(desired[name])
@@ -235,8 +236,9 @@ def verify(
         "unobservable_fields": unobservable,
         "desired_rulesets": sorted(desired),
         "missing_rulesets": missing,
+        "unexpected_rulesets": unexpected,
         "drifted_rulesets": drifted,
-        "in_sync": not missing and not drifted,
+        "in_sync": not missing and not unexpected and not drifted,
     }
     if not result["in_sync"]:
         raise RulesetVerificationError(json.dumps(result, sort_keys=True))
