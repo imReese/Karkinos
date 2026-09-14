@@ -7,3 +7,4 @@ export type {
   LiveHoldingGroup,
   PortfolioSnapshot,
 } from '../../shared/portfolio-evidence/contracts';
+export type { OperationsAttentionItem } from '../operations/api';

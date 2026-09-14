@@ -32,6 +32,7 @@ type AppShellToolbarProps = {
   onMobileNavToggle: () => void;
   onThemeChange: (value: ThemePreference) => void;
   status: ToolbarStatusState;
+  showFinancialStatus: boolean;
   theme: ThemePreference;
 };
 
@@ -45,6 +46,7 @@ export function AppShellToolbar({
   onMobileNavToggle,
   onThemeChange,
   status,
+  showFinancialStatus,
   theme,
 }: AppShellToolbarProps) {
   return (
@@ -89,17 +91,21 @@ export function AppShellToolbar({
           <span className="app-product-mark truncate">Karkinos</span>
         </div>
 
-        <div className="app-toolbar-state hidden shrink-0 items-center min-[1360px]:flex">
-          <div
-            className="app-toolbar-mode"
-            aria-label={`${copy.shell.accountMode}: ${status.executionMode}`}
-          >
-            <span>{copy.shell.accountMode}</span>
-            <strong>{status.executionMode}</strong>
+        {showFinancialStatus ? (
+          <div className="app-toolbar-state hidden shrink-0 items-center min-[1360px]:flex">
+            <div
+              className="app-toolbar-mode"
+              aria-label={`${copy.shell.accountMode}: ${status.executionMode}`}
+            >
+              <span>{copy.shell.accountMode}</span>
+              <strong>{status.executionMode}</strong>
+            </div>
           </div>
-        </div>
+        ) : null}
 
-        <ToolbarStatusRail copy={copy} status={status} />
+        {showFinancialStatus ? (
+          <ToolbarStatusRail copy={copy} status={status} />
+        ) : null}
 
         <button
           type="button"

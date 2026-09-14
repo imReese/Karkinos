@@ -10,7 +10,7 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
 }) => {
   for (const viewport of desktopViewports) {
     await page.setViewportSize(viewport);
-    await page.goto('/overview');
+    await page.goto('/portfolio');
 
     const sidebar = page.locator('#app-shell-navigation');
     const header = page.locator('.app-toolbar-shell');
@@ -186,32 +186,38 @@ test('workspace command menu navigates without adding execution authority', asyn
 test('a delayed route chunk replaces the prior page with non-interactive pending state', async ({
   page,
 }) => {
-  let markRiskChunkRequested = () => undefined;
-  const riskChunkRequested = new Promise<void>((resolve) => {
-    markRiskChunkRequested = resolve;
+  let markOperationsChunkRequested = () => undefined;
+  const operationsChunkRequested = new Promise<void>((resolve) => {
+    markOperationsChunkRequested = resolve;
   });
-  let releaseRiskChunk = () => undefined;
-  const riskChunkRelease = new Promise<void>((resolve) => {
-    releaseRiskChunk = resolve;
+  let releaseOperationsChunk = () => undefined;
+  const operationsChunkRelease = new Promise<void>((resolve) => {
+    releaseOperationsChunk = resolve;
   });
 
-  await page.route(/\/assets\/risk-page-[^/]+\.js(?:\?.*)?$/, async (route) => {
-    markRiskChunkRequested();
-    await riskChunkRelease;
-    await route.continue();
-  });
+  await page.route(
+    /\/assets\/operations-page-[^/]+\.js(?:\?.*)?$/,
+    async (route) => {
+      markOperationsChunkRequested();
+      await operationsChunkRelease;
+      await route.continue();
+    },
+  );
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/overview');
   const overviewControl = page
     .getByTestId('overview-performance-card')
-    .getByRole('tab')
+    .getByRole('button')
     .first();
   await expect(overviewControl).toBeVisible({ timeout: 15_000 });
 
-  const riskLink = page.getByRole('link', { name: 'Risk', exact: true });
-  await riskLink.evaluate((element) => (element as HTMLElement).click());
-  await riskChunkRequested;
+  const operationsLink = page.getByRole('link', {
+    name: 'Operations',
+    exact: true,
+  });
+  await operationsLink.evaluate((element) => (element as HTMLElement).click());
+  await operationsChunkRequested;
 
   try {
     const pending = page.getByTestId('route-pending');
@@ -225,12 +231,12 @@ test('a delayed route chunk replaces the prior page with non-interactive pending
       pending.locator('a, button, input, select, textarea, [role="button"]'),
     ).toHaveCount(0);
   } finally {
-    releaseRiskChunk();
+    releaseOperationsChunk();
   }
 
-  await expect(page).toHaveURL(/\/risk$/);
+  await expect(page).toHaveURL(/\/operations$/);
   await expect(
-    page.getByRole('heading', { name: 'Risk control center' }),
+    page.getByRole('heading', { name: 'Operations review' }),
   ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('route-pending')).toHaveCount(0);
 });
@@ -329,6 +335,7 @@ test('desktop utility controls align and overview holdings avoid partial columns
   ).toBeLessThanOrEqual(1);
 
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/portfolio');
   await expect(page.locator('.app-toolbar-status-rail')).toBeVisible();
   await expect(page.getByTestId('status-pill-valuation')).not.toHaveAttribute(
     'aria-label',
@@ -452,7 +459,13 @@ test('desktop utility controls align and overview holdings avoid partial columns
 
   await valuationStatus.click();
   await expect(valuationDialog).toBeVisible();
-  await page.getByRole('heading', { name: '当前持仓' }).click();
+  const contentBounds = (await page
+    .locator('.app-shell-content')
+    .boundingBox())!;
+  await page.mouse.click(
+    contentBounds.x + 16,
+    contentBounds.y + contentBounds.height - 16,
+  );
   await expect(valuationDialog).toHaveCount(0);
 
   const marketStatus = page.getByTestId('status-pill-market');

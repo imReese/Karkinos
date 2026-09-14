@@ -102,6 +102,14 @@ export function operationsNextActionLabel(
       en: 'Repair market data source',
       zh: '修复行情数据源',
     },
+    review_current_holding_market_evidence: {
+      en: 'Review current holding prices and NAV',
+      zh: '复核当前持仓价格与净值',
+    },
+    restore_valuation_identity_before_review: {
+      en: 'Restore valuation evidence before review',
+      zh: '恢复估值证据后继续复核',
+    },
     review_market_data_freshness: {
       en: 'Review market data freshness',
       zh: '复核行情新鲜度',

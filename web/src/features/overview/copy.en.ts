@@ -1,6 +1,6 @@
 export const overviewCopyEn = {
   kicker: 'Overview',
-  title: "Today's investment workbench",
+  title: 'Portfolio overview',
   subtitle:
     'Confirm account truth first, then review exceptions and current holdings before analysis.',
   modeHelper:
@@ -57,7 +57,7 @@ export const overviewCopyEn = {
     todayToReview: 'Today to review',
     additionalReviewItems: (count: number) =>
       count === 1 ? '1 more review item' : `${count} more review items`,
-    noActionItems: 'No urgent items right now.',
+    noActionItems: 'No items need your attention today.',
     noActionItemsDetail:
       'Market data, approvals, and strategy evidence do not need immediate action.',
     operationsTower: 'Execution status',
@@ -306,6 +306,7 @@ export const overviewCopyEn = {
     all: 'ALL',
     empty: 'No equity history yet.',
     emptyTitle: 'No Equity History Yet',
+    unverifiedPeriod: 'No verified valuation points in this period.',
     emptyPeriod: 'No data available for this period.',
     insufficientData: 'Insufficient data for this range.',
     emptyDetail:
