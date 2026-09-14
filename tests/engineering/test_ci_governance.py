@@ -52,7 +52,6 @@ def test_single_ci_workflow_verifies_every_dev_push_and_pull_request() -> None:
         "Browser safety smoke",
         "Workflow security",
         "Promotion Gate",
-        "Dev CI gate",
         "Full CI gate",
     } <= names
 
@@ -65,7 +64,7 @@ def test_single_ci_workflow_verifies_every_dev_push_and_pull_request() -> None:
     assert "setup-uv@" in text
 
 
-def test_promotion_gate_requires_all_checks_without_path_or_mode_filters() -> None:
+def test_promotion_gate_requires_all_checks_without_path_filters() -> None:
     config = _workflow(".github/workflows/ci.yml")
     jobs = config["jobs"]
     gate = jobs["promotion-gate"]
@@ -85,8 +84,7 @@ def test_promotion_gate_requires_all_checks_without_path_or_mode_filters() -> No
     }
     for name in gate["needs"]:
         assert "if" not in jobs[name]
-        for step in jobs[name]["steps"]:
-            assert "needs.plan.outputs.mode" not in step.get("if", "")
+    assert jobs["trading-safety"]["needs"] == "plan"
 
 
 def test_promotion_gate_rejects_unsuccessful_dependencies_and_empty_results(
@@ -110,25 +108,20 @@ def test_promotion_gate_rejects_unsuccessful_dependencies_and_empty_results(
         exec(script, {})
 
 
-def test_legacy_ci_gates_require_promotion_gate_success() -> None:
-    jobs = _workflow(".github/workflows/ci.yml")["jobs"]
-    for name, mode in (("dev-ci-gate", "incremental"), ("full-ci-gate", "full")):
-        gate = jobs[name]
-        assert gate["if"] == (
-            "${{ always() && needs.plan.outputs.mode == '" + mode + "' }}"
-        )
-        assert gate["needs"] == ["plan", "promotion-gate"]
-        step = gate["steps"][0]
-        assert step["env"] == {"PROMOTION_RESULT": "${{ needs.promotion-gate.result }}"}
-        assert step["run"] == 'test "${PROMOTION_RESULT}" = success'
+def test_release_compatibility_gate_requires_successful_dispatch() -> None:
+    gate = _workflow(".github/workflows/ci.yml")["jobs"]["full-ci-gate"]
+    assert gate["if"] == "${{ always() && github.event_name == 'workflow_dispatch' }}"
+    assert gate["needs"] == "promotion-gate"
+    step = gate["steps"][0]
+    assert step["env"] == {"PROMOTION_RESULT": "${{ needs.promotion-gate.result }}"}
+    assert step["run"] == 'test "${PROMOTION_RESULT}" = success'
 
 
-def test_full_dispatch_binds_exact_dev_sha_and_base() -> None:
+def test_dispatch_binds_exact_dev_sha_and_base() -> None:
     text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert 'test "${GITHUB_REF}" = refs/heads/dev' in text
     assert 'test "${GITHUB_SHA}" = "${DISPATCH_COMMIT_SHA}"' in text
     assert "git merge-base --is-ancestor" in text
-    assert "mode=full" in text
 
 
 def test_candidate_and_release_consume_promotion_full_ci_evidence() -> None:
