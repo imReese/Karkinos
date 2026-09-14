@@ -79,32 +79,6 @@ def test_promotion_gate_rejects_unsuccessful_dependencies_and_empty_results(
             exec(script, {})
 
 
-def test_release_compatibility_gate_requires_successful_dispatch() -> None:
-    gate = _workflow(".github/workflows/ci.yml")["jobs"]["full-ci-gate"]
-    assert gate["if"] == "${{ always() && github.event_name == 'workflow_dispatch' }}"
-    assert gate["needs"] == "promotion-gate"
-    step = gate["steps"][0]
-    assert step["env"] == {"PROMOTION_RESULT": "${{ needs.promotion-gate.result }}"}
-    assert step["run"] == 'test "${PROMOTION_RESULT}" = success'
-
-
-def test_dispatch_binds_exact_dev_sha_and_base() -> None:
-    text = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert 'test "${GITHUB_REF}" = refs/heads/dev' in text
-    assert 'test "${GITHUB_SHA}" = "${DISPATCH_COMMIT_SHA}"' in text
-    assert "git merge-base --is-ancestor" in text
-
-
-def test_candidate_and_release_consume_promotion_full_ci_evidence() -> None:
-    for path in (".github/workflows/candidate.yml", ".github/workflows/release.yml"):
-        text = Path(path).read_text(encoding="utf-8")
-        assert 'required-job "Full CI gate"' in text
-        assert "--branch dev" in text
-        assert "--event workflow_dispatch" in text
-        assert "Code CI gate" not in text
-        assert "Repository acceptance audit" not in text
-
-
 @pytest.mark.parametrize("filename", ["ci.yml", "nightly.yml", "governance.yml"])
 def test_source_verification_and_governance_permissions_are_read_only(filename) -> None:
     config = _workflow(f".github/workflows/{filename}")

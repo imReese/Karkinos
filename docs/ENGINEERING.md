@@ -121,10 +121,8 @@ all unpromoted commits and the working tree for secrets. Nightly failures remain
 visible in Actions and are fixed through normal development; the workflow cannot
 write branches or change promotion authority.
 
-Manual dispatch verifies an explicit dev SHA and main base for debugging. It runs
-the same checks as an ordinary push. A temporary `Full CI gate` dispatch alias
-remains for candidate/release consumers until their manifest migration; source
-promotion neither requests it nor depends on it.
+Manual dispatch on `dev` reruns ordinary CI for its current commit for debugging.
+It has no separate verification mode. Promotion uses the commit's dev push gate.
 
 ### Promotion authority
 
@@ -140,19 +138,30 @@ dev never falls back to an older green ancestor.
 
 ### Candidate and stable release authority
 
-`candidate.yml` builds release bytes once from an exact promoted main commit and
-attests their provenance. `release.yml` verifies the stable SemVer tag, candidate
-manifest and attestations, then publishes those already-built bytes.
+`candidate.yml` builds artifact bytes from an exact promoted main commit. It runs
+after successful promotion, on a main push, or by explicit dispatch on main. Its
+signed manifest binds the commit, version, native archive checksums, and container
+image digest. Native archives also carry candidate provenance attestations.
 
-The artifact workflows temporarily retain their legacy source-CI lookup for the
-existing candidate manifest contract. This compatibility is confined to artifact
-production and publication; it cannot authorize a source promotion. Remove it
-with the candidate manifest migration, preserving installed updater compatibility.
+`release.yml` resolves an immutable stable SemVer tag to its promoted main commit.
+Before trusting manifest digests, it verifies the candidate attestation's repository,
+signer workflow, exact source commit, main ref, and hosted-runner identity. It
+verifies the native bytes and provenance, then publishes those same bytes and
+promotes the container by digest without rebuilding. Stable release attestations
+bind the published manifest and native archives to the exact tag and commit.
+
+New candidates use manifest v3. Installed release readers retain read-only support
+for already-published v2 manifests and their signed v1 selection sidecars. These
+historical assets stay immutable; new production and publication do not create
+selection sidecars or reconstruct historical CI execution. An older installed
+controller that cannot read v3 uses the verified target package's standalone
+installer for the explicit update handoff.
 
 ### Branch and tag protection
 
 Repository-managed desired-state files live under `.github/rulesets/`:
 
+- `dev.json` rejects deletion and non-fast-forward updates without requiring a green development tip;
 - `main.json` requires `Promotion Gate`, rejects deletion and non-fast-forward updates, and has no bypass actor;
 - `tags-v.json` makes `v*` release tags immutable after creation by rejecting update, deletion, and non-fast-forward mutation, with no bypass actor.
 

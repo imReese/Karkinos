@@ -108,11 +108,15 @@ def verify_github_attestation(
         _STABLE_SIGNER_WORKFLOW,
     }:
         raise ValueError("release_attestation_signer_workflow_invalid")
-    if source_ref is not None and (
-        not source_ref.startswith("refs/tags/")
-        or _SEMVER_TAG.fullmatch(source_ref.removeprefix("refs/tags/")) is None
-    ):
-        raise ValueError("release_attestation_source_ref_invalid")
+    if source_ref is not None:
+        if signer_workflow == _CANDIDATE_SIGNER_WORKFLOW:
+            valid_ref = source_ref == "refs/heads/main"
+        else:
+            valid_ref = source_ref.startswith("refs/tags/") and (
+                _SEMVER_TAG.fullmatch(source_ref.removeprefix("refs/tags/")) is not None
+            )
+        if not valid_ref:
+            raise ValueError("release_attestation_source_ref_invalid")
     if archive.is_symlink() or not archive.is_file():
         raise ValueError("release_attestation_artifact_invalid")
     command = [
@@ -523,28 +527,23 @@ def fetch_candidate_native(
             output=work / "candidate-actions.zip",
             token=token,
             api_url=_api_root(api_url),
-            metadata_output=work / "candidate-selection.json",
         )
-        selection = download_candidate.read_candidate_selection(
-            work / "candidate-selection.json",
-            expected_repository=repository,
-            expected_commit_sha=commit_sha,
-        )
-        selection_workflow = selection["workflow"]
-        assert isinstance(selection_workflow, dict)
         bundle = work / "bundle"
         download_candidate._safe_zip_extract(actions_archive.read_bytes(), bundle)
         manifest_path = bundle / "candidate-manifest.json"
         artifact_dir = bundle / "candidate-artifacts"
+        verify_github_attestation(
+            manifest_path,
+            repository=repository,
+            commit_sha=commit_sha,
+            source_ref="refs/heads/main",
+            token=token,
+            runner=attestation_runner,
+        )
         manifest = verify_candidate_manifest(
             manifest_path,
             artifact_dir=artifact_dir,
             expected_commit_sha=commit_sha,
-            expected_candidate_workflow_run_id=int(selection_workflow["run_id"]),
-            expected_candidate_workflow_run_attempt=int(
-                selection_workflow["run_attempt"]
-            ),
-            expected_candidate_workflow_event=str(selection_workflow["event"]),
             expected_image_reference=f"ghcr.io/{repository.lower()}",
         )
         bundle_entries = {path.name for path in bundle.iterdir()}
@@ -557,6 +556,7 @@ def fetch_candidate_native(
             archive_path,
             repository=repository,
             commit_sha=commit_sha,
+            source_ref="refs/heads/main",
             token=token,
             runner=attestation_runner,
         )
@@ -614,8 +614,6 @@ def fetch_stable_native(
     if manifest_asset is None:
         raise ValueError("release_fetch_candidate_manifest_missing")
     selection_asset = assets.get("candidate-selection.json")
-    if selection_asset is None:
-        raise ValueError("release_fetch_candidate_selection_missing")
     output = _require_new_output(output_dir)
     with tempfile.TemporaryDirectory(
         prefix=f".{output.name}.release-", dir=output.parent
@@ -631,46 +629,59 @@ def fetch_stable_native(
                 maximum=_MAX_JSON_BYTES,
             )
         )
-        selection_path = work / "candidate-selection.json"
-        selection_path.write_bytes(
-            _download_release_asset(
-                selection_asset,
-                repository=repository,
-                token=token,
-                api_url=api_url,
-                maximum=_MAX_JSON_BYTES,
-            )
-        )
-        # Establish the tag-to-manifest identity before consulting the
-        # candidate selection receipt so drift reports the earliest boundary.
-        verify_candidate_manifest_metadata(
+        verify_github_attestation(
             manifest_path,
-            expected_commit_sha=commit_sha,
-            expected_version=tag.removeprefix("v"),
-            expected_image_reference=f"ghcr.io/{repository.lower()}",
+            repository=repository,
+            commit_sha=commit_sha,
+            signer_workflow=_STABLE_SIGNER_WORKFLOW,
+            source_ref=f"refs/tags/{tag}",
+            token=token,
+            runner=attestation_runner,
         )
-        selection = download_candidate.read_candidate_selection(
-            selection_path,
-            expected_repository=repository,
-            expected_commit_sha=commit_sha,
-        )
-        selection_workflow = selection["workflow"]
-        assert isinstance(selection_workflow, dict)
         manifest = verify_candidate_manifest_metadata(
             manifest_path,
             expected_commit_sha=commit_sha,
             expected_version=tag.removeprefix("v"),
-            expected_candidate_workflow_run_id=int(selection_workflow["run_id"]),
-            expected_candidate_workflow_run_attempt=int(
-                selection_workflow["run_attempt"]
-            ),
-            expected_candidate_workflow_event=str(selection_workflow["event"]),
             expected_image_reference=f"ghcr.io/{repository.lower()}",
         )
-        expected_asset_names = {
-            "candidate-manifest.json",
-            "candidate-selection.json",
-        }
+        legacy = manifest["schema_version"] == "karkinos.release_candidate.v2"
+        expected_asset_names = {"candidate-manifest.json"}
+        if legacy:
+            # Published v2 releases include this signed sidecar. New candidates
+            # bind their contents directly through the manifest attestation.
+            if selection_asset is None:
+                raise ValueError("release_fetch_candidate_selection_missing")
+            selection_path = work / "candidate-selection.json"
+            selection_path.write_bytes(
+                _download_release_asset(
+                    selection_asset,
+                    repository=repository,
+                    token=token,
+                    api_url=api_url,
+                    maximum=_MAX_JSON_BYTES,
+                )
+            )
+            verify_github_attestation(
+                selection_path,
+                repository=repository,
+                commit_sha=commit_sha,
+                signer_workflow=_STABLE_SIGNER_WORKFLOW,
+                source_ref=f"refs/tags/{tag}",
+                token=token,
+                runner=attestation_runner,
+            )
+            selection = download_candidate.read_candidate_selection(
+                selection_path,
+                expected_repository=repository,
+                expected_commit_sha=commit_sha,
+            )
+            workflow = selection["workflow"]
+            if any(
+                manifest["candidate_workflow"][field] != workflow[field]
+                for field in ("run_id", "run_attempt", "event")
+            ):
+                raise ValueError("release_fetch_legacy_selection_mismatch")
+            expected_asset_names.add("candidate-selection.json")
         for item in manifest["native_artifacts"]:
             expected_asset_names.add(item["filename"])
             expected_asset_names.add(f"{item['filename']}.sha256")
@@ -743,27 +754,10 @@ def fetch_stable_native(
             expected_version=manifest["version"],
         )
         verify_github_attestation(
-            manifest_path,
-            repository=repository,
-            commit_sha=commit_sha,
-            signer_workflow=_STABLE_SIGNER_WORKFLOW,
-            source_ref=f"refs/tags/{tag}",
-            token=token,
-            runner=attestation_runner,
-        )
-        verify_github_attestation(
-            selection_path,
-            repository=repository,
-            commit_sha=commit_sha,
-            signer_workflow=_STABLE_SIGNER_WORKFLOW,
-            source_ref=f"refs/tags/{tag}",
-            token=token,
-            runner=attestation_runner,
-        )
-        verify_github_attestation(
             archive_path,
             repository=repository,
             commit_sha=commit_sha,
+            source_ref=None if legacy else "refs/heads/main",
             token=token,
             runner=attestation_runner,
         )

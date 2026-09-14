@@ -13,13 +13,17 @@ import pytest
 
 from server import __version__
 from tools import release_artifact, release_fetch
-from tools.release_candidate import build_candidate_manifest
+from tools.release_candidate import (
+    build_candidate_manifest,
+    verify_candidate_manifest_metadata,
+)
 
 _SHA = "a" * 40
 _OTHER_SHA = "b" * 40
 _REPOSITORY = "imReese/Karkinos"
 _CANDIDATE_RUN_ID = 456
 _CANDIDATE_RUN_ATTEMPT = 2
+_PUBLISHED_V2 = Path(__file__).with_name("fixtures") / "v0.3.9-candidate-manifest.json"
 
 
 def _native_archive(
@@ -74,7 +78,9 @@ def _native_archive(
     return archive
 
 
-def _candidate_bundle(tmp_path: Path) -> tuple[Path, dict[str, bytes]]:
+def _candidate_bundle(
+    tmp_path: Path, *, legacy: bool = False
+) -> tuple[Path, dict[str, bytes]]:
     artifact_dir = tmp_path / "candidate-artifacts"
     artifact_dir.mkdir(parents=True)
     assets: dict[str, bytes] = {}
@@ -92,18 +98,30 @@ def _candidate_bundle(tmp_path: Path) -> tuple[Path, dict[str, bytes]]:
         artifact_dir=artifact_dir,
         commit_sha=_SHA,
         version=__version__,
-        source_ci_run_id=123,
-        source_ci_run_attempt=2,
-        source_ci_event="push",
-        candidate_workflow_run_id=_CANDIDATE_RUN_ID,
-        candidate_workflow_run_attempt=_CANDIDATE_RUN_ATTEMPT,
-        candidate_workflow_event="push",
-        image_workflow_run_id=_CANDIDATE_RUN_ID,
-        image_workflow_run_attempt=1,
         image_reference="ghcr.io/imreese/karkinos",
         image_digest="sha256:" + "c" * 64,
     )
     manifest_path = tmp_path / "candidate-manifest.json"
+    if legacy:
+        # Preserve the published v0.3.9 envelope around synthetic native bytes.
+        old = json.loads(_PUBLISHED_V2.read_text())
+        old.update(
+            commit_sha=_SHA,
+            version=__version__,
+            native_artifacts=manifest["native_artifacts"],
+        )
+        old["candidate_workflow"].update(
+            run_id=_CANDIDATE_RUN_ID, run_attempt=_CANDIDATE_RUN_ATTEMPT
+        )
+        tag = f"candidate-sha-{_SHA}-run-{_CANDIDATE_RUN_ID}-attempt-{_CANDIDATE_RUN_ATTEMPT}"
+        old["image"].update(
+            workflow_run_id=_CANDIDATE_RUN_ID,
+            workflow_run_attempt=_CANDIDATE_RUN_ATTEMPT,
+            candidate_tag=tag,
+            candidate_reference=f"{old['image']['reference']}:{tag}",
+        )
+        manifest = old
+        assets["candidate-selection.json"] = _candidate_selection()
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     assets[manifest_path.name] = manifest_path.read_bytes()
     return manifest_path, assets
@@ -152,7 +170,7 @@ def _candidate_selection(archive_payload: bytes = b"candidate-actions") -> bytes
 
 
 def _attestation_result(
-    command: list[str], **kwargs
+    command: list[str], *, expected_sha: str = _SHA, **kwargs
 ) -> subprocess.CompletedProcess[str]:
     assert command[:3] == ["gh", "attestation", "verify"]
     assert command[command.index("--repo") + 1] == _REPOSITORY
@@ -161,13 +179,13 @@ def _attestation_result(
         f"{_REPOSITORY}/.github/workflows/candidate.yml",
         f"{_REPOSITORY}/.github/workflows/release.yml",
     }
-    assert command[command.index("--source-digest") + 1] == _SHA
+    assert command[command.index("--source-digest") + 1] == expected_sha
     if signer.endswith("/release.yml"):
         assert command[command.index("--source-ref") + 1] == (
             f"refs/tags/v{__version__}"
         )
-    else:
-        assert "--source-ref" not in command
+    elif "--source-ref" in command:
+        assert command[command.index("--source-ref") + 1] == "refs/heads/main"
     assert command[-3:] == ["--deny-self-hosted-runners", "--format", "json"]
     assert kwargs["check"] is False
     assert kwargs["capture_output"] is True
@@ -189,9 +207,10 @@ def _attestation_result(
     )
 
 
-def _release_fixture(tmp_path: Path) -> tuple[dict[str, object], dict[int, bytes]]:
-    manifest_path, payloads = _candidate_bundle(tmp_path)
-    payloads["candidate-selection.json"] = _candidate_selection()
+def _release_fixture(
+    tmp_path: Path, *, legacy: bool = False
+) -> tuple[dict[str, object], dict[int, bytes]]:
+    manifest_path, payloads = _candidate_bundle(tmp_path, legacy=legacy)
     assets: list[dict[str, object]] = []
     downloads: dict[int, bytes] = {}
     for asset_id, (name, payload) in enumerate(sorted(payloads.items()), start=100):
@@ -227,23 +246,33 @@ def test_fetch_candidate_selects_current_architecture_after_full_verification(
     def fake_fetch_candidate(**kwargs) -> Path:
         output = kwargs["output"]
         output.write_bytes(payload)
-        kwargs["metadata_output"].write_bytes(_candidate_selection(payload))
         assert kwargs["commit_sha"] == _SHA
         return output
 
     monkeypatch.setattr(
         release_fetch.download_candidate, "fetch_candidate", fake_fetch_candidate
     )
+    attestations: list[list[str]] = []
+
+    def attest(command, **kwargs):
+        attestations.append(command)
+        return _attestation_result(command, **kwargs)
+
     result = release_fetch.fetch_candidate_native(
         repository=_REPOSITORY,
         commit_sha=_SHA,
         output_dir=tmp_path / "verified",
         token="sensitive-token",
         architecture="arm64",
-        attestation_runner=_attestation_result,
+        attestation_runner=attest,
     )
 
     assert result.source == "actions-candidate"
+    assert Path(attestations[0][3]).name == "candidate-manifest.json"
+    assert all(
+        command[command.index("--source-ref") + 1] == "refs/heads/main"
+        for command in attestations
+    )
     assert result.commit_sha == _SHA
     assert result.architecture == "arm64"
     assert result.archive.name == f"karkinos-{__version__}-macos-arm64.tar.gz"
@@ -326,13 +355,127 @@ def test_fetch_stable_binds_release_tag_asset_digests_and_native_manifest(
         for command in attestation_commands
     ] == [
         f"{_REPOSITORY}/.github/workflows/release.yml",
-        f"{_REPOSITORY}/.github/workflows/release.yml",
         f"{_REPOSITORY}/.github/workflows/candidate.yml",
         f"{_REPOSITORY}/.github/workflows/release.yml",
     ]
     assert Path(attestation_commands[0][3]).name == "candidate-manifest.json"
-    assert Path(attestation_commands[1][3]).name == "candidate-selection.json"
+    assert (
+        attestation_commands[1][attestation_commands[1].index("--source-ref") + 1]
+        == "refs/heads/main"
+    )
     assert installer_id not in requested_assets
+
+
+def test_published_v039_manifest_is_still_readable() -> None:
+    # Public asset: imReese/Karkinos/releases/download/v0.3.9/candidate-manifest.json
+    manifest = verify_candidate_manifest_metadata(
+        _PUBLISHED_V2,
+        expected_commit_sha="d25ded9225e7557c6b26aa782db57b27f46ea094",
+        expected_version="0.3.9",
+        expected_image_reference="ghcr.io/imreese/karkinos",
+    )
+    assert {item["architecture"] for item in manifest["native_artifacts"]} == {
+        "arm64",
+        "x86_64",
+    }
+
+
+@pytest.mark.parametrize("selection_state", ["valid", "missing", "mismatched"])
+def test_fetch_published_v2_requires_its_signed_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selection_state: str
+) -> None:
+    release, downloads = _release_fixture(tmp_path / "source", legacy=True)
+    selection = next(
+        asset
+        for asset in release["assets"]
+        if asset["name"] == "candidate-selection.json"
+    )
+    if selection_state == "missing":
+        release["assets"].remove(selection)
+    elif selection_state == "mismatched":
+        value = json.loads(downloads[selection["id"]])
+        value["workflow"]["run_id"] += 1
+        value["artifact"][
+            "name"
+        ] = f"karkinos-candidate-{_SHA}-{_CANDIDATE_RUN_ID + 1}-{_CANDIDATE_RUN_ATTEMPT}"
+        payload = json.dumps(value).encode()
+        downloads[selection["id"]] = payload
+        selection.update(
+            size=len(payload), digest=f"sha256:{hashlib.sha256(payload).hexdigest()}"
+        )
+
+    def fake_json(path, **_kwargs):
+        if "/releases/tags/" in path:
+            return release
+        return {
+            "ref": f"refs/tags/v{__version__}",
+            "object": {"type": "commit", "sha": _SHA},
+        }
+
+    monkeypatch.setattr(release_fetch, "_github_json", fake_json)
+    monkeypatch.setattr(
+        release_fetch,
+        "_https_get",
+        lambda url, **_kwargs: downloads[int(url.rsplit("/", 1)[1])],
+    )
+    attestations = []
+
+    def attest(command, **kwargs):
+        attestations.append(command)
+        return _attestation_result(command, **kwargs)
+
+    arguments = dict(
+        repository=_REPOSITORY,
+        tag=f"v{__version__}",
+        output_dir=tmp_path / "verified",
+        token="sensitive-token",
+        architecture="arm64",
+        attestation_runner=attest,
+    )
+    if selection_state == "valid":
+        result = release_fetch.fetch_stable_native(**arguments)
+        assert result.commit_sha == _SHA
+        assert [Path(command[3]).name for command in attestations[:2]] == [
+            "candidate-manifest.json",
+            "candidate-selection.json",
+        ]
+        assert "--source-ref" not in attestations[2]
+    else:
+        error = (
+            "candidate_selection_missing"
+            if selection_state == "missing"
+            else "legacy_selection_mismatch"
+        )
+        with pytest.raises(ValueError, match=error):
+            release_fetch.fetch_stable_native(**arguments)
+        assert not (tmp_path / "verified").exists()
+
+
+def test_candidate_manifest_is_not_parsed_before_attestation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("candidate-manifest.json", "untrusted invalid JSON")
+
+    def fetch(**kwargs):
+        kwargs["output"].write_bytes(payload.getvalue())
+        return kwargs["output"]
+
+    def reject(*_args, **_kwargs):
+        raise ValueError("release_attestation_verification_failed")
+
+    monkeypatch.setattr(release_fetch.download_candidate, "fetch_candidate", fetch)
+    monkeypatch.setattr(release_fetch, "verify_github_attestation", reject)
+    with pytest.raises(ValueError, match="release_attestation_verification_failed"):
+        release_fetch.fetch_candidate_native(
+            repository=_REPOSITORY,
+            commit_sha=_SHA,
+            output_dir=tmp_path / "verified",
+            token="sensitive-token",
+            architecture="arm64",
+        )
+    assert not (tmp_path / "verified").exists()
 
 
 def test_fetch_stable_reuses_installer_archive_without_downloading_it_again(
@@ -504,7 +647,11 @@ def test_fetch_stable_rejects_tag_manifest_commit_mismatch(
             repository=_REPOSITORY,
             tag=f"v{__version__}",
             output_dir=tmp_path / "verified",
+            token="sensitive-token",
             architecture="arm64",
+            attestation_runner=lambda command, **kwargs: _attestation_result(
+                command, expected_sha=_OTHER_SHA, **kwargs
+            ),
         )
 
 
@@ -596,7 +743,9 @@ def test_fetch_stable_rejects_missing_selected_checksum_asset(
             repository=_REPOSITORY,
             tag=f"v{__version__}",
             output_dir=tmp_path / "verified",
+            token="sensitive-token",
             architecture="arm64",
+            attestation_runner=_attestation_result,
         )
 
 

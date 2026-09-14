@@ -917,108 +917,7 @@ def test_candidate_zip_extract_rejects_symlink_and_traversal(tmp_path: Path) -> 
         download_candidate._safe_zip_extract(symlink.getvalue(), tmp_path / "symlink")
 
 
-@pytest.mark.parametrize("source_ci_event", ["push", "workflow_dispatch"])
-def test_candidate_manifest_round_trip_binds_artifact_bytes(
-    tmp_path: Path, monkeypatch, source_ci_event: str
-) -> None:
-    artifact_dir = tmp_path / "candidate-artifacts"
-    artifact_dir.mkdir()
-    monkeypatch.setattr(
-        release_artifact,
-        "validate_archive",
-        lambda *args, **kwargs: {},
-    )
-    for architecture in ("arm64", "x86_64"):
-        filename = f"karkinos-{_VERSION}-macos-{architecture}.tar.gz"
-        archive = artifact_dir / filename
-        archive.write_bytes(f"{architecture}\n".encode())
-        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        (artifact_dir / f"{filename}.sha256").write_text(
-            f"{digest}  {filename}\n", encoding="utf-8"
-        )
-
-    manifest = build_candidate_manifest(
-        repo_root=Path("."),
-        artifact_dir=artifact_dir,
-        commit_sha=_SHA,
-        version=_VERSION,
-        source_ci_run_id=123,
-        source_ci_run_attempt=2,
-        source_ci_event=source_ci_event,
-        candidate_workflow_run_id=456,
-        candidate_workflow_run_attempt=3,
-        candidate_workflow_event="push",
-        image_workflow_run_id=456,
-        image_workflow_run_attempt=2,
-        image_reference="ghcr.io/imreese/karkinos",
-        image_digest="sha256:" + "b" * 64,
-    )
-    manifest_path = tmp_path / "candidate-manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    verified = verify_candidate_manifest(
-        manifest_path,
-        artifact_dir=artifact_dir,
-        expected_commit_sha=_SHA,
-        expected_version=_VERSION,
-        expected_source_ci_run_id=123,
-        expected_source_ci_run_attempt=2,
-        expected_source_ci_event=source_ci_event,
-        expected_candidate_workflow_run_id=456,
-        expected_candidate_workflow_run_attempt=3,
-        expected_candidate_workflow_event="push",
-        expected_image_reference="ghcr.io/imreese/karkinos",
-        repo_root=Path("."),
-    )
-    assert verified["source_ci"]["event"] == source_ci_event
-    assert verified["image"]["digest"] == "sha256:" + "b" * 64
-    assert verified["image"]["candidate_tag"].endswith("run-456-attempt-2")
-    assert verified["toolchain"] == {
-        "python": "3.12.13",
-        "node": "24.20.0",
-        "uv": "0.11.28",
-    }
-
-    with pytest.raises(
-        ValueError, match="candidate_manifest_workflow_attempt_mismatch"
-    ):
-        verify_candidate_manifest(
-            manifest_path,
-            artifact_dir=artifact_dir,
-            expected_commit_sha=_SHA,
-            expected_candidate_workflow_run_id=456,
-            expected_candidate_workflow_run_attempt=4,
-        )
-
-    mismatched_event = "workflow_dispatch" if source_ci_event == "push" else "push"
-    with pytest.raises(ValueError, match="candidate_manifest_source_ci_event_mismatch"):
-        verify_candidate_manifest(
-            manifest_path,
-            artifact_dir=artifact_dir,
-            expected_commit_sha=_SHA,
-            expected_source_ci_run_id=123,
-            expected_source_ci_run_attempt=2,
-            expected_source_ci_event=mismatched_event,
-        )
-    assert (
-        verify_candidate_manifest_metadata(manifest_path, expected_commit_sha=_SHA)[
-            "source_ci"
-        ]["event"]
-        == source_ci_event
-    )
-    for invalid_event in ("schedule", "pull_request", "", None, []):
-        manifest["source_ci"]["event"] = invalid_event
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        with pytest.raises(ValueError, match="candidate_manifest_source_ci_invalid"):
-            verify_candidate_manifest_metadata(manifest_path, expected_commit_sha=_SHA)
-    del manifest["source_ci"]["event"]
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(ValueError, match="candidate_manifest_source_ci_invalid"):
-        verify_candidate_manifest_metadata(manifest_path, expected_commit_sha=_SHA)
-
-
-def test_candidate_manifest_cli_imports_package_from_direct_script_path(
-    tmp_path: Path,
-) -> None:
+def _candidate_bundle(tmp_path: Path) -> tuple[Path, Path, dict]:
     artifact_dir = tmp_path / "candidate-artifacts"
     artifact_dir.mkdir()
     for architecture in ("arm64", "x86_64"):
@@ -1030,74 +929,192 @@ def test_candidate_manifest_cli_imports_package_from_direct_script_path(
             ),
         )
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        (artifact_dir / f"{filename}.sha256").write_text(
-            f"{digest}  {filename}\n", encoding="utf-8"
+        (artifact_dir / f"{filename}.sha256").write_text(f"{digest}  {filename}\n")
+    manifest = build_candidate_manifest(
+        repo_root=Path("."),
+        artifact_dir=artifact_dir,
+        commit_sha=_SHA,
+        version=_VERSION,
+        image_reference="ghcr.io/imreese/karkinos",
+        image_digest="sha256:" + "b" * 64,
+    )
+    manifest_path = tmp_path / "candidate-manifest.json"
+    manifest_path.write_text(json.dumps(manifest))
+    return artifact_dir, manifest_path, manifest
+
+
+def test_candidate_manifest_round_trip_binds_artifact_bytes(tmp_path: Path) -> None:
+    artifact_dir, manifest_path, manifest = _candidate_bundle(tmp_path)
+    verified = verify_candidate_manifest(
+        manifest_path,
+        artifact_dir=artifact_dir,
+        expected_commit_sha=_SHA,
+        expected_version=_VERSION,
+        expected_image_reference="ghcr.io/imreese/karkinos",
+        repo_root=Path("."),
+    )
+    assert verified == manifest
+    assert verified["schema_version"] == "karkinos.release_candidate.v3"
+    assert verified["image"] == {
+        "reference": "ghcr.io/imreese/karkinos",
+        "digest": "sha256:" + "b" * 64,
+        "platforms": ["linux/amd64", "linux/arm64"],
+    }
+    archive = artifact_dir / manifest["native_artifacts"][0]["filename"]
+    archive.write_bytes(archive.read_bytes() + b"changed bytes")
+    with pytest.raises(ValueError, match="checksum_mismatch"):
+        verify_candidate_manifest(
+            manifest_path, artifact_dir=artifact_dir, expected_commit_sha=_SHA
         )
 
-    output = tmp_path / "candidate-manifest.json"
+
+@pytest.mark.parametrize(
+    "field,value,error",
+    [
+        ("commit_sha", "c" * 40, "commit_sha_mismatch"),
+        ("version", "0.0.1", "version_mismatch"),
+        (
+            "image",
+            {
+                "reference": "ghcr.io/other/repository",
+                "digest": "sha256:" + "b" * 64,
+                "platforms": ["linux/amd64", "linux/arm64"],
+            },
+            "image_reference_mismatch",
+        ),
+        (
+            "image",
+            {
+                "reference": "ghcr.io/imreese/karkinos",
+                "digest": "sha256:" + "b" * 64,
+                "platforms": ["linux/amd64"],
+            },
+            "image_platforms_invalid",
+        ),
+    ],
+)
+def test_candidate_manifest_rejects_wrong_identity(tmp_path, field, value, error):
+    _, manifest_path, manifest = _candidate_bundle(tmp_path)
+    manifest[field] = value
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match=error):
+        verify_candidate_manifest_metadata(
+            manifest_path,
+            expected_commit_sha=_SHA,
+            expected_version=_VERSION,
+            expected_image_reference="ghcr.io/imreese/karkinos",
+        )
+
+
+def test_manifest_digest_must_match_valid_native_archive(tmp_path):
+    artifact_dir, manifest_path, manifest = _candidate_bundle(tmp_path)
+    manifest["native_artifacts"][0]["sha256"] = "f" * 64
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="checksum_mismatch"):
+        verify_candidate_manifest(
+            manifest_path, artifact_dir=artifact_dir, expected_commit_sha=_SHA
+        )
+
+
+def test_legacy_v2_manifest_remains_readable_without_source_ci_lookup(tmp_path):
+    artifact_dir, manifest_path, manifest = _candidate_bundle(tmp_path)
+    manifest["schema_version"] = "karkinos.release_candidate.v2"
+    manifest["source_ci"] = {
+        "workflow": "CI",
+        "workflow_path": ".github/workflows/ci.yml",
+        "event": "push",
+        "branch": "main",
+        "run_id": 123,
+        "run_attempt": 1,
+    }
+    manifest["candidate_workflow"] = {
+        "workflow": "Release Candidate",
+        "workflow_path": ".github/workflows/candidate.yml",
+        "event": "push",
+        "branch": "main",
+        "run_id": 456,
+        "run_attempt": 2,
+    }
+    tag = f"candidate-sha-{_SHA}-run-456-attempt-1"
+    manifest["image"].pop("platforms")
+    manifest["image"].update(
+        workflow_run_id=456,
+        workflow_run_attempt=1,
+        candidate_tag=tag,
+        candidate_reference=f"ghcr.io/imreese/karkinos:{tag}",
+    )
+    manifest["source_fingerprints"] = {
+        field: "f" * 64
+        for field in (
+            "pyproject",
+            "uv_lock",
+            "web_package",
+            "web_lock",
+            "candidate_workflow",
+            "dockerfile",
+        )
+    }
+    manifest["toolchain"] = {"python": "3.12.10", "node": "24.1.0", "uv": "0.6.0"}
+    manifest["promotion"] = {
+        "method": "digest_and_bytes_only",
+        "rebuild_forbidden": True,
+        "stable_environment_required": True,
+    }
+    manifest_path.write_text(json.dumps(manifest))
+    assert (
+        verify_candidate_manifest(
+            manifest_path, artifact_dir=artifact_dir, expected_commit_sha=_SHA
+        )
+        == manifest
+    )
+    for invalid_event in ("schedule", "pull_request", "", None, []):
+        manifest["source_ci"]["event"] = invalid_event
+        manifest_path.write_text(json.dumps(manifest))
+        with pytest.raises(ValueError, match="legacy_workflow_invalid"):
+            verify_candidate_manifest_metadata(manifest_path, expected_commit_sha=_SHA)
+
+
+def test_candidate_manifest_cli_imports_package_from_direct_script_path(
+    tmp_path: Path,
+) -> None:
+    artifact_dir, _, _ = _candidate_bundle(tmp_path)
+    output = tmp_path / "cli-manifest.json"
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
+    command = [
+        sys.executable,
+        str(Path("tools/release_candidate.py").resolve()),
+        "build",
+        "--repo-root",
+        str(Path.cwd()),
+        "--artifact-dir",
+        str(artifact_dir),
+        "--commit-sha",
+        _SHA,
+        "--version",
+        _VERSION,
+        "--image-reference",
+        "ghcr.io/imreese/karkinos",
+        "--image-digest",
+        "sha256:" + "b" * 64,
+        "--output",
+        str(output),
+    ]
     result = subprocess.run(
-        [
-            sys.executable,
-            str(Path("tools/release_candidate.py").resolve()),
-            "build",
-            "--repo-root",
-            str(Path.cwd()),
-            "--artifact-dir",
-            str(artifact_dir),
-            "--commit-sha",
-            _SHA,
-            "--version",
-            _VERSION,
-            "--source-ci-run-id",
-            "123",
-            "--source-ci-run-attempt",
-            "1",
-            "--source-ci-event",
-            "workflow_dispatch",
-            "--candidate-workflow-run-id",
-            "456",
-            "--candidate-workflow-run-attempt",
-            "1",
-            "--candidate-workflow-event",
-            "push",
-            "--image-workflow-run-id",
-            "456",
-            "--image-workflow-run-attempt",
-            "1",
-            "--image-reference",
-            "ghcr.io/imreese/karkinos",
-            "--image-digest",
-            "sha256:" + "b" * 64,
-            "--output",
-            str(output),
-        ],
-        cwd=tmp_path,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
+        command, cwd=tmp_path, env=environment, capture_output=True, text=True
     )
-
     assert result.returncode == 0, result.stderr
-    manifest = json.loads(output.read_text(encoding="utf-8"))
+    manifest = json.loads(output.read_text())
     assert manifest["commit_sha"] == _SHA
-    assert manifest["source_ci"]["event"] == "workflow_dispatch"
-    missing_event_command = list(result.args)
-    event_index = missing_event_command.index("--source-ci-event")
-    del missing_event_command[event_index : event_index + 2]
-    missing_event_result = subprocess.run(
-        missing_event_command,
-        cwd=tmp_path,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
+    assert manifest["schema_version"] == "karkinos.release_candidate.v3"
+    original = output.read_bytes()
+    repeated = subprocess.run(
+        command, cwd=tmp_path, env=environment, capture_output=True, text=True
     )
-    assert missing_event_result.returncode == 2
-    assert "--source-ci-event" in missing_event_result.stderr
-    mismatch_result = subprocess.run(
+    assert repeated.returncode == 1
+    assert "output_already_exists" in repeated.stderr
+    assert output.read_bytes() == original
+    mismatch = subprocess.run(
         [
             sys.executable,
             str(Path("tools/release_candidate.py").resolve()),
@@ -1107,22 +1124,15 @@ def test_candidate_manifest_cli_imports_package_from_direct_script_path(
             "--artifact-dir",
             str(artifact_dir),
             "--commit-sha",
-            _SHA,
-            "--source-ci-run-id",
-            "123",
-            "--source-ci-run-attempt",
-            "1",
-            "--source-ci-event",
-            "push",
+            "c" * 40,
         ],
         cwd=tmp_path,
         env=environment,
-        check=False,
         capture_output=True,
         text=True,
     )
-    assert mismatch_result.returncode == 1
-    assert "candidate_manifest_source_ci_event_mismatch" in mismatch_result.stderr
+    assert mismatch.returncode == 1
+    assert "commit_sha_mismatch" in mismatch.stderr
 
 
 def _candidate_image_metadata(reference: str, digest: str) -> dict[str, object]:
@@ -1139,7 +1149,7 @@ def _candidate_image_metadata(reference: str, digest: str) -> dict[str, object]:
             },
         }
     return {
-        "name": reference,
+        "name": f"{reference}@{digest}",
         "manifest": {"digest": digest},
         "image": images,
     }
@@ -1149,7 +1159,7 @@ def test_candidate_image_metadata_binds_both_runtime_platforms(
     tmp_path: Path,
 ) -> None:
     digest = "sha256:" + "b" * 64
-    reference = f"ghcr.io/imreese/karkinos:candidate-sha-{_SHA}-run-456-attempt-2"
+    reference = "ghcr.io/imreese/karkinos"
     metadata_path = tmp_path / "candidate-image-metadata.json"
     metadata_path.write_text(
         json.dumps(_candidate_image_metadata(reference, digest)), encoding="utf-8"
@@ -1171,7 +1181,7 @@ def test_candidate_image_metadata_fails_closed_on_remote_identity_mismatch(
     tmp_path: Path,
 ) -> None:
     digest = "sha256:" + "b" * 64
-    reference = f"ghcr.io/imreese/karkinos:candidate-sha-{_SHA}-run-456-attempt-2"
+    reference = "ghcr.io/imreese/karkinos"
     metadata = _candidate_image_metadata(reference, digest)
     metadata_path = tmp_path / "candidate-image-metadata.json"
 
@@ -1221,34 +1231,89 @@ def test_candidate_image_metadata_fails_closed_on_remote_identity_mismatch(
         )
 
 
-def test_candidate_image_promotion_requires_run_and_attempt_identity(
-    monkeypatch,
-) -> None:
+def test_candidate_image_promotion_uses_exact_digest(monkeypatch) -> None:
     digest = "sha256:" + "b" * 64
-    candidate = f"ghcr.io/imreese/karkinos:candidate-sha-{_SHA}-run-456-attempt-2"
+    reference = "ghcr.io/imreese/karkinos"
     created: list[tuple[str, str]] = []
-    monkeypatch.setattr(promote_candidate_image, "_inspect", lambda _reference: digest)
+    inspected: list[str] = []
+
+    def inspect(target):
+        inspected.append(target)
+        return digest
+
+    monkeypatch.setattr(promote_candidate_image, "_inspect", inspect)
     monkeypatch.setattr(
         promote_candidate_image,
         "_create",
         lambda source, target: created.append((source, target)),
     )
-
     promote_candidate_image.promote(
-        candidate_reference=candidate,
+        image_reference=reference,
         expected_digest=digest,
-        targets=["ghcr.io/imreese/karkinos:v1.2.3"],
+        targets=[f"{reference}:v1.2.3"],
     )
-    assert created == [
-        (
-            f"{candidate}@{digest}",
-            "ghcr.io/imreese/karkinos:v1.2.3",
-        )
-    ]
-
+    assert created == [(f"{reference}@{digest}", f"{reference}:v1.2.3")]
+    assert inspected[0] == f"{reference}@{digest}"
     with pytest.raises(ValueError, match="candidate_image_reference_invalid"):
         promote_candidate_image.promote(
-            candidate_reference=f"ghcr.io/imreese/karkinos:candidate-sha-{_SHA}",
+            image_reference=f"{reference}:mutable",
             expected_digest=digest,
-            targets=["ghcr.io/imreese/karkinos:v1.2.3"],
+            targets=[f"{reference}:v1.2.3"],
         )
+
+
+def test_candidate_image_promotion_rejects_digest_or_repository_drift(monkeypatch):
+    reference = "ghcr.io/imreese/karkinos"
+    digest = "sha256:" + "b" * 64
+    created = []
+    monkeypatch.setattr(
+        promote_candidate_image, "_inspect", lambda _: "sha256:" + "c" * 64
+    )
+    monkeypatch.setattr(
+        promote_candidate_image, "_create", lambda *args: created.append(args)
+    )
+    with pytest.raises(ValueError, match="candidate_image_digest_mismatch"):
+        promote_candidate_image.promote(
+            image_reference=reference,
+            expected_digest=digest,
+            targets=[f"{reference}:v1.2.3"],
+        )
+    with pytest.raises(ValueError, match="target_repository_mismatch"):
+        promote_candidate_image.promote(
+            image_reference=reference,
+            expected_digest=digest,
+            targets=["ghcr.io/other/repository:v1.2.3"],
+        )
+    assert created == []
+
+
+def test_candidate_image_promotion_preserves_existing_immutable_tags(monkeypatch):
+    reference = "ghcr.io/imreese/karkinos"
+    digest = "sha256:" + "b" * 64
+    target = f"{reference}:v1.2.3"
+    created = []
+    monkeypatch.setattr(promote_candidate_image, "_inspect", lambda _: digest)
+    monkeypatch.setattr(promote_candidate_image, "_assert_compatible", lambda *_: True)
+    monkeypatch.setattr(
+        promote_candidate_image, "_create", lambda *args: created.append(args)
+    )
+    promote_candidate_image.promote(
+        image_reference=reference,
+        expected_digest=digest,
+        targets=[target],
+        immutable_targets=[target],
+    )
+    assert created == []
+
+    def conflict(*_):
+        raise ValueError("stable_image_tag_digest_conflict")
+
+    monkeypatch.setattr(promote_candidate_image, "_assert_compatible", conflict)
+    with pytest.raises(ValueError, match="stable_image_tag_digest_conflict"):
+        promote_candidate_image.promote(
+            image_reference=reference,
+            expected_digest=digest,
+            targets=[target],
+            immutable_targets=[target],
+        )
+    assert created == []

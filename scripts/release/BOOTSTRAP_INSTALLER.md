@@ -72,6 +72,12 @@ This mode requires an existing managed runtime under `--home` (or the default
 Karkinos application-support directory). `--service-port` and
 `--health-timeout` remain optional and are forwarded to the target controller.
 
+The same handoff supports a release whose candidate manifest format is newer
+than the installed controller accepts. New releases use candidate manifest v3;
+an older controller that accepts only v2 must use the verified target release's
+installer and packaged controller. This does not rewrite the installed release
+or alter historical release assets.
+
 ## Run the one-time source-service handoff
 
 Pass the exact existing checkout and LaunchAgent plist. The installer selects
@@ -135,8 +141,20 @@ Before documenting a stable tag as bootstrap-capable, the release workflow must:
   source ref so the verification command above remains exact; and
 - run the standalone installer contract tests and a Bash syntax check.
 
-`tools/release_fetch.py` accepts either the historical exact stable asset set or
-that same set plus `bootstrap_installer.sh`. This preserves immutable historical
-tags while allowing new bootstrap-capable releases; any other extra asset still
-fails closed. Adding a second installer checksum asset would require an explicit
-corresponding control-plane change.
+Source readiness belongs to `Promotion Gate` and the trusted fast-forward to
+main. Candidate builds bind that exact promoted commit to artifact digests and
+attestations; stable publication verifies those identities and publishes the same
+bytes. The installer verifies the stable tag and provenance before delegating to
+the packaged controller.
+
+`tools/release_fetch.py` checks the exact asset set for each supported manifest:
+v3 releases contain the signed candidate manifest and native archives with their
+checksums. Already-published v2 releases additionally retain their signed v1
+`candidate-selection.json` sidecar, supported only for reading those immutable
+historical assets. New releases do not produce selection sidecars or use
+historical CI execution as source authorization.
+
+For either format, the reader accepts that exact set with or without the fixed
+`bootstrap_installer.sh` asset; the installer itself requires that asset. Any
+other extra asset fails closed. Adding a second installer checksum asset would
+require an explicit corresponding inventory change.

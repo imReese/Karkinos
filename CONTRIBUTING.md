@@ -96,14 +96,21 @@ checks must succeed for `Promotion Gate`, including trading safety, normal
 product tests, quality and secret scanning. A path classifier cannot skip major
 correctness suites.
 
+Manual dispatch on `dev` reruns its current commit's ordinary CI for debugging.
+The complete browser suite, Docker smoke, and deep audits run separately in
+`.github/workflows/nightly.yml`.
+
 `.github/workflows/promote-dev.yml` executes trusted default-branch code only.
 It reads the exact current dev commit's gate through the GitHub API and never
 executes candidate code with branch-write credentials. It never falls back to
 an older green ancestor or dispatches another verification protocol.
 
-Candidate building and stable release are separate artifact lifecycles. They
-retain their existing manifest compatibility until its dedicated migration;
-that compatibility does not participate in source promotion.
+`candidate.yml` builds an exact promoted main commit and signs a manifest binding
+its native archive checksums and container digest. `release.yml` verifies the
+immutable SemVer tag, exact commit, manifest, artifact digests, and attestations,
+then publishes the already-built bytes. New candidates use manifest v3; installed
+readers preserve read-only compatibility with already-published v2 manifests and
+v1 selection sidecars.
 
 Do not weaken assertions, typing, financial invariants, or fail-closed behavior
 merely to make a check pass.

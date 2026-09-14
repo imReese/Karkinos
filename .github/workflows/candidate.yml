@@ -1,8 +1,11 @@
 name: Release Candidate
 
-on:
+on: # zizmor: ignore[dangerous-triggers] builds and attests only the exact trusted main source
   push:
     branches: [main]
+  workflow_run:
+    workflows: [Promote verified dev]
+    types: [completed]
   workflow_dispatch:
     inputs:
       commit_sha:
@@ -23,21 +26,29 @@ concurrency:
 jobs:
   source:
     name: Verify candidate source
-    if: ${{ github.event.repository.fork == false }}
+    if: >-
+      ${{
+        github.repository == 'imReese/Karkinos' &&
+        github.ref == 'refs/heads/main' &&
+        (
+          github.event_name != 'workflow_run' ||
+          (
+            github.event.workflow_run.head_branch == 'main' &&
+            github.event.workflow_run.conclusion == 'success'
+          )
+        )
+      }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      actions: read
     outputs:
       commit_sha: ${{ steps.identity.outputs.commit_sha }}
       version: ${{ steps.version.outputs.version }}
-      source_ci_run_id: ${{ steps.source_ci.outputs.source_ci_run_id }}
-      source_ci_run_attempt: ${{ steps.source_ci.outputs.source_ci_run_attempt }}
-      source_ci_event: ${{ steps.source_ci.outputs.source_ci_event }}
     steps:
       - name: Checkout candidate source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Verify full commit identity
@@ -69,24 +80,6 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
-      - name: Verify exact promotion Full CI evidence
-        id: source_ci
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_COMMIT_SHA: ${{ steps.identity.outputs.commit_sha }}
-        run: |
-          set -euo pipefail
-          verify_args=(
-            --repository "${GITHUB_REPOSITORY}"
-            --commit-sha "${TARGET_COMMIT_SHA}"
-            --branch dev
-            --event workflow_dispatch
-            --required-job "Full CI gate"
-            --timeout-seconds 1200
-            --poll-interval-seconds 15
-          )
-          python tools/verify_release_source_ci.py "${verify_args[@]}" \
-            --github-output "${GITHUB_OUTPUT}"
       - name: Read package version
         id: version
         run: |
@@ -311,8 +304,6 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       reference: ${{ steps.reference.outputs.reference }}
-      workflow_run_id: ${{ steps.reference.outputs.workflow_run_id }}
-      workflow_run_attempt: ${{ steps.reference.outputs.workflow_run_attempt }}
     steps:
       - name: Checkout verified candidate commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -331,27 +322,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Compute candidate image reference
         id: reference
-        env:
-          CANDIDATE_COMMIT_SHA: ${{ needs.source.outputs.commit_sha }}
         run: |
           set -euo pipefail
-          printf 'reference=ghcr.io/%s:candidate-sha-%s-run-%s-attempt-%s\n' \
-            "${GITHUB_REPOSITORY,,}" "${CANDIDATE_COMMIT_SHA}" \
-            "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" >> "${GITHUB_OUTPUT}"
-          printf 'workflow_run_id=%s\n' "${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
-          printf 'workflow_run_attempt=%s\n' "${GITHUB_RUN_ATTEMPT}" >> "${GITHUB_OUTPUT}"
-      - name: Reject a reused candidate image tag
-        env:
-          CANDIDATE_IMAGE_REFERENCE: ${{ steps.reference.outputs.reference }}
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import os
-
-          from tools.release_image_plan import assert_registry_image_tag_absent
-
-          assert_registry_image_tag_absent(os.environ["CANDIDATE_IMAGE_REFERENCE"])
-          PY
+          printf 'reference=ghcr.io/%s\n' "${GITHUB_REPOSITORY,,}" >> "${GITHUB_OUTPUT}"
       # This candidate build is intentionally the only source build. Stable promotion uses its digest.
       - name: Build and push candidate multi-architecture image
         id: build
@@ -360,7 +333,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.reference.outputs.reference }}
+          tags: ${{ steps.reference.outputs.reference }}:candidate-sha-${{ needs.source.outputs.commit_sha }}
           build-args: VERSION=${{ needs.source.outputs.version }}
           labels: |
             org.opencontainers.image.version=${{ needs.source.outputs.version }}
@@ -376,7 +349,7 @@ jobs:
           set -euo pipefail
           metadata_path="${RUNNER_TEMP}/candidate-image-metadata.json"
           docker buildx imagetools inspect --format '{{json .}}' \
-            "${IMAGE_REFERENCE}" > "${metadata_path}"
+            "${IMAGE_REFERENCE}@${EXPECTED_DIGEST}" > "${metadata_path}"
           python tools/release_candidate.py verify-image-metadata \
             --metadata "${metadata_path}" \
             --image-reference "${IMAGE_REFERENCE}" \
@@ -391,6 +364,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      attestations: write
+      id-token: write
     steps:
       - name: Checkout verified candidate commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -407,14 +382,7 @@ jobs:
         env:
           CANDIDATE_COMMIT_SHA: ${{ needs.source.outputs.commit_sha }}
           CANDIDATE_VERSION: ${{ needs.source.outputs.version }}
-          SOURCE_CI_RUN_ID: ${{ needs.source.outputs.source_ci_run_id }}
-          SOURCE_CI_RUN_ATTEMPT: ${{ needs.source.outputs.source_ci_run_attempt }}
-          SOURCE_CI_EVENT: ${{ needs.source.outputs.source_ci_event }}
-          CANDIDATE_WORKFLOW_RUN_ID: ${{ github.run_id }}
-          CANDIDATE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
-          CANDIDATE_WORKFLOW_EVENT: ${{ github.event_name }}
-          IMAGE_WORKFLOW_RUN_ID: ${{ needs.image.outputs.workflow_run_id }}
-          IMAGE_WORKFLOW_RUN_ATTEMPT: ${{ needs.image.outputs.workflow_run_attempt }}
+          CANDIDATE_IMAGE_REFERENCE: ${{ needs.image.outputs.reference }}
           CANDIDATE_IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
         run: |
           set -euo pipefail
@@ -423,21 +391,17 @@ jobs:
             --artifact-dir candidate-artifacts \
             --commit-sha "${CANDIDATE_COMMIT_SHA}" \
             --version "${CANDIDATE_VERSION}" \
-            --source-ci-run-id "${SOURCE_CI_RUN_ID}" \
-            --source-ci-run-attempt "${SOURCE_CI_RUN_ATTEMPT}" \
-            --source-ci-event "${SOURCE_CI_EVENT}" \
-            --candidate-workflow-run-id "${CANDIDATE_WORKFLOW_RUN_ID}" \
-            --candidate-workflow-run-attempt "${CANDIDATE_WORKFLOW_RUN_ATTEMPT}" \
-            --candidate-workflow-event "${CANDIDATE_WORKFLOW_EVENT}" \
-            --image-workflow-run-id "${IMAGE_WORKFLOW_RUN_ID}" \
-            --image-workflow-run-attempt "${IMAGE_WORKFLOW_RUN_ATTEMPT}" \
-            --image-reference "ghcr.io/${GITHUB_REPOSITORY,,}" \
+            --image-reference "${CANDIDATE_IMAGE_REFERENCE}" \
             --image-digest "${CANDIDATE_IMAGE_DIGEST}" \
             --output candidate-manifest.json
+      - name: Attest candidate manifest provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: candidate-manifest.json
       - name: Upload immutable candidate bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: karkinos-candidate-${{ needs.source.outputs.commit_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: karkinos-candidate-${{ needs.source.outputs.commit_sha }}
           path: |
             candidate-manifest.json
             candidate-artifacts/
