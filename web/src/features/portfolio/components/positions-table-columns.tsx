@@ -5,17 +5,13 @@ import {
   formatCurrency,
   formatDate,
   formatPercent,
-  formatTimestamp,
+  formatPrice,
 } from '../../../shared/format';
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
-import { formatPublicStatus } from '../../../shared/public-labels';
-import { formatStaleReason } from '../../../shared/stale-reason';
-import { StatusBadge } from '../../../shared/ui/workbench';
+import { PositionPricing } from '../../../shared/portfolio-evidence/position-pricing';
 import type { Position } from '../api';
-import { quoteNeedsReview } from '../position-observation';
 import {
-  formatPositionAge,
   handlePositionLinkClick,
   holdingDetailHref,
   resolvePositionAssetClass,
@@ -152,40 +148,9 @@ export function buildPositionColumns({
   const quoteColumn: ColumnDef<Position, unknown> = {
     id: 'quote-state',
     header: labels.quoteState,
-    cell: ({ row }) => {
-      const position = row.original;
-      const needsReview = quoteNeedsReview(position.quote_status);
-      const staleReason = formatStaleReason(
-        position.stale_reason,
-        copy.common.staleReasons,
-      );
-      return (
-        <div className="min-w-32">
-          <StatusBadge tone={needsReview ? 'warning' : 'success'}>
-            {position.quote_status
-              ? formatPublicStatus(position.quote_status, locale)
-              : '--'}
-          </StatusBadge>
-          <div className="mt-1 max-w-44 truncate text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
-            {formatPositionAge(position.quote_age_seconds)} ·{' '}
-            {formatTimestamp(position.quote_timestamp)}
-          </div>
-          {position.stale_reason ? (
-            <div
-              className={`mt-0.5 text-[length:var(--app-font-size-micro)] text-[var(--app-warning-text)] ${
-                model.variant === 'dashboard'
-                  ? 'max-w-full whitespace-normal [overflow-wrap:anywhere]'
-                  : 'max-w-44 whitespace-normal [overflow-wrap:anywhere]'
-              }`}
-              data-testid="position-quote-stale-reason"
-              title={staleReason}
-            >
-              {staleReason}
-            </div>
-          ) : null}
-        </div>
-      );
-    },
+    cell: ({ row }) => (
+      <PositionPricing position={row.original} locale={locale} />
+    ),
   };
 
   if (model.showHistoryColumns) {
@@ -215,7 +180,7 @@ export function buildPositionColumns({
   return [
     symbolColumn,
     marketValueColumn,
-    ...(model.showFullColumns
+    ...(model.showFullColumns || model.variant === 'dashboard'
       ? [
           {
             id: 'weight',
@@ -234,9 +199,26 @@ export function buildPositionColumns({
           } satisfies ColumnDef<Position, unknown>,
         ]
       : []),
-    todayColumn,
+    ...(model.variant === 'dashboard' ? [] : [todayColumn]),
     unrealizedColumn,
     ...(model.showFullColumns ? [realizedColumn] : []),
+    ...(model.variant === 'dashboard'
+      ? [
+          {
+            id: 'latest-price',
+            header: () => (
+              <span className="block text-right">
+                {locale === 'zh' ? '价格 / 净值' : 'Price / NAV'}
+              </span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => (
+              <PositionNumericCell
+                value={formatPrice(row.original.latest_price)}
+              />
+            ),
+          } satisfies ColumnDef<Position, unknown>,
+        ]
+      : []),
     quoteColumn,
   ];
 }

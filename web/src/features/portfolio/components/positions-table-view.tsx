@@ -1,7 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
 
 import type { useCopy } from '../../../shared/i18n/context';
-import { DataTable, EvidenceState } from '../../../shared/ui/workbench';
+import { DataTable } from '../../../shared/ui/workbench';
 import type { Position } from '../api';
 import {
   holdingDetailHref,
@@ -27,14 +27,6 @@ export function PositionsTableView({
   const labels = copy.portfolio.table;
   return (
     <div className="min-w-0 space-y-2">
-      {model.variant === 'dashboard' && model.hasQuotesNeedingReview ? (
-        <EvidenceState
-          kind="partial"
-          title={labels.cachedQuoteNotice}
-          evidence={labels.quoteState}
-        />
-      ) : null}
-
       <PositionsTableMobileList copy={copy} locale={locale} model={model} />
 
       <div className="hidden min-w-0 md:block">
