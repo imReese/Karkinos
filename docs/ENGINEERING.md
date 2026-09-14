@@ -129,18 +129,19 @@ Classification may add or skip expensive backend integration, frontend, dependen
 
 ### Promotion authority
 
-`.github/workflows/promote-dev.yml` is a privileged default-branch controller. It is event-driven from a successful `CI` push run on `dev` (with manual dispatch as an owner fallback). The controller:
+`.github/workflows/promote-dev.yml` is the sole privileged source-promotion controller.
+It executes trusted default-branch code and reads candidate metadata through the
+GitHub API; candidate source never executes with branch-write credentials.
 
-1. selects only the exact current green `dev` head;
-2. never falls back to an older green ancestor;
-3. checks out and executes only trusted `main` controller code;
-4. dispatches and waits for that candidate SHA's own `Full CI gate` before any branch write;
-5. revalidates incremental CI evidence, full CI evidence, `dev`, `main`, and fast-forward ancestry;
-6. publishes `Main promotion gate` and updates `main` with `force=false` only after all checks still agree.
+Promotion requires only the exact current `dev` HEAD, a successful `Promotion Gate`
+from that commit's own dev push CI, and `main` ancestry. Immediately before writing,
+the controller checks the gate again and re-reads both refs. Changed refs abort.
+The update uses `force=false` and is confirmed by reading `main` back. Red or pending
+dev never falls back to an older green ancestor.
 
-A red, pending, replaced, or divergent candidate is not promoted. There is no post-promotion repair workflow and no successful partial state that requires an automatic follow-up dispatch.
-
-Keep the promotion controller narrow. It owns selection, authorization, non-force fast-forward, and post-write confirmation. Artifact building, versioning, migrations, installed-runtime state, and release publication belong elsewhere.
+The owner must migrate the live required check and fast-forward the verified new
+controller to `main` before this replacement becomes authoritative. This bootstrap
+keeps deletion/non-fast-forward protection and no bypass actors throughout.
 
 ### Candidate and stable release authority
 
@@ -163,7 +164,7 @@ dev SHA
 
 Repository-managed desired-state files live under `.github/rulesets/`:
 
-- `main.json` requires both `Full CI gate` and `Main promotion gate`, rejects deletion and non-fast-forward updates, and has no bypass actor;
+- `main.json` requires `Promotion Gate`, rejects deletion and non-fast-forward updates, and has no bypass actor;
 - `tags-v.json` makes `v*` release tags immutable after creation by rejecting update, deletion, and non-fast-forward mutation, with no bypass actor.
 
 These JSON files are declarative desired state only. Changing a tracked file does not mutate the repository ruleset through the GitHub API and must never be described as if protection were already installed.
