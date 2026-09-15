@@ -269,14 +269,14 @@ start_dev() {
         cd "${REPO_ROOT}"
         exec nohup \
             "${python}" \
-            "${SCRIPT_DIR}/service/run_dev.py"
+            "scripts/service/run_dev.py"
     ) >>"${log}" 2>&1 </dev/null &
 
     pid=$!
 
     write_runtime_state \
         "${pid}" \
-        "dev:${SCRIPT_DIR}/service/run_dev.py" \
+        "dev:run_dev.py" \
         "dev" \
         "working-tree" \
         "${REPO_ROOT}" \
