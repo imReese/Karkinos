@@ -102,7 +102,7 @@ def test_multiple_daily_bars_preserve_input_order() -> None:
     )
     second = _bar(
         symbol="000001",
-        close=Decimal("12.34"),
+        close=Decimal("10.34"),
     )
 
     table = daily_bars_to_table(
@@ -134,7 +134,7 @@ def test_daily_bar_decimals_are_stored_with_canonical_scale() -> None:
 
 def test_daily_bar_rejects_value_exceeding_storage_scale() -> None:
     bar = _bar(
-        close=Decimal("10.123456789"),
+        close=Decimal("10.203456789"),
     )
 
     with pytest.raises(
