@@ -65,6 +65,7 @@ include = [
 version = {attr = "server.__version__"}
 
 [tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
