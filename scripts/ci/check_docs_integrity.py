@@ -12,7 +12,7 @@ CANONICAL_DOCS = (
     "docs/README.md",
     "docs/GOAL.md",
     "docs/ARCHITECTURE.md",
-    "docs/PRODUCT_DESIGN.md",
+    "DESIGN.md",
     "docs/PLAN.md",
     "docs/ENGINEERING.md",
     "docs/REFERENCES.md",
