@@ -215,14 +215,11 @@ Treat these as separate lifecycles:
 | Candidate build | exact promoted commit, artifact bytes, provenance | source-promotion authorization |
 | Stable release | immutable tag and publication of candidate bytes | rebuilding candidates or changing user state |
 
-`./scripts/start_server.sh` runs the stable `main` branch by default,
-`./scripts/start_server.sh dev` runs the current `dev` working tree with
-backend reload and Vite, and `./scripts/start_server.sh <branch>` runs another
-locally available branch in a managed Git worktree. The launcher never
-switches the current checkout and never runs `git fetch`. Development config,
-data, and logs live under `~/.karkinos/development`; `KARKINOS_DEV_HOME`
-explicitly selects another isolated development workspace. Only one Karkinos
-source runtime may run at a time; `./scripts/stop_server.sh` stops it.
+`./scripts/start_server.sh` and `./scripts/stop_server.sh` are the single
+public source-runtime entry points; the launch contract (branch selection,
+fetch policy, single-runtime rule) is documented in
+[scripts/README.md](../scripts/README.md). Development config, data, and logs
+live under `~/.karkinos/development`.
 
 Installed runtimes use their immutable release's `karkinosctl` to start, stop,
 and report status. Existing macOS installations retain
