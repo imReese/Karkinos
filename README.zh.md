@@ -57,8 +57,7 @@ cd Karkinos
 ./scripts/start_server.sh
 ```
 
-稳定的 `main` 在受管理的 Git worktree 中运行本地已获取的 `origin/main`，
-在 `http://127.0.0.1:8000` 提供构建后的 Web 界面和 API。
+稳定的 `main` 在 `http://127.0.0.1:8000` 提供构建后的 Web 界面和 API。
 
 启动当前 `dev` working tree：
 
@@ -71,12 +70,7 @@ npm ci --prefix web
 ```
 
 开发运行使用 Vite HMR 在 `http://127.0.0.1:5173` 提供 Web 界面，
-后端带 reload 运行于 `http://127.0.0.1:8000`，使用当前源码
-（包括尚未提交的修改）。
-
-`./scripts/start_server.sh <branch>` 运行其他本地可用的分支。
-启动器不会切换当前 checkout，也不会自动执行 `git fetch`；
-需要更新远端分支时先显式运行 `git fetch origin`。
+后端带 reload 运行于 `http://127.0.0.1:8000`。
 
 开发状态独立存放在 `~/.karkinos/development/`：
 
@@ -97,9 +91,7 @@ logs/                # 开发日志
 ./scripts/stop_server.sh
 ```
 
-同一时间只能运行一个 Karkinos 源码运行时；运行期间重复启动会被拒绝。
-
-生命周期说明见 [scripts/README.md](scripts/README.md)。
+分支选择、刷新与单 runtime 规则见 [scripts/README.md](scripts/README.md)。
 
 ### Docker Compose
 
@@ -152,8 +144,8 @@ python -m server
 
 ## 开发 Karkinos
 
-修改集成到 `dev`。安装上述锁定依赖后，`./scripts/start_server.sh dev`
-使用独立开发状态运行当前源码。
+修改集成到 `dev`。安装上述锁定依赖后，用 `./scripts/start_server.sh dev`
+启动源码运行时。
 贡献流程、测试、migration 规则和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md)
 与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
 

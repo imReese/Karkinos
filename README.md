@@ -58,8 +58,7 @@ cd Karkinos
 ./scripts/start_server.sh
 ```
 
-Stable `main` runs the locally available `origin/main` in a managed Git worktree
-and serves the built Web UI and API at `http://127.0.0.1:8000`.
+Stable `main` serves the built Web UI and API at `http://127.0.0.1:8000`.
 
 Start the current `dev` working tree:
 
@@ -71,13 +70,8 @@ npm ci --prefix web
 ./scripts/start_server.sh dev
 ```
 
-Development runs the Web UI with Vite HMR at `http://127.0.0.1:5173` and the
-API with backend reload at `http://127.0.0.1:8000`, using the current checkout
-including uncommitted changes.
-
-`./scripts/start_server.sh <branch>` runs another locally available branch.
-The launcher never switches the current checkout and never runs `git fetch`;
-refresh a remote branch explicitly with `git fetch origin` first.
+Development serves the Web UI with Vite HMR at `http://127.0.0.1:5173` and
+the API with backend reload at `http://127.0.0.1:8000`.
 
 Development state is isolated under `~/.karkinos/development/`:
 
@@ -99,10 +93,8 @@ Stop the managed runtime:
 ./scripts/stop_server.sh
 ```
 
-Only one Karkinos source runtime may run at a time; a repeated start is
-rejected while the runtime is running.
-
-Lifecycle details: [scripts/README.md](scripts/README.md).
+Branch selection, refresh, and single-runtime rules:
+[scripts/README.md](scripts/README.md).
 
 ### Docker Compose
 
@@ -155,9 +147,8 @@ The default market-data provider is **AKShare** and requires no token. TuShare, 
 
 ## Development
 
-Changes integrate on `dev`. After installing the locked dependencies above,
-`./scripts/start_server.sh dev` runs the current checkout with isolated
-development state.
+Changes integrate on `dev`. Start the source runtime with
+`./scripts/start_server.sh dev` after installing the locked dependencies above.
 For contribution workflow, tests, migration rules, and engineering constraints,
 see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ENGINEERING.md](docs/ENGINEERING.md).
 

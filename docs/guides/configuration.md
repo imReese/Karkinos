@@ -22,9 +22,8 @@ git switch dev
 ./scripts/start_server.sh dev
 ```
 
-可用 `KARKINOS_DEV_HOME` 指定另一份隔离的开发 workspace。其他本地可用的分支使用
-`./scripts/start_server.sh <branch>` 运行；启动器不会自动 `git fetch`，也不会切换
-当前 checkout，同一时间只允许一个源码 runtime，用 `./scripts/stop_server.sh` 停止。
+可用 `KARKINOS_DEV_HOME` 指定另一份隔离的开发 workspace。分支选择、刷新与
+单 runtime 约束见 [scripts/README.md](../../scripts/README.md)。
 
 已安装的 macOS runtime 继续使用 `~/Library/Application Support/Karkinos`，由不可变 release 中的 `karkinosctl` 管理。开发与安装环境不共用账户数据库、迁移状态、配置或日志；此布局不会自动搬迁已有数据。
 
