@@ -68,7 +68,9 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Karkinos 独立实时监控启动，关注 {len(watchlist)} 个标的")
     print(f"轮询间隔: {config.live_poll_interval}s")
-    print("开发 Web 服务请使用 scripts/dev；已安装服务使用 release 中的 karkinosctl")
+    print(
+        "开发 Web 服务请使用 scripts/start_server.sh；已安装服务使用 release 中的 karkinosctl"
+    )
     print("按 Ctrl+C 退出\n")
 
     try:
