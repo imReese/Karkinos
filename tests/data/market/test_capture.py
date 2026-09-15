@@ -284,7 +284,7 @@ def test_capture_rejects_naive_datetime(
 
     with pytest.raises(
         ValueError,
-        match=(f"provider_capture_{field}" "_must_be_timezone_aware"),
+        match=f"provider_capture_{field}_must_be_timezone_aware",
     ):
         capture_provider_payload(**kwargs)
 
