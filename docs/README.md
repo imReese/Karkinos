@@ -6,7 +6,7 @@
 | --- | --- |
 | [GOAL.md](GOAL.md) | Product goal, priorities, and hard boundaries |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Domain ownership and system design |
-| [PRODUCT_DESIGN.md](PRODUCT_DESIGN.md) | Product model, information architecture, interaction, and UI invariants |
+| [DESIGN.md](../DESIGN.md) | Product model, information architecture, interaction, and UI invariants |
 | [PLAN.md](PLAN.md) | Current development scope |
 | [ENGINEERING.md](ENGINEERING.md) | Current codebase, engineering policy, and validation |
 | [REFERENCES.md](REFERENCES.md) | External design references |
