@@ -1,7 +1,8 @@
 """Backtest CLI for Karkinos.
 
-This is a developer/operations tool. Use `./scripts/dev` for the development Web
-service or the installed release's `karkinosctl` for the packaged runtime.
+This is a developer/operations tool. Use `./scripts/start_server.sh` for the
+source Web service or the installed release's `karkinosctl` for the packaged
+runtime.
 """
 
 from __future__ import annotations

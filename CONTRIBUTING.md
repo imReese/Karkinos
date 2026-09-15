@@ -36,13 +36,15 @@ npm ci --prefix web
 For the normal development runtime:
 
 ```bash
-./scripts/dev
+./scripts/start_server.sh dev
 ```
 
 Development uses its own config, data, and logs under
 `~/.karkinos/development`. Set `KARKINOS_DEV_HOME` to use another isolated
-development workspace. Use a Git worktree or separate clone to run another
-source revision. See [scripts/README.md](scripts/README.md) for runtime commands.
+development workspace. The launcher also runs stable `main` (the default) or
+another locally available branch via `./scripts/start_server.sh <branch>`;
+it never switches the current checkout and never runs `git fetch`.
+See [scripts/README.md](scripts/README.md) for runtime commands.
 
 ## Validation
 

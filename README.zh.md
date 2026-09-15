@@ -42,25 +42,41 @@ Karkinos 将 point-in-time 市场数据、可复现研究、组合构建、风�
 
 | 方式 | 适合场景 | 环境要求 |
 | --- | --- | --- |
-| **开发运行** | 当前源码 checkout | Python 3.12+、Node.js 24.x、`uv`、Git、POSIX shell |
+| **源码运行** | 当前源码 checkout 或任意本地可用分支 | Python 3.12+、Node.js 24.x、`uv`、Git、POSIX shell |
 | **Docker Compose** | 隔离运行 Web + API | Docker / Docker Compose |
 | **Python / pip 源码安装** | 手动 Python/API 集成 | Python 3.12+；完整 Web 还需要 Node.js 24.x |
 | **Native Release** | 使用经过验证的原生发布包 | 当前提供 macOS arm64 / x86_64 |
 
-### 开发运行
+### 源码运行
 
-在前台运行当前 checkout：
+启动稳定的 `main` 分支（默认）：
+
+```bash
+git clone https://github.com/imReese/Karkinos.git
+cd Karkinos
+./scripts/start_server.sh
+```
+
+稳定的 `main` 在受管理的 Git worktree 中运行本地已获取的 `origin/main`，
+在 `http://127.0.0.1:8000` 提供构建后的 Web 界面和 API。
+
+启动当前 `dev` working tree：
 
 ```bash
 git clone --branch dev https://github.com/imReese/Karkinos.git
 cd Karkinos
 uv sync --locked --extra server --extra dev
 npm ci --prefix web
-./scripts/dev
+./scripts/start_server.sh dev
 ```
 
-打开 `http://127.0.0.1:5173`，API 位于 `http://127.0.0.1:8000`。
-按 Ctrl-C 停止两个进程。Backend reload 与 Vite 使用当前源码，包括尚未提交的修改。
+开发运行使用 Vite HMR 在 `http://127.0.0.1:5173` 提供 Web 界面，
+后端带 reload 运行于 `http://127.0.0.1:8000`，使用当前源码
+（包括尚未提交的修改）。
+
+`./scripts/start_server.sh <branch>` 运行其他本地可用的分支。
+启动器不会切换当前 checkout，也不会自动执行 `git fetch`；
+需要更新远端分支时先显式运行 `git fetch origin`。
 
 开发状态独立存放在 `~/.karkinos/development/`：
 
@@ -73,11 +89,15 @@ logs/                # 开发日志
 
 启动器不会复制现有账户数据，也不会读取仓库根目录的 `config.json` 或 `.env`。
 现有开发数据库沿用应用的正常 migration，失败时阻止启动。
-使用 `--home /absolute/path` 或 `KARKINOS_DEV_HOME` 指定其他开发目录。
+使用 `KARKINOS_DEV_HOME` 指定其他开发目录。
 
-运行其他分支或历史提交时，使用独立 Git worktree 或 clone，再执行其中的
-`scripts/dev`；需要独立状态时指定不同的开发目录。
-Karkinos 不再创建分支快照或切换 checkout。
+停止受管理的运行时：
+
+```bash
+./scripts/stop_server.sh
+```
+
+同一时间只能运行一个 Karkinos 源码运行时；运行期间重复启动会被拒绝。
 
 生命周期说明见 [scripts/README.md](scripts/README.md)。
 
@@ -132,7 +152,8 @@ python -m server
 
 ## 开发 Karkinos
 
-修改集成到 `dev`。安装上述锁定依赖后，`./scripts/dev` 使用独立开发状态运行当前源码。
+修改集成到 `dev`。安装上述锁定依赖后，`./scripts/start_server.sh dev`
+使用独立开发状态运行当前源码。
 贡献流程、测试、migration 规则和工程约束见 [CONTRIBUTING.md](CONTRIBUTING.md)
 与 [docs/ENGINEERING.md](docs/ENGINEERING.md)。
 

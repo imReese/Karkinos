@@ -1,7 +1,7 @@
 """Compatibility wrapper for the backtest CLI.
 
-Prefer `uv run python -m tools.run_backtest`. Use `./scripts/dev` for the
-development Web service or the installed release's `karkinosctl`.
+Prefer `uv run python -m tools.run_backtest`. Use `./scripts/start_server.sh`
+for the source Web service or the installed release's `karkinosctl`.
 """
 
 from __future__ import annotations

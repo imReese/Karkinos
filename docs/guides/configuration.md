@@ -4,7 +4,7 @@
 
 ## 本地 Workspace
 
-`./scripts/dev` 运行当前 checkout，使用独立的开发 workspace：
+`./scripts/start_server.sh dev` 运行当前 checkout，使用独立的开发 workspace：
 
 ```text
 ~/.karkinos/development/
@@ -19,10 +19,12 @@
 
 ```bash
 git switch dev
-./scripts/dev
+./scripts/start_server.sh dev
 ```
 
-可用 `KARKINOS_DEV_HOME` 指定另一份隔离的开发 workspace。运行其他分支或历史提交使用 Git worktree 或独立 clone，并为同时运行的开发实例选择不同 workspace 和端口。
+可用 `KARKINOS_DEV_HOME` 指定另一份隔离的开发 workspace。其他本地可用的分支使用
+`./scripts/start_server.sh <branch>` 运行；启动器不会自动 `git fetch`，也不会切换
+当前 checkout，同一时间只允许一个源码 runtime，用 `./scripts/stop_server.sh` 停止。
 
 已安装的 macOS runtime 继续使用 `~/Library/Application Support/Karkinos`，由不可变 release 中的 `karkinosctl` 管理。开发与安装环境不共用账户数据库、迁移状态、配置或日志；此布局不会自动搬迁已有数据。
 
@@ -38,13 +40,13 @@ git switch dev
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `KARKINOS_DEV_HOME` | `./scripts/dev` 使用的独立开发 workspace |
+| `KARKINOS_DEV_HOME` | `./scripts/start_server.sh dev` 使用的独立开发 workspace |
 | `KARKINOS_WORKSPACE` | 手动运行服务时的显式绝对 workspace |
 | `KARKINOS_CONFIG_PATH` | 高级覆盖：`config.json` 的绝对路径 |
 | `KARKINOS_DATA_DIR` | 高级覆盖：本地运行数据绝对路径 |
 | `KARKINOS_ENV_FILE` | 高级覆盖：环境文件绝对路径 |
 
-`./scripts/dev` 清除继承的 `KARKINOS_*` 设置，再根据开发 workspace 固定配置、数据、报告和环境文件路径。开发专用设置与凭据放在自己的 `config/.env`，避免继承安装环境的路径或权限开关。手动执行 `python -m server` 或集成脚本时，应明确选择所需的配置和状态路径。
+`./scripts/start_server.sh dev` 通过内部 runner 清除继承的 `KARKINOS_*` 设置，再根据开发 workspace 固定配置、数据、报告和环境文件路径。开发专用设置与凭据放在自己的 `config/.env`，避免继承安装环境的路径或权限开关。手动执行 `python -m server` 或集成脚本时，应明确选择所需的配置和状态路径。
 
 ## `server`
 

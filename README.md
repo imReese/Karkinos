@@ -43,26 +43,41 @@ risk, simulation, accounting, and attribution in one local-first workflow.
 
 | Method | Best for | Requirements |
 | --- | --- | --- |
-| **Development runtime** | Current source checkout | Python 3.12+, Node.js 24.x, `uv`, Git, POSIX shell |
+| **Source runtime** | Current source checkout or any locally available branch | Python 3.12+, Node.js 24.x, `uv`, Git, POSIX shell |
 | **Docker Compose** | Isolated Web + API runtime | Docker / Docker Compose |
 | **Python / pip from source** | Manual Python/API integration | Python 3.12+; Node.js 24.x for the Web UI |
 | **Native release** | Verified packaged runtime | Currently macOS arm64 / x86_64 |
 
-### Development runtime
+### Source runtime
 
-Run the current checkout in the foreground:
+Start the stable `main` branch (the default):
+
+```bash
+git clone https://github.com/imReese/Karkinos.git
+cd Karkinos
+./scripts/start_server.sh
+```
+
+Stable `main` runs the locally available `origin/main` in a managed Git worktree
+and serves the built Web UI and API at `http://127.0.0.1:8000`.
+
+Start the current `dev` working tree:
 
 ```bash
 git clone --branch dev https://github.com/imReese/Karkinos.git
 cd Karkinos
 uv sync --locked --extra server --extra dev
 npm ci --prefix web
-./scripts/dev
+./scripts/start_server.sh dev
 ```
 
-Open `http://127.0.0.1:5173`; the API runs on `http://127.0.0.1:8000`.
-Press Ctrl-C to stop both processes. Backend reload and Vite use the current
-checkout, including uncommitted changes.
+Development runs the Web UI with Vite HMR at `http://127.0.0.1:5173` and the
+API with backend reload at `http://127.0.0.1:8000`, using the current checkout
+including uncommitted changes.
+
+`./scripts/start_server.sh <branch>` runs another locally available branch.
+The launcher never switches the current checkout and never runs `git fetch`;
+refresh a remote branch explicitly with `git fetch origin` first.
 
 Development state is isolated under `~/.karkinos/development/`:
 
@@ -75,12 +90,17 @@ logs/                # development logs
 
 The launcher never copies existing account data or reads the repository's
 `config.json` or `.env`. Existing development databases use the application's
-normal migrations; a failed migration blocks startup. Use `--home /absolute/path`
-or `KARKINOS_DEV_HOME` for another development directory.
+normal migrations; a failed migration blocks startup. Set `KARKINOS_DEV_HOME`
+for another development directory.
 
-For another branch or historical commit, use a separate Git worktree or clone
-and run its `scripts/dev`. Use separate development homes for independent state.
-Karkinos does not create branch snapshots or switch your checkout.
+Stop the managed runtime:
+
+```bash
+./scripts/stop_server.sh
+```
+
+Only one Karkinos source runtime may run at a time; a repeated start is
+rejected while the runtime is running.
 
 Lifecycle details: [scripts/README.md](scripts/README.md).
 
@@ -136,7 +156,8 @@ The default market-data provider is **AKShare** and requires no token. TuShare, 
 ## Development
 
 Changes integrate on `dev`. After installing the locked dependencies above,
-`./scripts/dev` runs the current checkout with isolated development state.
+`./scripts/start_server.sh dev` runs the current checkout with isolated
+development state.
 For contribution workflow, tests, migration rules, and engineering constraints,
 see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ENGINEERING.md](docs/ENGINEERING.md).
 
