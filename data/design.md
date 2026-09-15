@@ -21,7 +21,6 @@ data/
 │
 ├── dataset/ # canonical PIT Dataset domain
 │ ├── model.py
-│ ├── schema.py
 │ ├── manifest.py
 │ ├── catalog.py
 │ ├── resolver.py
