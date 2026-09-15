@@ -16,6 +16,9 @@ FUND_ESTIMATE_QUOTE_SOURCES = frozenset(
         "sina_fund_estimate",
     }
 )
+PUBLISHED_FUND_NAV_QUOTE_SOURCES = frozenset(
+    {"eastmoney_fund_page", "tushare_fund_nav"}
+)
 
 
 def is_fund_estimate_quote_source(value: Any) -> bool:
