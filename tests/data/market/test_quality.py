@@ -502,7 +502,7 @@ def test_checked_at_is_normalized_to_utc() -> None:
 def test_checked_at_must_be_timezone_aware() -> None:
     with pytest.raises(
         ValueError,
-        match=("market_quality_checked_at" "_must_be_timezone_aware"),
+        match="market_quality_checked_at_must_be_timezone_aware",
     ):
         evaluate_daily_bar_quality(
             _bars(),
