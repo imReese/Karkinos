@@ -252,7 +252,7 @@ def test_provider_daily_bar_row_keeps_provider_numeric_types() -> None:
 def test_provider_daily_bar_row_rejects_naive_event_time() -> None:
     with pytest.raises(
         ValueError,
-        match=("provider_daily_bar_event_time" "_must_be_timezone_aware"),
+        match="provider_daily_bar_event_time_must_be_timezone_aware",
     ):
         ProviderDailyBarRow(
             instrument=_instrument(),
@@ -278,7 +278,7 @@ def test_provider_daily_bar_row_rejects_naive_event_time() -> None:
 def test_provider_daily_bar_row_rejects_naive_availability_time() -> None:
     with pytest.raises(
         ValueError,
-        match=("provider_daily_bar_available_at" "_must_be_timezone_aware"),
+        match="provider_daily_bar_available_at_must_be_timezone_aware",
     ):
         ProviderDailyBarRow(
             instrument=_instrument(),
