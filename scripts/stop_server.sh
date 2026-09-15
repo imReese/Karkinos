@@ -39,7 +39,7 @@ process_start_identity() {
 }
 
 process_command() {
-    ps -p "$1" -o command= 2>/dev/null || true
+    ps -ww -p "$1" -o command= 2>/dev/null || true
 }
 
 clear_runtime_state() {
