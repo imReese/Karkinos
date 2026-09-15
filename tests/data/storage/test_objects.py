@@ -15,7 +15,7 @@ from data.storage.objects import (
     sha256_digest,
 )
 
-_EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb924" "27ae41e4649b934ca495991b7852b855"
+_EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
 def _object_path(
