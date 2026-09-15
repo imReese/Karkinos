@@ -295,7 +295,7 @@ def test_normalize_daily_bar_builds_canonical_observation() -> None:
     bar = _bar(
         open_value=10.31,
         high_value="10.52",
-        low_value=Decimal("10.20"),
+        low_value=Decimal("9.90"),
         close_value=10,
         volume=123456,
         amount="1283912.42",
@@ -306,7 +306,7 @@ def test_normalize_daily_bar_builds_canonical_observation() -> None:
 
     assert bar.open == Decimal("10.31")
     assert bar.high == Decimal("10.52")
-    assert bar.low == Decimal("10.20")
+    assert bar.low == Decimal("9.90")
     assert bar.close == Decimal("10")
 
     assert bar.volume == Decimal("123456")
@@ -374,7 +374,7 @@ def test_normalize_daily_bar_does_not_guess_invalid_time_order() -> None:
 def test_normalize_daily_bar_rejects_non_instrument_key() -> None:
     with pytest.raises(
         TypeError,
-        match=("daily_bar_normalize_instrument" "_must_be_instrument_key"),
+        match="daily_bar_normalize_instrument_must_be_instrument_key",
     ):
         normalize_daily_bar(
             instrument="600000",
