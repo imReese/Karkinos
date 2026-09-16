@@ -17,6 +17,7 @@ _DAY = "2026-09-14"
 _PRIVATE = "private-value-that-must-not-appear"
 
 _FAKE_SDK = """\
+import configparser
 import json
 import os
 import time
@@ -26,6 +27,15 @@ Path(os.environ["TDX_TEST_IMPORTED"]).write_text("imported")
 secret = "private-value-that-must-not-appear"
 os.write(1, secret.encode())
 os.write(2, secret.encode())
+library = Path(os.environ["TDX_AI_DATA_LIB"])
+config = configparser.ConfigParser(interpolation=None)
+config.read(library.parent / "TdxAiData.ini", encoding="utf-8")
+assert config["Token"]["token"] == secret
+assert "KARKINOS_TDX_DATA_SERVICE_KEY" not in os.environ
+assert "KARKINOS_AI_API_KEY" not in os.environ
+Path(os.environ["TDX_TEST_RUNTIME"]).write_text(str(library.parent))
+# 真实 SDK 会改变 cwd，不能影响父进程选择环境文件与清理目录。
+os.chdir(library.parent)
 mode = os.environ.get("TDX_TEST_MODE", "ok")
 if mode == "native_error":
     raise OSError(secret)
@@ -44,6 +54,8 @@ class tqs:
             output.write(json.dumps(kwargs) + "\\n")
         if mode == "request_error":
             raise RuntimeError(secret)
+        if mode == "empty_dict":
+            return {}
         if mode == "bad_response":
             return None
         import pandas as pd
@@ -85,6 +97,8 @@ def sdk_env(tmp_path: Path) -> dict[str, str]:
         "PYTHONPATH": str(vendor),
         "TDX_TEST_IMPORTED": str(tmp_path / "imported"),
         "TDX_TEST_CALLS": str(tmp_path / "calls.jsonl"),
+        "TDX_TEST_RUNTIME": str(tmp_path / "runtime-path"),
+        "KARKINOS_AI_API_KEY": "unrelated-secret",
         "KARKINOS_TDX_DATA_SERVICE_KEY": _PRIVATE,
     }
 
@@ -116,7 +130,8 @@ def test_preflight_does_not_import_sdk_call_provider_or_create_output(
     assert report["status"] == "preflight"
     assert report["network_attempted"] is False
     assert report["sdk_module"] == "tdxaidata"
-    assert "not preverified" in report["credential_source"]
+    assert "not verified" in report["credential_source"]
+    assert report["credential_configured"] is True
     assert not Path(sdk_env["TDX_TEST_IMPORTED"]).exists()
     assert not Path(sdk_env["TDX_TEST_CALLS"]).exists()
     assert not output.exists()
@@ -196,6 +211,7 @@ def test_live_check_uses_default_sdk_loader_and_replays_real_pipeline(
     assert report["bar"]["amount_cny"] == "1283912.42000000"
     assert report["bar"]["available_at"] == report["bar"]["captured_at"]
     assert _PRIVATE not in completed.stdout + completed.stderr
+    assert not Path(Path(sdk_env["TDX_TEST_RUNTIME"]).read_text()).exists()
     assert (Path(sdk_env["PYTHONPATH"]) / "TdxAiData.ini").read_text() == (
         "do not rewrite SDK configuration"
     )
@@ -230,6 +246,7 @@ def test_live_check_uses_default_sdk_loader_and_replays_real_pipeline(
     "mode,code",
     [
         ("request_error", "check_failed"),
+        ("empty_dict", "check_failed"),
         ("native_error", "sdk_unavailable_check_installation_and_native_library"),
         ("empty", "no_data_check_session_permissions_and_sdk_config"),
         ("wrong_date", "check_failed"),
@@ -256,6 +273,8 @@ def test_live_failure_never_retries_publishes_success_or_exposes_sdk_logs(
     assert "dataset_id" not in report
     assert _PRIVATE not in completed.stdout + completed.stderr
     assert not (output / "index" / "catalog" / "datasets.sqlite3").exists()
+    if Path(env["TDX_TEST_RUNTIME"]).exists():
+        assert not Path(Path(env["TDX_TEST_RUNTIME"]).read_text()).exists()
     if Path(env["TDX_TEST_CALLS"]).exists():
         assert len(_calls(env)) == 1
 
@@ -365,3 +384,56 @@ def test_diagnostics_bound_exception_chains_and_respect_suppressed_context() -> 
         wrapper.__cause__ = outer
         outer = wrapper
     assert len(module._exception_diagnostics(outer)) == 4
+
+
+def test_dotenv_is_loaded_once_and_reaches_sdk_without_manual_ini(
+    tmp_path: Path, sdk_env: dict[str, str]
+) -> None:
+    path = tmp_path / "credentials.env"
+    path.write_text(f"KARKINOS_TDX_DATA_SERVICE_KEY={_PRIVATE}\n")
+    env = {k: v for k, v in sdk_env.items() if k != "KARKINOS_TDX_DATA_SERVICE_KEY"}
+    result = _run(env, "--env-file", str(path), "--allow-network")
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    assert report["credential_configured"] is True
+    assert report["env_file_loaded"] is True
+    assert report["status"] == "ok"
+    assert _PRIVATE not in result.stdout + result.stderr
+    assert not Path(Path(env["TDX_TEST_RUNTIME"]).read_text()).exists()
+
+
+def test_process_key_overrides_selected_dotenv_file(
+    tmp_path: Path, sdk_env: dict[str, str]
+) -> None:
+    path = tmp_path / "selected.env"
+    path.write_text("KARKINOS_TDX_DATA_SERVICE_KEY=wrong-file-value\n")
+    result = _run({**sdk_env, "KARKINOS_ENV_FILE": str(path)}, "--allow-network")
+    # Fake SDK 检查它从临时 INI 读到的确实是进程环境中的 Key。
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_missing_key_fails_before_sdk_import_or_output_creation(
+    tmp_path: Path, sdk_env: dict[str, str]
+) -> None:
+    path = tmp_path / "empty.env"
+    path.write_text("KARKINOS_TDX_DATA_SERVICE_KEY=\n")
+    env = {k: v for k, v in sdk_env.items() if k != "KARKINOS_TDX_DATA_SERVICE_KEY"}
+    output = tmp_path / "should-not-exist"
+    result = _run(
+        env, "--env-file", str(path), "--allow-network", "--output-dir", str(output)
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["error_code"] == "tdx_data_service_key_missing"
+    assert not output.exists()
+    assert not Path(env["TDX_TEST_IMPORTED"]).exists()
+
+
+def test_missing_explicit_env_file_fails_without_sdk_import(
+    tmp_path: Path, sdk_env: dict[str, str]
+) -> None:
+    result = _run(
+        sdk_env, "--env-file", str(tmp_path / "missing.env"), "--allow-network"
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["stage"] == "configuration"
+    assert not Path(sdk_env["TDX_TEST_IMPORTED"]).exists()

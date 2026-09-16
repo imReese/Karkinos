@@ -109,19 +109,39 @@ uv run --locked --extra dev python scripts/data/check_tdx_daily.py \
   --symbol 600000 --date 2026-09-14
 ```
 
-`status=preflight` 只表示参数检查通过且能找到 `tdxaidata` 包；此时没有加载原生动态库、
-请求行情或创建数据文件，不能据此判断认证有效或该日期一定开市。
+`status=preflight` 表示参数和配置文件可以解析，且能找到 `tdxaidata` 包。
+`credential_configured` 表示本次配置中是否有非空 Key，`env_file_loaded` 表示是否加载了环境文件。
+预检查不会加载原生库、调用行情接口或创建数据目录；这些结果不代表认证已经通过。
 
-### 认证准备
+### 统一配置与认证
 
-独立 SDK 的入口是 `from tdxaidata import tqs`。按
-[通达信官方说明](https://help.tdx.com.cn/quant/docs/markdown/mindoc-1hjbgqpdhv114.html)，
-后台模式需要在 SDK 使用的 `TdxAiData.ini` 中配置数据服务 Key。
-请遵循当前安装版本的配置说明；脚本不推断配置文件位置、不读取配置内容，也不改写它。
+在仓库根目录的 `.env` 中维护 `KARKINOS_TDX_DATA_SERVICE_KEY` 即可，不需要手工复制到 INI。
+`KARKINOS_TDX_USER` 是可选用户标识，仅在数据服务要求时填写。不要把真实值放进命令行、
+Git、日志或 Issue；`.env.example` 只提供空模板。
 
-**仅把 Key 放在 Karkinos 的 `.env` 中，目前不会自动传给这个 SDK。**
-本检查入口没有 `.env -> TdxAiData.ini` 的桥接，不接受命令行 Key，也不把认证信息放入 Capture。
-不要提交 SDK 配置文件或在 Issue 中粘贴 Key。
+Server 和本脚本共用 `server/runtime_environment.py` 的文件选择、解析和合并逻辑。
+文件路径选择：`--env-file` > 进程中的 `KARKINOS_ENV_FILE` > 入口的默认 `.env`。
+本脚本的默认文件固定在仓库根目录；Server 继续使用其运行目录，受管启动器可以显式指定文件。
+显式选择的文件不存在会报错，不静默回退到别处的配置。已有非空进程环境变量覆盖文件值，
+可选凭据的空字符串沿用 Server 的“未配置”约定。Server 的普通配置仍按
+显式参数 > 环境 > config.json > 默认值合并，不把实际 Key 复制到 config.json。
+
+本脚本生成只读环境快照，再提取不可变的 `TdxRuntimeSettings`；组件不重复读文件，
+也不在导入时创建全局 client 或缓存 Key。更换 Key 后重新执行命令或重启服务即可。
+指定其他文件时，在原命令上添加 `--env-file /absolute/path/to/credentials.env`。
+离线预检查允许缺少 Key，真正调用前会以 `tdx_data_service_key_missing` 提前拒绝。
+
+已静态核对锁定的 `tdxaidata 1.0.2` 发行包 Python 封装和随包 INI：
+SDK 支持通过 `TDX_AI_DATA_LIB` 指定原生库，并切换到库目录读取 `TdxAiData.ini` 的
+`[Token] token`（以及可选 `user`）。它的全局单例和工作目录副作用必须留在子进程。
+Karkinos 因此在父进程管理的临时目录中复制所需库、生成专用 INI，再把库路径仅传给子进程。
+不会改写安装包或已有 SDK 配置，也不需要虚构 `initialize()` / `set_token()` 接口。
+此桥接目前只接受已核对的 1.0.2 布局；更新 SDK 后需重新验证，不静默套用旧假设。
+
+临时目录在 POSIX 上为 `0700`，INI 为 `0600`；Windows 使用用户临时目录的访问控制。
+正常退出、SDK 崩溃或超时后由父进程清理；即使指定 `--output-dir`，认证文件也不保留在数据目录中。
+强制杀死父进程或断电可能留下临时目录；权限限制不能代替系统安全，也不能保证抹除磁盘内容。
+子进程不继承其他 `KARKINOS_` 凭据，SDK 原始日志和异常自由文本仍不会返回终端。
 
 明确允许真实调用后执行：
 
@@ -158,7 +178,8 @@ uv run --locked --extra dev python scripts/data/check_tdx_daily.py \
 
 已有目录会被拒绝，避免覆盖数据；失败时这个显式目录可能留有部分检查对象，但不会报告成功。
 退出码：`0` 表示预检查或真实检查成功，`1` 表示检查失败，`2` 表示参数错误。
-`no_data` 不能直接解释为休市或认证失败，应核对日期、数据权限和 SDK 配置。
+`no_data` 或 `tdx_response_empty` 不能直接解释为休市或认证失败，应核对日期、数据权限和凭据。
+SDK 的空字典现在明确标记为 `tdx_response_empty`，不再错误提示缺少 `Open`；不会补零或绕过检查。
 
 普通 CI 只使用隔离的 SDK 替身，不运行真实 TDX 调用。执行脚本测试：
 
