@@ -3,6 +3,7 @@
 默认只做预检查，不加载原生 SDK、不联网、不创建数据文件。
 真实调用需要 --allow-network；认证沿用 SDK 自己的 TdxAiData.ini。
 不读取 .env，不接受命令行 Key，也不推断或改写 SDK 配置文件。
+失败报告中的 diagnostics 只包含白名单错误分类，不含原始异常消息。
 """
 
 from __future__ import annotations
@@ -67,9 +68,137 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _failure(stage: str, code: str) -> dict[str, object]:
-    # 不拼接 SDK 异常文本、原始响应或环境变量，防止认证信息进入诊断输出。
-    return {"status": "error", "stage": stage, "error_code": code}
+# 只输出固定的异常类型与内部错误码，不输出 SDK 消息、模块路径或局部变量。
+_EXCEPTION_TYPES = frozenset(
+    {
+        "TdxProviderError",
+        "TdxProviderUnavailableError",
+        "TdxProviderRequestError",
+        "TdxProviderResponseError",
+        "DailyBarIngestionNoData",
+        "TypeError",
+        "ValueError",
+        "RuntimeError",
+        "ImportError",
+        "ModuleNotFoundError",
+        "OSError",
+        "FileNotFoundError",
+        "PermissionError",
+        "TimeoutError",
+        "ConnectionError",
+        "KeyError",
+        "AttributeError",
+        "InvalidOperation",
+        "ArrowInvalid",
+        "ArrowTypeError",
+        "ArrowNotImplementedError",
+        "ObjectStoreError",
+        "ObjectIntegrityError",
+        "ObjectNotFoundError",
+        "ParquetStorageError",
+        "ParquetIntegrityError",
+        "MarketRevisionIntegrityError",
+    }
+)
+_DIAGNOSTIC_CODES = frozenset(
+    {
+        "tdx_get_market_data_failed",
+        "tdx_sdk_not_installed",
+        "tdx_sdk_dependency_missing",
+        "tdx_sdk_load_failed",
+        "tdx_sdk_client_unavailable",
+        "tdx_daily_bar_request_must_be_single_session",
+        "tdx_daily_bar_session_not_closed",
+        "tdx_provider_clock_moved_backwards",
+        "tdx_response_must_be_dict",
+        "tdx_response_date_invalid",
+        "tdx_response_key_invalid",
+        "tdx_response_serialization_failed",
+        "tdx_response_non_finite_number",
+        "daily_bar_available_before_event",
+        "daily_bar_captured_before_available",
+        "daily_bar_event_session_mismatch",
+        "daily_bar_high_below_low",
+        "daily_bar_high_below_open_or_close",
+        "daily_bar_low_above_open_or_close",
+        "market_revision_multiple_partitions",
+        "market_revision_capture_time_mismatch",
+        "parquet_object_integrity_failed",
+    }
+)
+_DIAGNOSTIC_PREFIXES = frozenset(
+    {
+        "tdx_response_field_missing",
+        "tdx_response_field_must_be_dataframe",
+        "tdx_response_number_invalid",
+        "tdx_response_row_incomplete",
+        "tdx_response_session_unexpected",
+        "tdx_response_instrument_unexpected",
+        "tdx_response_axes_ambiguous",
+        "tdx_response_duplicate_code_axis",
+        "tdx_response_duplicate_point",
+        "tdx_response_instrument_axis_missing",
+        "tdx_response_scalar_unsupported",
+        "tdx_response_date_invalid",
+    }
+)
+_TDX_FIELDS = frozenset({"Open", "High", "Low", "Close", "Volume", "Amount"})
+_TDX_ARGUMENTS = frozenset(
+    {
+        "field_list",
+        "stock_list",
+        "period",
+        "start_time",
+        "end_time",
+        "count",
+        "dividend_type",
+        "fill_data",
+    }
+)
+
+
+def _exception_diagnostics(exc: BaseException) -> list[dict[str, str]]:
+    """保留定位问题所需的错误分类，不回显任何自由文本。"""
+    chain: list[dict[str, str]] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen and len(chain) < 4:
+        seen.add(id(current))
+        name = type(current).__name__
+        item = {"type": name if name in _EXCEPTION_TYPES else "Exception"}
+        message = current.args[0] if current.args else None
+        if type(message) is str:
+            if message in _DIAGNOSTIC_CODES:
+                item["code"] = message
+            else:
+                prefix, separator, suffix = message.partition(":")
+                if separator and prefix in _DIAGNOSTIC_PREFIXES:
+                    item["code"] = prefix
+                    if suffix in _TDX_FIELDS:
+                        item["field"] = suffix
+            # 只提取我们主动传入的参数名，不输出 TypeError 的其余内容。
+            if type(current) is TypeError:
+                match = re.search(r"unexpected keyword argument '([^']+)'", message)
+                if match and match[1] in _TDX_ARGUMENTS:
+                    item["code"] = "sdk_unexpected_keyword_argument"
+                    item["argument"] = match[1]
+        chain.append(item)
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif current.__suppress_context__:
+            current = None
+        else:
+            current = current.__context__
+    return chain
+
+
+def _failure(
+    stage: str, code: str, exc: BaseException | None = None
+) -> dict[str, object]:
+    result: dict[str, object] = {"status": "error", "stage": stage, "error_code": code}
+    if exc is not None:
+        result["diagnostics"] = _exception_diagnostics(exc)
+    return result
 
 
 def _run_pipeline(symbol: str, session_date: date, root: Path) -> dict[str, object]:
@@ -109,11 +238,13 @@ def _run_pipeline(symbol: str, session_date: date, root: Path) -> dict[str, obje
                 quality_policy=RESEARCH_STRICT_DAILY,
                 normalizer_version="karkinos.market.normalize.v1",
             )
-        except DailyBarIngestionNoData:
-            return _failure(stage, "no_data_check_session_permissions_and_sdk_config")
-        except TdxProviderUnavailableError:
+        except DailyBarIngestionNoData as exc:
             return _failure(
-                stage, "sdk_unavailable_check_installation_and_native_library"
+                stage, "no_data_check_session_permissions_and_sdk_config", exc
+            )
+        except TdxProviderUnavailableError as exc:
+            return _failure(
+                stage, "sdk_unavailable_check_installation_and_native_library", exc
             )
 
         stage = "quality"
@@ -182,10 +313,10 @@ def _run_pipeline(symbol: str, session_date: date, root: Path) -> dict[str, obje
             },
             "independent_market_accuracy_check": False,
         }
-    except Exception:
-        # SDK 及 ingestion 可能记录带异常链的日志；父进程丢弃子进程输出。
-        # 这里只返回失败阶段，不用错误字符串猜测“认证失败”或“市场休市”。
-        return _failure(stage, "check_failed")
+    except Exception as exc:
+        # 父进程继续丢弃原始日志；诊断只保留白名单中的错误分类。
+        # 不根据自由文本猜测“认证失败”或“市场休市”。
+        return _failure(stage, "check_failed", exc)
 
 
 def _run_worker(
