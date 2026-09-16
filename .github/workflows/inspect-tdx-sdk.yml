@@ -1,0 +1,43 @@
+name: Inspect pinned TDX SDK
+
+on:
+  push:
+    branches: [dev]
+    paths: [.github/workflows/inspect-tdx-sdk.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read public wheel without importing SDK
+        shell: python
+        run: |
+          import hashlib
+          import io
+          import re
+          import urllib.request
+          import zipfile
+
+          url = "https://files.pythonhosted.org/packages/a1/47/fcd55849d9a687232b389177395715f4f4c10d90946e13d5056ba1966b12/tdxaidata-1.0.2-py3-none-any.whl"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              payload = response.read()
+          expected = "9a81e37178d28641cad630d03d82217337be448fa1b02aa838202bc31ae03f51"
+          if hashlib.sha256(payload).hexdigest() != expected:
+              raise SystemExit("Pinned SDK wheel hash mismatch")
+          with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+              print("Wheel entries:", archive.namelist())
+              for name in archive.namelist():
+                  if not name.endswith(".py"):
+                      continue
+                  lines = archive.read(name).decode("utf-8-sig").splitlines()
+                  selected = set(range(min(220, len(lines))))
+                  for index, line in enumerate(lines):
+                      if re.search(r"(?i)config|\.ini|token|api.?key|data.?key|def get_market_data|def initialize|def init\(|getenv|environ", line):
+                          selected.update(range(max(0, index - 8), min(len(lines), index + 65)))
+                  print("SOURCE", name, "TOTAL_LINES", len(lines))
+                  for index in sorted(selected):
+                      print(f"{index + 1}: {lines[index]}")
