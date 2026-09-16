@@ -112,6 +112,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    started = os.environ.get("FAKE_RUNTIME_STARTED")
+    if started:
+        with open(started, "w", encoding="utf-8") as output:
+            output.write("started")
     backend = _port_from_env("KARKINOS_BACKEND_PORT", "KARKINOS_DEV_BACKEND_PORT")
     if "--port" in sys.argv:
         backend = int(sys.argv[sys.argv.index("--port") + 1])
@@ -208,6 +212,8 @@ def launcher(tmp_path: Path) -> Iterator[SimpleNamespace]:
 
     bin_dir = tmp_path / "bin"
     git_log = tmp_path / "git-calls.log"
+    uv_log = tmp_path / "uv-calls.log"
+    runtime_started = tmp_path / "runtime-started"
     stub_source = FAKE_PYTHON.replace("#!PYTHON", f"#!{sys.executable}")
     python_stub = bin_dir / "python-stub"
     _write_executable(python_stub, stub_source)
@@ -215,7 +221,13 @@ def launcher(tmp_path: Path) -> Iterator[SimpleNamespace]:
     _write_executable(
         bin_dir / "uv",
         "#!/bin/sh\n"
-        "# Fake uv: sync installs a runnable python into ./.venv/bin of the cwd.\n"
+        "set -eu\n"
+        "# Fake uv: record synchronization and install a runnable Python.\n"
+        'printf "%s\\n" "$PWD" "$UV_CACHE_DIR" "$*" >>"${FAKE_UV_LOG:?}"\n'
+        'if [ "${FAKE_UV_SYNC_EXIT_CODE:-0}" -ne 0 ]; then\n'
+        '    echo "fake uv sync failed" >&2\n'
+        '    exit "${FAKE_UV_SYNC_EXIT_CODE}"\n'
+        "fi\n"
         'stub="${FAKE_PYTHON_STUB:?FAKE_PYTHON_STUB is required}"\n'
         'if [ "${1:-}" = sync ]; then\n'
         "    mkdir -p .venv/bin\n"
@@ -239,6 +251,9 @@ def launcher(tmp_path: Path) -> Iterator[SimpleNamespace]:
         **os.environ,
         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
         "FAKE_GIT_LOG": str(git_log),
+        "FAKE_UV_LOG": str(uv_log),
+        "FAKE_UV_SYNC_EXIT_CODE": "0",
+        "FAKE_RUNTIME_STARTED": str(runtime_started),
         "FAKE_GIT_COMMIT_SHA": FAKE_COMMIT_SHA,
         "FAKE_PYTHON_STUB": str(python_stub),
         "KARKINOS_BACKEND_PORT": str(_free_port()),
@@ -262,6 +277,9 @@ def launcher(tmp_path: Path) -> Iterator[SimpleNamespace]:
         repo=repo,
         run=run,
         git_log=git_log,
+        uv_log=uv_log,
+        runtime_started=runtime_started,
+        bin_dir=bin_dir,
         git=git,
         bash=bash,
         dump_path=lambda: git_log.parent / "runtime-dump.json",
@@ -322,11 +340,21 @@ def test_dev_start_requires_dev_checkout(launcher: SimpleNamespace) -> None:
     assert result.returncode != 0
     assert "requires the current checkout to be 'dev'" in result.stderr
     assert not (launcher.repo / ".run" / "server.pid").exists()
+    assert not launcher.uv_log.exists()
+    assert not launcher.runtime_started.exists()
 
 
+@pytest.mark.parametrize("environment_state", ["ready", "missing", "stale"])
 def test_dev_start_runs_current_working_tree(
-    launcher: SimpleNamespace, tmp_path: Path
+    launcher: SimpleNamespace, tmp_path: Path, environment_state: str
 ) -> None:
+    if environment_state == "missing":
+        shutil.rmtree(launcher.repo / ".venv")
+    elif environment_state == "stale":
+        # A stale environment cannot run the service until uv repairs it.
+        _write_executable(
+            launcher.repo / ".venv" / "bin" / "python", "#!/bin/sh\nexit 99\n"
+        )
     home = tmp_path / "dev-home"
     result = launcher.run(
         "start_server.sh",
@@ -340,6 +368,12 @@ def test_dev_start_runs_current_working_tree(
     assert "Mode:       development" in result.stdout
     assert "Branch:     dev" in result.stdout
     assert str(home) in result.stdout
+    assert launcher.uv_log.read_text(encoding="utf-8").splitlines() == [
+        str(launcher.repo),
+        str(launcher.repo / ".uv-cache"),
+        "sync --locked --extra server --extra dev",
+    ]
+    assert launcher.runtime_started.is_file()
 
     meta = _meta(launcher)
     assert meta["mode"] == "development"
@@ -352,6 +386,51 @@ def test_dev_start_runs_current_working_tree(
         ["ps", "-ww", "-p", str(pid), "-o", "command="], capture_output=True, text=True
     ).stdout
     assert "run_dev.py" in command
+
+
+@pytest.mark.parametrize("environment_exists", [True, False])
+def test_dev_sync_failure_never_starts_runtime(
+    launcher: SimpleNamespace, environment_exists: bool
+) -> None:
+    if not environment_exists:
+        shutil.rmtree(launcher.repo / ".venv")
+    result = launcher.run(
+        "start_server.sh",
+        "dev",
+        env_extra={
+            "FAKE_GIT_HEAD_BRANCH": "dev",
+            "FAKE_UV_SYNC_EXIT_CODE": "42",
+        },
+    )
+    assert result.returncode != 0
+    assert "fake uv sync failed" in result.stderr
+    assert "dependency sync failed; development server was not started" in result.stderr
+    assert launcher.uv_log.is_file()
+    assert not launcher.runtime_started.exists()
+    assert not (launcher.repo / "logs" / "dev-server.log").exists()
+    for name in ("server.pid", "server.start", "server.owner", "server.meta"):
+        assert not (launcher.repo / ".run" / name).exists()
+
+
+def test_dev_start_requires_uv(launcher: SimpleNamespace, tmp_path: Path) -> None:
+    # Isolate PATH so an installed uv on the test host cannot mask its absence.
+    bin_dir = tmp_path / "no-uv-bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").symlink_to(launcher.bin_dir / "git")
+    for name in ("dirname", "mkdir", "rm"):
+        executable = shutil.which(name)
+        assert executable is not None
+        (bin_dir / name).symlink_to(executable)
+    result = launcher.run(
+        "start_server.sh",
+        "dev",
+        env_extra={"FAKE_GIT_HEAD_BRANCH": "dev", "PATH": str(bin_dir)},
+    )
+    assert result.returncode != 0
+    assert "'uv' was not found in PATH" in result.stderr
+    assert not launcher.uv_log.exists()
+    assert not launcher.runtime_started.exists()
+    assert not (launcher.repo / ".run" / "server.pid").exists()
 
 
 def test_launcher_never_fetches_and_never_switches_checkout(
@@ -399,15 +478,19 @@ def test_unavailable_branch_fails_closed_without_fetch(
         assert "fetch" not in call.split(), call
 
 
-def test_repeated_start_is_rejected(launcher: SimpleNamespace) -> None:
-    first = launcher.run("start_server.sh")
+@pytest.mark.parametrize("branch", ["main", "dev"])
+def test_repeated_start_is_rejected(launcher: SimpleNamespace, branch: str) -> None:
+    env = {"FAKE_GIT_HEAD_BRANCH": branch}
+    first = launcher.run("start_server.sh", branch, env_extra=env)
     assert first.returncode == 0, first.stderr
     pid = int((launcher.repo / ".run" / "server.pid").read_text(encoding="utf-8"))
 
-    second = launcher.run("start_server.sh", "main")
+    sync_calls = launcher.uv_log.read_text(encoding="utf-8")
+    second = launcher.run("start_server.sh", branch, env_extra=env)
     assert second.returncode == 1
     assert "already running" in second.stderr
     assert "stop_server.sh" in second.stderr
+    assert launcher.uv_log.read_text(encoding="utf-8") == sync_calls
 
     os.kill(pid, 0)
     assert (launcher.repo / ".run" / "server.pid").read_text(
