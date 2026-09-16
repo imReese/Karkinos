@@ -39,24 +39,18 @@ jobs:
           (bundle / "tdxaidata-1.0.2-py3-none-any.whl").write_bytes(payload)
           with zipfile.ZipFile(io.BytesIO(payload)) as archive:
               for name in archive.namelist():
-                  if name.endswith(".ini"):
-                      text = archive.read(name).decode("gb18030")
-                      print("BUNDLED INI", name)
-                      for line in text.splitlines():
-                          if "=" in line and re.search(r"(?i)key|token|password|secret", line.split("=", 1)[0]):
-                              print(line.split("=", 1)[0] + "=<redacted bundled default>")
-                          else:
-                              print(line)
-                  elif name.endswith(".md"):
-                      print("BUNDLED DOC", name)
-                      print(archive.read(name).decode("utf-8-sig"))
-                  elif name.endswith("/tdxaidata.py"):
-                      print("PUBLIC WRAPPER REMAINDER", name)
-                      for index, line in enumerate(archive.read(name).decode("utf-8-sig").splitlines()):
-                          if 220 <= index < 370 or index >= 930:
-                              print(f"{index + 1}: {line}")
+                  if not name.endswith(".ini"):
+                      continue
+                  text = archive.read(name).decode("utf-8-sig")
+                  print("BUNDLED INI", name)
+                  for line in text.splitlines():
+                      if "=" in line and re.search(r"(?i)key|token|password|secret", line.split("=", 1)[0]):
+                          print(line.split("=", 1)[0] + "=<redacted bundled default>")
+                      else:
+                          print(line)
           subprocess.run(["python", "-m", "pip", "download", "--no-deps", "ruff==0.16.6", "-d", str(bundle)], check=True)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
         with:
           name: static-source-inspection
           path: inspect-bundle/
