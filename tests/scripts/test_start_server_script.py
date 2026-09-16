@@ -349,7 +349,7 @@ def test_dev_start_runs_current_working_tree(
 
     pid = int((launcher.repo / ".run" / "server.pid").read_text(encoding="utf-8"))
     command = subprocess.run(
-        ["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True
+        ["ps", "-ww", "-p", str(pid), "-o", "command="], capture_output=True, text=True
     ).stdout
     assert "run_dev.py" in command
 

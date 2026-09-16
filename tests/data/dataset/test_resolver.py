@@ -697,7 +697,7 @@ def test_quality_report_from_wrong_policy_is_rejected(
 
     candidate = _candidate(
         store,
-        quality_policy_id=("karkinos.market_quality." "daily.serving_relaxed.v1"),
+        quality_policy_id=("karkinos.market_quality.daily.serving_relaxed.v1"),
     )
 
     with pytest.raises(
