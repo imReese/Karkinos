@@ -256,9 +256,19 @@ start_dev() {
     [[ "${current_branch}" == "dev" ]] ||
         die "start_server.sh dev requires the current checkout to be 'dev'"
 
+    command -v uv >/dev/null 2>&1 ||
+        die "'uv' was not found in PATH"
+
+    echo "Synchronizing development dependencies..."
+    (
+        cd "${REPO_ROOT}" || exit 1
+        UV_CACHE_DIR="${REPO_ROOT}/.uv-cache" \
+            uv sync --locked --extra server --extra dev
+    ) || die "dependency sync failed; development server was not started"
+
     python="${REPO_ROOT}/.venv/bin/python"
     [[ -x "${python}" ]] ||
-        die "development dependencies missing; run: uv sync --locked --extra server --extra dev"
+        die "Python environment was not created"
 
     [[ -x "${REPO_ROOT}/web/node_modules/.bin/vite" ]] ||
         die "frontend dependencies missing; run: npm ci --prefix web"
