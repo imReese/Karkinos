@@ -11,8 +11,8 @@ import time
 from pathlib import Path
 
 import pytest
-from scripts.service import run_dev
 
+from scripts.service import run_dev
 from server.__main__ import _report_startup_failure
 
 
