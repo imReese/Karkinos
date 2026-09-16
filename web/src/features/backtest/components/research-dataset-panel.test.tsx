@@ -67,7 +67,7 @@ test('preparation is an explicit action and selects the durable published datase
   expect(fetchMock).not.toHaveBeenCalled();
   const disclosure = container.querySelector('details')!;
   disclosure.open = true;
-  fireEvent.toggle(disclosure);
+  fireEvent(disclosure, new Event('toggle'));
   await screen.findByText(/持久目录：/);
   expect(
     fetchMock.mock.calls.every(([, init]) => init?.method !== 'POST'),
@@ -112,7 +112,7 @@ test('selecting a stored dataset does not trigger acquisition and errors do not 
   const { container } = mount();
   const disclosure = container.querySelector('details')!;
   disclosure.open = true;
-  fireEvent.toggle(disclosure);
+  fireEvent(disclosure, new Event('toggle'));
   await screen.findByText(/持久目录：/);
   fireEvent.change(screen.getByLabelText('本次回测的数据输入'), {
     target: { value: dataset.dataset_id },
