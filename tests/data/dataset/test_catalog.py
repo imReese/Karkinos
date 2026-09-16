@@ -252,7 +252,7 @@ def test_register_rejects_naive_registered_at(
 
     with pytest.raises(
         ValueError,
-        match=("dataset_catalog_registered_at" "_must_be_timezone_aware"),
+        match=("dataset_catalog_registered_at_must_be_timezone_aware"),
     ):
         catalog.register(
             store,
