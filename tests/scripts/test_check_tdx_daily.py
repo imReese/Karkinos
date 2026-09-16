@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -28,6 +29,8 @@ os.write(2, secret.encode())
 mode = os.environ.get("TDX_TEST_MODE", "ok")
 if mode == "native_error":
     raise OSError(secret)
+if mode == "dependency_error":
+    raise ModuleNotFoundError(secret, name=secret)
 if mode == "crash":
     os._exit(17)
 if mode == "timeout":
@@ -41,6 +44,8 @@ class tqs:
             output.write(json.dumps(kwargs) + "\\n")
         if mode == "request_error":
             raise RuntimeError(secret)
+        if mode == "bad_response":
+            return None
         import pandas as pd
         values = {
             "Open": 10.31, "High": 10.52, "Low": 10.20, "Close": 10.48,
@@ -50,6 +55,8 @@ class tqs:
             return {field: pd.DataFrame() for field in values}
         if mode == "bad_ohlc":
             values["Close"] = 1.0
+        if mode == "missing_field":
+            del values["Close"]
         session = "2026-09-13" if mode == "wrong_date" else kwargs["start_time"]
         return {
             field: pd.DataFrame(
@@ -57,6 +64,13 @@ class tqs:
             )
             for field, value in values.items()
         }
+
+
+if mode == "signature_mismatch":
+    def incompatible(field_list, stock_list, period, start_time, end_time,
+                     count, dividend_type):
+        raise AssertionError("must not be called")
+    tqs.get_market_data = staticmethod(incompatible)
 """
 
 
@@ -220,6 +234,10 @@ def test_live_check_uses_default_sdk_loader_and_replays_real_pipeline(
         ("empty", "no_data_check_session_permissions_and_sdk_config"),
         ("wrong_date", "check_failed"),
         ("bad_ohlc", "check_failed"),
+        ("signature_mismatch", "check_failed"),
+        ("bad_response", "check_failed"),
+        ("missing_field", "check_failed"),
+        ("dependency_error", "sdk_unavailable_check_installation_and_native_library"),
         ("crash", "worker_failed"),
         ("timeout", "timeout"),
     ],
@@ -240,3 +258,110 @@ def test_live_failure_never_retries_publishes_success_or_exposes_sdk_logs(
     assert not (output / "index" / "catalog" / "datasets.sqlite3").exists()
     if Path(env["TDX_TEST_CALLS"]).exists():
         assert len(_calls(env)) == 1
+
+    expected = {
+        "request_error": [
+            {"type": "TdxProviderError", "code": "tdx_get_market_data_failed"},
+            {"type": "RuntimeError"},
+        ],
+        "native_error": [
+            {"type": "TdxProviderUnavailableError", "code": "tdx_sdk_load_failed"},
+            {"type": "OSError"},
+        ],
+        "dependency_error": [
+            {
+                "type": "TdxProviderUnavailableError",
+                "code": "tdx_sdk_dependency_missing",
+            },
+            {"type": "ModuleNotFoundError"},
+        ],
+        "empty": [{"type": "DailyBarIngestionNoData"}],
+        "wrong_date": [
+            {
+                "type": "TdxProviderResponseError",
+                "code": "tdx_response_session_unexpected",
+            },
+        ],
+        "bad_ohlc": [
+            {"type": "ValueError", "code": "daily_bar_low_above_open_or_close"},
+        ],
+        "signature_mismatch": [
+            {"type": "TdxProviderError", "code": "tdx_get_market_data_failed"},
+            {
+                "type": "TypeError",
+                "code": "sdk_unexpected_keyword_argument",
+                "argument": "fill_data",
+            },
+        ],
+        "bad_response": [
+            {"type": "TdxProviderResponseError", "code": "tdx_response_must_be_dict"},
+        ],
+        "missing_field": [
+            {
+                "type": "TdxProviderResponseError",
+                "code": "tdx_response_field_missing",
+                "field": "Close",
+            },
+        ],
+    }
+    if mode in expected:
+        assert report["diagnostics"] == expected[mode]
+
+
+def _load_smoke_module():
+    spec = importlib.util.spec_from_file_location("tdx_smoke_diagnostics", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_diagnostics_never_echo_unknown_names_values_or_call_str() -> None:
+    module = _load_smoke_module()
+    unknown_type = type(_PRIVATE, (Exception,), {})
+
+    class UnsafeValue:
+        def __str__(self):
+            raise AssertionError("must not stringify SDK values")
+
+    cases = (
+        (unknown_type(_PRIVATE), {"type": "Exception"}),
+        (RuntimeError(UnsafeValue()), {"type": "RuntimeError"}),
+        (
+            ValueError("tdx_response_field_missing:" + _PRIVATE),
+            {"type": "ValueError", "code": "tdx_response_field_missing"},
+        ),
+        (
+            TypeError(f"unexpected keyword argument '{_PRIVATE}'"),
+            {"type": "TypeError"},
+        ),
+        (ValueError("tdx_get_market_data_failed:" + _PRIVATE), {"type": "ValueError"}),
+    )
+    for exc, expected in cases:
+        report = module._failure("ingestion", "check_failed", exc)
+        assert report["diagnostics"] == [expected]
+        assert _PRIVATE not in json.dumps(report)
+
+
+def test_diagnostics_bound_exception_chains_and_respect_suppressed_context() -> None:
+    module = _load_smoke_module()
+    outer = RuntimeError(_PRIVATE)
+    inner = TypeError(_PRIVATE)
+    outer.__cause__ = inner
+    inner.__cause__ = outer
+    assert module._exception_diagnostics(outer) == [
+        {"type": "RuntimeError"},
+        {"type": "TypeError"},
+    ]
+
+    outer = RuntimeError(_PRIVATE)
+    outer.__context__ = ValueError(_PRIVATE)
+    assert len(module._exception_diagnostics(outer)) == 2
+    outer.__suppress_context__ = True
+    assert module._exception_diagnostics(outer) == [{"type": "RuntimeError"}]
+
+    for _ in range(10):
+        wrapper = RuntimeError(_PRIVATE)
+        wrapper.__cause__ = outer
+        outer = wrapper
+    assert len(module._exception_diagnostics(outer)) == 4
