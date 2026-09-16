@@ -53,10 +53,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--symbol", type=_symbol, default="600000")
     parser.add_argument("--date", type=_session_date, required=True)
     parser.add_argument(
-        "--allow-network", action="store_true", help="允许一次 SDK 日线调用，可能消耗积分"
+        "--allow-network",
+        action="store_true",
+        help="允许一次 SDK 日线调用，可能消耗积分",
     )
     parser.add_argument(
-        "--output-dir", type=Path, help="可选：将检查数据保留到仓库外的新目录；不得已存在"
+        "--output-dir",
+        type=Path,
+        help="可选：将检查数据保留到仓库外的新目录；不得已存在",
     )
     parser.add_argument("--timeout", type=_timeout, default=60, help="检查超时秒数")
     parser.add_argument("--_worker-report", type=Path, help=argparse.SUPPRESS)
