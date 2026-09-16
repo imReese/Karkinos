@@ -1,20 +1,73 @@
-"""python -m server 入口。"""
+"""python -m server: prepare persistent state before starting runtime writers."""
+
+from __future__ import annotations
 
 import argparse
+import json
 import os
+import sqlite3
+import sys
+import uuid
+from contextlib import asynccontextmanager, suppress
+from pathlib import Path
+from typing import Any
+
+
+def _report_startup_failure(exc: BaseException) -> None:
+    """Notify the development parent even if Uvicorn's reloader stays alive."""
+    configured = os.environ.get("KARKINOS_STARTUP_STATUS_FILE")
+    token = os.environ.get("KARKINOS_STARTUP_STATUS_TOKEN")
+    if not configured or not token:
+        return
+    path = Path(configured)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        # No exception text, environment values or credentials in the IPC record.
+        with temporary.open("x", encoding="utf-8") as output:
+            os.chmod(temporary, 0o600)
+            json.dump(
+                {"token": token, "state": "failed", "error_type": type(exc).__name__},
+                output,
+            )
+        os.replace(temporary, path)
+    except OSError:
+        pass  # The original startup error must remain the primary exception.
+    finally:
+        with suppress(OSError):
+            temporary.unlink(missing_ok=True)
+
+
+def create_runtime_app(**kwargs: Any):
+    """Uvicorn factory with an explicit startup-failure channel to its parent."""
+    try:
+        from server.app import create_app
+
+        app = create_app(**kwargs)
+    except BaseException as exc:
+        _report_startup_failure(exc)
+        raise
+    original = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(application):
+        started = False
+        try:
+            async with original(application) as state:
+                started = True
+                yield state
+        except BaseException as exc:
+            if not started:
+                _report_startup_failure(exc)
+            raise
+
+    app.router.lifespan_context = lifespan
+    return app
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Karkinos Server")
-    parser.add_argument(
-        "--host", default=None, help="监听地址 (默认读 config.json 或 0.0.0.0)"
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="监听端口 (默认读 config.json 或 8000)",
-    )
+    parser.add_argument("--host", default=None, help="监听地址 (默认读配置)")
+    parser.add_argument("--port", type=int, default=None, help="监听端口 (默认读配置)")
     parser.add_argument("--reload", action="store_true", help="开发模式热重载")
     parser.add_argument(
         "--reload-exclude",
@@ -27,33 +80,50 @@ def main() -> None:
         default=None,
         help="环境变量文件（默认读取 KARKINOS_ENV_FILE 或 ./.env）",
     )
-    validation_mode = parser.add_mutually_exclusive_group()
-    validation_mode.add_argument(
-        "--check-config",
+    parser.add_argument(
+        "--json",
         action="store_true",
-        help="校验有效配置后退出，不启动服务或连接外部系统",
+        help="--database-status 使用 JSON 输出",
     )
-    validation_mode.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check-config", action="store_true", help="仅校验配置")
+    mode.add_argument(
         "--check-state",
         action="store_true",
-        help="校验配置并预检本地持久状态后退出",
+        help="准备并校验隔离状态副本（会执行迁移；保留发布工具兼容）",
     )
-    validation_mode.add_argument(
+    mode.add_argument(
+        "--database-status",
+        action="store_true",
+        help="只读诊断数据库，不创建或升级数据库",
+    )
+    mode.add_argument(
+        "--prepare-database",
+        action="store_true",
+        help="备份并准备数据库后退出，不启动服务",
+    )
+    mode.add_argument(
         "--research-worker",
         action="store_true",
-        help="启动独立、受管的 AI 收盘后研究 worker（不启动 HTTP 服务）",
+        help="启动受管研究 worker，不启动 HTTP 服务",
     )
-    validation_mode.add_argument(
+    mode.add_argument(
         "--data-worker",
         action="store_true",
-        help="启动独立数据 worker（不启动 HTTP 服务）",
+        help="启动受管数据 worker，不启动 HTTP 服务",
     )
-    validation_mode.add_argument(
+    mode.add_argument(
         "--replay-state",
         action="store_true",
         help="在一次性状态副本上验证迁移、读取、任务和重启",
     )
     args = parser.parse_args()
+    if args.json and not args.database_status:
+        parser.error("--json requires --database-status")
+    if (args.data_worker or args.research_worker) and (
+        args.host is not None or args.port is not None or args.reload
+    ):
+        parser.error("worker mode cannot be combined with --host, --port, or --reload")
 
     from server.bootstrap import (
         load_runtime_config,
@@ -61,17 +131,28 @@ def main() -> None:
         resolve_config_path,
     )
     from server.config import ServerConfig
+    from server.runtime_paths import resolve_data_dir
 
     load_selected_runtime_environment_file(args.env_file)
+    database_path = Path(resolve_data_dir()) / "app.db"
+    if args.database_status:
+        from server.persistence.migration_lifecycle import inspect_database
 
-    config_overrides = {}
+        status = inspect_database(database_path)
+        if args.json:
+            print(json.dumps(status.as_dict(), ensure_ascii=False, sort_keys=True))
+        else:
+            print(status.explain())
+        if status.blocked:
+            raise SystemExit(2)
+        return
+
+    overrides = {}
     if args.host is not None:
-        config_overrides["host"] = args.host
+        overrides["host"] = args.host
     if args.port is not None:
-        config_overrides["port"] = args.port
-    # 优先级：CLI > 已有进程环境 > .env > config.json > 默认值。
-    # 配置错误直接阻止启动。
-    config = load_runtime_config(ServerConfig, **config_overrides)
+        overrides["port"] = args.port
+    config = load_runtime_config(ServerConfig, **overrides)
     if args.check_config:
         print(f"Karkinos configuration valid: {resolve_config_path()}")
         return
@@ -84,22 +165,35 @@ def main() -> None:
     if args.replay_state:
         if os.environ.get("KARKINOS_STATE_CLONE") != "1":
             parser.error("--replay-state requires an explicitly isolated state clone")
-        import json
-
         from server.state_replay import replay_persistent_state
 
-        def replay_app_factory():
-            from server.app import create_app
-
-            return create_app()
-
-        print(json.dumps(replay_persistent_state(replay_app_factory), sort_keys=True))
+        print(json.dumps(replay_persistent_state(create_runtime_app), sort_keys=True))
         return
+
+    from server.persistence.initializer import database_runtime, initialize_database
+
+    # This runs in the parent, before Uvicorn/reloader or any worker is spawned.
+    # Ordinary uncommitted development code is allowed; the actual migration
+    # definitions and source identity are archived when preparation is needed.
+    try:
+        initialize_database(database_path)
+        if args.prepare_database:
+            print(f"Karkinos database ready: {database_path}")
+            return
+        with database_runtime(database_path):
+            _run_runtime(args, config, overrides)
+    except (RuntimeError, OSError, sqlite3.DatabaseError) as exc:
+        _report_startup_failure(exc)
+        print(f"Karkinos startup refused:\n{exc}", file=sys.stderr)
+        raise SystemExit(2) from None
+
+
+def _run_runtime(
+    args: argparse.Namespace,
+    config: Any,
+    overrides: dict[str, Any],
+) -> None:
     if args.data_worker:
-        if args.host is not None or args.port is not None or args.reload:
-            parser.error(
-                "--data-worker cannot be combined with --host, --port, or --reload"
-            )
         import asyncio
 
         from server.workers.data_worker import run_data_worker
@@ -109,10 +203,6 @@ def main() -> None:
         asyncio.run(run_data_worker(config))
         return
     if args.research_worker:
-        if args.host is not None or args.port is not None or args.reload:
-            parser.error(
-                "--research-worker cannot be combined with --host, --port, or --reload"
-            )
         import asyncio
 
         from server.workers.ai_shadow_research_worker import (
@@ -121,17 +211,12 @@ def main() -> None:
 
         asyncio.run(run_ai_shadow_research_worker(config))
         return
-    host = config.host
-    port = config.port
-    reload = args.reload
 
     import uvicorn
 
-    from server.app import create_app
     from server.workers.supervisor import supervised_data_worker
 
-    if reload:
-        # Reload starts a child process, so forward only explicit CLI values.
+    if args.reload:
         forwarded = {}
         if args.host is not None:
             forwarded["KARKINOS_HOST"] = args.host
@@ -141,12 +226,13 @@ def main() -> None:
         os.environ.update(forwarded)
         try:
             with supervised_data_worker(
-                enabled=config.market_calendar_auto_sync, env_file=args.env_file
+                enabled=config.market_calendar_auto_sync,
+                env_file=args.env_file,
             ):
                 uvicorn.run(
-                    "server.app:create_app",
-                    host=host,
-                    port=port,
+                    "server.__main__:create_runtime_app",
+                    host=config.host,
+                    port=config.port,
                     reload=True,
                     reload_excludes=args.reload_exclude or None,
                     factory=True,
@@ -160,12 +246,13 @@ def main() -> None:
         return
 
     with supervised_data_worker(
-        enabled=config.market_calendar_auto_sync, env_file=args.env_file
+        enabled=config.market_calendar_auto_sync,
+        env_file=args.env_file,
     ):
         uvicorn.run(
-            create_app(config_overrides=config_overrides, runtime_config=config),
-            host=host,
-            port=port,
+            create_runtime_app(config_overrides=overrides, runtime_config=config),
+            host=config.host,
+            port=config.port,
             reload=False,
         )
 

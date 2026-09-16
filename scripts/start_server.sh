@@ -18,6 +18,9 @@ DEV_WEB_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
 STARTUP_TIMEOUT="${KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-60}"
 
 TARGET_BRANCH="${1:-main}"
+if [[ "${TARGET_BRANCH}" == "dev" ]]; then
+    BACKEND_PORT="${KARKINOS_DEV_BACKEND_PORT:-${BACKEND_PORT}}"
+fi
 
 usage() {
     cat <<'EOF'
@@ -222,6 +225,7 @@ write_runtime_state() {
 
     printf '%s\n' "${pid}" >"${PID_FILE}"
     process_start_identity "${pid}" >"${START_FILE}"
+
     printf '%s\n' "${owner}" >"${OWNER_FILE}"
 
     cat >"${META_FILE}" <<EOF
@@ -272,6 +276,12 @@ start_dev() {
 
     [[ -x "${REPO_ROOT}/web/node_modules/.bin/vite" ]] ||
         die "frontend dependencies missing; run: npm ci --prefix web"
+
+    echo "Checking and preparing development database..."
+    (
+        cd "${REPO_ROOT}"
+        "${python}" scripts/service/run_dev.py --prepare-only
+    ) || die "database preparation failed; development server was not started"
 
     log="${REPO_ROOT}/logs/dev-server.log"
 
@@ -335,7 +345,7 @@ EOF
 
 start_worktree_branch() {
     local branch="$1"
-    local python log pid mode
+    local python log pid mode supports_preparation
 
     prepare_worktree "${branch}"
 
@@ -365,13 +375,33 @@ start_worktree_branch() {
             uv sync --locked --extra server
     )
 
+    python="${SOURCE_ROOT}/.venv/bin/python"
+    [[ -x "${python}" ]] ||
+        die "Python environment was not created for ${branch}"
+
+    # Old target branches do not necessarily implement the preparation CLI.
+    # Never use the launcher's dev registry to migrate another branch's data.
+    supports_preparation=false
+    if (cd "${SOURCE_ROOT}" && "${python}" -m server --help) |
+        grep -q -- '--prepare-database'; then
+        supports_preparation=true
+        (
+            cd "${SOURCE_ROOT}"
+            "${python}" -m server --database-status
+        ) || die "database compatibility check failed; server was not started"
+    fi
+
     echo "Building Web UI for ${branch}..."
     npm ci --prefix "${SOURCE_ROOT}/web"
     npm --prefix "${SOURCE_ROOT}/web" run build
 
-    python="${SOURCE_ROOT}/.venv/bin/python"
-    [[ -x "${python}" ]] ||
-        die "Python environment was not created for ${branch}"
+    if [[ "${supports_preparation}" == "true" ]]; then
+        echo "Checking and preparing database for ${branch}..."
+        (
+            cd "${SOURCE_ROOT}"
+            "${python}" -m server --prepare-database
+        ) || die "database preparation failed; server was not started"
+    fi
 
     (
         cd "${SOURCE_ROOT}"
