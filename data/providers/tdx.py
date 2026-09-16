@@ -380,6 +380,11 @@ def _response_to_rows(
     ):
         raise TdxProviderResponseError("tdx_response_must_be_dict")
 
+    if not response:
+        # SDK 在没有任何可用时间索引时返回 {}，原因可能是无数据或底层失败。
+        # 不能补零、假定认证成功，或把它混淆为 Open 的拼写错误。
+        raise TdxProviderResponseError("tdx_response_empty")
+
     requested_codes = tuple(code_to_instrument)
 
     field_values: dict[

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import MutableMapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -15,6 +14,15 @@ from server.config import BacktestConfig
 from server.config_contract import (
     MIN_LIVE_POLL_INTERVAL_SECONDS,
     SUPPORTED_DATA_SOURCES,
+)
+from server.runtime_environment import (
+    EMPTY_ENV_MEANS_UNSET as _EMPTY_ENV_MEANS_UNSET,
+)
+from server.runtime_environment import (
+    load_runtime_environment_file as load_runtime_environment_file,
+)
+from server.runtime_environment import (
+    load_selected_runtime_environment_file as load_selected_runtime_environment_file,
 )
 from server.runtime_paths import resolve_data_dir, resolve_runtime_home
 
@@ -59,16 +67,6 @@ _RUNTIME_ENV_FIELDS = {
     "KARKINOS_AI_ADAPTER_KIND": "ai.adapter_kind",
     "KARKINOS_AI_TIMEOUT_SECONDS": "ai.timeout_seconds",
 }
-_EMPTY_ENV_MEANS_UNSET = {
-    "KARKINOS_TUSHARE_TOKEN",
-    "KARKINOS_AI_API_KEY",
-    "KARKINOS_AI_PROVIDER",
-    "KARKINOS_AI_MODEL",
-    "KARKINOS_AI_BASE_URL",
-    "KARKINOS_TELEGRAM_BOT_TOKEN",
-    "KARKINOS_TELEGRAM_CHAT_ID",
-    "KARKINOS_WECHAT_SENDKEY",
-}
 
 
 @dataclass
@@ -97,52 +95,6 @@ def resolve_config_path() -> Path:
         return Path(configured)
     home = resolve_runtime_home()
     return home / "config" / "config.json" if home is not None else Path("config.json")
-
-
-def load_runtime_environment_file(
-    path: str | Path = ".env",
-    *,
-    environ: MutableMapping[str, str] | None = None,
-    required: bool = False,
-) -> bool:
-    """Load one dotenv file without overriding the existing process environment."""
-    from dotenv import dotenv_values  # pyright: ignore[reportMissingImports]
-
-    dotenv_path = Path(path)
-    if not dotenv_path.exists():
-        if required:
-            raise ValueError(f"environment file does not exist: {dotenv_path}")
-        return False
-    try:
-        values = dotenv_values(dotenv_path)
-    except OSError as exc:
-        raise ValueError(
-            f"environment file could not be loaded: {dotenv_path}"
-        ) from exc
-    target = os.environ if environ is None else environ
-    for name, value in values.items():
-        if value is None:
-            raise ValueError(f"environment file variable has no value: {name}")
-        current_value = target.get(name)
-        if name not in target or (
-            name in _EMPTY_ENV_MEANS_UNSET
-            and isinstance(current_value, str)
-            and not current_value.strip()
-        ):
-            target[name] = value
-    return True
-
-
-def load_selected_runtime_environment_file(
-    explicit_path: str | Path | None = None,
-) -> bool:
-    """Load the CLI-selected, process-selected, or default runtime dotenv file."""
-    configured_path = os.environ.get("KARKINOS_ENV_FILE")
-    env_file = explicit_path or configured_path or ".env"
-    return load_runtime_environment_file(
-        env_file,
-        required=explicit_path is not None or configured_path is not None,
-    )
 
 
 def load_runtime_config(

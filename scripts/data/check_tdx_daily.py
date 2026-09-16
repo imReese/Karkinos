@@ -1,8 +1,8 @@
 """手动检查一只股票、一个交易日的 TDX 采集与离线重放。
 
 默认只做预检查，不加载原生 SDK、不联网、不创建数据文件。
-真实调用需要 --allow-network；认证沿用 SDK 自己的 TdxAiData.ini。
-不读取 .env，不接受命令行 Key，也不推断或改写 SDK 配置文件。
+真实调用需要 --allow-network；统一加载 .env / 进程环境后生成临时 SDK 配置。
+不接受命令行 Key，不修改安装目录；只在受管子进程中加载原生 SDK。
 失败报告中的 diagnostics 只包含白名单错误分类，不含原始异常消息。
 """
 
@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -51,6 +52,11 @@ def _timeout(value: str) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        help="环境文件；默认 KARKINOS_ENV_FILE 或仓库根目录的 .env",
+    )
     parser.add_argument("--symbol", type=_symbol, default="600000")
     parser.add_argument("--date", type=_session_date, required=True)
     parser.add_argument(
@@ -111,6 +117,7 @@ _DIAGNOSTIC_CODES = frozenset(
         "tdx_daily_bar_session_not_closed",
         "tdx_provider_clock_moved_backwards",
         "tdx_response_must_be_dict",
+        "tdx_response_empty",
         "tdx_response_date_invalid",
         "tdx_response_key_invalid",
         "tdx_response_serialization_failed",
@@ -320,7 +327,7 @@ def _run_pipeline(symbol: str, session_date: date, root: Path) -> dict[str, obje
 
 
 def _run_worker(
-    args: argparse.Namespace, root: Path, report: Path
+    args: argparse.Namespace, root: Path, report: Path, *, environment: dict[str, str]
 ) -> dict[str, object]:
     command = [
         sys.executable,
@@ -339,6 +346,7 @@ def _run_worker(
         completed = subprocess.run(
             command,
             cwd=REPO_ROOT,
+            env=environment,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=args.timeout,
@@ -397,18 +405,68 @@ def main(argv: list[str] | None = None) -> int:
         "session_date": args.date.isoformat(),
         "sdk_module": "tdxaidata",
         "sdk_version": sdk_version,
-        "credential_source": "SDK-managed TdxAiData.ini; not preverified",
+        "credential_source": "Karkinos runtime environment; authentication not verified",
     }
     if not installed:
         return _emit({**common, **_failure("preflight", "sdk_not_installed")})
+    # 配置只在父进程读取一次，子进程不再解析文件或使用其他配置优先级。
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from data.providers.tdx_runtime import (
+            TDX_KEY_ENV,
+            TDX_USER_ENV,
+            TdxRuntimeConfigurationError,
+            TdxRuntimeSettings,
+            prepare_tdx_runtime,
+        )
+        from server.runtime_environment import load_runtime_environment
+
+        snapshot = load_runtime_environment(
+            args.env_file, default_path=REPO_ROOT / ".env"
+        )
+        settings = TdxRuntimeSettings.from_environment(snapshot.values)
+    except ImportError:
+        return _emit(
+            {**common, **_failure("configuration", "config_dependency_missing")}
+        )
+    except ValueError:
+        return _emit(
+            {**common, **_failure("configuration", "runtime_environment_invalid")}
+        )
+
+    common["credential_configured"] = settings.configured
+    common["env_file_loaded"] = snapshot.file_loaded
     if not args.allow_network:
         return _emit({**common, "status": "preflight", "network_attempted": False})
+    if not settings.configured:
+        return _emit(
+            {**common, **_failure("configuration", "tdx_data_service_key_missing")}
+        )
 
     try:
-        with tempfile.TemporaryDirectory(prefix="karkinos-tdx-check-") as temporary:
-            workspace = root if root is not None else Path(temporary) / "data"
-            workspace.mkdir(mode=0o700, parents=True, exist_ok=False)
-            payload = _run_worker(args, workspace, Path(temporary) / "result.json")
+        with prepare_tdx_runtime(settings) as library:
+            # 只向 SDK 子进程交付专用 INI 路径，不继承 dotenv 中其他服务的凭据。
+            # 保留基础系统环境（PATH、代理、动态库搜索路径等）。
+            environment = {
+                name: value
+                for name, value in os.environ.items()
+                if not name.startswith("KARKINOS_")
+            }
+            environment.pop(TDX_KEY_ENV, None)
+            environment.pop(TDX_USER_ENV, None)
+            environment["TDX_AI_DATA_LIB"] = str(library)
+            with tempfile.TemporaryDirectory(prefix="karkinos-tdx-check-") as temporary:
+                workspace = root if root is not None else Path(temporary) / "data"
+                workspace.mkdir(mode=0o700, parents=True, exist_ok=False)
+                payload = _run_worker(
+                    args,
+                    workspace,
+                    Path(temporary) / "result.json",
+                    environment=environment,
+                )
+    except TdxRuntimeConfigurationError as exc:
+        # 此异常只由本项目产生，代码集合固定，不包含 SDK 原始消息或配置值。
+        payload = _failure("configuration", str(exc))
     except OSError:
         payload = _failure("workspace", "workspace_or_process_unavailable")
     return _emit(
