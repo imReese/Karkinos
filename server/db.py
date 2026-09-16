@@ -43,6 +43,7 @@ from server.persistence.market_calendar import MarketCalendarRepository
 from server.persistence.market_calendar_publication_uow import (
     MarketCalendarPublicationUnitOfWork,
 )
+from server.persistence.migration_lifecycle import require_database_ready
 from server.persistence.oms import OmsRepository
 from server.persistence.paper_trading import PaperTradingRepository
 from server.persistence.pre_trade_risk_uow import PreTradeRiskUnitOfWork
@@ -141,11 +142,15 @@ class AppDatabase(
         return self._path
 
     async def init(self) -> None:
-        """初始化数据库表。"""
-        self.init_sync()
-        logger.info("Database initialized: %s", self._path)
+        """Attach API/async workers to state prepared by the process entry point.
+
+        ASGI lifespan and hot-reload children never apply schema migrations.
+        Explicit initializers and test fixtures use init_sync() before startup.
+        """
+        require_database_ready(self._path)
+        logger.info("Database ready: %s", self._path)
 
     def init_sync(self) -> None:
-        """同步初始化数据库表。"""
+        """Explicitly prepare a database before starting runtime writers."""
         initialize_database(self._path)
         logger.info("Database initialized: %s", self._path)

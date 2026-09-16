@@ -1,4 +1,4 @@
-"""Run the current checkout in the foreground with isolated development state."""
+"""Run the current checkout with isolated development state."""
 
 from __future__ import annotations
 
@@ -12,8 +12,10 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,7 +37,7 @@ def development_environment(home: Path) -> dict[str, str]:
     data = home / "data"
     if not config.exists() and data.exists() and any(data.iterdir()):
         raise ValueError(
-            "existing development data requires its original configuration"
+            "existing development data requires its original configuration",
         )
     for directory in (home, home / "config", data, home / "logs"):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -70,6 +72,22 @@ def development_environment(home: Path) -> dict[str, str]:
     return environment
 
 
+def _startup_failed(environment: dict[str, str]) -> bool:
+    configured = environment.get("KARKINOS_STARTUP_STATUS_FILE")
+    token = environment.get("KARKINOS_STARTUP_STATUS_TOKEN")
+    if not configured or not token:
+        return False
+    try:
+        record = json.loads(Path(configured).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (
+        isinstance(record, dict)
+        and record.get("token") == token
+        and record.get("state") == "failed"
+    )
+
+
 def supervise(
     commands: list[list[str]],
     environment: dict[str, str],
@@ -89,31 +107,54 @@ def supervise(
     }
     deadline = time.monotonic() + startup_timeout
     http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    def spawn(command):
+        children.append(
+            subprocess.Popen(
+                command,
+                cwd=ROOT,
+                env=environment,
+                start_new_session=True,
+            ),
+        )
+
+    deferred = commands[1:] if health_url is not None else []
+    initial = commands[:1] if health_url is not None else commands
     try:
-        for command in commands:
+        for command in initial:
             if interrupted:
                 return 128 + interrupted
-            children.append(
-                subprocess.Popen(
-                    command, cwd=ROOT, env=environment, start_new_session=True
-                )
-            )
+            spawn(command)
         while not interrupted:
             for child in children:
                 result = child.poll()
                 if result is not None:
                     return result if result > 0 else 1
+            if _startup_failed(environment):
+                print(
+                    "Development API startup failed; see the original error above.",
+                    file=sys.stderr,
+                )
+                return 1
             if health_url is not None:
+                healthy = False
                 try:
                     with http.open(health_url, timeout=0.5) as response:
                         health = json.loads(response.read(8192))
-                    if (
-                        health.get("service") == "karkinos"
+                    healthy = (
+                        isinstance(health, dict)
+                        and health.get("service") == "karkinos"
                         and health.get("status") == "alive"
-                    ):
-                        health_url = None
+                    )
                 except (OSError, ValueError):
                     pass
+                if healthy:
+                    health_url = None
+                    # Spawn errors must propagate, not be swallowed as HTTP errors.
+                    for command in deferred:
+                        if interrupted:
+                            return 128 + interrupted
+                        spawn(command)
                 if health_url is not None and time.monotonic() >= deadline:
                     print("Development API startup timed out.", file=sys.stderr)
                     return 1
@@ -156,17 +197,32 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("KARKINOS_DEV_HOME", "~/.karkinos/development"),
     )
     parser.add_argument(
-        "--port", type=port, default=os.environ.get("KARKINOS_DEV_BACKEND_PORT", "8000")
+        "--port",
+        type=port,
+        default=os.environ.get(
+            "KARKINOS_DEV_BACKEND_PORT",
+            os.environ.get("KARKINOS_BACKEND_PORT", "8000"),
+        ),
     )
     parser.add_argument(
         "--web-port",
         type=port,
         default=os.environ.get("KARKINOS_FRONTEND_PORT", "5173"),
     )
-    parser.add_argument("--startup-timeout", type=float, default=60)
+    parser.add_argument(
+        "--startup-timeout",
+        type=float,
+        default=os.environ.get("KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS", "60"),
+    )
+    parser.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Prepare development state before the launcher's health timeout starts",
+    )
     args = parser.parse_args(argv)
     os.umask(0o077)
     lock = None
+    status_path = None
     try:
         npm = shutil.which("npm")
         if npm is None or not (ROOT / "web/node_modules/.bin/vite").is_file():
@@ -185,6 +241,22 @@ def main(argv: list[str] | None = None) -> int:
         if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
             raise ValueError("development lock must be a regular file")
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if args.prepare_only:
+            return subprocess.run(
+                [sys.executable, "-m", "server", "--prepare-database"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+            ).returncode
+        descriptor, configured = tempfile.mkstemp(
+            prefix=".startup-",
+            suffix=".json",
+            dir=environment["KARKINOS_HOME"],
+        )
+        os.close(descriptor)
+        status_path = Path(configured)
+        environment["KARKINOS_STARTUP_STATUS_FILE"] = configured
+        environment["KARKINOS_STARTUP_STATUS_TOKEN"] = uuid.uuid4().hex
         environment["KARKINOS_DEV_BACKEND_URL"] = f"http://127.0.0.1:{args.port}"
         environment["KARKINOS_CORS_ALLOWED_ORIGINS"] = (
             f"http://127.0.0.1:{args.web_port},http://localhost:{args.web_port}"
@@ -231,6 +303,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Development startup refused: {exc}", file=sys.stderr)
         return 1
     finally:
+        if status_path is not None:
+            status_path.unlink(missing_ok=True)
         if lock is not None:
             os.close(lock)
 
