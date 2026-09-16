@@ -65,6 +65,13 @@ class MarketCalendarAutomationService:
             for year in market_calendar_automation_years(current)
         ]
 
+    def sync_year(self, year: int, *, now: datetime | None = None) -> dict[str, Any]:
+        """为明确的数据准备请求补齐指定年份，复用同一核验和发布流程。"""
+        current = get_shanghai_now(now)
+        if isinstance(year, bool) or not 1990 <= year <= current.year + 1:
+            raise ValueError("market_calendar_year_out_of_range")
+        return self._run_year(year=year, now=current)
+
     def _run_year(self, *, year: int, now: datetime) -> dict[str, Any]:
         run_date = now.date().isoformat()
         run_id = f"market_calendar_sync:SSE:{year}:{run_date}"

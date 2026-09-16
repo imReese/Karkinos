@@ -47,6 +47,7 @@ BODY_OPERATIONS = {
     ("post", "/api/backtest/paper-shadow-preview"),
     ("post", "/api/backtest/risk-preview"),
     ("post", "/api/backtest/run"),
+    ("post", "/api/backtest/datasets"),
     ("post", "/api/backtest/signal-preview"),
     ("post", "/api/backtest/sweep"),
     ("post", "/api/market/bars/backfill"),

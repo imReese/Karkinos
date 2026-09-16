@@ -50,6 +50,9 @@ export type DatasetSnapshotSymbol = {
 };
 
 export type DatasetSnapshot = {
+  immutable_dataset_id?: string;
+  available_as_of?: string;
+  point_in_time_verified?: boolean;
   schema_version?: string;
   snapshot_id: string;
   provider: {
@@ -185,6 +188,7 @@ export type StrategyMetadataSnapshot = {
 };
 
 export type BacktestRunRequest = {
+  dataset_id?: string;
   start_date: string;
   end_date: string;
   initial_cash: number;
@@ -438,6 +442,7 @@ export type BacktestReport = {
   id: number;
   created_at: string;
   config: {
+    dataset_id?: string | null;
     start_date: string;
     end_date: string;
     initial_cash: number;

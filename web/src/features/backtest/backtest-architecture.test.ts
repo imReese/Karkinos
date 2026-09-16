@@ -299,6 +299,8 @@ test('backtest request URLs stay at the reviewed contract', () => {
       '/api/account-strategy/contribution',
       '/api/backtest/attribution-preview',
       '/api/backtest/compare',
+      '/api/backtest/datasets',
+      '/api/backtest/datasets',
       '/api/backtest/paper-shadow-preview',
       '/api/backtest/results',
       '/api/backtest/results/${resultId}',

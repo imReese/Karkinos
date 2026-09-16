@@ -29,6 +29,7 @@ import {
   resultSummary,
   todayDate,
 } from './backtest-page-model';
+import type { PublishedDataset } from '../dataset-api';
 import { useBacktestPortfolioInstrumentsQuery } from './backtest-portfolio-query';
 
 export function useBacktestPageController() {
@@ -84,6 +85,18 @@ export function useBacktestPageController() {
   const [mobileWorkspaceTouched, setMobileWorkspaceTouched] = useState(false);
   const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
   const [formError, setFormError] = useState('');
+  const [selectedDataset, setSelectedDataset] =
+    useState<PublishedDataset | null>(null);
+  const [datasetPreparing, setDatasetPreparing] = useState(false);
+  const selectDataset = (dataset: PublishedDataset | null) => {
+    setSelectedDataset(dataset);
+    if (dataset?.instruments.length === 1) {
+      setSymbol(dataset.instruments[0].symbol);
+      setAssetClass(dataset.instruments[0].instrument_type);
+      setStartDate(dataset.start_date);
+      setEndDate(dataset.end_date);
+    }
+  };
   const assetClassOptions = [
     { value: 'stock', label: common.assetClassStock },
     { value: 'etf', label: common.assetClassEtf },
@@ -164,6 +177,22 @@ export function useBacktestPageController() {
 
   const submitRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (datasetPreparing) return;
+    if (
+      selectedDataset &&
+      (selectedDataset.start_date !== startDate ||
+        selectedDataset.end_date !== endDate ||
+        selectedDataset.instruments.length !== 1 ||
+        selectedDataset.instruments[0].symbol !== symbol.trim() ||
+        selectedDataset.instruments[0].instrument_type !== assetClass)
+    ) {
+      setFormError(
+        locale === 'zh'
+          ? '所选 Dataset 与当前标的或日期不一致，请重新选择或准备数据。'
+          : 'The selected Dataset does not match the symbol or dates. Select or prepare a matching dataset.',
+      );
+      return;
+    }
     if (
       !startDate ||
       !endDate ||
@@ -191,6 +220,7 @@ export function useBacktestPageController() {
         symbol,
         assetClass,
       });
+      if (selectedDataset) payload.dataset_id = selectedDataset.dataset_id;
       const report = await runBacktest.mutateAsync(payload);
       setLatestReport(report);
       setMobileWorkspaceTouched(true);
@@ -200,7 +230,7 @@ export function useBacktestPageController() {
       paperShadowPreview.reset();
       attributionPreview.reset();
       const previewAsset = payload.assets?.[0];
-      if (previewAsset) {
+      if (previewAsset && !selectedDataset) {
         signalPreview.mutate({
           strategy: payload.strategy,
           symbol: previewAsset.symbol,
@@ -280,6 +310,10 @@ export function useBacktestPageController() {
     savedResults,
     searchDefaults,
     selectedAssetClassLabel,
+    selectedDataset,
+    selectDataset,
+    datasetPreparing,
+    setDatasetPreparing,
     selectedReadiness,
     selectedStrategy,
     setAdvancedToolsOpen,

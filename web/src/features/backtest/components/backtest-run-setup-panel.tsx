@@ -11,6 +11,7 @@ import {
   RunContextValue,
   RunReadinessSummary,
 } from './backtest-page-primitives';
+import { ResearchDatasetPanel } from './research-dataset-panel';
 import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { StrategyCatalogPanel } from './strategy-catalog-panel';
@@ -22,6 +23,8 @@ export function BacktestRunSetupPanel() {
     assetClass,
     assetClassOptions,
     endDate,
+    datasetPreparing,
+    selectedDataset,
     formError,
     handoffLabels,
     initialCash,
@@ -122,6 +125,7 @@ export function BacktestRunSetupPanel() {
                   className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
                   type="date"
                   value={startDate}
+                  disabled={datasetPreparing || runBacktest.isPending}
                   onChange={(event) => setStartDate(event.target.value)}
                   aria-label={labels.startDate}
                 />
@@ -132,6 +136,7 @@ export function BacktestRunSetupPanel() {
                   className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
                   type="date"
                   value={endDate}
+                  disabled={datasetPreparing || runBacktest.isPending}
                   onChange={(event) => setEndDate(event.target.value)}
                   aria-label={labels.endDate}
                 />
@@ -221,6 +226,7 @@ export function BacktestRunSetupPanel() {
                 <input
                   className="app-field min-h-11 w-full min-w-0 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
                   value={symbol}
+                  disabled={datasetPreparing || runBacktest.isPending}
                   onChange={(event) => setSymbol(event.target.value)}
                   placeholder={labels.symbolPlaceholder}
                   aria-label={labels.symbol}
@@ -231,6 +237,7 @@ export function BacktestRunSetupPanel() {
                 <select
                   className="app-field min-h-11 w-full min-w-0 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
                   value={assetClass}
+                  disabled={datasetPreparing || runBacktest.isPending}
                   onChange={(event) => setAssetClass(event.target.value)}
                   aria-label={labels.assetClass}
                 >
@@ -245,6 +252,8 @@ export function BacktestRunSetupPanel() {
                 {labels.singleSymbolHint}
               </span>
             </div>
+
+            <ResearchDatasetPanel />
 
             <RunReadinessSummary
               assetClassLabel={selectedAssetClassLabel}
@@ -270,38 +279,40 @@ export function BacktestRunSetupPanel() {
               <button
                 type="submit"
                 className="app-button-primary min-h-11 w-full rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold transition active:scale-[0.99] sm:w-auto"
-                disabled={runBacktest.isPending}
+                disabled={runBacktest.isPending || datasetPreparing}
               >
                 {runBacktest.isPending ? labels.running : labels.run}
               </button>
             </div>
           </form>
-          <BacktestResponsiveDisclosure
-            detail={labels.advancedToolsDetail}
-            id="backtest-advanced-tools"
-            open={advancedToolsOpen}
-            onToggle={() => setAdvancedToolsOpen((current) => !current)}
-            testId="backtest-advanced-tools-disclosure"
-            title={labels.advancedToolsTitle}
-          >
-            <ParameterSweepPanel
-              startDate={startDate}
-              endDate={endDate}
-              initialCash={initialCash}
-              strategy={strategy}
-              parameterSchema={parameterSchema}
-              parameterValues={parameterValues}
-              assets={buildSingleAsset(symbol, assetClass)}
-            />
-            <ParameterComparePanel
-              startDate={startDate}
-              endDate={endDate}
-              initialCash={initialCash}
-              strategy={strategy}
-              parameterSchema={parameterSchema}
-              assets={buildSingleAsset(symbol, assetClass)}
-            />
-          </BacktestResponsiveDisclosure>
+          {!selectedDataset ? (
+            <BacktestResponsiveDisclosure
+              detail={labels.advancedToolsDetail}
+              id="backtest-advanced-tools"
+              open={advancedToolsOpen}
+              onToggle={() => setAdvancedToolsOpen((current) => !current)}
+              testId="backtest-advanced-tools-disclosure"
+              title={labels.advancedToolsTitle}
+            >
+              <ParameterSweepPanel
+                startDate={startDate}
+                endDate={endDate}
+                initialCash={initialCash}
+                strategy={strategy}
+                parameterSchema={parameterSchema}
+                parameterValues={parameterValues}
+                assets={buildSingleAsset(symbol, assetClass)}
+              />
+              <ParameterComparePanel
+                startDate={startDate}
+                endDate={endDate}
+                initialCash={initialCash}
+                strategy={strategy}
+                parameterSchema={parameterSchema}
+                assets={buildSingleAsset(symbol, assetClass)}
+              />
+            </BacktestResponsiveDisclosure>
+          ) : null}
         </div>
       </section>
     </div>
