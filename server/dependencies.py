@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from server.services.execution_gateway_verification import (
         ExecutionGatewayRuntimeProtocol,
     )
+    from server.services.research_datasets import ResearchDatasetService
     from server.services.trading_controls import TradingControlState
     from server.ws.hub import ConnectionHub
 
@@ -35,6 +36,7 @@ class AppState:
     """Mutable runtime services owned by exactly one FastAPI application."""
 
     def __init__(self) -> None:
+        self.research_datasets: ResearchDatasetService | None = None
         self.config: ServerConfig | None = None
         self.db: AppDatabase | None = None
         self.hub: ConnectionHub | None = None

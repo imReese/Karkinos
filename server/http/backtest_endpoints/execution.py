@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.ledger_models import EquityPoint
 from server.contracts.http.strategy_models import (
@@ -14,6 +14,7 @@ from server.contracts.http.strategy_models import (
     BacktestSweepResult,
 )
 from server.http.backtest_endpoints.dependencies import ExecutionEndpointDependencies
+from server.services.research_datasets import ResearchDatasetError
 
 
 def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
@@ -42,7 +43,12 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
         config = state.config
         request = _validate_backtest_strategy_params(request)
 
-        bt_result = await asyncio.to_thread(_run_backtest, request, config, state.db)
+        try:
+            bt_result = await asyncio.to_thread(
+                _run_backtest, request, config, state.db
+            )
+        except ResearchDatasetError as exc:
+            raise HTTPException(409, str(exc)) from None
         metrics_json = _backtest_report_metrics_json(request, bt_result)
 
         # 保存到数据库

@@ -185,7 +185,12 @@ _run_backtest = _run_single_backtest
 
 
 def create_router() -> APIRouter:
+    from server.http.backtest_endpoints.datasets import (
+        create_router as create_dataset_router,
+    )
+
     router = APIRouter()
+    router.include_router(create_dataset_router())
     router.routes.extend(
         _create_strategy_catalog_router(
             StrategyCatalogEndpointDependencies(

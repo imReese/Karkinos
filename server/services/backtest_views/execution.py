@@ -167,46 +167,82 @@ def run_single_backtest(
     from data.manager import DataManager, build_sources
     from data.store import DataStore
 
-    assets = request.assets or config.assets
-    store = None
-    try:
-        store = DataStore()
-    except Exception:
-        pass
+    dataset_binding = None
+    if getattr(request, "dataset_id", None) is not None:
+        from server.runtime_paths import resolve_data_dir
+        from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
 
-    sources = build_sources(
-        data_source=config.data_source,
-        tushare_token=config.tushare_token,
-    )
-    dm = DataManager(
-        sources=sources,
-        store=store,
-        default_source=config.data_source,
-    )
-
-    watchlist = build_watchlist(BacktestConfig(assets=assets))
-    instruments = {}
-    data_handlers = {}
-    for sym, ac in watchlist:
-        instrument = DataManager.get_instrument(sym, ac)
-        instruments[sym] = instrument
-
-        handler = dm.get_bars(
-            sym,
-            datetime.strptime(request.start_date, "%Y-%m-%d"),
-            datetime.strptime(request.end_date, "%Y-%m-%d"),
-            asset_class=ac,
+        root = (
+            db.path.resolve().parent
+            if db is not None
+            else Path(resolve_data_dir()).resolve()
+        ) / "research"
+        instruments, data_handlers, dataset_binding = load_dataset_backtest_inputs(
+            root, request
         )
-        data_handlers[sym] = handler
+        store = None
+        sources = {}
+    else:
+        assets = request.assets or config.assets
+        store = None
+        try:
+            store = DataStore()
+        except Exception:
+            pass
+
+        sources = build_sources(
+            data_source=config.data_source,
+            tushare_token=config.tushare_token,
+        )
+        dm = DataManager(
+            sources=sources,
+            store=store,
+            default_source=config.data_source,
+        )
+
+        watchlist = build_watchlist(BacktestConfig(assets=assets))
+        instruments = {}
+        data_handlers = {}
+        for sym, ac in watchlist:
+            instrument = DataManager.get_instrument(sym, ac)
+            instruments[sym] = instrument
+
+            handler = dm.get_bars(
+                sym,
+                datetime.strptime(request.start_date, "%Y-%m-%d"),
+                datetime.strptime(request.end_date, "%Y-%m-%d"),
+                asset_class=ac,
+            )
+            data_handlers[sym] = handler
 
     dataset_snapshot_json = build_backtest_dataset_snapshot(
         start_date=request.start_date,
         end_date=request.end_date,
-        configured_source=getattr(config, "data_source", None),
+        configured_source="tdx"
+        if dataset_binding
+        else getattr(config, "data_source", None),
         data_handlers=data_handlers,
         store=store,
-        source_names=list(sources.keys()),
+        source_names=["tdx"] if dataset_binding else list(sources.keys()),
     )
+    if dataset_binding is not None:
+        dataset_snapshot_json["immutable_dataset_id"] = dataset_binding["dataset_id"]
+        dataset_snapshot_json["available_as_of"] = dataset_binding["cutoff"]
+        dataset_snapshot_json["point_in_time_verified"] = False
+        # 不把历史回填、未建模公司行动的探索性回测标成可直接升级的证据。
+        dataset_snapshot_json["data_quality"]["status"] = "warning"
+        dataset_snapshot_json["data_quality"]["issues"].extend(
+            [
+                {
+                    "code": "historical_availability_unverified",
+                    "message": dataset_binding["limitations"][0],
+                },
+                {
+                    "code": "unadjusted_corporate_actions_unmodeled",
+                    "message": dataset_binding["limitations"][1],
+                },
+            ]
+        )
 
     event_bus_placeholder = type(
         "EventBus", (), {"subscribe": lambda *a: None, "publish": lambda *a: None}
@@ -242,6 +278,8 @@ def run_single_backtest(
     metrics_json = metrics.to_json_dict()
     metrics_json["evidence_bundle"] = evidence_json
     metrics_json["dataset_snapshot"] = dataset_snapshot_json
+    if dataset_binding is not None:
+        metrics_json["dataset_binding"] = dataset_binding
     metrics_json["strategy_metadata"] = _strategy_metadata_snapshot(request)
     oos_validation_json = build_oos_validation_payload(request, result)
     if oos_validation_json:

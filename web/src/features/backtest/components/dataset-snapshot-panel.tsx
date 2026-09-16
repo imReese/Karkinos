@@ -1,6 +1,7 @@
 import { ShieldCheck } from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
 import { EvidenceState } from '../../../shared/ui/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatTimestamp } from '../../../shared/format';
@@ -38,6 +39,7 @@ function datasetStatusNeedsReview(status?: string | null) {
 
 export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.backtest.datasetSnapshot;
   const common = copy.common;
   const snapshot = snapshotFromReport(report);
@@ -75,6 +77,25 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
         </div>
       </div>
 
+      {snapshot.immutable_dataset_id ? (
+        <div
+          className="mt-4 break-all text-xs"
+          data-testid="report-dataset-binding"
+        >
+          <div className="font-mono">
+            Dataset: {snapshot.immutable_dataset_id}
+          </div>
+          <div>
+            {locale === 'zh' ? '快照可用时间：' : 'Available as of: '}
+            {snapshot.available_as_of}
+          </div>
+          <div>
+            {locale === 'zh'
+              ? '未复权 · 未验证历史时点可用性'
+              : 'Unadjusted · historical PIT not verified'}
+          </div>
+        </div>
+      ) : null}
       <div className="mt-4 grid grid-cols-2 gap-2">
         <SnapshotStat
           className="col-span-2"

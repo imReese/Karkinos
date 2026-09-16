@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
@@ -206,6 +207,22 @@ async def lifespan(app: FastAPI):
                 migrated_count,
             )
     state.db = db
+    from data.providers.tdx_runtime import (
+        TdxRuntimeConfigurationError,
+        TdxRuntimeSettings,
+    )
+    from server.services.research_datasets import ResearchDatasetService
+
+    # 数据与当前应用的数据库共用 workspace，但不进入账户数据库。
+    # 一个可选数据源配置错误不能阻断其他页面或已发布数据集的离线读取。
+    try:
+        tdx_settings = TdxRuntimeSettings.from_environment(os.environ)
+    except TdxRuntimeConfigurationError:
+        logger.warning("TDX 配置无效，已停用远程准备；已发布数据仍可离线使用")
+        tdx_settings = TdxRuntimeSettings()
+    state.research_datasets = ResearchDatasetService(
+        db.path.resolve().parent / "research", tdx_settings
+    )
     initialize_ai_shadow_research_qualification_persistence(state)
     try:
         db.publish_current_valuation_snapshot_sync()
