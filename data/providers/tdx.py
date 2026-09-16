@@ -1,8 +1,8 @@
 """通达信 TdxAiData 日线 Provider Adapter。
 
-本模块把通达信 tqserver 的外部数据转换为 Karkinos Provider Contract：
+本模块把通达信 tdxaidata 的外部数据转换为 Karkinos Provider Contract：
 
-    tqserver.tqs.get_market_data(...)
+    tdxaidata.tqs.get_market_data(...)
                 ↓
           TDX response
                 ↓
@@ -128,7 +128,7 @@ class _TdxClient(Protocol):
 
 
 class TdxDailyBarProvider:
-    """基于 tqserver 的 TDX 日线 Provider。"""
+    """基于独立 tdxaidata 包的 TDX 日线 Provider。"""
 
     def __init__(
         self,
@@ -236,9 +236,17 @@ class TdxDailyBarProvider:
             return self._client
 
         try:
-            module = importlib.import_module("tqserver")
-        except ImportError as exc:
-            raise TdxProviderUnavailableError("tdx_sdk_not_installed") from exc
+            # 独立安装包公开的是 tdxaidata.tqs，不是客户端目录中的 tqserver。
+            module = importlib.import_module("tdxaidata")
+        except ModuleNotFoundError as exc:
+            code = (
+                "tdx_sdk_not_installed"
+                if exc.name == "tdxaidata"
+                else "tdx_sdk_dependency_missing"
+            )
+            raise TdxProviderUnavailableError(code) from exc
+        except (ImportError, OSError) as exc:
+            raise TdxProviderUnavailableError("tdx_sdk_load_failed") from exc
 
         client = getattr(
             module,
@@ -253,7 +261,7 @@ class TdxDailyBarProvider:
                 None,
             )
         ):
-            raise TdxProviderUnavailableError("tdx_tqserver_client_unavailable")
+            raise TdxProviderUnavailableError("tdx_sdk_client_unavailable")
 
         self._client = client
 
