@@ -112,7 +112,14 @@ export type AccountStateResponse = {
   next_step: string;
   overview: {
     market_session: {
-      status: 'open' | 'break' | 'closed' | 'non_trading_day' | 'unknown';
+      status:
+        | 'pre_open'
+        | 'open'
+        | 'midday_break'
+        | 'after_close'
+        | 'non_trading_day'
+        | 'unknown';
+      market_date: string;
       calendar_verified: boolean;
       latest_completed_trade_date: string | null;
       expected_quote_date: string | null;
