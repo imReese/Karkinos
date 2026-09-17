@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from server.contracts.idempotency import IdempotencyConflict
+from server.persistence.connection import connect_sqlite
 
 from ..contracts import (
     AgentRole,
@@ -66,10 +67,9 @@ class AiAuditStore:
         return self._path
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=30.0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=2000")
+        conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
     @contextmanager
@@ -98,6 +98,7 @@ class AiAuditStore:
         payload_json = canonical_json(payload)
         fingerprint = content_fingerprint(payload)
         with self._connection() as conn:
+            begin_immediate(conn)
             columns = [id_column, *(extra_columns or {}), "payload_json"]
             columns.extend(["payload_fingerprint", "created_at"])
             values = [identity, *(extra_columns or {}).values(), payload_json]
