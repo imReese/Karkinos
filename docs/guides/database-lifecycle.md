@@ -9,6 +9,26 @@ On first use, if the default development database is absent while repository-loc
 state already exists, startup refuses to create a silent empty replacement; clone
 or otherwise migrate that state deliberately first.
 
+## Stable database format
+
+Karkinos declares the completed financial persistence foundation as **Database
+Format v1**. The format version is intentionally separate from the append-only
+migration head: Format v1 currently ends at migration head 17. Migration numbers
+are historical lineage identifiers, not product/database major versions.
+
+Ordinary application work, refactors, UI changes, query rewrites, and data-flywheel
+algorithm changes do **not** advance the migration head. A new migration is added
+only when the durable persistence contract actually changes (for example a new
+table/column/index/trigger, a changed database constraint, or a versioned durable
+data transformation). Applied migrations remain immutable and are never renumbered
+or edited. A future incompatible persistence generation would require an explicit
+Database Format v2 decision rather than silently redefining Format v1.
+
+Format v1 guarantees the foundation established through migration head 17:
+immutable migration lineage, FULL/FK-aware authoritative writes, verified recovery
+bundles, exact financial decimal persistence with provenance, and database-level
+financial fact invariants.
+
 ## Startup
 
 The source launcher prepares state in the foreground, before the API health
@@ -113,10 +133,11 @@ record's before/target histories. `target_present` describes the current match,
 not proof of which process committed. Only existing digest-verified backups are
 advertised as verified.
 
-These are SQLite-store backups, **not a complete application restore point**.
-Application artifacts/configuration may need coordinated recovery as well. Existing
-managed release transactions retain ownership of complete activation/rollback.
-The database preparer never automatically overwrites live state from a backup.
+Migration-preparation backups remain narrow SQLite safety snapshots. For complete
+application-state recovery use the verified recovery-bundle workflow, which captures
+the selected data root, non-secret configuration identity, hashes, database identity,
+and migration lineage and restores only into a new candidate workspace before replay.
+Neither workflow automatically overwrites live state.
 
 ## Recovery boundaries
 

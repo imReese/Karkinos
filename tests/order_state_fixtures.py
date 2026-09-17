@@ -6,6 +6,7 @@ import sqlite3
 from typing import Any
 
 from server.contracts.content_identity import canonical_json
+from server.contracts.financial_values import decimal_storage_pair
 
 
 def insert_historical_oms_order(
@@ -27,14 +28,20 @@ def insert_historical_oms_order(
 ) -> dict[str, Any]:
     """Seed an already-existing historical fact without a production write API."""
 
+    quantity_real, quantity_decimal = decimal_storage_pair(quantity, field="quantity")
+    limit_real, limit_decimal = decimal_storage_pair(
+        limit_price, field="limit_price", allow_none=True
+    )
     with sqlite3.connect(database.path) as conn:
         conn.execute(
             """
             INSERT INTO oms_orders (
                 order_id, intent_key, symbol, side, asset_class, quantity,
-                order_type, limit_price, status, broker_submission_enabled,
-                source, source_ref, payload_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+                quantity_decimal, order_type, limit_price, limit_price_decimal,
+                status, broker_submission_enabled, source, source_ref, payload_json,
+                created_at, updated_at, currency_code, decimal_provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?,
+                      'CNY', 'exact_decimal_write_v1')
             """,
             (
                 order_id,
@@ -42,9 +49,11 @@ def insert_historical_oms_order(
                 symbol,
                 side,
                 asset_class,
-                quantity,
+                quantity_real,
+                quantity_decimal,
                 order_type,
-                limit_price,
+                limit_real,
+                limit_decimal,
                 status,
                 source,
                 source_ref,

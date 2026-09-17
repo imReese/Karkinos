@@ -42,18 +42,25 @@ class DatabaseStatus:
     def as_dict(self) -> dict[str, Any]:
         result = asdict(self)
         result["path"] = str(self.path)
+        from server.persistence.database_format import DATABASE_FORMAT_VERSION
+
+        result["database_format_version"] = DATABASE_FORMAT_VERSION
+        result["migration_head"] = self.expected[-1]["version"] if self.expected else 0
         result["sqlite_version"] = sqlite3.sqlite_version
         result["recovery_records"] = recovery_records(self)
         return result
 
     def explain(self) -> str:
+        from server.persistence.database_format import DATABASE_FORMAT_VERSION
+
         code_version = self.expected[-1]["version"] if self.expected else 0
         db_version = self.applied[-1]["version"] if self.applied else 0
         lines = [
             f"Database state: {self.state}",
             f"Database: {self.path}",
             f"SQLite: {sqlite3.sqlite_version}",
-            f"Code schema: {code_version}; database schema: {db_version}",
+            f"Database format: v{DATABASE_FORMAT_VERSION}",
+            f"Migration head: code={code_version}; database={db_version}",
         ]
         if self.reason:
             lines.append(self.reason)

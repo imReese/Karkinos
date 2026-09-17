@@ -60,6 +60,7 @@ from server.services.session_start_account_truth import (
 )
 from server.services.trading_controls import TradingControlState
 from tests.order_state_fixtures import insert_historical_oms_order
+from tests.out_of_band_corruption import allow_out_of_band_update
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
 
@@ -938,6 +939,7 @@ def test_session_budget_blocks_oversized_order_and_turnover(tmp_path) -> None:
     env = _ready_environment(tmp_path)
     order_id = env["order_ids"][0]
     with sqlite3.connect(env["db"].path) as conn:
+        allow_out_of_band_update(conn, "oms_orders")
         conn.execute(
             "UPDATE oms_orders SET quantity = 3000 WHERE order_id = ?",
             (order_id,),
@@ -957,6 +959,7 @@ def test_market_order_missing_gateway_evidence_and_symbol_scope_fail_closed(
     env = _ready_environment(tmp_path)
     order_id = env["order_ids"][0]
     with sqlite3.connect(env["db"].path) as conn:
+        allow_out_of_band_update(conn, "oms_orders")
         conn.execute(
             """
             UPDATE oms_orders

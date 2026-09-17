@@ -29,6 +29,15 @@ def _legacy_v15_database(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         AppDatabase(path).init_sync()
 
 
+def _initialize_through(
+    path: Path, version: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = tuple(item for item in migrations._MIGRATIONS if item.version <= version)
+    with monkeypatch.context() as context:
+        context.setattr(migrations, "_MIGRATIONS", registry)
+        initialize_database(path)
+
+
 def test_v16_backfills_legacy_real_without_changing_ledger_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -54,7 +63,7 @@ def test_v16_backfills_legacy_real_without_changing_ledger_identity(
     before = _rows(path, "ledger_entries")
     before_identity = ledger_identity_from_rows(before)["ledger_fingerprint"]
 
-    AppDatabase(path).init_sync()
+    _initialize_through(path, 16, monkeypatch)
 
     after = _rows(path, "ledger_entries")
     after_identity = ledger_identity_from_rows(after)["ledger_fingerprint"]
@@ -74,11 +83,11 @@ def test_v16_backfills_legacy_real_without_changing_ledger_identity(
 
 
 def test_v16_new_authoritative_writes_persist_canonical_decimal_text(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "exact.db"
     db = AppDatabase(path)
-    db.init_sync()
+    _initialize_through(path, 16, monkeypatch)
     db.record_order_sync(
         order_id="order-1",
         timestamp="2026-09-17T10:00:00+08:00",
@@ -157,10 +166,12 @@ def test_v16_new_authoritative_writes_persist_canonical_decimal_text(
         assert row["decimal_provenance"] == "exact_decimal_write_v1"
 
 
-def test_v16_real_projection_drift_blocks_startup(tmp_path: Path) -> None:
+def test_v16_real_projection_drift_blocks_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     path = tmp_path / "real-drift.db"
     db = AppDatabase(path)
-    db.init_sync()
+    _initialize_through(path, 16, monkeypatch)
     db.record_order_sync(
         order_id="order-1",
         timestamp="2026-09-17T10:00:00+08:00",
@@ -178,13 +189,15 @@ def test_v16_real_projection_drift_blocks_startup(tmp_path: Path) -> None:
         conn.commit()
 
     with pytest.raises(RuntimeError, match="financial_decimal_projection_drift"):
-        initialize_database(path)
+        _initialize_through(path, 16, monkeypatch)
 
 
-def test_v16_noncanonical_exact_write_blocks_startup(tmp_path: Path) -> None:
+def test_v16_noncanonical_exact_write_blocks_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     path = tmp_path / "exact-drift.db"
     db = AppDatabase(path)
-    db.init_sync()
+    _initialize_through(path, 16, monkeypatch)
     db.record_order_sync(
         order_id="order-1",
         timestamp="2026-09-17T10:00:00+08:00",
@@ -204,4 +217,4 @@ def test_v16_noncanonical_exact_write_blocks_startup(tmp_path: Path) -> None:
         conn.commit()
 
     with pytest.raises(RuntimeError, match="financial_decimal_not_canonical"):
-        initialize_database(path)
+        _initialize_through(path, 16, monkeypatch)

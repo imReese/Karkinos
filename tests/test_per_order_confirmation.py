@@ -80,6 +80,7 @@ from server.services.strategy_promotion_pipeline import (
 from server.services.trading_controls import TradingControlState
 from tests.ai_shadow_strategy_fixtures import seed_approved_ai_shadow_strategy
 from tests.order_state_fixtures import insert_historical_oms_order
+from tests.out_of_band_corruption import allow_out_of_band_update
 from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
@@ -1468,6 +1469,7 @@ def test_order_term_drift_invalidates_recorded_capital_fingerprint(tmp_path) -> 
     order_id = env["order"]["order_id"]
     order = env["db"].get_oms_order_sync(order_id)
     with sqlite3.connect(env["db"].path) as conn:
+        allow_out_of_band_update(conn, "oms_orders")
         conn.execute(
             "UPDATE oms_orders SET quantity = 200 WHERE order_id = ?",
             (order["order_id"],),

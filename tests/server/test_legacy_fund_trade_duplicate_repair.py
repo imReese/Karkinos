@@ -11,6 +11,7 @@ import pytest
 
 from server import legacy_fund_trade_duplicate_repair_cli as repair_cli
 from server.ledger.models import LedgerEntry
+from server.persistence import migrations
 from server.persistence.financial_facts_ledger import insert_ledger_entry_on_connection
 from server.persistence.initializer import initialize_database
 from server.projections.legacy_fund_trade_duplicate_correction import (
@@ -42,7 +43,14 @@ def _fixture_database(
     live_offset_shape: bool = False,
     high_precision: bool = False,
 ) -> None:
-    initialize_database(path)
+    current_registry = migrations._MIGRATIONS
+    try:
+        migrations._MIGRATIONS = tuple(
+            item for item in current_registry if item.version <= 16
+        )
+        initialize_database(path)
+    finally:
+        migrations._MIGRATIONS = current_registry
     with sqlite3.connect(path) as conn:
         for group_index, pair_count in enumerate(group_sizes, start=1):
             symbol = f"FIXTURE-{group_index}"
@@ -166,6 +174,8 @@ def _fixture_database(
             """
         )
         conn.commit()
+    # Install v17 guards only after the historical pre-v17 state is complete.
+    initialize_database(path)
 
 
 def _counts(path: Path) -> tuple[int, int, int]:
@@ -174,6 +184,15 @@ def _counts(path: Path) -> tuple[int, int, int]:
             int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             for table in ("ledger_entries", "event_log", "trades")
         )
+
+
+def _simulate_offline_guard_bypass(
+    conn: sqlite3.Connection, *trigger_names: str
+) -> None:
+    """Model disk/admin tampering that bypasses normal v17 database guards."""
+
+    for trigger_name in trigger_names:
+        conn.execute(f"DROP TRIGGER {trigger_name}")
 
 
 def _rows(path: Path) -> list[dict[str, object]]:
@@ -647,6 +666,7 @@ def test_apply_requires_exact_confirmation_and_current_preview(tmp_path) -> None
     assert _counts(path) == before
 
     with sqlite3.connect(path) as conn:
+        _simulate_offline_guard_bypass(conn, "ledger_entries_update_guard")
         conn.execute(
             "UPDATE ledger_entries SET amount = amount + 0.000000001 "
             "WHERE source = 'manual' AND id = ("
@@ -670,6 +690,7 @@ def test_stock_pairs_and_ambiguous_pairs_fail_closed(tmp_path) -> None:
     ambiguous_path = tmp_path / "ambiguous.db"
     _fixture_database(ambiguous_path, group_sizes=(1,))
     with sqlite3.connect(ambiguous_path) as conn:
+        _simulate_offline_guard_bypass(conn, "guard_ledger_entries_exact_insert")
         row = conn.execute(
             "SELECT * FROM ledger_entries WHERE source = 'manual' LIMIT 1"
         ).fetchone()
@@ -827,6 +848,7 @@ def test_resolver_uses_repair_cutoff_and_rejects_pre_cutoff_tampering(
         build_portfolio_projection([LedgerEntry.from_row(row) for row in _rows(path)])
 
     with sqlite3.connect(path) as conn:
+        _simulate_offline_guard_bypass(conn, "ledger_entries_update_guard")
         conn.execute(
             "UPDATE ledger_entries SET note = 'tampered' "
             "WHERE id = (SELECT min(id) FROM ledger_entries)"
@@ -856,6 +878,7 @@ def test_resolver_rejects_tampered_fingerprint_and_returns_no_exclusions(
         ).fetchone()
         payload = json.loads(row[1])
         payload["repair_fingerprint"] = "a" * 64
+        _simulate_offline_guard_bypass(conn, "ledger_entries_update_guard")
         conn.execute(
             "UPDATE ledger_entries SET correction_payload_json = ? WHERE id = ?",
             (json.dumps(payload, sort_keys=True), row[0]),

@@ -29,6 +29,7 @@ from server.services.account_truth_replay import (
     verify_account_truth_replay_evidence,
 )
 from server.services.valuation_snapshot import build_current_valuation_snapshot
+from tests.out_of_band_corruption import allow_out_of_band_update
 
 _INCOMPLETE_CITIC_SOURCE = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method,broker_order_id,client_order_id
 private-buy,trade_buy,2026-01-05T09:35:00+08:00,2026-01-06,PRIVATE-SYMBOL,PRIVATE-NAME,stock,CNY,100,10,1000,0,0,-1005,,,,PRIVATE-NOTE,0,,PRIVATE-ORDER,
@@ -207,6 +208,7 @@ cash-replay,cash_snapshot,2026-07-10T09:30:00+08:00,2026-07-10,,,,CNY,0,0,0.00,0
     assert after_source_drift["evidence_fingerprint"] != first["evidence_fingerprint"]
 
     with sqlite3.connect(db._path) as conn:
+        allow_out_of_band_update(conn, "ledger_entries")
         conn.execute("UPDATE ledger_entries SET amount = 2001 WHERE id = 1")
         conn.commit()
     after_ledger_drift = build_account_truth_replay_evidence(

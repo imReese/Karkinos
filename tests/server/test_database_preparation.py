@@ -149,9 +149,10 @@ def test_known_mutated_v14_preserves_provenance_and_upgrades_forward(
 
     after = _ledger(path)
     assert after[: len(before)] == before
-    assert [(row[0], row[1]) for row in after[-2:]] == [
+    assert [(row[0], row[1]) for row in after[-3:]] == [
         (15, "reindex_published_fund_nav_marks"),
         (16, "add_exact_financial_decimal_storage"),
+        (17, "enforce_financial_fact_invariants"),
     ]
     assert after[-1][2] == migrations._MIGRATIONS[-1].checksum
     assert migration_lifecycle.inspect_database(path).state == "current"
@@ -236,7 +237,7 @@ def test_failed_backup_never_enters_migration_transaction(tmp_path, monkeypatch)
     assert _ledger(database.path) == before
 
 
-def test_published_migrations_nine_through_sixteen_remain_frozen():
+def test_published_migrations_nine_through_seventeen_remain_frozen():
     # Earlier versions already have frozen fixtures in test_schema_migrations.py.
     expected = {
         9: "655b449d41b35726ff0a7175918a6ab29ce86b8c92651d8d8e6258bb3c123240",
@@ -247,6 +248,7 @@ def test_published_migrations_nine_through_sixteen_remain_frozen():
         14: "273163e5cdca99dd11c19645e3cda9b56988b1ea0faa27f4374f87eaeb2eb223",
         15: "3cbbfd222119247e2f2038da4f27c79896a8a9f78861de6998e6b05c482cba3a",
         16: "97a6e233b141aa9179962d17bfa4450c7a0939c80b7d394b195af5b601903271",
+        17: "9df70bbf4736f38b3bc7c3a4de6a180a1e5e6deafafbdfe9751bf708a81fb607",
     }
     actual = {item.version: item.checksum for item in migrations._MIGRATIONS}
     assert {version: actual[version] for version in expected} == expected

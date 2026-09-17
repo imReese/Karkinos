@@ -19,6 +19,7 @@ from server.persistence.portfolio_cash_flow_uow import PortfolioCashFlowUnitOfWo
 from server.persistence.schema_v1 import initialize_v1_baseline_schema
 from server.projections.service import build_portfolio_projection
 from server.services.portfolio_cash_flow_commands import PortfolioCashFlowCommandService
+from tests.out_of_band_corruption import allow_out_of_band_update
 
 pytestmark = pytest.mark.unit
 
@@ -414,6 +415,7 @@ def test_cash_flow_correction_replay_rejects_projection_drift(tmp_path) -> None:
     uow.correct(command)
 
     with sqlite3.connect(path) as conn:
+        allow_out_of_band_update(conn, "cash_flows")
         conn.execute("UPDATE cash_flows SET amount = 999 WHERE id = 1")
         conn.commit()
 
@@ -475,6 +477,7 @@ def test_cash_flow_projection_drift_fails_closed_while_ledger_remains_authority(
     repository = _PortfolioRepository(path, _valuation_writer([]))
     repository.record_cash_flow_sync(_cash_flow())
     with sqlite3.connect(path) as conn:
+        allow_out_of_band_update(conn, "cash_flows")
         conn.execute("UPDATE cash_flows SET amount = 999 WHERE id = 1")
         conn.commit()
 
