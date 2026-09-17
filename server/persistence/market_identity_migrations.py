@@ -12,6 +12,7 @@ from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
 from data.market_data import is_fund_estimate_quote_source
+from server.persistence.connection import run_immediate_transaction
 from server.persistence.market_identity_schema import (
     build_market_identity_schema_migration,
 )
@@ -46,7 +47,6 @@ def migrate_legacy_daily_closes_to_v2(
                 apply=False,
                 failure_hook=None,
             )
-        from server.persistence.migrations import run_immediate_schema_transaction
 
         def apply() -> dict[str, Any]:
             report = _daily_close_migration_report(
@@ -60,7 +60,7 @@ def migrate_legacy_daily_closes_to_v2(
                 raise RuntimeError("typed daily-close migration quick_check failed")
             return {**report, "quick_check": "ok"}
 
-        return run_immediate_schema_transaction(conn, apply)
+        return run_immediate_transaction(conn, apply)
     finally:
         conn.close()
 

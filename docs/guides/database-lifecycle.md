@@ -3,7 +3,11 @@
 The normal source commands remain `./scripts/start_server.sh dev` and
 `./scripts/start_server.sh main`. Development keeps its fixed development home;
 there is no sandbox manager, automatic database-per-commit, reset, or downgrade.
-Uncommitted development code and appended migrations are allowed.
+Uncommitted development code and appended migrations are allowed. The default
+development home is intentionally separate from repository-local `data/store`.
+On first use, if the default development database is absent while repository-local
+state already exists, startup refuses to create a silent empty replacement; clone
+or otherwise migrate that state deliberately first.
 
 ## Startup
 
@@ -20,18 +24,35 @@ API, worker, CLI, and SQLite writers before migration. These advisory locks do
 not control unrelated SQLite clients or older Karkinos processes.
 
 `AppDatabase.init_sync()` remains an explicit preparation entry point for tools
-and test fixtures. Asynchronous application/worker initialization validates an
-already-prepared database rather than applying schema changes in lifespan.
+and test fixtures. API, data-worker, and research-worker runtime initialization
+validates an already-prepared database rather than applying schema changes. The
+source entry point prepares once in the parent before Uvicorn or workers start.
 Direct ASGI deployments must prepare their data first. A migration changed during
 hot reload requires restarting through the normal launcher; reloader children
 must not upgrade the live database behind the parent.
+
+New application write connections use one explicit SQLite baseline: FULL
+synchronous writes, foreign-key enforcement, and a bounded busy timeout. Schema
+preparation additionally requires WAL but keeps foreign-key enforcement disabled
+while replaying frozen legacy rebuilds whose historical rows predate those runtime
+constraints; schema/history contracts remain the compatibility authority during
+that maintenance transaction. Read-only diagnostics open with SQLite `mode=ro`
+plus `query_only`, so a missing database is never created by inspection. The
+effective SQLite runtime version and PRAGMAs are verified by tests; changing this
+policy belongs in the shared connection module, not in individual migration code.
+Existing repositories migrate to the same helper when their financial write paths
+are touched rather than through a blind bulk rewrite.
 
 When the registry and database already agree, preparation does not create another
 backup/archive or repeat schema initialization. Unknown migrations, changed
 checksums, inconsistent history, and schema drift stop preparation before DDL.
 The existing migration registry, checksums, and structure validation remain the
 compatibility authority. Never edit an already-applied migration to make a check
-pass; append a corrective migration instead.
+pass; append a corrective migration instead. The published-fund-NAV incident is
+kept as a concrete compatibility example: the first applied v14 definition is
+frozen under its original checksum, while the later dirty-worktree v14 variant is
+accepted only by its exact known checksum and converges through the appended v15
+reindex migration without rewriting either v14 ledger row.
 
 ## Read-only diagnosis
 
@@ -64,20 +85,25 @@ Preparation archives under the selected data directory:
 ```text
 backups/schema/app.db/<run-id>/
   migration.json
+  migration-registry.json  # exact evaluated migration definitions
   app.db          # present only when a previous app.db existed
   meta.db         # present only when the sibling store existed
 ```
 
-The private JSON record includes the exact migration definitions and checksums,
+The private receipt includes the exact migration definitions and checksums,
 source location, available Git commit, persistence-worktree dirty status, prior
-ledger, result, and backup hashes. It does not archive environment variables,
+ledger, result, and backup hashes. The separately hashed registry snapshot keeps
+the evaluated definitions recoverable even for uncommitted development migrations.
+It does not archive environment variables,
 credentials, `.env`, arbitrary working-tree diffs, or user financial data as
 provenance. Database backup files naturally contain private application data:
 keep the entire backup directory private and out of Git.
 
-Backups use SQLite's backup API and include committed WAL data. Backup or integrity
-failure prevents migration. Schema scripts and migration ledger writes run inside
-an explicit transaction; initialization failure rolls it back. Existing SQL text
+Backups use SQLite's backup API and include committed WAL data. Backup, registry
+snapshot, or integrity failure prevents migration. Legacy schema repair, pending
+migrations, preparation backfills, verification, and migration-ledger writes share
+one explicit write transaction; a later failure rolls the whole preparation back.
+Existing SQL text
 and historical migration checksums are not rewritten by the transaction change.
 
 Records are durable diagnostics, not an alternative migration ledger or code that

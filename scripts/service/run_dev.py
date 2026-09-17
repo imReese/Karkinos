@@ -19,6 +19,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DEVELOPMENT_HOME = Path("~/.karkinos/development").expanduser().absolute()
 
 
 def development_environment(home: Path) -> dict[str, str]:
@@ -35,6 +36,17 @@ def development_environment(home: Path) -> dict[str, str]:
         raise ValueError("development must not use an installed runtime home")
     config = home / "config/config.json"
     data = home / "data"
+    legacy_database = ROOT / "data/store/app.db"
+    if (
+        home == DEFAULT_DEVELOPMENT_HOME
+        and not (data / "app.db").exists()
+        and legacy_database.is_file()
+        and legacy_database.stat().st_size > 0
+    ):
+        raise ValueError(
+            "development state is empty while repository data/store/app.db exists; "
+            "clone the legacy state into ~/.karkinos/development before starting dev"
+        )
     if not config.exists() and data.exists() and any(data.iterdir()):
         raise ValueError(
             "existing development data requires its original configuration",

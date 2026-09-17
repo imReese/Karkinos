@@ -125,9 +125,18 @@ def test_archived_definitions_survive_later_worktree_edits(tmp_path, monkeypatch
     saved = json.loads(record_path.read_text())
     assert saved["target"][0]["statements"] == ["CREATE INDEX sample ON facts(value)"]
     assert saved["source"]["persistence_worktree_dirty"] is True
+    registry_path = record_path.parent / saved["registry_snapshot"]["file"]
+    registry = json.loads(registry_path.read_text())
+    assert registry["migrations"][0]["statements"] == [
+        "CREATE INDEX sample ON facts(value)"
+    ]
     assert not path.exists()
     lifecycle.finish_preparation(record_path, record, succeeded=False)
-    assert json.loads(record_path.read_text())["state"] == "failed"
+    finished = json.loads(record_path.read_text())
+    assert finished["state"] == "failed"
+    assert finished["target"][0]["statements"] == [
+        "CREATE INDEX sample ON facts(value)"
+    ]
 
 
 def test_atomic_record_write_preserves_previous_record_on_failure(
@@ -169,9 +178,14 @@ def test_interrupted_record_is_compared_with_ledger_not_replayed(tmp_path, monke
     recovery = lifecycle.recovery_records(current)
     assert recovery[0]["ledger_comparison"] == "target_present"
     assert recovery[0]["state"] == "backed_up"
+    assert recovery[0]["verified_registry_snapshot"] == str(
+        record_path.parent / "migration-registry.json"
+    )
     assert recovery[0]["verified_backups"] == [str(record_path.parent / path.name)]
     assert json.loads(record_path.read_text())["state"] == "backed_up"
-    # An altered backup must not be advertised as verified.
+    # Altered recovery material must not be advertised as verified.
+    (record_path.parent / "migration-registry.json").write_text("corrupt")
+    assert lifecycle.recovery_records(current)[0]["verified_registry_snapshot"] is None
     (record_path.parent / path.name).write_bytes(b"corrupt backup")
     assert lifecycle.recovery_records(current)[0]["verified_backups"] == []
 

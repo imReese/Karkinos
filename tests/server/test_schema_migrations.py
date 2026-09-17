@@ -648,9 +648,21 @@ def test_known_legacy_v1_repair_revalidates_under_write_transaction(
         record_transaction_state,
     )
 
-    database.init_sync()
-
-    assert transaction_states == [False, True]
+    with sqlite3.connect(database.path) as conn:
+        expected = migrations._build_v1_baseline_contract(
+            db_module._initialize_v1_baseline_schema
+        )
+        applied = migrations._read_applied_migrations(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        migrations._repair_known_legacy_v1_schema(
+            conn,
+            expected,
+            applied,
+            baseline_initializer=db_module._initialize_v1_baseline_schema,
+        )
+        assert transaction_states
+        assert all(transaction_states)
+        conn.rollback()
 
 
 def test_known_legacy_v1_repair_rolls_back_when_post_contract_check_fails(
@@ -695,7 +707,7 @@ def test_known_legacy_v1_repair_rolls_back_when_post_contract_check_fails(
     )
 
 
-def test_known_legacy_v1_repair_commits_before_later_migration_blocker(
+def test_known_legacy_v1_repair_rolls_back_with_later_migration_blocker(
     tmp_path,
 ) -> None:
     database = AppDatabase(tmp_path / "app.db")
@@ -723,17 +735,16 @@ def test_known_legacy_v1_repair_commits_before_later_migration_blocker(
         database.init_sync()
 
     with sqlite3.connect(database.path) as conn:
-        repaired_column = next(
-            row
+        repaired_columns = {
+            str(row[1])
             for row in conn.execute(
                 "PRAGMA table_xinfo(controlled_submission_ledger_postings)"
             )
-            if row[1] == "account_truth_review_fingerprint"
-        )
+        }
         migrations_applied = conn.execute(
             "SELECT version, name, checksum FROM schema_migrations ORDER BY version"
         ).fetchall()
-    assert repaired_column[2:6] == ("TEXT", 1, None, 0)
+    assert "account_truth_review_fingerprint" not in repaired_columns
     assert migrations_applied == [
         (
             1,
@@ -1074,7 +1085,7 @@ def test_migration_rejects_legacy_positive_infinity_cash_flow(tmp_path) -> None:
             "SELECT version FROM schema_migrations ORDER BY version"
         ).fetchall()
         ledger_rows = conn.execute("SELECT COUNT(*) FROM ledger_entries").fetchone()
-    assert versions == [(1,), (2,)]
+    assert versions == [(1,)]
     assert ledger_rows == (0,)
 
 

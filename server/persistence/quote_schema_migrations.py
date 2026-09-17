@@ -7,6 +7,23 @@ from typing import Any
 
 # These expressions are frozen schema definitions. Pricing-policy changes that
 # affect this index require a new migration, preserving historical checksums.
+PUBLISHED_NAV_DATE_SQL_V14 = "coalesce(nullif(nav_date, ''), substr(timestamp, 1, 10))"
+PUBLISHED_NAV_SQL_PREDICATE_V14 = """
+    lower(trim(coalesce(quote_source, ''))) NOT IN
+        ('eastmoney_fund_estimate', 'sina_fund_estimate', 'manual', 'manual_mark', 'manual_valuation')
+    AND (lower(trim(coalesce(quote_status, ''))) = 'confirmed'
+         OR (lower(trim(coalesce(quote_source, ''))) IN
+             ('eastmoney_fund_page', 'tushare_fund_nav')
+             AND lower(trim(coalesce(quote_status, 'live'))) IN
+                 ('live', 'fresh', 'healthy', 'cache', 'cached', 'cache_only',
+                  'cache_only_after_market_data_permission_fallback', 'stale')))
+"""
+PUBLISHED_NAV_INDEX_SQL_V14 = f"""
+    CREATE INDEX idx_quote_snapshots_published_nav_date
+    ON quote_snapshots(symbol, {PUBLISHED_NAV_DATE_SQL_V14} DESC, quote_instant_utc DESC, id DESC)
+    WHERE instrument_type = 'open_end_fund' AND {PUBLISHED_NAV_SQL_PREDICATE_V14}
+"""
+
 PUBLISHED_NAV_DATE_SQL = (
     "coalesce(nullif(nav_date, ''), date(quote_instant_utc, '+8 hours'))"
 )
@@ -20,7 +37,6 @@ PUBLISHED_NAV_SQL_PREDICATE = """
                  ('live', 'fresh', 'healthy', 'cache', 'cached', 'cache_only',
                   'cache_only_after_market_data_permission_fallback')))
 """
-
 PUBLISHED_NAV_INDEX_SQL = f"""
     CREATE INDEX idx_quote_snapshots_published_nav_date
     ON quote_snapshots(symbol, {PUBLISHED_NAV_DATE_SQL} DESC, quote_instant_utc DESC, id DESC)
@@ -83,7 +99,7 @@ _V10_STATEMENTS = (
 
 def build_quote_schema_migrations(
     migration_factory: Callable[..., Any],
-) -> tuple[Any, Any, Any]:
+) -> tuple[Any, Any, Any, Any]:
     """Build quote migrations without coupling their data to the registry type."""
 
     return (
@@ -101,9 +117,27 @@ def build_quote_schema_migrations(
         migration_factory(
             version=14,
             name="index_published_fund_nav_marks",
-            statements=(PUBLISHED_NAV_INDEX_SQL,),
+            statements=(PUBLISHED_NAV_INDEX_SQL_V14,),
+        ),
+        migration_factory(
+            version=15,
+            name="reindex_published_fund_nav_marks",
+            statements=(
+                "DROP INDEX idx_quote_snapshots_published_nav_date",
+                PUBLISHED_NAV_INDEX_SQL,
+            ),
         ),
     )
 
 
-__all__ = ["build_quote_schema_migrations"]
+def build_legacy_mutated_v14(migration_factory: Callable[..., Any]) -> Any:
+    """Return the known 9/16 dirty-worktree v14 for provenance validation only."""
+
+    return migration_factory(
+        version=14,
+        name="index_published_fund_nav_marks",
+        statements=(PUBLISHED_NAV_INDEX_SQL,),
+    )
+
+
+__all__ = ["build_legacy_mutated_v14", "build_quote_schema_migrations"]

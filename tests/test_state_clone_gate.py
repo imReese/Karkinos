@@ -125,10 +125,18 @@ def test_replay_rejects_non_clone_before_any_database_write(
         monkeypatch.setenv("KARKINOS_STATE_CLONE", flag)
     else:
         monkeypatch.delenv("KARKINOS_STATE_CLONE", raising=False)
-    before = {path.name: path.read_bytes() for path in data.iterdir()}
+    before = {
+        str(path.relative_to(data)): path.read_bytes()
+        for path in data.rglob("*")
+        if path.is_file()
+    }
     with pytest.raises(ValueError, match="state_replay_"):
         replay_persistent_state(lambda: pytest.fail("must not start API"))
-    assert {path.name: path.read_bytes() for path in data.iterdir()} == before
+    assert {
+        str(path.relative_to(data)): path.read_bytes()
+        for path in data.rglob("*")
+        if path.is_file()
+    } == before
 
 
 def test_candidate_migrates_reads_restarts_and_restores_disposable_state(
@@ -517,7 +525,9 @@ def test_native_cold_copy_starts_before_migration_and_preserves_financial_facts(
             match="cold_(financial_state_changed|publication_changed|read_publication_drift)",
         ):
             gate._cold_native_gate(*arguments, timeout=10)
-        assert versions == ([12, 13] if corrupt == "restart" else [12])
+        assert versions == (
+            [12, migrations.CURRENT_SCHEMA_VERSION] if corrupt == "restart" else [12]
+        )
     else:
         report = gate._cold_native_gate(*arguments, timeout=10)
         assert report["status"] == "passed"
@@ -525,7 +535,7 @@ def test_native_cold_copy_starts_before_migration_and_preserves_financial_facts(
             "unavailable" if publication_state == "absent" else "passed"
         )
         assert report["financial_readiness_claimed"] is False
-        assert versions == [12, 13]
+        assert versions == [12, migrations.CURRENT_SCHEMA_VERSION]
     with sqlite3.connect(db.path) as conn:
         assert list(conn.iterdump()) == before
 
