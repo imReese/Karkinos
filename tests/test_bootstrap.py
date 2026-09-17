@@ -1457,7 +1457,7 @@ def test_server_main_reload_does_not_forward_removed_live_override(monkeypatch):
 
     server_main.main()
 
-    assert captured["args"] == ("server.app:create_app",)
+    assert captured["args"] == ("server.__main__:create_runtime_app",)
     assert captured["kwargs"]["reload"] is True
     assert captured["kwargs"]["reload_excludes"] == ["tests/**", "web/**"]
     assert captured["legacy_live_auto_start"] is None
@@ -1564,6 +1564,8 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
     )
 
     class FakeDB:
+        path = Path("/tmp/karkinos-test/app.db")
+
         async def init(self):
             pass
 
@@ -1657,6 +1659,8 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
     automation_arguments = {}
 
     class FakeDB:
+        path = Path("/tmp/karkinos-test/app.db")
+
         async def init(self):
             pass
 

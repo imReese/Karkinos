@@ -19,6 +19,7 @@ from server.persistence.connection import (
 )
 from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
 from server.persistence.market_identity_migrations import (
+    legacy_daily_close_reconciliation_needed_on_connection,
     migrate_legacy_daily_closes_on_connection,
 )
 from server.persistence.migration_lifecycle import (
@@ -34,6 +35,7 @@ from server.persistence.migrations import (
     assert_schema_compatible,
 )
 from server.persistence.quote_current_materialization import (
+    quote_current_materialization_needs_reconciliation_on_connection,
     reconcile_quote_current_materialization_on_connection,
 )
 from server.persistence.schema_v1 import initialize_v1_baseline_schema
@@ -114,8 +116,8 @@ def initialize_database(
 ) -> None:
     """Prepare once, with backup and provenance, before starting runtime writers.
 
-    Already-current databases need no DDL, migration archive or backup. Unknown
-    migrations and changed history are rejected before opening for writing.
+    Schema-current databases remain read-only unless derived persistence is
+    stale. Unknown migrations and changed history are rejected before writing.
     """
     if not math.isfinite(lock_timeout_seconds) or lock_timeout_seconds < 0:
         raise ValueError("database_initialization_timeout_invalid")
@@ -123,7 +125,7 @@ def initialize_database(
     status = inspect_database(path)
     if status.blocked:
         raise DatabasePreparationError(status)
-    if status.state == "current":
+    if status.state == "current" and not _database_requires_maintenance(path):
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + lock_timeout_seconds
@@ -134,7 +136,7 @@ def initialize_database(
             status = inspect_database(path)
             if status.blocked:
                 raise DatabasePreparationError(status)
-            if status.state == "current":
+            if status.state == "current" and not _database_requires_maintenance(path):
                 return
             try:
                 ownership.enter_context(_initialization_lock(path, 0))
@@ -147,7 +149,7 @@ def initialize_database(
         status = inspect_database(path)
         if status.blocked:
             raise DatabasePreparationError(status)
-        if status.state == "current":
+        if status.state == "current" and not _database_requires_maintenance(path):
             return
         record_path, record = begin_preparation(status)
         logger.info("Preparing database %s; migration record: %s", path, record_path)
@@ -187,6 +189,45 @@ def initialize_database(
                 f"{record_path}; "
                 "inspect database status before retrying; do not restore automatically"
             ) from None
+
+
+def _database_requires_maintenance(database_path: Path) -> bool:
+    """Detect drift in rebuildable persisted projections without writing."""
+
+    if not database_path.is_file():
+        return False
+    with closing(connect_sqlite(database_path, readonly=True)) as conn:
+        tables = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        if "quote_snapshots" in tables:
+            columns = {
+                str(row[1])
+                for row in conn.execute("PRAGMA table_info(quote_snapshots)")
+            }
+            if (
+                "quote_instant_utc" in columns
+                and conn.execute(
+                    "SELECT 1 FROM quote_snapshots "
+                    "WHERE quote_instant_utc IS NULL LIMIT 1"
+                ).fetchone()
+                is not None
+            ):
+                return True
+        if (
+            "quote_current_materialization_state" in tables
+            and quote_current_materialization_needs_reconciliation_on_connection(conn)
+        ):
+            return True
+        if {"daily_close_snapshots", "daily_close_snapshots_v2"}.issubset(tables):
+            return legacy_daily_close_reconciliation_needed_on_connection(
+                conn,
+                meta_database_path=database_path.parent / "meta.db",
+            )
+    return False
 
 
 def _initialize_on_connection(conn: sqlite3.Connection, database_path: Path) -> None:

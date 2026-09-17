@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -355,7 +356,8 @@ def _load_exact_valuation_binding(db: Any) -> tuple[dict[str, Any], list[str]]:
     if str(valuation.get("snapshot_id") or "") != snapshot_id:
         blockers.append("strategy_contribution_valuation_snapshot_identity_mismatch")
     try:
-        current = build_current_valuation_snapshot(db, persist=False)
+        replay_time = datetime.fromisoformat(str(valuation["as_of"]))
+        current = build_current_valuation_snapshot(db, persist=False, now=replay_time)
     except Exception:
         blockers.append("strategy_contribution_current_valuation_replay_failed")
     else:

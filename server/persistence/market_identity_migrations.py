@@ -65,6 +65,27 @@ def migrate_legacy_daily_closes_to_v2(
         conn.close()
 
 
+def legacy_daily_close_reconciliation_needed_on_connection(
+    conn: sqlite3.Connection,
+    *,
+    meta_database_path: str | Path,
+) -> bool:
+    """Return whether verified legacy close facts are missing from typed storage."""
+
+    previous_row_factory = conn.row_factory
+    conn.row_factory = sqlite3.Row
+    try:
+        report = _daily_close_migration_report(
+            conn,
+            meta_path=Path(meta_database_path),
+            apply=False,
+            failure_hook=None,
+        )
+        return int(report["pending_rows"]) > 0
+    finally:
+        conn.row_factory = previous_row_factory
+
+
 def migrate_legacy_daily_closes_on_connection(
     conn: sqlite3.Connection,
     *,
@@ -164,6 +185,24 @@ def _daily_close_migration_report(
         decisions.append(decision)
         _digest_json(digest, {"migrate": decision})
 
+    pending = 0
+    if _table_exists(conn, "daily_close_snapshots_v2"):
+        for decision in decisions:
+            existing = conn.execute(
+                """
+                SELECT close_price, source, captured_at
+                FROM daily_close_snapshots_v2
+                WHERE symbol = ? AND instrument_type = ? AND trade_date = ?
+                """,
+                decision[:3],
+            ).fetchone()
+            if existing is None or (
+                _decimal(existing["close_price"]) != _decimal(decision[3])
+                or str(existing["source"]) != decision[4]
+                or str(existing["captured_at"]) != decision[5]
+            ):
+                pending += 1
+
     migrated = 0
     if apply:
         if not _table_exists(conn, "daily_close_snapshots_v2"):
@@ -211,6 +250,7 @@ def _daily_close_migration_report(
         "source_preserved": True,
         "plan_fingerprint": f"sha256:{digest.hexdigest()}",
         "planned_rows": len(decisions),
+        "pending_rows": pending,
         "migrated_rows": migrated,
         "blocker_count": len(blockers),
         "blockers": blockers[:100],
@@ -382,6 +422,7 @@ def _digest_json(digest: Any, value: object) -> None:
 
 __all__ = [
     "build_market_identity_schema_migration",
+    "legacy_daily_close_reconciliation_needed_on_connection",
     "migrate_legacy_daily_closes_on_connection",
     "migrate_legacy_daily_closes_to_v2",
 ]

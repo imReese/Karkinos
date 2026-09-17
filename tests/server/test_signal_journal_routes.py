@@ -297,17 +297,20 @@ def _seed_bound_contribution_chain(db: AppDatabase) -> dict:
         source="controlled_submission_ledger_posting",
         source_ref="FILL-REVIEW-1",
     )
-    db.upsert_latest_quote_sync(
+    db.save_quote_snapshot_sync(
         symbol="510300",
-        asset_type="fund",
+        asset_class="fund",
         price=4.8,
-        quote_timestamp="2026-04-18T15:00:00+08:00",
+        volume=None,
+        timestamp="2026-04-18T15:00:00+08:00",
         quote_source="deterministic_fixture",
         provider_name="deterministic_fixture",
         provider_status="ok",
         quote_status="confirmed",
     )
-    return db.publish_current_valuation_snapshot_sync()
+    return db.publish_current_valuation_snapshot_sync(
+        now=datetime.fromisoformat("2026-04-18T16:00:00+08:00")
+    )
 
 
 def test_record_signal_review_outcome_is_evidence_bound_and_journaled(
@@ -564,17 +567,20 @@ def test_signal_review_binds_canonical_contribution_and_exposes_later_drift(
     result = asyncio.run(review_endpoint(1, request))
     assert result["target_binding_valid"] is True
 
-    db.upsert_latest_quote_sync(
+    db.save_quote_snapshot_sync(
         symbol="510300",
-        asset_type="fund",
+        asset_class="fund",
         price=4.9,
-        quote_timestamp="2026-04-18T15:05:00+08:00",
+        volume=None,
+        timestamp="2026-04-20T15:05:00+08:00",
         quote_source="deterministic_fixture",
         provider_name="deterministic_fixture",
         provider_status="ok",
         quote_status="confirmed",
     )
-    db.publish_current_valuation_snapshot_sync()
+    db.publish_current_valuation_snapshot_sync(
+        now=datetime.fromisoformat("2026-04-20T16:05:00+08:00")
+    )
     revalidated = asyncio.run(get_endpoint(result["review"]["review_id"]))
     assert revalidated["target_binding_valid"] is False
     assert (

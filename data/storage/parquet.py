@@ -173,9 +173,13 @@ def read_parquet(
         raise ParquetIntegrityError("parquet_object_integrity_failed") from exc
 
     try:
+        # Immutable object replay favors deterministic teardown over Parquet's
+        # global read thread pool.  Arrow has documented Linux shutdown crashes
+        # in threaded Parquet reads; object-level parallelism belongs to callers.
         table = pq.read_table(
             pa.BufferReader(payload),
             page_checksum_verification=True,
+            use_threads=False,
         )
     except (pa.ArrowInvalid, pa.ArrowIOError, OSError) as exc:
         raise ParquetIntegrityError("parquet_payload_invalid") from exc
