@@ -8,6 +8,12 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from server.contracts.content_identity import canonical_json
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_from_mapping,
+    decimal_storage_pair,
+)
 from server.contracts.order_state import (
     OmsOrderCommand,
     OmsTransitionCommand,
@@ -132,13 +138,20 @@ def create_oms_order_in_transaction(
         idempotency_key=command.idempotency_key,
         fingerprint=command.fingerprint,
     )
+    quantity_real, quantity_decimal = decimal_storage_pair(
+        command.quantity, field="quantity"
+    )
+    price_real, price_decimal = decimal_storage_pair(
+        command.limit_price, field="limit_price", allow_none=True
+    )
     conn.execute(
         """
         INSERT INTO oms_orders (
             order_id, intent_key, symbol, side, asset_class, quantity,
-            order_type, limit_price, status, broker_submission_enabled,
-            source, source_ref, payload_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            quantity_decimal, order_type, limit_price, limit_price_decimal,
+            status, broker_submission_enabled, source, source_ref, payload_json,
+            created_at, updated_at, currency_code, decimal_provenance
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             command.order_id,
@@ -146,9 +159,11 @@ def create_oms_order_in_transaction(
             command.symbol,
             command.side.lower(),
             command.asset_class,
-            float(command.quantity),
+            quantity_real,
+            quantity_decimal,
             command.order_type.lower(),
-            command.limit_price,
+            price_real,
+            price_decimal,
             command.initial_status,
             1 if command.broker_submission_enabled else 0,
             command.source,
@@ -156,6 +171,8 @@ def create_oms_order_in_transaction(
             canonical_json({**command.payload, "command_identity": identity}),
             now,
             now,
+            DEFAULT_CURRENCY_CODE,
+            EXACT_DECIMAL_WRITE_PROVENANCE,
         ),
     )
     cursor = conn.execute(
@@ -314,8 +331,11 @@ def _require_oms_create_replay(
     )
     if any(str(actual or "") != str(expected or "") for actual, expected in fields):
         raise RuntimeError("OMS create replay found drifted order projection")
-    if not _same_decimal(existing["quantity"], command.quantity) or not _same_decimal(
-        existing["limit_price"], command.limit_price
+    if not _same_decimal(
+        decimal_from_mapping(existing, "quantity"), command.quantity
+    ) or not _same_decimal(
+        decimal_from_mapping(existing, "limit_price", allow_none=True),
+        command.limit_price,
     ):
         raise RuntimeError("OMS create replay found drifted order values")
     if bool(existing["broker_submission_enabled"]) != (

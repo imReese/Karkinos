@@ -6,6 +6,11 @@ import sqlite3
 from decimal import Decimal
 from typing import Any
 
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_storage_pair,
+)
 from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_clearance_lifecycle import (
     controlled_lifecycle_invalidated_clearance_rows,
@@ -280,29 +285,52 @@ def _persist_controlled_ledger_posting(
     ledger_entry_ids: list[int] = []
     for entry in verified_entries:
         normalized_timestamp = normalize_timestamp(entry["timestamp"])
+        amount_real, amount_decimal = decimal_storage_pair(
+            entry["amount"], field="amount"
+        )
+        quantity_real, quantity_decimal = decimal_storage_pair(
+            entry["quantity"], field="quantity"
+        )
+        price_real, price_decimal = decimal_storage_pair(entry["price"], field="price")
+        commission_real, commission_decimal = decimal_storage_pair(
+            entry["commission"], field="commission"
+        )
+        gross_real, gross_decimal = decimal_storage_pair(
+            entry["gross_amount"], field="gross_amount"
+        )
+        net_real, net_decimal = decimal_storage_pair(
+            entry["net_cash_impact"], field="net_cash_impact"
+        )
         cursor = conn.execute(
             """
                 INSERT INTO ledger_entries (
-                    entry_type, timestamp, amount, symbol, direction,
-                    quantity, price, commission, gross_amount,
-                    net_cash_impact, fee_breakdown_json, fee_rule_id,
-                    fee_rule_version, settlement_status, settled_at,
-                    settlement_source, settlement_source_ref,
-                    settlement_note, cost_basis_method, asset_class,
-                    note, source, source_ref, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    entry_type, timestamp, amount, amount_decimal, symbol, direction,
+                    quantity, quantity_decimal, price, price_decimal, commission,
+                    commission_decimal, gross_amount, gross_amount_decimal,
+                    net_cash_impact, net_cash_impact_decimal, fee_breakdown_json,
+                    fee_rule_id, fee_rule_version, settlement_status, settled_at,
+                    settlement_source, settlement_source_ref, settlement_note,
+                    cost_basis_method, asset_class, note, source, source_ref, created_at,
+                    currency_code, decimal_provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             (
                 entry["entry_type"],
                 normalized_timestamp,
-                float(Decimal(entry["amount"])),
+                amount_real,
+                amount_decimal,
                 entry["symbol"],
                 entry["direction"],
-                float(Decimal(entry["quantity"])),
-                float(Decimal(entry["price"])),
-                float(Decimal(entry["commission"])),
-                float(Decimal(entry["gross_amount"])),
-                float(Decimal(entry["net_cash_impact"])),
+                quantity_real,
+                quantity_decimal,
+                price_real,
+                price_decimal,
+                commission_real,
+                commission_decimal,
+                gross_real,
+                gross_decimal,
+                net_real,
+                net_decimal,
                 serialize_metadata_json(entry["fee_breakdown"]),
                 entry["fee_rule_id"],
                 entry["fee_rule_version"],
@@ -317,6 +345,8 @@ def _persist_controlled_ledger_posting(
                 entry["source"],
                 entry["source_ref"],
                 requested["applied_at"],
+                DEFAULT_CURRENCY_CODE,
+                EXACT_DECIMAL_WRITE_PROVENANCE,
             ),
         )
         entry_id = int(cursor.lastrowid or 0)

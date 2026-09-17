@@ -46,6 +46,17 @@ _VERSIONED_SCHEMA_OBJECTS = (
 )
 
 
+_V16_EXACT_DECIMAL_SIGNATURE_COLUMNS = (
+    ("ledger_entries", "amount_decimal"),
+    ("ledger_entries", "quantity_decimal"),
+    ("orders", "quantity_decimal"),
+    ("oms_orders", "quantity_decimal"),
+    ("fills", "fill_price_decimal"),
+    ("trades", "quantity_decimal"),
+    ("pending_fund_orders", "confirmed_quantity_decimal"),
+)
+
+
 def validate_migration_registry(migrations: Sequence[MigrationSpec]) -> None:
     versions = [migration.version for migration in migrations]
     names = [migration.name for migration in migrations]
@@ -243,6 +254,16 @@ def versioned_schema_artifacts(
         for column in ("instrument_type", "identity_provenance"):
             if column in columns:
                 artifacts.append((12, f"column:quote_snapshots.{column}"))
+
+    for table, column in _V16_EXACT_DECIMAL_SIGNATURE_COLUMNS:
+        if table not in tables:
+            continue
+        columns = {
+            str(row[1])
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column in columns:
+            artifacts.append((16, f"column:{table}.{column}"))
 
     objects = {
         (str(row[0]), str(row[1]))

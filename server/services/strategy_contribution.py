@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from server.contracts.financial_values import decimal_from_mapping
 from server.models import (
     AccountStrategyAssignment,
     AccountStrategyContributionReport,
@@ -416,13 +417,14 @@ def _ledger_fill_binding_blockers(
         if actual.lower() != expected.lower():
             blockers.append(f"strategy_contribution_{field}_mismatch:{fill_id}")
     numeric_expectations = {
-        "quantity": _decimal(fill.get("fill_quantity")),
-        "price": _decimal(fill.get("fill_price")),
-        "commission": _decimal(fill.get("commission")),
+        "quantity": decimal_from_mapping(fill, "fill_quantity"),
+        "price": decimal_from_mapping(fill, "fill_price"),
+        "commission": decimal_from_mapping(fill, "commission"),
     }
     for field, expected in numeric_expectations.items():
         tolerance = _QUANTITY_TOLERANCE if field == "quantity" else _MONEY_TOLERANCE
-        if abs(_decimal(entry.get(field)) - expected) > tolerance:
+        actual = decimal_from_mapping(entry, field)
+        if actual is None or expected is None or abs(actual - expected) > tolerance:
             blockers.append(f"strategy_contribution_{field}_mismatch:{fill_id}")
     return blockers
 
@@ -440,7 +442,7 @@ def _contribution_components(
     blockers: list[str] = []
     fill_by_id = {str(fill.get("fill_id") or ""): fill for fill in fills}
     total_slippage = sum(
-        (_decimal(fill.get("slippage")) for fill in fills),
+        (decimal_from_mapping(fill, "slippage") or Decimal("0") for fill in fills),
         Decimal("0"),
     )
     for entry in sorted(entries, key=_ledger_sort_key):
@@ -449,8 +451,8 @@ def _contribution_components(
         symbol = str(entry.get("symbol") or "")
         asset_class = str(entry.get("asset_class") or "stock")
         direction = str(entry.get("direction") or "").lower()
-        quantity = abs(_decimal(entry.get("quantity")))
-        price = abs(_decimal(entry.get("price")))
+        quantity = abs(decimal_from_mapping(entry, "quantity") or Decimal("0"))
+        price = abs(decimal_from_mapping(entry, "price") or Decimal("0"))
         fees, taxes = _ledger_fee_components(entry)
         total_commission += fees
         total_tax += taxes
@@ -553,7 +555,7 @@ def _ledger_fee_components(row: dict[str, Any]) -> tuple[Decimal, Decimal]:
                 Decimal("0"),
             )
             if any(key in breakdown for key in fee_keys)
-            else _decimal(row.get("commission"))
+            else (decimal_from_mapping(row, "commission") or Decimal("0"))
         )
         taxes = sum(
             (_decimal(breakdown.get(key)) for key in ("stamp_tax", "tax")),
@@ -561,7 +563,7 @@ def _ledger_fee_components(row: dict[str, Any]) -> tuple[Decimal, Decimal]:
         )
         if fees or taxes or any(key in breakdown for key in fee_keys):
             return fees, taxes
-    return _decimal(row.get("commission")), Decimal("0")
+    return decimal_from_mapping(row, "commission") or Decimal("0"), Decimal("0")
 
 
 def _strategy_health(

@@ -8,6 +8,13 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from server.contracts.content_identity import canonical_json
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_storage_pair,
+    decimal_text,
+    decimal_text_from_mapping,
+)
 from server.contracts.paper_shadow import (
     PaperShadowFillFact,
     PaperShadowOrderFact,
@@ -145,9 +152,12 @@ def _require_order_facts(
         )
         if any(str(actual or "") != str(value or "") for actual, value in fields):
             raise RuntimeError("paper-shadow replay found drifted order projection")
-        if not _same_decimal(row["quantity"], fact.quantity) or not _same_decimal(
-            row["price"], fact.price
-        ):
+        row_map = dict(row)
+        if decimal_text_from_mapping(row_map, "quantity") != decimal_text(
+            fact.quantity, field="quantity"
+        ) or decimal_text_from_mapping(
+            row_map, "price", allow_none=True
+        ) != decimal_text(fact.price, field="price", allow_none=True):
             raise RuntimeError("paper-shadow replay found drifted order values")
         order_payload = _json_object(row["payload_json"])
         for key in (
@@ -186,13 +196,18 @@ def _require_fill_facts(
         )
         if any(str(actual or "") != str(value or "") for actual, value in fields):
             raise RuntimeError("paper-shadow replay found drifted fill projection")
+        row_map = dict(row)
         values = (
-            (row["fill_price"], fact.fill_price),
-            (row["fill_quantity"], fact.fill_quantity),
-            (row["commission"], fact.commission),
-            (row["slippage"], fact.slippage),
+            ("fill_price", fact.fill_price),
+            ("fill_quantity", fact.fill_quantity),
+            ("commission", fact.commission),
+            ("slippage", fact.slippage),
         )
-        if any(not _same_decimal(actual, value) for actual, value in values):
+        if any(
+            decimal_text_from_mapping(row_map, field)
+            != decimal_text(value, field=field)
+            for field, value in values
+        ):
             raise RuntimeError("paper-shadow replay found drifted fill values")
         if _json_object(row["metadata_json"]) != fact.metadata:
             raise RuntimeError("paper-shadow replay found drifted fill evidence")
@@ -207,14 +222,22 @@ def _insert_order_aggregate(
     create_oms_order_in_transaction(conn, fact.oms_create, now=now)
     for transition in fact.oms_transitions:
         transition_oms_order_in_transaction(conn, transition, now=now)
+    quantity_real, quantity_decimal = decimal_storage_pair(
+        fact.quantity, field="quantity"
+    )
+    price_real, price_decimal = decimal_storage_pair(
+        fact.price, field="price", allow_none=True
+    )
     try:
         conn.execute(
             """
             INSERT INTO orders (
-                order_id, timestamp, symbol, side, order_type, quantity, price,
-                asset_class, intent_id, risk_decision_id, execution_mode, status,
-                source, source_ref, payload_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                order_id, timestamp, symbol, side, order_type, quantity,
+                quantity_decimal, price, price_decimal, asset_class, intent_id,
+                risk_decision_id, execution_mode, status, source, source_ref,
+                payload_json, created_at, updated_at, currency_code,
+                decimal_provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 fact.order_id,
@@ -222,8 +245,10 @@ def _insert_order_aggregate(
                 fact.symbol,
                 fact.side,
                 fact.order_type,
-                fact.quantity,
-                fact.price,
+                quantity_real,
+                quantity_decimal,
+                price_real,
+                price_decimal,
                 fact.asset_class,
                 fact.intent_id,
                 fact.risk_decision_id,
@@ -234,6 +259,8 @@ def _insert_order_aggregate(
                 canonical_json(fact.payload),
                 now,
                 now,
+                DEFAULT_CURRENCY_CODE,
+                EXACT_DECIMAL_WRITE_PROVENANCE,
             ),
         )
     except sqlite3.IntegrityError as exc:
@@ -262,15 +289,29 @@ def _insert_fill(
     *,
     now: str,
 ) -> None:
+    fill_price_real, fill_price_decimal = decimal_storage_pair(
+        fact.fill_price, field="fill_price"
+    )
+    fill_quantity_real, fill_quantity_decimal = decimal_storage_pair(
+        fact.fill_quantity, field="fill_quantity"
+    )
+    commission_real, commission_decimal = decimal_storage_pair(
+        fact.commission, field="commission"
+    )
+    slippage_real, slippage_decimal = decimal_storage_pair(
+        fact.slippage, field="slippage"
+    )
     try:
         conn.execute(
             """
             INSERT INTO fills (
                 fill_id, order_id, timestamp, symbol, side, fill_price,
-                fill_quantity, commission, slippage, asset_class,
-                execution_mode, provider_name, broker_order_id, source,
-                source_ref, metadata_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fill_price_decimal, fill_quantity, fill_quantity_decimal,
+                commission, commission_decimal, slippage, slippage_decimal,
+                asset_class, execution_mode, provider_name, broker_order_id,
+                source, source_ref, metadata_json, created_at, updated_at,
+                currency_code, decimal_provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 fact.fill_id,
@@ -278,10 +319,14 @@ def _insert_fill(
                 fact.timestamp,
                 fact.symbol,
                 fact.side,
-                fact.fill_price,
-                fact.fill_quantity,
-                fact.commission,
-                fact.slippage,
+                fill_price_real,
+                fill_price_decimal,
+                fill_quantity_real,
+                fill_quantity_decimal,
+                commission_real,
+                commission_decimal,
+                slippage_real,
+                slippage_decimal,
                 fact.asset_class,
                 fact.execution_mode,
                 fact.provider_name,
@@ -291,6 +336,8 @@ def _insert_fill(
                 canonical_json(fact.metadata),
                 now,
                 now,
+                DEFAULT_CURRENCY_CODE,
+                EXACT_DECIMAL_WRITE_PROVENANCE,
             ),
         )
     except sqlite3.IntegrityError as exc:

@@ -6,6 +6,7 @@ import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
+from server.contracts.financial_values import decimal_from_mapping
 from server.contracts.portfolio_cash_flows import (
     CashFlowCorrectionResult,
     CashFlowCorrectionWrite,
@@ -174,7 +175,7 @@ class PortfolioCashFlowUnitOfWork:
                         str(original["entry_type"])
                     ),
                     timestamp=created_at,
-                    amount=float(original["amount"]),
+                    amount=decimal_from_mapping(original, "amount"),
                     asset_class="cash",
                     note=(
                         f"Append-only reversal of canonical cash flow {cash_flow_id}."
@@ -233,8 +234,8 @@ def _validate_existing_correction(
         != reversed_cash_flow_entry_type(str(original["entry_type"]))
         or correction.get("source") != "portfolio_cash_flow_correction"
         or correction.get("source_ref") != f"cash_flow:{cash_flow_id}"
-        or float(correction.get("amount") or 0.0)
-        != float(original.get("amount") or 0.0)
+        or decimal_from_mapping(correction, "amount")
+        != decimal_from_mapping(original, "amount")
         or str(correction.get("asset_class") or "") != "cash"
     ):
         raise RuntimeError("existing cash-flow correction is invalid")

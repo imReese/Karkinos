@@ -6,6 +6,13 @@ import sqlite3
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_from_mapping,
+    decimal_storage_pair,
+    real_projection_matches,
+)
 from server.contracts.ledger_mutations import (
     FEE_BREAKDOWN_KEYS,
     validate_fee_breakdown,
@@ -22,23 +29,36 @@ def insert_trade_projection(
 ) -> int:
     """Materialize the legacy ``trades`` read projection inside a UoW."""
 
+    quantity_real, quantity_decimal = decimal_storage_pair(
+        command.quantity, field="quantity"
+    )
+    price_real, price_decimal = decimal_storage_pair(command.price, field="price")
+    commission_real, commission_decimal = decimal_storage_pair(
+        command.commission, field="commission"
+    )
     cursor = conn.execute(
         """
         INSERT INTO trades (
-            timestamp, symbol, direction, quantity, price, commission,
-            asset_class, note, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            timestamp, symbol, direction, quantity, quantity_decimal,
+            price, price_decimal, commission, commission_decimal,
+            asset_class, note, created_at, currency_code, decimal_provenance
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             command.timestamp,
             command.symbol,
             command.direction,
-            command.quantity,
-            command.price,
-            command.commission,
+            quantity_real,
+            quantity_decimal,
+            price_real,
+            price_decimal,
+            commission_real,
+            commission_decimal,
             command.asset_class,
             command.note,
             created_at,
+            DEFAULT_CURRENCY_CODE,
+            EXACT_DECIMAL_WRITE_PROVENANCE,
         ),
     )
     return int(cursor.lastrowid or 0)
@@ -83,6 +103,12 @@ def validate_trade_projection(
 
     expected_entry_type = f"trade_{trade['direction']}"
     checks = {
+        "trade_quantity_projection": real_projection_matches(trade, "quantity"),
+        "trade_price_projection": real_projection_matches(trade, "price"),
+        "trade_commission_projection": real_projection_matches(trade, "commission"),
+        "ledger_quantity_projection": real_projection_matches(ledger, "quantity"),
+        "ledger_price_projection": real_projection_matches(ledger, "price"),
+        "ledger_commission_projection": real_projection_matches(ledger, "commission"),
         "source": str(ledger.get("source") or "") == "portfolio_trade",
         "source_ref": str(ledger.get("source_ref") or "")
         == f"trade:{int(trade['id'])}",
@@ -92,11 +118,12 @@ def validate_trade_projection(
         "symbol": str(ledger.get("symbol") or "") == str(trade.get("symbol") or ""),
         "direction": str(ledger.get("direction") or "")
         == str(trade.get("direction") or ""),
-        "quantity": float(ledger.get("quantity") or 0.0)
-        == float(trade.get("quantity") or 0.0),
-        "price": float(ledger.get("price") or 0.0) == float(trade.get("price") or 0.0),
-        "commission": float(ledger.get("commission") or 0.0)
-        == float(trade.get("commission") or 0.0),
+        "quantity": decimal_from_mapping(ledger, "quantity")
+        == decimal_from_mapping(trade, "quantity"),
+        "price": decimal_from_mapping(ledger, "price")
+        == decimal_from_mapping(trade, "price"),
+        "commission": decimal_from_mapping(ledger, "commission")
+        == decimal_from_mapping(trade, "commission"),
         "asset_class": str(ledger.get("asset_class") or "stock")
         == str(trade.get("asset_class") or "stock"),
     }

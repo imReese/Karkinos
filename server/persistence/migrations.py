@@ -18,6 +18,9 @@ from typing import Any
 
 import server.persistence.migration_schema_contracts as _schema_contracts
 from server.persistence.connection import run_immediate_transaction
+from server.persistence.financial_decimal_migrations import (
+    build_financial_decimal_migration,
+)
 from server.persistence.job_schema_migrations import V13_DURABLE_BACKGROUND_JOBS
 from server.persistence.legacy_trade_migration_preflight import (
     run_pending_legacy_trade_migration_preflight,
@@ -483,6 +486,7 @@ _MIGRATIONS = (
         statements=V13_DURABLE_BACKGROUND_JOBS,
     ),
     *_QUOTE_MIGRATIONS[2:],
+    build_financial_decimal_migration(SchemaMigration),
 )
 
 CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version

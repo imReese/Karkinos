@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Sequence
 
 from server.contracts.content_identity import content_fingerprint
+from server.contracts.financial_values import strip_financial_storage_mirrors
 from server.persistence.database_serialization import normalize_timestamp
 from server.projections.legacy_fund_trade_duplicate_contract import (
     LEGACY_FUND_TRADE_DUPLICATE_ORIGINAL_SOURCE,
@@ -105,7 +106,8 @@ def legacy_fund_trade_ledger_row_fingerprint(row: dict[str, Any]) -> str:
     """Bind a correction to the complete persisted source row, not only money."""
 
     normalized: dict[str, Any] = {}
-    for key, value in sorted(dict(row).items()):
+    source_row = strip_financial_storage_mirrors(row)
+    for key, value in sorted(source_row.items()):
         if key in _NUMERIC_FIELDS:
             normalized[key] = (
                 None if value is None else decimal_identity(as_finite_decimal(value))

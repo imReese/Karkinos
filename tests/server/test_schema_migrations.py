@@ -173,6 +173,32 @@ def _insert_legacy_fund_trade_with_ledger_duplicate(
         ).lastrowid
         or 0
     )
+    # When this helper runs against a v16 database, emulate a legitimate
+    # legacy-provenance write so the semantic-preflight test does not create
+    # unrelated exact-decimal drift.
+    trade_columns = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(trades)").fetchall()
+    }
+    if "quantity_decimal" in trade_columns:
+        conn.execute(
+            """UPDATE trades SET
+                quantity_decimal=CAST(quantity AS TEXT),
+                price_decimal=CAST(price AS TEXT),
+                commission_decimal=CAST(commission AS TEXT)
+                WHERE id=?""",
+            (trade_id,),
+        )
+        conn.execute(
+            """UPDATE ledger_entries SET
+                amount_decimal=CAST(amount AS TEXT),
+                quantity_decimal=CAST(quantity AS TEXT),
+                price_decimal=CAST(price AS TEXT),
+                commission_decimal=CAST(commission AS TEXT),
+                gross_amount_decimal=CAST(gross_amount AS TEXT),
+                net_cash_impact_decimal=CAST(net_cash_impact AS TEXT)
+                WHERE id=?""",
+            (ledger_id,),
+        )
     return trade_id, ledger_id
 
 

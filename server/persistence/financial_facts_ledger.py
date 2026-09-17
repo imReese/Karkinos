@@ -8,6 +8,12 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from server.contracts.content_identity import content_fingerprint
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    FinancialValueInput,
+    decimal_storage_pair,
+)
 from server.contracts.ledger_mutations import (
     LedgerAppendCommand,
     LedgerEntryDraft,
@@ -25,14 +31,14 @@ def insert_ledger_entry_on_connection(
     *,
     entry_type: str,
     timestamp: str,
-    amount: float | None = None,
+    amount: FinancialValueInput | None = None,
     symbol: str | None = None,
     direction: str | None = None,
-    quantity: float | None = None,
-    price: float | None = None,
-    commission: float = 0.0,
-    gross_amount: float | None = None,
-    net_cash_impact: float | None = None,
+    quantity: FinancialValueInput | None = None,
+    price: FinancialValueInput | None = None,
+    commission: FinancialValueInput = 0,
+    gross_amount: FinancialValueInput | None = None,
+    net_cash_impact: FinancialValueInput | None = None,
     fee_breakdown_json: str | None = None,
     fee_rule_id: str | None = None,
     fee_rule_version: str | None = None,
@@ -47,25 +53,52 @@ def insert_ledger_entry_on_connection(
     """Insert one ledger fact and its event on the caller-owned transaction."""
 
     normalized_timestamp = normalize_timestamp(timestamp)
+    amount_real, amount_decimal = decimal_storage_pair(
+        amount, field="amount", allow_none=True
+    )
+    quantity_real, quantity_decimal = decimal_storage_pair(
+        quantity, field="quantity", allow_none=True
+    )
+    price_real, price_decimal = decimal_storage_pair(
+        price, field="price", allow_none=True
+    )
+    commission_real, commission_decimal = decimal_storage_pair(
+        commission, field="commission"
+    )
+    gross_real, gross_decimal = decimal_storage_pair(
+        gross_amount, field="gross_amount", allow_none=True
+    )
+    net_real, net_decimal = decimal_storage_pair(
+        net_cash_impact, field="net_cash_impact", allow_none=True
+    )
     cursor = conn.execute(
         """INSERT INTO ledger_entries
-           (entry_type, timestamp, amount, symbol, direction, quantity,
-            price, commission, gross_amount, net_cash_impact,
-            fee_breakdown_json, fee_rule_id, fee_rule_version,
-            cost_basis_method, correction_payload_json, asset_class, note,
-            source, source_ref, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (entry_type, timestamp, amount, amount_decimal, symbol, direction,
+            quantity, quantity_decimal, price, price_decimal, commission,
+            commission_decimal, gross_amount, gross_amount_decimal,
+            net_cash_impact, net_cash_impact_decimal, fee_breakdown_json,
+            fee_rule_id, fee_rule_version, cost_basis_method,
+            correction_payload_json, asset_class, note, source, source_ref,
+            created_at, currency_code, decimal_provenance)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                   ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             entry_type,
             normalized_timestamp,
-            amount,
+            amount_real,
+            amount_decimal,
             symbol,
             direction,
-            quantity,
-            price,
-            commission,
-            gross_amount,
-            net_cash_impact,
+            quantity_real,
+            quantity_decimal,
+            price_real,
+            price_decimal,
+            commission_real,
+            commission_decimal,
+            gross_real,
+            gross_decimal,
+            net_real,
+            net_decimal,
             fee_breakdown_json,
             fee_rule_id,
             fee_rule_version,
@@ -76,6 +109,8 @@ def insert_ledger_entry_on_connection(
             source,
             source_ref,
             created_at,
+            DEFAULT_CURRENCY_CODE,
+            EXACT_DECIMAL_WRITE_PROVENANCE,
         ),
     )
     row_id = int(cursor.lastrowid or 0)
@@ -144,14 +179,14 @@ class LedgerFactsRepositoryMixin:
         *,
         entry_type: str,
         timestamp: str,
-        amount: float | None = None,
+        amount: FinancialValueInput | None = None,
         symbol: str | None = None,
         direction: str | None = None,
-        quantity: float | None = None,
-        price: float | None = None,
-        commission: float = 0.0,
-        gross_amount: float | None = None,
-        net_cash_impact: float | None = None,
+        quantity: FinancialValueInput | None = None,
+        price: FinancialValueInput | None = None,
+        commission: FinancialValueInput = 0,
+        gross_amount: FinancialValueInput | None = None,
+        net_cash_impact: FinancialValueInput | None = None,
         fee_breakdown_json: str | None = None,
         fee_rule_id: str | None = None,
         fee_rule_version: str | None = None,

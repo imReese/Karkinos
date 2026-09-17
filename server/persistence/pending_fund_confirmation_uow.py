@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_from_mapping,
+    decimal_storage_pair,
+)
 from server.contracts.portfolio_mutations import PortfolioMutationConflict
 from server.contracts.portfolio_trades import (
     ManualTradeWrite,
@@ -96,25 +102,36 @@ class PendingFundConfirmationUnitOfWork:
                     created_at=created_at,
                 )
                 self._inject("after_asset_identity")
+                amount_real, amount_decimal = decimal_storage_pair(
+                    command.amount, field="amount"
+                )
+                commission_real, commission_decimal = decimal_storage_pair(
+                    command.commission, field="commission"
+                )
                 cursor = conn.execute(
                     """
                     INSERT INTO pending_fund_orders (
-                        submitted_at, symbol, display_name, amount, commission,
-                        asset_class, target_trade_date, status, note, created_at,
-                        updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                        submitted_at, symbol, display_name, amount, amount_decimal,
+                        commission, commission_decimal, asset_class, target_trade_date,
+                        status, note, created_at, updated_at, currency_code,
+                        decimal_provenance
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
                     """,
                     (
                         command.submitted_at,
                         command.symbol,
                         command.display_name,
-                        command.amount,
-                        command.commission,
+                        amount_real,
+                        amount_decimal,
+                        commission_real,
+                        commission_decimal,
                         command.asset_class,
                         command.target_trade_date,
                         command.note,
                         created_at,
                         created_at,
+                        DEFAULT_CURRENCY_CODE,
+                        EXACT_DECIMAL_WRITE_PROVENANCE,
                     ),
                 )
                 order_id = int(cursor.lastrowid or 0)
@@ -245,19 +262,30 @@ class PendingFundConfirmationUnitOfWork:
                     created_at=created_at,
                 )
                 self._inject("after_ledger_entry")
+                confirmed_nav_real, confirmed_nav_decimal = decimal_storage_pair(
+                    trade_command.price, field="confirmed_nav"
+                )
+                confirmed_quantity_real, confirmed_quantity_decimal = (
+                    decimal_storage_pair(
+                        trade_command.quantity, field="confirmed_quantity"
+                    )
+                )
                 cursor = conn.execute(
                     """
                     UPDATE pending_fund_orders
                     SET status = 'confirmed', confirmed_nav = ?,
-                        confirmed_quantity = ?, confirmed_trade_date = ?,
+                        confirmed_nav_decimal = ?, confirmed_quantity = ?,
+                        confirmed_quantity_decimal = ?, confirmed_trade_date = ?,
                         trade_id = ?, confirmation_quote_snapshot_id = ?,
                         confirmation_fetch_run_id = ?, confirmed_by = ?,
                         confirmation_note = ?, updated_at = ?
                     WHERE id = ? AND status = 'pending'
                     """,
                     (
-                        trade_command.price,
-                        trade_command.quantity,
+                        confirmed_nav_real,
+                        confirmed_nav_decimal,
+                        confirmed_quantity_real,
+                        confirmed_quantity_decimal,
                         evidence["nav_date"],
                         trade_id,
                         evidence["id"],
@@ -400,8 +428,10 @@ def _derive_confirmed_trade(
     evidence: dict[str, Any],
     command: PendingFundConfirmationWrite,
 ) -> ManualTradeWrite:
-    amount = Decimal(str(order["amount"]))
-    commission = Decimal(str(order.get("commission") or 0))
+    amount = decimal_from_mapping(order, "amount")
+    commission = decimal_from_mapping(order, "commission")
+    if amount is None or commission is None:
+        raise RuntimeError("pending fund exact financial values are missing")
     net_amount = amount - commission
     price = Decimal(str(evidence["price"]))
     if net_amount <= 0 or price <= 0:
@@ -442,11 +472,11 @@ def _derive_confirmed_trade(
         symbol=str(order["symbol"]),
         display_name=str(order["display_name"]),
         direction="buy",
-        quantity=float(quantity),
-        price=float(price),
-        commission=float(commission),
-        gross_amount=float(net_amount),
-        net_cash_impact=-float(amount),
+        quantity=quantity,
+        price=price,
+        commission=commission,
+        gross_amount=net_amount,
+        net_cash_impact=-amount,
         fee_breakdown_json=fee_breakdown,
         fee_rule_id="manual_fee_input",
         fee_rule_version="manual_fee_input",
@@ -472,9 +502,9 @@ def _load_confirmed_result(
     validate_trade_projection(trade, ledger)
     _validate_confirmed_ledger(ledger, trade_command)
     checks = {
-        "confirmed_nav": Decimal(str(order.get("confirmed_nav")))
+        "confirmed_nav": decimal_from_mapping(order, "confirmed_nav")
         == Decimal(str(trade_command.price)),
-        "confirmed_quantity": Decimal(str(order.get("confirmed_quantity")))
+        "confirmed_quantity": decimal_from_mapping(order, "confirmed_quantity")
         == Decimal(str(trade_command.quantity)),
         "confirmed_trade_date": str(order.get("confirmed_trade_date") or "")
         == str(evidence["nav_date"]),
@@ -542,8 +572,8 @@ def _replay_pending_creation(
         "submitted_at": str(order.get("submitted_at") or "") == command.submitted_at,
         "symbol": str(order.get("symbol") or "") == command.symbol,
         "display_name": str(order.get("display_name") or "") == command.display_name,
-        "amount": Decimal(str(order.get("amount"))) == Decimal(str(command.amount)),
-        "commission": Decimal(str(order.get("commission")))
+        "amount": decimal_from_mapping(order, "amount") == Decimal(str(command.amount)),
+        "commission": decimal_from_mapping(order, "commission")
         == Decimal(str(command.commission)),
         "asset_class": str(order.get("asset_class") or "") == command.asset_class,
         "target_trade_date": str(order.get("target_trade_date") or "")

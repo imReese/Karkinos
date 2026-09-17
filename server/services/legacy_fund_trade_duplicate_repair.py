@@ -13,6 +13,7 @@ from typing import Any
 
 from domain.portfolio_accounting import total_trade_fee
 from server.contracts.content_identity import content_fingerprint
+from server.contracts.financial_values import strip_financial_storage_mirrors
 from server.ledger.models import LedgerEntry
 from server.persistence.database_serialization import normalize_timestamp
 from server.persistence.legacy_fund_trade_duplicate_repair import (
@@ -576,7 +577,10 @@ def _preview_fingerprint(
             "group_fingerprints": [group.fingerprint for group in groups],
             "pair_count": sum(len(group.pair_entry_ids) for group in groups),
             "trade_projection_fingerprint": content_fingerprint(
-                sorted(trade_rows, key=lambda row: int(row["id"]))
+                sorted(
+                    (strip_financial_storage_mirrors(row) for row in trade_rows),
+                    key=lambda row: int(row["id"]),
+                )
             ),
             "blockers": list(blockers),
         }
@@ -585,7 +589,7 @@ def _preview_fingerprint(
 
 def _ledger_identity(rows: list[dict[str, Any]]) -> dict[str, Any]:
     normalized = sorted(
-        (dict(row) for row in rows),
+        (strip_financial_storage_mirrors(row) for row in rows),
         key=lambda row: (int(row.get("id") or 0), str(row.get("timestamp") or "")),
     )
     ids = [int(row["id"]) for row in normalized if row.get("id") is not None]

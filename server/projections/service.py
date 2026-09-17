@@ -25,9 +25,6 @@ from server.projections.portfolio_projection_values import (
     apply_valuations as _apply_valuations,
 )
 from server.projections.portfolio_projection_values import as_decimal as _as_decimal
-from server.projections.portfolio_projection_values import (
-    require_decimal as _require_decimal,
-)
 from server.projections.portfolio_projection_values import require_text as _require_text
 from server.projections.portfolio_projection_values import trade_side as _trade_side
 from server.projections.portfolio_projection_values import (
@@ -366,16 +363,23 @@ def _entry_sort_key(entry: LedgerEntry) -> tuple[datetime, int]:
     return parsed.astimezone(timezone.utc), entry.id or 0
 
 
+def _require_entry_decimal(entry: LedgerEntry, field: str) -> Decimal:
+    value = entry.decimal(field)
+    if value is None:
+        raise ValueError(f"Missing {field} on ledger entry")
+    return value
+
+
 def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> None:
     entry_type = (entry.entry_type or "").strip().lower()
     if entry_type in _CASH_DEPOSIT_TYPES:
-        amount = _require_decimal(entry.amount, "amount")
+        amount = _require_entry_decimal(entry, "amount")
         projection.cash += amount
         projection.total_deposits += amount
         return
 
     if entry_type in _CASH_WITHDRAW_TYPES:
-        amount = _require_decimal(entry.amount, "amount")
+        amount = _require_entry_decimal(entry, "amount")
         projection.cash -= amount
         projection.total_deposits -= amount
         return
@@ -405,8 +409,8 @@ def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> 
 
 def _apply_trade_entry(projection: PortfolioProjection, entry: LedgerEntry) -> None:
     symbol = _require_text(entry.symbol, "symbol")
-    quantity = _require_decimal(entry.quantity, "quantity")
-    price = _require_decimal(entry.price, "price")
+    quantity = _require_entry_decimal(entry, "quantity")
+    price = _require_entry_decimal(entry, "price")
     commission = _trade_total_fee(entry)
     side = _trade_side(entry)
 
@@ -511,7 +515,7 @@ def _sync_broker_cost_basis(position: ProjectedPosition) -> None:
 
 
 def _apply_cash_income(projection: PortfolioProjection, entry: LedgerEntry) -> None:
-    amount = _require_decimal(entry.amount, "amount")
+    amount = _require_entry_decimal(entry, "amount")
     projection.cash += amount
 
     symbol = (entry.symbol or "").strip()
@@ -524,7 +528,7 @@ def _apply_cash_income(projection: PortfolioProjection, entry: LedgerEntry) -> N
 
 
 def _apply_cash_expense(projection: PortfolioProjection, entry: LedgerEntry) -> None:
-    amount = _require_decimal(entry.amount, "amount")
+    amount = _require_entry_decimal(entry, "amount")
     projection.cash -= amount
 
     symbol = (entry.symbol or "").strip()
@@ -539,12 +543,12 @@ def _apply_cash_expense(projection: PortfolioProjection, entry: LedgerEntry) -> 
 def _apply_manual_adjustment(
     projection: PortfolioProjection, entry: LedgerEntry
 ) -> None:
-    amount = entry.amount
+    amount = entry.decimal("amount", allow_none=True)
     if amount is not None:
-        projection.cash += _as_decimal(amount)
+        projection.cash += amount
 
     symbol = (entry.symbol or "").strip()
-    quantity = entry.quantity
+    quantity = entry.decimal("quantity", allow_none=True)
     if not symbol or quantity is None:
         return
 
@@ -553,23 +557,23 @@ def _apply_manual_adjustment(
         position = ProjectedPosition(symbol=symbol)
         projection.positions[symbol] = position
 
-    delta = _as_decimal(quantity)
+    delta = quantity
     if delta < ZERO and abs(delta) > position.quantity:
         raise ValueError(
             f"Manual adjustment quantity {delta} exceeds position {position.quantity} for {symbol}"
         )
 
     previous_quantity = position.quantity
-    price = entry.price
+    price = entry.decimal("price", allow_none=True)
     if delta > ZERO:
         if price is not None and previous_quantity > ZERO:
             previous_cost = previous_quantity * position.avg_cost
-            added_cost = delta * _as_decimal(price)
+            added_cost = delta * price
             position.avg_cost = (previous_cost + added_cost) / (
                 previous_quantity + delta
             )
         elif price is not None and previous_quantity == ZERO:
-            position.avg_cost = _as_decimal(price)
+            position.avg_cost = price
     position.quantity = previous_quantity + delta
     if position.quantity == ZERO:
         position.avg_cost = ZERO
