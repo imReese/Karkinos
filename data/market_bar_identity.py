@@ -11,6 +11,7 @@ from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
 from data.market_daily_store import _market_daily_records_fingerprint
+from data.meta_store_connection import connect_meta_sqlite
 
 _CANONICAL_INSTRUMENT_TYPES = tuple(
     item.value for item in InstrumentType if item is not InstrumentType.UNKNOWN
@@ -98,8 +99,7 @@ def migrate_legacy_market_bars_to_v2(
     path = Path(database_path)
     if not path.is_file():
         raise FileNotFoundError(path)
-    uri = f"{path.resolve().as_uri()}?mode=ro" if dry_run else str(path)
-    connection = sqlite3.connect(uri, uri=dry_run, timeout=2.0)
+    connection = connect_meta_sqlite(path, readonly=dry_run, timeout=2.0)
     connection.row_factory = sqlite3.Row
     try:
         if dry_run:

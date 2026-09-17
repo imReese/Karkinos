@@ -11,10 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from core.types import BarFrequency, InstrumentKey, InstrumentType, Symbol
-from data.market_bar_identity import (
-    ensure_market_bar_v2_schema,
-    migrate_legacy_market_bars_to_v2,
-)
+from data.market_bar_identity import migrate_legacy_market_bars_to_v2
 from data.market_daily_store import (
     MarketDailyIngestionMixin,
 )
@@ -23,20 +20,10 @@ from data.market_daily_store import build_dataset_id as _build_dataset_id
 from data.market_daily_store import metadata_value as _metadata_value
 from data.market_daily_store import nullable_float as _nullable_float
 from data.market_daily_store import parse_diagnostics as _parse_diagnostics
+from data.meta_store_connection import connect_meta_sqlite
+from data.meta_store_schema import prepare_meta_database
 
 build_bar_diagnostics = _build_bar_diagnostics
-
-_BAR_META_AUDIT_COLUMNS = {
-    "provider_name": "TEXT",
-    "data_source": "TEXT",
-    "adjustment_mode": "TEXT",
-    "fetched_at": "TEXT",
-    "dataset_id": "TEXT",
-    "diagnostics_json": "TEXT",
-    "duplicate_timestamp_count": "INTEGER DEFAULT 0",
-    "missing_ohlcv_count": "INTEGER DEFAULT 0",
-    "is_monotonic": "INTEGER DEFAULT 1",
-}
 
 
 class DataStore(MarketDailyIngestionMixin):
@@ -50,82 +37,7 @@ class DataStore(MarketDailyIngestionMixin):
         self._root = Path(root)
         self._root.mkdir(parents=True, exist_ok=True)
         self._meta_path = self._root / "meta.db"
-        self._init_meta_db()
-
-    def _init_meta_db(self) -> None:
-        with sqlite3.connect(self._meta_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS bar_meta (
-                    symbol TEXT NOT NULL,
-                    frequency TEXT NOT NULL,
-                    start_date TEXT,
-                    end_date TEXT,
-                    last_updated TEXT,
-                    row_count INTEGER DEFAULT 0,
-                    provider_name TEXT,
-                    data_source TEXT,
-                    adjustment_mode TEXT,
-                    fetched_at TEXT,
-                    dataset_id TEXT,
-                    diagnostics_json TEXT,
-                    duplicate_timestamp_count INTEGER DEFAULT 0,
-                    missing_ohlcv_count INTEGER DEFAULT 0,
-                    is_monotonic INTEGER DEFAULT 1,
-                    PRIMARY KEY (symbol, frequency)
-                )
-            """)
-            self._ensure_bar_meta_audit_columns(conn)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS market_bars (
-                    symbol TEXT NOT NULL,
-                    frequency TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    open REAL,
-                    high REAL,
-                    low REAL,
-                    close REAL NOT NULL,
-                    volume REAL,
-                    amount REAL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (symbol, frequency, timestamp)
-                )
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_market_bars_symbol_frequency_ts
-                ON market_bars(symbol, frequency, timestamp)
-            """)
-            ensure_market_bar_v2_schema(conn)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS market_universe_snapshots (
-                    snapshot_id TEXT PRIMARY KEY,
-                    trade_date TEXT NOT NULL,
-                    provider_name TEXT NOT NULL,
-                    member_count INTEGER NOT NULL,
-                    snapshot_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(trade_date, provider_name)
-                )
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_market_universe_snapshots_date
-                ON market_universe_snapshots(trade_date DESC, created_at DESC)
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS market_daily_ingestion_receipts (
-                    trade_date TEXT NOT NULL,
-                    provider_name TEXT NOT NULL,
-                    row_count INTEGER NOT NULL,
-                    dataset_fingerprint TEXT NOT NULL,
-                    receipt_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (trade_date, provider_name)
-                )
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_market_daily_receipts_date
-                ON market_daily_ingestion_receipts(trade_date DESC)
-            """)
+        prepare_meta_database(self._meta_path)
 
     # ---------- 行情数据 ----------
 
@@ -309,7 +221,7 @@ class DataStore(MarketDailyIngestionMixin):
         instrument_type: InstrumentType | str | None = None,
     ) -> dict | None:
         """Read exact v2 metadata, or the read-only legacy source."""
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
             if instrument_type is None:
                 row = conn.execute(
@@ -331,14 +243,6 @@ class DataStore(MarketDailyIngestionMixin):
             meta["diagnostics"] = _parse_diagnostics(meta.get("diagnostics_json"))
             return meta
 
-    def _ensure_bar_meta_audit_columns(self, conn: sqlite3.Connection) -> None:
-        existing_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(bar_meta)").fetchall()
-        }
-        for column, definition in _BAR_META_AUDIT_COLUMNS.items():
-            if column not in existing_columns:
-                conn.execute(f"ALTER TABLE bar_meta ADD COLUMN {column} {definition}")
-
     def _save_bar_meta(
         self,
         key: InstrumentKey,
@@ -358,7 +262,7 @@ class DataStore(MarketDailyIngestionMixin):
         else:
             start = end = ""
 
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO bar_meta_v2
                    (
@@ -412,7 +316,7 @@ class DataStore(MarketDailyIngestionMixin):
     ) -> list[Symbol]:
         """List symbols, optionally within one exact identity namespace."""
         symbols: set[Symbol] = set()
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             if instrument_type is None:
                 rows = conn.execute(
                     "SELECT DISTINCT symbol FROM market_bars WHERE frequency = ?",
@@ -492,7 +396,7 @@ class DataStore(MarketDailyIngestionMixin):
             separators=(",", ":"),
         )
         now = datetime.now().isoformat()
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
             existing = conn.execute(
                 """
@@ -537,7 +441,7 @@ class DataStore(MarketDailyIngestionMixin):
         """
         where_clause = "WHERE trade_date = ?" if trade_date is not None else ""
         params = (str(trade_date),) if trade_date is not None else ()
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             row = conn.execute(
                 query.format(where_clause=where_clause), params
             ).fetchone()
@@ -591,7 +495,7 @@ class DataStore(MarketDailyIngestionMixin):
                 )
             )
 
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             conn.executemany(
                 """
                 INSERT INTO market_bars_v2 (
@@ -619,7 +523,7 @@ class DataStore(MarketDailyIngestionMixin):
         *,
         key: InstrumentKey | None,
     ) -> pd.DataFrame | None:
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             if key is None:
                 sql = """
                     SELECT timestamp, open, high, low, close, volume, amount

@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from core.types import BarFrequency, InstrumentType, Symbol
+from data.meta_store_connection import connect_meta_sqlite
 
 _OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
 _STOCK_RECEIPT_STORAGE_AUTHORITY_BY_SCHEMA = {
@@ -118,7 +119,7 @@ class MarketDailyIngestionMixin:
         )
         now = datetime.now().isoformat()
 
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
             existing = conn.execute(
                 """
@@ -208,7 +209,7 @@ class MarketDailyIngestionMixin:
     ) -> dict[str, object] | None:
         """Read one frozen full-market batch receipt and optionally replay it."""
 
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -236,7 +237,7 @@ class MarketDailyIngestionMixin:
     ) -> list[dict[str, object]]:
         """Read a date-ordered receipt window for deterministic replay."""
 
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -268,7 +269,7 @@ class MarketDailyIngestionMixin:
         wanted = {str(symbol).strip() for symbol in symbols if str(symbol).strip()}
         if not wanted:
             return {}
-        with sqlite3.connect(self._meta_path) as conn:
+        with connect_meta_sqlite(self._meta_path) as conn:
             frame = pd.read_sql_query(
                 """
                 SELECT symbol, timestamp, open, high, low, close, volume, amount
