@@ -30,18 +30,22 @@ from server.projections.portfolio_read_snapshot_persistence import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
-from server.projections.quote_status import quote_freshness_reason
+from server.projections.quote_status import (
+    quote_freshness_reason,
+    quote_pricing_semantics,
+)
 from server.projections.quote_status import quote_is_stale as _quote_is_stale
 from server.projections.quote_status import quote_status as _quote_status
 from server.projections.service import build_portfolio_projection_from_db
 from server.projections.valuation_snapshot import (
     build_current_valuation_snapshot as build_current_valuation_projection,
 )
+from server.projections.valuation_snapshot import select_authoritative_valuation_marks
 from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.valuation_snapshot import (
     load_persisted_quote_rows,
-    select_authoritative_quote_rows,
+    select_latest_observation_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,7 +81,7 @@ def collect_latest_quote_timestamps(state) -> dict[str, str]:
         hasattr(db, "list_latest_quotes_sync") or hasattr(db, "get_latest_quotes_sync")
     )
     if persistent_reader_available:
-        for row in select_authoritative_quote_rows(load_persisted_quote_rows(db)):
+        for row in select_latest_observation_rows(load_persisted_quote_rows(db)):
             quote = adapt_persistent_quote_for_portfolio(row)
             timestamp = quote.get("timestamp")
             symbol = quote.get("symbol")
@@ -222,7 +226,7 @@ def collect_latest_quotes(state) -> dict[str, dict]:
         hasattr(db, "get_latest_quotes_sync") or hasattr(db, "list_latest_quotes_sync")
     )
     if persistent_reader_available:
-        rows = select_authoritative_quote_rows(load_persisted_quote_rows(db))
+        rows = select_authoritative_valuation_marks(load_persisted_quote_rows(db))
         for row in rows:
             quote = adapt_persistent_quote_for_portfolio(row)
             symbol = quote.get("symbol")
@@ -354,6 +358,15 @@ def position_quote_presentation(
     quote: dict | None,
     now: datetime | None = None,
 ) -> tuple[str, str | None]:
+    if quote_pricing_semantics(quote)["pricing_authority"] == "authoritative":
+        stale_reason = quote_freshness_reason(
+            quote,
+            now=now,
+            db=getattr(state, "db", None),
+            for_valuation=True,
+        )
+        raw_status = str((quote or {}).get("quote_status") or "live")
+        return ("stale", stale_reason) if stale_reason else (raw_status, None)
     quote_status = response_quote_status(state, quote, now=now)
     stale_reason = quote_stale_reason(state, quote, now=now)
     if is_unconfirmed_fund_estimate(

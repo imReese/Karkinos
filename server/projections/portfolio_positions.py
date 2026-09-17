@@ -23,6 +23,7 @@ from server.projections.portfolio_read_snapshot_persistence import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
+from server.projections.quote_status import quote_performance_session_date
 from server.services.daily_performance import (
     build_position_daily_context,
     mark_position_daily,
@@ -57,7 +58,7 @@ def resolve_live_holding_baseline(
     except ValueError:
         return None, None, "instrument_identity_unavailable"
     latest_timestamp = _parse_quote_timestamp(
-        None if latest_quote is None else latest_quote.get("timestamp")
+        quote_performance_session_date(latest_quote)
     )
     trade_date = (
         latest_timestamp.date().isoformat()
@@ -331,7 +332,7 @@ def resolve_position_today_change(
         as_of=now,
     )
     latest_timestamp = _parse_quote_timestamp(
-        None if latest_quote is None else latest_quote.get("timestamp")
+        quote_performance_session_date(latest_quote)
     )
     resolved_entries = (
         read_daily_ledger_entries(state) if ledger_entries is None else ledger_entries
@@ -343,6 +344,18 @@ def resolve_position_today_change(
         and ledger_entry_shanghai_date(entry) == shanghai_today
         for entry in resolved_entries
     )
+    if (
+        has_today_trade
+        and latest_timestamp is not None
+        and latest_timestamp.date() < shanghai_today
+    ):
+        return (
+            None,
+            None,
+            baseline_price,
+            baseline_timestamp,
+            "current_trade_session_mark_unavailable",
+        )
     trade_day = (
         shanghai_today
         if has_today_trade or latest_timestamp is None

@@ -28,6 +28,7 @@ def project_market_session(
     validation = validate_verified_market_calendar(row)
     result: dict[str, Any] = {
         "status": "unknown",
+        "market_date": current.date().isoformat(),
         "calendar_available": row is not None,
         "calendar_verified": validation.verified,
         "latest_completed_trade_date": None,
@@ -47,9 +48,11 @@ def project_market_session(
     elif time(9, 30) <= clock < time(11, 30) or time(13) <= clock < time(15):
         status = "open"
     elif time(11, 30) <= clock < time(13):
-        status = "break"
+        status = "midday_break"
+    elif clock < time(9, 30):
+        status = "pre_open"
     else:
-        status = "closed"
+        status = "after_close"
     cutoff = (
         today if clock >= time(15) else (current.date() - timedelta(days=1)).isoformat()
     )

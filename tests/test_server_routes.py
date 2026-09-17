@@ -14485,9 +14485,7 @@ def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch)
     assert response.positions[0].market_value is None
     assert response.positions[0].unrealized_pnl is None
     assert response.positions[0].valuation_available is False
-    assert response.positions[0].valuation_blockers == [
-        "valuation_baseline_missing:600519"
-    ]
+    assert response.positions[0].valuation_blockers == ["market_evidence_stale:600519"]
     assert response.positions[0].quote_status == "stale"
     assert response.positions[0].quote_timestamp == "2026-04-22T15:00:00"
     assert response.total_equity is None

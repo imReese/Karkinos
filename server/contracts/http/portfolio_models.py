@@ -9,6 +9,15 @@ from pydantic import BaseModel, Field
 from server.contracts.http.strategy_models import SignalResponse
 
 
+class MarketObservationResponse(BaseModel):
+    price: float | None = None
+    pricing_kind: str
+    pricing_as_of: str | None = None
+    pricing_authority: str
+    quote_source: str | None = None
+    quote_timestamp: str | None = None
+
+
 class PositionResponse(BaseModel):
     symbol: str
     name: str | None = None
@@ -31,6 +40,7 @@ class PositionResponse(BaseModel):
     commission_paid: float
     today_change: float | None = None
     today_change_pct: float | None = None
+    performance_session_date: str | None = None
     baseline_price: float | None = None
     baseline_timestamp: str | None = None
     baseline_source: str = "unavailable"
@@ -45,6 +55,7 @@ class PositionResponse(BaseModel):
     pricing_kind: str = "unknown"
     pricing_as_of: str | None = None
     pricing_authority: str = "unknown"
+    latest_observation: MarketObservationResponse | None = None
     valuation_available: bool = True
     valuation_blockers: list[str] = Field(default_factory=list)
 
@@ -203,6 +214,7 @@ class LiveHoldingItemResponse(BaseModel):
     since_buy_pnl_pct: float | None = None
     today_change: float | None = None
     today_change_pct: float | None = None
+    performance_session_date: str | None = None
     baseline_price: float | None = None
     baseline_timestamp: str | None = None
     baseline_source: str = "unavailable"
@@ -216,6 +228,7 @@ class LiveHoldingItemResponse(BaseModel):
     pricing_kind: str = "unknown"
     pricing_as_of: str | None = None
     pricing_authority: str = "unknown"
+    latest_observation: MarketObservationResponse | None = None
     valuation_available: bool = True
     valuation_blockers: list[str] = Field(default_factory=list)
 
@@ -324,7 +337,10 @@ class AccountOverview(BaseModel):
 
 
 class OverviewMarketSession(BaseModel):
-    status: Literal["open", "break", "closed", "non_trading_day", "unknown"]
+    status: Literal[
+        "pre_open", "open", "midday_break", "after_close", "non_trading_day", "unknown"
+    ]
+    market_date: str | None = None
     calendar_verified: bool
     latest_completed_trade_date: str | None = None
     expected_quote_date: str | None = None

@@ -32,6 +32,7 @@ from server.persistence.financial_facts_valuation import (
 )
 from server.persistence.quote_current_materialization import (
     advance_quote_snapshot_checkpoint_on_connection,
+    published_nav_changed_since_checkpoint,
 )
 from server.persistence.valuation_publication_recovery import (
     assert_quote_publication_not_started,
@@ -389,7 +390,14 @@ def _materialize_quote(
             advance_quote_snapshot_checkpoint_on_connection(
                 conn,
                 snapshot_id=inserted_snapshot_id,
-                current_changed=False,
+                current_changed=(
+                    command.asset_type in {"fund", "open_end_fund"}
+                    and published_nav_changed_since_checkpoint(
+                        conn,
+                        command.symbol,
+                        snapshot_cutoff_id=inserted_snapshot_id - 1,
+                    )
+                ),
                 updated_at=materialized_at,
             )
         _materialize_daily_close(conn, command, materialized_at=materialized_at)

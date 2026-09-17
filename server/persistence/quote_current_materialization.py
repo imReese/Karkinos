@@ -12,8 +12,68 @@ from server.contracts.quote_ingestion import (
     quote_timestamp_instant,
 )
 from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
+from server.persistence.quote_schema_migrations import (
+    PUBLISHED_NAV_DATE_SQL,
+    PUBLISHED_NAV_SQL_PREDICATE,
+)
 
 _STATE_TABLE = "quote_current_materialization_state"
+
+
+def published_nav_rows_on_connection(
+    conn: sqlite3.Connection,
+    symbol: str,
+    *,
+    snapshot_cutoff_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Read one fund's newest published NAV, retaining peers for conflict checks."""
+    cutoff = "AND id <= ?" if snapshot_cutoff_id is not None else ""
+    params = (symbol,) if snapshot_cutoff_id is None else (symbol, snapshot_cutoff_id)
+    row = _fetchone_dict(
+        conn,
+        f"""
+        SELECT quote_instant_utc, {PUBLISHED_NAV_DATE_SQL} AS pricing_date
+        FROM quote_snapshots
+        WHERE symbol = ? AND instrument_type = 'open_end_fund'
+          AND {PUBLISHED_NAV_SQL_PREDICATE} {cutoff}
+        ORDER BY {PUBLISHED_NAV_DATE_SQL} DESC, quote_instant_utc DESC, id DESC LIMIT 1
+        """,
+        params,
+    )
+    if row is None:
+        return []
+    # Exact-instant peers retain malformed/conflicting facts. Published peers
+    # from the same economic NAV date must agree even when captured later.
+    instant_params = (symbol, row["quote_instant_utc"])
+    date_params = (symbol, row["pricing_date"])
+    if snapshot_cutoff_id is not None:
+        instant_params = (*instant_params, snapshot_cutoff_id)
+        date_params = (*date_params, snapshot_cutoff_id)
+    return _fetchall_dicts(
+        conn,
+        f"""
+        SELECT * FROM quote_snapshots
+        WHERE symbol = ? AND instrument_type = 'open_end_fund'
+          AND quote_instant_utc = ? {cutoff}
+        UNION
+        SELECT * FROM quote_snapshots
+        WHERE symbol = ? AND instrument_type = 'open_end_fund'
+          AND {PUBLISHED_NAV_SQL_PREDICATE}
+          AND {PUBLISHED_NAV_DATE_SQL} = ? {cutoff}
+        ORDER BY id
+        """,
+        (*instant_params, *date_params),
+    )
+
+
+def published_nav_changed_since_checkpoint(
+    conn: sqlite3.Connection, symbol: str, *, snapshot_cutoff_id: int
+) -> bool:
+    before = published_nav_rows_on_connection(
+        conn, symbol, snapshot_cutoff_id=snapshot_cutoff_id
+    )
+    after = published_nav_rows_on_connection(conn, symbol)
+    return [row["id"] for row in before] != [row["id"] for row in after]
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +238,17 @@ def reconcile_quote_current_materialization_on_connection(
 
     frontiers = _pending_frontiers(pending)
     changes: list[dict[str, Any]] = []
-    account_current_changed = False
+    account_current_changed = any(
+        published_nav_changed_since_checkpoint(
+            conn, symbol, snapshot_cutoff_id=cutoff_id
+        )
+        for symbol in {
+            str(row["symbol"])
+            for row in pending
+            if str(row.get("instrument_type") or row.get("asset_class"))
+            in {"fund", "open_end_fund"}
+        }
+    )
     for identity in sorted(frontiers):
         newest_pending = frontiers[identity]
         current = _fetchone_dict(

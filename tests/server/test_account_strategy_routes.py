@@ -678,9 +678,21 @@ async def test_holding_strategy_attribution_filters_exact_symbol_evidence(
     ]
 
 
+@pytest.fixture
+def contribution_valuation_time(monkeypatch):
+    from datetime import datetime
+
+    frozen_now = datetime.fromisoformat("2026-06-18T15:00:00+08:00")
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: now or frozen_now,
+    )
+    return frozen_now
+
+
 @pytest.mark.asyncio
 async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, contribution_valuation_time
 ):
     from datetime import datetime
     from decimal import Decimal
@@ -810,7 +822,9 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
         provider_status="ok",
         quote_status="confirmed",
     )
-    published = db.publish_current_valuation_snapshot_sync()
+    published = db.publish_current_valuation_snapshot_sync(
+        now=contribution_valuation_time
+    )
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
@@ -848,7 +862,7 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
 
 @pytest.mark.asyncio
 async def test_account_strategy_contribution_separates_tax_manual_cash_and_missing_evidence(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, contribution_valuation_time
 ):
     from datetime import datetime
     from decimal import Decimal
@@ -1046,7 +1060,7 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
         provider_status="ok",
         quote_status="confirmed",
     )
-    db.publish_current_valuation_snapshot_sync()
+    db.publish_current_valuation_snapshot_sync(now=contribution_valuation_time)
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)

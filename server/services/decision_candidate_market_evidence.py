@@ -14,7 +14,7 @@ from data.market_data import is_fund_estimate_quote_source
 from server.projections.quote_status import quote_status
 from server.services.valuation_snapshot import (
     load_persisted_quote_rows,
-    select_authoritative_quote_rows,
+    select_latest_observation_rows,
 )
 
 
@@ -42,7 +42,7 @@ def candidate_market_evidence(
                     relevant_rows.append(dict(raw_row))
             except (TypeError, ValueError):
                 continue
-        selected_rows = select_authoritative_quote_rows(relevant_rows)
+        selected_rows = select_latest_observation_rows(relevant_rows)
     except (RuntimeError, ValueError):
         return _result(
             source_status="unavailable",

@@ -23,10 +23,12 @@ from server.persistence.quote_current_materialization import (
     advance_quote_snapshot_checkpoint_on_connection,
     assert_quote_current_materialization_on_connection,
     increment_quote_current_revision_on_connection,
+    published_nav_changed_since_checkpoint,
+    published_nav_rows_on_connection,
 )
 
 
-def _quote_snapshot_row(row: sqlite3.Row) -> dict[str, Any]:
+def _quote_snapshot_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     value = dict(row)
     value.pop("quote_instant_utc", None)
     if not value.get("instrument_type"):
@@ -52,14 +54,24 @@ def _canonical_quote_identity(raw_type: object) -> tuple[str, str]:
 def list_quote_selection_candidates_on_connection(
     conn: sqlite3.Connection,
 ) -> list[dict[str, Any]]:
-    """Read the write-maintained quote frontier, never append-only history."""
+    """Read latest observations and bounded published NAV evidence per fund."""
 
     assert_quote_current_materialization_on_connection(conn)
     latest_rows = conn.execute("""
         SELECT * FROM latest_quotes
         ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
         """).fetchall()
-    return [dict(row) for row in latest_rows]
+    candidates = [dict(row) for row in latest_rows]
+    for symbol in {
+        str(row["symbol"])
+        for row in latest_rows
+        if str(row["asset_type"]) in {"fund", "open_end_fund"}
+    }:
+        candidates.extend(
+            _quote_snapshot_row(row)
+            for row in published_nav_rows_on_connection(conn, symbol)
+        )
+    return candidates
 
 
 def _advance_latest_quote_from_snapshot_on_connection(
@@ -88,7 +100,15 @@ def _advance_latest_quote_from_snapshot_on_connection(
             )
         return False
     if existing_instant is not None and existing_instant > candidate_instant:
-        return False
+        return (
+            published_nav_changed_since_checkpoint(
+                conn,
+                str(snapshot["symbol"]),
+                snapshot_cutoff_id=int(snapshot["id"]) - 1,
+            )
+            if candidate["instrument_type"] == "open_end_fund"
+            else False
+        )
 
     conn.execute(
         """
