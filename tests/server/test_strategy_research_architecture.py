@@ -193,7 +193,7 @@ def test_strategy_research_sql_has_one_physical_owner() -> None:
     uow = PERSISTENCE_ROOT / "strategy_research_uow.py"
     source = uow.read_text(encoding="utf-8")
     assert source.count('"BEGIN IMMEDIATE"') == 1
-    assert "sqlite3.connect(" in source
+    assert "connect_sqlite(" in source
     assert {
         path.name
         for path in PERSISTENCE_PATHS

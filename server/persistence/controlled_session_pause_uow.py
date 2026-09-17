@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
@@ -32,7 +33,7 @@ class ControlledSessionPauseUnitOfWorkMixin(ControlledSessionRepositoryAccess):
                 requested,
                 ["automatic_pause_reason_missing"],
             )
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:
@@ -162,7 +163,7 @@ class ControlledSessionPauseUnitOfWorkMixin(ControlledSessionRepositoryAccess):
         session_id: str,
     ) -> dict[str, Any] | None:
         """Read the durable pause state for one session."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -179,7 +180,7 @@ class ControlledSessionPauseUnitOfWorkMixin(ControlledSessionRepositoryAccess):
         pause_event_id: str,
     ) -> dict[str, Any] | None:
         """Read one immutable automatic-pause event by fingerprint."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -197,7 +198,7 @@ class ControlledSessionPauseUnitOfWorkMixin(ControlledSessionRepositoryAccess):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable automatic-pause evidence newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

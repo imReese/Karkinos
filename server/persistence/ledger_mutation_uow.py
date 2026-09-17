@@ -19,6 +19,7 @@ from server.contracts.ledger_mutations import (
     ledger_entry_state_fingerprint,
     validate_trade_settlement_economics,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_normalization import json_dict
 from server.persistence.database_serialization import normalize_timestamp
 from server.persistence.event_log import insert_event_sync
@@ -279,7 +280,7 @@ class LedgerMutationUnitOfWork:
         return payload
 
     def _connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._database_path, timeout=2)
+        conn = connect_sqlite(self._database_path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=2000")
         return conn

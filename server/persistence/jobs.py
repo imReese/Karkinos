@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from server.contracts.jobs import JobLease, JobRun, job_time
+from server.persistence.connection import connect_sqlite
 
 
 def require_job_lease(
@@ -30,7 +31,7 @@ class SQLiteJobStore:
 
     @contextmanager
     def _transaction(self):
-        conn = sqlite3.connect(self.path, timeout=2)
+        conn = connect_sqlite(self.path, timeout=2)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("BEGIN IMMEDIATE")

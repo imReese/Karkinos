@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
+
 
 class ShadowResearchManagedConnection:
     """Commit or roll back one owned SQLite connection, then close it."""
@@ -41,13 +43,11 @@ class ShadowResearchUnitOfWork:
     def read(self) -> ShadowResearchManagedConnection:
         if not self._path.exists():
             raise sqlite3.OperationalError("shadow research store is not initialized")
-        connection = sqlite3.connect(
-            f"file:{self._path.resolve()}?mode=ro", uri=True, timeout=30
-        )
+        connection = connect_sqlite(self._path, readonly=True, timeout=30)
         connection.row_factory = sqlite3.Row
         return ShadowResearchManagedConnection(connection)
 
     def _open(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self._path, timeout=30)
+        connection = connect_sqlite(self._path, timeout=30)
         connection.row_factory = sqlite3.Row
         return connection

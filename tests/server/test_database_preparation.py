@@ -179,6 +179,38 @@ def test_failure_after_migration_rolls_back_entire_preparation(tmp_path, monkeyp
     )
 
 
+def test_foreign_key_violation_rolls_back_entire_preparation(tmp_path, monkeypatch):
+    database = _previous_database(tmp_path, monkeypatch)
+    before = _ledger(database.path)
+
+    def inject_violation(conn):
+        conn.execute("CREATE TABLE b1_parent(id INTEGER PRIMARY KEY)")
+        conn.execute(
+            "CREATE TABLE b1_child(parent_id INTEGER REFERENCES b1_parent(id))"
+        )
+        conn.execute("INSERT INTO b1_child(parent_id) VALUES (99)")
+
+    monkeypatch.setattr(
+        initializer, "_backfill_quote_snapshot_instants", inject_violation
+    )
+    with pytest.raises(RuntimeError, match="sqlite_foreign_key_check_failed"):
+        database.init_sync()
+
+    assert _ledger(database.path) == before
+    with closing(sqlite3.connect(database.path)) as conn:
+        assert conn.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert (
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE name IN ('b1_parent', 'b1_child')"
+            ).fetchone()
+            is None
+        )
+        assert conn.execute("SELECT display_name FROM watchlist_assets").fetchone() == (
+            "fixture",
+        )
+
+
 def test_runtime_shared_lock_blocks_a_different_builds_upgrade(tmp_path, monkeypatch):
     database = _previous_database(tmp_path, monkeypatch)
     before = _ledger(database.path)

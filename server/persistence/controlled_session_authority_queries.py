@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
@@ -18,7 +19,7 @@ class ControlledSessionAuthorityQueryRepositoryMixin(ControlledSessionRepository
         session_id: str,
     ) -> dict[str, Any] | None:
         """Read one runtime session including private hash fields for verification."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -36,7 +37,7 @@ class ControlledSessionAuthorityQueryRepositoryMixin(ControlledSessionRepository
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List runtime sessions without interpreting current authority."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -57,7 +58,7 @@ class ControlledSessionAuthorityQueryRepositoryMixin(ControlledSessionRepository
         now_epoch_ms: int,
     ) -> dict[str, Any] | None:
         """Find active paused authority that requires signed replacement review."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -89,7 +90,7 @@ class ControlledSessionAuthorityQueryRepositoryMixin(ControlledSessionRepository
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable signed replacement evidence newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -106,7 +107,7 @@ class ControlledSessionAuthorityQueryRepositoryMixin(ControlledSessionRepository
         predecessor_session_id: str,
     ) -> dict[str, Any] | None:
         """Read immutable replacement evidence for one retired predecessor."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -124,7 +125,7 @@ class ControlledSessionAuthorityQueryRepositoryMixin(ControlledSessionRepository
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable signed revocation evidence newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

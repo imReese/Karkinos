@@ -88,6 +88,17 @@ def assert_sqlite_write_baseline(
     return profile
 
 
+def assert_foreign_key_integrity(conn: sqlite3.Connection) -> None:
+    """Fail closed when committed rows would violate declared foreign keys."""
+
+    violations = conn.execute("PRAGMA foreign_key_check").fetchmany(20)
+    if violations:
+        details = ", ".join(
+            f"{row[0]}:rowid={row[1]}:parent={row[2]}:fk={row[3]}" for row in violations
+        )
+        raise RuntimeError("sqlite_foreign_key_check_failed: " + details)
+
+
 def run_immediate_transaction(
     conn: sqlite3.Connection,
     operation,

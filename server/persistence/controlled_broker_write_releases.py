@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
+
 _RELEASE_TABLE = "controlled_broker_write_releases"
 _REVOCATION_TABLE = "controlled_broker_write_release_revocations"
 _RELEASE_COLUMNS = {
@@ -124,7 +126,7 @@ class ControlledBrokerWriteReleaseRepository:
         """Revalidate and append one release under an immediate transaction."""
 
         self._ensure_schema()
-        with sqlite3.connect(self._path, timeout=2) as connection:
+        with connect_sqlite(self._path, timeout=2) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=2000")
             connection.execute("PRAGMA foreign_keys=ON")
@@ -175,7 +177,7 @@ class ControlledBrokerWriteReleaseRepository:
         """Revalidate and append one exact revocation under an immediate UoW."""
 
         self._ensure_schema()
-        with sqlite3.connect(self._path, timeout=2) as connection:
+        with connect_sqlite(self._path, timeout=2) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=2000")
             connection.execute("PRAGMA foreign_keys=ON")
@@ -320,10 +322,8 @@ class ControlledBrokerWriteReleaseRepository:
             yield None
             return
         try:
-            uri = f"{self._path.resolve().as_uri()}?mode=ro"
-            with sqlite3.connect(uri, uri=True) as connection:
+            with connect_sqlite(self._path, readonly=True) as connection:
                 connection.row_factory = sqlite3.Row
-                connection.execute("PRAGMA query_only=ON")
                 exists = connection.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
                     (table,),
@@ -349,7 +349,7 @@ class ControlledBrokerWriteReleaseRepository:
 
     def _ensure_schema(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self._path) as connection:
+        with connect_sqlite(self._path) as connection:
             connection.executescript(f"""
                 CREATE TABLE IF NOT EXISTS {_RELEASE_TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

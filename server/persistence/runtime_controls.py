@@ -16,6 +16,7 @@ from server.contracts.automatic_trading import (
     automatic_trading_transition_error,
     resolve_persisted_automatic_trading_control,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.event_log import insert_event_sync
 
 _AUTOMATIC_TRADING_EVENT_SOURCE = "trading_controls"
@@ -33,7 +34,7 @@ class RuntimeControlRepository:
             raise ValueError(
                 "automatic trading control requires the dedicated audited CAS"
             )
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.execute(
                 """
                 INSERT INTO runtime_controls (key, value_json, updated_at)
@@ -51,7 +52,7 @@ class RuntimeControlRepository:
             conn.commit()
 
     def get_value(self, key: str) -> dict[str, Any] | None:
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT value_json FROM runtime_controls WHERE key = ?",
@@ -100,7 +101,7 @@ class RuntimeControlRepository:
                 "automatic trading control effective_at_epoch_ms is invalid"
             )
 
-        with sqlite3.connect(self._database_path, timeout=2) as conn:
+        with connect_sqlite(self._database_path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")

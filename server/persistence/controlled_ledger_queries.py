@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_execution_access import (
     ControlledExecutionRepositoryAccess,
 )
@@ -20,7 +21,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         self,
         clearance_id: str,
     ) -> dict[str, Any] | None:
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -36,7 +37,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         self,
         submit_intent_id: str,
     ) -> dict[str, Any] | None:
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -53,7 +54,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         *,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -71,7 +72,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         posting_id: str,
     ) -> dict[str, Any] | None:
         """Read one immutable controlled-order ledger posting."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -87,7 +88,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         import_run_id: str,
     ) -> dict[str, Any]:
         """Fingerprint current manual-review decisions for one broker import."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             return account_truth_review_identity_from_connection(
                 conn,
@@ -99,7 +100,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         clearance_id: str,
     ) -> dict[str, Any] | None:
         """Read the exactly-once posting associated with one clearance."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -116,7 +117,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable controlled-order ledger postings, newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -133,7 +134,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         correction_id: str,
     ) -> dict[str, Any] | None:
         """Read one immutable compensating correction."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -149,7 +150,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         posting_id: str,
     ) -> dict[str, Any] | None:
         """Read the exactly-once correction associated with one posting."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -166,7 +167,7 @@ class ControlledLedgerQueryRepositoryMixin(ControlledExecutionRepositoryAccess):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable compensating corrections, newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

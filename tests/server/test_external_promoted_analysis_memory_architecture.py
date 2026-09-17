@@ -191,7 +191,7 @@ def test_promoted_memory_sql_and_atomic_uows_have_only_persistence_owners() -> N
     for path, expected_uows in UOWS.items():
         source = path.read_text(encoding="utf-8")
         assert "sqlite3" in _imports(path), path.name
-        assert "sqlite3.connect(" in source, path.name
+        assert "connect_sqlite(" in source, path.name
         assert "CREATE TABLE" in source, path.name
         assert source.count('conn.execute("BEGIN IMMEDIATE")') == expected_uows
 

@@ -15,6 +15,7 @@ from server.contracts.portfolio_trades import (
     ManualTradeWrite,
     ManualTradeWriteResult,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.event_log import serialize_event_payload_json
 from server.persistence.financial_facts_ledger import (
     insert_ledger_entry_on_connection,
@@ -58,7 +59,7 @@ class ManualTradeUnitOfWork:
 
         validate_manual_trade_write(command)
         created_at = self._now()
-        with sqlite3.connect(self._database_path, timeout=2) as conn:
+        with connect_sqlite(self._database_path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")
@@ -162,7 +163,7 @@ class ManualTradeUnitOfWork:
         if trade_id <= 0:
             raise ValueError("trade_id must be positive")
         created_at = self._now()
-        with sqlite3.connect(self._database_path, timeout=2) as conn:
+        with connect_sqlite(self._database_path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")

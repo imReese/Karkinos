@@ -7,6 +7,7 @@ import json
 import sqlite3
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_clearance_lifecycle import (
     controlled_lifecycle_invalidated_clearance_rows,
 )
@@ -35,7 +36,7 @@ class ControlledBrokerIntentRepositoryMixin(ControlledExecutionRepositoryAccess)
     ) -> dict[str, Any]:
         """Persist one one-shot submit intent before any external broker call."""
         requested = dict(intent)
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:
@@ -292,7 +293,7 @@ class ControlledBrokerIntentRepositoryMixin(ControlledExecutionRepositoryAccess)
                 requested,
                 ["controlled_broker_recovery_query_claim_invalid"],
             )
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:
@@ -448,7 +449,7 @@ class ControlledBrokerIntentRepositoryMixin(ControlledExecutionRepositoryAccess)
                 {"submit_intent_id": submit_intent_id},
                 ["controlled_broker_submit_result_status_invalid"],
             )
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:
@@ -586,7 +587,7 @@ class ControlledBrokerIntentRepositoryMixin(ControlledExecutionRepositoryAccess)
         self,
         submit_intent_id: str,
     ) -> dict[str, Any] | None:
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -601,7 +602,7 @@ class ControlledBrokerIntentRepositoryMixin(ControlledExecutionRepositoryAccess)
         self,
         order_id: str,
     ) -> dict[str, Any] | None:
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -617,7 +618,7 @@ class ControlledBrokerIntentRepositoryMixin(ControlledExecutionRepositoryAccess)
         *,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -634,7 +635,7 @@ class ControlledBrokerIntentRepositoryMixin(ControlledExecutionRepositoryAccess)
         limit: int = 500,
     ) -> list[dict[str, Any]]:
         """List controlled intents that still block every different order."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

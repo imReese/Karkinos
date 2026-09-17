@@ -20,6 +20,7 @@ from server.contracts.portfolio_trades import (
     PendingFundOrderWriteResult,
 )
 from server.contracts.quote_ingestion import PUBLISHED_QUOTE_RUN_STATUSES
+from server.persistence.connection import connect_sqlite
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_facts_ledger import (
     insert_ledger_entry_on_connection,
@@ -71,7 +72,7 @@ class PendingFundConfirmationUnitOfWork:
 
         _validate_pending_order(command)
         created_at = self._now()
-        with sqlite3.connect(self._database_path, timeout=2) as conn:
+        with connect_sqlite(self._database_path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")
@@ -162,7 +163,7 @@ class PendingFundConfirmationUnitOfWork:
 
         _validate_confirmation_request(command)
         created_at = self._now()
-        with sqlite3.connect(self._database_path, timeout=2) as conn:
+        with connect_sqlite(self._database_path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")

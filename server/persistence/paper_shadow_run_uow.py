@@ -13,6 +13,7 @@ from server.contracts.paper_shadow import (
     PaperShadowOrderFact,
     PaperShadowRunCommand,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_fact_event_payloads import (
     fill_event_payload,
@@ -38,7 +39,7 @@ class PaperShadowRunUnitOfWorkMixin:
         command: PaperShadowRunCommand,
     ) -> dict[str, Any]:
         now = self._now().isoformat()
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("PRAGMA foreign_keys=ON")

@@ -6,6 +6,7 @@ import sqlite3
 from decimal import Decimal
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_clearance_lifecycle import (
     controlled_lifecycle_invalidated_clearance_rows,
 )
@@ -42,7 +43,7 @@ class ControlledLedgerPostingUnitOfWorkMixin(ControlledExecutionRepositoryAccess
     ) -> dict[str, Any]:
         """Verify and atomically post exact cleared fills to the ledger once."""
         requested = dict(posting)
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:

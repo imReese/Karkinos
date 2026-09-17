@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from server.persistence.connection import (
+    assert_foreign_key_integrity,
     assert_sqlite_write_baseline,
     connect_sqlite,
 )
@@ -289,6 +290,7 @@ def _initialize_on_connection(conn: sqlite3.Connection, database_path: Path) -> 
         )
         if conn.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
             raise RuntimeError("database_initialization_integrity_failed")
+        assert_foreign_key_integrity(conn)
         conn.set_authorizer(None)
         conn.commit()
     except BaseException as exc:
