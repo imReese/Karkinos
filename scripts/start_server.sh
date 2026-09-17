@@ -178,6 +178,7 @@ ensure_stable_workspace() {
     export KARKINOS_WORKSPACE="${REPO_ROOT}"
     export KARKINOS_HOME="${REPO_ROOT}"
     export KARKINOS_DATA_DIR="${REPO_ROOT}/data/store"
+    export KARKINOS_WORKSPACE_ROLE="stable"
     export KARKINOS_CONFIG_PATH="${REPO_ROOT}/config.json"
     export KARKINOS_ENV_FILE="${REPO_ROOT}/.env"
 }
@@ -211,6 +212,7 @@ EOF
     export KARKINOS_WORKSPACE="${home}"
     export KARKINOS_HOME="${home}"
     export KARKINOS_DATA_DIR="${home}/data"
+    export KARKINOS_WORKSPACE_ROLE="development"
     export KARKINOS_CONFIG_PATH="${home}/config/config.json"
     export KARKINOS_ENV_FILE="${home}/config/.env"
 }

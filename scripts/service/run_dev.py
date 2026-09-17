@@ -76,6 +76,7 @@ def development_environment(home: Path) -> dict[str, str]:
         KARKINOS_HOME=str(home),
         KARKINOS_WORKSPACE=str(home),
         KARKINOS_DATA_DIR=str(data),
+        KARKINOS_WORKSPACE_ROLE="development",
         KARKINOS_CONFIG_PATH=str(config),
         KARKINOS_ENV_FILE=str(env_file),
         KARKINOS_STATIC_DIR=str(ROOT / "web/dist"),

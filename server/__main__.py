@@ -170,7 +170,13 @@ def main() -> None:
         print(json.dumps(replay_persistent_state(create_runtime_app), sort_keys=True))
         return
 
+    from server.persistence.database_identity import ensure_database_identity
     from server.persistence.initializer import database_runtime, initialize_database
+
+    ensure_database_identity(
+        database_path.parent,
+        workspace_role=os.environ.get("KARKINOS_WORKSPACE_ROLE"),
+    )
 
     # This runs in the parent, before Uvicorn/reloader or any worker is spawned.
     # Ordinary uncommitted development code is allowed; the actual migration

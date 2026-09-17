@@ -1429,6 +1429,7 @@ def legacy_launchd_hooks(
             **environment,
             "KARKINOS_HOME": str(home),
             "KARKINOS_DATA_DIR": str(workdir / "data" / "store"),
+            "KARKINOS_WORKSPACE_ROLE": "stable",
             "KARKINOS_CONFIG_PATH": str(workdir / "config.json"),
             "KARKINOS_ENV_FILE": str(workdir / ".env"),
         }
