@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -71,17 +72,20 @@ def _publish_quote(
     price: float = 4.8,
     quote_status: str = "confirmed",
 ) -> dict[str, Any]:
-    db.upsert_latest_quote_sync(
+    db.save_quote_snapshot_sync(
         symbol="510300",
-        asset_type="fund",
+        asset_class="fund",
         price=price,
-        quote_timestamp="2026-07-16T15:00:00+08:00",
+        volume=None,
+        timestamp="2026-07-16T15:00:00+08:00",
         quote_source="deterministic_fixture",
         provider_name="deterministic_fixture",
         provider_status="ok",
         quote_status=quote_status,
     )
-    return db.publish_current_valuation_snapshot_sync()
+    return db.publish_current_valuation_snapshot_sync(
+        now=datetime.fromisoformat("2026-07-16T16:00:00+08:00")
+    )
 
 
 def test_no_linked_fill_is_not_an_actionable_review() -> None:
@@ -155,11 +159,12 @@ def test_snapshot_identity_drift_blocks_replay(tmp_path) -> None:
     fill = _fill()
     _post_fill(db, fill)
     published = _publish_quote(db)
-    db.upsert_latest_quote_sync(
+    db.save_quote_snapshot_sync(
         symbol="510300",
-        asset_type="fund",
+        asset_class="fund",
         price=4.9,
-        quote_timestamp="2026-07-16T15:01:00+08:00",
+        volume=None,
+        timestamp="2026-07-17T15:01:00+08:00",
         quote_source="deterministic_fixture",
         provider_name="deterministic_fixture",
         provider_status="ok",

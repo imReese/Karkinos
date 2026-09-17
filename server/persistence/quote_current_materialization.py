@@ -101,6 +101,17 @@ def assert_quote_current_materialization_on_connection(
     return state
 
 
+def quote_current_materialization_needs_reconciliation_on_connection(
+    conn: sqlite3.Connection,
+) -> bool:
+    """Return whether the persisted current-quote projection trails audit facts."""
+
+    state = _read_state(conn)
+    if state is None:
+        return True
+    return state.snapshot_cutoff_id != _maximum_snapshot_id(conn)
+
+
 def current_quote_revision_on_connection(conn: sqlite3.Connection) -> int:
     """Return the complete account-valuation quote revision, or fail closed."""
 
@@ -507,5 +518,6 @@ __all__ = [
     "assert_quote_current_materialization_on_connection",
     "current_quote_revision_on_connection",
     "increment_quote_current_revision_on_connection",
+    "quote_current_materialization_needs_reconciliation_on_connection",
     "reconcile_quote_current_materialization_on_connection",
 ]
