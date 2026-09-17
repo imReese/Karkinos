@@ -1063,9 +1063,14 @@ def test_pending_v2_allows_migration_when_ledger_trade_field_drifts(
     ]
 
 
-def test_applied_v2_is_unaffected_by_semantic_duplicate_preflight(tmp_path) -> None:
+def test_applied_v2_is_unaffected_by_semantic_duplicate_preflight(
+    tmp_path, monkeypatch
+) -> None:
     database = AppDatabase(tmp_path / "app.db")
-    database.init_sync()
+    v2_registry = tuple(item for item in migrations._MIGRATIONS if item.version <= 2)
+    with monkeypatch.context() as legacy:
+        legacy.setattr(migrations, "_MIGRATIONS", v2_registry)
+        database.init_sync()
     with sqlite3.connect(database.path) as conn:
         trade_id, _ = _insert_legacy_fund_trade_with_ledger_duplicate(conn)
         conn.commit()

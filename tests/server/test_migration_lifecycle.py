@@ -212,3 +212,19 @@ def test_unknown_version_diagnostic_does_not_suggest_reset(tmp_path):
     assert "index_published_fund_nav_marks" in status.explain()
     assert "do not delete" in status.explain()
     assert not list(tmp_path.iterdir())
+
+
+def test_status_reports_stable_database_format_and_migration_head(tmp_path):
+    row = {
+        "version": 17,
+        "name": "enforce_financial_fact_invariants",
+        "checksum": "fixture",
+        "applied_at": "2026-09-17T12:00:00+00:00",
+    }
+    status = lifecycle.DatabaseStatus(tmp_path / "app.db", "current", (row,), (row,))
+
+    payload = status.as_dict()
+    assert payload["database_format_version"] == 1
+    assert payload["migration_head"] == 17
+    assert "Database format: v1" in status.explain()
+    assert "Migration head: code=17; database=17" in status.explain()

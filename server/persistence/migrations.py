@@ -1,9 +1,6 @@
 """Ordered, checksum-verified SQLite schema migrations.
 
-The v0.3.0 entry records the schema that predates this migration ledger. Existing
-compatibility bootstrap code runs before this registry is updated, so legacy and
-new databases enter the same explicit version state. Future schema changes must
-be appended here rather than added as untracked startup mutations.
+Applied entries are immutable; append future schema changes instead of rewriting history.
 """
 
 from __future__ import annotations
@@ -20,6 +17,9 @@ import server.persistence.migration_schema_contracts as _schema_contracts
 from server.persistence.connection import run_immediate_transaction
 from server.persistence.financial_decimal_migrations import (
     build_financial_decimal_migration,
+)
+from server.persistence.financial_invariant_migrations import (
+    build_financial_invariant_migration,
 )
 from server.persistence.job_schema_migrations import V13_DURABLE_BACKGROUND_JOBS
 from server.persistence.legacy_trade_migration_preflight import (
@@ -487,9 +487,10 @@ _MIGRATIONS = (
     ),
     *_QUOTE_MIGRATIONS[2:],
     build_financial_decimal_migration(SchemaMigration),
+    build_financial_invariant_migration(SchemaMigration),
 )
 
-CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version
+CURRENT_MIGRATION_HEAD = CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version
 
 
 def migration_registry() -> tuple[SchemaMigration, ...]:

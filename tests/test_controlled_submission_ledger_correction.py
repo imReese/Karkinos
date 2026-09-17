@@ -29,6 +29,7 @@ from server.services.controlled_submission_reconciliation_clearance import (
     CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
 )
 from server.services.execution_reconciliation import ExecutionReconciliationService
+from tests.out_of_band_corruption import allow_out_of_band_update
 from tests.test_controlled_submission_reconciliation_clearance import (
     NOW,
     _apply_ledger_posting,
@@ -453,6 +454,7 @@ def test_tampered_correction_evidence_fails_closed_during_replay(tmp_path) -> No
     )
     corrected = _apply_correction(env, _service(env), preview)
     with sqlite3.connect(env["db"]._path) as conn:
+        allow_out_of_band_update(conn, "ledger_entries")
         row = conn.execute(
             "SELECT correction_payload_json FROM ledger_entries WHERE id = ?",
             (corrected["correction_ledger_entry_id"],),

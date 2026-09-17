@@ -150,11 +150,13 @@ def _insert_legacy_manual_order(
         conn.execute(
             """
             INSERT INTO manual_orders (
-                order_id, timestamp, symbol, side, order_type, quantity, price,
-                intent_id, risk_decision_id, execution_mode, status, payload_json,
-                note, created_at, updated_at
-            ) VALUES (?, ?, '600519', 'buy', 'market', 100, 123.45,
-                      ?, ?, 'manual', 'pending_confirm', ?, '', ?, ?)
+                order_id, timestamp, symbol, side, order_type, quantity,
+                quantity_decimal, price, price_decimal, intent_id, risk_decision_id,
+                execution_mode, status, payload_json, note, created_at, updated_at,
+                currency_code, decimal_provenance
+            ) VALUES (?, ?, '600519', 'buy', 'market', 100, '100', 123.45, '123.45',
+                      ?, ?, 'manual', 'pending_confirm', ?, '', ?, ?,
+                      'CNY', 'exact_decimal_write_v1')
             """,
             (
                 order_id,

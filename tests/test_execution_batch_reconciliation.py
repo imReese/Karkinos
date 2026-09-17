@@ -21,6 +21,7 @@ from server.services.execution_reconciliation import (
     build_current_plan_paper_actual_comparison,
 )
 from tests.order_state_fixtures import insert_historical_oms_order
+from tests.out_of_band_corruption import allow_out_of_band_update
 from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 NOW = datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc)
@@ -596,6 +597,7 @@ def test_filled_batch_requires_real_fill_account_truth_and_same_run_linkage(
         reconciliation_run_id=RUN_ID,
     )
     with sqlite3.connect(db._path) as conn:
+        allow_out_of_band_update(conn, "fills")
         conn.execute(
             "UPDATE fills SET metadata_json = '{}' WHERE fill_id = ?",
             ("real-fill-1",),

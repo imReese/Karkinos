@@ -22,6 +22,7 @@ from server.persistence.pending_fund_confirmation_uow import (
 )
 from server.persistence.schema_v1 import initialize_v1_baseline_schema
 from server.projections.service import build_portfolio_projection
+from tests.out_of_band_corruption import allow_out_of_band_update
 
 pytestmark = pytest.mark.unit
 
@@ -655,6 +656,7 @@ def test_manual_trade_correction_replay_rejects_projection_drift(tmp_path) -> No
     uow.correct(command)
 
     with sqlite3.connect(path) as conn:
+        allow_out_of_band_update(conn, "trades")
         conn.execute("UPDATE trades SET quantity = 999 WHERE id = 1")
         conn.commit()
 
@@ -993,6 +995,7 @@ def test_pending_confirmation_replay_fails_closed_on_evidence_or_ledger_drift(
         uow.confirm(_confirmation("manual-nav-run-2"))
 
     with sqlite3.connect(path) as conn:
+        allow_out_of_band_update(conn, "ledger_entries")
         conn.execute("UPDATE ledger_entries SET note = 'drifted' WHERE id = 1")
         conn.commit()
     with pytest.raises(RuntimeError, match="ledger drifted"):
