@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
@@ -207,7 +208,7 @@ class ValuationFactsRepositoryMixin:
     def save_valuation_snapshot_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Persist one immutable, content-addressed valuation snapshot."""
         now = self._now(timezone.utc).isoformat()
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = insert_valuation_snapshot_on_connection(
                 conn,
@@ -225,7 +226,7 @@ class ValuationFactsRepositoryMixin:
     ) -> dict[str, Any]:
         """Atomically publish the immutable snapshot for committed facts."""
         try:
-            with sqlite3.connect(self._path, timeout=2) as conn:
+            with connect_sqlite(self._path, timeout=2) as conn:
                 conn.row_factory = sqlite3.Row
                 conn.execute("BEGIN IMMEDIATE")
                 snapshot = self._valuation_transaction_writer(
@@ -237,7 +238,7 @@ class ValuationFactsRepositoryMixin:
         except Exception as exc:
             failure_at = self._now(timezone.utc).isoformat()
             try:
-                with sqlite3.connect(self._path, timeout=2) as conn:
+                with connect_sqlite(self._path, timeout=2) as conn:
                     conn.row_factory = sqlite3.Row
                     conn.execute("BEGIN IMMEDIATE")
                     record_valuation_publication_failure_on_connection(
@@ -257,7 +258,7 @@ class ValuationFactsRepositoryMixin:
 
     def get_valuation_snapshot_sync(self, snapshot_id: str) -> dict[str, Any] | None:
         """Read one immutable valuation snapshot by content id."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM valuation_snapshots WHERE snapshot_id = ?",

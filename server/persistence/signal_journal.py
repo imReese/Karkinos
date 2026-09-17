@@ -7,7 +7,7 @@ import logging
 import sqlite3
 from typing import Any
 
-from server.persistence.connection import SQLiteRepository
+from server.persistence.connection import SQLiteRepository, connect_sqlite
 from server.persistence.database_normalization import json_dict, json_list
 from server.persistence.event_log import (
     insert_event_sync,
@@ -38,7 +38,7 @@ class SignalJournalRepository(SQLiteRepository):
         asset_class: str,
     ) -> int:
         """同步写入信号（后台线程调用）。"""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             cursor = conn.execute(
                 """INSERT INTO signals
                    (timestamp, strategy_id, symbol, direction, target_weight, price, asset_class)
@@ -66,7 +66,7 @@ class SignalJournalRepository(SQLiteRepository):
     ) -> int | None:
         """Return the canonical persisted identity for one exact signal."""
 
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             row = conn.execute(
                 """
                 SELECT id FROM signals
@@ -106,7 +106,7 @@ class SignalJournalRepository(SQLiteRepository):
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
         """List signal → action task → risk decision journal entries."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             signal_rows = conn.execute(
                 """
@@ -236,7 +236,7 @@ class SignalJournalRepository(SQLiteRepository):
     ) -> int:
         """同步写入或更新待执行任务，避免重复生成。"""
         now = self._now().isoformat()
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute(
                 """
@@ -322,14 +322,14 @@ class SignalJournalRepository(SQLiteRepository):
         query += " ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query, tuple(params)).fetchall()
             return self._enrich_action_tasks_with_risk_decisions(conn, rows)
 
     def get_action_task_sync(self, task_id: int) -> dict[str, Any] | None:
         """Read one action task with its latest risk and manual-confirm state."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -414,7 +414,7 @@ class SignalJournalRepository(SQLiteRepository):
         self, task_id: int, status: str
     ) -> dict[str, Any] | None:
         """同步版本，供线程池包装。"""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute(
                 "UPDATE action_tasks SET status = ?, updated_at = ? WHERE id = ?",
@@ -482,7 +482,7 @@ class SignalJournalRepository(SQLiteRepository):
             "review_notes": review_notes,
             "reviewer": reviewer,
         }
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             signal = conn.execute(
                 "SELECT id FROM signals WHERE id = ?",
@@ -539,7 +539,7 @@ class SignalJournalRepository(SQLiteRepository):
                 "metadata": decision.metadata,
             },
         }
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO risk_decisions
@@ -602,7 +602,7 @@ class SignalJournalRepository(SQLiteRepository):
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
         """同步读取风控决策审计记录，最新优先。"""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

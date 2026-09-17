@@ -6,6 +6,7 @@ import json
 import sqlite3
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_serialization import (
     decimal_values_equal,
     serialize_metadata_json,
@@ -45,7 +46,7 @@ class ExecutionFactUnitOfWorkMixin:
         """Create or exactly replay one immutable shared order fact."""
         now = self._now().isoformat()
         payload_json = serialize_metadata_json(payload) or "{}"
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")
@@ -143,7 +144,7 @@ class ExecutionFactUnitOfWorkMixin:
         """Create or exactly replay one immutable paper/live fill fact."""
         now = self._now().isoformat()
         metadata_json = serialize_metadata_json(metadata)
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")

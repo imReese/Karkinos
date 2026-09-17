@@ -13,6 +13,7 @@ from server.persistence.automatic_trading_session_binding import (
     automatic_trading_binding_from_session_payload,
     read_automatic_trading_control_in_transaction,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
@@ -61,7 +62,7 @@ class ControlledSessionRateAdmissionUnitOfWorkMixin(ControlledSessionRepositoryA
                 requested,
                 ["runtime_rate_admission_limit_invalid"],
             )
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:
@@ -383,7 +384,7 @@ class ControlledSessionRateAdmissionUnitOfWorkMixin(ControlledSessionRepositoryA
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable runtime rate-admission evidence newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

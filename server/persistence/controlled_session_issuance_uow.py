@@ -11,6 +11,7 @@ from server.persistence.automatic_trading_session_binding import (
     automatic_trading_session_reuse_blockers,
     bind_session_payload_to_automatic_trading_control,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
@@ -32,7 +33,7 @@ class ControlledSessionIssuanceUnitOfWorkMixin(ControlledSessionRepositoryAccess
     ) -> dict[str, Any]:
         """Issue one persisted bounded session for one exact reservation."""
         requested = dict(session)
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:

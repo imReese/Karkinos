@@ -15,6 +15,7 @@ from server.contracts.ledger_mutations import (
     LedgerTradeSettlementCommand,
     ledger_entry_state_fingerprint,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_serialization import normalize_timestamp
 from server.persistence.event_log import insert_event_sync
 
@@ -222,7 +223,7 @@ class LedgerFactsRepositoryMixin:
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
         """同步列出账本事件，最新优先。"""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT *
@@ -236,7 +237,7 @@ class LedgerFactsRepositoryMixin:
     def get_all_ledger_entries_sync(self) -> list[dict[str, Any]]:
         """Read one complete ledger snapshot in a single SQLite statement."""
 
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""SELECT *
                    FROM ledger_entries
@@ -245,7 +246,7 @@ class LedgerFactsRepositoryMixin:
 
     def get_ledger_entry_sync(self, entry_id: int) -> dict[str, Any] | None:
         """Read one ledger event by id."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM ledger_entries WHERE id = ? LIMIT 1",

@@ -7,6 +7,7 @@ from typing import Any
 
 from core.types import InstrumentType
 from server.contracts.quote_ingestion import quote_authority_conflict_fields
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_serialization import serialize_metadata_json
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_fact_event_payloads import (
@@ -204,7 +205,7 @@ class QuoteFactsRepositoryMixin:
         now = self._now().isoformat()
         captured_at_value = captured_at or now
         metadata_json = serialize_metadata_json(metadata)
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             existing = conn.execute(
                 "SELECT * FROM latest_quotes WHERE symbol = ? AND asset_type = ?",
@@ -328,7 +329,7 @@ class QuoteFactsRepositoryMixin:
         self, symbol: str, asset_type: str | None = None
     ) -> dict[str, Any] | None:
         """Read one current quote; untyped compatibility fails on ambiguity."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             assert_quote_current_materialization_on_connection(conn)
             if asset_type is None:
@@ -379,7 +380,7 @@ class QuoteFactsRepositoryMixin:
 
     def list_latest_quotes_sync(self) -> list[dict[str, Any]]:
         """List materialized latest quotes newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             assert_quote_current_materialization_on_connection(conn)
             rows = conn.execute("""
@@ -408,7 +409,7 @@ class QuoteFactsRepositoryMixin:
         """Append audit history and atomically advance current quote state."""
         instrument_type, identity_provenance = _canonical_quote_identity(asset_class)
         now = self._now().isoformat()
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """INSERT INTO quote_snapshots
@@ -526,7 +527,7 @@ class QuoteFactsRepositoryMixin:
 
     def get_latest_quotes_sync(self) -> list[dict[str, Any]]:
         """Read current quotes without replaying append-only quote history."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             assert_quote_current_materialization_on_connection(conn)
             rows = conn.execute("""
@@ -558,7 +559,7 @@ class QuoteFactsRepositoryMixin:
     def list_quote_selection_candidates_sync(self) -> list[dict[str, Any]]:
         """List the bounded persisted frontier used by canonical valuation."""
 
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             return list_quote_selection_candidates_on_connection(conn)
 
@@ -570,7 +571,7 @@ class QuoteFactsRepositoryMixin:
         """Page append-only quote history for explicit audit workflows."""
         if limit <= 0 or limit > 5000 or offset < 0:
             raise ValueError("quote history pagination is invalid")
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM quote_snapshots ORDER BY id DESC LIMIT ? OFFSET ?",
@@ -588,7 +589,7 @@ class QuoteFactsRepositoryMixin:
         """Read a bounded canonical-time page from append-only quote history."""
         if limit <= 0 or limit > 500:
             raise ValueError("recent quote snapshot limit is invalid")
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             identity_filter = ""
             params: tuple[object, ...] = (symbol,)
@@ -645,7 +646,7 @@ class QuoteFactsRepositoryMixin:
     ) -> None:
         """Write one close under an exact typed identity."""
         instrument_type, identity_provenance = _canonical_quote_identity(asset_class)
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.execute(
                 """
                 INSERT INTO daily_close_snapshots_v2
@@ -677,7 +678,7 @@ class QuoteFactsRepositoryMixin:
         instrument_type: str | None = None,
     ) -> dict[str, Any] | None:
         """Read an exact close; untyped compatibility fails on ambiguity."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             params: tuple[object, ...] = (symbol, trade_date)
             identity_filter = ""
@@ -755,7 +756,7 @@ class QuoteFactsRepositoryMixin:
         """Read the latest pre-date quote for one exact instrument identity."""
         resolved_type, _ = _canonical_quote_identity(instrument_type)
         instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """

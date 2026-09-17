@@ -9,6 +9,7 @@ import pytest
 
 from server.persistence.connection import (
     SQLITE_BUSY_TIMEOUT_MS,
+    assert_foreign_key_integrity,
     assert_sqlite_write_baseline,
     connect_sqlite,
     sqlite_runtime_profile,
@@ -54,3 +55,24 @@ def test_write_baseline_detects_weakened_connection():
         conn.execute("PRAGMA foreign_keys=OFF")
         with pytest.raises(RuntimeError, match="sqlite_write_baseline_mismatch"):
             assert_sqlite_write_baseline(conn, require_wal=False)
+
+
+def test_foreign_key_integrity_detects_existing_violation(tmp_path):
+    path = tmp_path / "app.db"
+    with closing(connect_sqlite(path, foreign_keys=False)) as conn:
+        conn.execute("CREATE TABLE parent(id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE child(parent_id INTEGER REFERENCES parent(id))")
+        conn.execute("INSERT INTO child(parent_id) VALUES (99)")
+        conn.commit()
+        with pytest.raises(RuntimeError, match="sqlite_foreign_key_check_failed"):
+            assert_foreign_key_integrity(conn)
+
+
+def test_foreign_key_integrity_accepts_valid_rows(tmp_path):
+    path = tmp_path / "app.db"
+    with closing(connect_sqlite(path)) as conn:
+        conn.execute("CREATE TABLE parent(id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE child(parent_id INTEGER REFERENCES parent(id))")
+        conn.execute("INSERT INTO parent(id) VALUES (1)")
+        conn.execute("INSERT INTO child(parent_id) VALUES (1)")
+        assert_foreign_key_integrity(conn)

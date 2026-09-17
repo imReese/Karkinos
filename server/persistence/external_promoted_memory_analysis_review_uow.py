@@ -25,6 +25,7 @@ from server.contracts.external_promoted_memory_analysis_review import (
     StoredExternalPromotedMemoryAnalysisReview,
 )
 from server.contracts.idempotency import IdempotencyConflict
+from server.persistence.connection import connect_sqlite
 
 EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REVIEW_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_external_promoted_memory_analysis_reviews (
@@ -89,7 +90,7 @@ class ExternalPromotedMemoryAnalysisReviewStore:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")

@@ -16,6 +16,7 @@ from server.contracts.order_state import (
 )
 from server.db import AppDatabase
 from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
+from server.persistence.schema_v1 import initialize_v1_baseline_schema
 
 
 def test_app_database_initializes_quote_fetch_runs_table(tmp_path):
@@ -1890,6 +1891,10 @@ def test_app_database_migrates_full_fill_clearance_to_terminal_outcome_schema(
 ) -> None:
     db_path = tmp_path / "legacy-clearance.db"
     with sqlite3.connect(db_path) as conn:
+        # Start from the frozen v1 baseline so the legacy clearance references
+        # real parent facts. The migration under test changes only clearance shape.
+        initialize_v1_baseline_schema(conn)
+        conn.execute("DROP TABLE controlled_submission_reconciliation_clearances")
         conn.execute("""
             CREATE TABLE controlled_submission_reconciliation_clearances (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1917,6 +1922,69 @@ def test_app_database_migrates_full_fill_clearance_to_terminal_outcome_schema(
                 created_at TEXT NOT NULL
             )
             """)
+        conn.execute(
+            """
+            INSERT INTO oms_orders (
+                order_id, intent_key, symbol, side, asset_class, quantity,
+                order_type, limit_price, status, broker_submission_enabled,
+                source, source_ref, payload_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "OMS-legacy-clearance",
+                "legacy-clearance-intent",
+                "510300",
+                "buy",
+                "fund",
+                100,
+                "market",
+                None,
+                "submitted",
+                0,
+                "legacy-fixture",
+                "legacy-clearance-1",
+                "{}",
+                "2026-07-13T00:00:00+00:00",
+                "2026-07-13T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO controlled_broker_submit_intents (
+                submit_intent_id, submit_fingerprint, order_id, order_fingerprint,
+                confirmation_id, dossier_fingerprint, gateway_id,
+                gateway_verification_fingerprint, release_evidence_id,
+                release_evidence_fingerprint, client_order_id, operator_id,
+                operator_approval_id, status, broker_order_id, broker_status,
+                prepared_at_epoch_ms, prepared_at, payload_json, result_json,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "b" * 64,
+                "c" * 64,
+                "OMS-legacy-clearance",
+                "2" * 64,
+                "legacy-confirmation",
+                "3" * 64,
+                "legacy-gateway",
+                "4" * 64,
+                "legacy-release",
+                "5" * 64,
+                "legacy-client-order",
+                "legacy-operator",
+                "1" * 64,
+                "submitted",
+                "BROKER-legacy-clearance",
+                "submitted",
+                1,
+                "2026-07-13T00:00:00+00:00",
+                "{}",
+                "{}",
+                "2026-07-13T00:00:00+00:00",
+                "2026-07-13T00:00:00+00:00",
+            ),
+        )
         conn.execute(
             """
             INSERT INTO controlled_submission_reconciliation_clearances (

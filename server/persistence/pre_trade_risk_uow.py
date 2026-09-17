@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey
-from server.persistence.connection import DateTimeNow
+from server.persistence.connection import DateTimeNow, connect_sqlite
 from server.persistence.event_log import insert_event_sync
 from server.persistence.quote_current_materialization import (
     assert_quote_current_materialization_on_connection,
@@ -54,7 +54,7 @@ class PreTradeRiskUnitOfWork:
 
         blockers: list[dict[str, Any]] = []
         bindings: list[dict[str, Any]] = []
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:
@@ -103,7 +103,7 @@ class PreTradeRiskUnitOfWork:
     ) -> dict[str, Any]:
         """Revalidate all evidence before the first insert, then commit atomically."""
 
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")

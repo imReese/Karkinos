@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from server.contracts.controlled_broker_cancellation import cancellation_json_object
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_broker_cancellation_records import (
     controlled_broker_cancellation_command_row,
 )
@@ -44,7 +45,7 @@ class ControlledBrokerCancellationStore:
     def get(self, cancel_command_id: str) -> dict[str, Any] | None:
         if not self.schema_available():
             return None
-        with sqlite3.connect(self._path) as connection:
+        with connect_sqlite(self._path) as connection:
             connection.row_factory = sqlite3.Row
             row = connection.execute(
                 """
@@ -61,7 +62,7 @@ class ControlledBrokerCancellationStore:
     def get_for_intent(self, submit_intent_id: str) -> dict[str, Any] | None:
         if not self.schema_available():
             return None
-        with sqlite3.connect(self._path) as connection:
+        with connect_sqlite(self._path) as connection:
             connection.row_factory = sqlite3.Row
             row = connection.execute(
                 """
@@ -78,7 +79,7 @@ class ControlledBrokerCancellationStore:
     def list(self, *, limit: int = 100) -> list[dict[str, Any]]:
         if not self.schema_available():
             return []
-        with sqlite3.connect(self._path) as connection:
+        with connect_sqlite(self._path) as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
@@ -101,7 +102,7 @@ class ControlledBrokerCancellationStore:
             "controlled_broker_cancellation_recovery_claims",
         ):
             return None
-        with sqlite3.connect(self._path) as connection:
+        with connect_sqlite(self._path) as connection:
             connection.row_factory = sqlite3.Row
             claim = connection.execute(
                 """

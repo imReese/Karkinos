@@ -6,7 +6,7 @@ import logging
 import sqlite3
 from typing import Any
 
-from server.persistence.connection import SQLiteRepository
+from server.persistence.connection import SQLiteRepository, connect_sqlite
 from server.persistence.database_normalization import (
     json_dict,
     paper_shadow_run_review_next_step,
@@ -38,7 +38,7 @@ class PaperTradingRepository(
 
     def get_paper_shadow_run_sync(self, run_id: str) -> dict[str, Any] | None:
         """Read one persisted paper/shadow run by ID."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM paper_shadow_runs WHERE run_id = ?",
@@ -58,7 +58,7 @@ class PaperTradingRepository(
             conditions.append("plan_date = ?")
             params.append(plan_date)
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 f"""
@@ -84,7 +84,7 @@ class PaperTradingRepository(
         """Attach an operator review outcome to a paper/shadow run."""
         next_step = paper_shadow_run_review_next_step(review_status)
         now = self._now().isoformat()
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM paper_shadow_runs WHERE run_id = ?",
@@ -158,7 +158,7 @@ class PaperTradingRepository(
 
     def get_order_sync(self, order_id: str) -> dict[str, Any] | None:
         """Read one shared order fact by ID."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM orders WHERE order_id = ?",
@@ -176,7 +176,7 @@ class PaperTradingRepository(
         reviewer: str | None = None,
     ) -> dict[str, Any] | None:
         """Attach an operator divergence review to a paper/shadow order fact."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM orders WHERE order_id = ?",
@@ -244,7 +244,7 @@ class PaperTradingRepository(
             params.append(symbol)
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([limit, offset])
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -262,7 +262,7 @@ class PaperTradingRepository(
         self, *, order_id: str, status: str, note: str = ""
     ) -> dict[str, Any] | None:
         """Update shared order status and append an order status event."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute(
                 """
@@ -294,7 +294,7 @@ class PaperTradingRepository(
 
     def get_manual_order_sync(self, order_id: str) -> dict[str, Any] | None:
         """Read one manual order by ID."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM manual_orders WHERE order_id = ?",
@@ -313,14 +313,14 @@ class PaperTradingRepository(
             params.append(status)
         query += " ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query, tuple(params)).fetchall()
             return [dict(row) for row in rows]
 
     def get_fill_sync(self, fill_id: str) -> dict[str, Any] | None:
         """Read one persisted execution fill by ID."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM fills WHERE fill_id = ?",
@@ -347,7 +347,7 @@ class PaperTradingRepository(
             params.append(symbol)
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([limit, offset])
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""

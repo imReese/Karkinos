@@ -18,6 +18,7 @@ from server.contracts.controlled_broker_cancellation import (
     cancellation_json_object,
     cancellation_mapping,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_broker_cancellation_records import (
     controlled_broker_cancellation_command_row,
     controlled_broker_cancellation_store_rejection,
@@ -48,7 +49,7 @@ class ControlledBrokerCancellationUnitOfWork:
         prepared_at: str,
     ) -> dict[str, Any]:
         ensure_controlled_broker_cancellation_schema(self._path)
-        with sqlite3.connect(self._path, timeout=2) as connection:
+        with connect_sqlite(self._path, timeout=2) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=2000")
             connection.execute("PRAGMA foreign_keys=ON")
@@ -205,7 +206,7 @@ class ControlledBrokerCancellationUnitOfWork:
             "cancellation_unknown",
         }:
             raise ValueError("invalid controlled broker cancellation status")
-        with sqlite3.connect(self._path, timeout=2) as connection:
+        with connect_sqlite(self._path, timeout=2) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=2000")
             connection.execute("BEGIN IMMEDIATE")
@@ -275,7 +276,7 @@ class ControlledBrokerCancellationUnitOfWork:
         claimed_at: str,
     ) -> dict[str, Any]:
         ensure_controlled_broker_cancellation_schema(self._path)
-        with sqlite3.connect(self._path, timeout=2) as connection:
+        with connect_sqlite(self._path, timeout=2) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=2000")
             connection.execute("PRAGMA foreign_keys=ON")
@@ -416,7 +417,7 @@ class ControlledBrokerCancellationUnitOfWork:
         completed_at_epoch_ms: int,
         completed_at: str,
     ) -> dict[str, Any]:
-        with sqlite3.connect(self._path, timeout=2) as connection:
+        with connect_sqlite(self._path, timeout=2) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=2000")
             connection.execute("BEGIN IMMEDIATE")

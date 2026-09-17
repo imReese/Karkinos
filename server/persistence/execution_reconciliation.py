@@ -8,7 +8,7 @@ import sqlite3
 from datetime import timezone
 from typing import Any
 
-from server.persistence.connection import SQLiteRepository
+from server.persistence.connection import SQLiteRepository, connect_sqlite
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
         """Persist one broker gateway audit event."""
         now = self._now(timezone.utc).isoformat()
         payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
                 """
@@ -74,7 +74,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
             params.append(gateway_id)
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([int(limit), int(offset)])
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -103,7 +103,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
             params.append(status)
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([int(limit), int(offset)])
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -131,7 +131,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
         """Persist one execution reconciliation run and replace its items."""
         now = self._now().isoformat()
         payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             existing = conn.execute(
                 """
@@ -211,7 +211,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """List recent execution reconciliation runs."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -229,7 +229,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
         run_id: str,
     ) -> dict[str, Any] | None:
         """Read one execution reconciliation run."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -246,7 +246,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
         run_id: str,
     ) -> list[dict[str, Any]]:
         """List item rows for one execution reconciliation run."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -266,7 +266,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """List execution reconciliation items that still require action."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -299,7 +299,7 @@ class ExecutionReconciliationRepository(SQLiteRepository):
         order_id: str,
     ) -> dict[str, Any] | None:
         """Return the latest persisted reconciliation fact for one OMS order."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path, readonly=True) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """

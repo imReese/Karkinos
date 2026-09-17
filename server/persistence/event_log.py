@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
+
 
 class EventLogRepository:
     """Own normalized event persistence without interpreting event payloads."""
@@ -26,7 +28,7 @@ class EventLogRepository:
         source_ref: str | None = None,
         payload: dict[str, Any] | str | None = None,
     ) -> int:
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             cursor = insert_event_sync(
                 conn,
                 event_type=event_type,
@@ -67,7 +69,7 @@ class EventLogRepository:
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([limit, offset])
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""

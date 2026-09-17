@@ -9,7 +9,7 @@ from typing import Any
 
 from server.contracts.market_calendar import MarketCalendarAutomationPublication
 from server.persistence.automation_runs import upsert_automation_run_in_transaction
-from server.persistence.connection import SQLiteRepository
+from server.persistence.connection import SQLiteRepository, connect_sqlite
 from server.persistence.jobs import require_job_lease
 from server.persistence.market_calendar import (
     bind_market_calendar_verification,
@@ -26,7 +26,7 @@ class MarketCalendarPublicationUnitOfWork(SQLiteRepository):
         command: MarketCalendarAutomationPublication,
     ) -> dict[str, Any]:
         now = self._now().isoformat()
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")

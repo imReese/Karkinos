@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
@@ -80,7 +81,7 @@ class ControlledSessionBudgetRepositoryMixin(ControlledSessionRepositoryAccess):
                 requested,
                 ["budget_reservation_symbol_units_invalid"],
             )
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:
@@ -327,7 +328,7 @@ class ControlledSessionBudgetRepositoryMixin(ControlledSessionRepositoryAccess):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable reservation records newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -344,7 +345,7 @@ class ControlledSessionBudgetRepositoryMixin(ControlledSessionRepositoryAccess):
         reservation_id: str,
     ) -> dict[str, Any] | None:
         """Read one reservation by its deterministic id."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """

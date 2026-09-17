@@ -8,6 +8,7 @@ from typing import Any
 from server.contracts.quote_ingestion import (
     PUBLISHED_QUOTE_RUN_STATUSES,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
@@ -57,7 +58,7 @@ class QuoteFetchRunRepositoryMixin:
             "error_message": error_message,
             "metadata": metadata_payload_value(metadata),
         }
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO quote_fetch_runs (
@@ -154,7 +155,7 @@ class QuoteFetchRunRepositoryMixin:
                 # Unconfirmed publication stays fenced; do not manufacture a terminal
                 # result after a lock/commit failure in a separate transaction.
                 raise
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
             current = conn.execute(
@@ -281,7 +282,7 @@ class QuoteFetchRunRepositoryMixin:
 
     def get_quote_fetch_run(self, run_id: str) -> dict[str, Any] | None:
         """Read one quote fetch run by run_id."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM quote_fetch_runs WHERE run_id = ?",
@@ -311,7 +312,7 @@ class QuoteFetchRunRepositoryMixin:
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.append(limit)
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -338,7 +339,7 @@ def _terminal_completion_replay(
     error_message: str | None,
     metadata: dict[str, Any] | str | None,
 ) -> dict[str, Any] | None:
-    with sqlite3.connect(path) as conn:
+    with connect_sqlite(path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT * FROM quote_fetch_runs WHERE run_id = ? LIMIT 1",

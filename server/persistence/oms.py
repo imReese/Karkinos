@@ -13,7 +13,7 @@ from server.contracts.order_state import (
     OmsTransitionCommand,
     command_identity,
 )
-from server.persistence.connection import SQLiteRepository
+from server.persistence.connection import SQLiteRepository, connect_sqlite
 from server.persistence.event_log import insert_event_sync
 from server.persistence.order_state_claims import (
     get_order_state_command_claim,
@@ -27,7 +27,7 @@ class OmsRepository(SQLiteRepository):
 
     def create_oms_order_sync(self, command: OmsOrderCommand) -> dict[str, Any]:
         """Atomically create one immutable OMS order and initial transition."""
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")
@@ -44,7 +44,7 @@ class OmsRepository(SQLiteRepository):
         command: OmsTransitionCommand,
     ) -> dict[str, Any]:
         """Atomically compare-and-set an OMS order and append its transition."""
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")
@@ -58,7 +58,7 @@ class OmsRepository(SQLiteRepository):
 
     def get_oms_order_sync(self, order_id: str) -> dict[str, Any] | None:
         """Read one OMS order by its stable order ID."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM oms_orders WHERE order_id = ?",
@@ -70,7 +70,7 @@ class OmsRepository(SQLiteRepository):
         self, intent_key: str
     ) -> dict[str, Any] | None:
         """Read one OMS order by its idempotency key."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM oms_orders WHERE intent_key = ?",
@@ -80,7 +80,7 @@ class OmsRepository(SQLiteRepository):
 
     def list_oms_transitions_sync(self, order_id: str) -> list[dict[str, Any]]:
         """List OMS transitions for one order in chronological order."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

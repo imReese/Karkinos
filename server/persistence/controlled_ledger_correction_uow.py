@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_execution_access import (
     ControlledExecutionRepositoryAccess,
 )
@@ -67,7 +68,7 @@ class ControlledLedgerCorrectionUnitOfWorkMixin(ControlledExecutionRepositoryAcc
     ) -> dict[str, Any]:
         """Re-derive and atomically append one exact correction event."""
         requested = dict(correction)
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:

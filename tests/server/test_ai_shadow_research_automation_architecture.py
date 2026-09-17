@@ -170,7 +170,7 @@ def test_shadow_research_sql_schema_and_transactions_have_physical_owners() -> N
     connection_owners = {
         path.name
         for path in PERSISTENCE_PATHS
-        if "sqlite3.connect(" in path.read_text(encoding="utf-8")
+        if "connect_sqlite(" in path.read_text(encoding="utf-8")
     }
     assert connection_owners == {"ai_shadow_research_uow.py"}
     schema_owners = {

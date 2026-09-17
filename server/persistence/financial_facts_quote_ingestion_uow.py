@@ -16,6 +16,7 @@ from server.contracts.quote_ingestion import (
     quote_authority_conflict_fields,
     validate_quote_authority_time,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_normalization import stable_json_fingerprint
 from server.persistence.database_serialization import (
     metadata_payload_value,
@@ -56,7 +57,7 @@ class QuoteIngestionUnitOfWorkMixin:
             quote_timestamp=command.quote_timestamp,
             authority_timestamp=command.captured_at or now,
         )
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
             if command.fetch_run_id:
@@ -71,7 +72,7 @@ class QuoteIngestionUnitOfWorkMixin:
         self,
         run_id: str,
     ) -> list[QuoteIngestionCommand]:
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             return _load_staged_quotes(conn, run_id)
 
@@ -92,7 +93,7 @@ class QuoteIngestionUnitOfWorkMixin:
         if status not in PUBLISHED_QUOTE_RUN_STATUSES or failure_count != 0:
             raise ValueError("only publishable quote-run statuses may be materialized")
         now = self._now(timezone.utc).isoformat()
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
             _require_running_quote_run(conn, run_id)

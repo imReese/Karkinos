@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
@@ -26,7 +27,7 @@ class ControlledSessionGateSnapshotRepositoryMixin(ControlledSessionRepositoryAc
     ) -> dict[str, Any]:
         """Persist one sanitized runtime-gate observation idempotently."""
         requested = dict(snapshot)
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             try:
@@ -142,7 +143,7 @@ class ControlledSessionGateSnapshotRepositoryMixin(ControlledSessionRepositoryAc
         session_id: str,
     ) -> dict[str, Any] | None:
         """Read the newest persisted gate snapshot for one session."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -161,7 +162,7 @@ class ControlledSessionGateSnapshotRepositoryMixin(ControlledSessionRepositoryAc
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List sanitized runtime-gate snapshots newest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -181,7 +182,7 @@ class ControlledSessionGateSnapshotRepositoryMixin(ControlledSessionRepositoryAc
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List one session's persisted gate snapshots oldest first."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -206,7 +207,7 @@ class ControlledSessionGateSnapshotRepositoryMixin(ControlledSessionRepositoryAc
         observed_at_epoch_ms: int,
     ) -> dict[str, Any]:
         """Read admission counters and the exact reserved order capacity."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """

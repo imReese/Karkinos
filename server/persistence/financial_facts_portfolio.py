@@ -22,6 +22,7 @@ from server.contracts.portfolio_trades import (
     PendingFundOrderWrite,
     PendingFundOrderWriteResult,
 )
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_serialization import metadata_payload_value
 from server.persistence.event_log import insert_event_sync
 from server.persistence.manual_trade_uow import ManualTradeUnitOfWork
@@ -49,7 +50,7 @@ class PortfolioFactsRepositoryMixin:
     ) -> None:
         """同步写入组合快照（后台线程调用）。"""
         timestamp = self._now().isoformat()
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             cursor = conn.execute(
                 """INSERT INTO portfolio_snapshots
                    (timestamp, cash, total_equity, positions_json, allocation_json)
@@ -106,7 +107,7 @@ class PortfolioFactsRepositoryMixin:
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
         """List active cash-flow projections and fail closed on drift."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -159,7 +160,7 @@ class PortfolioFactsRepositoryMixin:
     def get_trades_sync(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
         """List ledger-backed trade projections and fail closed on drift."""
 
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -198,7 +199,7 @@ class PortfolioFactsRepositoryMixin:
         self, status: str = "pending"
     ) -> list[dict[str, Any]]:
         """同步读取待确认基金申购。"""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -247,7 +248,7 @@ class PortfolioFactsRepositoryMixin:
 
     def get_total_deposits_sync(self) -> float:
         """Read net deposits from canonical ledger facts only."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             cursor = conn.execute("""
                 SELECT COALESCE(SUM(
                     CASE
