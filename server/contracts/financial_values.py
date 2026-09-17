@@ -146,7 +146,7 @@ def real_projection_matches(
     row: Mapping[str, Any],
     field: str,
     *,
-    legacy_backfill: bool = False,
+    legacy_backfill: bool | None = None,
 ) -> bool:
     legacy = row.get(field)
     exact = row.get(f"{field}_decimal")
@@ -159,6 +159,10 @@ def real_projection_matches(
         actual = float(legacy)
     except (TypeError, ValueError):
         return False
+    if legacy_backfill is None:
+        legacy_backfill = (
+            row.get("decimal_provenance") == LEGACY_REAL_BACKFILL_PROVENANCE
+        )
     if not legacy_backfill:
         return actual == expected
     # SQLite documents that only the first 15 significant decimal digits are

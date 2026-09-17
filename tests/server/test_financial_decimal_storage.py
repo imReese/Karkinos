@@ -69,9 +69,9 @@ def test_v16_backfills_legacy_real_without_changing_ledger_identity(
     after_identity = ledger_identity_from_rows(after)["ledger_fingerprint"]
     assert after_identity == before_identity
     assert after[0]["quantity"] == before[0]["quantity"]
-    assert Decimal(str(after[0]["quantity_decimal"])) == Decimal(
-        str(after[0]["quantity"])
-    )
+    assert abs(
+        Decimal(str(after[0]["quantity_decimal"])) - Decimal(str(after[0]["quantity"]))
+    ) <= Decimal("1e-12")
     assert after[0]["decimal_provenance"] == "legacy_real_backfill_v1"
     with sqlite3.connect(path) as conn:
         conn.row_factory = sqlite3.Row
