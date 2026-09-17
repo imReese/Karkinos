@@ -6,9 +6,15 @@ import json
 import sqlite3
 from typing import Any
 
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_storage_pair,
+    decimal_text,
+    decimal_text_from_mapping,
+)
 from server.persistence.connection import connect_sqlite
 from server.persistence.database_serialization import (
-    decimal_values_equal,
     serialize_metadata_json,
 )
 from server.persistence.event_log import insert_event_sync
@@ -74,13 +80,21 @@ class ExecutionFactUnitOfWorkMixin:
                 )
                 conn.commit()
                 return int(existing["id"])
+            quantity_real, quantity_decimal = decimal_storage_pair(
+                quantity, field="quantity"
+            )
+            price_real, price_decimal = decimal_storage_pair(
+                price, field="price", allow_none=True
+            )
             conn.execute(
                 """
                 INSERT INTO orders (
-                    order_id, timestamp, symbol, side, order_type, quantity, price,
-                    asset_class, intent_id, risk_decision_id, execution_mode, status,
-                    source, source_ref, payload_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    order_id, timestamp, symbol, side, order_type, quantity,
+                    quantity_decimal, price, price_decimal, asset_class, intent_id,
+                    risk_decision_id, execution_mode, status, source, source_ref,
+                    payload_json, created_at, updated_at, currency_code,
+                    decimal_provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     order_id,
@@ -88,8 +102,10 @@ class ExecutionFactUnitOfWorkMixin:
                     symbol,
                     side,
                     order_type,
-                    quantity,
-                    price,
+                    quantity_real,
+                    quantity_decimal,
+                    price_real,
+                    price_decimal,
                     asset_class,
                     intent_id,
                     risk_decision_id,
@@ -100,6 +116,8 @@ class ExecutionFactUnitOfWorkMixin:
                     payload_json,
                     now,
                     now,
+                    DEFAULT_CURRENCY_CODE,
+                    EXACT_DECIMAL_WRITE_PROVENANCE,
                 ),
             )
             row = conn.execute(
@@ -173,14 +191,28 @@ class ExecutionFactUnitOfWorkMixin:
                 )
                 conn.commit()
                 return int(existing["id"])
+            fill_price_real, fill_price_decimal = decimal_storage_pair(
+                fill_price, field="fill_price"
+            )
+            fill_quantity_real, fill_quantity_decimal = decimal_storage_pair(
+                fill_quantity, field="fill_quantity"
+            )
+            commission_real, commission_decimal = decimal_storage_pair(
+                commission, field="commission"
+            )
+            slippage_real, slippage_decimal = decimal_storage_pair(
+                slippage, field="slippage"
+            )
             conn.execute(
                 """
                 INSERT INTO fills (
                     fill_id, order_id, timestamp, symbol, side, fill_price,
-                    fill_quantity, commission, slippage, asset_class,
-                    execution_mode, provider_name, broker_order_id, source,
-                    source_ref, metadata_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    fill_price_decimal, fill_quantity, fill_quantity_decimal,
+                    commission, commission_decimal, slippage, slippage_decimal,
+                    asset_class, execution_mode, provider_name, broker_order_id,
+                    source, source_ref, metadata_json, created_at, updated_at,
+                    currency_code, decimal_provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fill_id,
@@ -188,10 +220,14 @@ class ExecutionFactUnitOfWorkMixin:
                     timestamp,
                     symbol,
                     side,
-                    fill_price,
-                    fill_quantity,
-                    commission,
-                    slippage,
+                    fill_price_real,
+                    fill_price_decimal,
+                    fill_quantity_real,
+                    fill_quantity_decimal,
+                    commission_real,
+                    commission_decimal,
+                    slippage_real,
+                    slippage_decimal,
                     asset_class,
                     execution_mode,
                     provider_name,
@@ -201,6 +237,8 @@ class ExecutionFactUnitOfWorkMixin:
                     metadata_json,
                     now,
                     now,
+                    DEFAULT_CURRENCY_CODE,
+                    EXACT_DECIMAL_WRITE_PROVENANCE,
                 ),
             )
             row = conn.execute(
@@ -256,9 +294,13 @@ def _require_order_replay(
     )
     if any(str(actual or "") != str(expected or "") for actual, expected in fields):
         raise ValueError("order idempotency conflict: fact payload changed")
-    if not decimal_values_equal(row["quantity"], quantity) or not (
+    row_map = dict(row)
+    if decimal_text_from_mapping(row_map, "quantity") != decimal_text(
+        quantity, field="quantity"
+    ) or not (
         (row["price"] is None and price is None)
-        or decimal_values_equal(row["price"], price)
+        or decimal_text_from_mapping(row_map, "price", allow_none=True)
+        == decimal_text(price, field="price", allow_none=True)
     ):
         raise ValueError("order idempotency conflict: numeric fact changed")
     if not _serialized_values_equal(row["payload_json"], payload_json):
@@ -298,13 +340,17 @@ def _require_fill_replay(
     )
     if any(str(actual or "") != str(expected or "") for actual, expected in fields):
         raise ValueError("fill idempotency conflict: fact payload changed")
+    row_map = dict(row)
     values = (
-        (row["fill_price"], fill_price),
-        (row["fill_quantity"], fill_quantity),
-        (row["commission"], commission),
-        (row["slippage"], slippage),
+        ("fill_price", fill_price),
+        ("fill_quantity", fill_quantity),
+        ("commission", commission),
+        ("slippage", slippage),
     )
-    if any(not decimal_values_equal(actual, expected) for actual, expected in values):
+    if any(
+        decimal_text_from_mapping(row_map, field) != decimal_text(expected, field=field)
+        for field, expected in values
+    ):
         raise ValueError("fill idempotency conflict: numeric fact changed")
     if not _serialized_values_equal(row["metadata_json"], metadata_json):
         raise ValueError("fill idempotency conflict: evidence changed")

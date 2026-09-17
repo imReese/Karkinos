@@ -6,6 +6,11 @@ import asyncio
 import sqlite3
 from typing import Any
 
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_storage_pair,
+)
 from server.contracts.portfolio_cash_flows import (
     CashFlowCorrectionResult,
     CashFlowCorrectionWrite,
@@ -50,17 +55,27 @@ class PortfolioFactsRepositoryMixin:
     ) -> None:
         """同步写入组合快照（后台线程调用）。"""
         timestamp = self._now().isoformat()
+        cash_real, cash_decimal = decimal_storage_pair(cash, field="cash")
+        equity_real, equity_decimal = decimal_storage_pair(
+            total_equity, field="total_equity"
+        )
         with connect_sqlite(self._path) as conn:
             cursor = conn.execute(
                 """INSERT INTO portfolio_snapshots
-                   (timestamp, cash, total_equity, positions_json, allocation_json)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   (timestamp, cash, cash_decimal, total_equity,
+                    total_equity_decimal, positions_json, allocation_json,
+                    currency_code, decimal_provenance)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     timestamp,
-                    cash,
-                    total_equity,
+                    cash_real,
+                    cash_decimal,
+                    equity_real,
+                    equity_decimal,
                     positions_json,
                     allocation_json,
+                    DEFAULT_CURRENCY_CODE,
+                    EXACT_DECIMAL_WRITE_PROVENANCE,
                 ),
             )
             snapshot_id = cursor.lastrowid or 0

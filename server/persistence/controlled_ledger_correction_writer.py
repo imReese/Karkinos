@@ -6,6 +6,11 @@ import sqlite3
 from decimal import Decimal
 from typing import Any
 
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_storage_pair,
+)
 from server.persistence.database_serialization import normalize_timestamp
 from server.persistence.event_log import (
     insert_event_sync,
@@ -33,20 +38,32 @@ def insert_controlled_ledger_correction(
     quantity_delta = Decimal(after["quantity"]) - Decimal(before["quantity"])
     effective_at = normalize_timestamp(derived_plan["effective_at"])
     correction_payload_json = _serialize_event_payload_json(derived_plan)
+    amount_real, amount_decimal = decimal_storage_pair(
+        derived_plan["cash_delta"], field="amount"
+    )
+    quantity_real, quantity_decimal = decimal_storage_pair(
+        quantity_delta, field="quantity"
+    )
+    commission_real, commission_decimal = decimal_storage_pair(0, field="commission")
     cursor = conn.execute(
         """
         INSERT INTO ledger_entries (
-            entry_type, timestamp, amount, symbol, direction,
-            quantity, price, commission, correction_payload_json,
-            asset_class, note, source, source_ref, created_at
-        ) VALUES (?, ?, ?, ?, NULL, ?, NULL, 0, ?, ?, ?, ?, ?, ?)
+            entry_type, timestamp, amount, amount_decimal, symbol, direction,
+            quantity, quantity_decimal, price, price_decimal, commission,
+            commission_decimal, correction_payload_json, asset_class, note,
+            source, source_ref, created_at, currency_code, decimal_provenance
+        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             CONTROLLED_SUBMISSION_LEDGER_CORRECTION_ENTRY_TYPE,
             effective_at,
-            float(Decimal(derived_plan["cash_delta"])),
+            amount_real,
+            amount_decimal,
             derived_plan["symbol"],
-            float(quantity_delta),
+            quantity_real,
+            quantity_decimal,
+            commission_real,
+            commission_decimal,
             correction_payload_json,
             derived_plan["asset_class"],
             (
@@ -56,6 +73,8 @@ def insert_controlled_ledger_correction(
             CONTROLLED_SUBMISSION_LEDGER_CORRECTION_SOURCE,
             requested["correction_id"],
             requested["applied_at"],
+            DEFAULT_CURRENCY_CODE,
+            EXACT_DECIMAL_WRITE_PROVENANCE,
         ),
     )
     correction_entry_id = int(cursor.lastrowid or 0)

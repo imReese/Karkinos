@@ -139,6 +139,32 @@ def _fixture_database(
                         "UPDATE ledger_entries SET timestamp = ? WHERE id = ?",
                         (timestamp, canonical_id),
                     )
+        # This fixture models facts that existed before v16 and were then
+        # backfilled by the exact-decimal migration. Do not create impossible
+        # REAL-only rows inside an already-v16 database.
+        conn.execute(
+            """
+            UPDATE trades SET
+                quantity_decimal = CAST(quantity AS TEXT),
+                price_decimal = CAST(price AS TEXT),
+                commission_decimal = CAST(commission AS TEXT),
+                currency_code = 'CNY',
+                decimal_provenance = 'legacy_real_backfill_v1'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE ledger_entries SET
+                amount_decimal = CASE WHEN amount IS NULL THEN NULL ELSE CAST(amount AS TEXT) END,
+                quantity_decimal = CASE WHEN quantity IS NULL THEN NULL ELSE CAST(quantity AS TEXT) END,
+                price_decimal = CASE WHEN price IS NULL THEN NULL ELSE CAST(price AS TEXT) END,
+                commission_decimal = CAST(commission AS TEXT),
+                gross_amount_decimal = CASE WHEN gross_amount IS NULL THEN NULL ELSE CAST(gross_amount AS TEXT) END,
+                net_cash_impact_decimal = CASE WHEN net_cash_impact IS NULL THEN NULL ELSE CAST(net_cash_impact AS TEXT) END,
+                currency_code = 'CNY',
+                decimal_provenance = 'legacy_real_backfill_v1'
+            """
+        )
         conn.commit()
 
 

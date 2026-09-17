@@ -6,6 +6,13 @@ import math
 import sqlite3
 from typing import Any
 
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_from_mapping,
+    decimal_storage_pair,
+    real_projection_matches,
+)
 from server.contracts.portfolio_cash_flows import CashFlowWrite
 from server.persistence.database_serialization import normalize_timestamp
 
@@ -51,17 +58,23 @@ def insert_cash_flow_projection(
     *,
     created_at: str,
 ) -> int:
+    amount_real, amount_decimal = decimal_storage_pair(command.amount, field="amount")
     cursor = conn.execute(
         """
-        INSERT INTO cash_flows (timestamp, amount, flow_type, note, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO cash_flows (
+            timestamp, amount, amount_decimal, flow_type, note, created_at,
+            currency_code, decimal_provenance
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             command.timestamp,
-            command.amount,
+            amount_real,
+            amount_decimal,
             command.flow_type,
             command.note,
             created_at,
+            DEFAULT_CURRENCY_CODE,
+            EXACT_DECIMAL_WRITE_PROVENANCE,
         ),
     )
     return int(cursor.lastrowid or 0)
@@ -103,6 +116,8 @@ def validate_cash_flow_projection(
     ledger: dict[str, Any],
 ) -> None:
     checks = {
+        "cash_flow_amount_projection": real_projection_matches(cash_flow, "amount"),
+        "ledger_amount_projection": real_projection_matches(ledger, "amount"),
         "source": str(ledger.get("source") or "") == "portfolio_cash_flow",
         "source_ref": str(ledger.get("source_ref") or "")
         == f"cash_flow:{int(cash_flow['id'])}",
@@ -110,8 +125,8 @@ def validate_cash_flow_projection(
         == cash_flow_entry_type(str(cash_flow.get("flow_type") or "")),
         "timestamp": normalize_timestamp(str(ledger.get("timestamp") or ""))
         == normalize_timestamp(str(cash_flow.get("timestamp") or "")),
-        "amount": float(ledger.get("amount") or 0.0)
-        == float(cash_flow.get("amount") or 0.0),
+        "amount": decimal_from_mapping(ledger, "amount")
+        == decimal_from_mapping(cash_flow, "amount"),
         "note": str(ledger.get("note") or "") == str(cash_flow.get("note") or ""),
     }
     drifted = [field for field, matches in checks.items() if not matches]

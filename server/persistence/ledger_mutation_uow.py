@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from server.contracts.content_identity import canonical_json, content_fingerprint
+from server.contracts.financial_values import (
+    decimal_storage_pair,
+    decimal_text_from_mapping,
+)
 from server.contracts.idempotency import IdempotencyConflict
 from server.contracts.ledger_mutations import (
     LedgerAppendCommand,
@@ -188,12 +192,33 @@ class LedgerMutationUnitOfWork:
                 )
                 self._inject("after_claim")
                 estimates = _estimated_trade_costs(current)
+                commission_real, commission_decimal = decimal_storage_pair(
+                    command.commission, field="commission"
+                )
+                net_real, net_decimal = decimal_storage_pair(
+                    command.net_cash_impact, field="net_cash_impact"
+                )
+                estimated_commission_real, estimated_commission_decimal = (
+                    decimal_storage_pair(
+                        estimates["commission_decimal"],
+                        field="estimated_commission",
+                        allow_none=True,
+                    )
+                )
+                estimated_net_real, estimated_net_decimal = decimal_storage_pair(
+                    estimates["net_cash_impact_decimal"],
+                    field="estimated_net_cash_impact",
+                    allow_none=True,
+                )
                 cursor = conn.execute(
                     """
                     UPDATE ledger_entries
-                    SET commission = ?, net_cash_impact = ?, fee_breakdown_json = ?,
-                        fee_rule_id = ?, fee_rule_version = ?,
-                        estimated_commission = ?, estimated_net_cash_impact = ?,
+                    SET commission = ?, commission_decimal = ?,
+                        net_cash_impact = ?, net_cash_impact_decimal = ?,
+                        fee_breakdown_json = ?, fee_rule_id = ?, fee_rule_version = ?,
+                        estimated_commission = ?, estimated_commission_decimal = ?,
+                        estimated_net_cash_impact = ?,
+                        estimated_net_cash_impact_decimal = ?,
                         estimated_fee_breakdown_json = ?, estimated_fee_rule_id = ?,
                         estimated_fee_rule_version = ?, settlement_status = 'confirmed',
                         settled_at = ?, settlement_source = ?, settlement_source_ref = ?,
@@ -202,13 +227,17 @@ class LedgerMutationUnitOfWork:
                       AND (settlement_status IS NULL OR settlement_status = '')
                     """,
                     (
-                        command.commission,
-                        command.net_cash_impact,
+                        commission_real,
+                        commission_decimal,
+                        net_real,
+                        net_decimal,
                         command.fee_breakdown_json,
                         command.fee_rule_id,
                         command.fee_rule_version,
-                        estimates["commission"],
-                        estimates["net_cash_impact"],
+                        estimated_commission_real,
+                        estimated_commission_decimal,
+                        estimated_net_real,
+                        estimated_net_decimal,
                         estimates["fee_breakdown_json"],
                         estimates["fee_rule_id"],
                         estimates["fee_rule_version"],
@@ -425,16 +454,30 @@ def _load_all_ledger_entries(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def _estimated_trade_costs(current: dict[str, Any]) -> dict[str, Any]:
+    commission = (
+        current.get("estimated_commission")
+        if current.get("estimated_commission") is not None
+        else current.get("commission")
+    )
+    net_cash_impact = (
+        current.get("estimated_net_cash_impact")
+        if current.get("estimated_net_cash_impact") is not None
+        else current.get("net_cash_impact")
+    )
     return {
-        "commission": (
-            current.get("estimated_commission")
+        "commission": commission,
+        "commission_decimal": (
+            decimal_text_from_mapping(current, "estimated_commission", allow_none=True)
             if current.get("estimated_commission") is not None
-            else current.get("commission")
+            else decimal_text_from_mapping(current, "commission", allow_none=True)
         ),
-        "net_cash_impact": (
-            current.get("estimated_net_cash_impact")
+        "net_cash_impact": net_cash_impact,
+        "net_cash_impact_decimal": (
+            decimal_text_from_mapping(
+                current, "estimated_net_cash_impact", allow_none=True
+            )
             if current.get("estimated_net_cash_impact") is not None
-            else current.get("net_cash_impact")
+            else decimal_text_from_mapping(current, "net_cash_impact", allow_none=True)
         ),
         "fee_breakdown_json": (
             current.get("estimated_fee_breakdown_json")

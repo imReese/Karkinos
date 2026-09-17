@@ -152,9 +152,9 @@ def ledger_capital_flow_amount(entry: LedgerEntry) -> Decimal | None:
     entry_type = (entry.entry_type or "").strip().lower()
     if entry_type not in _CAPITAL_INFLOW_LEDGER_TYPES | _CAPITAL_OUTFLOW_LEDGER_TYPES:
         return None
-    if entry.amount is None:
+    amount = entry.decimal("amount", allow_none=True)
+    if amount is None:
         return None
-    amount = Decimal(str(entry.amount))
     if entry_type in _CAPITAL_OUTFLOW_LEDGER_TYPES:
         return -amount
     return amount

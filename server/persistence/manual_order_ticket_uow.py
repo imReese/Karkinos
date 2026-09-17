@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from server.contracts.content_identity import canonical_json
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_storage_pair,
+)
 from server.contracts.order_state import (
     ManualOrderStateCommand,
     ManualOrderTicketCommand,
@@ -97,14 +102,21 @@ class ManualOrderTicketUnitOfWorkMixin:
             )
             stored_payload = {**command.payload, "command_identity": identity}
             payload_json = canonical_json(stored_payload)
+            quantity_real, quantity_decimal = decimal_storage_pair(
+                command.quantity, field="quantity"
+            )
+            price_real, price_decimal = decimal_storage_pair(
+                command.price, field="price", allow_none=True
+            )
 
             conn.execute(
                 """
                 INSERT INTO manual_orders (
-                    order_id, timestamp, symbol, side, order_type, quantity, price,
-                    intent_id, risk_decision_id, execution_mode, status, payload_json,
-                    note, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)
+                    order_id, timestamp, symbol, side, order_type, quantity,
+                    quantity_decimal, price, price_decimal, intent_id, risk_decision_id,
+                    execution_mode, status, payload_json, note, created_at, updated_at,
+                    currency_code, decimal_provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?)
                 """,
                 (
                     command.order_id,
@@ -112,8 +124,10 @@ class ManualOrderTicketUnitOfWorkMixin:
                     command.symbol,
                     command.side.lower(),
                     command.order_type.lower(),
-                    float(command.quantity),
-                    command.price,
+                    quantity_real,
+                    quantity_decimal,
+                    price_real,
+                    price_decimal,
                     command.intent_id,
                     command.risk_decision_id,
                     command.execution_mode,
@@ -121,15 +135,19 @@ class ManualOrderTicketUnitOfWorkMixin:
                     payload_json,
                     now,
                     now,
+                    DEFAULT_CURRENCY_CODE,
+                    EXACT_DECIMAL_WRITE_PROVENANCE,
                 ),
             )
             conn.execute(
                 """
                 INSERT INTO orders (
-                    order_id, timestamp, symbol, side, order_type, quantity, price,
-                    asset_class, intent_id, risk_decision_id, execution_mode, status,
-                    source, source_ref, payload_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    order_id, timestamp, symbol, side, order_type, quantity,
+                    quantity_decimal, price, price_decimal, asset_class, intent_id,
+                    risk_decision_id, execution_mode, status, source, source_ref,
+                    payload_json, created_at, updated_at, currency_code,
+                    decimal_provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     command.order_id,
@@ -137,8 +155,10 @@ class ManualOrderTicketUnitOfWorkMixin:
                     command.symbol,
                     command.side.lower(),
                     command.order_type.lower(),
-                    float(command.quantity),
-                    command.price,
+                    quantity_real,
+                    quantity_decimal,
+                    price_real,
+                    price_decimal,
                     command.asset_class,
                     command.intent_id,
                     command.risk_decision_id,
@@ -149,6 +169,8 @@ class ManualOrderTicketUnitOfWorkMixin:
                     payload_json,
                     now,
                     now,
+                    DEFAULT_CURRENCY_CODE,
+                    EXACT_DECIMAL_WRITE_PROVENANCE,
                 ),
             )
             if command.action_id is not None:

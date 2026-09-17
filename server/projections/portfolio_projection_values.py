@@ -73,8 +73,9 @@ def trade_side(entry: LedgerEntry) -> str:
 
 
 def trade_total_fee(entry: LedgerEntry) -> Decimal:
+    commission = entry.decimal("commission")
     return total_trade_fee(
-        commission=as_decimal(entry.commission),
+        commission=commission if commission is not None else Decimal("0"),
         fee_breakdown=entry.fee_breakdown,
     )
 

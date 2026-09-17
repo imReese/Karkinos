@@ -5,6 +5,11 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.contracts.financial_values import (
+    DEFAULT_CURRENCY_CODE,
+    EXACT_DECIMAL_WRITE_PROVENANCE,
+    decimal_storage_pair,
+)
 from server.persistence.controlled_clearance_repository import (
     get_fill,
     get_saved_clearance,
@@ -59,15 +64,26 @@ def _insert_fills(
         if get_fill(conn, fill["fill_id"]) is not None:
             return ["controlled_submission_fill_id_conflict"]
         metadata_json = serialize_metadata_json(fill["metadata"])
+        fill_price_real, fill_price_decimal = decimal_storage_pair(
+            fill["fill_price"], field="fill_price"
+        )
+        fill_quantity_real, fill_quantity_decimal = decimal_storage_pair(
+            fill["fill_quantity"], field="fill_quantity"
+        )
+        commission_real, commission_decimal = decimal_storage_pair(
+            fill["fee"], field="commission"
+        )
+        slippage_real, slippage_decimal = decimal_storage_pair(0, field="slippage")
         conn.execute(
             """
                 INSERT INTO fills (
-                    fill_id, order_id, timestamp, symbol, side,
-                    fill_price, fill_quantity, commission, slippage,
-                    asset_class, execution_mode, provider_name,
-                    broker_order_id, source, source_ref, metadata_json,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    fill_id, order_id, timestamp, symbol, side, fill_price,
+                    fill_price_decimal, fill_quantity, fill_quantity_decimal,
+                    commission, commission_decimal, slippage, slippage_decimal,
+                    asset_class, execution_mode, provider_name, broker_order_id,
+                    source, source_ref, metadata_json, created_at, updated_at,
+                    currency_code, decimal_provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             (
                 fill["fill_id"],
@@ -75,10 +91,14 @@ def _insert_fills(
                 fill["timestamp"],
                 fill["symbol"],
                 fill["side"],
-                float(fill["fill_price"]),
-                float(fill["fill_quantity"]),
-                float(fill["fee"]),
-                0.0,
+                fill_price_real,
+                fill_price_decimal,
+                fill_quantity_real,
+                fill_quantity_decimal,
+                commission_real,
+                commission_decimal,
+                slippage_real,
+                slippage_decimal,
                 fill["asset_class"],
                 "controlled_live",
                 fill["provider_name"],
@@ -88,6 +108,8 @@ def _insert_fills(
                 metadata_json,
                 requested["cleared_at"],
                 requested["cleared_at"],
+                DEFAULT_CURRENCY_CODE,
+                EXACT_DECIMAL_WRITE_PROVENANCE,
             ),
         )
         saved_fill = get_fill(conn, fill["fill_id"])

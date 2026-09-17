@@ -18,6 +18,7 @@ from server.persistence.connection import (
     assert_sqlite_write_baseline,
     connect_sqlite,
 )
+from server.persistence.financial_decimal_storage import assert_exact_financial_storage
 from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
 from server.persistence.market_identity_migrations import (
     legacy_daily_close_reconciliation_needed_on_connection,
@@ -109,6 +110,7 @@ def database_runtime(database_path: str | Path):
     path = Path(database_path).expanduser().absolute()
     with _initialization_lock(path, 0, shared=True):
         require_database_ready(path)
+        _assert_runtime_financial_storage(path)
         yield
 
 
@@ -123,6 +125,7 @@ def database_maintenance(database_path: str | Path, *, timeout_seconds: float = 
     path = Path(database_path).expanduser().absolute()
     with _initialization_lock(path, timeout_seconds):
         require_database_ready(path)
+        _assert_runtime_financial_storage(path)
         yield
 
 
@@ -141,6 +144,7 @@ def initialize_database(
     if status.blocked:
         raise DatabasePreparationError(status)
     if status.state == "current" and not _database_requires_maintenance(path):
+        _assert_runtime_financial_storage(path)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + lock_timeout_seconds
@@ -152,6 +156,7 @@ def initialize_database(
             if status.blocked:
                 raise DatabasePreparationError(status)
             if status.state == "current" and not _database_requires_maintenance(path):
+                _assert_runtime_financial_storage(path)
                 return
             try:
                 ownership.enter_context(_initialization_lock(path, 0))
@@ -165,6 +170,7 @@ def initialize_database(
         if status.blocked:
             raise DatabasePreparationError(status)
         if status.state == "current" and not _database_requires_maintenance(path):
+            _assert_runtime_financial_storage(path)
             return
         record_path, record = begin_preparation(status)
         logger.info("Preparing database %s; migration record: %s", path, record_path)
@@ -204,6 +210,13 @@ def initialize_database(
                 f"{record_path}; "
                 "inspect database status before retrying; do not restore automatically"
             ) from None
+
+
+def _assert_runtime_financial_storage(database_path: Path) -> None:
+    if not database_path.is_file():
+        return
+    with closing(connect_sqlite(database_path, readonly=True)) as conn:
+        assert_exact_financial_storage(conn)
 
 
 def _database_requires_maintenance(database_path: Path) -> bool:
@@ -305,6 +318,7 @@ def _initialize_on_connection(conn: sqlite3.Connection, database_path: Path) -> 
         if conn.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
             raise RuntimeError("database_initialization_integrity_failed")
         assert_foreign_key_integrity(conn)
+        assert_exact_financial_storage(conn)
         conn.set_authorizer(None)
         conn.commit()
     except BaseException as exc:

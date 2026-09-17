@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
+
+from server.contracts.financial_values import (
+    LEGACY_REAL_BACKFILL_PROVENANCE,
+    decimal_value,
+)
 
 
 @dataclass(slots=True)
@@ -26,6 +32,16 @@ class LedgerEntry:
     fee_rule_version: str | None = None
     estimated_commission: float | None = None
     estimated_net_cash_impact: float | None = None
+    amount_decimal: str | None = None
+    quantity_decimal: str | None = None
+    price_decimal: str | None = None
+    commission_decimal: str | None = None
+    gross_amount_decimal: str | None = None
+    net_cash_impact_decimal: str | None = None
+    estimated_commission_decimal: str | None = None
+    estimated_net_cash_impact_decimal: str | None = None
+    currency_code: str | None = None
+    decimal_provenance: str | None = None
     estimated_fee_breakdown: dict[str, Any] | None = None
     estimated_fee_rule_id: str | None = None
     estimated_fee_rule_version: str | None = None
@@ -62,6 +78,20 @@ class LedgerEntry:
             fee_rule_version=row.get("fee_rule_version"),
             estimated_commission=_as_float(row.get("estimated_commission")),
             estimated_net_cash_impact=_as_float(row.get("estimated_net_cash_impact")),
+            amount_decimal=_as_text(row.get("amount_decimal")),
+            quantity_decimal=_as_text(row.get("quantity_decimal")),
+            price_decimal=_as_text(row.get("price_decimal")),
+            commission_decimal=_as_text(row.get("commission_decimal")),
+            gross_amount_decimal=_as_text(row.get("gross_amount_decimal")),
+            net_cash_impact_decimal=_as_text(row.get("net_cash_impact_decimal")),
+            estimated_commission_decimal=_as_text(
+                row.get("estimated_commission_decimal")
+            ),
+            estimated_net_cash_impact_decimal=_as_text(
+                row.get("estimated_net_cash_impact_decimal")
+            ),
+            currency_code=_as_text(row.get("currency_code")),
+            decimal_provenance=_as_text(row.get("decimal_provenance")),
             estimated_fee_breakdown=_as_fee_breakdown(
                 row.get("estimated_fee_breakdown_json")
             ),
@@ -80,6 +110,25 @@ class LedgerEntry:
             source_ref=row.get("source_ref"),
             created_at=row.get("created_at"),
         )
+
+    def decimal(self, field: str, *, allow_none: bool = False) -> Decimal | None:
+        """Return the exact persisted financial value when v16 storage exists."""
+
+        legacy = getattr(self, field)
+        if self.decimal_provenance == LEGACY_REAL_BACKFILL_PROVENANCE:
+            return decimal_value(legacy, field=field, allow_none=allow_none)
+        exact_name = f"{field}_decimal"
+        if hasattr(self, exact_name):
+            exact = getattr(self, exact_name)
+            if exact not in {None, ""}:
+                return decimal_value(exact, field=field, allow_none=allow_none)
+        return decimal_value(legacy, field=field, allow_none=allow_none)
+
+
+def _as_text(value: object | None) -> str | None:
+    if value in {None, ""}:
+        return None
+    return str(value)
 
 
 def _as_float(value: object | None) -> float | None:

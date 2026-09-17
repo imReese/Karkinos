@@ -10,6 +10,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from data.market_data import is_fund_estimate_quote_source
+from server.contracts.financial_values import strip_financial_storage_mirrors
 from server.contracts.quote_ingestion import (
     quote_authority_conflict_fields,
     quote_timestamp_instant,
@@ -437,7 +438,7 @@ def ledger_identity_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Build the canonical ledger cutoff/fingerprint from persisted rows."""
 
     normalized_rows = sorted(
-        (dict(row) for row in rows),
+        (strip_financial_storage_mirrors(row) for row in rows),
         key=lambda row: (
             int(row.get("id") or 0),
             _parse_timestamp(row.get("timestamp")),
