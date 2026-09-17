@@ -218,3 +218,17 @@ def test_v16_noncanonical_exact_write_blocks_startup(
 
     with pytest.raises(RuntimeError, match="financial_decimal_not_canonical"):
         _initialize_through(path, 16, monkeypatch)
+
+
+def test_legacy_real_backfill_allows_only_sqlite_text_rendering_loss() -> None:
+    from server.contracts.financial_values import real_projection_matches
+
+    row = {
+        "quantity": 456.62100456621005,
+        "quantity_decimal": "456.62100456621",
+    }
+    assert real_projection_matches(row, "quantity", legacy_backfill=True)
+    assert not real_projection_matches(row, "quantity")
+
+    drifted = {**row, "quantity_decimal": "456.6211"}
+    assert not real_projection_matches(drifted, "quantity", legacy_backfill=True)
