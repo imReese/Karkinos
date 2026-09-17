@@ -13,6 +13,10 @@ from contextlib import ExitStack, closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from server.persistence.connection import (
+    assert_sqlite_write_baseline,
+    connect_sqlite,
+)
 from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
 from server.persistence.market_identity_migrations import (
     migrate_legacy_daily_closes_on_connection,
@@ -149,7 +153,15 @@ def initialize_database(
         logger.info("Preparing database %s; migration record: %s", path, record_path)
         try:
             with closing(
-                sqlite3.connect(path, timeout=2, factory=AtomicSchemaConnection),
+                # Frozen legacy schema repair predates FK enforcement and may
+                # rebuild child tables before historical parent facts exist.
+                # Keep preparation compatibility-scoped; ordinary write
+                # connections use foreign_keys=ON by default.
+                connect_sqlite(
+                    path,
+                    factory=AtomicSchemaConnection,
+                    foreign_keys=False,
+                ),
             ) as conn:
                 _initialize_on_connection(conn, path)
         except BaseException:
@@ -181,7 +193,6 @@ def _initialize_on_connection(conn: sqlite3.Connection, database_path: Path) -> 
     phase = "compatibility"
     started = time.monotonic()
     try:
-        conn.execute("PRAGMA busy_timeout=2000")
         assert_schema_compatible(
             conn,
             baseline_initializer=initialize_v1_baseline_schema,
@@ -190,6 +201,8 @@ def _initialize_on_connection(conn: sqlite3.Connection, database_path: Path) -> 
         journal_mode = conn.execute("PRAGMA journal_mode").fetchone()
         if journal_mode and str(journal_mode[0]).lower() != "wal":
             conn.execute("PRAGMA journal_mode=WAL")
+        profile = assert_sqlite_write_baseline(conn, require_foreign_keys=False)
+        logger.info("SQLite migration profile: %s", profile)
         conn.execute("BEGIN IMMEDIATE")
         # Recheck while holding SQLite's write reservation as well as the
         # managed-process lock. Migration SQL must not commit the outer unit.

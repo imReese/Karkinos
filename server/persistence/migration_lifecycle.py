@@ -6,6 +6,7 @@ an unknown schema, rewrite a checksum, or restore a database automatically.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -18,6 +19,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from server.persistence.connection import connect_sqlite
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,7 @@ class DatabaseStatus:
     def as_dict(self) -> dict[str, Any]:
         result = asdict(self)
         result["path"] = str(self.path)
+        result["sqlite_version"] = sqlite3.sqlite_version
         result["recovery_records"] = recovery_records(self)
         return result
 
@@ -48,6 +52,7 @@ class DatabaseStatus:
         lines = [
             f"Database state: {self.state}",
             f"Database: {self.path}",
+            f"SQLite: {sqlite3.sqlite_version}",
             f"Code schema: {code_version}; database schema: {db_version}",
         ]
         if self.reason:
@@ -69,6 +74,9 @@ class DatabaseStatus:
                     f"ledger comparison: {item['ledger_comparison']}"
                 )
                 lines.append(f"  Record: {item['path']}")
+                registry = item.get("verified_registry_snapshot")
+                if registry:
+                    lines.append(f"  Verified migration registry: {registry}")
                 for backup in item["verified_backups"]:
                     lines.append(f"  Verified backup: {backup}")
             lines.extend(
@@ -96,7 +104,7 @@ class DatabasePreparationError(RuntimeError):
 def migration_definitions() -> tuple[dict[str, Any], ...]:
     # Resolve dynamically: tests and development can append migrations without
     # stale CURRENT_SCHEMA_VERSION constants becoming the compatibility owner.
-    from server.persistence.migrations import _MIGRATIONS
+    from server.persistence.migrations import migration_registry
 
     return tuple(
         {
@@ -107,13 +115,16 @@ def migration_definitions() -> tuple[dict[str, Any], ...]:
             "blockers": [list(blocker) for blocker in item.blockers],
             "schema_contract_checksum": item.schema_contract_checksum,
         }
-        for item in _MIGRATIONS
+        for item in migration_registry()
     )
 
 
 def inspect_database(database_path: str | Path) -> DatabaseStatus:
     """Inspect without creating a database, running migrations or providers."""
-    from server.persistence.migrations import assert_schema_compatible
+    from server.persistence.migrations import (
+        assert_migration_table_structure,
+        assert_schema_compatible,
+    )
     from server.persistence.schema_v1 import initialize_v1_baseline_schema
 
     path = Path(database_path).expanduser().absolute()
@@ -129,10 +140,7 @@ def inspect_database(database_path: str | Path) -> DatabaseStatus:
             path, "invalid_database", applied, expected, "Unsafe database path"
         )
     try:
-        with closing(
-            sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2),
-        ) as conn:
-            conn.execute("PRAGMA query_only=ON")
+        with closing(connect_sqlite(path, readonly=True)) as conn:
             conn.execute("BEGIN")
             tables = {
                 row[0]
@@ -141,6 +149,7 @@ def inspect_database(database_path: str | Path) -> DatabaseStatus:
                 )
             }
             if "schema_migrations" in tables:
+                assert_migration_table_structure(conn)
                 applied = tuple(
                     dict(
                         zip(
@@ -225,6 +234,22 @@ def recovery_records(status: DatabaseStatus) -> list[dict[str, Any]]:
                 comparison = "before_present"
             else:
                 comparison = "different_history"
+            registry_snapshot = None
+            registry = record.get("registry_snapshot")
+            if (
+                isinstance(registry, dict)
+                and registry.get("file") == "migration-registry.json"
+            ):
+                saved = path.parent / "migration-registry.json"
+                if (
+                    not saved.is_symlink()
+                    and saved.is_file()
+                    and saved.stat().st_nlink == 1
+                ):
+                    with saved.open("rb") as data:
+                        digest = hashlib.file_digest(data, "sha256").hexdigest()
+                    if digest == registry.get("sha256"):
+                        registry_snapshot = str(saved)
             backups = []
             for item in record.get("backups", []):
                 name = item["file"]
@@ -248,6 +273,7 @@ def recovery_records(status: DatabaseStatus) -> list[dict[str, Any]]:
                     "state": record.get("state"),
                     "started_at": str(record.get("started_at", "")),
                     "ledger_comparison": comparison,
+                    "verified_registry_snapshot": registry_snapshot,
                     "verified_backups": backups,
                 }
             )
@@ -291,6 +317,18 @@ def write_record(path: Path, record: dict[str, Any]) -> None:
         _fsync_directory(path.parent)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def write_registry_snapshot(
+    directory: Path, definitions: tuple[dict[str, Any], ...]
+) -> dict[str, str]:
+    """Persist the exact evaluated migration registry as recovery material."""
+
+    path = directory / "migration-registry.json"
+    write_record(path, {"format": 1, "migrations": list(definitions)})
+    with path.open("rb") as saved:
+        digest = hashlib.file_digest(saved, "sha256").hexdigest()
+    return {"file": path.name, "sha256": digest}
 
 
 def source_identity() -> dict[str, Any]:
@@ -342,10 +380,8 @@ def backup_database(source: Path, destination: Path, *, timeout: float = 30) -> 
         if time.monotonic() >= deadline:
             raise TimeoutError("migration_backup_timeout")
 
-    with closing(
-        sqlite3.connect(source.as_uri() + "?mode=ro", uri=True, timeout=2),
-    ) as origin:
-        with closing(sqlite3.connect(destination)) as target:
+    with closing(connect_sqlite(source, readonly=True)) as origin:
+        with closing(connect_sqlite(destination)) as target:
             origin.backup(target, pages=256, progress=progress, sleep=0.05)
             if target.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
                 raise RuntimeError("migration_backup_integrity_failed")
@@ -362,13 +398,16 @@ def begin_preparation(status: DatabaseStatus) -> tuple[Path, dict[str, Any]]:
     directory = history_directory(path) / uuid.uuid4().hex
     _private_directory(directory)
     record_path = directory / "migration.json"
+    definitions = tuple(copy.deepcopy(migration_definitions()))
+    registry_snapshot = write_registry_snapshot(directory, definitions)
     record: dict[str, Any] = {
         "format": 1,
         "state": "preparing",
         "started_at": datetime.now(timezone.utc).isoformat(),
         "database": str(path),
         "before": list(status.applied),
-        "target": migration_definitions(),
+        "target": list(definitions),
+        "registry_snapshot": registry_snapshot,
         "source": source_identity(),
         "backups": [],
         "backup_scope": "SQLite stores only; not a complete application restore point",

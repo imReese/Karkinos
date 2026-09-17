@@ -112,6 +112,17 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    if sys.argv[1:] == ["-m", "server", "--help"]:
+        print("--prepare-database")
+        return
+    if (
+        "--database-status" in sys.argv
+        or "--prepare-database" in sys.argv
+        or "--prepare-only" in sys.argv
+    ):
+        print("fake database ready")
+        return
+
     started = os.environ.get("FAKE_RUNTIME_STARTED")
     if started:
         with open(started, "w", encoding="utf-8") as output:

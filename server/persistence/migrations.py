@@ -17,14 +17,22 @@ from datetime import datetime, timezone
 from typing import Any
 
 import server.persistence.migration_schema_contracts as _schema_contracts
-from server.persistence.jobs import JOB_SCHEMA
+from server.persistence.connection import run_immediate_transaction
+from server.persistence.job_schema_migrations import V13_DURABLE_BACKGROUND_JOBS
 from server.persistence.legacy_trade_migration_preflight import (
     run_pending_legacy_trade_migration_preflight,
 )
 from server.persistence.market_identity_schema import (
     build_market_identity_schema_migration,
 )
-from server.persistence.quote_schema_migrations import build_quote_schema_migrations
+from server.persistence.migration_history_compat import (
+    migrations_for_applied_history,
+    normalize_known_history,
+)
+from server.persistence.quote_schema_migrations import (
+    build_legacy_mutated_v14,
+    build_quote_schema_migrations,
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +71,8 @@ _LEGACY_V1_REPAIR_TABLE = _schema_contracts.LEGACY_V1_REPAIR_TABLE
 _LEGACY_V1_REPAIR_COLUMN = _schema_contracts.LEGACY_V1_REPAIR_COLUMN
 
 _QUOTE_MIGRATIONS = build_quote_schema_migrations(SchemaMigration)
+_LEGACY_MUTATED_V14 = build_legacy_mutated_v14(SchemaMigration)
+_LEGACY_HISTORY_VARIANTS = {14: _LEGACY_MUTATED_V14}
 _MIGRATIONS = (
     SchemaMigration(
         version=1,
@@ -467,11 +477,22 @@ _MIGRATIONS = (
         ),
     ),
     build_market_identity_schema_migration(SchemaMigration),
-    SchemaMigration(version=13, name="durable_background_jobs", statements=JOB_SCHEMA),
-    _QUOTE_MIGRATIONS[2],
+    SchemaMigration(
+        version=13,
+        name="durable_background_jobs",
+        statements=V13_DURABLE_BACKGROUND_JOBS,
+    ),
+    *_QUOTE_MIGRATIONS[2:],
 )
 
 CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version
+
+
+def migration_registry() -> tuple[SchemaMigration, ...]:
+    """Return the immutable ordered migration registry."""
+
+    return _MIGRATIONS
+
 
 _MIGRATION_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -507,7 +528,7 @@ def apply_schema_migrations(
         expected = _build_v1_baseline_contract(baseline_initializer)
         _assert_required_schema_contract(conn, expected)
     conn.execute(_MIGRATION_TABLE_SQL)
-    _assert_migration_table_structure(conn)
+    assert_migration_table_structure(conn)
     applied = _read_applied_migrations(conn)
     _validate_applied_migrations(applied)
     if _uses_legacy_v1_provenance(applied):
@@ -585,7 +606,7 @@ def assert_schema_compatible(
             )
         return
     _validate_registry()
-    _assert_migration_table_structure(conn)
+    assert_migration_table_structure(conn)
     applied = _read_applied_migrations(conn)
     _validate_applied_migrations(applied)
     if 1 not in applied:
@@ -651,25 +672,10 @@ def _repair_known_legacy_v1_schema(
             applied=applied,
         )
 
-    run_immediate_schema_transaction(conn, repair)
-
-
-def run_immediate_schema_transaction(
-    conn: sqlite3.Connection,
-    operation: Callable[[], Any],
-) -> Any:
-    """Run one schema operation under the canonical immediate transaction."""
-
     if conn.in_transaction:
-        raise RuntimeError("schema operation requires its own write transaction")
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        result = operation()
-        conn.commit()
-        return result
-    except Exception:
-        conn.rollback()
-        raise
+        repair()
+    else:
+        run_immediate_transaction(conn, repair)
 
 
 def _build_v1_baseline_contract(
@@ -691,20 +697,9 @@ def _assert_applied_schema_contract(
         conn,
         baseline_initializer=baseline_initializer,
         applied=applied,
-        migrations=_MIGRATIONS,
-        baseline_checksum=V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM,
-    )
-
-
-def _build_schema_contract_through_version(
-    initializer: Callable[[sqlite3.Connection], None],
-    *,
-    through_version: int,
-) -> tuple[dict[str, Any], dict[tuple[str, str], str]]:
-    return _schema_contracts.build_schema_contract_through_version(
-        initializer,
-        through_version=through_version,
-        migrations=_MIGRATIONS,
+        migrations=migrations_for_applied_history(
+            applied, _MIGRATIONS, _LEGACY_HISTORY_VARIANTS
+        ),
         baseline_checksum=V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM,
     )
 
@@ -727,7 +722,7 @@ _schema_contract_checksum = _schema_contracts.schema_contract_checksum
 _assert_required_schema_contract = _schema_contracts.assert_required_schema_contract
 
 
-def _assert_migration_table_structure(conn: sqlite3.Connection) -> None:
+def assert_migration_table_structure(conn: sqlite3.Connection) -> None:
     """Reject a weakened ledger table before trusting its recorded history."""
     try:
         columns = tuple(
@@ -790,7 +785,7 @@ def _read_applied_migrations(
 
 def _validate_applied_migrations(applied: dict[int, tuple[str, str]]) -> None:
     _schema_contracts.validate_applied_migrations(
-        applied,
+        normalize_known_history(applied, _MIGRATIONS, _LEGACY_HISTORY_VARIANTS),
         migrations=_MIGRATIONS,
         legacy_v1_checksum=_LEGACY_V1_MIGRATION_CHECKSUM,
     )

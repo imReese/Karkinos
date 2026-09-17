@@ -109,7 +109,7 @@ async def execute_calendar_job(
 
 async def run_data_worker(config) -> None:
     db = AppDatabase()
-    db.init_sync()
+    await db.init()
     store = SQLiteJobStore(db.path)
     controls = RuntimeControlRepository(db.path)
     owner = f"data-worker:{os.getpid()}:{uuid.uuid4().hex}"

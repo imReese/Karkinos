@@ -75,6 +75,23 @@ def test_development_rejects_installed_or_aliased_state(tmp_path):
     assert list(production.iterdir()) == [production / "releases"]
 
 
+def test_default_development_home_refuses_silent_empty_state_when_legacy_data_exists(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source"
+    legacy = source / "data/store"
+    legacy.mkdir(parents=True)
+    (legacy / "app.db").write_bytes(b"existing financial state")
+    development = tmp_path / "development"
+    monkeypatch.setattr(run_dev, "ROOT", source)
+    monkeypatch.setattr(run_dev, "DEFAULT_DEVELOPMENT_HOME", development)
+
+    with pytest.raises(ValueError, match="repository data/store/app.db exists"):
+        run_dev.development_environment(development)
+
+    assert not development.exists()
+
+
 def test_existing_data_without_configuration_is_not_reinitialized(tmp_path):
     (tmp_path / "data").mkdir()
     database = tmp_path / "data/app.db"
