@@ -62,6 +62,7 @@ _LEGACY_V1_MIGRATION_CHECKSUM = (
 _LEGACY_V1_REPAIR_TABLE = _schema_contracts.LEGACY_V1_REPAIR_TABLE
 _LEGACY_V1_REPAIR_COLUMN = _schema_contracts.LEGACY_V1_REPAIR_COLUMN
 
+_QUOTE_MIGRATIONS = build_quote_schema_migrations(SchemaMigration)
 _MIGRATIONS = (
     SchemaMigration(
         version=1,
@@ -444,7 +445,7 @@ _MIGRATIONS = (
             """,
         ),
     ),
-    *build_quote_schema_migrations(SchemaMigration),
+    *_QUOTE_MIGRATIONS[:2],
     SchemaMigration(
         version=11,
         name="protect_immutable_valuation_snapshots",
@@ -467,6 +468,7 @@ _MIGRATIONS = (
     ),
     build_market_identity_schema_migration(SchemaMigration),
     SchemaMigration(version=13, name="durable_background_jobs", statements=JOB_SCHEMA),
+    _QUOTE_MIGRATIONS[2],
 )
 
 CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version

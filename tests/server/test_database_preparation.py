@@ -80,7 +80,7 @@ def test_history_conflicts_fail_before_backup_or_schema_mutation(tmp_path, confl
                 "INSERT INTO schema_migrations VALUES (?, ?, ?, ?)",
                 (
                     migrations._MIGRATIONS[-1].version + 1,
-                    "index_published_fund_nav_marks",
+                    "synthetic_future_migration",
                     "synthetic-unknown-checksum",
                     "2026-09-16T07:37:48+00:00",
                 ),
@@ -171,7 +171,7 @@ def test_failed_backup_never_enters_migration_transaction(tmp_path, monkeypatch)
     assert _ledger(database.path) == before
 
 
-def test_published_migrations_nine_through_thirteen_remain_frozen():
+def test_published_migrations_nine_through_fourteen_remain_frozen():
     # Earlier versions already have frozen fixtures in test_schema_migrations.py.
     expected = {
         9: "655b449d41b35726ff0a7175918a6ab29ce86b8c92651d8d8e6258bb3c123240",
@@ -179,6 +179,7 @@ def test_published_migrations_nine_through_thirteen_remain_frozen():
         11: "b76210eb65a2a42c9f50c67b77344ff0fee48248d8c63aac8af062fd725480a0",
         12: "582da11b15221bdc463ad4a10b936908d8b9cd2cac2e5014be87a33d6b9270ab",
         13: "7be894d95be8d29a4c0e2164d10079ed1f0837284d4a6702ba0a2d0ff89c7d78",
+        14: "885fdab9c4d2d3b9c95d07ba53a45506787690421ed19a9ea6ebcbda25b700a1",
     }
     actual = {item.version: item.checksum for item in migrations._MIGRATIONS}
     assert {version: actual[version] for version in expected} == expected

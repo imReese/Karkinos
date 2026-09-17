@@ -22,6 +22,7 @@ LEGACY_V1_REPAIR_TABLE = "controlled_submission_ledger_postings"
 LEGACY_V1_REPAIR_COLUMN = "account_truth_review_fingerprint"
 
 _VERSIONED_SCHEMA_OBJECTS = (
+    (14, "index", "idx_quote_snapshots_published_nav_date"),
     (4, "table", "ledger_mutation_claims"),
     (4, "index", "idx_ledger_mutation_claims_entry"),
     (4, "index", "idx_ledger_mutation_claims_operator"),
