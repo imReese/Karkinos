@@ -112,6 +112,20 @@ def database_runtime(database_path: str | Path):
         yield
 
 
+@contextmanager
+def database_maintenance(database_path: str | Path, *, timeout_seconds: float = 0):
+    """Hold exclusive ownership while snapshotting or maintaining persistent state.
+
+    Managed API/worker runtimes hold the same file lock in shared mode, so this
+    barrier prevents a recovery snapshot from racing Karkinos writers. The
+    database must already have been explicitly prepared by the caller.
+    """
+    path = Path(database_path).expanduser().absolute()
+    with _initialization_lock(path, timeout_seconds):
+        require_database_ready(path)
+        yield
+
+
 def initialize_database(
     database_path: str | Path, *, lock_timeout_seconds: float = 30
 ) -> None:

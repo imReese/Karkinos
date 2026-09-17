@@ -144,6 +144,7 @@ EOF
 		cat <<EOF
     <key>KARKINOS_HOME</key><string>${escaped_home}</string>
     <key>KARKINOS_DATA_DIR</key><string>${escaped_data}</string>
+    <key>KARKINOS_WORKSPACE_ROLE</key><string>stable</string>
     <key>KARKINOS_CONFIG_PATH</key><string>${escaped_config}</string>
     <key>KARKINOS_STATIC_DIR</key><string>${escaped_static}</string>
     <key>PYTHONDONTWRITEBYTECODE</key><string>1</string>
