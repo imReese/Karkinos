@@ -142,7 +142,12 @@ def strip_financial_storage_mirrors(row: Mapping[str, Any] | Any) -> dict[str, A
     }
 
 
-def real_projection_matches(row: Mapping[str, Any], field: str) -> bool:
+def real_projection_matches(
+    row: Mapping[str, Any],
+    field: str,
+    *,
+    legacy_backfill: bool = False,
+) -> bool:
     legacy = row.get(field)
     exact = row.get(f"{field}_decimal")
     if legacy is None:
@@ -151,9 +156,16 @@ def real_projection_matches(row: Mapping[str, Any], field: str) -> bool:
         return False
     try:
         expected = real_projection(exact, field=field)
-    except ValueError:
+        actual = float(legacy)
+    except (TypeError, ValueError):
         return False
-    return float(legacy) == expected
+    if not legacy_backfill:
+        return actual == expected
+    # SQLite documents that only the first 15 significant decimal digits are
+    # preserved when converting REAL to text. Legacy v16 backfill mirrors an
+    # already-lossy REAL value, so tolerate only the text-rendering loss while
+    # still rejecting economically meaningful drift.
+    return math.isclose(actual, expected, rel_tol=1e-14, abs_tol=1e-14)
 
 
 __all__ = [

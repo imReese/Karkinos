@@ -118,7 +118,13 @@ def _assert_table(
                 raise RuntimeError(
                     f"financial_decimal_not_canonical:{table}:{row_id}:{field}"
                 )
-            if not real_projection_matches(payload, field):
+            if not real_projection_matches(
+                payload,
+                field,
+                legacy_backfill=(
+                    payload.get("decimal_provenance") == LEGACY_REAL_BACKFILL_PROVENANCE
+                ),
+            ):
                 raise RuntimeError(
                     f"financial_decimal_projection_drift:{table}:{row_id}:{field}"
                 )

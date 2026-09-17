@@ -539,6 +539,9 @@ def test_deleted_migration_ledger_with_newer_artifacts_fails_closed(tmp_path) ->
         # database and must not replay already-applied ALTER statements.
         conn.execute("DROP TABLE schema_migrations")
         conn.execute("DROP TABLE controlled_submission_ledger_corrections")
+        # Simulate an out-of-band/admin schema corruption that bypasses the
+        # normal v17 financial-fact guard before removing a protected column.
+        allow_out_of_band_update(conn, "ledger_entries")
         conn.execute("ALTER TABLE ledger_entries DROP COLUMN correction_payload_json")
         conn.commit()
 
