@@ -201,7 +201,7 @@ def test_account_setup_remains_required_for_pending_manual_order() -> None:
     assert result == [setup]
 
 
-def test_account_mismatch_and_real_scheduler_failure_remain_actionable() -> None:
+def test_account_mismatch_remains_actionable_without_scheduler_diagnostics() -> None:
     mismatch = _attention("account_truth", "resolve_account_truth_mismatch")
     failure = _attention("scheduler", "inspect_scheduler_failure")
     result = build_overview_attention_items(
@@ -213,7 +213,91 @@ def test_account_mismatch_and_real_scheduler_failure_remain_actionable() -> None
         market_evidence_review=_review(),
     )
 
-    assert result == [mismatch, failure]
+    assert result == [mismatch]
+
+
+@pytest.mark.parametrize(
+    ("subsystem", "action"),
+    [
+        ("account_truth", "refresh_account_truth_snapshot"),
+        ("account_truth", "attach_account_truth_evidence"),
+        ("citic_source_follow_up", "review_citic_source_query_windows"),
+        ("citic_source_follow_up", "repair_citic_source_intake_metadata_store"),
+        ("broker_adapter_evidence", "review_broker_adapter_evidence"),
+        ("scheduler", "inspect_scheduler_failure"),
+        ("paper_shadow", "run_paper_shadow_daily"),
+    ],
+)
+def test_operations_maintenance_without_investment_work_is_not_attention(
+    subsystem: str, action: str
+) -> None:
+    maintenance = _attention(subsystem, action)
+    operations = {"attention_items": [maintenance]}
+
+    assert (
+        build_overview_attention_items(
+            operations=operations,
+            market_evidence_review=_review(),
+        )
+        == []
+    )
+    assert operations["attention_items"] == [maintenance]
+
+
+@pytest.mark.parametrize(
+    "workflow",
+    [
+        {"daily_plan": {"candidate_pool_count": 1}},
+        {"daily_plan": {"order_intent_count": 1}},
+        {"daily_operations": {"pending_manual_order_count": 1}},
+        {"execution_reconciliation": {"open_item_count": 1}},
+    ],
+)
+def test_account_refresh_for_current_investment_work_remains_actionable(
+    workflow: dict,
+) -> None:
+    refresh = _attention("account_truth", "refresh_account_truth_snapshot")
+
+    assert build_overview_attention_items(
+        operations={"attention_items": [refresh], **workflow},
+        market_evidence_review=_review(),
+    ) == [refresh]
+
+
+def test_manual_risk_strategy_and_ledger_reviews_remain_in_attention() -> None:
+    reviews = [
+        _attention("daily_trading_plan", "review_manual_order_intents"),
+        _attention("risk", "review_risk_blocks"),
+        _attention("strategy_candidates", "review_strategy_evidence"),
+        _attention("execution_reconciliation", "review_execution_reconciliation"),
+        _attention("paper_shadow", "review_shadow_divergence"),
+    ]
+
+    assert (
+        build_overview_attention_items(
+            operations={
+                "attention_items": reviews,
+                "daily_plan": {"order_intent_count": 1},
+            },
+            market_evidence_review=_review(),
+        )
+        == reviews
+    )
+
+
+def test_existing_ledger_entries_do_not_make_account_setup_actionable() -> None:
+    assert (
+        build_overview_attention_items(
+            operations={
+                "attention_items": [
+                    _attention("account_truth", "attach_account_truth_evidence")
+                ],
+                "daily_operations": {"ledger_review_count": 12},
+            },
+            market_evidence_review=_review(),
+        )
+        == []
+    )
 
 
 def test_expected_nav_publication_wait_is_not_an_overview_task() -> None:
@@ -230,3 +314,43 @@ def test_expected_nav_publication_wait_is_not_an_overview_task() -> None:
     assert result == []
     assert review.items[0].blocks_authoritative_decisions is True
     assert review.review_required_count == 1
+
+
+@pytest.mark.parametrize(
+    ("sample_symbols", "count", "expected_subsystems"),
+    [
+        (["600000"], 1, []),
+        (["600001"], 1, ["market_data"]),
+        (["600000"], 2, ["market_data"]),
+        ([], 1, ["market_data"]),
+    ],
+)
+def test_publication_wait_dedup_requires_the_same_complete_plan_symbol_scope(
+    sample_symbols: list[str], count: int, expected_subsystems: list[str]
+) -> None:
+    review = _review("stale")
+    review.items[0].requires_user_attention = False
+    operations = {
+        "attention_items": [
+            _attention("market_data", "review_market_data_freshness"),
+            _attention("daily_trading_plan", "resolve_daily_plan_blockers"),
+        ],
+        "daily_plan": {
+            "blocked_count": count,
+            "blocker_summary": [
+                {
+                    "category": "market_data",
+                    "count": count,
+                    "sample_symbols": sample_symbols,
+                }
+            ],
+        },
+    }
+
+    result = build_overview_attention_items(
+        operations=operations, market_evidence_review=review
+    )
+
+    assert [item["subsystem_id"] for item in result] == expected_subsystems
+    assert operations["daily_plan"]["blocked_count"] == count
+    assert review.items[0].blocks_authoritative_decisions is True

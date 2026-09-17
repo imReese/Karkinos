@@ -16,7 +16,7 @@ from server.persistence.financial_fact_event_payloads import quote_instant_stora
 from server.projections.portfolio_quotes import current_valuation_snapshot
 from server.projections.valuation_snapshot import (
     build_current_valuation_snapshot,
-    select_authoritative_quote_rows,
+    select_latest_observation_rows,
 )
 from server.services.market_quote_ingestion import build_quote_ingestion_command
 
@@ -502,7 +502,7 @@ def test_canonical_quote_selection_rejects_conflicts_independent_of_input_order(
 
     for rows in ([original, conflicting], [conflicting, original]):
         with pytest.raises(ValueError, match="conflict at the same timestamp"):
-            select_authoritative_quote_rows(rows)
+            select_latest_observation_rows(rows)
 
 
 def test_canonical_quote_selection_ignores_superseded_legacy_conflict() -> None:
@@ -532,7 +532,7 @@ def test_canonical_quote_selection_ignores_superseded_legacy_conflict() -> None:
         [original, conflicting, newest],
         [newest, conflicting, original],
     ):
-        assert select_authoritative_quote_rows(rows) == [newest]
+        assert select_latest_observation_rows(rows) == [newest]
 
 
 def test_canonical_quote_selection_rejects_latest_conflict_across_timezones() -> None:
@@ -551,7 +551,7 @@ def test_canonical_quote_selection_rejects_latest_conflict_across_timezones() ->
     }
 
     with pytest.raises(ValueError, match="conflict at the same timestamp"):
-        select_authoritative_quote_rows([original, conflicting])
+        select_latest_observation_rows([original, conflicting])
 
 
 def test_startup_quote_reconciliation_keeps_latest_timezone_conflict_blocking(

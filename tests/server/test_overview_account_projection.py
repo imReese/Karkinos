@@ -169,6 +169,45 @@ async def test_daily_pnl_includes_canonical_closed_position_attribution(
 
 
 @pytest.mark.asyncio
+async def test_closed_position_from_an_older_session_does_not_erase_session_pnl(
+    projection_sources,
+):
+    state, snapshot, _ = projection_sources
+    snapshot.closed_positions = [
+        ClosedPositionResponse(
+            **{
+                **snapshot.positions[0].model_dump(),
+                "symbol": "older-closed-fixture",
+                "quantity": 0,
+                "today_change": 70,
+                "performance_session_date": "2026-09-10",
+                "pricing_as_of": "2026-09-10",
+            },
+            closed_at="2026-09-10T14:00:00+08:00",
+        )
+    ]
+    response = await build_account_state_response(state, now=NOW)
+    assert response.summary.today_pnl == -10
+    assert response.summary.latest_session_date == "2026-09-11"
+    assert [item.symbol for item in response.summary.today_contributors] == [
+        "fixture-stock"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_performance_session_date_takes_priority_over_publication_timestamp(
+    projection_sources,
+):
+    state, snapshot, _ = projection_sources
+    position = snapshot.positions[0]
+    position.performance_session_date = "2026-09-10"
+    position.pricing_as_of = "2026-09-11"
+    response = await build_account_state_response(state, now=NOW)
+    assert response.summary.today_pnl == -10
+    assert response.summary.latest_session_date == "2026-09-10"
+
+
+@pytest.mark.asyncio
 async def test_attention_failure_preserves_financial_canvas(
     monkeypatch, projection_sources
 ):
@@ -186,6 +225,50 @@ async def test_attention_failure_preserves_financial_canvas(
     assert response.overview.valuation_usability == "usable"
     assert response.overview.attention_status == "unavailable"
     assert response.overview.decision_readiness == "unknown"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["history", "refresh", "attention_items"])
+async def test_secondary_projection_failure_preserves_usable_financial_state(
+    monkeypatch, projection_sources, failure
+):
+    state, snapshot, _ = projection_sources
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("fixture secondary projection unavailable")
+
+    target = {
+        "history": "build_daily_equity_series_from_ledger_history",
+        "refresh": "read_overview_refresh_health",
+        "attention_items": "build_overview_attention_items",
+    }[failure]
+    monkeypatch.setattr(f"server.projections.account_state.{target}", unavailable)
+    if failure == "attention_items":
+
+        async def blocked_operations(state):
+            return {"daily_plan": {"blocked_count": 1}, "attention_items": []}
+
+        monkeypatch.setattr(
+            "server.projections.account_state.build_today_operations_payload",
+            blocked_operations,
+        )
+    response = await build_account_state_response(state, now=NOW)
+
+    assert response.snapshot is snapshot
+    assert response.summary.total_equity == 1600
+    assert response.summary.today_pnl == -10
+    assert response.summary.cumulative_pnl == 120
+    assert response.overview.valuation_usability == "usable"
+    if failure == "history":
+        assert response.summary.current_drawdown is None
+        assert response.summary.drawdown_blockers == ["drawdown_history_unavailable"]
+    elif failure == "refresh":
+        assert response.overview.refresh_health.blockers == [
+            "refresh_history_unavailable"
+        ]
+    else:
+        assert response.overview.attention_status == "unavailable"
+        assert response.overview.decision_readiness == "blocked"
 
 
 @pytest.mark.asyncio
@@ -329,7 +412,7 @@ async def test_persisted_overview_keeps_friday_valuation_after_failed_weekend_re
         symbol="019999",
         asset_class="fund",
         trade_date="2026-09-10",
-        close_price=1.0,
+        close_price=1.2,
         source="fixture",
     )
     db.save_quote_snapshot_sync(
@@ -362,6 +445,11 @@ async def test_persisted_overview_keeps_friday_valuation_after_failed_weekend_re
     assert response.snapshot.valuation_snapshot_id == valuation["snapshot_id"]
     assert response.summary.valuation_snapshot_id == valuation["snapshot_id"]
     assert response.summary.total_equity == 1010.0
+    assert response.summary.current_drawdown == pytest.approx(1 - 1010 / 1020)
+    assert response.summary.current_drawdown_amount == pytest.approx(10)
+    assert response.summary.drawdown_peak_equity == pytest.approx(1020)
+    assert response.summary.drawdown_latest_equity == pytest.approx(1010)
+    assert response.summary.drawdown_blockers == []
     assert response.overview.valuation_usability == "usable"
     assert response.overview.market_session.status == "non_trading_day"
     assert response.overview.pricing_as_of == "2026-09-11"

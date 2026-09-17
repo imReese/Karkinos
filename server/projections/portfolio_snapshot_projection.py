@@ -32,6 +32,7 @@ from server.projections.portfolio_quotes import (
 )
 from server.projections.quote_status import (
     current_quote_valuation_evidence,
+    quote_performance_session_date,
     quote_pricing_semantics,
     quote_valuation_blocker,
     quote_valuation_status,
@@ -211,6 +212,11 @@ def build_portfolio_snapshot_sync(
             commission_paid=float(pos.commission_paid),
             today_change=today_change,
             today_change_pct=today_change_pct,
+            performance_session_date=(
+                quote_performance_session_date(quote)
+                if today_change is not None
+                else None
+            ),
             baseline_price=baseline_price,
             baseline_timestamp=baseline_timestamp,
             baseline_source=baseline_source,
@@ -222,6 +228,9 @@ def build_portfolio_snapshot_sync(
             refresh_policy=refresh_policy(now),
             using_persistent_cache=using_persistent_cache(quote),
             nav_date=None if quote is None else quote.get("nav_date"),
+            latest_observation=None
+            if quote is None
+            else quote.get("latest_observation"),
             **quote_pricing_semantics(
                 quote,
                 instrument_type=instrument_type,

@@ -18,6 +18,8 @@ from server.ledger.models import LedgerEntry
 from server.projections.quote_status import (
     expected_quote_date,
     quote_freshness_reason,
+    quote_performance_session_date,
+    quote_pricing_semantics,
     quote_valuation_status,
 )
 from server.projections.service import build_portfolio_projection
@@ -26,7 +28,7 @@ from server.services.market_hours import get_shanghai_now
 from server.services.position_presence import is_economically_zero_quantity
 from server.valuation_snapshot_contract import validate_valuation_snapshot
 
-VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v6"
+VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v7"
 _VALUATION_SCOPE_POLICY = "current_nonzero_positions.v1"
 _VALUATION_FRESHNESS_POLICY = "expected_session_and_live_ttl.v1"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
@@ -116,7 +118,7 @@ def _quote_rank(row: dict[str, Any]) -> tuple[datetime, int, datetime, int, str]
     )
 
 
-def select_authoritative_quote_rows(
+def select_latest_observation_rows(
     rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Select one newest persisted observation for each instrument identity."""
@@ -148,18 +150,72 @@ def select_authoritative_quote_rows(
     return [selected[key] for key in sorted(selected)]
 
 
-def _account_valuation_quote_rows(
+def select_authoritative_valuation_marks(
     rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Exclude non-investable market context from account valuation facts."""
-    return [
-        row
-        for row in rows
-        if str(row.get("asset_type") or row.get("asset_class") or "stock")
-        .strip()
-        .lower()
-        != "index"
-    ]
+    """Select valuation marks while retaining newer observations independently."""
+    observations = select_latest_observation_rows(rows)
+    authoritative: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        semantics = quote_pricing_semantics(row)
+        if (
+            semantics["pricing_kind"] != "published_nav"
+            or quote_valuation_status(row) != "complete"
+        ):
+            continue
+        identity = _quote_identity(row)
+        prior = authoritative.get(identity)
+        rank = (semantics["pricing_as_of"] or "", _quote_rank(row))
+        if prior is None or rank > (
+            quote_pricing_semantics(prior)["pricing_as_of"] or "",
+            _quote_rank(prior),
+        ):
+            authoritative[identity] = row
+    for identity, mark in authoritative.items():
+        select_latest_observation_rows(
+            [
+                row
+                for row in rows
+                if _quote_identity(row) == identity
+                and _parse_timestamp(_quote_timestamp(row))
+                == _parse_timestamp(_quote_timestamp(mark))
+            ]
+        )
+        same_date = [
+            row
+            for row in rows
+            if _quote_identity(row) == identity
+            and quote_pricing_semantics(row)["pricing_kind"] == "published_nav"
+            and quote_valuation_status(row) == "complete"
+            and quote_pricing_semantics(row)["pricing_as_of"]
+            == quote_pricing_semantics(mark)["pricing_as_of"]
+        ]
+        if any(float(row["price"]) != float(mark["price"]) for row in same_date):
+            raise ValueError(
+                f"published NAV facts conflict for {identity[0]} on {quote_pricing_semantics(mark)['pricing_as_of']}"
+            )
+    selected = []
+    for observation in observations:
+        # NAV date selects the financial mark; observation time selects the latest
+        # information. Invalid or conflicting current facts still fail closed.
+        identity = _quote_identity(observation)
+        mark = observation
+        if quote_pricing_semantics(observation)["pricing_kind"] == "estimated_nav" or (
+            quote_pricing_semantics(observation)["pricing_kind"] == "published_nav"
+            and quote_valuation_status(observation) == "complete"
+        ):
+            mark = authoritative.get(identity, observation)
+        projected = dict(mark)
+        if mark != observation:
+            projected["latest_observation"] = {
+                "price": observation.get("price"),
+                "quote_timestamp": _quote_timestamp(observation) or None,
+                "quote_source": observation.get("quote_source")
+                or observation.get("source"),
+                **quote_pricing_semantics(observation),
+            }
+        selected.append(projected)
+    return selected
 
 
 def _freeze_previous_close_evidence(
@@ -178,11 +234,7 @@ def _freeze_previous_close_evidence(
             quote["quote_status"] = "error"
             quote["stale_reason"] = "invalid_quote_timestamp"
             quote["valuation_evidence_status"] = "invalid_timestamp"
-        trade_date = (
-            None
-            if quote_timestamp == _MIN_TIMESTAMP
-            else quote_timestamp.astimezone(_SHANGHAI_TZ).date().isoformat()
-        )
+        trade_date = quote_performance_session_date(quote)
         asset_class = (
             str(quote.get("asset_type") or quote.get("asset_class") or "")
             .strip()
@@ -263,6 +315,15 @@ def _freeze_previous_close_evidence(
                     trade_date,
                     instrument_type=instrument_type,
                 )
+                if (
+                    instrument_type == "open_end_fund"
+                    and row
+                    and (
+                        quote_pricing_semantics(row)["pricing_kind"] != "published_nav"
+                        or quote_valuation_status(row) != "complete"
+                    )
+                ):
+                    row = None
                 if row and row.get("price") not in {None, ""}:
                     evidence = {
                         "price": float(row["price"]),
@@ -420,8 +481,6 @@ def _valuation_lane_blockers(quotes: list[dict[str, Any]]) -> list[str]:
         quote_status = str(quote.get("quote_status") or "live").strip().lower()
         if quote_status in _MISSING_QUOTE_STATUSES | _DEGRADED_QUOTE_STATUSES:
             blockers.add(quote_status)
-        if quote.get("valuation_baseline_status") == "missing":
-            blockers.add("valuation_baseline_missing")
     return sorted(blockers)
 
 
@@ -618,11 +677,15 @@ def build_current_valuation_snapshot(
         _load_ledger_rows(db, candidate_rows=candidate_ledger_rows)
     )
     ledger_rows = ledger_identity["rows"]
-    persisted_quote_rows = load_persisted_quote_rows(db)
-    selected_quotes = select_authoritative_quote_rows(
-        _account_valuation_quote_rows(persisted_quote_rows)
-    )
     position_scope = _current_position_scope(ledger_rows)
+    persisted_quote_rows = load_persisted_quote_rows(db)
+    selected_quotes = select_authoritative_valuation_marks(
+        [
+            row
+            for row in persisted_quote_rows
+            if position_scope.get(_quote_identity(row)[0]) == _quote_identity(row)[1]
+        ]
+    )
     position_scope_fingerprint = _fingerprint(position_scope)
     scoped_quotes = _quotes_for_current_positions(selected_quotes, position_scope)
     observed_quotes = [
@@ -727,7 +790,8 @@ __all__ = [
     "ledger_identity_from_rows",
     "load_persisted_quote_rows",
     "quote_valuation_status",
-    "select_authoritative_quote_rows",
+    "select_latest_observation_rows",
+    "select_authoritative_valuation_marks",
     "valuation_identity_fields",
     "valuation_lanes_from_quotes",
     "valuation_snapshot_from_row",

@@ -123,15 +123,16 @@ def test_valuation_snapshot_is_content_addressed_and_replayable(tmp_path):
 
     assert first == second
     assert first["snapshot_id"].startswith("valuation-")
-    assert first["status"] == "degraded"
+    assert first["status"] == "complete"
+    assert first["quotes"][0]["valuation_baseline_status"] == "missing"
     assert first["valuation_lanes"] == [
         {
             "asset_class": "stock",
-            "status": "degraded",
+            "status": "complete",
             "quote_count": 1,
-            "complete_quote_count": 0,
-            "review_required_quote_count": 1,
-            "blocker_statuses": ["valuation_baseline_missing"],
+            "complete_quote_count": 1,
+            "review_required_quote_count": 0,
+            "blocker_statuses": [],
         },
         {
             "asset_class": "fund",
@@ -712,10 +713,7 @@ def test_open_holding_without_quote_is_explicitly_missing(tmp_path):
             "valuation_evidence_status": "missing",
         }
     ]
-    assert snapshot["valuation_lanes"][1]["blocker_statuses"] == [
-        "missing",
-        "valuation_baseline_missing",
-    ]
+    assert snapshot["valuation_lanes"][1]["blocker_statuses"] == ["missing"]
 
 
 def test_valuation_snapshot_preserves_explicit_etf_lane():

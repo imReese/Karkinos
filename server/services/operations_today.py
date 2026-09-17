@@ -171,10 +171,45 @@ def build_overview_attention_items(
     plan = trading_plan or operations.get("daily_plan") or {}
     blockers = _list_of_dicts(plan.get("blocker_summary"))
     plan_roots = {str(blocker.get("category") or "") for blocker in blockers}
+    daily_operations = operations.get("daily_operations") or {}
+    shadow = operations.get("paper_shadow") or {}
+    order_work = any(
+        _int(source.get(key)) > 0
+        for source, key in (
+            (plan, "order_intent_count"),
+            (plan, "manual_ready_count"),
+            (daily_operations, "pending_manual_order_count"),
+            (shadow, "order_intent_count"),
+        )
+    )
+    investment_work = (
+        order_work
+        or bool(blockers)
+        or any(
+            _int(source.get(key)) > 0
+            for source, key in (
+                (plan, "candidate_pool_count"),
+                (daily_operations, "candidate_pool_count"),
+                (daily_operations, "execution_exception_count"),
+                (operations.get("execution_reconciliation") or {}, "open_item_count"),
+            )
+        )
+    )
     items = [
         item
         for item in _list_of_dicts(operations.get("attention_items"))
-        if item.get("next_action")
+        if item.get("subsystem_id")
+        in {
+            "market_data",
+            "account_truth",
+            "strategy_candidates",
+            "risk",
+            "daily_trading_plan",
+            "execution_reconciliation",
+            "paper_shadow",
+            "citic_source_follow_up",
+        }
+        and item.get("next_action")
         not in {
             None,
             "",
@@ -183,25 +218,28 @@ def build_overview_attention_items(
             "await_explicit_real_broker_environment_confirmation",
         }
     ]
-    scheduler = operations.get("scheduler")
-    if isinstance(scheduler, dict) and not scheduler.get("run_id"):
-        items = [item for item in items if item.get("subsystem_id") != "scheduler"]
-    if (
-        plan.get("candidate_pool_count") == 0
-        and plan.get("order_intent_count") == 0
-        and not _int(
-            (operations.get("daily_operations") or {}).get("pending_manual_order_count")
-        )
-    ):
+    if not investment_work:
         items = [
             item
             for item in items
             if not (
-                item.get("subsystem_id") == "account_truth"
-                and item.get("next_action") == "attach_account_truth_evidence"
-                and (item.get("evidence") or {}).get("status") == "missing"
+                item.get("subsystem_id") == "citic_source_follow_up"
+                or (
+                    item.get("subsystem_id") == "account_truth"
+                    and item.get("next_action")
+                    in {
+                        "attach_account_truth_evidence",
+                        "refresh_account_truth_snapshot",
+                    }
+                )
             )
         ]
+    if not (
+        order_work
+        or shadow.get("review_queue")
+        or _int(daily_operations.get("paper_shadow_review_count")) > 0
+    ):
+        items = [item for item in items if item.get("subsystem_id") != "paper_shadow"]
 
     # A watchlist refresh diagnostic is not a current-holding valuation blocker.
     # Preserve it when a current plan independently requires that market input.
@@ -210,6 +248,29 @@ def build_overview_attention_items(
         for item in market_evidence_review.items
         if item.next_manual_action != "none" and item.requires_user_attention
     ]
+    waiting_symbols = {
+        item.symbol
+        for item in market_evidence_review.items
+        if not item.requires_user_attention
+    }
+    market_blockers = [
+        blocker for blocker in blockers if blocker.get("category") == "market_data"
+    ]
+    publication_wait_only = bool(market_blockers) and all(
+        bool(symbols := set(blocker.get("sample_symbols") or []))
+        and symbols <= waiting_symbols
+        and _int(blocker.get("count")) <= len(symbols)
+        for blocker in market_blockers
+    )
+    if publication_wait_only:
+        items = [
+            item
+            for item in items
+            if not (
+                item.get("subsystem_id") == "market_data"
+                and item.get("next_action") == "review_market_data_freshness"
+            )
+        ]
     holding_blocked = market_evidence_review.status == "blocked_identity"
     if holding_blocked or holding_items:
         items = [item for item in items if item.get("subsystem_id") != "market_data"]
@@ -233,6 +294,8 @@ def build_overview_attention_items(
 
     present = {str(item.get("subsystem_id") or "") for item in items}
     represented_roots = present & {"account_truth", "market_data", "risk"}
+    if publication_wait_only:
+        represented_roots.add("market_data")
     if plan_roots and plan_roots <= represented_roots:
         items = [
             item

@@ -59,7 +59,14 @@ def _snapshot_status(quotes: list[dict[str, Any]], *, valuation_policy: str) -> 
         if valuation_policy == "karkinos.persisted_valuation.v5"
         else quote_valuation_status
     )
-    statuses = {classify(row) for row in quotes}
+    statuses = {
+        "degraded"
+        if valuation_policy == "karkinos.persisted_valuation.v6"
+        and classify(row) == "complete"
+        and row.get("valuation_baseline_status") == "missing"
+        else classify(row)
+        for row in quotes
+    }
     if "missing" in statuses:
         return "missing"
     if "degraded" in statuses:

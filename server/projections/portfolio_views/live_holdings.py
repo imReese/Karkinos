@@ -51,6 +51,7 @@ from server.projections.portfolio_read_snapshot_persistence import (
 )
 from server.projections.quote_status import (
     current_quote_valuation_evidence,
+    quote_performance_session_date,
     quote_pricing_semantics,
     quote_valuation_blocker,
     quote_valuation_status,
@@ -331,6 +332,11 @@ def build_live_holdings_response(
                 since_buy_pnl_pct=since_buy_pnl_pct,
                 today_change=today_change,
                 today_change_pct=today_change_pct,
+                performance_session_date=(
+                    quote_performance_session_date(latest_quote)
+                    if today_change is not None
+                    else None
+                ),
                 baseline_price=baseline_price,
                 baseline_timestamp=baseline_timestamp,
                 baseline_source=baseline_source,
@@ -341,6 +347,7 @@ def build_live_holdings_response(
                 refresh_policy=_refresh_policy(resolved_now),
                 using_persistent_cache=_using_persistent_cache(latest_quote),
                 nav_date=latest_quote.get("nav_date"),
+                latest_observation=latest_quote.get("latest_observation"),
                 **quote_pricing_semantics(
                     latest_quote,
                     instrument_type=instrument_type,

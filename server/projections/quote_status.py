@@ -10,7 +10,11 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from data.market_data import FUND_ESTIMATE_QUOTE_SOURCES, is_fund_estimate_quote_source
+from data.market_data import (
+    FUND_ESTIMATE_QUOTE_SOURCES,
+    PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    is_fund_estimate_quote_source,
+)
 from server.services.market_calendar_dates import project_market_session
 from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 
@@ -54,8 +58,6 @@ def quote_valuation_status(quote: dict) -> str:
         "conflicting",
     }:
         return "degraded"
-    if quote.get("valuation_baseline_status") == "missing":
-        return "degraded"
     return "complete"
 
 
@@ -70,8 +72,6 @@ def quote_valuation_blocker(quote: dict | None, *, symbol: str) -> str:
         "confirmed_fund_nav_missing_estimate_only",
     }:
         return f"confirmed_nav_missing:{symbol}"
-    if quote.get("valuation_baseline_status") == "missing":
-        return f"valuation_baseline_missing:{symbol}"
     authority = quote_pricing_semantics(quote)["pricing_authority"]
     if authority in {"missing", "non_authoritative", "conflicting"}:
         return f"pricing_authority_{authority}:{symbol}"
@@ -96,6 +96,16 @@ def parse_quote_timestamp(timestamp: object) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=_SHANGHAI_TZ)
     return parsed.astimezone(_SHANGHAI_TZ)
+
+
+def quote_performance_session_date(quote: dict | None) -> str | None:
+    row = quote or {}
+    timestamp = parse_quote_timestamp(
+        row.get("nav_date") or row.get("quote_timestamp") or row.get("timestamp")
+        if quote_pricing_semantics(row)["pricing_kind"] == "published_nav"
+        else row.get("quote_timestamp") or row.get("timestamp")
+    )
+    return timestamp.date().isoformat() if timestamp else None
 
 
 def previous_weekday(day: date) -> date:
@@ -303,10 +313,7 @@ def quote_pricing_semantics(
         kind, authority = "nav_pending", "missing"
     elif is_fund:
         observed_status = str(row.get("observed_quote_status") or status).lower()
-        if (
-            source in {"eastmoney_fund_page", "tushare_fund_nav"}
-            or observed_status == "confirmed"
-        ):
+        if source in PUBLISHED_FUND_NAV_QUOTE_SOURCES or observed_status == "confirmed":
             kind, authority = "published_nav", "authoritative"
             as_of = (
                 str(
