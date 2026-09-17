@@ -1,9 +1,13 @@
 import type { Locale } from '../../../shared/locale';
+import type { AccountStateResponse } from '../overview-feature-boundary';
 
 export const overviewPresentation = {
   en: {
     cumulativePnl: 'Cumulative P&L',
     latestPnl: 'Latest trading-session P&L',
+    todayDrivers: 'Today’s main contributors',
+    previousDrivers: 'Previous session contributors',
+    sessionDrivers: 'Session contributors',
     returnUnavailable: 'Return unavailable',
     holdings: 'Holdings',
     viewPortfolio: 'View portfolio',
@@ -17,7 +21,10 @@ export const overviewPresentation = {
     unavailable: 'Valuation unavailable',
     closeBasis: 'close',
     asOf: 'Data as of',
+    pre_open: 'Before market open',
     open: 'Market open',
+    midday_break: 'Session break',
+    after_close: 'Market closed',
     break: 'Session break',
     closed: 'Market closed',
     non_trading_day: 'Market closed',
@@ -45,6 +52,9 @@ export const overviewPresentation = {
   zh: {
     cumulativePnl: '累计盈亏',
     latestPnl: '最近交易日盈亏',
+    todayDrivers: '今日主要影响',
+    previousDrivers: '上一交易日主要影响',
+    sessionDrivers: '交易日主要影响',
     returnUnavailable: '收益率暂不可用',
     holdings: '持仓',
     viewPortfolio: '查看全部持仓',
@@ -58,7 +68,10 @@ export const overviewPresentation = {
     unavailable: '估值暂不可用',
     closeBasis: '收盘',
     asOf: '数据截至',
+    pre_open: '市场开盘前',
     open: '市场交易中',
+    midday_break: '午间休市',
+    after_close: '市场休市',
     break: '午间休市',
     closed: '市场休市',
     non_trading_day: '市场休市',
@@ -83,6 +96,22 @@ export const overviewPresentation = {
     cumulativeHelp: '已实现与未实现盈亏',
   },
 } satisfies Record<Locale, Record<string, string>>;
+
+export function overviewSessionLabels(
+  state: AccountStateResponse,
+  locale: Locale,
+) {
+  const labels = overviewPresentation[locale];
+  const date = state.summary.latest_session_date;
+  const session = state.overview.market_session;
+  if (date && date === session.market_date) {
+    return { drivers: labels.todayDrivers };
+  }
+  if (date && date === session.latest_completed_trade_date) {
+    return { drivers: labels.previousDrivers };
+  }
+  return { drivers: labels.sessionDrivers };
+}
 
 export function shortDate(value: string | null | undefined) {
   if (!value) return '--';

@@ -71,6 +71,7 @@ function accountFixture(): AccountStateResponse {
     overview: {
       market_session: {
         status: 'non_trading_day',
+        market_date: '2026-09-14',
         calendar_verified: true,
         latest_completed_trade_date: '2026-09-11',
         expected_quote_date: '2026-09-11',
@@ -468,4 +469,22 @@ test('known valuation repair remains actionable when unrelated Operations eviden
     }),
   ).toHaveAttribute('href', '/market');
   expect(queue).not.toHaveTextContent('authorizes_execution');
+});
+
+test('shows previous-session performance contributors from canonical account state', async () => {
+  const state = accountFixture();
+  state.summary.today_contributors = [
+    {
+      symbol: 'fixture-fund',
+      display_name: '合成基金',
+      asset_class: 'fund',
+      today_change: -314.51,
+    },
+  ];
+  installFetch(state);
+  renderPage('zh');
+  const drivers = await screen.findByTestId('overview-performance-drivers');
+  expect(drivers).toHaveTextContent('上一交易日主要影响');
+  expect(drivers).toHaveTextContent('合成基金');
+  expect(drivers).toHaveTextContent('-¥314.51');
 });

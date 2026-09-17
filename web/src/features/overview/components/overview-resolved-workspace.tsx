@@ -11,6 +11,7 @@ import {
   OverviewDataStatus,
 } from './overview-data-status';
 import { OverviewHoldingsSection } from './overview-holdings-section';
+import { OverviewPerformanceDrivers } from './overview-performance-drivers';
 import { OverviewStatusCard } from './overview-status-card';
 import { OverviewSummary } from './overview-summary';
 import { DashboardTodayQueue } from './overview-today-queue';
@@ -63,6 +64,7 @@ export function OverviewResolvedWorkspace({
                   range={equityCurveRange}
                   onRangeChange={setEquityCurveRange}
                 />
+                <OverviewPerformanceDrivers state={state} />
               </>
             )}
           </section>
