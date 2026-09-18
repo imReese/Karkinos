@@ -36,6 +36,7 @@ class StrategyResearchGenerationMixin:
     async def generate_hypotheses(
         self, request: HypothesisGenerationRequest
     ) -> JsonObject:
+        self._require_accepted_research_task(request)
         settings = self._require_settings()
         await self._validate_saved_selection(request.selection)
         reviewed_fee_schedule_resolution = await asyncio.to_thread(
