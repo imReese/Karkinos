@@ -32,7 +32,7 @@
         "currency": "CNY",
         "display_name": "示例券商账户费用规则",
         "exchange_transfer_fee_rates": {
-            "shanghai": 0.00001,
+            "shanghai": 1e-05,
             "shenzhen": 0.0
         },
         "fund_etf_commission_rate": 0.0001,
@@ -95,14 +95,7 @@
         "stamp_tax_rate": 0.0005,
         "stock_a_commission_rate": 0.0001,
         "stock_a_min_commission": 5.0,
-        "transfer_fee_rate": 0.00001
-    },
-    "data_source": {
-        "live_poll_interval": 60,
-        "provider": "akshare",
-        "provider_config": {
-            "tushare_token_env": "KARKINOS_TUSHARE_TOKEN"
-        }
+        "transfer_fee_rate": 1e-05
     },
     "server": {
         "cors_allowed_origins": [
@@ -115,5 +108,12 @@
             "type": "console"
         },
         "port": 8000
+    },
+    "market_data": {
+        "source_policy": "karkinos.market.source.cn_research.v1",
+        "live_poll_interval": 60,
+        "provider_config": {
+            "tushare_token_env": "KARKINOS_TUSHARE_TOKEN"
+        }
     }
 }

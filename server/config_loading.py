@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from server.config_contract import (
+    DEFAULT_MARKET_SOURCE_POLICY,
+    LEGACY_DATA_SOURCE_PROVIDERS,
     MIN_LIVE_POLL_INTERVAL_SECONDS,
-    SUPPORTED_DATA_SOURCES,
     SUPPORTED_NOTIFICATION_TYPES,
 )
 from server.config_fee_schedule import parse_broker_fee_schedule_config
@@ -69,7 +70,10 @@ _SERVER_CONFIG_GROUP_FIELDS = frozenset(
     }
 )
 _IGNORED_LEGACY_CONFIG_FIELDS = frozenset({"live_auto_start"})
-_DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
+_MARKET_DATA_CONFIG_GROUP_FIELDS = frozenset(
+    {"source_policy", "live_poll_interval", "provider_config"}
+)
+_LEGACY_DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
     {"provider", "live_poll_interval", "provider_config"}
 )
 _AI_CONFIG_GROUP_FIELDS = frozenset(
@@ -135,24 +139,25 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
                 )
             data[field] = value
 
-    data_source = data.get("data_source")
-    if isinstance(data_source, dict):
-        group = dict(data_source)
+    market_data = data.pop("market_data", None)
+    if market_data is not None:
+        if not isinstance(market_data, dict):
+            raise ValueError("market_data config group must be an object")
+        group = dict(market_data)
         if "tushare_token" in group:
             raise ValueError(
-                "data_source.tushare_token is not accepted in config.json; "
+                "market_data.tushare_token is not accepted in config.json; "
                 "set the environment variable named by "
-                "data_source.provider_config.tushare_token_env"
+                "market_data.provider_config.tushare_token_env"
             )
-        unknown = sorted(set(group) - _DATA_SOURCE_CONFIG_GROUP_FIELDS)
+        unknown = sorted(set(group) - _MARKET_DATA_CONFIG_GROUP_FIELDS)
         if unknown:
             raise ValueError(
-                "data_source config group contains unsupported fields: "
+                "market_data config group contains unsupported fields: "
                 + ", ".join(unknown)
             )
-        data.pop("data_source")
         field_mapping = {
-            "provider": "data_source",
+            "source_policy": "market_data_source_policy",
             "live_poll_interval": "live_poll_interval",
             "provider_config": "data_source_provider_config",
         }
@@ -163,6 +168,37 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
                     f"config field {runtime_field} cannot appear both grouped and flat"
                 )
             data[runtime_field] = value
+
+    # Compatibility-only loader for pre-source-policy config files.
+    data_source = data.get("data_source")
+    if isinstance(data_source, dict):
+        group = dict(data_source)
+        if "tushare_token" in group:
+            raise ValueError(
+                "data_source.tushare_token is not accepted in config.json; "
+                "set the environment variable named by "
+                "market_data.provider_config.tushare_token_env"
+            )
+        unknown = sorted(set(group) - _LEGACY_DATA_SOURCE_CONFIG_GROUP_FIELDS)
+        if unknown:
+            raise ValueError(
+                "data_source config group contains unsupported fields: "
+                + ", ".join(unknown)
+            )
+        data.pop("data_source")
+        provider = group.get("provider")
+        if provider is not None:
+            provider = str(provider).strip().lower()
+            if provider not in LEGACY_DATA_SOURCE_PROVIDERS:
+                raise ValueError(
+                    "legacy data_source.provider must be akshare or tushare"
+                )
+            data["data_source"] = provider
+        data.setdefault("market_data_source_policy", DEFAULT_MARKET_SOURCE_POLICY)
+        if "live_poll_interval" in group:
+            data["live_poll_interval"] = group["live_poll_interval"]
+        if "provider_config" in group:
+            data["data_source_provider_config"] = group["provider_config"]
 
     broker_fee = data.pop("broker_fee", None)
     if broker_fee is not None:
@@ -308,7 +344,7 @@ def _validate_runtime_config_fields(data: dict, *, config_type: type[Any]) -> No
     if "tushare_token" in data:
         raise ValueError(
             "tushare_token is not accepted in config.json; set the environment "
-            "variable named by data_source.provider_config.tushare_token_env"
+            "variable named by market_data.provider_config.tushare_token_env"
         )
     allowed_fields = set(config_type.__dataclass_fields__)
     unknown = sorted(set(data) - allowed_fields)
@@ -395,11 +431,11 @@ def _parse_data_source_provider_config(
     if value is None:
         return DataSourceProviderConfig()
     if not isinstance(value, dict):
-        raise ValueError("data_source.provider_config must be an object")
+        raise ValueError("market_data.provider_config must be an object")
     unknown = sorted(set(value) - {"tushare_token_env"})
     if unknown:
         raise ValueError(
-            "data_source.provider_config contains unsupported fields: "
+            "market_data.provider_config contains unsupported fields: "
             + ", ".join(unknown)
         )
     return DataSourceProviderConfig(
@@ -439,8 +475,15 @@ def _validate_core_runtime_values(data: dict) -> None:
             )
     if "notification" in data:
         _validate_notification_config(data["notification"])
-    if "data_source" in data and data["data_source"] not in SUPPORTED_DATA_SOURCES:
-        raise ValueError("data_source.provider must be akshare or tushare")
+    if "market_data_source_policy" in data:
+        from data.source_policy import resolve_market_source_policy
+
+        resolve_market_source_policy(str(data["market_data_source_policy"]))
+    if (
+        "data_source" in data
+        and data["data_source"] not in LEGACY_DATA_SOURCE_PROVIDERS
+    ):
+        raise ValueError("legacy data_source provider must be akshare or tushare")
     if "live_poll_interval" in data and (
         isinstance(data["live_poll_interval"], bool)
         or not isinstance(data["live_poll_interval"], int)

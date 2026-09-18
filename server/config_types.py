@@ -249,6 +249,6 @@ class DataSourceProviderConfig:
     def __post_init__(self) -> None:
         if not _ENV_NAME_PATTERN.fullmatch(self.tushare_token_env):
             raise ValueError(
-                "data_source.provider_config.tushare_token_env must be an "
+                "market_data.provider_config.tushare_token_env must be an "
                 "uppercase environment variable name"
             )

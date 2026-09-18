@@ -13,7 +13,6 @@ from data.store import DataStore
 from server.config import BacktestConfig
 from server.config_contract import (
     MIN_LIVE_POLL_INTERVAL_SECONDS,
-    SUPPORTED_DATA_SOURCES,
 )
 from server.runtime_environment import (
     EMPTY_ENV_MEANS_UNSET as _EMPTY_ENV_MEANS_UNSET,
@@ -41,6 +40,7 @@ _NON_STRATEGY_FIELDS = {
     "end_date",
     "assets",
     "instruments",
+    "market_data_source_policy",
     "data_source",
     "data_source_provider_config",
     "notification",
@@ -58,6 +58,7 @@ _RUNTIME_ENV_FIELDS = {
     "KARKINOS_HOST": "host",
     "KARKINOS_PORT": "port",
     "KARKINOS_CORS_ALLOWED_ORIGINS": "cors_allowed_origins",
+    "KARKINOS_MARKET_SOURCE_POLICY": "market_data_source_policy",
     "KARKINOS_DATA_SOURCE": "data_source",
     "KARKINOS_LIVE_POLL_INTERVAL": "live_poll_interval",
     "KARKINOS_AI_ENABLED": "ai.enabled",
@@ -185,9 +186,16 @@ def _parse_runtime_environment_value(env_name: str, raw_value: str) -> Any:
         if not origins:
             raise ValueError(f"{env_name} must contain at least one origin")
         return list(origins)
+    if env_name == "KARKINOS_MARKET_SOURCE_POLICY":
+        from data.source_policy import resolve_market_source_policy
+
+        return resolve_market_source_policy(value).policy_id
     if env_name == "KARKINOS_DATA_SOURCE":
+        # Legacy runtime input only. New deployments use source policy.
+        from server.config_contract import LEGACY_DATA_SOURCE_PROVIDERS
+
         provider = value.lower()
-        if provider not in SUPPORTED_DATA_SOURCES:
+        if provider not in LEGACY_DATA_SOURCE_PROVIDERS:
             raise ValueError(f"{env_name} must be akshare or tushare")
         return provider
     if not value:
