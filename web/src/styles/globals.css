@@ -356,8 +356,20 @@ textarea {
   align-items: center;
   justify-content: center;
   border-radius: var(--app-radius-control);
-  background: var(--app-accent);
-  color: var(--app-text-inverse);
+  background: color-mix(
+    in srgb,
+    var(--app-accent) 12%,
+    var(--app-surface-overlay)
+  );
+  border: 1px solid color-mix(in srgb, var(--app-accent) 26%, var(--app-border));
+  color: var(--app-accent);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition:
+    border-color var(--app-motion-fast) var(--app-ease-standard),
+    box-shadow var(--app-motion-fast) var(--app-ease-standard),
+    background-color var(--app-motion-fast) var(--app-ease-standard);
 }
 
 .app-brand-glyph > svg {
@@ -373,6 +385,26 @@ textarea {
 .app-brand-glyph-compact > svg {
   width: 15px;
   height: 15px;
+}
+
+.app-public-brand:hover .app-brand-glyph,
+.app-brand-lockup a:hover .app-brand-glyph {
+  background: color-mix(
+    in srgb,
+    var(--app-accent) 18%,
+    var(--app-surface-overlay)
+  );
+  border-color: color-mix(in srgb, var(--app-accent) 42%, var(--app-border));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--app-accent) 22%, transparent);
+}
+
+.app-sidebar-brand-copy .app-product-mark,
+.app-toolbar-brand .app-product-mark {
+  font-family: var(--app-font-sans);
+  font-size: var(--app-font-size-subsection-title);
+  font-weight: var(--app-font-weight-semibold);
+  letter-spacing: var(--app-letter-spacing-metric);
+  text-transform: none;
 }
 
 .app-toolbar-state {
@@ -2457,10 +2489,20 @@ h3 {
 .app-public-brand-glyph {
   width: 32px;
   height: 32px;
+  border-radius: var(--app-radius-surface);
+}
+
+.app-public-brand-glyph > svg {
+  width: 20px;
+  height: 20px;
 }
 
 .app-public-product-mark {
-  font-size: var(--app-font-size-label);
+  font-family: var(--app-font-sans);
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-semibold);
+  letter-spacing: var(--app-letter-spacing-metric);
+  text-transform: none;
 }
 
 .app-public-nav {
@@ -4022,7 +4064,7 @@ h3 {
   }
 
   .app-public-product-mark {
-    font-size: var(--app-font-size-micro);
+    font-size: var(--app-font-size-subsection-title);
   }
 
   .app-public-hero {
