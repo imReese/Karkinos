@@ -101,6 +101,7 @@ class DailyBarDatasetPartition:
 
     revision_id: str
     materialization_id: str
+    verification_id: str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(
@@ -126,6 +127,14 @@ class DailyBarDatasetPartition:
             self.materialization_id,
             field="materialization_id",
         )
+        verification_id = (
+            None
+            if self.verification_id is None
+            else _require_content_id(
+                self.verification_id,
+                field="verification_id",
+            )
+        )
 
         object.__setattr__(
             self,
@@ -143,6 +152,11 @@ class DailyBarDatasetPartition:
             self,
             "materialization_id",
             materialization_id,
+        )
+        object.__setattr__(
+            self,
+            "verification_id",
+            verification_id,
         )
 
 
@@ -211,6 +225,11 @@ class DailyBarDatasetSnapshot:
             start_date=start_date,
             end_date=end_date,
         )
+        verification_states = {
+            partition.verification_id is not None for partition in partitions
+        }
+        if len(verification_states) > 1:
+            raise ValueError("dataset_partition_verification_mixed")
 
         object.__setattr__(
             self,
@@ -265,6 +284,12 @@ class DailyBarDatasetSnapshot:
     @property
     def instrument_count(self) -> int:
         return len(self.instruments)
+
+    @property
+    def verification_bound(self) -> bool:
+        return bool(self.partitions) and all(
+            partition.verification_id is not None for partition in self.partitions
+        )
 
 
 def _canonical_instruments(

@@ -58,6 +58,11 @@ from data.market.schema import (
     daily_bars_from_table,
     daily_bars_to_table,
 )
+from data.market.verification_evidence import (
+    MarketVerificationEvidenceError,
+    MarketVerificationStatus,
+    read_market_verification_evidence,
+)
 from data.storage.objects import (
     ContentAddressedObjectStore,
     ObjectStoreError,
@@ -206,6 +211,7 @@ def _read_partition(
         )
 
         _validate_partition_lineage(
+            store=store,
             snapshot=snapshot,
             partition=partition,
             revision=revision,
@@ -256,6 +262,7 @@ def _read_partition(
 
 def _validate_partition_lineage(
     *,
+    store: ContentAddressedObjectStore,
     snapshot: DailyBarDatasetSnapshot,
     partition: DailyBarDatasetPartition,
     revision: MarketRevision,
@@ -284,6 +291,40 @@ def _validate_partition_lineage(
 
     if revision.market_schema_version != snapshot.market_schema_version:
         raise DatasetReaderIntegrityError("dataset_reader_market_schema_mismatch")
+
+    if partition.verification_id is not None:
+        try:
+            verification = read_market_verification_evidence(
+                store,
+                store.resolve_ref(partition.verification_id),
+            )
+        except (ObjectStoreError, MarketVerificationEvidenceError) as exc:
+            raise DatasetReaderIntegrityError(
+                "dataset_reader_verification_unreadable"
+            ) from exc
+        if verification.status is not MarketVerificationStatus.MATCHED:
+            raise DatasetReaderIntegrityError("dataset_reader_verification_not_matched")
+        selected = (
+            partition.provider,
+            partition.revision_id,
+            partition.materialization_id,
+        )
+        verified_sides = {
+            (
+                verification.report.primary_provider,
+                verification.report.primary_revision_id,
+                verification.primary_materialization_id,
+            ),
+            (
+                verification.report.comparison_provider,
+                verification.report.comparison_revision_id,
+                verification.comparison_materialization_id,
+            ),
+        }
+        if selected not in verified_sides:
+            raise DatasetReaderIntegrityError(
+                "dataset_reader_verification_lineage_mismatch"
+            )
 
 
 def _select_partition_bars(
