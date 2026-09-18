@@ -998,3 +998,35 @@ test('shows market status details without simulated latency', async () => {
 
 test('toggles mobile navigation from the global toolbar', async () => {
   renderShell();
+  const user = userEvent.setup();
+
+  const openButton = (
+    await screen.findAllByRole('button', { name: 'Open navigation' })
+  ).find((button) => button.hasAttribute('aria-expanded'));
+  expect(openButton).toBeTruthy();
+  if (!openButton) {
+    return;
+  }
+  expect(openButton.getAttribute('aria-expanded')).toBe('false');
+
+  await user.click(openButton);
+
+  expect(
+    (await screen.findAllByRole('button', { name: 'Close navigation' })).length,
+  ).toBeGreaterThan(0);
+  expect(openButton.getAttribute('aria-expanded')).toBe('true');
+  expect(await screen.findByLabelText('Navigation')).toBeTruthy();
+});
+
+test('Overview owns its financial status without duplicate toolbar evidence or extra status reads', async () => {
+  const fetchMock = vi.fn(async () => jsonResponse(defaultOverview));
+  renderShell({ fetchImpl: fetchMock });
+  await screen.findByText('Overview page');
+  expect(screen.queryByTestId('status-pill-market')).toBeNull();
+  expect(screen.queryByTestId('status-pill-valuation')).toBeNull();
+  expect(screen.queryByTestId('compact-status-trigger')).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(screen.getByTestId('sidebar-nav-market').getAttribute('href')).toBe(
+    '/market',
+  );
+});
