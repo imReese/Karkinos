@@ -11,11 +11,11 @@ export function BacktestPageLayout() {
     >
       <BacktestPageHeader />
       <div
-        className="grid min-w-0 items-start gap-5 xl:grid-cols-[380px_minmax(0,1fr)] xl:gap-0"
+        className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-6"
         data-testid="backtest-primary-workbench"
       >
-        <BacktestRunSetupPanel />
         <BacktestRunResultsPanel />
+        <BacktestRunSetupPanel />
       </div>
       <BacktestGovernancePanels />
     </section>

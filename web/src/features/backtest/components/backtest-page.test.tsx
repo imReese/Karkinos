@@ -1281,7 +1281,8 @@ test('renders the backtest workspace and saved report history', async () => {
   expect(
     await screen.findByLabelText('Short moving-average window'),
   ).toBeTruthy();
-  expect(await screen.findByText('Report selection')).toBeTruthy();
+  expect(await screen.findByText('Run registry')).toBeTruthy();
+  expect(screen.getByTestId('backtest-run-registry')).toBeTruthy();
   const persistedEvidence = screen.getByTestId('backtest-persisted-evidence');
   const equityChart = await within(persistedEvidence).findByRole('heading', {
     name: 'Equity and drawdown',
@@ -1341,7 +1342,9 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   const { fetchMock } = renderBacktestPage({ results: [] });
 
   const primary = await screen.findByTestId('backtest-primary-workbench');
-  const setup = screen.getByTestId('backtest-parameter-panel').parentElement;
+  const setup = screen.getByTestId(
+    'backtest-run-setup-disclosure',
+  ) as HTMLDetailsElement;
   const results = screen.getByTestId('backtest-result-panel');
   const tabs = screen.getByTestId('backtest-mobile-workspace-tabs');
   const contextMetrics = screen
@@ -1354,6 +1357,7 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   expect(contextMetrics?.className).toContain('app-horizontal-scroll-cue');
   expect(primary.contains(setup)).toBe(true);
   expect(primary.contains(results)).toBe(true);
+  expect(setup.open).toBe(true);
   expect(
     (
       screen.getByTestId(
@@ -1364,7 +1368,7 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   expect(tabs.getAttribute('role')).toBe('tablist');
   expect(tabs.getAttribute('data-workspace-view')).toBe('setup');
   expect(
-    setup!.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING,
+    results.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
   for (const testId of [

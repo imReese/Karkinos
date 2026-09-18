@@ -578,7 +578,16 @@ describe('remaining route workbench contract', () => {
     expect(BACKTEST_REPORT).toContain(
       'data-backtest-report-workspace="saved-evidence"',
     );
-    expect(BACKTEST_REPORT).toContain('<FilterBar');
+    expect(BACKTEST_REPORT).toContain('data-testid="backtest-run-registry"');
+    expect(BACKTEST_REPORT).toContain('role="listbox"');
+    expect(BACKTEST_REPORT).toContain(
+      'data-testid="backtest-run-registry-row"',
+    );
+    expect(BACKTEST_REPORT).toContain(
+      'data-testid="backtest-run-registry-scroll"',
+    );
+    expect(BACKTEST_REPORT).toContain('max-h-[360px]');
+    expect(BACKTEST_REPORT).toContain('sticky top-0');
     expect(BACKTEST_REPORT).toContain('<MetricStrip');
     expect(BACKTEST_REPORT).toContain(
       'className="app-backtest-evidence-strip"',
@@ -666,6 +675,10 @@ describe('remaining route workbench contract', () => {
 
     expect(currentWorkspace).toContain(
       'data-testid="backtest-primary-workbench"',
+    );
+    expect(currentWorkspace).toContain('xl:grid-cols-[minmax(0,1fr)_360px]');
+    expect(currentWorkspace).toContain(
+      'data-testid="backtest-run-setup-disclosure"',
     );
     expect(currentWorkspace).toContain('useBacktestResultsQuery()');
     expect(currentWorkspace).toContain("setMobileWorkspaceView('results')");

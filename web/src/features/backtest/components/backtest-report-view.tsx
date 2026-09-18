@@ -4,7 +4,6 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useCopy } from '../../../shared/i18n/context';
 import {
   EvidenceState,
-  FilterBar,
   MetricStrip,
   type MetricTone,
 } from '../../../shared/ui/workbench';
@@ -35,29 +34,97 @@ function ResultSelector({
   selectedId: number | null;
   onSelect: (value: number) => void;
 }) {
-  const labels = useCopy().backtest.selection;
+  const copy = useCopy();
+  const labels = copy.backtest.selection;
+  const pageLabels = copy.backtest.page;
+  const metricLabels = copy.backtest.metrics;
 
   return (
-    <FilterBar label={labels.kicker}>
-      <div className="flex w-full min-w-0 items-center gap-3">
-        <div className="shrink-0 text-sm font-semibold text-[var(--app-text)]">
-          {labels.title}
+    <section className="min-w-0" data-testid="backtest-run-registry">
+      <div className="flex min-w-0 items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="app-kicker">{labels.kicker}</div>
+          <h2 className="app-type-section-title mt-1.5 text-[var(--app-text)]">
+            {labels.title}
+          </h2>
+          <p className="app-muted mt-1.5 max-w-3xl text-xs leading-5">
+            {labels.detail}
+          </p>
         </div>
-        <select
-          className="app-field min-h-11 min-w-0 flex-1 rounded-[var(--app-radius-control)] px-3 py-2 text-sm sm:ml-auto sm:max-w-[320px]"
-          value={selectedId ?? ''}
-          onChange={(event) => onSelect(Number(event.target.value))}
-          aria-label={labels.ariaLabel}
-        >
-          {results.map((result) => (
-            <option key={result.id} value={result.id}>
-              #{result.id} {result.strategy} ·{' '}
-              {formatTimestamp(result.created_at)}
-            </option>
-          ))}
-        </select>
+        <span className="shrink-0 font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
+          {results.length}
+        </span>
       </div>
-    </FilterBar>
+
+      <div
+        className="mt-3 min-w-0 max-h-[360px] max-w-full overflow-auto overscroll-contain border-y border-[var(--app-divider)]"
+        data-testid="backtest-run-registry-scroll"
+      >
+        <div
+          aria-label={labels.ariaLabel}
+          className="min-w-[760px]"
+          role="listbox"
+        >
+          <div
+            aria-hidden="true"
+            className="sticky top-0 z-10 grid h-8 grid-cols-[72px_minmax(160px,1fr)_96px_84px_96px_160px] items-center gap-3 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-text-secondary)]"
+          >
+            <span>{labels.run}</span>
+            <span>{pageLabels.strategy}</span>
+            <span className="text-right">{metricLabels.totalReturn}</span>
+            <span className="text-right">{metricLabels.sharpe}</span>
+            <span className="text-right">{metricLabels.maxDrawdown}</span>
+            <span className="text-right">{labels.created}</span>
+          </div>
+          <div className="divide-y divide-[var(--app-divider)]">
+            {results.map((result) => {
+              const selected = result.id === selectedId;
+              const returnClass =
+                result.total_return > 0
+                  ? 'text-[var(--app-pnl-positive)]'
+                  : result.total_return < 0
+                    ? 'text-[var(--app-pnl-negative)]'
+                    : 'text-[var(--app-text)]';
+              return (
+                <button
+                  aria-selected={selected}
+                  className={`grid min-h-10 w-full grid-cols-[72px_minmax(160px,1fr)_96px_84px_96px_160px] items-center gap-3 px-2 text-left text-xs tabular-nums transition-colors ${
+                    selected
+                      ? 'bg-[var(--app-accent-bg)]'
+                      : 'hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_50%,transparent)]'
+                  }`}
+                  data-result-id={result.id}
+                  data-testid="backtest-run-registry-row"
+                  key={result.id}
+                  onClick={() => onSelect(result.id)}
+                  role="option"
+                  type="button"
+                >
+                  <span className="font-mono font-semibold text-[var(--app-text)]">
+                    #{result.id}
+                  </span>
+                  <span className="truncate font-semibold text-[var(--app-text)]">
+                    {result.strategy}
+                  </span>
+                  <span className={`text-right font-semibold ${returnClass}`}>
+                    {formatPercent(result.total_return)}
+                  </span>
+                  <span className="text-right text-[var(--app-text)]">
+                    {formatAmount(result.sharpe)}
+                  </span>
+                  <span className="text-right text-[var(--app-pnl-negative)]">
+                    {formatPercent(-Math.abs(result.max_drawdown))}
+                  </span>
+                  <span className="text-right text-[var(--app-text-tertiary)]">
+                    {formatTimestamp(result.created_at)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
