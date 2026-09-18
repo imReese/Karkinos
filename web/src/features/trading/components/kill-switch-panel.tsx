@@ -137,16 +137,13 @@ export function KillSwitchPanel() {
       data-layout="compact-control"
       data-testid="kill-switch-panel"
     >
-      <summary className="flex min-h-14 cursor-pointer list-none flex-col items-start justify-between gap-2 px-1 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:flex-row sm:items-center sm:gap-4 sm:px-3 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-14 cursor-pointer list-none flex-col items-start gap-2 px-1 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:px-2 [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
           <span className="block text-sm font-semibold text-[var(--app-text)]">
             {labels.title}
           </span>
-          <span className="mt-0.5 hidden text-xs leading-5 text-[var(--app-text-secondary)] sm:block">
-            {labels.subtitle}
-          </span>
         </span>
-        <span className="flex w-full shrink-0 items-center justify-between gap-2 text-right sm:w-auto sm:flex-col sm:items-end sm:gap-1">
+        <span className="flex w-full min-w-0 items-center justify-between gap-2 text-left">
           <span className="app-type-micro flex flex-wrap items-center justify-end gap-2 font-mono text-[var(--app-text-tertiary)]">
             <KillSwitchBadge enabled={enabled} snapshot={snapshot} />
             <span>

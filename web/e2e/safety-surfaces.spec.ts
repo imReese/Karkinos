@@ -15,7 +15,7 @@ test('critical human-review surfaces load from the product runtime', async ({
   test.setTimeout(60_000);
   const surfaces = [
     { path: '/decision', heading: /Decision platform|决策平台/ },
-    { path: '/trading', heading: /Trading review|交易复核/ },
+    { path: '/trading', heading: /^Execution$|^执行$/ },
     {
       path: '/account-truth',
       heading: /Account Truth Review Center|账户事实复核中心/,
