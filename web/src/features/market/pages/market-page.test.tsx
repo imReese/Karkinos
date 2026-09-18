@@ -524,7 +524,12 @@ test('counts cache estimated and missing quotes as market data needing confirmat
     0,
   );
   expect((await screen.findAllByText('Cache only')).length).toBeGreaterThan(0);
-  expect(await screen.findByText('3 quotes need review')).toBeTruthy();
+  const globalEvidence = await screen.findByTestId(
+    'market-global-data-evidence',
+  );
+  const globalSummary = globalEvidence.querySelector('summary');
+  expect(globalSummary?.textContent).toContain('Cache only');
+  expect(globalSummary?.textContent).toContain('3');
 });
 
 test('states the personal-universe boundary and shows quote age separately from status', async () => {

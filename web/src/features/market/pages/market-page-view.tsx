@@ -1,6 +1,5 @@
 import {
   EvidenceState,
-  MetricStrip,
   StatusBadge,
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
@@ -12,7 +11,6 @@ import {
 } from '../components/market-instrument-workspace';
 import type { MarketPageController } from './market-page-controller';
 import { MarketDataEvidenceWorkspace } from './market-data-evidence-workspace';
-import { formatAge } from './market-page-format';
 import { MarketResearchNotesWorkspace } from './market-research-notes-workspace';
 
 export function MarketPageView({
@@ -83,10 +81,9 @@ function MarketResolvedWorkspace({
   return (
     <div className="space-y-4 sm:space-y-5">
       <MarketInstrumentSelection controller={controller} />
-      <MarketSummary controller={controller} />
-      <MarketDataEvidenceWorkspace controller={controller} />
-      <MarketHoldingEvidenceReview controller={controller} />
       <MarketResearchNotesWorkspace controller={controller} />
+      <MarketHoldingEvidenceReview controller={controller} />
+      <MarketGlobalDataEvidence controller={controller} />
     </div>
   );
 }
@@ -205,47 +202,41 @@ function MarketInstrumentSelection({
   );
 }
 
-function MarketSummary({ controller }: { controller: MarketPageController }) {
-  const {
-    copy,
-    health,
-    holdingItemsCount,
-    items,
-    latestQuoteLabel,
-    marketStateLabel,
-    staleCount,
-  } = controller;
+function MarketGlobalDataEvidence({
+  controller,
+}: {
+  controller: MarketPageController;
+}) {
+  const { copy, evidenceModeLabel, staleCount } = controller;
   return (
-    <MetricStrip
-      ariaLabel={copy.market.title}
-      items={[
-        {
-          id: 'watchlist',
-          label: copy.market.watchlist,
-          value: items.length,
-          detail: copy.market.personalUniverse,
-        },
-        {
-          id: 'holdings',
-          label: copy.market.holdingsContext,
-          value: holdingItemsCount,
-          detail: `${items.length} ${copy.market.watchlist}`,
-        },
-        {
-          id: 'latest-quote',
-          label: copy.market.latestQuote,
-          value: latestQuoteLabel,
-          detail: `${copy.market.cacheAge} ${formatAge(health?.cache_age_seconds)}`,
-        },
-        {
-          id: 'market-state',
-          label: copy.market.marketOpen,
-          value: marketStateLabel,
-          detail: `${staleCount} ${copy.market.staleSymbols}`,
-          tone: staleCount > 0 ? 'warning' : 'neutral',
-        },
-      ]}
-    />
+    <details
+      className="group min-w-0 border-t border-[var(--app-divider)]"
+      data-testid="market-global-data-evidence"
+    >
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="app-type-section-title block text-[var(--app-text)]">
+            {copy.market.health}
+          </span>
+          <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
+            {copy.market.dataOperationsDetail}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
+          <span>{evidenceModeLabel}</span>
+          <span className="font-mono tabular-nums">{staleCount}</span>
+          <span
+            aria-hidden="true"
+            className="font-semibold transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+          >
+            ↓
+          </span>
+        </span>
+      </summary>
+      <div className="border-t border-[var(--app-divider)] pt-3">
+        <MarketDataEvidenceWorkspace controller={controller} />
+      </div>
+    </details>
   );
 }
 
