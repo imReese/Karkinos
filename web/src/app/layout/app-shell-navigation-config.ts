@@ -16,56 +16,44 @@ export const OVERVIEW_ROUTE = '/overview';
 
 export const NAVIGATION_GROUPS = [
   {
-    key: 'workspace',
-    label: { en: 'Workspace', zh: '工作台' },
-    items: [{ to: OVERVIEW_ROUTE, key: 'overview', icon: OverviewNavIcon }],
-  },
-  {
-    key: 'invest',
-    label: { en: 'Invest', zh: '投资' },
+    key: 'monitor',
+    label: { en: 'Monitor', zh: '监控' },
     items: [
+      { to: OVERVIEW_ROUTE, key: 'overview', icon: OverviewNavIcon },
       { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
       { to: '/market', key: 'market', icon: MarketNavIcon },
     ],
   },
   {
-    key: 'research',
-    label: { en: 'Research', zh: '研究' },
-    items: [
-      { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
-      { to: '/ai-research', key: 'aiResearch', icon: AiResearchNavIcon },
-    ],
-  },
-  {
-    key: 'act',
-    label: { en: 'Act', zh: '行动' },
+    key: 'decide',
+    label: { en: 'Decide', zh: '决策' },
     items: [
       { to: '/decision', key: 'decision', icon: DecisionNavIcon },
-      { to: '/trading', key: 'trading', icon: TradingNavIcon },
+      { to: '/risk', key: 'risk', icon: RiskNavIcon },
+      { to: '/ai-research', key: 'aiResearch', icon: AiResearchNavIcon },
+      { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
     ],
   },
   {
-    key: 'control',
-    label: { en: 'Control', zh: '控制' },
+    key: 'execute',
+    label: { en: 'Execute', zh: '执行' },
     items: [
-      { to: '/risk', key: 'risk', icon: RiskNavIcon },
+      { to: '/trading', key: 'trading', icon: TradingNavIcon },
+      { to: '/operations', key: 'operations', icon: OperationsNavIcon },
       { to: '/activity', key: 'activity', icon: ActivityNavIcon },
     ],
   },
   {
     key: 'system',
     label: { en: 'System', zh: '系统' },
-    items: [
-      { to: '/operations', key: 'operations', icon: OperationsNavIcon },
-      { to: '/settings', key: 'settings', icon: SettingsNavIcon },
-    ],
+    items: [{ to: '/settings', key: 'settings', icon: SettingsNavIcon }],
   },
 ] as const;
 
 export const MOBILE_PRIMARY_ITEMS = [
   NAVIGATION_GROUPS[0].items[0],
+  NAVIGATION_GROUPS[0].items[1],
   NAVIGATION_GROUPS[1].items[0],
-  NAVIGATION_GROUPS[3].items[0],
 ] as const;
 
 export function isNavigationItemActive(pathname: string, target: string) {

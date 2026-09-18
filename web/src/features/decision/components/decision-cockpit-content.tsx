@@ -93,6 +93,57 @@ export function DecisionCockpitContent({
         }
       />
 
+      {intraday.isLoading || intraday.isError ? (
+        <div
+          role="status"
+          data-testid="decision-intraday-state"
+          className="flex min-w-0 items-center gap-2 border-y border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-text-secondary)]"
+        >
+          <StatusBadge tone={intraday.isError ? 'warning' : 'neutral'}>
+            {intraday.isError ? copy.states.error : copy.states.loading}
+          </StatusBadge>
+          <span>
+            {intraday.isError
+              ? labels.intradayErrorDetail
+              : labels.intradayLoadingDetail}
+          </span>
+        </div>
+      ) : null}
+
+      <SignalQueuePanel
+        actions={signalActions.data ?? []}
+        journal={signalJournal.data ?? []}
+        loading={signalActions.isLoading || signalJournal.isLoading}
+        error={signalActions.isError || signalJournal.isError}
+      />
+
+      <DecisionGateMatrixSection
+        gateItems={gateItems}
+        allDecisionGatesPass={allDecisionGatesPass}
+        decisionGateAttentionCount={decisionGateAttentionCount}
+        healthyGateMatrixExpanded={healthyGateMatrixExpanded}
+        onToggle={() => setHealthyGateMatrixExpanded((current) => !current)}
+      />
+
+      <details
+        className="min-w-0 border-y border-[var(--app-divider)]"
+        data-testid="decision-quality-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+          <span>
+            {locale === 'zh'
+              ? '决策证据登记'
+              : 'Decision evidence register'}
+          </span>
+          <span className="text-xs font-normal text-[var(--app-text-secondary)]">
+            {locale === 'zh' ? '按需展开' : 'Expand on demand'}
+          </span>
+        </summary>
+        <div className="py-4">
+          <DecisionQualityPanel />
+        </div>
+      </details>
+
       <DecisionNextActionGuidePanel lanes={lanes} />
 
       <MetricStrip
@@ -133,57 +184,6 @@ export function DecisionCockpitContent({
           },
         ]}
       />
-
-      {intraday.isLoading || intraday.isError ? (
-        <div
-          role="status"
-          data-testid="decision-intraday-state"
-          className="flex min-w-0 items-center gap-2 border-y border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-text-secondary)]"
-        >
-          <StatusBadge tone={intraday.isError ? 'warning' : 'neutral'}>
-            {intraday.isError ? copy.states.error : copy.states.loading}
-          </StatusBadge>
-          <span>
-            {intraday.isError
-              ? labels.intradayErrorDetail
-              : labels.intradayLoadingDetail}
-          </span>
-        </div>
-      ) : null}
-
-      <SignalQueuePanel
-        actions={signalActions.data ?? []}
-        journal={signalJournal.data ?? []}
-        loading={signalActions.isLoading || signalJournal.isLoading}
-        error={signalActions.isError || signalJournal.isError}
-      />
-
-      <DecisionGateMatrixSection
-        gateItems={gateItems}
-        allDecisionGatesPass={allDecisionGatesPass}
-        decisionGateAttentionCount={decisionGateAttentionCount}
-        healthyGateMatrixExpanded={healthyGateMatrixExpanded}
-        onToggle={() => setHealthyGateMatrixExpanded((current) => !current)}
-      />
-
-      <details
-        className="min-w-0 border-y border-[var(--app-divider)]"
-        data-testid="decision-quality-disclosure"
-      >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
-          <span>
-            {locale === 'zh'
-              ? '决策质量与复盘证据'
-              : 'Decision quality and review evidence'}
-          </span>
-          <span className="text-xs font-normal text-[var(--app-text-secondary)]">
-            {locale === 'zh' ? '按需展开' : 'Expand on demand'}
-          </span>
-        </summary>
-        <div className="py-4">
-          <DecisionQualityPanel />
-        </div>
-      </details>
 
       {idleTradingPlan ? (
         <details

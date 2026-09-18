@@ -65,7 +65,7 @@ export function ManualTicketSummary({
         />
       </div>
       {result.limitations?.length ? (
-        <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+        <div className="mt-3 border-y border-[var(--app-divider)] py-3">
           <div className="app-muted text-xs">
             {exportReviewLabels.limitations}
           </div>
@@ -80,7 +80,7 @@ export function ManualTicketSummary({
       ) : null}
       {operatorForm ? (
         <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-3">
-          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
             <div className="app-muted text-xs">
               {labels.manualTicketAccountAlias}
             </div>
@@ -88,7 +88,7 @@ export function ManualTicketSummary({
               {formValueText(operatorForm.account_alias)}
             </div>
           </div>
-          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
             <div className="app-muted text-xs">
               {labels.manualTicketEstimatedTotalFee}
             </div>
@@ -96,7 +96,7 @@ export function ManualTicketSummary({
               {formValueText(feeTax?.estimated_total_fee)}
             </div>
           </div>
-          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
             <div className="app-muted text-xs">
               {labels.manualTicketTradingSession}
             </div>
@@ -108,7 +108,7 @@ export function ManualTicketSummary({
       ) : null}
       {operatorForm ? (
         <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-3">
-          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
             <div className="app-muted text-xs">
               {labels.manualTicketNetCashImpact}
             </div>
@@ -116,7 +116,7 @@ export function ManualTicketSummary({
               {formValueText(cashImpact?.estimated_net_cash_impact)}
             </div>
           </div>
-          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
             <div className="app-muted text-xs">
               {labels.manualTicketPositionAfter}
             </div>
@@ -124,7 +124,7 @@ export function ManualTicketSummary({
               {formValueText(positionCost?.estimated_quantity_after)}
             </div>
           </div>
-          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
             <div className="app-muted text-xs">
               {labels.manualTicketCostBasisMethod}
             </div>
@@ -139,7 +139,7 @@ export function ManualTicketSummary({
           {visibleFields.map((field) => (
             <div
               key={field.key}
-              className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_16%,transparent)] px-3 py-2"
+              className="min-w-0 border-t border-[var(--app-divider)] py-2"
             >
               <div className="app-muted text-xs">{field.label}</div>
               <div className="mt-1 break-words text-sm text-[var(--app-text)]">
@@ -150,7 +150,7 @@ export function ManualTicketSummary({
         </div>
       ) : null}
       <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
-        <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+        <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
           <div className="app-muted text-xs">
             {labels.manualTicketExportCopyText}
           </div>
@@ -158,7 +158,7 @@ export function ManualTicketSummary({
             {result.export.copy_text || result.ticket.copy_text}
           </div>
         </div>
-        <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+        <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
           <div className="app-muted text-xs">
             {labels.manualTicketExportPayload}
           </div>
@@ -168,7 +168,7 @@ export function ManualTicketSummary({
         </div>
       </div>
       <div
-        className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-3"
+        className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3"
         data-testid="manual-ticket-reconciliation-handoff"
       >
         <div className="font-semibold text-[var(--app-text)]">
@@ -179,13 +179,13 @@ export function ManualTicketSummary({
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <a
-            className="app-button-secondary rounded-xl px-3 py-2 text-sm font-semibold"
+            className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold"
             href="/account-truth"
           >
             {handoffLabels.importEvidence}
           </a>
           <a
-            className="app-button-secondary rounded-xl px-3 py-2 text-sm font-semibold"
+            className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold"
             href="/decision"
           >
             {handoffLabels.reviewReconciliation}

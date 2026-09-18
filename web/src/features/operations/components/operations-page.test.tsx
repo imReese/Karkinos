@@ -373,11 +373,13 @@ test('renders persisted attention evidence without write or execution affordance
       .getAttribute('href'),
   ).toBe('/market');
   const subsystemRegister = screen.getByTestId('operations-subsystem-register');
-  expect(subsystemRegister.querySelector('summary')?.textContent).toContain(
-    'Subsystem evidence register',
-  );
-  fireEvent.click(subsystemRegister.querySelector('summary') as HTMLElement);
+  expect(
+    within(subsystemRegister).getByRole('heading', {
+      name: 'Subsystem evidence register',
+    }),
+  ).toBeTruthy();
   const subsystemTable = screen.getByTestId('operations-subsystem-table');
+  expect(subsystemRegister.contains(subsystemTable)).toBe(true);
   expect(within(subsystemTable).getAllByRole('columnheader')).toHaveLength(4);
   expect(subsystemTable.textContent).toContain('Observed at:');
   expect(subsystemTable.textContent).toContain(

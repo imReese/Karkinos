@@ -39,7 +39,10 @@ export function ManualTicketExportPanel({
   }
 
   return (
-    <div className="mt-4 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+    <section
+      className="mt-4 min-w-0 border-y border-[var(--app-divider)] py-4"
+      data-testid="manual-execution-register"
+    >
       <ManualTicketSummary result={result} />
       <ManualExecutionPanel
         result={result}
@@ -52,6 +55,6 @@ export function ManualTicketExportPanel({
         onPreviewExecution={onPreviewExecution}
         onRecordExecution={onRecordExecution}
       />
-    </div>
+    </section>
   );
 }

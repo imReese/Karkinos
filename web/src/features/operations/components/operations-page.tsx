@@ -299,31 +299,32 @@ function OperationsSubsystemRegister({
 }) {
   const { labels, subsystemColumns } = controller;
   return (
-    <details
-      className="group min-w-0 border-y border-[var(--app-divider)] py-2"
+    <section
+      className="min-w-0 space-y-3 border-t border-[var(--app-divider)] pt-4"
       data-testid="operations-subsystem-register"
+      aria-labelledby="operations-subsystem-register-heading"
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
-        <span>{labels.subsystemRegister}</span>
-        <span className="flex items-center gap-2 font-mono text-xs font-normal tabular-nums text-[var(--app-text-tertiary)]">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2
+          id="operations-subsystem-register-heading"
+          className="app-type-section-title text-[var(--app-text)]"
+        >
+          {labels.subsystemRegister}
+        </h2>
+        <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
           {projection.subsystems.length}
-          <span aria-hidden="true" className="group-open:rotate-180">
-            ▾
-          </span>
         </span>
-      </summary>
-      <div className="mt-3 min-w-0">
-        <DataTable
-          data={projection.subsystems}
-          columns={subsystemColumns}
-          caption={labels.subsystemRegister}
-          emptyState={labels.attentionEmpty}
-          getRowId={(row) => row.id}
-          tableTestId="operations-subsystem-table"
-          scrollTestId="operations-subsystem-scroll"
-        />
       </div>
-    </details>
+      <DataTable
+        data={projection.subsystems}
+        columns={subsystemColumns}
+        caption={labels.subsystemRegister}
+        emptyState={labels.attentionEmpty}
+        getRowId={(row) => row.id}
+        tableTestId="operations-subsystem-table"
+        scrollTestId="operations-subsystem-scroll"
+      />
+    </section>
   );
 }
 
