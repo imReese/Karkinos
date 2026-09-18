@@ -161,11 +161,9 @@ def legacy_preferred_provider_policy(provider: str) -> MarketSourcePolicy:
     base = CN_RESEARCH_V1
     routes: list[tuple[MarketDataUseCase, SourceRoute]] = []
     for use_case, route in base.routes:
-        candidates = route.candidates
-        if preferred in candidates:
-            candidates = (preferred,) + tuple(
-                candidate for candidate in candidates if candidate != preferred
-            )
+        candidates = (preferred,) + tuple(
+            candidate for candidate in route.candidates if candidate != preferred
+        )
         routes.append(
             (
                 use_case,

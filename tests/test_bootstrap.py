@@ -650,10 +650,10 @@ def test_create_runtime_context_builds_data_manager_with_default_store(monkeypat
             created["store_path"] = base_path
 
     class FakeDataManager:
-        def __init__(self, sources, store=None, default_source="akshare"):
+        def __init__(self, sources, store=None, source_policy=None):
             created["sources"] = sources
             created["store"] = store
-            created["default_source"] = default_source
+            created["source_policy"] = source_policy
 
         @staticmethod
         def get_instrument_by_type(sym, instrument_type, *, name=None):
@@ -662,15 +662,15 @@ def test_create_runtime_context_builds_data_manager_with_default_store(monkeypat
     monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
     monkeypatch.setattr("server.bootstrap.DataManager", FakeDataManager)
     monkeypatch.setattr(
-        "server.bootstrap.build_sources",
-        lambda data_source, tushare_token: {data_source: object()},
+        "server.bootstrap.build_sources_for_config",
+        lambda config: {"fixture": object()},
     )
 
     context = create_runtime_context(BacktestConfig())
 
     assert created["store_path"] == "data/store"
     assert created["store"].__class__ is FakeStore
-    assert created["default_source"] == "akshare"
+    assert created["source_policy"].policy_id == "karkinos.market.source.cn_research.v1"
     assert context.watchlist == []
 
 
@@ -682,7 +682,7 @@ def test_create_runtime_context_builds_watchlist_from_explicit_assets(monkeypatc
             pass
 
     class FakeDataManager:
-        def __init__(self, sources, store=None, default_source="akshare"):
+        def __init__(self, sources, store=None, source_policy=None):
             pass
 
         @staticmethod
@@ -693,8 +693,8 @@ def test_create_runtime_context_builds_watchlist_from_explicit_assets(monkeypatc
     monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
     monkeypatch.setattr("server.bootstrap.DataManager", FakeDataManager)
     monkeypatch.setattr(
-        "server.bootstrap.build_sources",
-        lambda data_source, tushare_token: {data_source: object()},
+        "server.bootstrap.build_sources_for_config",
+        lambda config: {"fixture": object()},
     )
 
     context = create_runtime_context(
@@ -1493,7 +1493,7 @@ def test_create_runtime_context_supports_env_data_dir(monkeypatch):
             created["store_path"] = base_path
 
     class FakeDataManager:
-        def __init__(self, sources, store=None, default_source="akshare"):
+        def __init__(self, sources, store=None, source_policy=None):
             created["store"] = store
 
         @staticmethod
@@ -1504,8 +1504,8 @@ def test_create_runtime_context_supports_env_data_dir(monkeypatch):
     monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
     monkeypatch.setattr("server.bootstrap.DataManager", FakeDataManager)
     monkeypatch.setattr(
-        "server.bootstrap.build_sources",
-        lambda data_source, tushare_token: {data_source: object()},
+        "server.bootstrap.build_sources_for_config",
+        lambda config: {"fixture": object()},
     )
 
     create_runtime_context(BacktestConfig())
