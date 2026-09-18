@@ -47,6 +47,7 @@ from data.storage.objects import (
 )
 
 DATASET_MANIFEST_SCHEMA_VERSION = "karkinos.dataset_manifest.v1"
+DATASET_MANIFEST_SCHEMA_VERSION_V2 = "karkinos.dataset_manifest.v2"
 
 
 class DatasetManifestError(RuntimeError):
@@ -133,8 +134,13 @@ def serialize_daily_bar_dataset_manifest(
     ):
         raise TypeError("dataset_manifest_snapshot_invalid")
 
+    schema_version = (
+        DATASET_MANIFEST_SCHEMA_VERSION_V2
+        if snapshot.verification_bound
+        else DATASET_MANIFEST_SCHEMA_VERSION
+    )
     payload = {
-        "schema_version": (DATASET_MANIFEST_SCHEMA_VERSION),
+        "schema_version": schema_version,
         "kind": snapshot.kind,
         "start_date": (snapshot.start_date.isoformat()),
         "end_date": (snapshot.end_date.isoformat()),
@@ -145,7 +151,8 @@ def serialize_daily_bar_dataset_manifest(
             _instrument_payload(instrument) for instrument in snapshot.instruments
         ],
         "partitions": [
-            _partition_payload(partition) for partition in snapshot.partitions
+            _partition_payload(partition, schema_version=schema_version)
+            for partition in snapshot.partitions
         ],
     }
 
@@ -202,7 +209,10 @@ def deserialize_daily_bar_dataset_manifest(
         field="schema_version",
     )
 
-    if schema_version != DATASET_MANIFEST_SCHEMA_VERSION:
+    if schema_version not in {
+        DATASET_MANIFEST_SCHEMA_VERSION,
+        DATASET_MANIFEST_SCHEMA_VERSION_V2,
+    }:
         raise DatasetManifestIntegrityError("dataset_manifest_schema_unsupported")
 
     kind = _require_text(
@@ -225,7 +235,10 @@ def deserialize_daily_bar_dataset_manifest(
 
     instruments = tuple(_instrument_from_payload(item) for item in instruments_value)
 
-    partitions = tuple(_partition_from_payload(item) for item in partitions_value)
+    partitions = tuple(
+        _partition_from_payload(item, schema_version=schema_version)
+        for item in partitions_value
+    )
 
     try:
         return DailyBarDatasetSnapshot(
@@ -278,13 +291,20 @@ def _instrument_payload(
 
 def _partition_payload(
     partition: DailyBarDatasetPartition,
+    *,
+    schema_version: str,
 ) -> dict[str, str]:
-    return {
-        "partition_date": (partition.partition_date.isoformat()),
+    payload = {
+        "partition_date": partition.partition_date.isoformat(),
         "provider": partition.provider,
-        "revision_id": (partition.revision_id),
-        "materialization_id": (partition.materialization_id),
+        "revision_id": partition.revision_id,
+        "materialization_id": partition.materialization_id,
     }
+    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V2:
+        if partition.verification_id is None:
+            raise DatasetManifestError("dataset_manifest_verification_id_missing")
+        payload["verification_id"] = partition.verification_id
+    return payload
 
 
 def _instrument_from_payload(
@@ -337,20 +357,24 @@ def _instrument_from_payload(
 
 def _partition_from_payload(
     value: object,
+    *,
+    schema_version: str,
 ) -> DailyBarDatasetPartition:
     payload = _require_object(
         value,
         field="partition",
     )
-
+    expected = {
+        "partition_date",
+        "provider",
+        "revision_id",
+        "materialization_id",
+    }
+    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V2:
+        expected.add("verification_id")
     _require_exact_keys(
         payload,
-        {
-            "partition_date",
-            "provider",
-            "revision_id",
-            "materialization_id",
-        },
+        expected,
         field="partition",
     )
 
@@ -368,19 +392,22 @@ def _partition_from_payload(
                 payload["revision_id"],
                 field="revision_id",
             ),
-            materialization_id=(
-                _require_text(
-                    payload["materialization_id"],
-                    field=("materialization_id"),
+            materialization_id=_require_text(
+                payload["materialization_id"],
+                field="materialization_id",
+            ),
+            verification_id=(
+                None
+                if schema_version == DATASET_MANIFEST_SCHEMA_VERSION
+                else _require_text(
+                    payload["verification_id"],
+                    field="verification_id",
                 )
             ),
         )
     except DatasetManifestIntegrityError:
         raise
-    except (
-        TypeError,
-        ValueError,
-    ) as exc:
+    except (TypeError, ValueError) as exc:
         raise DatasetManifestIntegrityError(
             "dataset_manifest_partition_invalid"
         ) from exc
