@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.types import AssetClass, InstrumentType, Symbol
-from data.manager import DataManager, build_sources
+from data.manager import DataManager, build_sources_for_config
 from data.store import DataStore
 from server.config import BacktestConfig
 from server.config_contract import (
@@ -327,15 +327,15 @@ def build_strategy(config: BacktestConfig, event_bus: Any) -> Any:
 
 def create_runtime_context(config: BacktestConfig) -> RuntimeContext:
     """Build shared runtime wiring for data-backed entrypoints."""
-    sources = build_sources(
-        data_source=config.data_source,
-        tushare_token=config.tushare_token,
-    )
+    from data.source_policy import source_policy_for_config
+
+    source_policy = source_policy_for_config(config)
+    sources = build_sources_for_config(config)
     store = DataStore(resolve_data_dir())
     data_manager = DataManager(
         sources=sources,
         store=store,
-        default_source=config.data_source,
+        source_policy=source_policy,
     )
     configured_identities = _configured_instrument_identities(config)
     configured_instrument_types = {

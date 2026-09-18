@@ -9,7 +9,16 @@ import pandas as pd
 
 from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
+from data.provider_registry import build_provider_registry
 from data.source import DataSource
+from data.source_policy import (
+    CN_RESEARCH_V1,
+    MarketDataUseCase,
+    MarketSourcePolicy,
+    legacy_preferred_provider_policy,
+    resolve_market_source_policy,
+    source_policy_for_config,
+)
 from data.store import DataStore
 from domain.instrument import (
     Instrument,
@@ -27,16 +36,39 @@ _EMPTY_BAR_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
 
 
 def build_sources(
-    data_source: str = "akshare", tushare_token: str = ""
+    data_source: str | None = None,
+    tushare_token: str = "",
+    *,
+    source_policy: MarketSourcePolicy | str | None = None,
 ) -> dict[str, DataSource]:
-    """集中构建数据源字典，消除四处重复代码。"""
-    from data.providers.akshare_source import AKShareSource
-    from data.providers.tushare_source import TushareSource
+    """Build legacy DataSource adapters in policy order."""
+    if source_policy is None:
+        policy = (
+            legacy_preferred_provider_policy(data_source)
+            if data_source
+            else CN_RESEARCH_V1
+        )
+    elif isinstance(source_policy, MarketSourcePolicy):
+        policy = source_policy
+    else:
+        policy = resolve_market_source_policy(str(source_policy))
 
-    sources: dict[str, DataSource] = {"akshare": AKShareSource()}
-    if tushare_token:
-        sources["tushare"] = TushareSource(token=tushare_token)
-    return sources
+    ordered: list[str] = []
+    for _, route in policy.routes:
+        for name in route.candidates:
+            if name not in ordered:
+                ordered.append(name)
+    return build_provider_registry(
+        tushare_token=tushare_token,
+        include_tdx=False,
+    ).legacy_sources(tuple(ordered))
+
+
+def build_sources_for_config(config: object) -> dict[str, DataSource]:
+    return build_sources(
+        tushare_token=str(getattr(config, "tushare_token", "") or ""),
+        source_policy=source_policy_for_config(config),
+    )
 
 
 # 资产类别 → 标的名称模板
@@ -84,6 +116,21 @@ def _bar_instrument_type(
     return resolved
 
 
+def _bar_use_case(
+    asset_class: AssetClass,
+    frequency: BarFrequency,
+) -> MarketDataUseCase:
+    if asset_class is AssetClass.INDEX:
+        return MarketDataUseCase.INDEX_BARS
+    if asset_class is AssetClass.GOLD:
+        return MarketDataUseCase.GOLD_BARS
+    if asset_class is AssetClass.BOND:
+        return MarketDataUseCase.BOND_BARS
+    if frequency in {BarFrequency.MIN_1, BarFrequency.MIN_5}:
+        return MarketDataUseCase.REALTIME_QUOTES
+    return MarketDataUseCase.DAILY_BARS
+
+
 class DataManager:
     """数据管线编排。
 
@@ -95,11 +142,25 @@ class DataManager:
         self,
         sources: dict[str, DataSource],
         store: DataStore | None = None,
-        default_source: str = "akshare",
+        default_source: str | None = None,
+        *,
+        source_policy: MarketSourcePolicy | None = None,
     ) -> None:
         self.sources = sources
         self.store = store
-        self.default_source = default_source
+        self.source_policy = (
+            source_policy
+            if source_policy is not None
+            else (
+                legacy_preferred_provider_policy(default_source)
+                if default_source
+                else CN_RESEARCH_V1
+            )
+        )
+        self.default_source = (
+            default_source
+            or self.source_policy.route(MarketDataUseCase.REALTIME_QUOTES).candidates[0]
+        )
 
     def get_bars(
         self,
@@ -232,7 +293,10 @@ class DataManager:
             "拉取数据: %s (%s) from %s",
             symbol,
             asset_class.value,
-            source_name or self.default_source,
+            source_name
+            or self.source_policy.route(
+                _bar_use_case(asset_class, frequency)
+            ).candidates[0],
         )
         try:
             df = self._fetch_bars_remote(
@@ -282,15 +346,22 @@ class DataManager:
         )
 
     def _source_candidates(
-        self, source_name: str | None = None
+        self,
+        *,
+        asset_class: AssetClass,
+        frequency: BarFrequency,
+        source_name: str | None = None,
     ) -> list[tuple[str, DataSource]]:
-        primary_name = source_name or self.default_source
-        primary_source = self._get_source(primary_name)
-        candidates = [(primary_name, primary_source)]
-        fallback = self.sources.get("akshare")
-        if fallback is not None and primary_name != "akshare":
-            candidates.append(("akshare", fallback))
-        return candidates
+        if source_name is not None:
+            return [(source_name, self._get_source(source_name))]
+        names = self.source_policy.route(
+            _bar_use_case(asset_class, frequency)
+        ).candidates
+        return [
+            (name, source)
+            for name in names
+            if (source := self.sources.get(name)) is not None
+        ]
 
     def _fetch_bars_remote(
         self,
@@ -305,7 +376,11 @@ class DataManager:
         errors: list[Exception] = []
         empty_sources: list[str] = []
         unsupported_sources: list[str] = []
-        for candidate_name, source in self._source_candidates(source_name):
+        for candidate_name, source in self._source_candidates(
+            asset_class=asset_class,
+            frequency=frequency,
+            source_name=source_name,
+        ):
             supports_bars = getattr(source, "supports_bars", None)
             if callable(supports_bars) and not supports_bars(
                 asset_class=asset_class, frequency=frequency
@@ -337,10 +412,16 @@ class DataManager:
                 df = df.copy()
                 df.attrs["provider_name"] = candidate_name
                 df.attrs["data_source"] = candidate_name
-                if candidate_name != (source_name or self.default_source):
+                requested_source = (
+                    source_name
+                    or self.source_policy.route(
+                        _bar_use_case(asset_class, frequency)
+                    ).candidates[0]
+                )
+                if candidate_name != requested_source:
                     logger.info(
                         "远端数据源 fallback 成功: %s -> %s for %s (%s)",
-                        source_name or self.default_source,
+                        requested_source,
                         candidate_name,
                         symbol,
                         asset_class.value,
