@@ -107,4 +107,25 @@ describe('decision workbench contract', () => {
     );
     expect(DECISION_CORE).not.toContain('app-workbench-section');
   });
+
+  it('keeps default decision reading focused on queue, gates, action, and evidence', () => {
+    const queue = DECISION_CONTENT.indexOf('<SignalQueuePanel');
+    const gates = DECISION_CONTENT.indexOf('<DecisionGateMatrixSection');
+    const nextAction = DECISION_CONTENT.indexOf(
+      '<DecisionNextActionGuidePanel',
+    );
+    const evidence = DECISION_CONTENT.indexOf(
+      'data-testid="decision-quality-disclosure"',
+    );
+    const supporting = DECISION_CONTENT.indexOf(
+      'data-testid="decision-supporting-details"',
+    );
+
+    expect(queue).toBeGreaterThanOrEqual(0);
+    expect(queue).toBeLessThan(gates);
+    expect(gates).toBeLessThan(nextAction);
+    expect(nextAction).toBeLessThan(evidence);
+    expect(evidence).toBeLessThan(supporting);
+    expect(DECISION_CONTENT).not.toContain('<MetricStrip');
+  });
 });

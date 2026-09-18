@@ -15,7 +15,10 @@ export function RiskThresholdEvidence({
   if (!workspace.data) return null;
 
   return (
-    <section className="min-w-0 space-y-2">
+    <section
+      className="min-w-0 space-y-2"
+      data-testid="risk-threshold-register"
+    >
       <div>
         <h2 className="app-type-section-title text-[var(--app-text)]">
           {locale === 'zh'

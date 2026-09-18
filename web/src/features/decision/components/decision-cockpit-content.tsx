@@ -1,9 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import {
-  MetricStrip,
-  StatusBadge,
-  WorkspaceHeader,
-} from '../../../shared/ui/workbench';
+import { StatusBadge, WorkspaceHeader } from '../../../shared/ui/workbench';
 import { formatCurrency } from '../../../shared/format';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import { DecisionQualityPanel } from './decision-quality-panel';
@@ -125,6 +121,8 @@ export function DecisionCockpitContent({
         onToggle={() => setHealthyGateMatrixExpanded((current) => !current)}
       />
 
+      <DecisionNextActionGuidePanel lanes={lanes} />
+
       <details
         className="min-w-0 border-y border-[var(--app-divider)]"
         data-testid="decision-quality-disclosure"
@@ -141,47 +139,6 @@ export function DecisionCockpitContent({
           <DecisionQualityPanel />
         </div>
       </details>
-
-      <DecisionNextActionGuidePanel lanes={lanes} />
-
-      <MetricStrip
-        ariaLabel={labels.commandRegisterTitle}
-        items={[
-          {
-            id: 'candidate-count',
-            label: labels.candidateActions,
-            value: today.data?.summary.candidate_count ?? '--',
-          },
-          {
-            id: 'manual-ready',
-            label: labels.manualConfirmations,
-            value: today.data
-              ? labels.readyCount(
-                  today.data.summary.ready_for_manual_confirmation_count,
-                )
-              : '--',
-          },
-          {
-            id: 'risk-blocked',
-            label: labels.riskBlocks,
-            value: today.data
-              ? labels.blockedCount(today.data.summary.risk_blocked_count)
-              : '--',
-            tone:
-              (today.data?.summary.risk_blocked_count ?? 0) > 0
-                ? 'warning'
-                : 'neutral',
-          },
-          {
-            id: 'market-evidence',
-            label: labels.marketData,
-            value: formatPublicStatus(
-              today.data?.summary.market_data?.source_health ?? 'unknown',
-              locale,
-            ),
-          },
-        ]}
-      />
 
       {idleTradingPlan ? (
         <details
@@ -276,64 +233,96 @@ export function DecisionCockpitContent({
         </div>
       </details>
 
-      <DecisionWorkflowPanel lanes={lanes} />
-
-      {collapseDecisionEvidence && !summaryExpanded ? (
-        <DecisionSummaryCollapsedPanel
-          candidateCount={denseCandidateCount}
-          onExpand={() => setSummaryExpanded(true)}
-        />
-      ) : (
-        <div
-          data-testid="decision-summary-grid"
-          className="min-w-0 border-y border-[var(--app-divider)]"
-        >
-          {lanes.map((lane) => (
-            <LaneStatusTile key={lane.lane} lane={lane} />
-          ))}
-          {lanes.map((lane) => (
-            <AccountTruthGateTile
-              key={`${lane.lane}-account-truth`}
-              lane={lane}
-            />
-          ))}
-          {lanes.map((lane) => (
-            <StrategyAttributionGateTile
-              key={`${lane.lane}-strategy-attribution`}
-              lane={lane}
-            />
-          ))}
-          <SummaryTile
-            label={labels.marketHealth}
-            value={`${labels.marketHealth}: ${formatPublicStatus(
-              today.data?.summary.market_data?.source_health ?? '--',
-              locale,
-            )}`}
-            detail={labels.quotesDetail(
-              today.data?.summary.market_data?.live_quote_count ?? 0,
-              today.data?.summary.market_data?.stale_quote_count ?? 0,
-            )}
-          />
-          <SummaryTile
-            label={labels.portfolio}
-            value={`${labels.portfolioEquity}: ${formatCurrency(
-              today.data?.summary.portfolio?.total_equity,
-            )}`}
-            detail={labels.positionCount(
-              today.data?.summary.portfolio?.position_count ?? 0,
-            )}
-          />
-        </div>
-      )}
-
-      <div
-        data-testid="decision-lane-grid"
-        className="grid min-w-0 gap-5 xl:grid-cols-2"
+      <details
+        className="group min-w-0 border-y border-[var(--app-divider)]"
+        data-testid="decision-supporting-details"
       >
-        {lanes.map((lane) => (
-          <DecisionLanePanel key={lane.lane} lane={lane} />
-        ))}
-      </div>
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+          <span className="min-w-0">
+            <span className="app-type-section-title block text-[var(--app-text)]">
+              {locale === 'zh'
+                ? '通道与状态明细'
+                : 'Channel and status details'}
+            </span>
+            <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
+              {locale === 'zh'
+                ? '仅在需要核对日级、盘中、账户事实或归因差异时展开。'
+                : 'Expand only when reconciling daily, intraday, account-truth, or attribution differences.'}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
+            <span>
+              {locale === 'zh'
+                ? ['候选池 ', denseCandidateCount].join('')
+                : [denseCandidateCount, ' candidates'].join('')}
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+            />
+          </span>
+        </summary>
+        <div className="space-y-4 border-t border-[var(--app-divider)] py-4">
+          <DecisionWorkflowPanel lanes={lanes} />
+
+          {collapseDecisionEvidence && !summaryExpanded ? (
+            <DecisionSummaryCollapsedPanel
+              candidateCount={denseCandidateCount}
+              onExpand={() => setSummaryExpanded(true)}
+            />
+          ) : (
+            <div
+              data-testid="decision-summary-grid"
+              className="min-w-0 border-y border-[var(--app-divider)]"
+            >
+              {lanes.map((lane) => (
+                <LaneStatusTile key={lane.lane} lane={lane} />
+              ))}
+              {lanes.map((lane) => (
+                <AccountTruthGateTile
+                  key={`${lane.lane}-account-truth`}
+                  lane={lane}
+                />
+              ))}
+              {lanes.map((lane) => (
+                <StrategyAttributionGateTile
+                  key={`${lane.lane}-strategy-attribution`}
+                  lane={lane}
+                />
+              ))}
+              <SummaryTile
+                label={labels.marketHealth}
+                value={`${labels.marketHealth}: ${formatPublicStatus(
+                  today.data?.summary.market_data?.source_health ?? '--',
+                  locale,
+                )}`}
+                detail={labels.quotesDetail(
+                  today.data?.summary.market_data?.live_quote_count ?? 0,
+                  today.data?.summary.market_data?.stale_quote_count ?? 0,
+                )}
+              />
+              <SummaryTile
+                label={labels.portfolio}
+                value={`${labels.portfolioEquity}: ${formatCurrency(
+                  today.data?.summary.portfolio?.total_equity,
+                )}`}
+                detail={labels.positionCount(
+                  today.data?.summary.portfolio?.position_count ?? 0,
+                )}
+              />
+            </div>
+          )}
+
+          <div
+            data-testid="decision-lane-grid"
+            className="grid min-w-0 gap-5 xl:grid-cols-2"
+          >
+            {lanes.map((lane) => (
+              <DecisionLanePanel key={lane.lane} lane={lane} />
+            ))}
+          </div>
+        </div>
+      </details>
     </section>
   );
 }
