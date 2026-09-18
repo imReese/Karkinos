@@ -51,13 +51,9 @@ from server.services.market_refresh_provider import (
 logger = logging.getLogger(__name__)
 
 QUOTE_REFRESH_ATTEMPTS: dict[tuple[str, str], datetime] = {}
-
 QUOTE_REFRESH_ERRORS: dict[tuple[str, str], str | None] = {}
-
 MANUAL_REFRESH_TIMEOUT_SECONDS = 8.0
-
 PROVIDER_REFRESH_TIMEOUT_SECONDS = 3.0
-
 INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS = 7.0
 
 _BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(

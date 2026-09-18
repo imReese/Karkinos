@@ -148,6 +148,7 @@ class DataManager:
     ) -> None:
         self.sources = sources
         self.store = store
+        self._explicit_default_source = default_source
         self.source_policy = (
             source_policy
             if source_policy is not None
@@ -354,9 +355,13 @@ class DataManager:
     ) -> list[tuple[str, DataSource]]:
         if source_name is not None:
             return [(source_name, self._get_source(source_name))]
-        names = self.source_policy.route(
+        route_names = self.source_policy.route(
             _bar_use_case(asset_class, frequency)
         ).candidates
+        names = list(route_names)
+        explicit = self._explicit_default_source
+        if explicit and explicit in self.sources and explicit not in names:
+            names.insert(0, explicit)
         return [
             (name, source)
             for name in names
@@ -414,6 +419,7 @@ class DataManager:
                 df.attrs["data_source"] = candidate_name
                 requested_source = (
                     source_name
+                    or self._explicit_default_source
                     or self.source_policy.route(
                         _bar_use_case(asset_class, frequency)
                     ).candidates[0]

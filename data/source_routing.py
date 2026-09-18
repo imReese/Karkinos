@@ -59,12 +59,19 @@ def legacy_sources_for_use_case(
     config: object,
     use_case: MarketDataUseCase,
 ) -> dict[str, DataSource]:
-    names = configured_legacy_provider_names(config, use_case)
-    if not names:
+    """Resolve one legacy adapter route through the injectable manager seam."""
+    route = route_for_config(config, use_case)
+    # Import lazily so route tests and extension providers can replace the
+    # historical build_sources seam without contacting real providers.
+    from data import manager as data_manager
+
+    sources = data_manager.build_sources(
+        data_source=getattr(config, "data_source", None),
+        tushare_token=str(getattr(config, "tushare_token", "") or ""),
+    )
+    resolved = {name: sources[name] for name in route.candidates if name in sources}
+    if not resolved:
         raise MarketSourceRoutingError(
             f"market_source_route_unavailable:{use_case.value}"
         )
-    return provider_registry_for_config(
-        config,
-        include_tdx=False,
-    ).legacy_sources(names)
+    return resolved

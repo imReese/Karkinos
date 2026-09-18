@@ -59,7 +59,12 @@ def load_provider_quote_payload(
     }.get(asset_class, MarketDataUseCase.REALTIME_QUOTES)
     sources = _quote_sources(config=state.config, use_case=use_case)
     source_chain = list(sources.items())
-    configured_source_name = source_chain[0][0]
+    legacy_configured_source = (
+        None
+        if getattr(state.config, "market_data_source_policy", None)
+        else str(getattr(state.config, "data_source", "") or "").strip().lower() or None
+    )
+    configured_source_name = legacy_configured_source or source_chain[0][0]
 
     snapshot = None
     selected_source_name = configured_source_name

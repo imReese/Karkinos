@@ -14,7 +14,10 @@ from data.market_data import (
     normalize_market_data_status,
 )
 from data.source_policy import MarketDataUseCase
-from data.source_routing import preferred_legacy_provider
+from data.source_routing import (
+    configured_legacy_provider_names,
+    preferred_legacy_provider,
+)
 from server.projections.quote_status import (
     expected_quote_date,
     parse_quote_timestamp,
@@ -42,6 +45,14 @@ _HEALTHY_PROVIDER_STATUSES = frozenset(
 _STRATEGY_QUOTE_STATUSES = frozenset(
     {MarketDataStatus.CONFIRMED, MarketDataStatus.LIVE}
 )
+
+
+def scheduler_quote_provider_names(config: Any) -> tuple[str, ...]:
+    """Resolve scheduler realtime providers behind the scheduler value layer."""
+    return configured_legacy_provider_names(
+        config,
+        MarketDataUseCase.REALTIME_QUOTES,
+    )
 
 
 def configured_symbol_set(

@@ -10,8 +10,6 @@ from typing import Any, Callable
 
 from core.events import MarketEvent, SignalEvent
 from core.types import AssetClass, InstrumentType, Symbol
-from data.source_policy import MarketDataUseCase
-from data.source_routing import configured_legacy_provider_names
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from server.contracts.quote_ingestion import QuoteIngestionCommand
@@ -38,6 +36,7 @@ from server.scheduler_values import (
     optional_float,
     quote_fetch_metadata,
     scheduler_quote_evidence,
+    scheduler_quote_provider_names,
 )
 
 logger = logging.getLogger(__name__)
@@ -204,10 +203,7 @@ class SchedulerLoop:
         dependencies = self._dependencies
         state.install_runtime_event_bus(dependencies.event_bus_factory())
         runtime = dependencies.runtime_context_factory(dependencies.config)
-        provider_names = configured_legacy_provider_names(
-            dependencies.config,
-            MarketDataUseCase.REALTIME_QUOTES,
-        )
+        provider_names = scheduler_quote_provider_names(dependencies.config)
         if not provider_names:
             raise RuntimeError("configured scheduler quote route is unavailable")
         source = runtime.sources.get(provider_names[0])
