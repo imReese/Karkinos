@@ -83,6 +83,8 @@ jobs:
         run: uv run --locked mypy
       - name: Check Python architecture
         run: uv run --locked python tools/check_python_architecture.py
+      - name: Check persistence architecture
+        run: uv run --locked python tools/check_persistence_architecture.py
 
   repository-integrity:
     name: Repository integrity
