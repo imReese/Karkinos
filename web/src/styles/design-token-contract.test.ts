@@ -93,7 +93,6 @@ const REQUIRED_GEOMETRY_TOKENS = [
   '--app-touch-target',
   '--app-space-2',
   '--app-space-3',
-  '--app-space-4',
   '--app-space-6',
   '--app-space-8',
   '--app-section-gap',
@@ -284,7 +283,6 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-touch-target')).toBe('44px');
     expect(MOCHA.get('--app-space-2')).toBe('8px');
     expect(MOCHA.get('--app-space-3')).toBe('12px');
-    expect(MOCHA.get('--app-space-4')).toBe('16px');
     expect(MOCHA.get('--app-space-6')).toBe('24px');
     expect(MOCHA.get('--app-space-8')).toBe('32px');
     expect(MOCHA.get('--app-section-gap')).toBe('var(--app-space-6)');

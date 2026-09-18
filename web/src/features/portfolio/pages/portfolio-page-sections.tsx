@@ -1,5 +1,9 @@
 import { formatCurrency } from '../../../shared/format';
-import { EvidenceState } from '../../../shared/ui/workbench';
+import {
+  Button,
+  EvidenceState,
+  SectionHeader,
+} from '../../../shared/ui/workbench';
 import { AllocationCard } from '../components/allocation-card';
 import { LiveHoldingsBoard } from '../components/live-holdings-board';
 import { PortfolioConstructionRecommendationsCard } from '../components/portfolio-construction-recommendations-card';
@@ -25,14 +29,10 @@ export function PortfolioCurrentHoldingsSection({
       className="min-w-0 space-y-2"
       data-testid="portfolio-current-holdings"
     >
-      <div>
-        <h2 className="app-type-section-title text-[var(--app-text)]">
-          {copy.portfolio.currentHoldings.title}
-        </h2>
-        <p className="mt-0.5 max-w-4xl text-xs leading-5 text-[var(--app-text-secondary)]">
-          {copy.portfolio.currentHoldings.detail}
-        </p>
-      </div>
+      <SectionHeader
+        title={copy.portfolio.currentHoldings.title}
+        description={copy.portfolio.currentHoldings.detail}
+      />
       {model.hasQuotesNeedingReview ? (
         <EvidenceState
           kind="partial"
@@ -77,13 +77,9 @@ export function PortfolioCurrentHoldingsSection({
           title={copy.states.error}
           description={copy.portfolio.positionsError}
           action={
-            <button
-              type="button"
-              className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
-              onClick={actions.onRetrySnapshot}
-            >
+            <Button variant="secondary" onClick={actions.onRetrySnapshot}>
               {copy.states.retry}
-            </button>
+            </Button>
           }
         />
       ) : model.filteredPositions.length === 0 ? (
@@ -122,42 +118,40 @@ export function PortfolioAnalysisSection({
       className="min-w-0 space-y-3 border-t border-[var(--app-divider)] pt-4"
       data-testid="portfolio-analysis"
     >
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="app-type-section-title text-[var(--app-text)]">
-            {copy.portfolio.analysis.title}
-          </h2>
-          <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
-            {copy.portfolio.analysis.detail}
-          </p>
-        </div>
-        <div
-          role="group"
-          className="inline-flex overflow-hidden rounded-[var(--app-radius-control)] border border-[var(--app-border)]"
-          aria-label={copy.portfolio.toolbar.view}
-        >
-          {[
-            { value: 'account', label: copy.mode.accountShort },
-            { value: 'strategy', label: copy.mode.strategyShort },
-          ].map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              aria-pressed={state.mode === item.value}
-              onClick={() => actions.onModeChange(item.value as PortfolioMode)}
-              className={`min-h-10 px-3 text-xs font-semibold sm:min-h-8 ${
-                state.mode === item.value
-                  ? 'bg-[var(--app-accent)] text-[var(--app-text-inverse)]'
-                  : 'bg-transparent text-[var(--app-text-secondary)] hover:bg-[var(--app-accent-bg)]'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <SectionHeader
+        title={copy.portfolio.analysis.title}
+        description={copy.portfolio.analysis.detail}
+        actions={
+          <div
+            role="group"
+            className="app-inline-segmented"
+            aria-label={copy.portfolio.toolbar.view}
+          >
+            {[
+              { value: 'account', label: copy.mode.accountShort },
+              { value: 'strategy', label: copy.mode.strategyShort },
+            ].map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={state.mode === item.value}
+                onClick={() =>
+                  actions.onModeChange(item.value as PortfolioMode)
+                }
+                className={`app-inline-segmented-btn ${
+                  state.mode === item.value
+                    ? 'app-inline-segmented-btn-active'
+                    : ''
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
+      <div className="grid min-w-0 gap-4 min-[1440px]:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.5fr)]">
         {!model.primaryPortfolioQueriesSettled ? (
           <EvidenceState
             kind="error"
@@ -177,13 +171,12 @@ export function PortfolioAnalysisSection({
               title={copy.states.error}
               description={copy.portfolio.liveBoard.error}
               action={
-                <button
-                  type="button"
-                  className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
+                <Button
+                  variant="secondary"
                   onClick={actions.onRetryLiveHoldings}
                 >
                   {copy.states.retry}
-                </button>
+                </Button>
               }
             />
           ) : (
@@ -226,13 +219,9 @@ export function PortfolioAnalysisSection({
             title={copy.states.error}
             description={copy.portfolio.sidebarError}
             action={
-              <button
-                type="button"
-                className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
-                onClick={actions.onRetrySnapshot}
-              >
+              <Button variant="secondary" onClick={actions.onRetrySnapshot}>
                 {copy.states.retry}
-              </button>
+              </Button>
             }
           />
         ) : snapshot.data ? (
@@ -265,23 +254,24 @@ export function PortfolioHistorySection({
       className="min-w-0 border-t border-[var(--app-divider)] pt-4"
       data-testid="portfolio-history"
     >
-      <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="app-type-section-title text-[var(--app-text)]">
-            {copy.portfolio.detail.closedHistoryOnly}
-          </h2>
-          <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
+      <SectionHeader
+        title={copy.portfolio.detail.closedHistoryOnly}
+        description={
+          <>
             {copy.portfolio.detail.realizedPnl}:{' '}
             {formatCurrency(snapshot.data?.realized_pnl_total)}
-          </p>
-        </div>
-        <a
-          href="/activity"
-          className="app-button-secondary inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] px-2.5 text-xs font-semibold"
-        >
-          {copy.portfolio.detail.actionViewActivity}
-        </a>
-      </div>
+          </>
+        }
+        actions={
+          <a
+            href="/activity"
+            className="app-button app-button-secondary app-button-sm"
+          >
+            {copy.portfolio.detail.actionViewActivity}
+          </a>
+        }
+        className="mb-2"
+      />
       {model.closedPositions.length > 0 ? (
         <PositionsTable
           positions={model.closedPositions}

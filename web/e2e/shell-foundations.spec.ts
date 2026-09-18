@@ -503,6 +503,57 @@ test('desktop utility controls align and overview holdings avoid partial columns
   ).toBeVisible();
 });
 
+test('wide financial canvases use large displays without excessive gutters', async ({
+  page,
+}) => {
+  for (const viewport of [
+    { width: 1920, height: 1080 },
+    { width: 2560, height: 1440 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const path of ['/overview', '/portfolio']) {
+      await page.goto(path);
+      await expect(page.locator('h1').first(), path).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.locator('.app-workbench-route'), path).toBeVisible({
+        timeout: 15_000,
+      });
+      const geometry = await page.evaluate(() => {
+        const canvas = document.querySelector(
+          '.app-shell-canvas',
+        ) as HTMLElement;
+        const route = document.querySelector(
+          '.app-workbench-route',
+        ) as HTMLElement;
+        const heading = route.querySelector('h1') as HTMLElement;
+        const canvasBox = canvas.getBoundingClientRect();
+        const routeBox = route.getBoundingClientRect();
+        const headingBox = heading.getBoundingClientRect();
+        return {
+          canvasWidth: canvasBox.width,
+          leftGutter: routeBox.left - canvasBox.left,
+          rightGutter: canvasBox.right - routeBox.right,
+          routeWidth: routeBox.width,
+          headingTop: headingBox.top,
+        };
+      });
+      expect(geometry.routeWidth, `${path} ${viewport.width}`).toBeGreaterThan(
+        viewport.width >= 2560 ? 1900 : 1550,
+      );
+      expect(geometry.routeWidth).toBeLessThanOrEqual(2048.5);
+      expect(
+        Math.abs(geometry.leftGutter - geometry.rightGutter),
+        `${path} ${viewport.width}`,
+      ).toBeLessThanOrEqual(1);
+      expect(geometry.leftGutter, `${path} ${viewport.width}`).toBeLessThan(
+        viewport.width >= 2560 ? 170 : 32,
+      );
+      expect(geometry.headingTop, `${path} ${viewport.width}`).toBeLessThan(92);
+    }
+  }
+});
+
 test('shell remains local-overflow safe in Latte and Mocha across tablet and mobile', async ({
   page,
 }) => {

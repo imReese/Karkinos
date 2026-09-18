@@ -27,6 +27,7 @@ function sourceTree(directory: string): string {
     .join('\n');
 }
 const OVERVIEW = sourceTree('features/overview');
+const PORTFOLIO = sourceTree('features/portfolio');
 
 function cssBlock(selector: string) {
   const start = CSS.indexOf(selector);
@@ -61,8 +62,20 @@ describe('Karkinos workstation foundation contract', () => {
     expect(OVERVIEW).not.toMatch(/\btext-(?:xl|2xl|3xl)\b/);
     expect(OVERVIEW).not.toContain('xl:grid-cols-[minmax(0,1fr)_18rem]');
   });
+  it('keeps Portfolio on the wide canvas with secondary analysis delayed on laptops', () => {
+    expect(PORTFOLIO).toContain('data-workbench-width="wide"');
+    expect(PORTFOLIO).toContain('<SectionHeader');
+    expect(PORTFOLIO).toContain('<Button');
+    expect(PORTFOLIO).toContain(
+      'min-[1440px]:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.5fr)]',
+    );
+    expect(PORTFOLIO).not.toContain(
+      'xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]',
+    );
+  });
+
   it('defines bounded workspace width modes', () => {
-    expect(cssBlock('.app-workbench-route')).toContain('max-width: 1440px');
+    expect(cssBlock('.app-workbench-route')).toContain('max-width: 1560px');
     expect(CSS).toContain(
       ".app-workbench-route[data-workbench-width='compact']",
     );
@@ -72,7 +85,7 @@ describe('Karkinos workstation foundation contract', () => {
     );
     expect(CSS).toContain('max-width: 1360px');
     expect(CSS).toContain(".app-workbench-route[data-workbench-width='wide']");
-    expect(CSS).toContain('max-width: 1680px');
+    expect(CSS).toContain('max-width: 2048px');
     expect(CSS).toContain(".app-workbench-route[data-workbench-width='full']");
     expect(CSS).toContain('max-width: none');
   });
