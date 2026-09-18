@@ -194,70 +194,71 @@ export function StrategyLearningReviewPanel() {
   );
 
   return (
-    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
-        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="app-product-mark">{copy.kicker}</div>
-            <h2 className="app-card-title mt-1.5">{copy.title}</h2>
-            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
-              {copy.detail}
-            </p>
-          </div>
-          <div className="grid shrink-0 grid-cols-3 gap-2 text-right text-xs tabular-nums">
-            <Count
-              label={copy.reviewed}
-              value={queue.data?.reviewed_signal_count}
-            />
-            <Count label={copy.actions} value={queue.data?.action_item_count} />
-            <Count
-              label={copy.critical}
-              value={queue.data?.critical_item_count}
-            />
-          </div>
+    <section
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
+      data-testid="strategy-learning-review-register"
+    >
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="app-product-mark">{copy.kicker}</div>
+          <h2 className="app-card-title mt-1.5">{copy.title}</h2>
+          <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+            {copy.detail}
+          </p>
         </div>
-
-        <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-          <BoundaryChip>{copy.persistedOnly}</BoundaryChip>
-          <BoundaryChip>{copy.aiIdle}</BoundaryChip>
-          <BoundaryChip>{copy.noMutation}</BoundaryChip>
-          <BoundaryChip>{copy.noAuthority}</BoundaryChip>
+        <div className="grid shrink-0 grid-cols-3 gap-2 text-right text-xs tabular-nums">
+          <Count
+            label={copy.reviewed}
+            value={queue.data?.reviewed_signal_count}
+          />
+          <Count label={copy.actions} value={queue.data?.action_item_count} />
+          <Count
+            label={copy.critical}
+            value={queue.data?.critical_item_count}
+          />
         </div>
-
-        {queue.isLoading ? (
-          <p className="app-muted mt-5 text-sm">{copy.loading}</p>
-        ) : queue.isError || !queue.data ? (
-          <p className="mt-5 rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-3 text-sm text-[var(--app-danger-text)]">
-            {copy.loadError}
-          </p>
-        ) : queue.data.status === 'not_configured' ? (
-          <p className="app-muted mt-5 rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_40%,transparent)] px-4 py-5 text-sm leading-6">
-            {copy.empty}
-          </p>
-        ) : actionItems.length === 0 ? (
-          <p className="mt-5 rounded-2xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-4 py-3 text-sm leading-6 text-[var(--app-success-text)]">
-            {copy.clear}
-          </p>
-        ) : (
-          <div className="mt-5 space-y-3">
-            {actionItems.map((item) => (
-              <LearningItemCard
-                key={item.item_fingerprint}
-                copy={copy}
-                item={item}
-                locale={locale}
-              />
-            ))}
-          </div>
-        )}
-
-        {queue.data ? (
-          <div className="app-muted mt-4 break-all font-mono text-[length:var(--app-font-size-micro)] leading-4">
-            {copy.status[queue.data.status]} · {copy.queueFingerprint}:{' '}
-            {queue.data.queue_fingerprint}
-          </div>
-        ) : null}
       </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+        <BoundaryChip>{copy.persistedOnly}</BoundaryChip>
+        <BoundaryChip>{copy.aiIdle}</BoundaryChip>
+        <BoundaryChip>{copy.noMutation}</BoundaryChip>
+        <BoundaryChip>{copy.noAuthority}</BoundaryChip>
+      </div>
+
+      {queue.isLoading ? (
+        <p className="app-muted mt-5 text-sm">{copy.loading}</p>
+      ) : queue.isError || !queue.data ? (
+        <p className="mt-5 border-l-2 border-[var(--app-danger-border)] py-2 pl-3 text-sm text-[var(--app-danger-text)]">
+          {copy.loadError}
+        </p>
+      ) : queue.data.status === 'not_configured' ? (
+        <p className="app-muted mt-5 border-y border-[var(--app-divider)] py-4 text-sm leading-6">
+          {copy.empty}
+        </p>
+      ) : actionItems.length === 0 ? (
+        <p className="mt-5 border-l-2 border-[var(--app-success-border)] py-2 pl-3 text-sm leading-6 text-[var(--app-success-text)]">
+          {copy.clear}
+        </p>
+      ) : (
+        <div className="mt-5 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
+          {actionItems.map((item) => (
+            <LearningItemCard
+              key={item.item_fingerprint}
+              copy={copy}
+              item={item}
+              locale={locale}
+            />
+          ))}
+        </div>
+      )}
+
+      {queue.data ? (
+        <div className="app-muted mt-4 break-all border-t border-[var(--app-divider)] pt-3 font-mono text-[length:var(--app-font-size-micro)] leading-4">
+          {copy.status[queue.data.status]} · {copy.queueFingerprint}:{' '}
+          {queue.data.queue_fingerprint}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -273,7 +274,7 @@ function LearningItemCard({
 }) {
   const validBinding = item.audit_integrity_valid && item.target_binding_valid;
   return (
-    <article className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
+    <article className="py-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="font-semibold text-[var(--app-text)]">
@@ -313,7 +314,7 @@ function LearningItemCard({
       </dl>
 
       {item.blockers.length > 0 ? (
-        <div className="mt-4 rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-3 text-sm text-[var(--app-danger-text)]">
+        <div className="mt-4 border-l-2 border-[var(--app-danger-border)] py-2 pl-3 text-sm text-[var(--app-danger-text)]">
           <div className="app-type-overline">{copy.blocker}</div>
           <ul className="mt-2 space-y-1">
             {item.blockers.map((blocker) => (
@@ -331,7 +332,7 @@ function LearningItemCard({
           {item.evidence_refs.map((reference) => (
             <li
               key={reference}
-              className="app-muted min-w-0 break-all rounded-xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-2 font-mono"
+              className="app-muted min-w-0 break-all border-t border-[var(--app-divider)] py-2 font-mono"
             >
               {reference}
             </li>
@@ -340,7 +341,7 @@ function LearningItemCard({
       </div>
 
       {item.research_handoff ? (
-        <div className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-4">
+        <div className="mt-4 border-l-2 border-[var(--app-warning-border)] py-2 pl-3">
           <div className="app-type-overline text-[var(--app-warning-text)]">
             {copy.researchHandoff}
           </div>
@@ -358,7 +359,7 @@ function LearningItemCard({
 
 function Count({ label, value }: { label: string; value?: number }) {
   return (
-    <div className="min-w-24 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-2">
+    <div className="min-w-24 border-l border-[var(--app-divider)] pl-3">
       <div className="app-muted text-[length:var(--app-font-size-micro)]">
         {label}
       </div>
