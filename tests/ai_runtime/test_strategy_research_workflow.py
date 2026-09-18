@@ -30,7 +30,12 @@ from server.ai_runtime.capture import (
     ContextCaptureAuditStore,
     HumanResearchContextCaptureService,
 )
-from server.ai_runtime.contracts import AgentRole, ArtifactKind, content_fingerprint
+from server.ai_runtime.contracts import (
+    AgentRole,
+    AIResearchCapability,
+    ArtifactKind,
+    content_fingerprint,
+)
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
@@ -1089,6 +1094,7 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
                     "only bound evidence and the local Formula DSL; never create "
                     "authority."
                 ),
+                capability=AIResearchCapability.PROPOSE,
                 allowed_tools=(
                     "research_evidence.read",
                     "formula_operator_catalog.read",

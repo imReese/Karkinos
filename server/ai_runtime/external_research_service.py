@@ -24,6 +24,7 @@ from .capture import (
 )
 from .contracts import (
     AgentRole,
+    AIResearchCapability,
     ArtifactKind,
     ModelRegistration,
     ProviderRegistration,
@@ -230,6 +231,7 @@ class HumanExternalBacktestReportService:
                     "Analyze one exact saved-backtest evidence record without "
                     "investment, account, risk, capital, or execution authority."
                 ),
+                capability=AIResearchCapability.EXPLAIN,
                 allowed_tools=(EXTERNAL_RESEARCH_EVIDENCE_TOOL,),
                 allowed_artifact_kinds=(ArtifactKind.REPORT,),
                 instructions_version=EXTERNAL_BACKTEST_REPORT_PROMPT,

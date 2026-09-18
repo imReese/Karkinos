@@ -53,6 +53,19 @@ class AIResearchCapability(StrEnum):
     PROPOSE = "propose"
     ORCHESTRATE_RESEARCH = "orchestrate_research"
 
+    @property
+    def level(self) -> int:
+        return {
+            AIResearchCapability.OBSERVE: 0,
+            AIResearchCapability.EXPLAIN: 1,
+            AIResearchCapability.INVESTIGATE: 2,
+            AIResearchCapability.PROPOSE: 3,
+            AIResearchCapability.ORCHESTRATE_RESEARCH: 4,
+        }[self]
+
+    def allows(self, required: AIResearchCapability) -> bool:
+        return self.level >= required.level
+
 
 class ResearchClaimSupportStatus(StrEnum):
     UNREVIEWED = "unreviewed"
@@ -344,6 +357,7 @@ class AgentRole:
     role_id: str
     display_name: str
     purpose: str
+    capability: AIResearchCapability
     allowed_tools: tuple[str, ...] = ()
     allowed_artifact_kinds: tuple[ArtifactKind, ...] = ()
     instructions_version: str = "karkinos.ai.role.v1"
@@ -355,6 +369,7 @@ class AgentRole:
 
     def to_dict(self) -> JsonObject:
         payload = asdict(self)
+        payload["capability"] = self.capability.value
         payload["allowed_artifact_kinds"] = [
             item.value for item in self.allowed_artifact_kinds
         ]

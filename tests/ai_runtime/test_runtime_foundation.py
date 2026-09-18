@@ -31,6 +31,7 @@ from server.ai_runtime.contracts import (
     TradePlanDraft,
     WorkflowDefinition,
     WorkflowStatus,
+    canonical_json,
     content_fingerprint,
 )
 from server.ai_runtime.orchestrator import DeterministicWorkflowOrchestrator
@@ -174,6 +175,7 @@ def _runtime(
                 role_id=ROLE_ID,
                 display_name="Fixture analyst",
                 purpose="Analyze frozen evidence without execution authority",
+                capability=AIResearchCapability.EXPLAIN,
                 allowed_tools=allowed_tools,
                 allowed_artifact_kinds=artifact_kinds,
             )
@@ -205,6 +207,107 @@ def test_ai_capability_levels_stop_at_bounded_research():
         "orchestrate_research",
     ]
     assert all("execut" not in item.value for item in AIResearchCapability)
+
+
+@pytest.mark.unit
+def test_tool_permissions_enforce_minimum_ai_capability():
+    permissions = default_tool_permission_registry()
+    observer = AgentRole(
+        role_id="observer",
+        display_name="Observer",
+        purpose="Read persisted evidence without interpretation.",
+        capability=AIResearchCapability.OBSERVE,
+        allowed_tools=("portfolio_projection.read", "calculator.evaluate"),
+        allowed_artifact_kinds=(ArtifactKind.CLAIM,),
+    )
+    read_authorization = permissions.authorize(
+        role=observer,
+        tool_name="portfolio_projection.read",
+        context=_context(),
+    )
+    calculator_authorization = permissions.authorize(
+        role=observer,
+        tool_name="calculator.evaluate",
+        context=_context(),
+    )
+
+    assert read_authorization.allowed is True
+    assert calculator_authorization.allowed is False
+    assert calculator_authorization.reason == "capability_too_low"
+
+    explainer = AgentRole(
+        role_id="explainer",
+        display_name="Explainer",
+        purpose="Explain persisted evidence using deterministic arithmetic.",
+        capability=AIResearchCapability.EXPLAIN,
+        allowed_tools=("calculator.evaluate",),
+        allowed_artifact_kinds=(ArtifactKind.CLAIM,),
+    )
+    assert (
+        permissions.authorize(
+            role=explainer,
+            tool_name="calculator.evaluate",
+            context=_context(),
+        ).allowed
+        is True
+    )
+
+
+@pytest.mark.unit
+def test_legacy_role_payload_upgrades_without_false_registration_conflict(tmp_path):
+    db_path = tmp_path / "legacy-role.db"
+    store = AiAuditStore(db_path)
+    store.init()
+    legacy_payload = {
+        "role_id": "external.strategy_hypothesis_researcher.v10",
+        "display_name": "Strategy hypothesis researcher",
+        "purpose": "Propose bounded research hypotheses without authority.",
+        "allowed_tools": ["research_evidence.read"],
+        "allowed_artifact_kinds": ["report"],
+        "instructions_version": "karkinos.ai.strategy_research_prompt.v11",
+    }
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute(
+            """
+            INSERT INTO ai_agent_roles (
+                role_id, payload_json, payload_fingerprint, created_at
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (
+                legacy_payload["role_id"],
+                canonical_json(legacy_payload),
+                content_fingerprint(legacy_payload),
+                NOW,
+            ),
+        )
+
+    upgraded = AgentRole(
+        role_id=legacy_payload["role_id"],
+        display_name=legacy_payload["display_name"],
+        purpose=legacy_payload["purpose"],
+        capability=AIResearchCapability.PROPOSE,
+        allowed_tools=("research_evidence.read",),
+        allowed_artifact_kinds=(ArtifactKind.REPORT,),
+        instructions_version=legacy_payload["instructions_version"],
+    )
+
+    assert store.list_roles() == (upgraded,)
+    store.register_role(upgraded, created_at=NOW)
+    assert store.list_roles() == (upgraded,)
+
+    with pytest.raises(IdempotencyConflict):
+        store.register_role(
+            AgentRole(
+                role_id=legacy_payload["role_id"],
+                display_name=legacy_payload["display_name"],
+                purpose=legacy_payload["purpose"],
+                capability=AIResearchCapability.EXPLAIN,
+                allowed_tools=("research_evidence.read",),
+                allowed_artifact_kinds=(ArtifactKind.REPORT,),
+                instructions_version=legacy_payload["instructions_version"],
+            ),
+            created_at=NOW,
+        )
 
 
 @pytest.mark.unit

@@ -22,6 +22,7 @@ from ..contracts import (
     AgentRole,
     AgentRun,
     AgentRunStatus,
+    AIResearchCapability,
     ArtifactDraft,
     ArtifactKind,
     EvidenceBoundContextSnapshot,
@@ -141,13 +142,26 @@ class AiAuditStore:
         )
 
     def register_role(self, role: AgentRole, *, created_at: str | None = None) -> None:
-        self._register(
-            table="ai_agent_roles",
-            id_column="role_id",
-            identity=role.role_id,
-            payload=role.to_dict(),
-            created_at=created_at or _utc_now(),
-        )
+        try:
+            self._register(
+                table="ai_agent_roles",
+                id_column="role_id",
+                identity=role.role_id,
+                payload=role.to_dict(),
+                created_at=created_at or _utc_now(),
+            )
+        except IdempotencyConflict:
+            with self._connection() as conn:
+                existing = conn.execute(
+                    "SELECT payload_json FROM ai_agent_roles WHERE role_id = ?",
+                    (role.role_id,),
+                ).fetchone()
+            if (
+                existing is not None
+                and _role_from_json(str(existing["payload_json"])) == role
+            ):
+                return
+            raise
 
     def list_providers(self) -> tuple[ProviderRegistration, ...]:
         with self._connection() as conn:
@@ -662,10 +676,22 @@ def _model_from_json(payload_json: str) -> ModelRegistration:
 
 def _role_from_json(payload_json: str) -> AgentRole:
     payload = json.loads(payload_json)
+    role_id = str(payload["role_id"])
+    capability_value = payload.get("capability")
+    capability = (
+        AIResearchCapability(str(capability_value))
+        if capability_value is not None
+        else (
+            AIResearchCapability.PROPOSE
+            if "hypothesis" in role_id
+            else AIResearchCapability.EXPLAIN
+        )
+    )
     return AgentRole(
-        role_id=str(payload["role_id"]),
+        role_id=role_id,
         display_name=str(payload["display_name"]),
         purpose=str(payload["purpose"]),
+        capability=capability,
         allowed_tools=tuple(str(item) for item in payload.get("allowed_tools", [])),
         allowed_artifact_kinds=tuple(
             ArtifactKind(str(item))

@@ -7,6 +7,7 @@ import pytest
 
 from server.ai_runtime.contracts import (
     AgentRole,
+    AIResearchCapability,
     ArtifactKind,
     Claim,
     ModelRegistration,
@@ -297,6 +298,7 @@ def test_orchestrator_reads_bound_evidence_and_audit_replays_without_authority_w
             role_id="portfolio_reader",
             display_name="Portfolio reader",
             purpose="Read frozen portfolio evidence only",
+            capability=AIResearchCapability.EXPLAIN,
             allowed_tools=("portfolio_projection.read",),
             allowed_artifact_kinds=(ArtifactKind.CLAIM,),
         )

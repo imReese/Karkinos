@@ -17,6 +17,7 @@ from server.contracts.memory_informed_analysis import (
 
 from .contracts import (
     AgentRole,
+    AIResearchCapability,
     ArtifactDraft,
     ArtifactKind,
     ModelRegistration,
@@ -121,6 +122,7 @@ def register_memory_informed_runtime(registry: AiRuntimeRegistry) -> None:
                 role_id=role_id,
                 display_name=display_name,
                 purpose=purpose,
+                capability=AIResearchCapability.EXPLAIN,
                 allowed_tools=tools,
                 allowed_artifact_kinds=(artifact_kind,),
             )
