@@ -198,6 +198,19 @@ def test_hypothesis_route_accepts_provider_free_normalized_notional_selection(
 
 
 @pytest.mark.unit
+def test_hypothesis_route_binds_optional_research_task_identity(monkeypatch):
+    service = FixtureService()
+    client = _client(monkeypatch, service)
+    payload = _payload()
+    payload["research_task_id"] = "research-task-route-001"
+
+    response = client.post("/api/ai/strategy-research/hypotheses", json=payload)
+
+    assert response.status_code == 200
+    assert service.requests[0].research_task_id == "research-task-route-001"
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("path", "payload"),
     [

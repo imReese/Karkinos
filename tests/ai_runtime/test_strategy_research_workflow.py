@@ -56,7 +56,7 @@ from server.ai_runtime.provider_connectivity import (
     ProviderConnectivitySettings,
 )
 from server.ai_runtime.registry import AiRuntimeRegistry
-from server.ai_runtime.store import AiAuditStore
+from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
 from server.ai_runtime.strategy_research import (
     BACKTEST_CONFIRMATION,
     CRITIQUE_EXPORT_CONFIRMATION,
@@ -1042,6 +1042,73 @@ async def test_iteration_rejects_multiple_provider_drafts_fail_closed(tmp_path) 
     assert result["status"] == "failed"
     assert result["drafts"] == []
     assert len(transport.calls) == 1
+
+
+@pytest.mark.unit
+def test_unbound_hypothesis_request_keeps_legacy_fingerprint_shape(tmp_path) -> None:
+    _, selection, _, _ = _service(tmp_path)
+    request = HypothesisGenerationRequest(
+        idempotency_key="legacy-fingerprint",
+        requested_by="human:reese",
+        account_alias="synthetic-research-only",
+        research_question="Keep the pre-task-binding fingerprint stable.",
+        selection=selection,
+        confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+    )
+
+    assert request.fingerprint == content_fingerprint(
+        {
+            "requested_by": request.requested_by,
+            "account_alias": request.account_alias,
+            "research_question": request.research_question,
+            "selection": selection.to_dict(),
+            "confirmation": HYPOTHESIS_EXPORT_CONFIRMATION,
+            "iteration_context": None,
+        }
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_research_task_identity_is_persisted_and_idempotency_locked(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    request = HypothesisGenerationRequest(
+        idempotency_key="task-bound-hypothesis",
+        requested_by="human:reese",
+        account_alias="synthetic-research-only",
+        research_question="Test one task-bound research hypothesis.",
+        selection=selection,
+        confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        research_task_id="research-task-001",
+    )
+
+    first = await service.generate_hypotheses(request)
+
+    assert first["research_task_id"] == "research-task-001"
+    stored = service._research_store.get_session(first["session_id"])
+    stored_request = json.loads(stored["request_json"])
+    assert stored_request["research_task_id"] == "research-task-001"
+
+    replay = await service.generate_hypotheses(request)
+    assert replay["reused"] is True
+    assert replay["research_task_id"] == "research-task-001"
+    assert len(transport.calls) == 1
+
+    with pytest.raises(IdempotencyConflict, match="idempotency conflict"):
+        await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key=request.idempotency_key,
+                requested_by=request.requested_by,
+                account_alias=request.account_alias,
+                research_question=request.research_question,
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+                research_task_id="research-task-002",
+            )
+        )
 
 
 @pytest.mark.unit

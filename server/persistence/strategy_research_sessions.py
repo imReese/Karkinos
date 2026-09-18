@@ -25,17 +25,18 @@ class StrategyResearchSessionRepositoryMixin:
             "ai-strategy-session-"
             + content_fingerprint({"idempotency_key": request.idempotency_key})[:24]
         )
-        request_json = canonical_json(
-            {
-                "requested_by": request.requested_by,
-                "account_alias": request.account_alias,
-                "research_question": request.research_question,
-                "selection": request.selection.to_dict(),
-                "iteration_context": request.iteration_context,
-                "confirmation_recorded": True,
-                "api_key_recorded": False,
-            }
-        )
+        request_payload: JsonObject = {
+            "requested_by": request.requested_by,
+            "account_alias": request.account_alias,
+            "research_question": request.research_question,
+            "selection": request.selection.to_dict(),
+            "iteration_context": request.iteration_context,
+            "confirmation_recorded": True,
+            "api_key_recorded": False,
+        }
+        if request.research_task_id is not None:
+            request_payload["research_task_id"] = request.research_task_id
+        request_json = canonical_json(request_payload)
         with self._connect(immediate=True) as conn:
             existing = conn.execute(
                 "SELECT * FROM ai_strategy_research_sessions WHERE idempotency_key=?",
