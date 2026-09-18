@@ -53,9 +53,13 @@ export const backtestDetailsCopy = {
       cost: 'Cost',
     },
     selection: {
-      kicker: 'Backtest history',
-      title: 'Report selection',
-      ariaLabel: 'Select backtest report',
+      kicker: 'Saved research runs',
+      title: 'Run registry',
+      detail:
+        'Select a persisted run to inspect its evidence package and reproducible report.',
+      ariaLabel: 'Select backtest run',
+      run: 'Run',
+      created: 'Created',
       loading: 'Loading backtest results.',
       loadFailed: 'Failed to load backtest history.',
       empty:
@@ -263,9 +267,12 @@ export const backtestDetailsCopy = {
       cost: '成本',
     },
     selection: {
-      kicker: '回测历史',
-      title: '报告选择',
-      ariaLabel: '选择回测报告',
+      kicker: '已保存研究运行',
+      title: '运行登记',
+      detail: '选择一条持久化运行，复核其证据包与可复现报告。',
+      ariaLabel: '选择回测运行',
+      run: '运行',
+      created: '创建时间',
       loading: '正在加载回测结果。',
       loadFailed: '回测历史加载失败。',
       empty:

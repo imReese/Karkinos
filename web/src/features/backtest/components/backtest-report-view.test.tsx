@@ -67,10 +67,14 @@ test('preserves the report structure while persisted evidence is loading', async
   renderReportView();
 
   expect(
-    await screen.findByRole('combobox', { name: 'Select backtest report' }),
+    await screen.findByRole('listbox', { name: 'Select backtest run' }),
   ).toBeTruthy();
+  const registryRow = await screen.findByTestId('backtest-run-registry-row');
+  expect(registryRow.getAttribute('aria-selected')).toBe('true');
+  expect(registryRow.textContent).toContain('#7');
+  expect(registryRow.textContent).toContain('dual_ma');
   expect(screen.getByText('Summary return')).toBeTruthy();
-  expect(screen.getByText('8.2%')).toBeTruthy();
+  expect(screen.getAllByText('8.2%')).toHaveLength(2);
 
   const skeleton = screen.getByTestId('backtest-report-skeleton');
   expect(skeleton.getAttribute('aria-busy')).toBe('true');
