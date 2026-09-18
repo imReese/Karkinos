@@ -94,8 +94,8 @@ def test_fund_nav_sync_does_not_fetch_etf(monkeypatch, tmp_path) -> None:
     db.init_sync()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda **kwargs: pytest.fail("ETF must not enter the open-end NAV lane"),
+        "_fund_nav_sources",
+        lambda config: pytest.fail("ETF must not enter the open-end NAV lane"),
     )
 
     result = fund_nav_sync.refresh_fund_nav_quotes(
@@ -117,8 +117,8 @@ def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_pat
     source = FakeFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {
+        "_fund_nav_sources",
+        lambda config: {
             "akshare": source,
             "tushare": object(),
         },
@@ -169,8 +169,8 @@ def test_refresh_fund_nav_quotes_skips_fresh_cached_fund(monkeypatch, tmp_path):
     source = FakeFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"akshare": source},
+        "_fund_nav_sources",
+        lambda config: {"akshare": source},
     )
 
     result = fund_nav_sync.refresh_fund_nav_quotes(
@@ -217,8 +217,8 @@ def test_confirmation_only_skips_same_day_confirmed_nav_even_after_ttl(
     )
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda **kwargs: pytest.fail("confirmed same-day NAV must not be refetched"),
+        "_fund_nav_sources",
+        lambda config: pytest.fail("confirmed same-day NAV must not be refetched"),
     )
 
     result = fund_nav_sync.refresh_fund_nav_quotes(
@@ -265,8 +265,8 @@ def test_confirmation_only_refetches_target_date_nonconfirmed_nav_after_midnight
     source = ConfirmedFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"tushare": source},
+        "_fund_nav_sources",
+        lambda config: {"tushare": source},
     )
 
     result = fund_nav_sync.refresh_fund_nav_quotes(
@@ -328,8 +328,8 @@ def test_confirmation_only_falls_back_after_tushare_fund_nav_permission_error(
 
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {
+        "_fund_nav_sources",
+        lambda config: {
             "tushare": PermissionDeniedTushare(),
             "akshare": PublicFundPage(),
         },
@@ -367,8 +367,8 @@ def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
     source = BatchInspectingFundSource(db)
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"akshare": source},
+        "_fund_nav_sources",
+        lambda config: {"akshare": source},
     )
 
     result = fund_nav_sync.refresh_fund_nav_quotes(
@@ -426,8 +426,8 @@ def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
     confirmed_source = ConfirmedFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {
+        "_fund_nav_sources",
+        lambda config: {
             "akshare": estimate_source,
             "tushare": confirmed_source,
         },
@@ -493,8 +493,8 @@ def test_confirmation_only_rejects_intraday_estimate(monkeypatch, tmp_path):
     estimate_source = FakeFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"akshare": estimate_source},
+        "_fund_nav_sources",
+        lambda config: {"akshare": estimate_source},
     )
 
     result = fund_nav_sync.refresh_fund_nav_quotes(
@@ -534,8 +534,8 @@ def test_confirmation_only_rejects_previous_day_confirmed_nav(monkeypatch, tmp_p
     )
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"tushare": confirmed_source},
+        "_fund_nav_sources",
+        lambda config: {"tushare": confirmed_source},
     )
 
     result = fund_nav_sync.refresh_fund_nav_quotes(
@@ -567,8 +567,8 @@ def test_confirmation_only_request_replays_persisted_run_after_restart(
     source = ConfirmedFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"tushare": source},
+        "_fund_nav_sources",
+        lambda config: {"tushare": source},
     )
     request_id = "confirmed-nav-fixture-0001"
     kwargs = {
@@ -640,8 +640,8 @@ def test_confirmation_only_request_replays_running_run_without_provider_contact(
     )
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: pytest.fail(
+        "_fund_nav_sources",
+        lambda config: pytest.fail(
             "idempotent replay must not build or contact a provider"
         ),
     )
@@ -675,8 +675,8 @@ def test_confirmation_only_request_rejects_idempotency_payload_drift(
     source = ConfirmedFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"tushare": source},
+        "_fund_nav_sources",
+        lambda config: {"tushare": source},
     )
     request_id = "confirmed-nav-conflict-0001"
     config = SimpleNamespace(data_source="tushare", tushare_token="unit-token")
@@ -718,8 +718,8 @@ def test_confirmation_only_request_rejects_target_date_drift(
     source = ConfirmedFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"tushare": source},
+        "_fund_nav_sources",
+        lambda config: {"tushare": source},
     )
     request_id = "confirmed-nav-target-drift-0001"
     config = SimpleNamespace(data_source="tushare", tushare_token="unit-token")
@@ -779,8 +779,8 @@ def test_confirmation_only_duplicate_during_active_request_replays_running_run(
     source = BlockingConfirmedSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"tushare": source},
+        "_fund_nav_sources",
+        lambda config: {"tushare": source},
     )
     request_id = "confirmed-nav-concurrent-0001"
     config = SimpleNamespace(data_source="tushare", tushare_token="unit-token")
@@ -824,8 +824,8 @@ def test_confirmation_only_failed_request_replays_exact_failure_without_refetch(
     source = FakeFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"akshare": source},
+        "_fund_nav_sources",
+        lambda config: {"akshare": source},
     )
     request_id = "confirmed-nav-failed-0001"
     kwargs = {
@@ -892,8 +892,8 @@ def test_confirmation_only_concurrent_create_race_admits_one_provider_effect(
     source = ConfirmedFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
-        "build_sources",
-        lambda data_source, tushare_token: {"tushare": source},
+        "_fund_nav_sources",
+        lambda config: {"tushare": source},
     )
     request_id = "confirmed-nav-create-race-0001"
     config = SimpleNamespace(data_source="tushare", tushare_token="unit-token")

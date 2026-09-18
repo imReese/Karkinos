@@ -12,7 +12,8 @@ from datetime import date, datetime
 from typing import Any
 
 from core.types import AssetClass, InstrumentType, Symbol
-from data.manager import build_sources
+from data.source_policy import MarketDataUseCase, source_policy_for_config
+from data.source_routing import legacy_sources_for_use_case, preferred_legacy_provider
 from server.services.market_hours import get_shanghai_now
 from server.services.market_quote_ingestion import (
     build_quote_ingestion_command,
@@ -217,27 +218,25 @@ def is_confirmed_fund_nav_quote(
     )
 
 
+def _fund_nav_sources(config: Any) -> dict[str, Any]:
+    """Resolve configured FUND_NAV adapters through the versioned source policy."""
+    return legacy_sources_for_use_case(
+        config,
+        MarketDataUseCase.FUND_NAV,
+    )
+
+
 def _source_chain(
     config: Any,
     *,
     confirmation_only: bool = False,
 ) -> list[tuple[str, Any]]:
-    data_source = str(getattr(config, "data_source", "akshare") or "akshare")
-    sources = build_sources(
-        data_source=data_source,
-        tushare_token=str(getattr(config, "tushare_token", "") or ""),
-    )
-    ordered: list[tuple[str, Any]] = []
-    source_order = (
-        (data_source, "akshare") if confirmation_only else ("akshare", data_source)
-    )
-    for name in source_order:
-        source = sources.get(name)
-        if source is not None and all(
-            existing is not source for _, existing in ordered
-        ):
-            ordered.append((name, source))
-    return ordered
+    # confirmation_only intentionally shares the same policy ordering. Provider
+    # output semantics decide whether a returned value is confirmed.
+    del confirmation_only
+    sources = _fund_nav_sources(config)
+    route = source_policy_for_config(config).route(MarketDataUseCase.FUND_NAV)
+    return [(name, sources[name]) for name in route.candidates if name in sources]
 
 
 def _normalize_snapshot(
@@ -403,7 +402,10 @@ def refresh_fund_nav_quotes(
                 run_id=run_id,
                 started_at=current.isoformat(),
                 trigger="fund_nav_sync",
-                provider=str(getattr(config, "data_source", "akshare") or "akshare"),
+                provider=preferred_legacy_provider(
+                    config,
+                    MarketDataUseCase.FUND_NAV,
+                ),
                 asset_type=InstrumentType.OPEN_END_FUND.value,
                 symbol_count=len(due_symbols),
                 status="running",

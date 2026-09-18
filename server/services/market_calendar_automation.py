@@ -14,6 +14,8 @@ from data.market_calendar import (
     build_market_calendar_provider,
     verify_official_market_calendar,
 )
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.contracts.jobs import JobLease
 from server.contracts.market_calendar import (
     MarketCalendarAutomationPublication,
@@ -85,7 +87,10 @@ class MarketCalendarAutomationService:
             "trigger": "server_background_task",
             "exchange": "SSE",
             "year": year,
-            "provider": str(getattr(self._config, "data_source", "akshare")),
+            "provider": preferred_legacy_provider(
+                self._config,
+                MarketDataUseCase.MARKET_CALENDAR,
+            ),
             "attempt": attempt,
             "read_endpoints_contact_providers": False,
             "changes_account_truth": False,

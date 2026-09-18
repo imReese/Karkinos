@@ -4213,7 +4213,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "data.manager.build_sources",
+        "server.services.market_refresh_provider._quote_sources",
         lambda **kwargs: {
             "tushare": NullSource(),
             "akshare": AkshareSource(),
@@ -4263,7 +4263,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
             }
 
     monkeypatch.setattr(
-        "data.manager.build_sources",
+        "server.services.market_refresh_provider._quote_sources",
         lambda **kwargs: {
             "tushare": NullSource(),
             "akshare": AkshareSource(),
@@ -4316,7 +4316,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
             }
 
     monkeypatch.setattr(
-        "data.manager.build_sources",
+        "server.services.market_refresh_provider._quote_sources",
         lambda **kwargs: {
             "tushare": RaisingTushareSource(),
             "akshare": AkshareSource(),
@@ -4371,7 +4371,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
 
     monkeypatch.setattr(market_refresh, "PROVIDER_REFRESH_TIMEOUT_SECONDS", 0.001)
     monkeypatch.setattr(
-        "data.manager.build_sources",
+        "server.services.market_refresh_provider._quote_sources",
         lambda **kwargs: {
             "tushare": SlowTushareSource(),
             "akshare": AkshareSource(),
@@ -4425,7 +4425,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
             }
 
     monkeypatch.setattr(
-        "data.manager.build_sources",
+        "server.services.market_refresh_provider._quote_sources",
         lambda **kwargs: {"akshare": AkshareSource()},
     )
 
@@ -4473,7 +4473,7 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
             }
 
     monkeypatch.setattr(
-        "data.manager.build_sources",
+        "server.services.market_refresh_provider._quote_sources",
         lambda **kwargs: {"akshare": AkshareSource()},
     )
 
@@ -4520,7 +4520,7 @@ def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
             }
 
     monkeypatch.setattr(
-        "data.manager.build_sources",
+        "server.services.market_refresh_provider._quote_sources",
         lambda **kwargs: {"akshare": AkshareSource()},
     )
 
