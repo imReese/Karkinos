@@ -1172,6 +1172,17 @@ async def test_iteration_exports_exact_parent_feedback_and_one_draft_contract(
     )
 
     assert result["status"] == "completed"
+    research_run = result["research_run"]
+    assert research_run["run_id"] == result["session_id"]
+    assert research_run["task_id"] is None
+    assert research_run["task_binding_status"] == "legacy_unbound"
+    assert research_run["status"] == "completed"
+    assert research_run["research_budget"] == (
+        STRATEGY_RESEARCH_WORKFLOW_BUDGET.to_dict()
+    )
+    assert research_run["requires_deterministic_evaluation"] is True
+    assert research_run["requires_human_selection"] is True
+    assert research_run["authority_effect"] == "none"
     assert len(result["drafts"]) == 1
     assert result["iteration_context"] == iteration_context
     assert result["drafts"][0]["iteration_context"] == iteration_context
@@ -1305,6 +1316,21 @@ async def test_research_task_identity_is_persisted_and_idempotency_locked(
     first = await service.generate_hypotheses(request)
 
     assert first["research_task_id"] == "research-task-001"
+    research_run = first["research_run"]
+    assert research_run["run_id"] == first["session_id"]
+    assert research_run["task_id"] == "research-task-001"
+    assert research_run["task_binding_status"] == "bound"
+    assert research_run["status"] == "completed"
+    assert research_run["workflow_id"] == first["workflow"]["workflow_id"]
+    assert research_run["workflow_status"] == "completed"
+    assert research_run["research_budget"] == (
+        STRATEGY_RESEARCH_WORKFLOW_BUDGET.to_dict()
+    )
+    assert research_run["provider_id"]
+    assert research_run["model_id"]
+    assert research_run["requires_deterministic_evaluation"] is True
+    assert research_run["requires_human_selection"] is True
+    assert research_run["authority_effect"] == "none"
     stored = service._research_store.get_session(first["session_id"])
     stored_request = json.loads(stored["request_json"])
     assert stored_request["research_task_id"] == "research-task-001"

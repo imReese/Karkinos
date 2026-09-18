@@ -86,6 +86,15 @@ class ResearchSelectionSource(StrEnum):
     DETERMINISTIC_RULE = "deterministic_rule"
 
 
+class ResearchRunStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    COMPLETED = "completed"
+
+
 class ArtifactKind(StrEnum):
     CLAIM = "claim"
     DEBATE = "debate"
@@ -319,6 +328,103 @@ class AITrace:
             "token_usage": self.token_usage,
             "raw_output_fingerprint": self.raw_output_fingerprint,
             "parsed_output_fingerprint": self.parsed_output_fingerprint,
+            "authority_effect": self.authority_effect,
+            "schema_version": self.schema_version,
+        }
+
+
+@dataclass(frozen=True)
+class ResearchRun:
+    run_id: str
+    task_id: str | None
+    task_binding_status: str
+    research_question: str
+    status: ResearchRunStatus
+    selection_fingerprint: str
+    context_snapshot_id: str | None
+    context_fingerprint: str | None
+    workflow_id: str | None
+    workflow_status: str | None
+    research_budget: ResearchBudget | None
+    provider_id: str | None
+    model_id: str | None
+    prompt_version: str
+    created_at: str
+    updated_at: str
+    requires_deterministic_evaluation: bool = True
+    requires_human_selection: bool = True
+    authority_effect: str = "none"
+    schema_version: str = "karkinos.ai.research_run.v1"
+
+    def __post_init__(self) -> None:
+        for name in (
+            "run_id",
+            "task_binding_status",
+            "research_question",
+            "selection_fingerprint",
+            "prompt_version",
+            "created_at",
+            "updated_at",
+            "schema_version",
+        ):
+            _require_text(str(getattr(self, name)), name)
+        if self.task_binding_status not in {"bound", "legacy_unbound"}:
+            raise ValueError("task_binding_status invalid")
+        if (self.task_id is None) != (self.task_binding_status == "legacy_unbound"):
+            raise ValueError("task binding status does not match task id")
+        if self.task_id is not None:
+            _require_text(self.task_id, "task_id")
+        if (self.context_snapshot_id is None) != (self.context_fingerprint is None):
+            raise ValueError("research run context binding must be complete")
+        if self.context_snapshot_id is not None:
+            _require_text(self.context_snapshot_id, "context_snapshot_id")
+            _require_text(self.context_fingerprint, "context_fingerprint")
+        if self.workflow_status is not None and self.workflow_id is None:
+            raise ValueError("workflow status requires workflow identity")
+        if self.workflow_id is not None:
+            _require_text(self.workflow_id, "workflow_id")
+        if self.workflow_status is not None:
+            _require_text(self.workflow_status, "workflow_status")
+        if (self.provider_id is None) != (self.model_id is None):
+            raise ValueError("provider and model identity must be bound together")
+        if self.provider_id is not None:
+            _require_text(self.provider_id, "provider_id")
+            _require_text(self.model_id, "model_id")
+        if not self.requires_deterministic_evaluation:
+            raise ValueError("research runs require deterministic evaluation")
+        if not self.requires_human_selection:
+            raise ValueError("research runs require human research selection")
+        if self.authority_effect != "none":
+            raise ValueError("research runs cannot change execution authority")
+
+    @property
+    def fingerprint(self) -> str:
+        return content_fingerprint(self.to_dict())
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "run_id": self.run_id,
+            "task_id": self.task_id,
+            "task_binding_status": self.task_binding_status,
+            "research_question": self.research_question,
+            "status": self.status.value,
+            "selection_fingerprint": self.selection_fingerprint,
+            "context_snapshot_id": self.context_snapshot_id,
+            "context_fingerprint": self.context_fingerprint,
+            "workflow_id": self.workflow_id,
+            "workflow_status": self.workflow_status,
+            "research_budget": (
+                self.research_budget.to_dict()
+                if self.research_budget is not None
+                else None
+            ),
+            "provider_id": self.provider_id,
+            "model_id": self.model_id,
+            "prompt_version": self.prompt_version,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "requires_deterministic_evaluation": self.requires_deterministic_evaluation,
+            "requires_human_selection": self.requires_human_selection,
             "authority_effect": self.authority_effect,
             "schema_version": self.schema_version,
         }

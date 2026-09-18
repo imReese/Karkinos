@@ -26,6 +26,8 @@ from server.ai_runtime.contracts import (
     ResearchClaimSupportStatus,
     ResearchEvaluationBundle,
     ResearchHypothesis,
+    ResearchRun,
+    ResearchRunStatus,
     ResearchSelection,
     ResearchSelectionDecision,
     ResearchSelectionSource,
@@ -461,6 +463,105 @@ def test_research_evaluation_bundle_cannot_be_ai_generated_or_authoritative():
         ResearchEvaluationBundle(**base, ai_generated=True)
     with pytest.raises(ValueError, match="cannot change execution authority"):
         ResearchEvaluationBundle(**base, authority_effect="expand")
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_research_run_requires_deterministic_evaluation_and_human_selection():
+    run = ResearchRun(
+        run_id="run-001",
+        task_id="task-001",
+        task_binding_status="bound",
+        research_question="Does short-horizon reversal improve the baseline?",
+        status=ResearchRunStatus.RUNNING,
+        selection_fingerprint="sha256:" + "a" * 64,
+        context_snapshot_id="context-001",
+        context_fingerprint="sha256:" + "b" * 64,
+        workflow_id="workflow-001",
+        workflow_status="running",
+        research_budget=ResearchBudget(
+            max_candidates=5,
+            max_iterations=5,
+            max_backtests=30,
+            max_parameter_variants=20,
+            max_provider_calls=10,
+            max_external_searches=0,
+        ),
+        provider_id="fixture.local",
+        model_id="fixture.local/research-v1",
+        prompt_version="karkinos.ai.fixture_prompt.v1",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    payload = run.to_dict()
+    assert payload["task_binding_status"] == "bound"
+    assert payload["requires_deterministic_evaluation"] is True
+    assert payload["requires_human_selection"] is True
+    assert payload["authority_effect"] == "none"
+    assert payload["research_budget"]["max_candidates"] == 5
+    assert run.fingerprint == content_fingerprint(payload)
+
+    with pytest.raises(ValueError, match="require deterministic evaluation"):
+        ResearchRun(
+            run_id="run-no-evaluation",
+            task_id=None,
+            task_binding_status="legacy_unbound",
+            research_question="unsafe",
+            status=ResearchRunStatus.PENDING,
+            selection_fingerprint="sha256:" + "a" * 64,
+            context_snapshot_id=None,
+            context_fingerprint=None,
+            workflow_id=None,
+            workflow_status=None,
+            research_budget=None,
+            provider_id=None,
+            model_id=None,
+            prompt_version="karkinos.ai.fixture_prompt.v1",
+            created_at=NOW,
+            updated_at=NOW,
+            requires_deterministic_evaluation=False,
+        )
+    with pytest.raises(ValueError, match="require human research selection"):
+        ResearchRun(
+            run_id="run-no-human",
+            task_id=None,
+            task_binding_status="legacy_unbound",
+            research_question="unsafe",
+            status=ResearchRunStatus.PENDING,
+            selection_fingerprint="sha256:" + "a" * 64,
+            context_snapshot_id=None,
+            context_fingerprint=None,
+            workflow_id=None,
+            workflow_status=None,
+            research_budget=None,
+            provider_id=None,
+            model_id=None,
+            prompt_version="karkinos.ai.fixture_prompt.v1",
+            created_at=NOW,
+            updated_at=NOW,
+            requires_human_selection=False,
+        )
+    with pytest.raises(ValueError, match="cannot change execution authority"):
+        ResearchRun(
+            run_id="run-authority",
+            task_id=None,
+            task_binding_status="legacy_unbound",
+            research_question="unsafe",
+            status=ResearchRunStatus.PENDING,
+            selection_fingerprint="sha256:" + "a" * 64,
+            context_snapshot_id=None,
+            context_fingerprint=None,
+            workflow_id=None,
+            workflow_status=None,
+            research_budget=None,
+            provider_id=None,
+            model_id=None,
+            prompt_version="karkinos.ai.fixture_prompt.v1",
+            created_at=NOW,
+            updated_at=NOW,
+            authority_effect="expand",
+        )
 
 
 @pytest.mark.unit
