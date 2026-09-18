@@ -2790,8 +2790,8 @@ def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "data.manager.build_sources",
-        lambda **kwargs: {"akshare": FakeAkshare()},
+        "server.services.market_views.backfill._metadata_sources",
+        lambda config, use_case: {"akshare": FakeAkshare()},
     )
 
     response = asyncio.run(
@@ -2873,8 +2873,8 @@ def test_market_instrument_metadata_backfill_batches_stock_master_names(
     quote_source = FakeQuoteSource()
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "data.manager.build_sources",
-        lambda **kwargs: {
+        "server.services.market_views.backfill._metadata_sources",
+        lambda config, use_case: {
             "akshare": quote_source,
             "tushare": stock_master_source,
         },
@@ -2949,8 +2949,8 @@ def test_market_instrument_metadata_backfill_preserves_provider_quote_identity(
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "data.manager.build_sources",
-        lambda **kwargs: {"akshare": FakeAkshare()},
+        "server.services.market_views.backfill._metadata_sources",
+        lambda config, use_case: {"akshare": FakeAkshare()},
     )
 
     response = asyncio.run(
@@ -3007,8 +3007,8 @@ def test_market_instrument_metadata_backfill_skips_existing_metadata(
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "data.manager.build_sources",
-        lambda **kwargs: {"akshare": UnexpectedAkshare()},
+        "server.services.market_views.backfill._metadata_sources",
+        lambda config, use_case: {"akshare": UnexpectedAkshare()},
     )
 
     response = asyncio.run(
@@ -3055,8 +3055,8 @@ def test_market_instrument_metadata_backfill_reports_missing_provider_name(
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "data.manager.build_sources",
-        lambda **kwargs: {"akshare": NamelessAkshare()},
+        "server.services.market_views.backfill._metadata_sources",
+        lambda config, use_case: {"akshare": NamelessAkshare()},
     )
 
     response = asyncio.run(

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.contracts.http.market_models import (
     MarketCalendarSnapshotResponse,
     MarketCalendarSyncRequest,
@@ -51,8 +53,10 @@ def create_router(dependencies: CalendarEndpointDependencies) -> APIRouter:
             )
         provider_name = str(
             request.provider
-            or getattr(state.config, "data_source", "akshare")
-            or "akshare"
+            or preferred_legacy_provider(
+                state.config,
+                MarketDataUseCase.MARKET_CALENDAR,
+            )
         ).lower()
         try:
             provider = dependencies.build_market_calendar_provider(
