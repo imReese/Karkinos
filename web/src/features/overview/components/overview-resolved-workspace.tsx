@@ -16,6 +16,7 @@ import { OverviewPerformanceDrivers } from './overview-performance-drivers';
 import { OverviewStatusCard } from './overview-status-card';
 import { OverviewStrategyRecommendation } from './overview-strategy-recommendation';
 import { OverviewSummary } from './overview-summary';
+import { OverviewValuationCoverage } from './overview-valuation-coverage';
 import { DashboardTodayQueue } from './overview-today-queue';
 
 export function OverviewResolvedWorkspace({
@@ -39,6 +40,7 @@ export function OverviewResolvedWorkspace({
       <OverviewDataStatus state={state} />
       <OverviewSummary summary={state.summary} />
       <DashboardTodayQueue overview={state.overview} />
+      <OverviewValuationCoverage snapshot={state.snapshot} />
 
       <section
         className="min-w-0 border-b border-[var(--app-divider)] py-4"
@@ -84,7 +86,10 @@ export function OverviewResolvedWorkspace({
 
       <div className="grid min-w-0 lg:grid-cols-2 lg:divide-x lg:divide-[var(--app-divider)]">
         <div className="min-w-0 lg:pr-6">
-          <OverviewStrategyRecommendation query={controller.tradingPlan} />
+          <OverviewStrategyRecommendation
+            planQuery={controller.tradingPlan}
+            decisionQuery={controller.todayDecision}
+          />
         </div>
         <div className="min-w-0 lg:pl-6">
           <OverviewMarketStatus state={state} />

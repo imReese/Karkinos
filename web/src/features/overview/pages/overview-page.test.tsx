@@ -7,6 +7,7 @@ import { PreferencesProvider } from '../../../app/providers/preferences-provider
 import type {
   AccountStateResponse,
   DailyTradingPlanResponse,
+  DecisionResponse,
 } from '../overview-feature-boundary';
 import { OverviewPage } from './overview-page';
 
@@ -145,6 +146,25 @@ function tradingPlanFixture(): DailyTradingPlanResponse {
   };
 }
 
+function decisionFixture(): DecisionResponse {
+  return {
+    lane: 'daily',
+    decision_date: '2026-09-14',
+    generated_at: '2026-09-14T08:00:00+08:00',
+    decision: 'no_action',
+    requires_manual_confirmation: false,
+    summary: {
+      candidate_count: 0,
+      risk_blocked_count: 0,
+      ready_for_manual_confirmation_count: 0,
+      workflow_tasks: [],
+    },
+    candidates: [],
+    no_action_reasons: [],
+    limitations: [],
+  };
+}
+
 const curve = [
   {
     timestamp: '2026-09-10T15:00:00+08:00',
@@ -168,6 +188,7 @@ function installFetch(
   state = accountFixture(),
   curveFailure = false,
   tradingPlan = tradingPlanFixture(),
+  decision = decisionFixture(),
 ) {
   const mock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -176,6 +197,7 @@ function installFetch(
       return curveFailure
         ? new Response('unavailable', { status: 503 })
         : Response.json(curve);
+    if (url.includes('/api/decision/today')) return Response.json(decision);
     if (url.includes('/api/decision/trading-plan'))
       return Response.json(tradingPlan);
     throw new Error(`Unexpected request: ${url}`);
@@ -228,11 +250,12 @@ test('reads one coherent account projection and a separate canonical history', a
   const fetch = installFetch();
   renderPage();
   await screen.findByTestId('overview-summary');
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
   expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual(
     [
       '/api/portfolio/state',
       '/api/portfolio/equity-curve/series?range=1m',
+      '/api/decision/today',
       '/api/decision/trading-plan',
     ].sort(),
   );
@@ -256,7 +279,7 @@ test('shows the canonical daily strategy recommendation separately from operatio
   const recommendation = await screen.findByTestId(
     'overview-strategy-recommendation',
   );
-  expect(within(recommendation).getByText('今日策略建议')).toBeVisible();
+  expect(within(recommendation).getByText('今日决策与操作')).toBeVisible();
   expect(
     await within(recommendation).findByText('今日账户操作：无操作'),
   ).toBeVisible();
@@ -266,6 +289,55 @@ test('shows the canonical daily strategy recommendation separately from operatio
     'href',
     '/decision',
   );
+});
+
+test('explains why today has no actionable recommendation when evidence gates block it', async () => {
+  const plan = tradingPlanFixture();
+  plan.conclusion_status = 'account_truth_blocked';
+  plan.account_action_recommendation!.status = 'unavailable';
+  plan.account_action_recommendation!.reason_codes = [
+    'valuation_snapshot_not_complete',
+    'market_data_not_trusted',
+    'account_truth_not_fresh',
+  ];
+  const decision = decisionFixture();
+  decision.summary.workflow_tasks = [
+    {
+      id: 'data_refresh',
+      priority: 10,
+      status: 'blocked',
+      title: 'Data refresh',
+      description: 'Market evidence is stale.',
+      required_actions: ['refresh_or_confirm_market_data'],
+      blocking_reasons: ['market_data_not_fully_live'],
+    },
+    {
+      id: 'account_truth',
+      priority: 20,
+      status: 'blocked',
+      title: 'Account truth',
+      description: 'Account truth is stale.',
+      required_actions: ['account_truth_snapshot_stale'],
+      blocking_reasons: ['account_truth_snapshot_stale'],
+    },
+  ];
+
+  installFetch(accountFixture(), false, plan, decision);
+  renderPage('zh');
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  await waitFor(() =>
+    expect(recommendation).toHaveTextContent('今日账户建议证据不可用'),
+  );
+  const blockers = within(recommendation).getByTestId(
+    'overview-decision-blockers',
+  );
+  expect(blockers).toHaveTextContent('行情数据');
+  expect(blockers).toHaveTextContent('刷新或确认当前行情证据');
+  expect(blockers).toHaveTextContent('账户事实');
+  expect(blockers).toHaveTextContent('刷新账户事实快照');
+  expect(blockers).not.toHaveTextContent('valuation_snapshot_not_complete');
 });
 
 test('shows a manual-review strategy action without implying automatic execution', async () => {
@@ -489,6 +561,40 @@ test('Chinese presentation preserves published NAV and compact no-action semanti
   expect(
     screen.getAllByTestId('position-pricing-fixture-fund')[0],
   ).toHaveTextContent('已公布净值 · 09/11');
+});
+
+test('shows valuation coverage when current holdings are not fully evidence-gated', async () => {
+  const state = accountFixture();
+  state.snapshot.valuation_status = 'degraded';
+  state.overview.valuation_usability = 'degraded';
+  state.snapshot.valuation_lanes = [
+    {
+      asset_class: 'stock',
+      status: 'degraded',
+      quote_count: 2,
+      complete_quote_count: 1,
+      review_required_quote_count: 1,
+      blocker_statuses: ['stale'],
+    },
+    {
+      asset_class: 'fund',
+      status: 'degraded',
+      quote_count: 3,
+      complete_quote_count: 0,
+      review_required_quote_count: 3,
+      blocker_statuses: ['stale'],
+    },
+  ];
+
+  installFetch(state);
+  renderPage('zh');
+  const coverage = await screen.findByTestId('overview-valuation-coverage');
+  expect(coverage).toHaveTextContent('估值覆盖');
+  expect(coverage).toHaveTextContent('股票');
+  expect(coverage).toHaveTextContent('1/2');
+  expect(coverage).toHaveTextContent('基金');
+  expect(coverage).toHaveTextContent('0/3');
+  expect(coverage).toHaveTextContent('3 个标的待补证据');
 });
 
 test.each(['missing', 'conflicting', 'unknown'] as const)(
