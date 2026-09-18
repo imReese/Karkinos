@@ -115,8 +115,15 @@ describe('holding detail workbench contract', () => {
     expect(HOLDING_DETAIL).toContain("'position'");
     expect(HOLDING_DETAIL).toContain("'pnl-costs'");
     expect(HOLDING_DETAIL).toContain("'transactions'");
-    expect(HOLDING_DETAIL).toContain("'evidence'");
-    expect(HOLDING_DETAIL).toContain("'reconciliation'");
+    expect(HOLDING_DETAIL).toContain(
+      'data-testid="holding-evidence-inspector-rail"',
+    );
+    expect(HOLDING_DETAIL).toContain(
+      'data-testid="holding-evidence-inspector"',
+    );
+    expect(HOLDING_DETAIL).toContain('xl:sticky xl:top-20');
+    expect(HOLDING_DETAIL).not.toContain('holding-tab-evidence');
+    expect(HOLDING_DETAIL).not.toContain('holding-tab-reconciliation');
     expect(HOLDING_DETAIL).toContain('<WorkbenchMetricStrip');
     expect(HOLDING_DETAIL).toContain('<WorkbenchEvidenceState');
     expect(HOLDING_DETAIL).not.toContain('app-panel');

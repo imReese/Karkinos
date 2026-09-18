@@ -202,8 +202,6 @@ export function buildHoldingMetricsModel(
     position: labels.tabPosition,
     'pnl-costs': labels.tabPnlCosts,
     transactions: labels.tabTransactions,
-    evidence: labels.tabEvidence,
-    reconciliation: labels.tabReconciliation,
   };
   return {
     portfolioWeight,

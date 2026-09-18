@@ -499,8 +499,7 @@ test('renders holding detail with cached quote status and ledger trace', async (
     within(transactionsPanel).getByText('Persisted account ledger only'),
   ).toBeTruthy();
 
-  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
-  const evidencePanel = screen.getByRole('tabpanel', { name: 'Evidence' });
+  const evidencePanel = screen.getByTestId('holding-evidence-inspector');
   expect(within(evidencePanel).getByText('akshare')).toBeTruthy();
   expect(within(evidencePanel).getByText('26d')).toBeTruthy();
   expect(
@@ -766,7 +765,7 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
     chartScroll.compareDocumentPosition(positionSizeGrid) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(chartPanel.className).toContain('overflow-hidden');
+  expect(chartPanel.className).toContain('border-y');
   expect(chartScroll.className).toContain('overflow-x-auto');
   expect(chartScroll.className).toContain('app-horizontal-scroll-cue');
   expect(chartCanvas.className).toContain('min-w-[720px]');
@@ -843,7 +842,7 @@ test('distinguishes persisted price loading and read failure without implicit re
   ).toBe(false);
 });
 
-test('exposes five keyboard-operable holding evidence views', async () => {
+test('keeps three keyboard-operable primary views with a persistent evidence inspector', async () => {
   const user = userEvent.setup();
   renderHoldingDetail();
 
@@ -862,8 +861,6 @@ test('exposes five keyboard-operable holding evidence views', async () => {
     'Position',
     'P&L & Costs',
     'Transactions',
-    'Evidence',
-    'Reconciliation',
   ]);
   expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
   expect(screen.getByTestId('holding-kline-panel').hidden).toBe(false);
@@ -881,9 +878,11 @@ test('exposes five keyboard-operable holding evidence views', async () => {
   expect(screen.getByTestId('holding-transactions-panel').hidden).toBe(false);
 
   await user.keyboard('{End}');
-  expect(tabs[4]?.getAttribute('aria-selected')).toBe('true');
-  expect(document.activeElement).toBe(tabs[4]);
+  expect(tabs[2]?.getAttribute('aria-selected')).toBe('true');
+  expect(document.activeElement).toBe(tabs[2]);
+  expect(screen.getByTestId('holding-evidence-inspector')).toBeTruthy();
   expect(screen.getByTestId('holding-reconciliation-panel').hidden).toBe(false);
+  expect(screen.getByTestId('holding-evidence-inspector-rail')).toBeTruthy();
 });
 
 test('keeps the holding detail header compact and non-duplicative', async () => {
@@ -963,7 +962,6 @@ test('keeps quote status and action panels readable with long runtime values', a
 });
 
 test('localizes known persisted quote source enums in the evidence view', async () => {
-  const user = userEvent.setup();
   renderHoldingDetail({
     positionOverride: { quote_source: 'market_bar_close' },
     liveItemOverride: { quote_source: 'market_bar_close' },
@@ -971,8 +969,7 @@ test('localizes known persisted quote source enums in the evidence view', async 
   });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
-  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
-  const evidencePanel = screen.getByRole('tabpanel', { name: 'Evidence' });
+  const evidencePanel = screen.getByTestId('holding-evidence-inspector');
   expect(within(evidencePanel).getByText('Local OHLC close')).toBeTruthy();
   expect(within(evidencePanel).queryByText('market_bar_close')).toBeNull();
 });
@@ -992,12 +989,9 @@ test('links the holding detail to a single-instrument strategy loop with symbol 
 });
 
 test('explains that holding PnL is not attributed to strategy without linked fills', async () => {
-  const user = userEvent.setup();
   renderHoldingDetail();
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
-  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
-
   const card = screen.getByTestId('holding-strategy-attribution-boundary');
   expect(card.textContent).toContain('Strategy attribution boundary');
   expect(card.textContent).toContain('No linked strategy fills yet');
@@ -1399,7 +1393,6 @@ test('uses structured holding attribution prerequisites instead of parsing evide
 });
 
 test('shows a localized next action for the first missing attribution prerequisite', async () => {
-  const user = userEvent.setup();
   renderHoldingDetail({
     holdingStrategyAttribution: {
       strategy_id: 'dual_ma',
@@ -1434,8 +1427,6 @@ test('shows a localized next action for the first missing attribution prerequisi
   });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
-  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
-
   const card = await screen.findByTestId(
     'holding-strategy-attribution-boundary',
   );
@@ -1451,12 +1442,9 @@ test('shows a localized next action for the first missing attribution prerequisi
 });
 
 test('shows a next action when holding-level attribution readiness is unavailable', async () => {
-  const user = userEvent.setup();
   renderHoldingDetail({ holdingStrategyAttribution: null });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
-  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
-
   const card = await screen.findByTestId(
     'holding-strategy-attribution-boundary',
   );
