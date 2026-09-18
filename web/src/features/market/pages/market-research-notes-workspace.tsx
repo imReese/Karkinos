@@ -12,10 +12,13 @@ export function MarketResearchNotesWorkspace({
   controller: MarketPageController;
 }) {
   return (
-    <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+    <section
+      className="min-w-0 space-y-3 border-t border-[var(--app-divider)] pt-4"
+      data-testid="market-research-workspace"
+    >
       <MarketResearchNoteEditor controller={controller} />
       <MarketResearchNoteHistory controller={controller} />
-    </div>
+    </section>
   );
 }
 
@@ -44,146 +47,179 @@ function MarketResearchNoteEditor({
     updateResearchNote,
   } = controller;
   return (
-    <div className="min-w-0 border-y border-[var(--app-divider)] px-1 py-4 sm:px-3 sm:py-5">
-      <div className="app-kicker app-type-overline">
-        {copy.market.notesTitle}
-      </div>
-      {selectedItem ? (
-        <form
-          className="mt-4 grid gap-3"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (!noteTitle.trim() || !noteContent.trim()) {
-              pushToast('error', copy.market.noteFailed, copy.common.required);
-              return;
-            }
-            try {
-              if (editingNoteId !== null) {
-                await updateResearchNote.mutateAsync({
-                  noteId: editingNoteId,
-                  entry_kind: noteType,
-                  title: noteTitle.trim(),
-                  content: noteContent.trim(),
-                  priority: notePriority,
-                  event_date: noteDate || null,
-                });
-              } else {
-                await createResearchNote.mutateAsync({
-                  symbol: selectedItem.symbol,
-                  asset_class: selectedItem.asset_class,
-                  entry_kind: noteType,
-                  title: noteTitle.trim(),
-                  content: noteContent.trim(),
-                  priority: notePriority,
-                  event_date: noteDate || null,
-                });
+    <details
+      id="market-research-note-editor"
+      open={editingNoteId !== null ? true : undefined}
+      className="group min-w-0 border-y border-[var(--app-divider)]"
+      data-testid="market-research-note-editor"
+    >
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 px-1 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:px-2 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="text-sm font-semibold text-[var(--app-text)]">
+            {editingNoteId !== null
+              ? copy.market.updateNote
+              : copy.market.saveNote}
+          </span>
+          <span className="app-type-micro mt-0.5 block text-[var(--app-text-tertiary)]">
+            {selectedItem
+              ? [
+                  selectedItem.name || selectedItem.symbol,
+                  selectedItem.symbol,
+                ].join(' · ')
+              : copy.market.noSelection}
+          </span>
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className="size-4 shrink-0 text-[var(--app-text-tertiary)] transition-transform group-open:rotate-180 motion-reduce:transition-none"
+        />
+      </summary>
+      <div className="border-t border-[var(--app-divider)] px-1 py-4 sm:px-2">
+        {selectedItem ? (
+          <form
+            className="grid gap-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!noteTitle.trim() || !noteContent.trim()) {
+                pushToast(
+                  'error',
+                  copy.market.noteFailed,
+                  copy.common.required,
+                );
+                return;
               }
-              setEditingNoteId(null);
-              setNoteType('note');
-              setNotePriority('normal');
-              setNoteTitle('');
-              setNoteContent('');
-              setNoteDate('');
-              pushToast(
-                'success',
-                editingNoteId !== null
-                  ? copy.market.updateNote
-                  : copy.market.noteSaved,
-                selectedItem.symbol,
-              );
-            } catch (error) {
-              pushToast(
-                'error',
-                copy.market.noteFailed,
-                getErrorMessage(error),
-              );
-            }
-          }}
-        >
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">
-                {copy.market.noteType}
-              </span>
-              <select
-                name="research_note_type"
-                value={noteType}
-                onChange={(event) => setNoteType(event.target.value)}
-                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-              >
-                <option value="note">{copy.market.note}</option>
-                <option value="thesis">{copy.market.thesis}</option>
-                <option value="catalyst">{copy.market.catalyst}</option>
-              </select>
-            </label>
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">
-                {copy.market.notePriority}
-              </span>
-              <select
-                name="research_note_priority"
-                value={notePriority}
-                onChange={(event) => setNotePriority(event.target.value)}
-                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-              >
-                <option value="high">{copy.market.highPriority}</option>
-                <option value="normal">{copy.market.normalPriority}</option>
-                <option value="low">{copy.market.lowPriority}</option>
-              </select>
-            </label>
-          </div>
-          <label className="grid gap-2">
-            <span className="text-sm font-medium">{copy.market.noteTitle}</span>
-            <input
-              name="research_note_title"
-              autoComplete="off"
-              value={noteTitle}
-              onChange={(event) => setNoteTitle(event.target.value)}
-              placeholder={copy.market.noteTitlePlaceholder}
-              className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-medium">
-              {copy.market.noteContent}
-            </span>
-            <textarea
-              name="research_note_content"
-              value={noteContent}
-              onChange={(event) => setNoteContent(event.target.value)}
-              placeholder={copy.market.noteContentPlaceholder}
-              rows={5}
-              className="app-field min-h-32 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-medium">{copy.market.noteDate}</span>
-            <input
-              name="research_note_date"
-              type="date"
-              value={noteDate}
-              onChange={(event) => setNoteDate(event.target.value)}
-              className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={
-              createResearchNote.isPending || updateResearchNote.isPending
-            }
-            className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm"
+              try {
+                if (editingNoteId !== null) {
+                  await updateResearchNote.mutateAsync({
+                    noteId: editingNoteId,
+                    entry_kind: noteType,
+                    title: noteTitle.trim(),
+                    content: noteContent.trim(),
+                    priority: notePriority,
+                    event_date: noteDate || null,
+                  });
+                } else {
+                  await createResearchNote.mutateAsync({
+                    symbol: selectedItem.symbol,
+                    asset_class: selectedItem.asset_class,
+                    entry_kind: noteType,
+                    title: noteTitle.trim(),
+                    content: noteContent.trim(),
+                    priority: notePriority,
+                    event_date: noteDate || null,
+                  });
+                }
+                setEditingNoteId(null);
+                setNoteType('note');
+                setNotePriority('normal');
+                setNoteTitle('');
+                setNoteContent('');
+                setNoteDate('');
+                pushToast(
+                  'success',
+                  editingNoteId !== null
+                    ? copy.market.updateNote
+                    : copy.market.noteSaved,
+                  selectedItem.symbol,
+                );
+              } catch (error) {
+                pushToast(
+                  'error',
+                  copy.market.noteFailed,
+                  getErrorMessage(error),
+                );
+              }
+            }}
           >
-            {createResearchNote.isPending || updateResearchNote.isPending
-              ? copy.market.savingNote
-              : editingNoteId !== null
-                ? copy.market.updateNote
-                : copy.market.saveNote}
-          </button>
-        </form>
-      ) : (
-        <div className="app-muted mt-4 text-sm">{copy.market.noSelection}</div>
-      )}
-    </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-2">
+                <span className="text-sm font-medium">
+                  {copy.market.noteType}
+                </span>
+                <select
+                  name="research_note_type"
+                  value={noteType}
+                  onChange={(event) => setNoteType(event.target.value)}
+                  className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                >
+                  <option value="note">{copy.market.note}</option>
+                  <option value="thesis">{copy.market.thesis}</option>
+                  <option value="catalyst">{copy.market.catalyst}</option>
+                </select>
+              </label>
+              <label className="grid gap-2">
+                <span className="text-sm font-medium">
+                  {copy.market.notePriority}
+                </span>
+                <select
+                  name="research_note_priority"
+                  value={notePriority}
+                  onChange={(event) => setNotePriority(event.target.value)}
+                  className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                >
+                  <option value="high">{copy.market.highPriority}</option>
+                  <option value="normal">{copy.market.normalPriority}</option>
+                  <option value="low">{copy.market.lowPriority}</option>
+                </select>
+              </label>
+            </div>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium">
+                {copy.market.noteTitle}
+              </span>
+              <input
+                name="research_note_title"
+                autoComplete="off"
+                value={noteTitle}
+                onChange={(event) => setNoteTitle(event.target.value)}
+                placeholder={copy.market.noteTitlePlaceholder}
+                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium">
+                {copy.market.noteContent}
+              </span>
+              <textarea
+                name="research_note_content"
+                value={noteContent}
+                onChange={(event) => setNoteContent(event.target.value)}
+                placeholder={copy.market.noteContentPlaceholder}
+                rows={5}
+                className="app-field min-h-32 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium">
+                {copy.market.noteDate}
+              </span>
+              <input
+                name="research_note_date"
+                type="date"
+                value={noteDate}
+                onChange={(event) => setNoteDate(event.target.value)}
+                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={
+                createResearchNote.isPending || updateResearchNote.isPending
+              }
+              className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm"
+            >
+              {createResearchNote.isPending || updateResearchNote.isPending
+                ? copy.market.savingNote
+                : editingNoteId !== null
+                  ? copy.market.updateNote
+                  : copy.market.saveNote}
+            </button>
+          </form>
+        ) : (
+          <div className="app-muted text-sm">{copy.market.noSelection}</div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -213,7 +249,10 @@ function MarketResearchNoteHistory({
     setNoteType,
   } = controller;
   return (
-    <div className="min-w-0 border-y border-[var(--app-divider)] px-1 py-4 sm:px-3 sm:py-5">
+    <div
+      className="min-w-0 border-y border-[var(--app-divider)] px-1 py-4 sm:px-3 sm:py-5"
+      data-testid="market-research-note-history"
+    >
       <div className="app-kicker app-type-overline">
         {copy.market.notesTitle}
       </div>
