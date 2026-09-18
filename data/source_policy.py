@@ -86,6 +86,8 @@ class MarketSourcePolicy:
         object.__setattr__(self, "routes", tuple(normalized))
 
     def route(self, use_case: MarketDataUseCase) -> SourceRoute:
+        if not isinstance(use_case, MarketDataUseCase):
+            raise TypeError("market_source_policy_use_case_invalid")
         for candidate_use_case, route in self.routes:
             if candidate_use_case is use_case:
                 return route
@@ -187,7 +189,10 @@ def source_policy_for_config(config: object) -> MarketSourcePolicy:
         return resolve_market_source_policy(str(policy_id))
     legacy_provider = getattr(config, "data_source", None)
     if legacy_provider:
-        return legacy_preferred_provider_policy(str(legacy_provider))
+        normalized = str(legacy_provider).strip().lower()
+        if normalized not in {"akshare", "tushare"}:
+            raise ValueError(f"legacy_market_source_provider_unsupported:{normalized}")
+        return legacy_preferred_provider_policy(normalized)
     return CN_RESEARCH_V1
 
 

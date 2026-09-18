@@ -11,6 +11,8 @@ from core.event_bus import EventBus
 from core.events import SignalEvent
 from core.types import AssetClass, BarFrequency, Symbol
 from data.live import LiveDataFeed
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from server.bootstrap import build_strategy, create_runtime_context
@@ -403,13 +405,13 @@ class TradingScheduler(
                 snapshot.get("quote_source")
                 or snapshot.get("source")
                 or snapshot.get("provider")
-                or self._config.data_source
+                or preferred_legacy_provider(self._config, MarketDataUseCase.INDEX_BARS)
             )
             provider_name = str(
                 snapshot.get("provider_name")
                 or snapshot.get("provider")
                 or snapshot.get("source")
-                or self._config.data_source
+                or preferred_legacy_provider(self._config, MarketDataUseCase.INDEX_BARS)
             )
             display_name = str(
                 snapshot.get("display_name")

@@ -10,6 +10,8 @@ from fastapi import HTTPException
 
 from core.types import AssetClass
 from data.market_data import is_fund_estimate_quote_source
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.projections.portfolio_assets import normalize_asset_class
 from server.projections.portfolio_quote_assets import (
     asset_class_for_position,
@@ -390,10 +392,13 @@ def quote_source(state, quote: dict | None) -> str | None:
     )
     if source:
         return str(source)
-    configured = getattr(state.config, "data_source", None)
-    if configured:
-        return str(configured)
-    return None
+    try:
+        return preferred_legacy_provider(
+            state.config,
+            MarketDataUseCase.REALTIME_QUOTES,
+        )
+    except Exception:
+        return None
 
 
 def refresh_policy(now: datetime | None = None) -> str:
@@ -457,7 +462,11 @@ def using_persistent_cache(quote: dict | None) -> bool:
 
 
 def can_refresh_quotes(state, now: datetime | None = None) -> bool:
-    return bool(hasattr(state.config, "data_source") and is_cn_trading_session(now))
+    try:
+        preferred_legacy_provider(state.config, MarketDataUseCase.REALTIME_QUOTES)
+    except Exception:
+        return False
+    return is_cn_trading_session(now)
 
 
 def store_runtime_quote(state, symbol: str, quote: dict) -> None:

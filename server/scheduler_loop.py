@@ -10,6 +10,8 @@ from typing import Any, Callable
 
 from core.events import MarketEvent, SignalEvent
 from core.types import AssetClass, InstrumentType, Symbol
+from data.source_policy import MarketDataUseCase
+from data.source_routing import configured_legacy_provider_names
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from server.contracts.quote_ingestion import QuoteIngestionCommand
@@ -202,15 +204,21 @@ class SchedulerLoop:
         dependencies = self._dependencies
         state.install_runtime_event_bus(dependencies.event_bus_factory())
         runtime = dependencies.runtime_context_factory(dependencies.config)
-        source = runtime.sources.get(dependencies.config.data_source)
+        provider_names = configured_legacy_provider_names(
+            dependencies.config,
+            MarketDataUseCase.REALTIME_QUOTES,
+        )
+        if not provider_names:
+            raise RuntimeError("configured scheduler quote route is unavailable")
+        source = runtime.sources.get(provider_names[0])
         if source is None:
             raise RuntimeError(
-                "configured scheduler data source is unavailable: "
-                f"{dependencies.config.data_source}"
+                "configured scheduler quote provider is unavailable: "
+                f"{provider_names[0]}"
             )
-        fallback_source = None
-        if dependencies.config.data_source != "akshare":
-            fallback_source = runtime.sources.get("akshare")
+        fallback_source = (
+            runtime.sources.get(provider_names[1]) if len(provider_names) > 1 else None
+        )
         feed = dependencies.live_data_feed_factory(
             source,
             DiscardingEventPublisher(),
