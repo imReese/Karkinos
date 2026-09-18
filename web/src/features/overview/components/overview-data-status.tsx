@@ -11,26 +11,124 @@ import {
   shortDate,
 } from '../model/overview-presentation';
 
+function latestPricingDate(
+  positions: AccountStateResponse['snapshot']['positions'],
+  assetClass: string,
+) {
+  const dates = positions
+    .filter((position) => position.asset_class === assetClass)
+    .map((position) => position.pricing_as_of)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  return dates.length > 0 ? dates[dates.length - 1] : null;
+}
+
 export function OverviewDataStatus({ state }: { state: AccountStateResponse }) {
   const { locale } = usePreferences();
   const labels = overviewPresentation[locale];
-  const { overview } = state;
+  const { overview, snapshot } = state;
   const usability = overview.valuation_usability;
+  const fundDate = latestPricingDate(snapshot.positions, 'fund');
+  const stockDate = latestPricingDate(snapshot.positions, 'stock');
+  const pendingCount = snapshot.positions.filter(
+    (position) => position.market_value == null,
+  ).length;
   const closeBasis =
-    state.snapshot.positions.length > 0 &&
-    state.snapshot.positions.every(
+    snapshot.positions.length > 0 &&
+    snapshot.positions.every(
       (position) => position.pricing_kind === 'session_close',
     );
+
   return (
     <div
       data-testid="overview-data-status"
       role="status"
-      className={`text-xs leading-6 ${usability === 'usable' ? 'text-[var(--app-text-secondary)]' : 'border-l-2 border-[var(--app-warning)] pl-3 text-[var(--app-warning-text)]'}`}
+      className="flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 border-y border-[var(--app-divider)] py-2 text-xs leading-5 text-[var(--app-text-secondary)]"
     >
-      {labels.asOf} {shortDate(overview.pricing_as_of)}
-      {closeBasis ? ` ${labels.closeBasis}` : ''} ·{' '}
-      {labels[overview.market_session.status]} · {labels[usability]}
+      <span>
+        {labels.asOf} {shortDate(overview.pricing_as_of)}
+        {closeBasis ? ` ${labels.closeBasis}` : ''} ·{' '}
+        {labels[overview.market_session.status]} ·{' '}
+        <strong
+          className={`font-semibold ${usability === 'usable' ? 'text-[var(--app-text)]' : 'text-[var(--app-warning-text)]'}`}
+        >
+          {labels[usability]}
+        </strong>
+      </span>
+      {fundDate ? (
+        <span className="tabular-nums text-[var(--app-text-tertiary)]">
+          {labels.fundsEvidence} {shortDate(fundDate)}
+        </span>
+      ) : null}
+      {stockDate ? (
+        <span className="tabular-nums text-[var(--app-text-tertiary)]">
+          {labels.stocksEvidence} {shortDate(stockDate)}
+        </span>
+      ) : null}
+      {pendingCount > 0 ? (
+        <span className="font-medium tabular-nums text-[var(--app-warning-text)]">
+          {labels.pendingHoldingsLabel} {pendingCount}
+        </span>
+      ) : null}
     </div>
+  );
+}
+
+export function OverviewMarketStatus({
+  state,
+}: {
+  state: AccountStateResponse;
+}) {
+  const { locale } = usePreferences();
+  const labels = overviewPresentation[locale];
+  const { overview } = state;
+  const refreshLabels = {
+    healthy: labels.healthy,
+    degraded: labels.refreshDegraded,
+    running: labels.running,
+    unknown: labels.unknownHealth,
+  };
+  const rows = [
+    [
+      labels.latestSession,
+      shortDate(overview.market_session.latest_completed_trade_date),
+    ],
+    [labels.nextSession, shortDate(overview.market_session.next_trading_date)],
+    [labels.refreshHealth, refreshLabels[overview.refresh_health.status]],
+    [labels.valuationStatus, labels[overview.valuation_usability]],
+    [
+      labels.decisionReadiness,
+      overview.decision_readiness === 'ready'
+        ? labels.ready
+        : overview.decision_readiness === 'blocked'
+          ? labels.blocked
+          : labels.unknownHealth,
+    ],
+  ];
+
+  return (
+    <section
+      className="min-w-0 py-4"
+      data-testid="overview-market-status"
+      aria-label={labels.marketAndData}
+    >
+      <h2 className="text-sm font-semibold text-[var(--app-text)]">
+        {labels.marketAndData}
+      </h2>
+      <dl className="mt-2 divide-y divide-[var(--app-divider)] text-xs">
+        {rows.map(([label, value]) => (
+          <div
+            key={label}
+            className="flex items-center justify-between gap-4 py-2.5"
+          >
+            <dt className="text-[var(--app-text-secondary)]">{label}</dt>
+            <dd className="text-right font-medium tabular-nums text-[var(--app-text)]">
+              {value ?? '--'}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 

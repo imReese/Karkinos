@@ -68,7 +68,7 @@ export function OverviewEquityCurve({
   ];
   return (
     <div className="min-w-0">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-[var(--app-text)]">
           {copy.overview.dashboard.equityPanel}
         </h2>
@@ -84,14 +84,17 @@ export function OverviewEquityCurve({
               aria-pressed={range === value}
               aria-label={`${labels.range}: ${label}`}
               onClick={() => onRangeChange(value)}
-              className={`min-h-8 rounded-[var(--app-radius-control)] px-3 text-xs font-medium ${range === value ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]' : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-accent-bg)]'}`}
+              className={`min-h-8 border-b-2 px-2 text-xs font-medium ${range === value ? 'border-[var(--app-accent)] text-[var(--app-accent)]' : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'}`}
             >
               {label}
             </button>
           ))}
         </div>
       </div>
-      <div ref={chartRef} className="h-[180px] min-w-0 sm:h-[280px]">
+      <div
+        ref={chartRef}
+        className={`${usablePoints.length >= 2 ? 'h-[220px] sm:h-[248px]' : 'h-[96px] sm:h-[112px]'} min-w-0`}
+      >
         {usablePoints.length >= 2 ? (
           <div
             data-testid="equity-chart-frame"
@@ -160,7 +163,7 @@ export function OverviewEquityCurve({
             ) : null}
           </div>
         ) : (
-          <div className="flex h-[180px] items-center justify-center text-center text-sm text-[var(--app-text-secondary)] sm:h-[280px]">
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-[var(--app-text-secondary)]">
             {usablePoints.length
               ? labels.insufficientData
               : chartPoints.length
