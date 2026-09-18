@@ -23,9 +23,88 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
-from core.types import InstrumentKey
+from core.types import InstrumentKey, InstrumentType
 
 ProviderNumber = Decimal | int | float | str
+
+
+@dataclass(frozen=True, slots=True)
+class DailyBarCapability:
+    """One explicitly supported daily-bar provider endpoint."""
+
+    endpoint: str
+    instrument_types: tuple[InstrumentType, ...]
+    frequency: str = "1d"
+    price_basis: str = "unadjusted"
+
+    def __post_init__(self) -> None:
+        endpoint = _require_non_empty_text(self.endpoint, field="capability_endpoint")
+        frequency = _require_non_empty_text(
+            self.frequency, field="capability_frequency"
+        )
+        price_basis = _require_non_empty_text(
+            self.price_basis, field="capability_price_basis"
+        )
+        if frequency != "1d":
+            raise ValueError("provider_daily_bar_capability_frequency_unsupported")
+        if not isinstance(self.instrument_types, tuple) or not self.instrument_types:
+            raise ValueError("provider_daily_bar_capability_instrument_types_missing")
+        if any(
+            not isinstance(item, InstrumentType) or item is InstrumentType.UNKNOWN
+            for item in self.instrument_types
+        ):
+            raise ValueError("provider_daily_bar_capability_instrument_type_invalid")
+        canonical = tuple(
+            sorted(set(self.instrument_types), key=lambda item: item.value)
+        )
+        object.__setattr__(self, "endpoint", endpoint)
+        object.__setattr__(self, "frequency", frequency)
+        object.__setattr__(self, "price_basis", price_basis)
+        object.__setattr__(self, "instrument_types", canonical)
+
+    def supports(self, instrument_type: InstrumentType) -> bool:
+        return instrument_type in self.instrument_types
+
+
+@dataclass(frozen=True, slots=True)
+class MarketDataProviderDescriptor:
+    """Stable provider identity and reviewed market-data capabilities."""
+
+    provider: str
+    upstream_group: str
+    adapter_version: str
+    daily_bar_capabilities: tuple[DailyBarCapability, ...]
+
+    def __post_init__(self) -> None:
+        provider = _require_non_empty_text(self.provider, field="descriptor_provider")
+        upstream_group = _require_non_empty_text(
+            self.upstream_group, field="descriptor_upstream_group"
+        )
+        adapter_version = _require_non_empty_text(
+            self.adapter_version, field="descriptor_adapter_version"
+        )
+        if not isinstance(self.daily_bar_capabilities, tuple):
+            raise TypeError("provider_descriptor_daily_bar_capabilities_must_be_tuple")
+        if any(
+            not isinstance(item, DailyBarCapability)
+            for item in self.daily_bar_capabilities
+        ):
+            raise TypeError("provider_descriptor_daily_bar_capability_invalid")
+        object.__setattr__(self, "provider", provider)
+        object.__setattr__(self, "upstream_group", upstream_group)
+        object.__setattr__(self, "adapter_version", adapter_version)
+
+    def supports_daily_bars(
+        self,
+        instrument_type: InstrumentType,
+        *,
+        price_basis: str | None = None,
+    ) -> bool:
+        return any(
+            capability.supports(instrument_type)
+            and (price_basis is None or capability.price_basis == price_basis)
+            for capability in self.daily_bar_capabilities
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,6 +387,11 @@ class DailyBarProvider(Protocol):
     前复权、后复权等价格视图属于后续 Dataset / corporate-action
     派生语义，不能成为底层 Market Data 唯一事实。
     """
+
+    @property
+    def descriptor(self) -> MarketDataProviderDescriptor:
+        """Return reviewed provider identity and daily-bar capabilities."""
+        ...
 
     def fetch_daily_bars(
         self,

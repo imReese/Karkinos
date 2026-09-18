@@ -12,13 +12,27 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
+from data.market.contracts import DailyBarCapability, MarketDataProviderDescriptor
 from data.source import DataSource, normalize_provider_quote
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_REALTIME_TIMEOUT_SECONDS = 2.0
 _CHINA_MARKET_TZ = ZoneInfo("Asia/Shanghai")
+
+TUSHARE_PROVIDER_DESCRIPTOR = MarketDataProviderDescriptor(
+    provider="tushare",
+    upstream_group="tushare",
+    adapter_version="karkinos.tushare.source.v1",
+    daily_bar_capabilities=(
+        DailyBarCapability(
+            endpoint="daily",
+            instrument_types=(InstrumentType.STOCK,),
+            price_basis="unadjusted",
+        ),
+    ),
+)
 
 
 def _clean_stock_master_text(value: object) -> str | None:
@@ -33,6 +47,10 @@ class TushareSource(DataSource):
 
     需要 Tushare token，通过环境变量 TUSHARE_TOKEN 或构造参数传入。
     """
+
+    @property
+    def descriptor(self) -> MarketDataProviderDescriptor:
+        return TUSHARE_PROVIDER_DESCRIPTOR
 
     def __init__(
         self,

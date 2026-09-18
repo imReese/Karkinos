@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
+from data.market.contracts import DailyBarCapability, MarketDataProviderDescriptor
 from data.providers.akshare_open_end_funds import OpenEndFundMixin
 from data.providers.akshare_support import CHINA_MARKET_TZ as _CHINA_MARKET_TZ
 from data.providers.akshare_support import previous_weekday as _previous_weekday
@@ -16,6 +17,24 @@ from data.providers.akshare_support import row_float as _row_float
 from data.source import DataSource, normalize_provider_quote
 
 logger = logging.getLogger(__name__)
+
+AKSHARE_PROVIDER_DESCRIPTOR = MarketDataProviderDescriptor(
+    provider="akshare",
+    upstream_group="eastmoney",
+    adapter_version="karkinos.akshare.source.v1",
+    daily_bar_capabilities=(
+        DailyBarCapability(
+            endpoint="stock_zh_a_hist",
+            instrument_types=(InstrumentType.STOCK,),
+            price_basis="qfq",
+        ),
+        DailyBarCapability(
+            endpoint="fund_etf_hist_em",
+            instrument_types=(InstrumentType.ETF,),
+            price_basis="qfq",
+        ),
+    ),
+)
 
 
 def _clean_stock_master_text(value: object) -> str | None:
@@ -96,6 +115,10 @@ class AKShareSource(OpenEndFundMixin, DataSource):
 
     根据 asset_class 调用不同的 AKShare 函数，统一列名映射。
     """
+
+    @property
+    def descriptor(self) -> MarketDataProviderDescriptor:
+        return AKSHARE_PROVIDER_DESCRIPTOR
 
     _MAX_RETRIES = 3
     _RETRY_DELAY = 2  # seconds

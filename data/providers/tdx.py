@@ -47,7 +47,9 @@ import pandas as pd
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import (
+    DailyBarCapability,
     DailyBarRequest,
+    MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
     ProviderDailyBarRow,
 )
@@ -60,6 +62,19 @@ TDX_PROVIDER_NAME = "tdx"
 TDX_DAILY_BAR_ADAPTER_VERSION = "karkinos.tdx.daily_bar.v1"
 
 TDX_DAILY_BAR_PAYLOAD_FORMAT = "tdx.get_market_data.dataframe.v1"
+
+TDX_PROVIDER_DESCRIPTOR = MarketDataProviderDescriptor(
+    provider=TDX_PROVIDER_NAME,
+    upstream_group="tdx",
+    adapter_version=TDX_DAILY_BAR_ADAPTER_VERSION,
+    daily_bar_capabilities=(
+        DailyBarCapability(
+            endpoint="tdxaidata.tqs.get_market_data",
+            instrument_types=(InstrumentType.STOCK, InstrumentType.ETF),
+            price_basis="unadjusted",
+        ),
+    ),
+)
 
 
 _TDX_DAILY_FIELDS = (
@@ -129,6 +144,10 @@ class _TdxClient(Protocol):
 
 class TdxDailyBarProvider:
     """基于独立 tdxaidata 包的 TDX 日线 Provider。"""
+
+    @property
+    def descriptor(self) -> MarketDataProviderDescriptor:
+        return TDX_PROVIDER_DESCRIPTOR
 
     def __init__(
         self,
