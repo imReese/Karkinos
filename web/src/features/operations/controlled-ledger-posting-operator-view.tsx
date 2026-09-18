@@ -23,7 +23,7 @@ export function ControlledLedgerPostingOperatorView({
       {!controller.open ? (
         <button
           type="button"
-          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold"
+          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
           onClick={controller.openPanel}
         >
           {controller.locale === 'zh'
@@ -37,7 +37,7 @@ export function ControlledLedgerPostingOperatorView({
               ? '签名式账本入账复核'
               : 'Signed ledger posting review'
           }
-          className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_38%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] p-3"
+          className="min-w-0 border-l-2 border-[var(--app-warning-border)] py-2 pl-3"
         >
           <PostingHeader controller={controller} />
           <PostingPreview controller={controller} />
@@ -68,7 +68,7 @@ function PostingHeader({ controller }: PostingViewProps) {
         </div>
         <button
           type="button"
-          className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs font-semibold"
+          className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
           onClick={controller.close}
         >
           {locale === 'zh' ? '关闭' : 'Close'}
@@ -84,7 +84,7 @@ function PostingHeader({ controller }: PostingViewProps) {
       </div>
       <button
         type="button"
-        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         disabled={preview.isPending}
         onClick={controller.loadPreview}
       >
@@ -114,7 +114,7 @@ function PostingPreview({ controller }: PostingViewProps) {
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {locale === 'zh' ? '确定性变更预览' : 'Deterministic delta preview'}
@@ -159,7 +159,7 @@ function PostingPreview({ controller }: PostingViewProps) {
         <div className="mt-3 grid min-w-0 gap-2">
           {preview.data.ledger_entries.map((entry) => (
             <div
-              className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2"
+              className="min-w-0 border-t border-[var(--app-divider)] py-2"
               key={`${entry.fill_id}:${entry.broker_event_id}`}
             >
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -237,7 +237,7 @@ function PostingSignature({ controller }: PostingViewProps) {
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh' ? '短时离线签名' : 'Short-lived offline signature'}
       </div>
@@ -273,7 +273,7 @@ function PostingSignature({ controller }: PostingViewProps) {
         <label className="mt-3 block min-w-0 text-xs font-semibold text-[var(--app-text)]">
           {locale === 'zh' ? '可信操作员身份' : 'Trusted operator identity'}
           <select
-            className="app-input mt-1 min-h-10 w-full rounded-xl px-3 py-2 text-sm"
+            className="app-input mt-1 min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
             aria-label={
               locale === 'zh' ? '可信操作员身份' : 'Trusted operator identity'
             }
@@ -293,7 +293,7 @@ function PostingSignature({ controller }: PostingViewProps) {
       ) : null}
       <button
         type="button"
-        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         disabled={!selectedIdentity || challenge.isPending}
         onClick={controller.createChallenge}
       >
@@ -320,7 +320,7 @@ function PostingSignature({ controller }: PostingViewProps) {
               ? '待签 payload（Base64）'
               : 'Payload to sign (Base64)'}
             <textarea
-              className="app-input mt-1 min-h-24 w-full resize-y rounded-xl px-3 py-2 font-mono text-xs"
+              className="app-input mt-1 min-h-24 w-full resize-y rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
               aria-label={
                 locale === 'zh'
                   ? '待签 payload Base64'
@@ -338,7 +338,7 @@ function PostingSignature({ controller }: PostingViewProps) {
               ? 'Detached signature（Base64）'
               : 'Detached signature (Base64)'}
             <input
-              className="app-input mt-1 min-h-10 w-full rounded-xl px-3 py-2 font-mono text-sm"
+              className="app-input mt-1 min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-sm"
               aria-label={
                 locale === 'zh'
                   ? 'Detached signature Base64'
@@ -355,7 +355,7 @@ function PostingSignature({ controller }: PostingViewProps) {
           </label>
           <button
             type="button"
-            className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={signature.trim().length < 80 || verification.isPending}
             onClick={controller.verifySignature}
           >
@@ -395,7 +395,7 @@ function PostingFinalConfirmation({ controller }: PostingViewProps) {
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_6%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-l-2 border-[var(--app-danger-border)] py-2 pl-3">
       <div className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh' ? '最终应用确认' : 'Final apply confirmation'}
       </div>
@@ -419,7 +419,7 @@ function PostingFinalConfirmation({ controller }: PostingViewProps) {
       </label>
       <button
         type="button"
-        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl border-[var(--app-danger)] px-3 py-2 text-xs font-semibold text-[var(--app-danger)] disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] border-[var(--app-danger)] px-3 py-2 text-xs font-semibold text-[var(--app-danger)] disabled:cursor-not-allowed disabled:opacity-50"
         disabled={
           !acknowledged ||
           applyPosting.isPending ||

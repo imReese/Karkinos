@@ -28,6 +28,12 @@ const WRITE_RELEASE_FLOW = [
   ),
 ].join('\n');
 
+const CONTROLLED_FINANCIAL_FLOWS = [
+  source('features/operations/controlled-ledger-correction-operator-view.tsx'),
+  source('features/operations/controlled-ledger-posting-operator-view.tsx'),
+  source('features/operations/controlled-terminal-clearance-operator-view.tsx'),
+].join('\n');
+
 const CONTROLLED_OPERATORS = [
   source(
     'features/operations/controlled-broker-write-release-operator-panel.tsx',
@@ -71,5 +77,16 @@ describe('controlled operator register contract', () => {
     );
     expect(WRITE_RELEASE_FLOW).toContain('border-l-2');
     expect(WRITE_RELEASE_FLOW).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
+  });
+
+  it('keeps ledger correction, posting, and terminal clearance register-like', () => {
+    expect(CONTROLLED_FINANCIAL_FLOWS).toContain(
+      'rounded-[var(--app-radius-control)]',
+    );
+    expect(CONTROLLED_FINANCIAL_FLOWS).toContain(
+      'border-y border-[var(--app-divider)]',
+    );
+    expect(CONTROLLED_FINANCIAL_FLOWS).toContain('border-l-2');
+    expect(CONTROLLED_FINANCIAL_FLOWS).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
   });
 });
