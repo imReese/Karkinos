@@ -34,7 +34,7 @@ export function MarketPageView({
     <>
       <ToastStack toasts={toasts} />
       <section
-        className="app-workbench-route space-y-5 sm:space-y-6"
+        className="app-workbench-route space-y-4 sm:space-y-5"
         data-workbench-route="market"
       >
         <WorkspaceHeader
@@ -81,7 +81,7 @@ function MarketResolvedWorkspace({
   controller: MarketPageController;
 }) {
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <MarketInstrumentSelection controller={controller} />
       <MarketSummary controller={controller} />
       <MarketDataEvidenceWorkspace controller={controller} />

@@ -42,7 +42,7 @@ export function HoldingDetailView({
   const { displayName, quoteNeedsReview, quoteTimestamp } = model.market;
   return (
     <section
-      className="app-workbench-route space-y-5 sm:space-y-6"
+      className="app-workbench-route space-y-4 sm:space-y-5"
       data-workbench-route="holding-detail"
     >
       <div data-testid="holding-detail-header">

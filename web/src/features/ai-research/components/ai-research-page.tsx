@@ -16,7 +16,7 @@ export function AiResearchPage() {
 
   return (
     <section
-      className="app-workbench-route flex flex-col gap-5 sm:gap-6"
+      className="app-workbench-route flex flex-col gap-4 sm:gap-5"
       data-workbench-route="ai-research"
     >
       <WorkspaceHeader
