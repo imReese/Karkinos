@@ -11,9 +11,12 @@ from server.ai_runtime.contracts import (
     ArtifactKind,
     JsonObject,
     ResearchEvaluationBundle,
+    ResearchRun,
+    ResearchRunStatus,
     ResearchSelection,
     ResearchSelectionDecision,
     ResearchSelectionSource,
+    ResearchWorkflow,
     StoredArtifact,
     canonical_json,
     content_fingerprint,
@@ -29,6 +32,58 @@ from server.contracts.strategy_research import (
     StrategyResearchRejected,
     StrategyResearchSelection,
 )
+
+
+def build_research_run_projection(
+    *,
+    session: Mapping[str, Any],
+    workflow: ResearchWorkflow | None,
+) -> ResearchRun:
+    """Project the persisted Strategy Research session into a provider-neutral run."""
+
+    request = strategy_research_request_json(session)
+    task_id = (
+        str(request["research_task_id"])
+        if request.get("research_task_id") is not None
+        else None
+    )
+    context_snapshot_id = (
+        str(session["context_snapshot_id"])
+        if session.get("context_snapshot_id") is not None
+        else None
+    )
+    context_fingerprint = (
+        str(session["context_fingerprint"])
+        if session.get("context_fingerprint") is not None
+        else None
+    )
+    workflow_id = (
+        str(session["workflow_id"]) if session.get("workflow_id") is not None else None
+    )
+    provider_id = (
+        str(session["provider_id"]) if session.get("provider_id") is not None else None
+    )
+    model_id = str(session["model_id"]) if session.get("model_id") is not None else None
+    return ResearchRun(
+        run_id=str(session["session_id"]),
+        task_id=task_id,
+        task_binding_status="bound" if task_id is not None else "legacy_unbound",
+        research_question=str(request.get("research_question") or ""),
+        status=ResearchRunStatus(str(session["status"])),
+        selection_fingerprint=str(session["selection_fingerprint"]),
+        context_snapshot_id=context_snapshot_id,
+        context_fingerprint=context_fingerprint,
+        workflow_id=workflow_id,
+        workflow_status=workflow.status.value if workflow is not None else None,
+        research_budget=(
+            workflow.definition.research_budget if workflow is not None else None
+        ),
+        provider_id=provider_id,
+        model_id=model_id,
+        prompt_version=str(session["prompt_version"]),
+        created_at=str(session["created_at"]),
+        updated_at=str(session["updated_at"]),
+    )
 
 
 def build_research_evaluation_bundle(

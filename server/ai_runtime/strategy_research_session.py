@@ -18,6 +18,7 @@ from server.ai_runtime.strategy_research_backtest import (
 )
 from server.ai_runtime.strategy_research_support import (
     build_research_evaluation_bundle,
+    build_research_run_projection,
     selection_from_session,
     strategy_research_json_object,
     strategy_research_request_json,
@@ -48,18 +49,26 @@ class StrategyResearchSessionMixin:
             except StrategyResearchRejected as exc:
                 binding_validity = "invalidated_by_drift"
                 binding_errors.append(str(exc))
+        stored_workflow = None
         workflow = None
         if session.get("workflow_id"):
             try:
-                stored = self._ai_store.get_workflow(str(session["workflow_id"]))
+                stored_workflow = self._ai_store.get_workflow(
+                    str(session["workflow_id"])
+                )
                 workflow = {
-                    "workflow_id": stored.workflow_id,
-                    "status": stored.status.value,
-                    "failure_code": stored.failure_code,
+                    "workflow_id": stored_workflow.workflow_id,
+                    "status": stored_workflow.status.value,
+                    "failure_code": stored_workflow.failure_code,
                 }
             except (LookupError, StrategyResearchOperationalError):
+                stored_workflow = None
                 workflow = None
         request = strategy_research_request_json(session)
+        research_run = build_research_run_projection(
+            session=session,
+            workflow=stored_workflow,
+        )
         return {
             "schema_version": STRATEGY_RESEARCH_API_CONTRACT,
             "session_id": session["session_id"],
@@ -79,6 +88,7 @@ class StrategyResearchSessionMixin:
             "binding_validity": binding_validity,
             "binding_errors": binding_errors,
             "workflow": workflow,
+            "research_run": research_run.to_dict(),
             "drafts": [
                 item["contract"]
                 for item in self._research_store.list_drafts(session_id)
