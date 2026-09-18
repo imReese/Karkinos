@@ -1329,8 +1329,8 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         ],
         "notification": {"type": "console"},
     }
-    assert example["data_source"] == {
-        "provider": "akshare",
+    assert example["market_data"] == {
+        "source_policy": "karkinos.market.source.cn_research.v1",
         "live_poll_interval": 60,
         "provider_config": {
             "tushare_token_env": "KARKINOS_TUSHARE_TOKEN",
@@ -1364,7 +1364,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     }
     assert set(example) == {
         "server",
-        "data_source",
+        "market_data",
         "account_truth",
         "broker_fee",
         "ai",
@@ -1381,7 +1381,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "KARKINOS_CORS_ALLOWED_ORIGINS",
         "KARKINOS_CONFIG_PATH",
         "KARKINOS_DATA_DIR",
-        "KARKINOS_DATA_SOURCE",
+        "KARKINOS_MARKET_SOURCE_POLICY",
         "KARKINOS_LIVE_POLL_INTERVAL",
         "KARKINOS_TELEGRAM_BOT_TOKEN",
         "KARKINOS_TELEGRAM_CHAT_ID",
