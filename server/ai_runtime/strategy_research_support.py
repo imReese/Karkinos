@@ -11,6 +11,9 @@ from server.ai_runtime.contracts import (
     ArtifactKind,
     JsonObject,
     ResearchEvaluationBundle,
+    ResearchSelection,
+    ResearchSelectionDecision,
+    ResearchSelectionSource,
     StoredArtifact,
     canonical_json,
     content_fingerprint,
@@ -128,6 +131,73 @@ def build_research_evaluation_bundle(
         signal_execution_evidence=dict(detached["signal_execution_evidence"]),
         lot_feasibility_evidence=dict(detached["lot_feasibility_evidence"]),
         missing_evidence=missing_evidence,
+    )
+
+
+def build_human_research_selection(
+    *,
+    review: Mapping[str, Any],
+    session: Mapping[str, Any],
+    critique: Mapping[str, Any],
+    evaluation: ResearchEvaluationBundle,
+) -> ResearchSelection:
+    disposition = str(review.get("disposition") or "")
+    decision_by_disposition = {
+        "accepted_for_more_research": (
+            ResearchSelectionDecision.SELECTED_FOR_FURTHER_RESEARCH
+        ),
+        "needs_revision": ResearchSelectionDecision.NEEDS_REVISION,
+        "rejected": ResearchSelectionDecision.REJECTED,
+    }
+    try:
+        decision = decision_by_disposition[disposition]
+    except KeyError as exc:
+        raise StrategyResearchRejected("review_disposition_invalid") from exc
+
+    projected_task_id = session.get("research_task_id")
+    if projected_task_id is not None:
+        task_id = str(projected_task_id)
+    elif session.get("request_json") is not None:
+        request = strategy_research_request_json(session)
+        task_id = (
+            str(request["research_task_id"])
+            if request.get("research_task_id") is not None
+            else None
+        )
+    else:
+        task_id = None
+    review_id = str(review.get("review_id") or "")
+    session_id = str(review.get("session_id") or session.get("session_id") or "")
+    candidate_id = str(critique.get("draft_id") or "")
+    critique_id = str(review.get("critique_id") or critique.get("critique_id") or "")
+    reviewer = str(review.get("reviewer") or "")
+    created_at = str(review.get("created_at") or "")
+    notes = str(review.get("notes") or "")
+    identity = {
+        "review_id": review_id,
+        "session_id": session_id,
+        "candidate_id": candidate_id,
+        "critique_id": critique_id,
+        "evaluation_id": evaluation.evaluation_id,
+        "decision": decision.value,
+        "schema_version": "karkinos.ai.research_selection.v1",
+    }
+    selection_id = "research-selection-" + content_fingerprint(identity)[:24]
+    return ResearchSelection(
+        selection_id=selection_id,
+        session_id=session_id,
+        task_id=task_id,
+        task_binding_status="bound" if task_id is not None else "legacy_unbound",
+        candidate_id=candidate_id,
+        critique_id=critique_id,
+        evaluation_id=evaluation.evaluation_id,
+        evaluation_fingerprint=evaluation.fingerprint,
+        evaluation_gate_status=evaluation.research_gate_status,
+        decision=decision,
+        source=ResearchSelectionSource.HUMAN,
+        reviewer=reviewer,
+        notes=notes,
+        created_at=created_at,
     )
 
 

@@ -34,6 +34,7 @@ from server.ai_runtime.contracts import (
     AgentRole,
     AIResearchCapability,
     ArtifactKind,
+    ResearchEvaluationBundle,
     content_fingerprint,
 )
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
@@ -77,6 +78,7 @@ from server.ai_runtime.strategy_research import (
     _compact_hypothesis_citation_catalog,
 )
 from server.ai_runtime.strategy_research_support import (
+    build_human_research_selection,
     build_research_evaluation_bundle,
 )
 from server.composition.strategy_research import (
@@ -778,6 +780,123 @@ def test_strategy_research_workflow_uses_existing_bounded_research_limits():
         definition = strategy_research_workflow_definition("fixture.local/model", mode)
         assert definition.research_budget == budget
         assert definition.to_dict()["research_budget"] == budget.to_dict()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("disposition", "expected_decision"),
+    [
+        ("accepted_for_more_research", "selected_for_further_research"),
+        ("needs_revision", "needs_revision"),
+        ("rejected", "rejected"),
+    ],
+)
+def test_human_review_projects_to_research_selection_bound_to_evaluation(
+    disposition,
+    expected_decision,
+):
+    evaluation = ResearchEvaluationBundle(
+        evaluation_id="research-evaluation-001",
+        backtest_result_id=18,
+        source_fingerprint="sha256:" + "a" * 64,
+        dataset_snapshot_id="sha256:dataset-001",
+        research_gate_status="pass",
+        research_evidence_bundle={"gate_status": "pass"},
+        oos_validation={"validation_status": "passed"},
+        after_cost_evidence={"status": "complete"},
+        cost_summary={"total_trades": 4},
+        parameter_robustness={},
+        market_regime_robustness={},
+        capacity_review={},
+        drawdown_evidence={},
+        signal_execution_evidence={},
+        lot_feasibility_evidence={},
+        missing_evidence=(),
+    )
+    review = {
+        "review_id": "review-001",
+        "session_id": "session-001",
+        "critique_id": "critique-001",
+        "reviewer": "human:reese",
+        "disposition": disposition,
+        "notes": "Human research disposition.",
+        "created_at": NOW,
+    }
+    session = {
+        "session_id": "session-001",
+        "request_json": json.dumps(
+            {
+                "research_task_id": "task-001",
+                "research_question": "Should this candidate continue?",
+            }
+        ),
+    }
+    critique = {
+        "critique_id": "critique-001",
+        "draft_id": "candidate-001",
+    }
+
+    selection = build_human_research_selection(
+        review=review,
+        session=session,
+        critique=critique,
+        evaluation=evaluation,
+    )
+
+    payload = selection.to_dict()
+    assert payload["decision"] == expected_decision
+    assert payload["task_id"] == "task-001"
+    assert payload["task_binding_status"] == "bound"
+    assert payload["evaluation_id"] == evaluation.evaluation_id
+    assert payload["evaluation_fingerprint"] == evaluation.fingerprint
+    assert payload["evaluation_gate_status"] == "pass"
+    assert payload["requires_human_promotion"] is True
+    assert payload["authority_effect"] == "none"
+
+
+@pytest.mark.unit
+def test_legacy_unbound_review_projects_without_inventing_task_identity():
+    evaluation = ResearchEvaluationBundle(
+        evaluation_id="research-evaluation-legacy",
+        backtest_result_id=18,
+        source_fingerprint="sha256:" + "b" * 64,
+        dataset_snapshot_id=None,
+        research_gate_status="not_evaluated",
+        research_evidence_bundle={},
+        oos_validation={},
+        after_cost_evidence={},
+        cost_summary={},
+        parameter_robustness={},
+        market_regime_robustness={},
+        capacity_review={},
+        drawdown_evidence={},
+        signal_execution_evidence={},
+        lot_feasibility_evidence={},
+        missing_evidence=("dataset_snapshot",),
+    )
+    selection = build_human_research_selection(
+        review={
+            "review_id": "review-legacy",
+            "session_id": "session-legacy",
+            "critique_id": "critique-legacy",
+            "reviewer": "human:reese",
+            "disposition": "needs_revision",
+            "notes": "Legacy session remains readable.",
+            "created_at": NOW,
+        },
+        session={
+            "session_id": "session-legacy",
+            "request_json": json.dumps({"research_question": "Legacy question"}),
+        },
+        critique={
+            "critique_id": "critique-legacy",
+            "draft_id": "candidate-legacy",
+        },
+        evaluation=evaluation,
+    )
+
+    assert selection.task_id is None
+    assert selection.task_binding_status == "legacy_unbound"
 
 
 @pytest.mark.unit
