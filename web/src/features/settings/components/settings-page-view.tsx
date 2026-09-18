@@ -26,7 +26,7 @@ export function SettingsPageView({
   } = controller;
   return (
     <section
-      className="app-workbench-route space-y-5 sm:space-y-6"
+      className="app-workbench-route space-y-4 sm:space-y-5"
       data-workbench-route="settings"
     >
       <WorkspaceHeader

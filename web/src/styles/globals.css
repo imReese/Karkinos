@@ -1031,6 +1031,9 @@ select:is(.app-field, .app-input):not([multiple]) {
 }
 
 .app-workbench-route {
+  width: 100%;
+  max-width: 1560px;
+  margin-inline: auto;
   padding-bottom: var(--app-space-section-relaxed);
 }
 
@@ -2159,6 +2162,23 @@ h3 {
 .app-workbench-route :is(.overflow-x-auto, .overflow-auto) {
   max-width: 100%;
   overscroll-behavior-inline: contain;
+}
+
+@media (min-width: 1280px) {
+  [data-workbench-route='trading'] .app-trading-command-grid {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    align-items: start;
+    gap: 24px;
+  }
+
+  [data-workbench-route='trading'] [data-testid='trading-safety-rail'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-workbench-route='trading']
+    [data-testid='trading-broker-boundary-disclosure'] {
+    grid-column: auto;
+  }
 }
 
 [data-workbench-route='backtest']

@@ -392,7 +392,7 @@ export function ActivityPage() {
     <>
       <ToastStack toasts={toasts} />
       <section
-        className="app-workbench-route min-w-0 space-y-5 sm:space-y-6"
+        className="app-workbench-route min-w-0 space-y-4 sm:space-y-5"
         data-workbench-route="activity"
       >
         <WorkspaceHeader
