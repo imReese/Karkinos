@@ -198,9 +198,8 @@ test('does not derive authoritative net cash impact from the visible ledger rows
       'Recent entries are not a complete account history, so no total is shown.',
     ),
   ).toBeTruthy();
-  expect(
-    document.querySelectorAll('.activity-summary-strip > div'),
-  ).toHaveLength(2);
+  expect(screen.getByTestId('ledger-scope-register')).toBeTruthy();
+  expect(document.querySelector('.activity-summary-strip')).toBeNull();
   expect(await screen.findByText('2 entries')).toBeTruthy();
   expect(await screen.findByText('Commission ¥5.00')).toBeTruthy();
   expect(await screen.findByText('Stamp tax ¥0.00')).toBeTruthy();
@@ -389,7 +388,8 @@ test('keeps immutable history as the primary surface and opens entry tools on de
   const entryTrigger = screen.getByRole('button', { name: '新增流水' });
   expect(entryTrigger.className).toContain('app-button-secondary');
   expect(entryTrigger.className).not.toContain('app-button-primary');
-  expect(document.querySelector('.activity-summary-strip')).toBeTruthy();
+  expect(document.querySelector('.activity-summary-strip')).toBeNull();
+  expect(screen.getByTestId('ledger-scope-register')).toBeTruthy();
   expect(
     screen.getByRole('group', { name: '流水分类筛选' }).className,
   ).toContain('overflow-x-auto');

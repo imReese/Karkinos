@@ -2,10 +2,10 @@ import type { Locale } from '../../shared/locale';
 
 export const settingsCopy = {
   en: {
-    kicker: 'Settings',
-    title: 'Control center',
+    kicker: 'Configuration',
+    title: 'Configuration register',
     subtitle:
-      'Manage saved defaults, review service status, and verify safety boundaries without changing trading authority.',
+      'Review effective values, runtime boundaries, and saved defaults before opening a controlled editor.',
     dataStatus: 'Data status',
     dataStatusDetail:
       'Portfolio valuations follow the recorded quote state and refresh policy.',
@@ -191,10 +191,9 @@ export const settingsCopy = {
       'AI research services, evidence collection rules, broker credentials, and notification delivery remain managed outside this page until reviewed controls are available.',
   },
   zh: {
-    kicker: '设置',
-    title: '控制中心',
-    subtitle:
-      '管理已保存的默认配置、检查服务状态并复核安全边界，不改变交易权限。',
+    kicker: '配置',
+    title: '配置登记',
+    subtitle: '先查看生效值、运行边界和已保存默认项，再按需打开受控编辑入口。',
     dataStatus: '数据状态',
     dataStatusDetail: '组合估值以已记录的行情状态和刷新策略为准。',
     refreshActionDetail:

@@ -21,10 +21,10 @@ export function EvidenceMetric({
   value: string;
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-3 py-2">
+    <div className="grid min-w-0 gap-1 border-b border-[var(--app-divider)] px-1 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-3">
       <div className="app-muted app-type-micro">{label}</div>
       <div
-        className="mt-1 min-w-0 truncate font-mono text-xs text-[var(--app-text)]"
+        className="min-w-0 truncate font-mono text-xs text-[var(--app-text)]"
         title={value}
       >
         {value || '—'}

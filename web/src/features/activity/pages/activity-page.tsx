@@ -7,7 +7,6 @@ import {
   ControlledActionZone,
   EvidenceDrawer,
   EvidenceState,
-  MetricStrip,
   StatusBadge,
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
@@ -413,30 +412,20 @@ export function ActivityPage() {
           }
         />
 
-        <MetricStrip
-          ariaLabel={copy.activity.title}
-          className="activity-summary-strip"
-          items={[
-            {
-              id: 'pending-orders',
-              label: copy.activity.summary.pendingOrders,
-              value: pendingFundOrders.isLoading
-                ? '--'
-                : String(pendingFundOrders.data?.length ?? 0),
-              detail: copy.activity.summary.pendingOrdersDetail,
-              tone:
-                (pendingFundOrders.data?.length ?? 0) > 0
-                  ? 'warning'
-                  : 'neutral',
-            },
-            {
-              id: 'net-cash-impact',
-              label: copy.activity.summary.netCashImpact,
-              value: copy.activity.summary.netCashImpactUnavailable,
-              detail: copy.activity.summary.netCashImpactDetail,
-            },
-          ]}
-        />
+        <div
+          className="grid min-w-0 gap-x-4 gap-y-1 border-y border-[var(--app-divider)] px-1 py-2.5 sm:grid-cols-[10rem_9rem_minmax(0,1fr)] sm:items-baseline"
+          data-testid="ledger-scope-register"
+        >
+          <span className="app-type-overline text-[var(--app-text-tertiary)]">
+            {copy.activity.summary.netCashImpact}
+          </span>
+          <span className="font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
+            {copy.activity.summary.netCashImpactUnavailable}
+          </span>
+          <span className="text-xs leading-5 text-[var(--app-text-secondary)]">
+            {copy.activity.summary.netCashImpactDetail}
+          </span>
+        </div>
 
         <div
           className="min-w-0 space-y-6"

@@ -28,7 +28,7 @@ export function SettingsPreferencesWorkspace({
     theme,
   } = controller;
   return (
-    <aside className="order-2 min-w-0 space-y-5 xl:col-start-2 xl:row-start-1">
+    <aside className="min-w-0 space-y-5">
       <SettingsDisclosure
         testId="settings-notifications-disclosure"
         title={copy.settings.notifications}

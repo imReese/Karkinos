@@ -151,6 +151,13 @@ export function DecisionCockpitContent({
         </div>
       ) : null}
 
+      <SignalQueuePanel
+        actions={signalActions.data ?? []}
+        journal={signalJournal.data ?? []}
+        loading={signalActions.isLoading || signalJournal.isLoading}
+        error={signalActions.isError || signalJournal.isError}
+      />
+
       <DecisionGateMatrixSection
         gateItems={gateItems}
         allDecisionGatesPass={allDecisionGatesPass}
@@ -272,13 +279,6 @@ export function DecisionCockpitContent({
       </details>
 
       <DecisionWorkflowPanel lanes={lanes} />
-
-      <SignalQueuePanel
-        actions={signalActions.data ?? []}
-        journal={signalJournal.data ?? []}
-        loading={signalActions.isLoading || signalJournal.isLoading}
-        error={signalActions.isError || signalJournal.isError}
-      />
 
       {collapseDecisionEvidence && !summaryExpanded ? (
         <DecisionSummaryCollapsedPanel

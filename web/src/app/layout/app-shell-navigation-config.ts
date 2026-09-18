@@ -16,12 +16,15 @@ export const OVERVIEW_ROUTE = '/overview';
 
 export const NAVIGATION_GROUPS = [
   {
-    key: 'portfolio',
-    label: { en: 'Portfolio', zh: '组合管理' },
+    key: 'workspace',
+    label: { en: 'Workspace', zh: '工作台' },
+    items: [{ to: OVERVIEW_ROUTE, key: 'overview', icon: OverviewNavIcon }],
+  },
+  {
+    key: 'invest',
+    label: { en: 'Invest', zh: '投资' },
     items: [
-      { to: OVERVIEW_ROUTE, key: 'overview', icon: OverviewNavIcon },
       { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
-      { to: '/activity', key: 'activity', icon: ActivityNavIcon },
       { to: '/market', key: 'market', icon: MarketNavIcon },
     ],
   },
@@ -30,42 +33,41 @@ export const NAVIGATION_GROUPS = [
     label: { en: 'Research', zh: '研究' },
     items: [
       { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
-      {
-        to: '/ai-research',
-        key: 'aiResearch',
-        icon: AiResearchNavIcon,
-      },
+      { to: '/ai-research', key: 'aiResearch', icon: AiResearchNavIcon },
     ],
   },
   {
-    key: 'decision-risk',
-    label: { en: 'Decision & Risk', zh: '决策与风控' },
+    key: 'act',
+    label: { en: 'Act', zh: '行动' },
     items: [
       { to: '/decision', key: 'decision', icon: DecisionNavIcon },
-      { to: '/risk', key: 'risk', icon: RiskNavIcon },
+      { to: '/trading', key: 'trading', icon: TradingNavIcon },
     ],
   },
   {
-    key: 'execution-operations',
-    label: { en: 'Execution & Operations', zh: '执行与运营' },
+    key: 'control',
+    label: { en: 'Control', zh: '控制' },
     items: [
-      { to: '/operations', key: 'operations', icon: OperationsNavIcon },
-      { to: '/trading', key: 'trading', icon: TradingNavIcon },
+      { to: '/risk', key: 'risk', icon: RiskNavIcon },
+      { to: '/activity', key: 'activity', icon: ActivityNavIcon },
     ],
   },
   {
     key: 'system',
     label: { en: 'System', zh: '系统' },
-    items: [{ to: '/settings', key: 'settings', icon: SettingsNavIcon }],
+    items: [
+      { to: '/operations', key: 'operations', icon: OperationsNavIcon },
+      { to: '/settings', key: 'settings', icon: SettingsNavIcon },
+    ],
   },
 ] as const;
 
 export const MOBILE_PRIMARY_ITEMS = [
   NAVIGATION_GROUPS[0].items[0],
-  NAVIGATION_GROUPS[0].items[1],
-  NAVIGATION_GROUPS[2].items[0],
+  NAVIGATION_GROUPS[1].items[0],
+  NAVIGATION_GROUPS[3].items[0],
 ] as const;
 
 export function isNavigationItemActive(pathname: string, target: string) {
-  return pathname === target || pathname.startsWith(`${target}/`);
+  return pathname === target || pathname.startsWith(target + '/');
 }

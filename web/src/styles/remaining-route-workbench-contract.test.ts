@@ -170,7 +170,6 @@ describe('remaining route workbench contract', () => {
     for (const page of [
       PORTFOLIO,
       MARKET,
-      ACTIVITY,
       BACKTEST,
       AI_RESEARCH,
       DECISION,
@@ -183,6 +182,9 @@ describe('remaining route workbench contract', () => {
       expect(page).toContain('WorkspaceHeader');
       expect(page).toContain('MetricStrip');
     }
+    expect(ACTIVITY).toContain('WorkspaceHeader');
+    expect(ACTIVITY).toContain('data-testid="ledger-scope-register"');
+    expect(ACTIVITY).not.toContain('MetricStrip');
   });
 
   it('keeps primary route sections on the semantic 18px title role', () => {
@@ -334,23 +336,16 @@ describe('remaining route workbench contract', () => {
     expect(SETTINGS).not.toContain('stopLive');
   });
 
-  it('keeps routine route structure flat and balances the settings rail', () => {
-    expect(SETTINGS).toContain(
-      'className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]"',
+  it('keeps routine route structure flat and makes settings a configuration register', () => {
+    expect(SETTINGS).not.toContain(
+      'xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]',
     );
-    expect(SETTINGS).toContain('className="contents"');
-    expect(SETTINGS).toContain(
-      'className="order-1 min-w-0 xl:col-start-1 xl:row-span-3 xl:row-start-1"',
-    );
-    expect(SETTINGS).toContain(
-      'className="order-2 min-w-0 space-y-5 xl:col-start-2 xl:row-start-1"',
-    );
-    expect(SETTINGS).toContain(
-      'className="order-3 min-w-0 xl:col-start-2 xl:row-start-2"',
-    );
-    expect(SETTINGS).toContain(
-      'className="order-4 min-w-0 xl:col-start-2 xl:row-start-3"',
-    );
+    expect(SETTINGS).not.toContain('xl:col-start-');
+    expect(SETTINGS).not.toContain('xl:row-start-');
+    expect(SETTINGS).toContain('settings-persisted-configuration');
+    expect(SETTINGS).toContain('settings-data-source-disclosure');
+    expect(SETTINGS).toContain('settings-live-services-disclosure');
+    expect(SETTINGS).toContain('settings-preferences-disclosure');
     const activityFeed = ACTIVITY_FEED.slice(
       ACTIVITY_FEED.indexOf('export function ActivityFeed'),
       ACTIVITY_FEED.indexOf('function activityAmountClass'),

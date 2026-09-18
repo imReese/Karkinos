@@ -1831,6 +1831,44 @@ h3 {
   box-shadow: none;
 }
 
+:is(
+    [data-workbench-route='trading'],
+    [data-workbench-route='operations'],
+    [data-workbench-route='settings']
+  )
+  :is(
+    div,
+    section,
+    article,
+    aside
+  )[class*='rounded-'][class*='border-[color-mix(in_srgb,var(--app-border)'] {
+  border-right-width: 0;
+  border-left-width: 0;
+  border-top-color: var(--app-divider);
+  border-bottom-color: var(--app-divider);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:is(
+    [data-workbench-route='trading'],
+    [data-workbench-route='operations'],
+    [data-workbench-route='settings']
+  )
+  :is(
+    div,
+    section,
+    article,
+    aside
+  )[class*='rounded-'][class*='border-[var(--app-border)'] {
+  border-right-width: 0;
+  border-left-width: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 [data-workbench-primitive='exception-list'][data-density='compact']
   > .app-exception-item {
   position: relative;
@@ -2220,6 +2258,36 @@ h3 {
 
 .app-activity-filter-rail::-webkit-scrollbar {
   display: none;
+}
+
+[data-workbench-route='backtest']
+  :is(
+    div,
+    section,
+    article,
+    aside
+  )[class*='rounded-'][class*='border-[color-mix(in_srgb,var(--app-border)'] {
+  border-right-width: 0;
+  border-left-width: 0;
+  border-top-color: var(--app-divider);
+  border-bottom-color: var(--app-divider);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-workbench-route='backtest']
+  :is(
+    div,
+    section,
+    article,
+    aside
+  )[class*='rounded-'][class*='border-[var(--app-border)'] {
+  border-right-width: 0;
+  border-left-width: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .activity-summary-strip .app-metric-strip-item > .truncate {

@@ -168,6 +168,7 @@ export function PortfolioPageView({
         )}
       </div>
 
+      <PortfolioCurrentHoldingsSection actions={actions} model={model} />
       {state.evidenceFilter !== 'clear' ? (
         <PortfolioEvidenceReviewPanel
           copy={copy}
@@ -175,7 +176,6 @@ export function PortfolioPageView({
           locale={locale}
         />
       ) : null}
-      <PortfolioCurrentHoldingsSection actions={actions} model={model} />
       <PortfolioAnalysisSection actions={actions} model={model} />
       <PortfolioHistorySection actions={actions} model={model} />
     </section>

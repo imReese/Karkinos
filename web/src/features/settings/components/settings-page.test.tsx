@@ -244,7 +244,7 @@ afterEach(() => {
 test('keeps secondary settings workflows behind explicit disclosures', async () => {
   renderSettingsPage();
 
-  await screen.findByText('Control center');
+  await screen.findByText('Configuration register');
   for (const testId of [
     'settings-metadata-disclosure',
     'settings-live-services-disclosure',
@@ -260,7 +260,7 @@ test('keeps secondary settings workflows behind explicit disclosures', async () 
 test('renders backend data status and service state', async () => {
   renderSettingsPage();
 
-  expect(await screen.findByText('Control center')).toBeTruthy();
+  expect(await screen.findByText('Configuration register')).toBeTruthy();
   expect(await screen.findByText('Data status')).toBeTruthy();
   expect(
     await screen.findByLabelText('Market state: Market open'),
@@ -320,11 +320,11 @@ test('prioritizes saved configuration before refresh and runtime controls', asyn
   const liveServices = await screen.findByText('Live services');
 
   expect(
-    dataStatus.compareDocumentPosition(persistedConfiguration) &
+    persistedConfiguration.compareDocumentPosition(dataStatus) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    persistedConfiguration.compareDocumentPosition(refreshAction) &
+    dataStatus.compareDocumentPosition(refreshAction) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
@@ -453,13 +453,13 @@ test('updates local theme and language preferences', async () => {
   const user = userEvent.setup();
   renderSettingsPage();
 
-  await screen.findByText('Control center');
+  await screen.findByText('Configuration register');
   await user.click(screen.getByRole('button', { name: 'Latte' }));
   expect(window.localStorage.getItem('karkinos.theme')).toBe('light');
 
   await user.click(screen.getByRole('button', { name: '中文' }));
   expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
-  expect(await screen.findByText('控制中心')).toBeTruthy();
+  expect(await screen.findByText('配置登记')).toBeTruthy();
   expect(screen.getByText('行情源配置')).toBeTruthy();
   expect(screen.getByText('行情源能力矩阵')).toBeTruthy();
   expect(document.body.textContent).not.toContain('供应商配置');
