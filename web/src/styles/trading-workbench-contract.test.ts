@@ -170,7 +170,8 @@ describe('trading workbench contract', () => {
       BROKER_READINESS.indexOf('function brokerAdapterReadinessCopy'),
     );
 
-    expect(brokerReadiness).toContain('app-workbench-section');
+    expect(brokerReadiness).not.toContain('app-workbench-section');
+    expect(brokerReadiness).toContain('border-y border-[var(--app-divider)]');
     expect(brokerReadiness).toContain('<WorkbenchStatusBadge');
     expect(brokerReadiness).toContain('<EvidenceState');
     expect(brokerReadiness).toContain(

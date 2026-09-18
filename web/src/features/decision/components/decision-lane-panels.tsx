@@ -164,7 +164,7 @@ export function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
     lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
   const hasCandidates = lane.candidates.length > 0;
   return (
-    <section className="app-workbench-section min-w-0 py-4">
+    <section className="min-w-0 border-y border-[var(--app-divider)] py-4">
       <div className="min-w-0 px-1 sm:px-3">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
