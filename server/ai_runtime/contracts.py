@@ -44,6 +44,24 @@ class ToolCallStatus(StrEnum):
     COMPLETED = "completed"
 
 
+class AIResearchCapability(StrEnum):
+    """Bounded AI capabilities. Capital execution is deliberately absent."""
+
+    OBSERVE = "observe"
+    EXPLAIN = "explain"
+    INVESTIGATE = "investigate"
+    PROPOSE = "propose"
+    ORCHESTRATE_RESEARCH = "orchestrate_research"
+
+
+class ResearchClaimSupportStatus(StrEnum):
+    UNREVIEWED = "unreviewed"
+    SUPPORTED = "supported"
+    CONTRADICTED = "contradicted"
+    MIXED = "mixed"
+    UNRESOLVED = "unresolved"
+
+
 class ArtifactKind(StrEnum):
     CLAIM = "claim"
     DEBATE = "debate"
@@ -51,6 +69,235 @@ class ArtifactKind(StrEnum):
     TRADE_PLAN_DRAFT = "trade_plan_draft"
     REVIEW = "review"
     MEMORY = "memory"
+
+
+@dataclass(frozen=True)
+class ResearchBudget:
+    max_candidates: int
+    max_iterations: int
+    max_backtests: int
+    max_parameter_variants: int
+    max_provider_calls: int
+    max_external_searches: int
+    schema_version: str = "karkinos.ai.research_budget.v1"
+
+    def __post_init__(self) -> None:
+        positive = {
+            "max_candidates": self.max_candidates,
+            "max_iterations": self.max_iterations,
+            "max_backtests": self.max_backtests,
+        }
+        non_negative = {
+            "max_parameter_variants": self.max_parameter_variants,
+            "max_provider_calls": self.max_provider_calls,
+            "max_external_searches": self.max_external_searches,
+        }
+        for name, value in positive.items():
+            if value <= 0:
+                raise ValueError(f"{name} must be positive")
+        for name, value in non_negative.items():
+            if value < 0:
+                raise ValueError(f"{name} must be non-negative")
+        _require_text(self.schema_version, "schema_version")
+
+    @property
+    def fingerprint(self) -> str:
+        return content_fingerprint(self.to_dict())
+
+    def to_dict(self) -> JsonObject:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ResearchHypothesis:
+    hypothesis_id: str
+    task_id: str
+    thesis: str
+    mechanism: str
+    baseline_reference: str
+    expected_regime: str
+    falsification_conditions: tuple[str, ...]
+    required_evidence: tuple[str, ...]
+    source_trace_id: str | None = None
+    authority_effect: str = "none"
+    schema_version: str = "karkinos.ai.research_hypothesis.v1"
+
+    def __post_init__(self) -> None:
+        for name in (
+            "hypothesis_id",
+            "task_id",
+            "thesis",
+            "mechanism",
+            "baseline_reference",
+            "expected_regime",
+            "schema_version",
+        ):
+            _require_text(str(getattr(self, name)), name)
+        if not self.falsification_conditions:
+            raise ValueError(
+                "formal research hypotheses require falsification conditions"
+            )
+        if any(not item.strip() for item in self.falsification_conditions):
+            raise ValueError("falsification conditions must not be empty")
+        if len(self.falsification_conditions) != len(
+            set(self.falsification_conditions)
+        ):
+            raise ValueError("falsification conditions must be unique")
+        if not self.required_evidence:
+            raise ValueError("formal research hypotheses require evidence requirements")
+        if any(not item.strip() for item in self.required_evidence):
+            raise ValueError("required evidence entries must not be empty")
+        if len(self.required_evidence) != len(set(self.required_evidence)):
+            raise ValueError("required evidence entries must be unique")
+        if self.authority_effect != "none":
+            raise ValueError("research hypotheses cannot change execution authority")
+        if self.source_trace_id is not None:
+            _require_text(self.source_trace_id, "source_trace_id")
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "hypothesis_id": self.hypothesis_id,
+            "task_id": self.task_id,
+            "thesis": self.thesis,
+            "mechanism": self.mechanism,
+            "baseline_reference": self.baseline_reference,
+            "expected_regime": self.expected_regime,
+            "falsification_conditions": list(self.falsification_conditions),
+            "required_evidence": list(self.required_evidence),
+            "source_trace_id": self.source_trace_id,
+            "authority_effect": self.authority_effect,
+            "schema_version": self.schema_version,
+        }
+
+
+@dataclass(frozen=True)
+class ResearchClaim:
+    claim_id: str
+    task_id: str
+    run_id: str
+    statement: str
+    claim_type: str
+    evidence_reference_ids: tuple[str, ...]
+    support_status: ResearchClaimSupportStatus
+    as_of: str
+    source_trace_id: str | None = None
+    authority_effect: str = "none"
+    schema_version: str = "karkinos.ai.research_claim.v1"
+
+    def __post_init__(self) -> None:
+        for name in (
+            "claim_id",
+            "task_id",
+            "run_id",
+            "statement",
+            "claim_type",
+            "as_of",
+            "schema_version",
+        ):
+            _require_text(str(getattr(self, name)), name)
+        if not self.evidence_reference_ids:
+            raise ValueError("research claims must cite evidence")
+        if len(self.evidence_reference_ids) != len(set(self.evidence_reference_ids)):
+            raise ValueError("research claim evidence references must be unique")
+        if any(not item.strip() for item in self.evidence_reference_ids):
+            raise ValueError("research claim evidence references must not be empty")
+        if self.authority_effect != "none":
+            raise ValueError("research claims cannot change execution authority")
+        if self.source_trace_id is not None:
+            _require_text(self.source_trace_id, "source_trace_id")
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "claim_id": self.claim_id,
+            "task_id": self.task_id,
+            "run_id": self.run_id,
+            "statement": self.statement,
+            "claim_type": self.claim_type,
+            "evidence_reference_ids": list(self.evidence_reference_ids),
+            "support_status": self.support_status.value,
+            "as_of": self.as_of,
+            "source_trace_id": self.source_trace_id,
+            "authority_effect": self.authority_effect,
+            "schema_version": self.schema_version,
+        }
+
+
+@dataclass(frozen=True)
+class AITrace:
+    trace_id: str
+    task_id: str
+    run_id: str
+    capability: AIResearchCapability
+    provider_id: str
+    model_id: str
+    prompt_version: str
+    input_artifact_ids: tuple[str, ...]
+    evidence_reference_ids: tuple[str, ...]
+    tool_names: tuple[str, ...]
+    started_at: str
+    finished_at: str | None = None
+    token_usage: int | None = None
+    raw_output_fingerprint: str | None = None
+    parsed_output_fingerprint: str | None = None
+    authority_effect: str = "none"
+    schema_version: str = "karkinos.ai.trace.v1"
+
+    def __post_init__(self) -> None:
+        for name in (
+            "trace_id",
+            "task_id",
+            "run_id",
+            "provider_id",
+            "model_id",
+            "prompt_version",
+            "started_at",
+            "schema_version",
+        ):
+            _require_text(str(getattr(self, name)), name)
+        for name, values in (
+            ("input_artifact_ids", self.input_artifact_ids),
+            ("evidence_reference_ids", self.evidence_reference_ids),
+            ("tool_names", self.tool_names),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"{name} must be unique")
+            if any(not value.strip() for value in values):
+                raise ValueError(f"{name} must not contain empty values")
+        if self.finished_at is not None:
+            _require_text(self.finished_at, "finished_at")
+        if self.token_usage is not None and self.token_usage < 0:
+            raise ValueError("token_usage must be non-negative")
+        for name in ("raw_output_fingerprint", "parsed_output_fingerprint"):
+            value = getattr(self, name)
+            if value is not None:
+                _require_text(value, name)
+        if self.authority_effect != "none":
+            raise ValueError("AI traces cannot change execution authority")
+
+    @property
+    def fingerprint(self) -> str:
+        return content_fingerprint(self.to_dict())
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "trace_id": self.trace_id,
+            "task_id": self.task_id,
+            "run_id": self.run_id,
+            "capability": self.capability.value,
+            "provider_id": self.provider_id,
+            "model_id": self.model_id,
+            "prompt_version": self.prompt_version,
+            "input_artifact_ids": list(self.input_artifact_ids),
+            "evidence_reference_ids": list(self.evidence_reference_ids),
+            "tool_names": list(self.tool_names),
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "token_usage": self.token_usage,
+            "raw_output_fingerprint": self.raw_output_fingerprint,
+            "parsed_output_fingerprint": self.parsed_output_fingerprint,
+            "authority_effect": self.authority_effect,
+            "schema_version": self.schema_version,
+        }
 
 
 @dataclass(frozen=True)
