@@ -121,6 +121,8 @@ export function PublicHomePage() {
                 <ArrowRight aria-hidden="true" />
               </a>
             </div>
+
+            <PublicHomeHeroPillars copy={copy} locale={locale} />
           </div>
 
           <PublicHomeSectionIndex
@@ -356,6 +358,32 @@ export function PublicHomePage() {
       </main>
 
       <PublicHomeFooter copy={copy} setActivePanel={setActivePanel} />
+    </div>
+  );
+}
+
+function PublicHomeHeroPillars({
+  copy,
+  locale,
+}: {
+  copy: PublicHomeCopy;
+  locale: PublicHomePreferences['locale'];
+}) {
+  return (
+    <div
+      className="app-public-hero-pillars"
+      role="region"
+      aria-label={locale === 'zh' ? '核心架构保障' : 'Core guarantees'}
+    >
+      {copy.hero.pillars.map((pillar) => (
+        <div className="app-public-hero-pillar" key={pillar.index}>
+          <span className="app-public-pillar-index">{pillar.index}</span>
+          <div className="app-public-pillar-content">
+            <strong>{pillar.title}</strong>
+            <p>{pillar.detail}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
