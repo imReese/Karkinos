@@ -509,7 +509,7 @@ describe('remaining route workbench contract', () => {
       CSS.indexOf('.app-holding-summary-metrics'),
       CSS.indexOf('.app-account-truth-filter-rail'),
     );
-    expect(holdingSummaryStyles).toContain('> div.app-type-label.truncate');
+    expect(holdingSummaryStyles).toContain('> div.app-type-label');
     expect(holdingSummaryStyles).toContain('overflow-wrap: anywhere');
     expect(holdingSummaryStyles).toContain('text-overflow: clip');
     expect(holdingSummaryStyles).toContain('white-space: pre-line');

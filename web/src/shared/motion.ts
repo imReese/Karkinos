@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 
 export const APP_MOTION = {
-  chartDurationMs: 320,
+  chartDurationMs: 180,
   easing: 'ease-out',
-  exitDurationMs: 180,
+  exitDurationMs: 120,
   reducedMotionQuery: '(prefers-reduced-motion: reduce)',
 } as const;
 

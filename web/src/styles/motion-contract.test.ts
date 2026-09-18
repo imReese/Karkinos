@@ -27,18 +27,16 @@ describe('Karkinos brand motion contract', () => {
   it('declares the semantic duration, easing, distance, and stagger layers', () => {
     const requiredTokens = [
       '--app-motion-instant: 80ms',
-      '--app-motion-fast: 120ms',
-      '--app-motion-standard: 180ms',
-      '--app-motion-deliberate: 240ms',
-      '--app-motion-route: 320ms',
-      '--app-motion-loading: 1600ms',
+      '--app-motion-fast: 100ms',
+      '--app-motion-standard: 120ms',
+      '--app-motion-deliberate: 160ms',
+      '--app-motion-route: 100ms',
+      '--app-motion-loading: 1400ms',
       '--app-motion-spin: 900ms',
-      '--app-motion-stagger: 36ms',
+      '--app-motion-stagger: 24ms',
       '--app-motion-distance-xs: 2px',
-      '--app-motion-distance-sm: 6px',
-      '--app-motion-distance-md: 12px',
-      '--app-space-section: 24px',
-      '--app-space-section-relaxed: 32px',
+      '--app-motion-distance-sm: 4px',
+      '--app-motion-distance-md: 8px',
       '--app-ease-standard: cubic-bezier(0.2, 0, 0, 1)',
       '--app-ease-enter: cubic-bezier(0.16, 1, 0.3, 1)',
       '--app-ease-exit: cubic-bezier(0.4, 0, 1, 1)',
@@ -47,8 +45,8 @@ describe('Karkinos brand motion contract', () => {
     for (const token of requiredTokens) {
       expect(GLOBALS).toContain(token);
     }
-    expect(APP_MOTION.chartDurationMs).toBe(320);
-    expect(APP_MOTION.exitDurationMs).toBe(180);
+    expect(APP_MOTION.chartDurationMs).toBe(180);
+    expect(APP_MOTION.exitDurationMs).toBe(120);
   });
 
   it('keeps one deterministic reduced-motion override', () => {

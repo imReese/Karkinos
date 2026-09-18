@@ -13,10 +13,10 @@ export function OverviewPerformanceDrivers({
   if (!contributors.length) return null;
   return (
     <div
-      className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-2 text-xs"
+      className="app-type-compact mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-2"
       data-testid="overview-performance-drivers"
     >
-      <h3 className="font-medium text-[var(--app-text-secondary)]">
+      <h3 className="font-semibold text-[var(--app-text-secondary)]">
         {overviewSessionLabels(state, locale).drivers}
       </h3>
       <ul className="flex flex-wrap gap-x-5 gap-y-2">

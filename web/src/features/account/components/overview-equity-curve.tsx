@@ -9,6 +9,7 @@ import {
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import { useCopy } from '../../../shared/i18n/context';
+import { SectionHeader } from '../../../shared/ui/workbench';
 import type { EquityCurveRange, EquitySeriesPoint } from '../api';
 import {
   resolveXAxisDomain,
@@ -68,32 +69,41 @@ export function OverviewEquityCurve({
   ];
   return (
     <div className="min-w-0">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-[var(--app-text)]">
-          {copy.overview.dashboard.equityPanel}
-        </h2>
-        <div
-          className="flex gap-1"
-          data-testid="equity-range-controls"
-          aria-label={labels.range}
-        >
-          {ranges.map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={range === value}
-              aria-label={`${labels.range}: ${label}`}
-              onClick={() => onRangeChange(value)}
-              className={`min-h-8 border-b-2 px-2 text-xs font-medium ${range === value ? 'border-[var(--app-accent)] text-[var(--app-accent)]' : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <SectionHeader
+        title={copy.overview.dashboard.equityPanel}
+        className="mb-2"
+        actions={
+          <div
+            className="app-inline-segmented"
+            data-testid="equity-range-controls"
+            aria-label={labels.range}
+            role="group"
+          >
+            {ranges.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={range === value}
+                aria-label={labels.range + ': ' + label}
+                onClick={() => onRangeChange(value)}
+                className={
+                  'app-inline-segmented-btn ' +
+                  (range === value ? 'app-inline-segmented-btn-active' : '')
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        }
+      />
       <div
         ref={chartRef}
-        className={`${usablePoints.length >= 2 ? 'h-[210px] sm:h-[236px]' : 'h-[76px] sm:h-[88px]'} min-w-0`}
+        className={
+          (usablePoints.length >= 2
+            ? 'h-[200px] sm:h-[224px] xl:h-[236px]'
+            : 'h-[72px] sm:h-[84px]') + ' min-w-0'
+        }
       >
         {usablePoints.length >= 2 ? (
           <div

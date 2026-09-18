@@ -35,65 +35,66 @@ export function OverviewResolvedWorkspace({
   );
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" data-testid="overview-financial-canvas">
       <OverviewDataStatus state={state} />
       <OverviewSummary summary={state.summary} />
-      <div
-        className="grid min-w-0 items-start xl:grid-cols-[minmax(0,1fr)_18rem]"
-        data-testid="overview-financial-canvas"
+      <DashboardTodayQueue overview={state.overview} />
+
+      <section
+        className="min-w-0 border-b border-[var(--app-divider)] py-4"
+        data-testid="overview-performance-card"
       >
-        <div className="min-w-0 xl:border-r xl:border-[var(--app-divider)]">
-          <section
-            className="min-w-0 py-3.5 xl:pr-6"
-            data-testid="overview-performance-card"
-          >
-            {equityCurve.isLoading && !equityCurve.data ? (
-              <EquityCurveSkeleton />
-            ) : equityCurve.isError && !equityCurve.data ? (
-              <OverviewStatusCard
-                tone="danger"
-                title={copy.states.error}
-                detail={getEquityCurveErrorDetail(equityCurve.error, copy)}
-                actionLabel={copy.states.retry}
-                onAction={() => void equityCurve.refetch()}
-              />
-            ) : (
-              <>
-                {equityCurve.isError ? (
-                  <p
-                    role="status"
-                    data-testid="equity-curve-refresh-warning"
-                    className="mb-3 text-xs text-[var(--app-warning-text)]"
-                  >
-                    {copy.overview.curveRefreshError}
-                  </p>
-                ) : null}
-                <OverviewEquityCurve
-                  points={equityCurve.data ?? []}
-                  range={equityCurveRange}
-                  onRangeChange={setEquityCurveRange}
-                />
-                <OverviewPerformanceDrivers state={state} />
-              </>
-            )}
-          </section>
-          <OverviewHoldingsSection
-            positions={state.snapshot.positions}
-            assetClassBySymbol={assetClassBySymbol}
-            weightBySymbol={weightBySymbol}
-            className="border-t border-[var(--app-divider)] xl:pr-6"
+        {equityCurve.isLoading && !equityCurve.data ? (
+          <EquityCurveSkeleton />
+        ) : equityCurve.isError && !equityCurve.data ? (
+          <OverviewStatusCard
+            tone="danger"
+            title={copy.states.error}
+            detail={getEquityCurveErrorDetail(equityCurve.error, copy)}
+            actionLabel={copy.states.retry}
+            onAction={() => void equityCurve.refetch()}
           />
-        </div>
-        <aside className="min-w-0 xl:pl-5">
+        ) : (
+          <>
+            {equityCurve.isError ? (
+              <p
+                role="status"
+                data-testid="equity-curve-refresh-warning"
+                className="app-type-compact mb-3 text-[var(--app-warning-text)]"
+              >
+                {copy.overview.curveRefreshError}
+              </p>
+            ) : null}
+            <OverviewEquityCurve
+              points={equityCurve.data ?? []}
+              range={equityCurveRange}
+              onRangeChange={setEquityCurveRange}
+            />
+            <OverviewPerformanceDrivers state={state} />
+          </>
+        )}
+      </section>
+
+      <OverviewHoldingsSection
+        positions={state.snapshot.positions}
+        assetClassBySymbol={assetClassBySymbol}
+        weightBySymbol={weightBySymbol}
+        className="border-b border-[var(--app-divider)]"
+      />
+
+      <div className="grid min-w-0 lg:grid-cols-2 lg:divide-x lg:divide-[var(--app-divider)]">
+        <div className="min-w-0 lg:pr-6">
           <OverviewStrategyRecommendation query={controller.tradingPlan} />
+        </div>
+        <div className="min-w-0 lg:pl-6">
           <OverviewMarketStatus state={state} />
-          <DashboardTodayQueue overview={state.overview} />
-          <OverviewDataDetails
-            state={state}
-            refreshFailed={controller.account.isError}
-          />
-        </aside>
+        </div>
       </div>
+
+      <OverviewDataDetails
+        state={state}
+        refreshFailed={controller.account.isError}
+      />
     </div>
   );
 }

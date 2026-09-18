@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 
 import { usePreferences } from '../../../shared/preferences/context';
+import { SectionHeader } from '../../../shared/ui/workbench';
 import { overviewPresentation } from '../model/overview-presentation';
 import { useCopy } from '../../../shared/i18n/context';
 import {
@@ -27,25 +28,22 @@ export function OverviewHoldingsSection({
 
   return (
     <section
-      className={`min-w-0 py-3.5 ${className ?? ''}`.trim()}
+      className={('min-w-0 py-4 ' + (className ?? '')).trim()}
       data-testid="overview-holdings-section"
     >
-      <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-[var(--app-text)]">
-            {labels.holdings}{' '}
-            <span className="ml-2 font-normal tabular-nums text-[var(--app-text-tertiary)]">
-              {positions.length}
-            </span>
-          </h2>
-        </div>
-        <a
-          href="/portfolio"
-          className="text-xs text-[var(--app-accent)] hover:underline"
-        >
-          {labels.viewPortfolio}
-        </a>
-      </div>
+      <SectionHeader
+        title={labels.holdings}
+        meta={positions.length}
+        actions={
+          <a
+            href="/portfolio"
+            className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+          >
+            {labels.viewPortfolio}
+          </a>
+        }
+        className="mb-2"
+      />
       {positions.length === 0 ? (
         <OverviewStatusCard
           title={copy.states.empty}

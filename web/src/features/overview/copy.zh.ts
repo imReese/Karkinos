@@ -30,6 +30,7 @@ export const overviewCopyZh = {
     largestHoldingUnavailable: '当前没有未平仓资产暴露。',
     exposureUnavailable: '总权益为零或缺失，组合暴露暂不可用。',
     exposurePartial: '部分估值',
+    cumulativePnl: '累计盈亏',
     cumulativeReturn: '累计收益',
     netDeposits: '净投入',
     unrealizedPnl: '浮动盈亏',

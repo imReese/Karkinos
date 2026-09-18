@@ -405,12 +405,16 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
     overviewPrimary.getByTestId('overview-holdings-section'),
   ).toBeVisible();
   const overviewQueueBox = (await overviewQueue.boundingBox())!;
+  const overviewPerformanceBox = (await overviewPerformance.boundingBox())!;
   const overviewHoldingsBox = (await overviewHoldings.boundingBox())!;
-  expect(overviewHoldingsBox.x).toBeLessThan(overviewQueueBox.x);
-  expect(overviewHoldingsBox.width).toBeGreaterThan(overviewQueueBox.width);
-  expect((await overviewPerformance.boundingBox())!.y).toBeLessThan(
-    overviewHoldingsBox.y,
+  expect(overviewQueueBox.y).toBeLessThan(overviewPerformanceBox.y);
+  expect(overviewPerformanceBox.y).toBeLessThan(overviewHoldingsBox.y);
+  expect(Math.abs(overviewQueueBox.x - overviewPerformanceBox.x)).toBeLessThan(
+    8,
   );
+  expect(
+    Math.abs(overviewPerformanceBox.x - overviewHoldingsBox.x),
+  ).toBeLessThan(8);
 
   await page.goto('/risk');
   const blockingRegister = page.getByTestId('risk-blocking-register');
@@ -517,17 +521,17 @@ test('overview prioritizes summary, performance and holdings across all viewport
       document: 0,
       content: 0,
     });
-    expect(performance.y).toBeGreaterThanOrEqual(summary.y + summary.height);
+    expect(queue.y).toBeGreaterThanOrEqual(summary.y + summary.height);
+    expect(performance.y).toBeGreaterThanOrEqual(queue.y + queue.height);
     expect(holdings.y).toBeGreaterThan(performance.y);
-    if (viewport.width >= 1280) {
-      expect(holdings.x).toBeLessThan(queue.x);
-      expect(holdings.width).toBeGreaterThan(queue.width);
-    } else {
-      expect(queue.y).toBeGreaterThanOrEqual(
-        performance.y + performance.height,
-      );
-      expect(queue.y).toBeLessThan(holdings.y);
-    }
+    expect(
+      Math.abs(queue.x - performance.x),
+      JSON.stringify(viewport),
+    ).toBeLessThan(8);
+    expect(
+      Math.abs(performance.x - holdings.x),
+      JSON.stringify(viewport),
+    ).toBeLessThan(8);
     await expect(page.getByTestId('overview-data-status')).toContainText(
       'Current valuation usable',
     );
@@ -2891,7 +2895,7 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
     };
   });
   expect(routeMotion).toEqual({
-    duration: '0.32s',
+    duration: '0.1s',
     easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
     name: 'app-route-enter',
   });
@@ -2924,7 +2928,7 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
     };
   });
   expect(commandEnter).toEqual({
-    duration: '0.24s',
+    duration: '0.16s',
     easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
     name: 'app-overlay-enter',
   });
@@ -2939,7 +2943,7 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
     };
   });
   expect(commandExit).toEqual({
-    duration: '0.18s',
+    duration: '0.12s',
     easing: 'cubic-bezier(0.4, 0, 1, 1)',
     name: 'app-overlay-exit',
   });
@@ -2975,7 +2979,7 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
     };
   });
   expect(drawerMotion.property).toBe('transform, visibility');
-  expect(drawerMotion.duration).toBe('0.24s, 0s');
+  expect(drawerMotion.duration).toBe('0.16s, 0s');
   expect(drawerMotion.delay).toBe('0s, 0s');
   expect(drawerMotion.easing).toBe('cubic-bezier(0.16, 1, 0.3, 1), linear');
 
@@ -2995,8 +2999,8 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
     };
   });
   expect(drawerExit).toEqual({
-    delay: '0s, 0.24s',
-    duration: '0.24s, 0s',
+    delay: '0s, 0.16s',
+    duration: '0.16s, 0s',
     easing: 'cubic-bezier(0.4, 0, 1, 1), linear',
     property: 'transform, visibility',
     visibility: 'hidden',

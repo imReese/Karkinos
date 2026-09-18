@@ -1,3 +1,4 @@
+export { Button, type ButtonSize, type ButtonVariant } from './button';
 export { ControlledActionZone } from './controlled-action-zone';
 export { DataTable } from './data-table';
 export { EvidenceDrawer } from './evidence-drawer';
@@ -30,3 +31,7 @@ export {
   type MetricTone,
   type StatusTone,
 } from './workspace';
+export { Disclosure } from './disclosure';
+export { ExceptionBoundary } from './exception-boundary';
+export { Register, RegisterRow, type RegisterTone } from './register';
+export { SectionHeader } from './section';

@@ -1,5 +1,6 @@
 import { createLazyRoute } from '@tanstack/react-router';
 
+import { WorkspaceHeader } from '../../../shared/ui/workbench';
 import { OverviewLoadingWorkspace } from '../components/overview-loading-workspace';
 import { OverviewResolvedWorkspace } from '../components/overview-resolved-workspace';
 import { OverviewStatusCard } from '../components/overview-status-card';
@@ -10,15 +11,16 @@ export function OverviewPage() {
   const { copy, account } = controller;
   return (
     <section
-      className="app-workbench-route overview-terminal-route mx-auto min-w-0 w-full max-w-[1560px]"
+      className="app-workbench-route overview-terminal-route min-w-0"
       data-testid="overview-page"
       data-workbench-route="overview"
+      data-workbench-width="wide"
     >
-      <header className="mb-2">
-        <h1 className="text-xl font-semibold tracking-tight text-[var(--app-text)]">
-          {copy.overview.title}
-        </h1>
-      </header>
+      <WorkspaceHeader
+        eyebrow={copy.overview.kicker}
+        title={copy.overview.title}
+        description={copy.overview.subtitle}
+      />
       {account.data ? (
         <OverviewResolvedWorkspace
           controller={controller}

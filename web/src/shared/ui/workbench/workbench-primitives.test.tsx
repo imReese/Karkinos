@@ -6,16 +6,22 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
 import {
+  Button,
   ControlledActionZone,
   DataTable,
+  Disclosure,
   EvidenceDrawer,
   EvidenceIdentityDisclosure,
   EvidenceLoadingLayout,
   EvidenceState,
+  ExceptionBoundary,
   ExceptionList,
   FilterBar,
   GateMatrix,
   MetricStrip,
+  Register,
+  RegisterRow,
+  SectionHeader,
   StatusBadge,
   Timeline,
   WorkspaceHeader,
@@ -128,6 +134,63 @@ test('renders the workspace hierarchy without routine card nesting', () => {
   expect(
     within(filters).getByText('No authoritative rows').className,
   ).toContain('app-type-compact');
+});
+
+test('standardizes workstation controls and flat information primitives', async () => {
+  const user = userEvent.setup();
+  render(
+    <main>
+      <SectionHeader
+        title="Holdings"
+        meta="5"
+        description="Current authoritative positions"
+        actions={<Button variant="secondary">Export</Button>}
+      />
+      <Register ariaLabel="Account register">
+        <RegisterRow label="Cash" value="¥6,979.91" mono />
+        <RegisterRow
+          label="Unrealized P&L"
+          value="-¥140.00"
+          tone="pnl-negative"
+        />
+      </Register>
+      <ExceptionBoundary
+        tone="warning"
+        title="Valuation evidence needs review"
+        description="Two holdings are stale."
+        actions={<Button variant="ghost">Review</Button>}
+      />
+      <Disclosure title="Evidence register" meta="2" testId="evidence-register">
+        <p>snapshot: snap-7</p>
+      </Disclosure>
+    </main>,
+  );
+
+  const exportButton = screen.getByRole('button', { name: 'Export' });
+  expect(exportButton.getAttribute('data-workbench-primitive')).toBe('button');
+  expect(exportButton.getAttribute('data-button-variant')).toBe('secondary');
+  expect(exportButton.className).toContain('app-button-sm');
+
+  expect(
+    screen
+      .getByRole('heading', { name: 'Holdings' })
+      .closest('header')
+      ?.getAttribute('data-workbench-primitive'),
+  ).toBe('section-header');
+  expect(screen.getByLabelText('Account register').tagName).toBe('DL');
+  expect(screen.getByText('-¥140.00').className).toContain('app-pnl-negative');
+  expect(
+    screen
+      .getByText('Valuation evidence needs review')
+      .closest('section')
+      ?.getAttribute('data-boundary-tone'),
+  ).toBe('warning');
+
+  const disclosure = screen.getByTestId('evidence-register');
+  expect(disclosure.hasAttribute('open')).toBe(false);
+  await user.click(within(disclosure).getByText('Evidence register'));
+  expect(disclosure.hasAttribute('open')).toBe(true);
+  expect(within(disclosure).getByText('snapshot: snap-7')).toBeTruthy();
 });
 
 test('keeps operational state and financial direction on separate roles', () => {

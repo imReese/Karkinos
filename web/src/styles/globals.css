@@ -20,30 +20,30 @@
   --app-font-weight-semibold: 600;
   --app-font-weight-title: 700;
   --app-font-weight-brand: 750;
-  --app-font-size-page-title-mobile: 24px;
-  --app-font-size-page-title: 28px;
-  --app-font-size-section-title: 18px;
-  --app-font-size-metric: 18px;
-  --app-font-size-primary-metric-mobile: 32px;
-  --app-font-size-primary-metric: 34px;
-  --app-font-size-primary-metric-wide: 36px;
-  --app-font-size-subsection-title: 15px;
-  --app-font-size-body: 14px;
-  --app-font-size-compact: 13px;
-  --app-font-size-label: 12px;
+  --app-font-size-page-title-mobile: 20px;
+  --app-font-size-page-title: 22px;
+  --app-font-size-section-title: 16px;
+  --app-font-size-metric: 16px;
+  --app-font-size-primary-metric-mobile: 28px;
+  --app-font-size-primary-metric: 30px;
+  --app-font-size-primary-metric-wide: 32px;
+  --app-font-size-subsection-title: 14px;
+  --app-font-size-body: 13px;
+  --app-font-size-compact: 12px;
+  --app-font-size-label: 11px;
   --app-font-size-micro: 11px;
   --app-font-size-public-hero-landscape: clamp(2.7rem, 5vw, 4.65rem);
   --app-font-size-public-hero-zh-landscape: clamp(2.55rem, 4.55vw, 4.35rem);
   --app-font-size-public-section-landscape: clamp(2rem, 3.5vw, 3.35rem);
-  --app-line-height-page-title-mobile: 28px;
-  --app-line-height-page-title: 32px;
-  --app-line-height-section-title: 24px;
-  --app-line-height-metric: 24px;
-  --app-line-height-primary-metric: 36px;
-  --app-line-height-subsection-title: 22px;
-  --app-line-height-body: 22px;
-  --app-line-height-compact: 20px;
-  --app-line-height-label: 18px;
+  --app-line-height-page-title-mobile: 26px;
+  --app-line-height-page-title: 28px;
+  --app-line-height-section-title: 22px;
+  --app-line-height-metric: 22px;
+  --app-line-height-primary-metric: 32px;
+  --app-line-height-subsection-title: 20px;
+  --app-line-height-body: 20px;
+  --app-line-height-compact: 18px;
+  --app-line-height-label: 16px;
   --app-line-height-micro: 16px;
   --app-line-height-public-hero-landscape: 0.96;
   --app-line-height-public-hero-zh-landscape: 1.04;
@@ -53,20 +53,23 @@
   --app-letter-spacing-label: 0.01em;
   --app-letter-spacing-metric: -0.015em;
   --app-letter-spacing-primary-metric: -0.045em;
-  --app-space-section: 24px;
-  --app-space-section-relaxed: 32px;
+  --app-space-2: 8px;
+  --app-space-3: 12px;
+  --app-space-4: 16px;
+  --app-space-6: 24px;
+  --app-space-8: 32px;
   /* Brand motion: quick, calm, and causal. */
   --app-motion-instant: 80ms;
-  --app-motion-fast: 120ms;
-  --app-motion-standard: 180ms;
-  --app-motion-deliberate: 240ms;
-  --app-motion-route: 320ms;
-  --app-motion-loading: 1600ms;
+  --app-motion-fast: 100ms;
+  --app-motion-standard: 120ms;
+  --app-motion-deliberate: 160ms;
+  --app-motion-route: 100ms;
+  --app-motion-loading: 1400ms;
   --app-motion-spin: 900ms;
-  --app-motion-stagger: 36ms;
+  --app-motion-stagger: 24ms;
   --app-motion-distance-xs: 2px;
-  --app-motion-distance-sm: 6px;
-  --app-motion-distance-md: 12px;
+  --app-motion-distance-sm: 4px;
+  --app-motion-distance-md: 8px;
   --app-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --app-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
   --app-ease-exit: cubic-bezier(0.4, 0, 1, 1);
@@ -138,9 +141,9 @@
   --app-radius-surface: 8px;
   --app-radius-overlay: 12px;
   --app-control-height: 32px;
-  --app-row-height-dense: 40px;
+  --app-row-height-dense: 36px;
   --app-touch-target: 44px;
-  --app-section-gap: 24px;
+  --app-section-gap: var(--app-space-6);
   --app-viewport-collision-padding: 12px;
   --app-shadow-overlay: 0 18px 50px rgba(17, 17, 27, 0.28);
   --app-shadow-sticky: 0 1px 0 rgba(17, 17, 27, 0.36);
@@ -802,15 +805,70 @@ select:is(.app-field, .app-input):not([multiple]) {
   white-space: nowrap;
 }
 
+.app-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--app-space-2);
+  border-radius: var(--app-radius-control);
+  font-size: var(--app-font-size-compact);
+  font-weight: var(--app-font-weight-semibold);
+  line-height: var(--app-line-height-compact);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--app-motion-fast) var(--app-ease-standard),
+    background-color var(--app-motion-fast) var(--app-ease-standard),
+    color var(--app-motion-fast) var(--app-ease-standard),
+    opacity var(--app-motion-fast) var(--app-ease-standard);
+}
+
+.app-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.app-button-xs {
+  min-height: 28px;
+  padding: 0 var(--app-space-2);
+}
+
+.app-button-sm {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.app-button-md {
+  min-height: 34px;
+  padding: 0 var(--app-space-3);
+}
+
+.app-button-ghost {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--app-text-secondary);
+}
+
+.app-button-ghost:hover {
+  border-color: var(--app-divider);
+  background: var(--app-accent-bg);
+  color: var(--app-text);
+}
+
+@media (pointer: coarse) {
+  .app-button {
+    min-height: var(--app-touch-target);
+  }
+}
+
 .app-button-primary {
   border: 1px solid var(--app-accent);
   border-radius: var(--app-radius-control);
   background: var(--app-accent);
   color: var(--app-text-inverse);
   transition:
-    border-color var(--app-motion-standard) var(--app-ease-standard),
-    background-color var(--app-motion-standard) var(--app-ease-standard),
-    translate var(--app-motion-fast) var(--app-ease-enter);
+    border-color var(--app-motion-fast) var(--app-ease-standard),
+    background-color var(--app-motion-fast) var(--app-ease-standard);
 }
 
 .app-button-secondary {
@@ -819,9 +877,8 @@ select:is(.app-field, .app-input):not([multiple]) {
   background: var(--app-surface-raised);
   color: var(--app-text);
   transition:
-    border-color var(--app-motion-standard) var(--app-ease-standard),
-    background-color var(--app-motion-standard) var(--app-ease-standard),
-    translate var(--app-motion-fast) var(--app-ease-enter);
+    border-color var(--app-motion-fast) var(--app-ease-standard),
+    background-color var(--app-motion-fast) var(--app-ease-standard);
 }
 
 .app-button-danger {
@@ -830,21 +887,14 @@ select:is(.app-field, .app-input):not([multiple]) {
   background: var(--app-danger-bg);
   color: var(--app-danger-text);
   transition:
-    border-color var(--app-motion-standard) var(--app-ease-standard),
-    background-color var(--app-motion-standard) var(--app-ease-standard),
-    translate var(--app-motion-fast) var(--app-ease-enter);
+    border-color var(--app-motion-fast) var(--app-ease-standard),
+    background-color var(--app-motion-fast) var(--app-ease-standard);
 }
 
 .app-button-primary:hover,
 .app-button-secondary:hover,
 .app-button-danger:hover {
   border-color: var(--app-accent-border);
-}
-
-.app-button-primary:active,
-.app-button-secondary:active,
-.app-button-danger:active {
-  translate: 0 var(--app-motion-distance-xs);
 }
 
 .app-button-primary:hover {
@@ -1027,14 +1077,30 @@ select:is(.app-field, .app-input):not([multiple]) {
 }
 
 .app-workspace-header {
-  padding-bottom: var(--app-space-section);
+  padding-bottom: var(--app-space-4);
 }
 
 .app-workbench-route {
   width: 100%;
-  max-width: 1560px;
+  max-width: 1440px;
   margin-inline: auto;
-  padding-bottom: var(--app-space-section-relaxed);
+  padding-bottom: var(--app-space-8);
+}
+
+.app-workbench-route[data-workbench-width='compact'] {
+  max-width: 1120px;
+}
+
+.app-workbench-route[data-workbench-width='standard'] {
+  max-width: 1360px;
+}
+
+.app-workbench-route[data-workbench-width='wide'] {
+  max-width: 1680px;
+}
+
+.app-workbench-route[data-workbench-width='full'] {
+  max-width: none;
 }
 
 .app-workspace-eyebrow {
@@ -1418,11 +1484,9 @@ select:is(.app-field, .app-input):not([multiple]) {
 @keyframes app-route-enter {
   from {
     opacity: 0;
-    translate: 0 var(--app-motion-distance-sm);
   }
   to {
     opacity: 1;
-    translate: 0;
   }
 }
 
@@ -1497,19 +1561,19 @@ select:is(.app-field, .app-input):not([multiple]) {
 
 @keyframes app-drawer-enter {
   from {
-    scale: 0.985 1;
+    translate: calc(-1 * var(--app-motion-distance-md)) 0;
   }
   to {
-    scale: 1;
+    translate: 0;
   }
 }
 
 @keyframes app-drawer-exit {
   from {
-    scale: 1;
+    translate: 0;
   }
   to {
-    scale: 0.985 1;
+    translate: calc(-1 * var(--app-motion-distance-md)) 0;
   }
 }
 
@@ -1539,12 +1603,7 @@ select:is(.app-field, .app-input):not([multiple]) {
     border-color var(--app-motion-standard) var(--app-ease-standard),
     background-color var(--app-motion-standard) var(--app-ease-standard),
     color var(--app-motion-standard) var(--app-ease-standard),
-    opacity var(--app-motion-standard) var(--app-ease-standard),
-    translate var(--app-motion-fast) var(--app-ease-enter);
-}
-
-.app-interactive-surface:active {
-  translate: 0 var(--app-motion-distance-xs);
+    opacity var(--app-motion-standard) var(--app-ease-standard);
 }
 
 .app-disclosure-chevron {
@@ -1616,17 +1675,7 @@ select:is(.app-field, .app-input):not([multiple]) {
     background-color var(--app-motion-standard) var(--app-ease-standard),
     box-shadow var(--app-motion-standard) var(--app-ease-standard),
     color var(--app-motion-standard) var(--app-ease-standard),
-    opacity var(--app-motion-standard) var(--app-ease-standard),
-    translate var(--app-motion-fast) var(--app-ease-enter);
-}
-
-.app-chart-control:active,
-.app-shell-content
-  :where(
-    [role='tab'],
-    button[aria-pressed]:not([data-motion='stable-fact'])
-  ):active {
-  translate: 0 var(--app-motion-distance-xs);
+    opacity var(--app-motion-standard) var(--app-ease-standard);
 }
 
 .recharts-tooltip-wrapper {
@@ -2097,7 +2146,7 @@ h3 {
     white-space: normal;
   }
 
-  .app-holding-summary-metrics .app-metric-strip-item > .truncate {
+  .app-holding-summary-metrics .app-metric-strip-item > .app-type-label {
     overflow: visible;
     overflow-wrap: anywhere;
     text-overflow: clip;
@@ -2202,7 +2251,7 @@ h3 {
   overscroll-behavior-inline: contain;
 }
 
-@media (min-width: 1280px) {
+@media (min-width: 1440px) {
   [data-workbench-route='trading'] .app-trading-command-grid {
     grid-template-columns: minmax(0, 1fr) 320px;
     align-items: start;
@@ -2297,9 +2346,7 @@ h3 {
   white-space: normal;
 }
 
-.app-holding-summary-metrics
-  .app-metric-strip-item
-  > div.app-type-label.truncate {
+.app-holding-summary-metrics .app-metric-strip-item > div.app-type-label {
   overflow: visible;
   overflow-wrap: anywhere;
   text-overflow: clip;
