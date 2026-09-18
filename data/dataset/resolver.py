@@ -69,6 +69,12 @@ from data.market.schema import (
     DAILY_BAR_SCHEMA_VERSION,
     daily_bars_from_table,
 )
+from data.market.verification_evidence import (
+    MarketVerificationEvidence,
+    MarketVerificationEvidenceError,
+    MarketVerificationStatus,
+    read_market_verification_evidence,
+)
 from data.storage.objects import (
     ContentAddressedObjectStore,
 )
@@ -200,6 +206,7 @@ class DailyBarResolutionCandidate:
     revision: MarketRevision
     materialization: MarketRevisionMaterialization
     quality: MarketDataQualityReport
+    verification: MarketVerificationEvidence | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -219,6 +226,11 @@ class DailyBarResolutionCandidate:
             MarketDataQualityReport,
         ):
             raise TypeError("dataset_resolver_quality_invalid")
+        if self.verification is not None and not isinstance(
+            self.verification,
+            MarketVerificationEvidence,
+        ):
+            raise TypeError("dataset_resolver_verification_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,6 +342,11 @@ def resolve_daily_bar_dataset(
                 revision_id=(selected.candidate.revision.ref.revision_id),
                 materialization_id=(
                     selected.candidate.materialization.materialization_id
+                ),
+                verification_id=(
+                    None
+                    if selected.candidate.verification is None
+                    else selected.candidate.verification.verification_id
                 ),
             )
         )
@@ -481,6 +498,44 @@ def _evaluate_candidate(
         and not policy.allow_degraded_quality
     ):
         return None
+
+    if candidate.verification is not None:
+        try:
+            persisted_verification = read_market_verification_evidence(
+                store,
+                candidate.verification.ref,
+            )
+        except MarketVerificationEvidenceError as exc:
+            raise DatasetResolverIntegrityError(
+                "dataset_resolver_verification_unreadable"
+            ) from exc
+        if persisted_verification != candidate.verification:
+            raise DatasetResolverIntegrityError(
+                "dataset_resolver_verification_mismatch"
+            )
+        if candidate.verification.status is not MarketVerificationStatus.MATCHED:
+            return None
+        selected_lineage = (
+            revision.provider,
+            revision.ref.revision_id,
+            materialization.materialization_id,
+        )
+        verified_lineages = {
+            (
+                candidate.verification.report.primary_provider,
+                candidate.verification.report.primary_revision_id,
+                candidate.verification.primary_materialization_id,
+            ),
+            (
+                candidate.verification.report.comparison_provider,
+                candidate.verification.report.comparison_revision_id,
+                candidate.verification.comparison_materialization_id,
+            ),
+        }
+        if selected_lineage not in verified_lineages:
+            raise DatasetResolverIntegrityError(
+                "dataset_resolver_verification_lineage_mismatch"
+            )
 
     validate_daily_bar_materialization(
         store,
