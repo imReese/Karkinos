@@ -135,6 +135,7 @@ class HypothesisGenerationPayload(BaseModel):
     requested_by: str = Field(min_length=1, max_length=128)
     account_alias: str = Field(min_length=1, max_length=128)
     research_question: str = Field(min_length=1, max_length=4_000)
+    research_task_id: str | None = Field(default=None, min_length=1, max_length=200)
     selection: StrategyResearchSelectionPayload
     confirmation: Literal[
         "send_selected_sanitized_strategy_research_evidence_to_configured_"
@@ -236,6 +237,7 @@ def create_router() -> APIRouter:
                     research_question=payload.research_question,
                     selection=payload.selection.to_domain(),
                     confirmation=payload.confirmation,
+                    research_task_id=payload.research_task_id,
                 )
             )
             return _status_response(result)

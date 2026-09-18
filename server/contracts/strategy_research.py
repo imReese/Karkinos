@@ -229,6 +229,7 @@ class HypothesisGenerationRequest:
     selection: StrategyResearchSelection
     confirmation: str
     iteration_context: JsonObject | None = None
+    research_task_id: str | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -239,22 +240,25 @@ class HypothesisGenerationRequest:
         ):
             if not str(getattr(self, name)).strip():
                 raise StrategyResearchRejected(f"{name}_required")
+        if self.research_task_id is not None and not self.research_task_id.strip():
+            raise StrategyResearchRejected("research_task_id_required")
         if self.confirmation != HYPOTHESIS_EXPORT_CONFIRMATION:
             raise PermissionError("hypothesis export requires exact human confirmation")
         validate_iteration_context(self.iteration_context)
 
     @property
     def fingerprint(self) -> str:
-        return content_fingerprint(
-            {
-                "requested_by": self.requested_by,
-                "account_alias": self.account_alias,
-                "research_question": self.research_question,
-                "selection": self.selection.to_dict(),
-                "confirmation": self.confirmation,
-                "iteration_context": self.iteration_context,
-            }
-        )
+        payload: JsonObject = {
+            "requested_by": self.requested_by,
+            "account_alias": self.account_alias,
+            "research_question": self.research_question,
+            "selection": self.selection.to_dict(),
+            "confirmation": self.confirmation,
+            "iteration_context": self.iteration_context,
+        }
+        if self.research_task_id is not None:
+            payload["research_task_id"] = self.research_task_id
+        return content_fingerprint(payload)
 
 
 @dataclass(frozen=True)

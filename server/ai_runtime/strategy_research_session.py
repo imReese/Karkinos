@@ -65,6 +65,7 @@ class StrategyResearchSessionMixin:
             "status": session["status"],
             "failure_code": session.get("failure_code"),
             "research_question": request.get("research_question"),
+            "research_task_id": request.get("research_task_id"),
             "iteration_context": request.get("iteration_context"),
             "selection": request.get("selection"),
             "selection_fingerprint": session["selection_fingerprint"],
