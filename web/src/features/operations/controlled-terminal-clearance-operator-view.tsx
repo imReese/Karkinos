@@ -23,7 +23,7 @@ export function ControlledTerminalClearanceOperatorView({
       {!controller.open ? (
         <button
           type="button"
-          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold"
+          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
           onClick={controller.openPanel}
         >
           {controller.locale === 'zh'
@@ -37,7 +37,7 @@ export function ControlledTerminalClearanceOperatorView({
               ? '签名式受控订单终态确认'
               : 'Signed controlled-order terminal clearance'
           }
-          className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] p-3"
+          className="min-w-0 border-l-2 border-[var(--app-warning-border)] py-2 pl-3"
         >
           <TerminalClearanceHeader controller={controller} />
           <TerminalClearancePreview controller={controller} />
@@ -68,7 +68,7 @@ function TerminalClearanceHeader({ controller }: TerminalClearanceViewProps) {
         </div>
         <button
           type="button"
-          className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs"
+          className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs"
           onClick={controller.close}
         >
           {locale === 'zh' ? '关闭' : 'Close'}
@@ -84,7 +84,7 @@ function TerminalClearanceHeader({ controller }: TerminalClearanceViewProps) {
       </div>
       <button
         type="button"
-        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+        className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
         disabled={preview.isPending}
         onClick={controller.loadPreview}
       >
@@ -114,7 +114,7 @@ function TerminalClearancePreview({ controller }: TerminalClearanceViewProps) {
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {locale === 'zh'
@@ -176,7 +176,7 @@ function TerminalClearancePreview({ controller }: TerminalClearanceViewProps) {
         <div className="mt-3 grid min-w-0 gap-2">
           {preview.data.fills.map((fill) => (
             <div
-              className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2"
+              className="min-w-0 border-t border-[var(--app-divider)] py-2"
               key={fill.fill_id}
             >
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -251,7 +251,7 @@ function TerminalClearanceSignature({
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh' ? '离线签名' : 'Offline signature'}
       </div>
@@ -293,7 +293,7 @@ function TerminalClearanceSignature({
       ) : null}
       <button
         type="button"
-        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+        className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
         disabled={!selectedIdentity || challenge.isPending}
         onClick={controller.createChallenge}
       >
@@ -361,7 +361,7 @@ function TerminalClearanceSignature({
           </label>
           <button
             type="button"
-            className="app-button-secondary min-h-9 justify-self-start rounded-xl px-3 py-2 text-xs font-semibold"
+            className="app-button-secondary min-h-9 justify-self-start rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             disabled={!signature.trim() || verification.isPending}
             onClick={controller.verifySignature}
           >
@@ -396,7 +396,7 @@ function TerminalClearanceFinalConfirmation({
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_38%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-l-2 border-[var(--app-warning-border)] py-2 pl-3">
       <div className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh' ? '最终确认' : 'Final clearance confirmation'}
       </div>
@@ -415,7 +415,7 @@ function TerminalClearanceFinalConfirmation({
       </label>
       <button
         type="button"
-        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+        className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
         disabled={!acknowledged || applyClearance.isPending}
         onClick={controller.apply}
       >

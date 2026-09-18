@@ -29,7 +29,7 @@ export function ControlledLedgerCorrectionOperatorView({
       {!open ? (
         <button
           type="button"
-          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold"
+          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
           onClick={controller.openPanel}
         >
           {locale === 'zh'
@@ -43,7 +43,7 @@ export function ControlledLedgerCorrectionOperatorView({
               ? '追加式账本纠正复核'
               : 'Append-only ledger correction review'
           }
-          className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_38%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_6%,transparent)] p-3"
+          className="min-w-0 border-l-2 border-[var(--app-danger-border)] py-2 pl-3"
           data-testid="controlled-ledger-correction-review"
         >
           <CorrectionHeader controller={controller} />
@@ -76,7 +76,7 @@ function CorrectionHeader({ controller }: ViewProps) {
         </div>
         <button
           type="button"
-          className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs font-semibold"
+          className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
           onClick={controller.close}
         >
           {locale === 'zh' ? '关闭' : 'Close'}
@@ -116,7 +116,7 @@ function CorrectionInputs({ controller }: ViewProps) {
             aria-label={
               locale === 'zh' ? '确认的错误类型' : 'Confirmed error type'
             }
-            className="app-input mt-1 min-h-10 w-full rounded-xl px-3 py-2 text-sm"
+            className="app-input mt-1 min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
             value={reason}
             onChange={(event) =>
               changeReason(
@@ -138,7 +138,7 @@ function CorrectionInputs({ controller }: ViewProps) {
             aria-label={
               locale === 'zh' ? '可信操作员身份' : 'Trusted operator identity'
             }
-            className="app-input mt-1 min-h-10 w-full rounded-xl px-3 py-2 text-sm disabled:opacity-50"
+            className="app-input mt-1 min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm disabled:opacity-50"
             disabled={!eligibleIdentities.length}
             value={effectiveKeyId}
             onChange={(event) => selectKey(event.target.value)}
@@ -180,7 +180,7 @@ function CorrectionInputs({ controller }: ViewProps) {
       ) : null}
       <button
         type="button"
-        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         disabled={!reason || !selectedIdentity || preview.isPending}
         onClick={loadPreview}
       >
@@ -210,7 +210,7 @@ function CorrectionPreview({ controller }: ViewProps) {
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {locale === 'zh'
@@ -248,7 +248,7 @@ function CorrectionPreview({ controller }: ViewProps) {
         <div>{preview.data.generated_at}</div>
       </div>
       {preview.data.correction_plan?.symbol ? (
-        <div className="mt-3 min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2">
+        <div className="mt-3 min-w-0 border-t border-[var(--app-divider)] py-2">
           <div className="font-semibold text-[var(--app-text)]">
             {preview.data.correction_plan.symbol} ·{' '}
             {formatPublicStatus(
@@ -330,7 +330,7 @@ function CorrectionSignature({ controller }: ViewProps) {
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh' ? '短时离线签名' : 'Short-lived offline signature'}
       </div>
@@ -341,7 +341,7 @@ function CorrectionSignature({ controller }: ViewProps) {
       </div>
       <button
         type="button"
-        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         disabled={!selectedIdentity || challenge.isPending}
         onClick={createChallenge}
       >
@@ -373,7 +373,7 @@ function CorrectionSignature({ controller }: ViewProps) {
                   ? '待签 payload Base64'
                   : 'Payload to sign Base64'
               }
-              className="app-input mt-1 min-h-24 w-full resize-y rounded-xl px-3 py-2 font-mono text-xs"
+              className="app-input mt-1 min-h-24 w-full resize-y rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
               readOnly
               value={challenge.data.signing_payload_base64}
             />
@@ -386,7 +386,7 @@ function CorrectionSignature({ controller }: ViewProps) {
             <input
               aria-label="Detached signature Base64"
               autoComplete="off"
-              className="app-input mt-1 min-h-10 w-full rounded-xl px-3 py-2 font-mono text-sm"
+              className="app-input mt-1 min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-sm"
               spellCheck={false}
               type="password"
               value={signature}
@@ -395,7 +395,7 @@ function CorrectionSignature({ controller }: ViewProps) {
           </label>
           <button
             type="button"
-            className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={signature.trim().length < 80 || verification.isPending}
             onClick={verifySignature}
           >
@@ -434,7 +434,7 @@ function CorrectionFinalConfirmation({ controller }: ViewProps) {
     return null;
   }
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_42%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-l-2 border-[var(--app-danger-border)] py-2 pl-3">
       <div className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh' ? '最终纠正确认' : 'Final correction confirmation'}
       </div>
@@ -458,7 +458,7 @@ function CorrectionFinalConfirmation({ controller }: ViewProps) {
       </label>
       <button
         type="button"
-        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl border-[var(--app-danger)] px-3 py-2 text-xs font-semibold text-[var(--app-danger)] disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] border-[var(--app-danger)] px-3 py-2 text-xs font-semibold text-[var(--app-danger)] disabled:cursor-not-allowed disabled:opacity-50"
         disabled={
           !acknowledged ||
           applyCorrection.isPending ||
