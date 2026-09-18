@@ -73,6 +73,7 @@ markers = [
     "api_contract: API, persistence, and route contract tests",
     "trading_safety: fail-closed trading authority and financial-integrity tests",
     "product_smoke: high-value end-to-end product journeys",
+    "database_format: stable Karkinos Database Format conformance tests",
     "slow: deterministic tests that intentionally exercise timeout or wait behavior",
 ]
 

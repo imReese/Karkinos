@@ -184,8 +184,13 @@ jobs:
           set -euo pipefail
           mkdir -p reports/ci
           uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
-            -m "not trading_safety and not product_smoke" \
+            -m "not trading_safety and not product_smoke and not database_format" \
             --cov --cov-report= --cov-fail-under=0
+      - name: Database format conformance
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run --locked python -m pytest -m database_format
+          --cov --cov-append --cov-report= --cov-fail-under=0
       - name: Trading safety invariants
         if: ${{ !cancelled() }}
         run: >-
