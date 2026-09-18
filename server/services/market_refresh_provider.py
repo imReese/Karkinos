@@ -8,9 +8,16 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 
 from core.types import AssetClass, Symbol
+from data.source_policy import MarketDataUseCase
+from data.source_routing import legacy_sources_for_use_case
 from server.services.market_refresh_errors import provider_error_code
 
 logger = logging.getLogger(__name__)
+
+
+def _quote_sources(*, config, use_case: MarketDataUseCase):
+    """Resolve quote adapters for one source-policy use case."""
+    return legacy_sources_for_use_case(config, use_case)
 
 
 def fetch_provider_latest_with_timeout(
@@ -44,32 +51,18 @@ def load_provider_quote_payload(
 ) -> dict | None:
     """Fetch one quote through the configured bounded provider chain."""
 
-    from data.manager import build_sources
-
-    data_source = getattr(state.config, "data_source", "akshare")
-    tushare_token = getattr(state.config, "tushare_token", "")
-    sources = build_sources(
-        data_source=data_source,
-        tushare_token=tushare_token,
-    )
-    configured_source_name = data_source if data_source in sources else "akshare"
-    preferred = sources.get(configured_source_name, sources["akshare"])
-    source_chain = [(configured_source_name, preferred)]
-    if configured_source_name != "akshare":
-        akshare = sources.get("akshare")
-        if akshare is not None and akshare is not preferred:
-            source_chain.append(("akshare", akshare))
-
-    if configured_source_name == "tushare" and asset_class in {
-        AssetClass.INDEX,
-        AssetClass.GOLD,
-        AssetClass.BOND,
-    }:
-        akshare = sources.get("akshare")
-        source_chain = [("akshare", akshare)] if akshare is not None else []
+    use_case = {
+        AssetClass.INDEX: MarketDataUseCase.INDEX_BARS,
+        AssetClass.GOLD: MarketDataUseCase.GOLD_BARS,
+        AssetClass.BOND: MarketDataUseCase.BOND_BARS,
+        AssetClass.FUND: MarketDataUseCase.FUND_NAV,
+    }.get(asset_class, MarketDataUseCase.REALTIME_QUOTES)
+    sources = _quote_sources(config=state.config, use_case=use_case)
+    source_chain = list(sources.items())
+    configured_source_name = source_chain[0][0]
 
     snapshot = None
-    selected_source_name = data_source
+    selected_source_name = configured_source_name
     last_error: Exception | None = None
     fallback_reason_code: str | None = None
     primary_source_name = source_chain[0][0]
