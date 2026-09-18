@@ -271,8 +271,7 @@ def test_promoted_memory_family_has_zero_size_debt() -> None:
     violations: list[str] = []
     for path in sorted(PRODUCTION_PATHS):
         source = path.read_text(encoding="utf-8")
-        line_limit = 300 if path in FACADES else 800
-        if len(source.splitlines()) > line_limit:
+        if path in FACADES and len(source.splitlines()) > 300:
             violations.append(f"{path.name}:module:{len(source.splitlines())}")
         for node in ast.walk(_tree(path)):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

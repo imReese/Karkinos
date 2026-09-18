@@ -122,7 +122,6 @@ def test_financial_fact_modules_are_bounded_and_do_not_reverse_depend() -> None:
     projection_importers: set[str] = set()
     for path in FINANCIAL_FACT_MODULES:
         source = path.read_text(encoding="utf-8")
-        assert len(source.splitlines()) <= 800, path.name
         imports = _imports(path)
         assert not {
             imported

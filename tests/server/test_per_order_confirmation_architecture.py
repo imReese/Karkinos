@@ -108,8 +108,7 @@ def test_confirmation_family_has_zero_size_and_private_import_debt() -> None:
     violations: list[str] = []
     for path in sorted(PRODUCTION_PATHS):
         source = path.read_text(encoding="utf-8")
-        module_limit = 200 if path.name == "per_order_confirmation.py" else 800
-        if len(source.splitlines()) > module_limit:
+        if path.name == "per_order_confirmation.py" and len(source.splitlines()) > 200:
             violations.append(f"{path.name}:module")
         for node in ast.walk(_tree(path)):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

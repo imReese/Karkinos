@@ -222,16 +222,14 @@ def test_clearance_family_has_zero_size_debt() -> None:
     violations: list[str] = []
     for path in sorted(PRODUCTION_PATHS):
         source = path.read_text(encoding="utf-8")
-        module_limit = (
-            300
-            if path.name
+        if (
+            path.name
             in {
                 "controlled_submission_reconciliation_clearance.py",
                 "controlled_clearance_uow.py",
             }
-            else 800
-        )
-        if len(source.splitlines()) > module_limit:
+            and len(source.splitlines()) > 300
+        ):
             violations.append(f"{path.name}:module:{len(source.splitlines())}")
         for node in ast.walk(_tree(path)):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

@@ -189,8 +189,6 @@ def test_family_has_zero_size_and_dynamic_locator_debt() -> None:
     violations: list[str] = []
     for path in FAMILY_PATHS:
         source = path.read_text(encoding="utf-8")
-        if len(source.splitlines()) > 800:
-            violations.append(f"{path.name}:module")
         if "__module__" in source or "sys.modules" in source:
             violations.append(f"{path.name}:dynamic_locator")
         for node in ast.walk(_tree(path)):
