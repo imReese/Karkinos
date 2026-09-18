@@ -10,6 +10,8 @@ import pytest
 
 from server.ai_runtime.contracts import (
     AgentRole,
+    AIResearchCapability,
+    AITrace,
     ArtifactKind,
     Claim,
     Debate,
@@ -19,12 +21,17 @@ from server.ai_runtime.contracts import (
     ModelRegistration,
     ProviderRegistration,
     Report,
+    ResearchBudget,
+    ResearchClaim,
+    ResearchClaimSupportStatus,
+    ResearchHypothesis,
     Review,
     StageDefinition,
     ToolRequest,
     TradePlanDraft,
     WorkflowDefinition,
     WorkflowStatus,
+    content_fingerprint,
 )
 from server.ai_runtime.orchestrator import DeterministicWorkflowOrchestrator
 from server.ai_runtime.permissions import default_tool_permission_registry
@@ -185,6 +192,197 @@ def _runtime(
         now=lambda: NOW,
     )
     return store, provider, orchestrator
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_ai_capability_levels_stop_at_bounded_research():
+    assert [item.value for item in AIResearchCapability] == [
+        "observe",
+        "explain",
+        "investigate",
+        "propose",
+        "orchestrate_research",
+    ]
+    assert all("execut" not in item.value for item in AIResearchCapability)
+
+
+@pytest.mark.unit
+def test_research_budget_is_explicit_bounded_and_fingerprint_stable():
+    budget = ResearchBudget(
+        max_candidates=5,
+        max_iterations=5,
+        max_backtests=30,
+        max_parameter_variants=20,
+        max_provider_calls=10,
+        max_external_searches=8,
+    )
+
+    assert budget.to_dict()["max_backtests"] == 30
+    assert (
+        budget.fingerprint
+        == ResearchBudget(
+            **{
+                key: value
+                for key, value in budget.to_dict().items()
+                if key != "schema_version"
+            }
+        ).fingerprint
+    )
+    with pytest.raises(ValueError, match="max_candidates must be positive"):
+        ResearchBudget(
+            max_candidates=0,
+            max_iterations=5,
+            max_backtests=30,
+            max_parameter_variants=20,
+            max_provider_calls=10,
+            max_external_searches=8,
+        )
+    with pytest.raises(ValueError, match="max_provider_calls must be non-negative"):
+        ResearchBudget(
+            max_candidates=5,
+            max_iterations=5,
+            max_backtests=30,
+            max_parameter_variants=20,
+            max_provider_calls=-1,
+            max_external_searches=8,
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_formal_hypothesis_requires_falsification_and_has_no_authority_effect():
+    hypothesis = ResearchHypothesis(
+        hypothesis_id="hypothesis-001",
+        task_id="task-001",
+        thesis="Short-horizon reversal may improve the trend baseline.",
+        mechanism="Crowded short-term momentum overshoots inside a long trend.",
+        baseline_reference="dual_ma:v3",
+        expected_regime="positive long trend with elevated short-horizon volatility",
+        falsification_conditions=(
+            "OOS return does not improve after costs",
+            "turnover increase erases gross improvement",
+        ),
+        required_evidence=("frozen daily bars", "canonical cost model"),
+        source_trace_id="trace-001",
+    )
+
+    payload = hypothesis.to_dict()
+    assert payload["authority_effect"] == "none"
+    assert payload["falsification_conditions"] == [
+        "OOS return does not improve after costs",
+        "turnover increase erases gross improvement",
+    ]
+    with pytest.raises(ValueError, match="require falsification conditions"):
+        ResearchHypothesis(
+            hypothesis_id="hypothesis-invalid",
+            task_id="task-001",
+            thesis="Unfalsifiable idea",
+            mechanism="Unknown",
+            baseline_reference="dual_ma:v3",
+            expected_regime="all regimes",
+            falsification_conditions=(),
+            required_evidence=(),
+        )
+    with pytest.raises(ValueError, match="require evidence requirements"):
+        ResearchHypothesis(
+            hypothesis_id="hypothesis-no-evidence",
+            task_id="task-001",
+            thesis="Testable but underspecified idea",
+            mechanism="Unknown",
+            baseline_reference="dual_ma:v3",
+            expected_regime="all regimes",
+            falsification_conditions=("candidate fails evaluation",),
+            required_evidence=(),
+        )
+    with pytest.raises(ValueError, match="cannot change execution authority"):
+        ResearchHypothesis(
+            hypothesis_id="hypothesis-unsafe",
+            task_id="task-001",
+            thesis="Unsafe idea",
+            mechanism="Unknown",
+            baseline_reference="dual_ma:v3",
+            expected_regime="all regimes",
+            falsification_conditions=("candidate fails evaluation",),
+            required_evidence=("frozen evidence",),
+            authority_effect="expand",
+        )
+
+
+@pytest.mark.unit
+def test_research_claim_uses_evidence_status_not_numeric_model_confidence():
+    claim = ResearchClaim(
+        claim_id="claim-001",
+        task_id="task-001",
+        run_id="run-001",
+        statement="Transaction costs materially reduce the candidate edge.",
+        claim_type="evaluation_interpretation",
+        evidence_reference_ids=("backtest-001", "cost-report-001"),
+        support_status=ResearchClaimSupportStatus.SUPPORTED,
+        as_of=NOW,
+        source_trace_id="trace-001",
+    )
+
+    payload = claim.to_dict()
+    assert payload["support_status"] == "supported"
+    assert payload["evidence_reference_ids"] == ["backtest-001", "cost-report-001"]
+    assert "confidence" not in payload
+    assert payload["authority_effect"] == "none"
+
+    with pytest.raises(ValueError, match="must cite evidence"):
+        ResearchClaim(
+            claim_id="claim-invalid",
+            task_id="task-001",
+            run_id="run-001",
+            statement="Unsupported assertion",
+            claim_type="interpretation",
+            evidence_reference_ids=(),
+            support_status=ResearchClaimSupportStatus.UNREVIEWED,
+            as_of=NOW,
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_ai_trace_records_research_provenance_without_authority():
+    trace = AITrace(
+        trace_id="trace-001",
+        task_id="task-001",
+        run_id="run-001",
+        capability=AIResearchCapability.PROPOSE,
+        provider_id=PROVIDER_ID,
+        model_id=MODEL_ID,
+        prompt_version="karkinos.ai.fixture_prompt.v1",
+        input_artifact_ids=("artifact-001",),
+        evidence_reference_ids=(RESEARCH_REF,),
+        tool_names=("research_evidence.read",),
+        started_at=NOW,
+        finished_at=NOW,
+        token_usage=512,
+        raw_output_fingerprint="raw-fingerprint",
+        parsed_output_fingerprint="parsed-fingerprint",
+    )
+
+    payload = trace.to_dict()
+    assert payload["capability"] == "propose"
+    assert payload["authority_effect"] == "none"
+    assert trace.fingerprint == content_fingerprint(payload)
+
+    with pytest.raises(ValueError, match="cannot change execution authority"):
+        AITrace(
+            trace_id="trace-unsafe",
+            task_id="task-001",
+            run_id="run-001",
+            capability=AIResearchCapability.ORCHESTRATE_RESEARCH,
+            provider_id=PROVIDER_ID,
+            model_id=MODEL_ID,
+            prompt_version="karkinos.ai.fixture_prompt.v1",
+            input_artifact_ids=(),
+            evidence_reference_ids=(),
+            tool_names=(),
+            started_at=NOW,
+            authority_effect="execute",
+        )
 
 
 @pytest.mark.unit

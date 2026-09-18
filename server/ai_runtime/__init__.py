@@ -14,6 +14,8 @@ from .capture import (
 )
 from .contracts import (
     AgentRole,
+    AIResearchCapability,
+    AITrace,
     ArtifactDraft,
     ArtifactKind,
     Claim,
@@ -24,6 +26,10 @@ from .contracts import (
     ModelRegistration,
     ProviderRegistration,
     Report,
+    ResearchBudget,
+    ResearchClaim,
+    ResearchClaimSupportStatus,
+    ResearchHypothesis,
     ResearchWorkflow,
     Review,
     StageDefinition,
@@ -48,6 +54,8 @@ from .registry import AiRuntimeRegistry
 from .store import AiAuditStore
 
 __all__ = [
+    "AIResearchCapability",
+    "AITrace",
     "AgentRole",
     "AiAuditStore",
     "AiRuntimeRegistry",
@@ -81,6 +89,10 @@ __all__ = [
     "ProviderAdapter",
     "ProviderRegistration",
     "Report",
+    "ResearchBudget",
+    "ResearchClaim",
+    "ResearchClaimSupportStatus",
+    "ResearchHypothesis",
     "ResearchWorkflow",
     "Review",
     "StageDefinition",
