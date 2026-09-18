@@ -25,6 +25,9 @@ from server.contracts.ai_shadow_research_automation import (
     ShadowResearchPolicy,
     ShadowResearchRejected,
 )
+from server.contracts.ai_shadow_research_qualification import (
+    public_promotion_decision_projection,
+)
 from server.projections.ai_shadow_research import (
     project_shadow_research_candidate_status,
 )
@@ -679,9 +682,15 @@ class AiShadowResearchCommandsMixin:
             "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
             "lifecycle": lifecycle_metadata("paper_shadow"),
         }
+        promotion_decision = public_promotion_decision_projection(
+            approval,
+            strategy_id=strategy_id,
+            strategy_promotion=promotion_state,
+        )
         return {
             **approval,
             "qualification_approval": approval,
+            "promotion_decision": promotion_decision,
             "qualification_run": self._store.get_public_qualification_run(
                 str(evidence["qualification_run_id"])
             ),
