@@ -15,6 +15,9 @@ from typing import Any
 
 import server.persistence.migration_schema_contracts as _schema_contracts
 from server.persistence.connection import run_immediate_transaction
+from server.persistence.financial_canonical_migrations import (
+    build_financial_canonical_migration,
+)
 from server.persistence.financial_decimal_migrations import (
     build_financial_decimal_migration,
 )
@@ -488,6 +491,7 @@ _MIGRATIONS = (
     *_QUOTE_MIGRATIONS[2:],
     build_financial_decimal_migration(SchemaMigration),
     build_financial_invariant_migration(SchemaMigration),
+    build_financial_canonical_migration(SchemaMigration),
 )
 
 CURRENT_MIGRATION_HEAD = CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version

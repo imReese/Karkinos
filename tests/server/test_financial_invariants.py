@@ -247,3 +247,54 @@ def test_v17_pending_fund_economics_are_one_way(tmp_path: Path) -> None:
             conn.execute(
                 "UPDATE pending_fund_orders SET amount=900 WHERE id=?", (row_id,)
             )
+
+
+def test_v18_rejects_noncanonical_decimal_text_on_direct_insert(tmp_path: Path) -> None:
+    path = tmp_path / "app.db"
+    AppDatabase(path).init_sync()
+    with _connect(path) as conn:
+        with pytest.raises(
+            sqlite3.IntegrityError,
+            match="canonical financial decimals required",
+        ):
+            conn.execute(
+                """
+                INSERT INTO orders (
+                    order_id, timestamp, symbol, side, order_type,
+                    quantity, quantity_decimal, price, price_decimal,
+                    asset_class, execution_mode, status, source, payload_json,
+                    created_at, updated_at, currency_code, decimal_provenance
+                ) VALUES (
+                    'raw-noncanonical', '2026-09-17T10:00:00+08:00', '600519',
+                    'buy', 'limit', 1, '01', 25.5, '25.50', 'stock', 'paper',
+                    'submitted', 'fixture', '{}', '2026-09-17T10:00:00+08:00',
+                    '2026-09-17T10:00:00+08:00', 'CNY', 'exact_decimal_write_v1'
+                )
+                """
+            )
+
+
+def test_v18_rejects_noncanonical_decimal_text_on_terminal_updates(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "app.db"
+    db = AppDatabase(path)
+    db.init_sync()
+    repository = LedgerRepository(db)
+    entry_id = _buy(repository, ref="canonical-update")
+    with _connect(path) as conn:
+        with pytest.raises(
+            sqlite3.IntegrityError,
+            match="ledger settlement canonical financial decimals required",
+        ):
+            conn.execute(
+                """
+                UPDATE ledger_entries
+                SET settlement_status='confirmed', settled_at=?,
+                    settlement_source='fixture', settlement_source_ref='statement-1',
+                    commission=5, commission_decimal='5.0',
+                    net_cash_impact=-105, net_cash_impact_decimal='-105'
+                WHERE id=?
+                """,
+                ("2026-09-17T10:01:00+08:00", entry_id),
+            )
