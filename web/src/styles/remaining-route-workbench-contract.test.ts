@@ -348,9 +348,27 @@ describe('remaining route workbench contract', () => {
     expect(SETTINGS).not.toContain('xl:col-start-');
     expect(SETTINGS).not.toContain('xl:row-start-');
     expect(SETTINGS).toContain('settings-persisted-configuration');
+    expect(SETTINGS).toContain('settings-operational-controls-disclosure');
+    expect(SETTINGS).toContain(
+      'settings-local-preferences-boundaries-disclosure',
+    );
     expect(SETTINGS).toContain('settings-data-source-disclosure');
     expect(SETTINGS).toContain('settings-live-services-disclosure');
     expect(SETTINGS).toContain('settings-preferences-disclosure');
+    const persistedConfigurationIndex = SETTINGS.indexOf(
+      '<SettingsPersistedConfiguration',
+    );
+    const dataStatusIndex = SETTINGS.indexOf('<SettingsDataStatus');
+    const operationalControlsIndex = SETTINGS.indexOf(
+      'testId="settings-operational-controls-disclosure"',
+    );
+    const localPreferencesIndex = SETTINGS.indexOf(
+      'testId="settings-local-preferences-boundaries-disclosure"',
+    );
+    expect(persistedConfigurationIndex).toBeGreaterThanOrEqual(0);
+    expect(dataStatusIndex).toBeGreaterThan(persistedConfigurationIndex);
+    expect(operationalControlsIndex).toBeGreaterThan(dataStatusIndex);
+    expect(localPreferencesIndex).toBeGreaterThan(operationalControlsIndex);
     const activityFeed = ACTIVITY_FEED.slice(
       ACTIVITY_FEED.indexOf('export function ActivityFeed'),
       ACTIVITY_FEED.indexOf('function activityAmountClass'),
@@ -439,6 +457,8 @@ describe('remaining route workbench contract', () => {
     }
     for (const disclosureId of [
       'settings-metadata-disclosure',
+      'settings-operational-controls-disclosure',
+      'settings-local-preferences-boundaries-disclosure',
       'settings-live-services-disclosure',
       'settings-data-safety-disclosure',
       'settings-preferences-disclosure',

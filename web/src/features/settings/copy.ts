@@ -9,6 +9,12 @@ export const settingsCopy = {
     dataStatus: 'Data status',
     dataStatusDetail:
       'Portfolio valuations follow the recorded quote state and refresh policy.',
+    operationalControls: 'Operational controls',
+    operationalControlsDetail:
+      'Open data-source maintenance and runtime-service controls only when operational review is needed.',
+    localPreferencesBoundaries: 'Local preferences & boundaries',
+    localPreferencesBoundariesDetail:
+      'Notification readiness, immutable safety boundaries, theme, and language stay secondary to effective configuration.',
     refreshActionDetail:
       'Starts a controlled quote refresh and records the result. It does not write ledger entries or submit orders.',
     refreshActionEvidence: 'Controlled refresh · recorded quote cache',
@@ -196,6 +202,12 @@ export const settingsCopy = {
     subtitle: '先查看生效值、运行边界和已保存默认项，再按需打开受控编辑入口。',
     dataStatus: '数据状态',
     dataStatusDetail: '组合估值以已记录的行情状态和刷新策略为准。',
+    operationalControls: '运行维护',
+    operationalControlsDetail:
+      '仅在需要运行复核时展开数据源维护与服务状态控制。',
+    localPreferencesBoundaries: '本地偏好与边界',
+    localPreferencesBoundariesDetail:
+      '通知就绪、不可变安全边界、主题和语言保持为生效配置之后的次级信息。',
     refreshActionDetail:
       '主动刷新行情并记录结果；不会写入账本，也不会提交订单。',
     refreshActionEvidence: '受控刷新 · 已记录行情缓存',
