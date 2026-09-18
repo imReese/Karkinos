@@ -98,6 +98,7 @@ def test_verified_weekend_valuation_requires_latest_completed_session(day, expec
     session = project_market_session(db, SATURDAY)
     assert session["status"] == "non_trading_day"
     assert session["latest_completed_trade_date"] == "2026-09-11"
+    assert session["previous_completed_trade_date"] == "2026-09-10"
     assert session["next_trading_date"] == "2026-09-14"
     valuation = build_current_valuation_snapshot(db, now=SATURDAY)
     assert valuation["status"] == expected
@@ -144,6 +145,27 @@ def test_calendar_verification_conflict_does_not_fall_back_to_weekday():
     assert project_market_session(db, SATURDAY)["calendar_verified"] is False
     assert quote_is_stale(db.quote, now=SATURDAY, db=db)
     assert build_current_valuation_snapshot(db, now=SATURDAY)["status"] == "degraded"
+
+
+def test_after_close_book_keeps_previous_session_published_nav_for_valuation():
+    now = datetime(2026, 9, 18, 19, 30, tzinfo=SHANGHAI)
+    quote = _quote(
+        "2026-09-17",
+        asset_type="fund",
+        instrument_type="open_end_fund",
+        quote_source="eastmoney_fund_page",
+        nav_date="2026-09-17",
+        quote_timestamp="2026-09-17T20:00:00+08:00",
+    )
+    session = project_market_session(CalendarDb(), now)
+
+    assert session["status"] == "after_close"
+    assert session["latest_completed_trade_date"] == "2026-09-18"
+    assert session["previous_completed_trade_date"] == "2026-09-17"
+    assert not quote_is_stale(
+        quote, now=now, market_session=session, for_valuation=True
+    )
+    assert quote_is_stale(quote, now=now, market_session=session)
 
 
 def test_confirmed_fund_nav_has_its_own_date_and_no_live_valuation_ttl():
@@ -289,8 +311,8 @@ def test_readiness_retains_valid_nav_after_later_refresh_failure(tmp_path):
     monday_close = build_system_readiness(
         db.path, now=datetime(2026, 9, 14, 18, 30, tzinfo=SHANGHAI)
     )
-    assert monday_close["subsystems"]["valuation_read"]["status"] == "degraded"
-    assert monday_close["valuation_snapshot_id"] == saturday["valuation_snapshot_id"]
+    assert monday_close["subsystems"]["valuation_read"]["status"] == "ready"
+    assert monday_close["subsystems"]["decision"]["status"] == "blocked"
 
 
 def test_fund_without_confirmed_nav_identity_and_manual_mark_fail_closed():
@@ -337,6 +359,10 @@ def test_readiness_reassesses_authority_without_invalidating_legacy_identity(tmp
     assert legacy["status"] == "degraded"
     legacy["valuation_policy"] = "karkinos.persisted_valuation.v5"
     legacy["status"] = "complete"
+    legacy["metadata"] = {
+        **legacy["metadata"],
+        "valuation_freshness_policy": "expected_session_and_live_ttl.v1",
+    }
     legacy["snapshot_id"] = "valuation-" + content_fingerprint(
         _valuation_snapshot_identity_payload(legacy)
     )

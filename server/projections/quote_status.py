@@ -180,6 +180,32 @@ def quote_is_stale(
     )
 
 
+def _published_nav_valuation_lag_is_usable(
+    *,
+    pricing_date: date,
+    expected_date: date,
+    current: datetime,
+    session: dict[str, Any],
+) -> bool:
+    """Allow one-session publication lag only for after-close book valuation."""
+
+    previous_value = session.get("previous_completed_trade_date")
+    if not previous_value:
+        return False
+    try:
+        previous_date = date.fromisoformat(str(previous_value))
+    except ValueError:
+        return False
+    return (
+        session.get("status") == "after_close"
+        and str(session.get("market_date") or "") == current.date().isoformat()
+        and str(session.get("latest_completed_trade_date") or "")
+        == current.date().isoformat()
+        and pricing_date == previous_date
+        and pricing_date < expected_date
+    )
+
+
 def quote_freshness_reason(
     quote: dict | None,
     *,
@@ -229,7 +255,16 @@ def quote_freshness_reason(
             return "invalid_nav_date"
         pricing_date = nav_timestamp.date()
     if pricing_date < expected_date:
-        return "quote_older_than_expected_session"
+        if not (
+            published_nav
+            and _published_nav_valuation_lag_is_usable(
+                pricing_date=pricing_date,
+                expected_date=expected_date,
+                current=current,
+                session=session,
+            )
+        ):
+            return "quote_older_than_expected_session"
     if session["calendar_verified"] and pricing_date > expected_date:
         return "quote_after_expected_session"
     market_open = (

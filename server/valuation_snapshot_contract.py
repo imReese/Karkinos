@@ -12,7 +12,9 @@ from server.contracts.quote_ingestion import quote_timestamp_instant
 from server.projections.quote_status import quote_valuation_status
 
 _VALUATION_SCOPE_POLICY = "current_nonzero_positions.v1"
-_VALUATION_FRESHNESS_POLICY = "expected_session_and_live_ttl.v1"
+_LEGACY_VALUATION_FRESHNESS_POLICY = "expected_session_and_live_ttl.v1"
+_VALUATION_FRESHNESS_POLICY = "expected_session_live_ttl_and_nav_publication_lag.v2"
+
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -49,6 +51,16 @@ def _v5_quote_status(quote: dict[str, Any]) -> str:
     ):
         return "degraded"
     return "complete"
+
+
+def _expected_freshness_policy(valuation_policy: str) -> str:
+    if valuation_policy in {
+        "karkinos.persisted_valuation.v5",
+        "karkinos.persisted_valuation.v6",
+        "karkinos.persisted_valuation.v7",
+    }:
+        return _LEGACY_VALUATION_FRESHNESS_POLICY
+    return _VALUATION_FRESHNESS_POLICY
 
 
 def _snapshot_status(quotes: list[dict[str, Any]], *, valuation_policy: str) -> str:
@@ -112,7 +124,9 @@ def validate_valuation_snapshot(payload: dict[str, Any]) -> None:
     if has_freshness_policy:
         if metadata.get("valuation_scope_policy") != _VALUATION_SCOPE_POLICY:
             raise ValueError("valuation snapshot scope policy drifted")
-        if metadata.get("valuation_freshness_policy") != _VALUATION_FRESHNESS_POLICY:
+        if metadata.get("valuation_freshness_policy") != _expected_freshness_policy(
+            str(payload.get("valuation_policy") or "")
+        ):
             raise ValueError("valuation snapshot freshness policy drifted")
         if metadata.get("quote_count") != len(quotes):
             raise ValueError("valuation snapshot quote count drifted")

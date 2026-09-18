@@ -365,7 +365,6 @@ def position_quote_presentation(
             quote,
             now=now,
             db=getattr(state, "db", None),
-            for_valuation=True,
         )
         raw_status = str((quote or {}).get("quote_status") or "live")
         return ("stale", stale_reason) if stale_reason else (raw_status, None)

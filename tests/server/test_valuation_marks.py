@@ -116,7 +116,8 @@ async def test_published_nav_survives_new_estimate_in_real_book(tmp_path, baseli
     assert position.unrealized_pnl == pytest.approx(30.0)
     assert position.pricing_kind == "published_nav"
     assert position.pricing_as_of == "2026-09-11"
-    assert position.quote_status == "confirmed"
+    assert position.quote_status == "stale"
+    assert position.stale_reason == "quote_older_than_expected_session"
     assert position.latest_observation.price == 1.8115
     assert position.latest_observation.pricing_kind == "estimated_nav"
     assert position.latest_observation.pricing_authority == "non_authoritative"
@@ -199,6 +200,40 @@ def test_conflicting_published_nav_is_not_hidden_by_newer_estimate(tmp_path):
     _save(db, _nav(price=1.9, quote_timestamp="2026-09-11T19:00:00+08:00"))
     with pytest.raises(ValueError, match="published NAV facts conflict"):
         build_current_valuation_snapshot(db, now=MONDAY)
+
+
+@pytest.mark.asyncio
+async def test_after_close_book_uses_previous_session_nav_but_decision_stays_stale(
+    tmp_path,
+):
+    db = _book(tmp_path)
+    _save(
+        db,
+        _nav(
+            nav_date="2026-09-17",
+            quote_timestamp="2026-09-17T20:00:00+08:00",
+        ),
+    )
+    now = datetime(2026, 9, 18, 19, 30, tzinfo=SHANGHAI)
+
+    valuation = db.publish_current_valuation_snapshot_sync(now=now)
+    assert valuation["valuation_policy"] == "karkinos.persisted_valuation.v8"
+    assert valuation["status"] == "complete"
+    assert valuation["quotes"][0]["quote_status"] == "confirmed"
+
+    state = AppState()
+    state.db, state.config = db, ServerConfig()
+    account = await build_account_state_response(state, now=now)
+
+    position = account.snapshot.positions[0]
+    assert position.valuation_available is True
+    assert position.market_value == pytest.approx(180.0)
+    assert position.quote_status == "stale"
+    assert position.stale_reason == "quote_older_than_expected_session"
+    assert account.summary.total_equity == pytest.approx(1030.0)
+    assert account.summary.cumulative_pnl == pytest.approx(30.0)
+    assert account.overview.valuation_usability == "usable"
+    assert account.overview.decision_readiness != "ready"
 
 
 def test_estimate_only_and_overdue_nav_are_distinct_unusable_evidence(tmp_path):
@@ -299,6 +334,10 @@ def test_legacy_v6_baseline_classification_preserves_snapshot_identity(tmp_path)
         **current,
         "valuation_policy": "karkinos.persisted_valuation.v6",
         "status": "degraded",
+        "metadata": {
+            **current["metadata"],
+            "valuation_freshness_policy": "expected_session_and_live_ttl.v1",
+        },
     }
     legacy["snapshot_id"] = "valuation-" + content_fingerprint(
         _valuation_snapshot_identity_payload(legacy)

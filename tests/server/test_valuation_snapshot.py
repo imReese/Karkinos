@@ -147,7 +147,7 @@ def test_valuation_snapshot_is_content_addressed_and_replayable(tmp_path):
         "quote_count": 1,
         "current_position_count": 1,
         "valuation_scope_policy": "current_nonzero_positions.v1",
-        "valuation_freshness_policy": "expected_session_and_live_ttl.v1",
+        "valuation_freshness_policy": "expected_session_live_ttl_and_nav_publication_lag.v2",
         "valuation_expected_date": "2026-07-10",
         "current_position_scope_fingerprint": (
             "a2060e1120202f61d14a27774b5a0f0e0dfc9efbb198be0a14cbd686a0fafd77"
