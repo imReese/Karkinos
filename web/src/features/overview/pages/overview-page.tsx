@@ -10,11 +10,11 @@ export function OverviewPage() {
   const { copy, account } = controller;
   return (
     <section
-      className="app-workbench-route overview-terminal-route mx-auto min-w-0 w-full max-w-[1680px]"
+      className="app-workbench-route overview-terminal-route mx-auto min-w-0 w-full max-w-[1560px]"
       data-testid="overview-page"
       data-workbench-route="overview"
     >
-      <header className="mb-3">
+      <header className="mb-2">
         <h1 className="text-xl font-semibold tracking-tight text-[var(--app-text)]">
           {copy.overview.title}
         </h1>

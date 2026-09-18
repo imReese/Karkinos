@@ -499,6 +499,7 @@ export function ShadowResearchPanel() {
         candidates={status?.candidates ?? []}
         copy={copy}
         loading={query.isLoading}
+        latestRunId={status?.runs[0]?.run_id ?? null}
         notes={notes}
         onApprovalChange={setApprovals}
         onApprove={approveCandidate}
@@ -582,6 +583,7 @@ function ShadowCandidateList({
   candidates,
   copy,
   loading,
+  latestRunId,
   notes,
   onApprovalChange,
   onApprove,
@@ -600,6 +602,7 @@ function ShadowCandidateList({
   candidates: ShadowResearchCandidate[];
   copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
   loading: boolean;
+  latestRunId: string | null;
   notes: Record<string, string>;
   onApprovalChange: Dispatch<SetStateAction<Record<string, boolean>>>;
   onApprove: (candidate: ShadowResearchCandidate) => Promise<void>;
@@ -614,67 +617,122 @@ function ShadowCandidateList({
   verifiedResearchWinnerCandidateIds: Set<string>;
   verifiedWinnerCandidateIds: Set<string>;
 }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   if (candidates.length === 0) {
     return (
       <div className="mt-6 grid gap-4">
-        <div className="rounded-[var(--app-radius-surface)] border border-dashed border-[var(--app-divider)] p-5 text-sm text-[var(--app-muted)]">
+        <div className="border-y border-dashed border-[var(--app-divider)] p-5 text-sm text-[var(--app-muted)]">
           {loading ? copy.running : copy.noCandidates}
         </div>
       </div>
     );
   }
+
+  const ordered = [...candidates].sort((left, right) =>
+    right.updated_at.localeCompare(left.updated_at),
+  );
+  const current = ordered.filter(
+    (candidate) =>
+      candidate.run_id === latestRunId ||
+      candidate.promotion_status === 'paper_shadow_approved' ||
+      verifiedWinnerCandidateIds.has(candidate.candidate_id) ||
+      verifiedResearchWinnerCandidateIds.has(candidate.candidate_id),
+  );
+  const currentIds = new Set(
+    current.map((candidate) => candidate.candidate_id),
+  );
+  const historical = ordered.filter(
+    (candidate) => !currentIds.has(candidate.candidate_id),
+  );
+
+  const renderCandidate = (candidate: ShadowResearchCandidate) => (
+    <CandidateCard
+      approvals={approvals}
+      candidate={candidate}
+      copy={copy}
+      isDailyWinner={verifiedWinnerCandidateIds.has(candidate.candidate_id)}
+      isResearchWinner={verifiedResearchWinnerCandidateIds.has(
+        candidate.candidate_id,
+      )}
+      key={candidate.candidate_id}
+      notes={notes}
+      onPause={() => void onPause(candidate)}
+      onPauseConfirmationChange={(checked) =>
+        onPauseConfirmationChange((currentState) => ({
+          ...currentState,
+          [candidate.candidate_id]: checked,
+        }))
+      }
+      onPauseNoteChange={(value) =>
+        onPauseNoteChange((currentState) => ({
+          ...currentState,
+          [candidate.candidate_id]: value,
+        }))
+      }
+      onApprovalChange={(checked) =>
+        onApprovalChange((currentState) => ({
+          ...currentState,
+          [candidate.candidate_id]: checked,
+        }))
+      }
+      onApprove={() => void onApprove(candidate)}
+      onNoteChange={(value) =>
+        onNoteChange((currentState) => ({
+          ...currentState,
+          [candidate.candidate_id]: value,
+        }))
+      }
+      pauseConfirmations={pauseConfirmations}
+      pauseNotes={pauseNotes}
+      pending={pending}
+      promotionStage={
+        promotionStates.data?.find(
+          (state) =>
+            state.strategy_id === `ai_formula_shadow:${candidate.candidate_id}`,
+        )?.stage
+      }
+      promotionStateLoaded={promotionStates.isSuccess}
+    />
+  );
+
   return (
-    <div className="mt-6 grid gap-4">
-      {candidates.map((candidate) => (
-        <CandidateCard
-          approvals={approvals}
-          candidate={candidate}
-          copy={copy}
-          isDailyWinner={verifiedWinnerCandidateIds.has(candidate.candidate_id)}
-          isResearchWinner={verifiedResearchWinnerCandidateIds.has(
-            candidate.candidate_id,
-          )}
-          key={candidate.candidate_id}
-          notes={notes}
-          onPause={() => void onPause(candidate)}
-          onPauseConfirmationChange={(checked) =>
-            onPauseConfirmationChange((current) => ({
-              ...current,
-              [candidate.candidate_id]: checked,
-            }))
-          }
-          onPauseNoteChange={(value) =>
-            onPauseNoteChange((current) => ({
-              ...current,
-              [candidate.candidate_id]: value,
-            }))
-          }
-          onApprovalChange={(checked) =>
-            onApprovalChange((current) => ({
-              ...current,
-              [candidate.candidate_id]: checked,
-            }))
-          }
-          onApprove={() => void onApprove(candidate)}
-          onNoteChange={(value) =>
-            onNoteChange((current) => ({
-              ...current,
-              [candidate.candidate_id]: value,
-            }))
-          }
-          pauseConfirmations={pauseConfirmations}
-          pauseNotes={pauseNotes}
-          pending={pending}
-          promotionStage={
-            promotionStates.data?.find(
-              (state) =>
-                state.strategy_id ===
-                `ai_formula_shadow:${candidate.candidate_id}`,
-            )?.stage
-          }
-          promotionStateLoaded={promotionStates.isSuccess}
-        />
-      ))}
+    <div className="mt-6 min-w-0">
+      <div className="flex items-baseline justify-between gap-3 border-b border-[var(--app-divider)] pb-2">
+        <h3 className="app-type-section-title text-[var(--app-text)]">
+          {copy.currentCandidates}
+        </h3>
+        <span className="app-type-micro tabular-nums text-[var(--app-text-tertiary)]">
+          {current.length}
+        </span>
+      </div>
+      <div className="mt-3 grid gap-4">{current.map(renderCandidate)}</div>
+
+      {historical.length ? (
+        <details
+          className="mt-5 border-y border-[var(--app-divider)]"
+          onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
+          open={historyOpen}
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[var(--app-text)]">
+                {copy.candidateHistory}
+              </span>
+              <span className="app-type-micro mt-0.5 block text-[var(--app-text-secondary)]">
+                {copy.candidateHistoryDetail(historical.length)}
+              </span>
+            </span>
+            <span className="app-type-micro shrink-0 tabular-nums text-[var(--app-text-tertiary)]">
+              {historyOpen ? '−' : '+'}
+            </span>
+          </summary>
+          {historyOpen ? (
+            <div className="grid gap-4 border-t border-[var(--app-divider)] py-4">
+              {historical.map(renderCandidate)}
+            </div>
+          ) : null}
+        </details>
+      ) : null}
     </div>
   );
 }

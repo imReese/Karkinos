@@ -35,8 +35,9 @@ export function OperationsPage() {
 
   return (
     <section
-      className="min-w-0 space-y-5 sm:space-y-6"
+      className="app-workbench-route min-w-0 space-y-5 sm:space-y-6"
       data-testid="operations-page"
+      data-workbench-route="operations"
     >
       <WorkspaceHeader
         eyebrow={labels.kicker}

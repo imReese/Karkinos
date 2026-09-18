@@ -14,6 +14,7 @@
 ## Guides
 
 - [Configuration](guides/configuration.md)
+- [Financial workbench UI patterns](guides/financial-workbench.md)
 - [Return accounting](guides/return-accounting.md)
 - [Legacy Strategy compatibility](guides/strategy-compatibility.md)
 

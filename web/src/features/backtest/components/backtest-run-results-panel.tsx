@@ -30,7 +30,7 @@ export function BacktestRunResultsPanel() {
   } = useBacktestPage();
   return (
     <section
-      className={`app-workbench-section min-w-0 ${
+      className={`app-workbench-section min-w-0 xl:border-t-0 xl:pl-6 ${
         mobileWorkspaceView === 'results' ? '' : 'hidden xl:block'
       }`}
       data-testid="backtest-result-panel"

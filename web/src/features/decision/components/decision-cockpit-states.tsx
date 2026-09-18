@@ -12,7 +12,10 @@ export function DecisionCockpitLoading() {
   const copy = useCopy();
   const labels = copy.decision;
   return (
-    <section className="min-w-0 space-y-5 sm:space-y-6">
+    <section
+      className="app-workbench-route min-w-0 space-y-5 sm:space-y-6"
+      data-workbench-route="decision"
+    >
       <WorkspaceHeader
         eyebrow={labels.kicker}
         title={labels.title}
@@ -126,7 +129,10 @@ export function DecisionCockpitError({ error }: { error: unknown }) {
   const copy = useCopy();
   const labels = copy.decision;
   return (
-    <section className="space-y-5">
+    <section
+      className="app-workbench-route space-y-5"
+      data-workbench-route="decision"
+    >
       <PageHeader title={labels.title} subtitle={labels.subtitle} />
       <EvidenceState
         kind="error"

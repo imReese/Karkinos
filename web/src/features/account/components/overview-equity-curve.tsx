@@ -68,7 +68,7 @@ export function OverviewEquityCurve({
   ];
   return (
     <div className="min-w-0">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-[var(--app-text)]">
           {copy.overview.dashboard.equityPanel}
         </h2>
@@ -93,7 +93,7 @@ export function OverviewEquityCurve({
       </div>
       <div
         ref={chartRef}
-        className={`${usablePoints.length >= 2 ? 'h-[220px] sm:h-[248px]' : 'h-[96px] sm:h-[112px]'} min-w-0`}
+        className={`${usablePoints.length >= 2 ? 'h-[210px] sm:h-[236px]' : 'h-[76px] sm:h-[88px]'} min-w-0`}
       >
         {usablePoints.length >= 2 ? (
           <div

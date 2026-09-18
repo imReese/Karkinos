@@ -32,7 +32,9 @@ export function SettingsSection({
     <section className="border-y border-[var(--app-divider)]">
       <div className="space-y-4 py-4 sm:py-5">
         <div>
-          <div className="app-card-title text-lg">{title}</div>
+          <h2 className="app-type-section-title text-[var(--app-text)]">
+            {title}
+          </h2>
           <p className="app-muted mt-2 text-sm leading-6">{detail}</p>
         </div>
         {children}

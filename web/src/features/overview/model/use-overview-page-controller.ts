@@ -4,6 +4,7 @@ import { useCopy } from '../../../shared/i18n/context';
 import {
   useAccountStateQuery,
   useEquityCurveSeriesQuery,
+  useDailyTradingPlanQuery,
   type EquityCurveRange,
 } from '../overview-feature-boundary';
 
@@ -12,9 +13,15 @@ export function useOverviewPageController() {
   const [equityCurveRange, setEquityCurveRange] =
     useState<EquityCurveRange>('1m');
   const account = useAccountStateQuery();
-  const equityCurve = useEquityCurveSeriesQuery(
+  const accountReady = Boolean(account.data);
+  const equityCurve = useEquityCurveSeriesQuery(equityCurveRange, accountReady);
+  const tradingPlan = useDailyTradingPlanQuery(accountReady);
+  return {
+    copy,
+    account,
+    equityCurve,
+    tradingPlan,
     equityCurveRange,
-    Boolean(account.data),
-  );
-  return { copy, account, equityCurve, equityCurveRange, setEquityCurveRange };
+    setEquityCurveRange,
+  };
 }

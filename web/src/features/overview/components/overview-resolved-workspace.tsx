@@ -14,6 +14,7 @@ import {
 import { OverviewHoldingsSection } from './overview-holdings-section';
 import { OverviewPerformanceDrivers } from './overview-performance-drivers';
 import { OverviewStatusCard } from './overview-status-card';
+import { OverviewStrategyRecommendation } from './overview-strategy-recommendation';
 import { OverviewSummary } from './overview-summary';
 import { DashboardTodayQueue } from './overview-today-queue';
 
@@ -38,12 +39,12 @@ export function OverviewResolvedWorkspace({
       <OverviewDataStatus state={state} />
       <OverviewSummary summary={state.summary} />
       <div
-        className="grid min-w-0 items-start xl:grid-cols-[minmax(0,1fr)_20rem]"
+        className="grid min-w-0 items-start xl:grid-cols-[minmax(0,1fr)_18rem]"
         data-testid="overview-financial-canvas"
       >
         <div className="min-w-0 xl:border-r xl:border-[var(--app-divider)]">
           <section
-            className="min-w-0 py-4 xl:pr-7"
+            className="min-w-0 py-3.5 xl:pr-6"
             data-testid="overview-performance-card"
           >
             {equityCurve.isLoading && !equityCurve.data ? (
@@ -80,10 +81,11 @@ export function OverviewResolvedWorkspace({
             positions={state.snapshot.positions}
             assetClassBySymbol={assetClassBySymbol}
             weightBySymbol={weightBySymbol}
-            className="border-t border-[var(--app-divider)] xl:pr-7"
+            className="border-t border-[var(--app-divider)] xl:pr-6"
           />
         </div>
-        <aside className="min-w-0 xl:pl-6">
+        <aside className="min-w-0 xl:pl-5">
+          <OverviewStrategyRecommendation query={controller.tradingPlan} />
           <OverviewMarketStatus state={state} />
           <DashboardTodayQueue overview={state.overview} />
           <OverviewDataDetails

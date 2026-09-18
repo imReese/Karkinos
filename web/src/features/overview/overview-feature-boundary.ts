@@ -12,6 +12,8 @@ export { EquityCurveSkeleton } from '../account/components/equity-curve-card';
 export { OverviewEquityCurve } from '../account/components/overview-equity-curve';
 export type { PortfolioSnapshot } from '../portfolio/api';
 export { PositionsTable } from '../portfolio/components/positions-table';
+export { useDailyTradingPlanQuery } from '../decision/api';
+export type { DailyTradingPlanResponse } from '../decision/api';
 export {
   operationsSubsystemLabel,
   operationsNextActionLabel,
