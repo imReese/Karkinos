@@ -101,6 +101,23 @@ test('portfolio lifecycle states stay flat instead of rebuilding a card wall', (
   expect(portfolioPageSource).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
 });
 
+test('portfolio keeps holdings primary and secondary analysis behind disclosure', () => {
+  expect(portfolioPageSource).toContain(
+    'data-testid="portfolio-current-holdings"',
+  );
+  expect(portfolioPageSource).toContain('data-testid="portfolio-analysis"');
+  expect(portfolioPageSource).toContain('<details');
+  expect(portfolioPageSource).toContain('<summary');
+  expect(portfolioPageSource).toContain(
+    'data-portfolio-analysis-layout="primary-first"',
+  );
+  expect(
+    portfolioPageSource.indexOf('data-testid="portfolio-current-holdings"'),
+  ).toBeLessThan(
+    portfolioPageSource.indexOf('data-testid="portfolio-analysis"'),
+  );
+});
+
 test('portfolio defers secondary read models until their visible perspective is ready', () => {
   expect(portfolioPageSource).toContain(
     'const primaryPortfolioQueriesSettled = snapshot.data !== undefined',
