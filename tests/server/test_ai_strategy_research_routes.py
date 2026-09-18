@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.provider_call_window import (
     DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
     ProviderCallDeferred,
@@ -17,6 +19,7 @@ from server.ai_runtime.provider_call_window import (
 from server.ai_runtime.strategy_research import (
     CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
+    REVIEW_CONFIRMATION,
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
 )
 from server.app import create_app
@@ -254,6 +257,135 @@ def test_each_follow_on_stage_requires_its_own_exact_confirmation(
 
     assert response.status_code == 422
     assert service.requests == []
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_human_review_returns_research_selection_bound_to_evaluation(
+    monkeypatch, tmp_path
+):
+    artifact = {"summary": "Deterministic critique evidence"}
+    artifact_fingerprint = content_fingerprint(artifact)
+
+    class ReviewDb:
+        def __init__(self):
+            self._path = tmp_path / "app.db"
+
+        async def get_backtest_result(self, result_id):
+            assert result_id == 18
+            return {
+                "initial_cash": 1_000_000.0,
+                "final_equity": 1_080_000.0,
+                "total_return": 0.08,
+                "sharpe": 1.1,
+                "max_drawdown": 0.12,
+                "duration_days": 120,
+                "metrics_json": json.dumps(
+                    {
+                        "dataset_snapshot": {"snapshot_id": "sha256:dataset-route-001"},
+                        "research_evidence_bundle": {"gate_status": "pass"},
+                        "oos_validation": {"validation_status": "passed"},
+                        "evidence_bundle": {"status": "complete"},
+                    }
+                ),
+                "cost_summary_json": json.dumps({"total_trades": 4}),
+            }
+
+    class ReviewStore:
+        def __init__(self, path):
+            assert path == tmp_path / "app.db"
+
+        def init(self):
+            return None
+
+        def get_critique(self, critique_id):
+            assert critique_id == "critique-route-001"
+            return {
+                "critique_id": critique_id,
+                "session_id": "session-route-001",
+                "draft_id": "draft-route-001",
+                "backtest_run_id": "backtest-route-001",
+                "status": "completed",
+                "artifact": artifact,
+                "artifact_fingerprint": artifact_fingerprint,
+            }
+
+        def verify_events(self, entity_id):
+            assert entity_id == "critique-route-001"
+            return True, ()
+
+        def save_review(self, **kwargs):
+            return {
+                "review_id": "review-route-001",
+                "session_id": kwargs["session_id"],
+                "critique_id": kwargs["critique_id"],
+                "critique_artifact_fingerprint": kwargs[
+                    "critique_artifact_fingerprint"
+                ],
+                "reviewer": kwargs["reviewer"],
+                "disposition": kwargs["disposition"],
+                "notes": kwargs["notes"],
+                "input_fingerprint": "review-input-fingerprint",
+                "created_at": kwargs["created_at"],
+            }
+
+        def get_backtest(self, run_id):
+            assert run_id == "backtest-route-001"
+            return {
+                "backtest_run_id": run_id,
+                "status": "completed",
+                "canonical_backtest_result_id": 18,
+            }
+
+    class ReviewReadService:
+        def get_session(self, session_id):
+            assert session_id == "session-route-001"
+            return {
+                "session_id": session_id,
+                "status": "completed",
+                "binding_validity": "valid",
+                "research_task_id": "research-task-route-001",
+            }
+
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research.StrategyResearchAuditStore",
+        ReviewStore,
+    )
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_read_service",
+        lambda state: ReviewReadService(),
+    )
+    service = FixtureService()
+    client = _client(monkeypatch, service, db=ReviewDb())
+
+    response = client.post(
+        "/api/ai/strategy-research/sessions/session-route-001/reviews",
+        json={
+            "idempotency_key": "review-route-001",
+            "critique_id": "critique-route-001",
+            "reviewer": "human:owner",
+            "disposition": "accepted_for_more_research",
+            "notes": "Continue research; do not promote.",
+            "confirmation": REVIEW_CONFIRMATION,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    selection = body["research_selection"]
+    assert selection["task_id"] == "research-task-route-001"
+    assert selection["task_binding_status"] == "bound"
+    assert selection["candidate_id"] == "draft-route-001"
+    assert selection["critique_id"] == "critique-route-001"
+    assert selection["decision"] == "selected_for_further_research"
+    assert selection["source"] == "human"
+    assert selection["evaluation_gate_status"] == "pass"
+    assert selection["requires_human_promotion"] is True
+    assert selection["ai_generated"] is False
+    assert selection["authority_effect"] == "none"
+    assert body["decision_input_created"] is False
+    assert body["trade_plan_created"] is False
+    assert body["authority_effect"] == "none"
 
 
 @pytest.mark.unit

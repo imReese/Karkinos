@@ -26,6 +26,9 @@ from server.ai_runtime.contracts import (
     ResearchClaimSupportStatus,
     ResearchEvaluationBundle,
     ResearchHypothesis,
+    ResearchSelection,
+    ResearchSelectionDecision,
+    ResearchSelectionSource,
     Review,
     StageDefinition,
     ToolRequest,
@@ -458,6 +461,89 @@ def test_research_evaluation_bundle_cannot_be_ai_generated_or_authoritative():
         ResearchEvaluationBundle(**base, ai_generated=True)
     with pytest.raises(ValueError, match="cannot change execution authority"):
         ResearchEvaluationBundle(**base, authority_effect="expand")
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_research_selection_is_non_ai_non_promoting_and_non_executable():
+    selection = ResearchSelection(
+        selection_id="research-selection-001",
+        session_id="session-001",
+        task_id="task-001",
+        task_binding_status="bound",
+        candidate_id="candidate-001",
+        critique_id="critique-001",
+        evaluation_id="evaluation-001",
+        evaluation_fingerprint="sha256:" + "a" * 64,
+        evaluation_gate_status="pass",
+        decision=ResearchSelectionDecision.SELECTED_FOR_FURTHER_RESEARCH,
+        source=ResearchSelectionSource.HUMAN,
+        reviewer="human:reese",
+        notes="Continue deterministic research; do not promote.",
+        created_at=NOW,
+    )
+
+    payload = selection.to_dict()
+    assert payload["decision"] == "selected_for_further_research"
+    assert payload["requires_human_promotion"] is True
+    assert payload["ai_generated"] is False
+    assert payload["authority_effect"] == "none"
+    assert selection.fingerprint == content_fingerprint(payload)
+
+    with pytest.raises(ValueError, match="cannot bypass human promotion"):
+        ResearchSelection(
+            selection_id="research-selection-no-human",
+            session_id="session-001",
+            task_id="task-001",
+            task_binding_status="bound",
+            candidate_id="candidate-001",
+            critique_id="critique-001",
+            evaluation_id="evaluation-001",
+            evaluation_fingerprint="sha256:" + "a" * 64,
+            evaluation_gate_status="pass",
+            decision=ResearchSelectionDecision.SELECTED_FOR_FURTHER_RESEARCH,
+            source=ResearchSelectionSource.HUMAN,
+            reviewer="human:reese",
+            notes="unsafe",
+            created_at=NOW,
+            requires_human_promotion=False,
+        )
+    with pytest.raises(ValueError, match="AI cannot create canonical"):
+        ResearchSelection(
+            selection_id="research-selection-ai",
+            session_id="session-001",
+            task_id="task-001",
+            task_binding_status="bound",
+            candidate_id="candidate-001",
+            critique_id="critique-001",
+            evaluation_id="evaluation-001",
+            evaluation_fingerprint="sha256:" + "a" * 64,
+            evaluation_gate_status="pass",
+            decision=ResearchSelectionDecision.NEEDS_REVISION,
+            source=ResearchSelectionSource.HUMAN,
+            reviewer="human:reese",
+            notes="unsafe",
+            created_at=NOW,
+            ai_generated=True,
+        )
+    with pytest.raises(ValueError, match="cannot change execution authority"):
+        ResearchSelection(
+            selection_id="research-selection-authority",
+            session_id="session-001",
+            task_id="task-001",
+            task_binding_status="bound",
+            candidate_id="candidate-001",
+            critique_id="critique-001",
+            evaluation_id="evaluation-001",
+            evaluation_fingerprint="sha256:" + "a" * 64,
+            evaluation_gate_status="pass",
+            decision=ResearchSelectionDecision.REJECTED,
+            source=ResearchSelectionSource.HUMAN,
+            reviewer="human:reese",
+            notes="unsafe",
+            created_at=NOW,
+            authority_effect="expand",
+        )
 
 
 @pytest.mark.unit

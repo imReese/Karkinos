@@ -36,6 +36,11 @@ from server.ai_runtime.strategy_research import (
 from server.ai_runtime.strategy_research_privacy import (
     NORMALIZED_RESEARCH_NOTIONAL,
 )
+from server.ai_runtime.strategy_research_support import (
+    build_human_research_selection,
+    build_research_evaluation_bundle,
+    strategy_research_json_object,
+)
 from server.composition.ai_application_services import (
     build_shadow_research_read_service,
     build_shadow_research_write_service,
@@ -340,10 +345,33 @@ def create_router() -> APIRouter:
                 confirmation=payload.confirmation,
                 created_at=_utc_now(),
             )
+            backtest = store.get_backtest(str(critique["backtest_run_id"]))
+            result_id = backtest.get("canonical_backtest_result_id")
+            if backtest.get("status") != "completed" or not result_id:
+                raise StrategyResearchRejected(
+                    "human final review requires completed deterministic evaluation"
+                )
+            persisted = await state.db.get_backtest_result(int(result_id))
+            if not isinstance(persisted, dict):
+                raise StrategyResearchRejected(
+                    "human final review evaluation source missing"
+                )
+            evaluation = build_research_evaluation_bundle(
+                backtest_result_id=int(result_id),
+                persisted_row=persisted,
+                metrics=strategy_research_json_object(persisted.get("metrics_json")),
+            )
+            research_selection = build_human_research_selection(
+                review=review,
+                session=session,
+                critique=critique,
+                evaluation=evaluation,
+            )
             return JSONResponse(
                 status_code=201,
                 content={
                     **review,
+                    "research_selection": research_selection.to_dict(),
                     "non_authoritative": True,
                     "non_executable": True,
                     "requires_human_review": False,

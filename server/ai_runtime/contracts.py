@@ -75,6 +75,17 @@ class ResearchClaimSupportStatus(StrEnum):
     UNRESOLVED = "unresolved"
 
 
+class ResearchSelectionDecision(StrEnum):
+    SELECTED_FOR_FURTHER_RESEARCH = "selected_for_further_research"
+    NEEDS_REVISION = "needs_revision"
+    REJECTED = "rejected"
+
+
+class ResearchSelectionSource(StrEnum):
+    HUMAN = "human"
+    DETERMINISTIC_RULE = "deterministic_rule"
+
+
 class ArtifactKind(StrEnum):
     CLAIM = "claim"
     DEBATE = "debate"
@@ -362,6 +373,10 @@ class ResearchEvaluationBundle:
         if self.authority_effect != "none":
             raise ValueError("research evaluation cannot change execution authority")
 
+    @property
+    def fingerprint(self) -> str:
+        return content_fingerprint(self.to_dict())
+
     def to_dict(self) -> JsonObject:
         return {
             "evaluation_id": self.evaluation_id,
@@ -382,6 +397,88 @@ class ResearchEvaluationBundle:
             "missing_evidence": list(self.missing_evidence),
             "persisted_source_only": self.persisted_source_only,
             "deterministic": self.deterministic,
+            "ai_generated": self.ai_generated,
+            "authority_effect": self.authority_effect,
+            "schema_version": self.schema_version,
+        }
+
+
+@dataclass(frozen=True)
+class ResearchSelection:
+    selection_id: str
+    session_id: str
+    task_id: str | None
+    task_binding_status: str
+    candidate_id: str
+    critique_id: str
+    evaluation_id: str
+    evaluation_fingerprint: str
+    evaluation_gate_status: str
+    decision: ResearchSelectionDecision
+    source: ResearchSelectionSource
+    reviewer: str | None
+    notes: str
+    created_at: str
+    requires_human_promotion: bool = True
+    ai_generated: bool = False
+    authority_effect: str = "none"
+    schema_version: str = "karkinos.ai.research_selection.v1"
+
+    def __post_init__(self) -> None:
+        for name in (
+            "selection_id",
+            "session_id",
+            "task_binding_status",
+            "candidate_id",
+            "critique_id",
+            "evaluation_id",
+            "evaluation_fingerprint",
+            "evaluation_gate_status",
+            "notes",
+            "created_at",
+            "schema_version",
+        ):
+            _require_text(str(getattr(self, name)), name)
+        if self.task_id is not None:
+            _require_text(self.task_id, "task_id")
+        if self.task_binding_status not in {"bound", "legacy_unbound"}:
+            raise ValueError("task_binding_status invalid")
+        if (self.task_id is None) != (self.task_binding_status == "legacy_unbound"):
+            raise ValueError("task binding status does not match task id")
+        if self.source == ResearchSelectionSource.HUMAN:
+            if self.reviewer is None:
+                raise ValueError("human research selection requires reviewer")
+            _require_text(self.reviewer, "reviewer")
+        elif self.reviewer is not None:
+            raise ValueError("deterministic research selection cannot claim reviewer")
+        if not self.requires_human_promotion:
+            raise ValueError("research selection cannot bypass human promotion")
+        if self.ai_generated:
+            raise ValueError("AI cannot create canonical research selection")
+        if self.authority_effect != "none":
+            raise ValueError("research selection cannot change execution authority")
+
+    @property
+    def fingerprint(self) -> str:
+        return content_fingerprint(self.to_dict())
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "selection_id": self.selection_id,
+            "session_id": self.session_id,
+            "task_id": self.task_id,
+            "task_binding_status": self.task_binding_status,
+            "candidate_id": self.candidate_id,
+            "critique_id": self.critique_id,
+            "evaluation_id": self.evaluation_id,
+            "evaluation_fingerprint": self.evaluation_fingerprint,
+            "evaluation_gate_status": self.evaluation_gate_status,
+            "decision": self.decision.value,
+            "source": self.source.value,
+            "reviewer": self.reviewer,
+            "notes": self.notes,
+            "created_at": self.created_at,
+            "requires_human_promotion": self.requires_human_promotion,
             "ai_generated": self.ai_generated,
             "authority_effect": self.authority_effect,
             "schema_version": self.schema_version,
