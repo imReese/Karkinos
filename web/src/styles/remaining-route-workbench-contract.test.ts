@@ -316,6 +316,10 @@ describe('remaining route workbench contract', () => {
     expect(OPERATIONS).toContain('data-testid="operations-health-overview"');
     expect(OPERATIONS).toContain('className="app-operations-health-strip"');
     expect(OPERATIONS).toContain('xl:col-span-2');
+    expect(OPERATIONS).toContain('app-operations-register-density');
+    expect(OPERATIONS).toContain('app-operations-subsystem-register-table');
+    expect(OPERATIONS).toContain('[&>li]:px-2 [&>li]:py-2');
+    expect(OPERATIONS).toContain('[&_th]:px-2 [&_td]:px-2');
     expect(CSS).toMatch(
       /\.app-operations-health-strip\s*{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
     );

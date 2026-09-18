@@ -71,7 +71,7 @@ describe('trading workbench contract', () => {
     expect(tradingPage).toContain('xl:max-w-[440px]');
     expect(tradingPage).toContain('group-open:grid sm:grid-cols-2');
     expect(tradingPage).not.toContain('sm:hidden [&::-webkit-details-marker]');
-    expect(tradingPage).toContain('app-workbench-section');
+    expect(tradingPage).not.toContain('app-workbench-section');
     expect(tradingPage).toContain('EvidenceState');
     expect(tradingPage).not.toContain('<FilterBar');
     expect(tradingPage).not.toContain('app-panel');
@@ -121,6 +121,8 @@ describe('trading workbench contract', () => {
     expect(orderQueue).toContain('grid grid-cols-2');
     expect(orderQueue).toContain('md:table-row');
     expect(orderQueue).toContain('md:hidden');
+    expect(orderQueue).toContain('md:px-3 md:py-3');
+    expect(orderQueue).not.toContain('md:px-3 md:py-4');
     expect(orderQueue).not.toContain('className="min-w-[1100px]');
     expect(orderQueue).toContain('onClick={() => void onConfirm()}');
     expect(orderQueue).toContain('onClick={() => void onReject()}');

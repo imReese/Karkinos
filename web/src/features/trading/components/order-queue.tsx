@@ -90,13 +90,13 @@ export function OrderQueue({
       <table className="block w-full text-left text-sm md:table md:min-w-[1100px] md:table-fixed">
         <thead className="hidden md:table-header-group">
           <tr className="app-kicker app-type-overline border-b border-[var(--app-divider)]">
-            <th className="w-[150px] px-3 py-3">{labels.symbol}</th>
-            <th className="w-[80px] px-3 py-3">{labels.side}</th>
-            <th className="w-[90px] px-3 py-3 text-right">{labels.quantity}</th>
-            <th className="w-[100px] px-3 py-3 text-right">{labels.price}</th>
-            <th className="w-[120px] px-3 py-3">{pageLabels.statusFilter}</th>
-            <th className="w-[220px] px-3 py-3">{labels.riskHint}</th>
-            <th className="w-[340px] px-3 py-3">{labels.actions}</th>
+            <th className="w-[150px] px-3 py-2">{labels.symbol}</th>
+            <th className="w-[80px] px-3 py-2">{labels.side}</th>
+            <th className="w-[90px] px-3 py-2 text-right">{labels.quantity}</th>
+            <th className="w-[100px] px-3 py-2 text-right">{labels.price}</th>
+            <th className="w-[120px] px-3 py-2">{pageLabels.statusFilter}</th>
+            <th className="w-[220px] px-3 py-2">{labels.riskHint}</th>
+            <th className="w-[340px] px-3 py-2">{labels.actions}</th>
           </tr>
         </thead>
         <tbody className="block md:table-row-group">
@@ -160,10 +160,10 @@ function OrderRow({
 
   return (
     <tr
-      className="grid grid-cols-2 gap-x-4 border-b border-[var(--app-divider)] px-1 py-3 align-top transition-colors hover:bg-[var(--app-surface-raised)] md:table-row md:px-0 md:py-0"
+      className="grid grid-cols-2 gap-x-4 border-b border-[var(--app-divider)] px-1 py-2.5 align-top transition-colors hover:bg-[var(--app-surface-raised)] md:table-row md:px-0 md:py-0"
       data-testid={`trading-order-row-${order.order_id}`}
     >
-      <td className="col-span-2 block py-2 md:table-cell md:px-3 md:py-4">
+      <td className="col-span-2 block py-2 md:table-cell md:px-3 md:py-3">
         <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.symbol}
         </span>
@@ -172,31 +172,31 @@ function OrderRow({
           {formatTimestamp(order.timestamp)}
         </div>
       </td>
-      <td className="block py-2 md:table-cell md:px-3 md:py-4">
+      <td className="block py-2 md:table-cell md:px-3 md:py-3">
         <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.side}
         </span>
         <SideBadge side={order.side} />
       </td>
-      <td className="block py-2 text-right tabular-nums md:table-cell md:px-3 md:py-4">
+      <td className="block py-2 text-right tabular-nums md:table-cell md:px-3 md:py-3">
         <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.quantity}
         </span>
         {formatQuantity(order.quantity)}
       </td>
-      <td className="block py-2 text-left tabular-nums md:table-cell md:px-3 md:py-4 md:text-right">
+      <td className="block py-2 text-left tabular-nums md:table-cell md:px-3 md:py-3 md:text-right">
         <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.price}
         </span>
         {formatPrice(order.price)}
       </td>
-      <td className="block py-2 text-right md:table-cell md:px-3 md:py-4 md:text-left">
+      <td className="block py-2 text-right md:table-cell md:px-3 md:py-3 md:text-left">
         <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {pageLabels.statusFilter}
         </span>
         <StatusBadge status={order.status} />
       </td>
-      <td className="col-span-2 block border-t border-[var(--app-divider)] py-3 md:table-cell md:border-t-0 md:px-3 md:py-4">
+      <td className="col-span-2 block border-t border-[var(--app-divider)] py-3 md:table-cell md:border-t-0 md:px-3 md:py-3">
         <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.riskHint}
         </span>
@@ -213,7 +213,7 @@ function OrderRow({
           ) : null}
         </div>
       </td>
-      <td className="col-span-2 block pb-2 md:table-cell md:px-3 md:py-4">
+      <td className="col-span-2 block pb-2 md:table-cell md:px-3 md:py-3">
         {isPending ? (
           <ControlledActionZone
             tone="info"
@@ -322,7 +322,7 @@ export function AuditRow({
   const publicNote =
     formatPublicOperationalNote(order.note, locale) ?? labels.noPublicAuditNote;
   return (
-    <div className="grid gap-2 px-1 py-3 text-sm sm:grid-cols-[140px_90px_minmax(0,1fr)_160px] sm:items-center">
+    <div className="grid gap-2 px-1 py-2.5 text-sm sm:grid-cols-[140px_90px_minmax(0,1fr)_160px] sm:items-center">
       <div className="font-semibold">{displayLabel}</div>
       <SideBadge side={order.side} />
       <div className="app-muted min-w-0 truncate text-xs">{publicNote}</div>

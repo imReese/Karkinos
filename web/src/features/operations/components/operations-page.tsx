@@ -175,7 +175,7 @@ function OperationsCommandGrid({
           ariaLabel={labels.attentionQueue}
           emptyState={labels.attentionEmpty}
           density="compact"
-          className="app-operations-attention-list min-w-0 [&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
+          className="app-operations-attention-list app-operations-register-density min-w-0 [&>li]:px-2 [&>li]:py-2 [&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
           labels={{
             reason: labels.evidenceStatus,
             unblockCondition: labels.resolution,
@@ -323,6 +323,7 @@ function OperationsSubsystemRegister({
         getRowId={(row) => row.id}
         tableTestId="operations-subsystem-table"
         scrollTestId="operations-subsystem-scroll"
+        className="app-operations-subsystem-register-table [&_th]:px-2 [&_td]:px-2"
       />
     </section>
   );
