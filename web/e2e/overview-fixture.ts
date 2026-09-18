@@ -136,6 +136,77 @@ export const overviewCurveFixture = [
   others: 0,
 }));
 
+export const overviewDecisionFixture = {
+  lane: 'daily',
+  decision_date: '2026-09-11',
+  generated_at: '2026-09-11T15:05:00+08:00',
+  decision: 'no_action',
+  requires_manual_confirmation: false,
+  summary: {
+    candidate_count: 0,
+    risk_blocked_count: 0,
+    ready_for_manual_confirmation_count: 0,
+    workflow_tasks: [],
+  },
+  candidates: [],
+  no_action_reasons: [],
+  limitations: [],
+};
+
+export const overviewTradingPlanFixture = {
+  schema_version: 'karkinos.daily_trading_plan.v1',
+  plan_date: '2026-09-11',
+  generated_at: '2026-09-11T15:05:00+08:00',
+  source_decision: 'no_action',
+  conclusion_status: 'no_manual_action',
+  primary_target: 'decision',
+  candidate_pool_count: 0,
+  manual_ready_count: 0,
+  paper_shadow_ready_count: 0,
+  order_intent_count: 0,
+  blocked_count: 0,
+  blocker_summary: [],
+  available_cash: 22500,
+  total_equity: 100500,
+  default_execution_mode: 'manual_confirmation',
+  broker_bridge_status: 'disabled',
+  order_intents: [],
+  blockers: [],
+  account_action_recommendation: {
+    schema_version: 'karkinos.decision.account_action_recommendation.v1',
+    decision_date: '2026-09-11',
+    status: 'no_action',
+    reason_codes: ['promoted_strategy_scan_completed_without_signal'],
+    source_action_task_ids: [],
+    actions: [],
+    promoted_scan: {
+      run_id: 'fixture-scan',
+      status: 'completed_no_signal',
+      input_fingerprint: 'a'.repeat(64),
+      output_fingerprint: 'b'.repeat(64),
+      selected_signal_count: 0,
+    },
+    account_evidence: {
+      valuation_snapshot_id: 'overview-sanitized-friday',
+      ledger_cutoff_id: 2,
+      quote_set_fingerprint: 'sanitized-quotes',
+      valuation_status: 'complete',
+      account_truth_status: 'passed',
+      account_qualification_status: 'passed',
+      account_positions_evaluated: true,
+    },
+    read_only: true,
+    manual_confirmation_required: true,
+    creates_oms_order: false,
+    submits_broker_order: false,
+    authorizes_execution: false,
+    changes_capital_authority: false,
+    authority_effect: 'none',
+    evidence_fingerprint: 'c'.repeat(64),
+  },
+  limitations: [],
+};
+
 export async function installOverviewFixture(page: Page) {
   await page.route('**/api/portfolio/state', (route) =>
     route.fulfill({ json: overviewFixture() }),
@@ -145,5 +216,11 @@ export async function installOverviewFixture(page: Page) {
   );
   await page.route('**/api/portfolio/equity-curve/series**', (route) =>
     route.fulfill({ json: overviewCurveFixture }),
+  );
+  await page.route('**/api/decision/today', (route) =>
+    route.fulfill({ json: overviewDecisionFixture }),
+  );
+  await page.route('**/api/decision/trading-plan', (route) =>
+    route.fulfill({ json: overviewTradingPlanFixture }),
   );
 }

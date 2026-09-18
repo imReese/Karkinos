@@ -44,22 +44,38 @@ export function OverviewEquityCurve({
     { maximumFractionDigits: 2 },
   );
   const labels = copy.overview.equityCurve;
-  const chartPoints = toChartPoints(points).map((point) =>
-    (point.valuation_status && point.valuation_status !== 'complete') ||
-    [
-      'estimated',
-      'confirmed_nav_missing',
-      'confirmed_fund_nav_missing_estimate_only',
-      'unknown',
-      'conflict',
-      'conflicting',
-    ].includes(point.quote_status ?? '')
-      ? { ...point, total: null }
-      : point,
-  );
+  const unconfirmedQuoteStatuses = new Set([
+    'estimated',
+    'confirmed_nav_missing',
+    'confirmed_fund_nav_missing_estimate_only',
+    'unknown',
+    'conflict',
+    'conflicting',
+  ]);
+  const chartPoints = toChartPoints(points).map((point) => {
+    const rawTotal =
+      typeof point.total === 'number' && Number.isFinite(point.total)
+        ? point.total
+        : null;
+    const valuationComplete =
+      !point.valuation_status || point.valuation_status === 'complete';
+    const quoteConfirmed = !unconfirmedQuoteStatuses.has(
+      point.quote_status ?? '',
+    );
+    const confirmed = valuationComplete && quoteConfirmed;
+    return {
+      ...point,
+      confirmedTotal: confirmed ? rawTotal : null,
+      indicativeTotal: rawTotal,
+      indicativeOnly: rawTotal != null && !confirmed,
+    };
+  });
   const usablePoints = chartPoints.filter(
-    (point) => typeof point.total === 'number' && Number.isFinite(point.total),
+    (point) =>
+      typeof point.indicativeTotal === 'number' &&
+      Number.isFinite(point.indicativeTotal),
   );
+  const hasIndicativePoints = chartPoints.some((point) => point.indicativeOnly);
   const [chartRef, size] = useChartContainerSize<HTMLDivElement>();
   const ranges: Array<[EquityCurveRange, string]> = [
     ['1m', labels.oneMonth],
@@ -102,7 +118,7 @@ export function OverviewEquityCurve({
         className={
           (usablePoints.length >= 2
             ? 'h-[200px] sm:h-[224px] xl:h-[236px]'
-            : 'h-[72px] sm:h-[84px]') + ' min-w-0'
+            : 'h-[72px] sm:h-[84px]') + ' min-w-0 overflow-hidden'
         }
       >
         {usablePoints.length >= 2 ? (
@@ -143,9 +159,9 @@ export function OverviewEquityCurve({
                   tick={{ fontSize: 11, fill: 'var(--app-text-tertiary)' }}
                 />
                 <Tooltip
-                  formatter={(value) => [
+                  formatter={(value, name) => [
                     formatCurrency(typeof value === 'number' ? value : null),
-                    labels.portfolioTotal,
+                    String(name),
                   ]}
                   labelFormatter={(value) =>
                     formatTimestamp(new Date(Number(value)).toISOString())
@@ -158,9 +174,24 @@ export function OverviewEquityCurve({
                   }}
                   cursor={{ stroke: 'var(--app-accent)', strokeOpacity: 0.3 }}
                 />
+                {hasIndicativePoints ? (
+                  <Line
+                    dataKey="indicativeTotal"
+                    name={labels.indicativePortfolioTotal}
+                    type="linear"
+                    stroke="var(--app-text-tertiary)"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 4"
+                    strokeOpacity={0.8}
+                    dot={false}
+                    activeDot={{ r: 3 }}
+                    isAnimationActive={false}
+                    connectNulls={false}
+                  />
+                ) : null}
                 <Line
-                  dataKey="total"
-                  name={labels.portfolioTotal}
+                  dataKey="confirmedTotal"
+                  name={labels.confirmedPortfolioTotal}
                   type="linear"
                   stroke="var(--app-accent)"
                   strokeWidth={2}
@@ -182,6 +213,14 @@ export function OverviewEquityCurve({
           </div>
         )}
       </div>
+      {hasIndicativePoints ? (
+        <p
+          className="app-type-micro mt-2 text-[var(--app-text-tertiary)]"
+          data-testid="equity-indicative-note"
+        >
+          {labels.indicativeHistoryNote}
+        </p>
+      ) : null}
     </div>
   );
 }

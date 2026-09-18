@@ -53,6 +53,18 @@ export const overviewCopyEn = {
   },
   dashboard: {
     equityPanel: 'Equity curve',
+    valuationCoverage: 'Valuation coverage',
+    valuationCoverageDetail:
+      'Authoritative total equity and P&L require evidence-gated valuation coverage across every current holding.',
+    valuationCoverageAssetClasses: {
+      stock: 'Stocks',
+      fund: 'Funds',
+      etf: 'ETFs',
+      other: 'Other',
+    },
+    valuationCoverageReview: (count: number) =>
+      `${count} holding${count === 1 ? '' : 's'} need evidence`,
+    valuationCoverageComplete: 'Valuation complete for this asset class',
     opsPanel: 'Review queue',
     dailyWorkbench: "Today's to-dos",
     todayToReview: 'Today to review',
@@ -157,10 +169,63 @@ export const overviewCopyEn = {
     strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
     strategyCandidateEmptyDetail:
       'No buy, sell, hold, or rebalance signals have entered the queue.',
-    strategyRecommendationTitle: "Today's strategy recommendation",
+    strategyRecommendationTitle: "Today's decision & actions",
     strategyRecommendationQuantity: 'Qty',
     strategyRecommendationReadOnly:
       'Read-only recommendation · manual confirmation required · no broker order is created or submitted',
+    accountRecommendationUnavailableDetail:
+      'Current evidence is not sufficient to form a reviewable account action for today. Clear the blockers below first.',
+    decisionBlockers: 'Decision blockers',
+    decisionBlocked: 'BLOCKED',
+    decisionEvidence: 'Evidence',
+    decisionTaskLabels: {
+      data_refresh: 'Market data',
+      account_truth: 'Account truth',
+      risk_review: 'Risk review',
+      strategy_evidence: 'Strategy evidence',
+      paper_shadow_review: 'Paper/shadow review',
+      manual_confirmation: 'Manual confirmation',
+    },
+    decisionReasonLabels: {
+      promoted_strategy_scan_missing:
+        'Current promoted-strategy scan is missing',
+      decision_generation_time_not_bound_to_plan_date:
+        'Decision generation is not bound to the plan date',
+      plan_generation_time_not_bound_to_plan_date:
+        'Trading-plan generation is not bound to the plan date',
+      account_truth_promotion_status_not_clear:
+        'Account-truth promotion status is not clear',
+      account_truth_gate_not_pass: 'Account-truth gate did not pass',
+      account_truth_not_fresh: 'Account truth is stale',
+      account_truth_not_bound_to_plan_date:
+        'Account truth is not bound to the current plan date',
+      account_truth_age_exceeds_reviewed_limit:
+        'Account truth exceeds the reviewed age limit',
+      account_truth_too_old_for_decision:
+        "Account truth is too old for today's decision",
+      valuation_snapshot_not_complete:
+        'Portfolio valuation snapshot is incomplete',
+      market_data_not_trusted: 'Market evidence is not trusted',
+      market_quote_too_old_for_decision:
+        "Market quotes are too old for today's decision",
+      account_qualification_not_evaluated:
+        'Account qualification was not evaluated',
+      market_data_not_fully_live: 'Market data is not fully refreshed',
+      account_truth_snapshot_stale: 'Account-truth snapshot is stale',
+      'account_truth_gate_not_pass:degraded':
+        'Account truth is currently degraded',
+    },
+    decisionRequiredActionLabels: {
+      refresh_or_confirm_market_data:
+        'Refresh or confirm current market evidence',
+      account_truth_snapshot_stale: 'Refresh the account-truth snapshot',
+      'account_truth_gate_not_pass:degraded':
+        'Restore account truth to a passable state',
+      restore_complete_portfolio_valuation_snapshot:
+        'Restore a complete portfolio valuation snapshot',
+      review_current_holding_market_evidence:
+        'Review current holding prices and fund NAV evidence',
+    },
     accountRecommendationPaperShadow:
       'Strategy recommendation: paper-shadow evaluation',
     accountRecommendationPaperShadowDetail:
@@ -327,6 +392,10 @@ export const overviewCopyEn = {
     unconfirmedCategoryDailyChange: (label: string) =>
       `${label} change needs confirmation`,
     portfolioTotal: 'Portfolio total',
+    confirmedPortfolioTotal: 'Confirmed valuation',
+    indicativePortfolioTotal: 'Indicative valuation',
+    indicativeHistoryNote:
+      'The dashed line shows historical values that exist but did not pass the complete valuation gate. Only the solid line is authoritative account valuation.',
     rangeHigh: 'Range high',
     quoteStatus: 'Quote status',
     realtimeUnrealizedPnl: 'Portfolio unrealized P/L',

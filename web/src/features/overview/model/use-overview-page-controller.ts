@@ -5,6 +5,7 @@ import {
   useAccountStateQuery,
   useEquityCurveSeriesQuery,
   useDailyTradingPlanQuery,
+  useTodayDecisionQuery,
   type EquityCurveRange,
 } from '../overview-feature-boundary';
 
@@ -15,11 +16,13 @@ export function useOverviewPageController() {
   const account = useAccountStateQuery();
   const accountReady = Boolean(account.data);
   const equityCurve = useEquityCurveSeriesQuery(equityCurveRange, accountReady);
+  const todayDecision = useTodayDecisionQuery(accountReady);
   const tradingPlan = useDailyTradingPlanQuery(accountReady);
   return {
     copy,
     account,
     equityCurve,
+    todayDecision,
     tradingPlan,
     equityCurveRange,
     setEquityCurveRange,

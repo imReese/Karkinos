@@ -48,6 +48,17 @@ export const overviewCopyZh = {
   },
   dashboard: {
     equityPanel: '资金曲线',
+    valuationCoverage: '估值覆盖',
+    valuationCoverageDetail:
+      '只有覆盖全部当前持仓且通过证据门禁的估值，才会进入权威总资产与盈亏。',
+    valuationCoverageAssetClasses: {
+      stock: '股票',
+      fund: '基金',
+      etf: 'ETF',
+      other: '其他',
+    },
+    valuationCoverageReview: (count: number) => `${count} 个标的待补证据`,
+    valuationCoverageComplete: '该资产类别估值完整',
     opsPanel: '复核队列',
     dailyWorkbench: '今日待办',
     todayToReview: '今天需要处理',
@@ -136,10 +147,50 @@ export const overviewCopyZh = {
     strategyDecisionUnavailable: '策略候选信号暂不可用',
     strategyCandidateEmptyDetail:
       '当前没有买入、卖出、持有或再平衡信号进入队列。',
-    strategyRecommendationTitle: '今日策略建议',
+    strategyRecommendationTitle: '今日决策与操作',
     strategyRecommendationQuantity: '数量',
     strategyRecommendationReadOnly:
       '只读建议 · 需要人工确认 · 不创建或提交券商订单',
+    accountRecommendationUnavailableDetail:
+      '当前证据链尚不足以形成可复核的今日账户操作；先处理下面的阻断项。',
+    decisionBlockers: '决策阻断',
+    decisionBlocked: 'BLOCKED',
+    decisionEvidence: '证据',
+    decisionTaskLabels: {
+      data_refresh: '行情数据',
+      account_truth: '账户事实',
+      risk_review: '风控复核',
+      strategy_evidence: '策略证据',
+      paper_shadow_review: '模拟评估',
+      manual_confirmation: '人工确认',
+    },
+    decisionReasonLabels: {
+      promoted_strategy_scan_missing: '缺少当前晋级策略扫描',
+      decision_generation_time_not_bound_to_plan_date:
+        '决策生成时间未绑定计划日',
+      plan_generation_time_not_bound_to_plan_date:
+        '交易计划生成时间未绑定计划日',
+      account_truth_promotion_status_not_clear: '账户事实晋级状态未通过',
+      account_truth_gate_not_pass: '账户事实门禁未通过',
+      account_truth_not_fresh: '账户事实已过期',
+      account_truth_not_bound_to_plan_date: '账户事实未绑定当前计划日',
+      account_truth_age_exceeds_reviewed_limit: '账户事实超过已复核时效',
+      account_truth_too_old_for_decision: '账户事实过旧，不能用于今日决策',
+      valuation_snapshot_not_complete: '账户估值快照不完整',
+      market_data_not_trusted: '行情证据未达到可信标准',
+      market_quote_too_old_for_decision: '行情过旧，不能用于今日决策',
+      account_qualification_not_evaluated: '账户资格尚未评估',
+      market_data_not_fully_live: '行情未完全刷新到当前交易日',
+      account_truth_snapshot_stale: '账户事实快照已过期',
+      'account_truth_gate_not_pass:degraded': '账户事实当前为降级状态',
+    },
+    decisionRequiredActionLabels: {
+      refresh_or_confirm_market_data: '刷新或确认当前行情证据',
+      account_truth_snapshot_stale: '刷新账户事实快照',
+      'account_truth_gate_not_pass:degraded': '恢复账户事实到可通过状态',
+      restore_complete_portfolio_valuation_snapshot: '恢复完整账户估值快照',
+      review_current_holding_market_evidence: '复核当前持仓行情与基金净值',
+    },
     accountRecommendationPaperShadow: '今日策略建议：进入模拟评估',
     accountRecommendationPaperShadowDetail:
       '仅进入 Paper Shadow 评估，不形成可执行订单。',
@@ -290,6 +341,10 @@ export const overviewCopyZh = {
     categoryDailyChange: (label: string) => `${label}截至此时变化`,
     unconfirmedCategoryDailyChange: (label: string) => `${label}变化待确认`,
     portfolioTotal: '组合总计',
+    confirmedPortfolioTotal: '已确认估值',
+    indicativePortfolioTotal: '指示估值',
+    indicativeHistoryNote:
+      '虚线仅表示已有但未通过完整估值门禁的历史数值；实线才是完整、可作为账户事实使用的估值。',
     rangeHigh: '区间最高',
     quoteStatus: '行情状态',
     realtimeUnrealizedPnl: '组合浮动盈亏',

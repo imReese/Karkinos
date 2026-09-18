@@ -1293,20 +1293,29 @@ test('overview loads one account projection before history without fabricated fi
   await expect(loading).toBeVisible();
   await expect(loading).not.toContainText(/[¥$€£]|\d+[,\.]\d{2}/);
   await expect(page.getByTestId('overview-summary')).toHaveCount(0);
-  expect(requestedPaths).not.toContain('/api/portfolio/equity-curve/series');
+  for (const path of [
+    '/api/portfolio/equity-curve/series',
+    '/api/decision/today',
+    '/api/decision/trading-plan',
+  ]) {
+    expect(requestedPaths).not.toContain(path);
+  }
   releaseAccount();
   await expect(page.getByTestId('overview-total-value')).toContainText(
     '100,500.00',
   );
-  await expect
-    .poll(() => requestedPaths.includes('/api/portfolio/equity-curve/series'))
-    .toBe(true);
+  for (const path of [
+    '/api/portfolio/equity-curve/series',
+    '/api/decision/today',
+    '/api/decision/trading-plan',
+  ]) {
+    await expect.poll(() => requestedPaths.includes(path), path).toBe(true);
+  }
   for (const path of [
     '/api/portfolio/overview',
     '/api/portfolio',
     '/api/portfolio/explainability',
     '/api/operations/today',
-    '/api/decision/today',
   ]) {
     expect(requestedPaths).not.toContain(path);
   }

@@ -99,7 +99,7 @@ test.each([
   { quote_status: 'estimated' },
   { quote_status: 'conflicting' },
 ])(
-  'renders an explicit gap for non-authoritative historical marks: %j',
+  'keeps non-authoritative history visible only on the indicative line: %j',
   (evidence) => {
     const data = [0, 1, 2, 3, 4].map((index) => ({
       ...points[index % 2],
@@ -107,8 +107,11 @@ test.each([
       ...(index === 2 ? evidence : { valuation_status: 'complete' }),
     }));
     const { container } = render(chart(data));
-    const path = container.querySelector('path.recharts-line-curve');
-    expect(path?.getAttribute('d')?.match(/M/g)).toHaveLength(2);
+    const paths = container.querySelectorAll('path.recharts-line-curve');
+    expect(paths).toHaveLength(2);
+    expect(paths[0]?.getAttribute('d')?.match(/M/g)).toHaveLength(1);
+    expect(paths[1]?.getAttribute('d')?.match(/M/g)).toHaveLength(2);
+    expect(screen.getByTestId('equity-indicative-note')).toBeVisible();
   },
 );
 
