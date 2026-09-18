@@ -89,12 +89,17 @@ export function SignalQueuePanel({
   };
 
   return (
-    <section className="app-workbench-section min-w-0 py-4">
+    <section
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
+      data-testid="decision-signal-queue-register"
+    >
       <div className="min-w-0 px-1 sm:px-3">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.signalQueue}</div>
-            <h2 className="app-card-title mt-1.5">{labels.signalQueueTitle}</h2>
+            <h2 className="app-type-section-title mt-1.5 text-[var(--app-text)]">
+              {labels.signalQueueTitle}
+            </h2>
           </div>
           <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
             {labels.signalQueueDetail}

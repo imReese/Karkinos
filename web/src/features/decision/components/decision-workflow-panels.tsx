@@ -135,7 +135,7 @@ export function DecisionWorkflowPanel({
   return (
     <section
       data-testid="decision-workflow-tasks"
-      className="app-workbench-section min-w-0 py-4"
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
     >
       <div className="min-w-0 px-1 sm:px-3">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

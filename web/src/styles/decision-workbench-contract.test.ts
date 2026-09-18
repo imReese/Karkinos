@@ -16,8 +16,9 @@ const DECISION_WORKSPACE = readDecisionModule(
   'use-decision-cockpit-workspace.ts',
 );
 const SIGNAL_QUEUE = readDecisionModule('decision-signal-queue-panel.tsx');
+const WORKFLOW_TASKS = readDecisionModule('decision-workflow-panels.tsx');
 const DECISION_CORE = [
-  readDecisionModule('decision-workflow-panels.tsx'),
+  WORKFLOW_TASKS,
   SIGNAL_QUEUE,
   readDecisionModule('decision-lane-panels.tsx'),
 ].join('\n');
@@ -37,6 +38,17 @@ describe('decision workbench contract', () => {
     expect(DECISION_CORE).not.toMatch(
       /text-\[var\(--app-(?:success|warning|danger)\)\]/,
     );
+  });
+
+  it('keeps signal and workflow queues on direct register boundaries', () => {
+    expect(SIGNAL_QUEUE).toContain(
+      'data-testid="decision-signal-queue-register"',
+    );
+    expect(SIGNAL_QUEUE).toContain('app-type-section-title mt-1.5');
+    expect(SIGNAL_QUEUE).not.toContain('app-workbench-section');
+    expect(WORKFLOW_TASKS).toContain('data-testid="decision-workflow-tasks"');
+    expect(WORKFLOW_TASKS).toContain('border-y border-[var(--app-divider)]');
+    expect(WORKFLOW_TASKS).not.toContain('app-workbench-section');
   });
 
   it('keeps manual order preparation inside the controlled action primitive', () => {
