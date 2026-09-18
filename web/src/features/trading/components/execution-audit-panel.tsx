@@ -102,10 +102,10 @@ export function ExecutionAuditPanel({
 
   return (
     <details
-      className="group app-workbench-section min-w-0"
+      className="group min-w-0 border-y border-[var(--app-divider)]"
       data-testid="trading-execution-audit-disclosure"
     >
-      <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-1 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:px-3 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-1 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:px-3 [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
           <span className="app-product-mark block">
             {labels.executionAudit}
@@ -131,7 +131,7 @@ export function ExecutionAuditPanel({
         </span>
       </summary>
 
-      <div className="min-w-0 border-t border-[var(--app-divider)] px-1 py-4 sm:px-3">
+      <div className="min-w-0 border-t border-[var(--app-divider)] px-1 py-3 sm:px-2">
         <p className="app-muted max-w-3xl break-words text-sm leading-6">
           {labels.executionAuditDetail}
         </p>

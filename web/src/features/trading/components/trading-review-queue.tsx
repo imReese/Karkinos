@@ -52,10 +52,10 @@ export function TradingReviewQueue({
 
   return (
     <section
-      className="app-workbench-section order-1 min-w-0 overflow-hidden"
+      className="order-1 min-w-0 overflow-hidden border-y border-[var(--app-divider)]"
       data-testid="trading-review-queue"
     >
-      <div className="min-w-0 px-1 py-4 sm:px-3">
+      <div className="min-w-0 px-1 py-3 sm:px-2">
         <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.filterTitle}</div>
