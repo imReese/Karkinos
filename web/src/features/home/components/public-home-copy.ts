@@ -20,23 +20,6 @@ export const publicHomeCopy = {
       title: 'Every decision should leave evidence.',
       body: 'Karkinos connects account truth, research, risk, and human review into one auditable path. Evidence moves first; authority stays explicit.',
       explore: 'Explore the workflow',
-      pillars: [
-        {
-          index: '01',
-          title: 'Account Truth',
-          detail: 'Saved locally, no external control plane',
-        },
-        {
-          index: '02',
-          title: 'Point-in-Time',
-          detail: 'Strict event vs visible time boundaries',
-        },
-        {
-          index: '03',
-          title: 'Explicit Authority',
-          detail: 'Default read-only, broker authority explicit',
-        },
-      ],
     },
     evidence: {
       eyebrow: 'Product trace · No account data',
@@ -225,23 +208,6 @@ export const publicHomeCopy = {
       title: '让每一个投资决定，都有证据可回放。',
       body: 'Karkinos 把账户事实、研究、风控与人工复核连成一条可审计路径；证据先行，权限始终显式。',
       explore: '了解能力流程',
-      pillars: [
-        {
-          index: '01',
-          title: '单一事实',
-          detail: '凭据本地落盘，零外部控制面',
-        },
-        {
-          index: '02',
-          title: '点时间时序',
-          detail: '严格区分事件与可用时间，严防未来偏差',
-        },
-        {
-          index: '03',
-          title: '受控显式权限',
-          detail: '默认只读，实盘权限严格隔离',
-        },
-      ],
     },
     evidence: {
       eyebrow: '产品路径 · 不含账户数据',
