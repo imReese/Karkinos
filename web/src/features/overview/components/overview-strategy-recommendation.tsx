@@ -1,5 +1,6 @@
 import { formatPercent } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
+import { SectionHeader } from '../../../shared/ui/workbench';
 import type { DailyTradingPlanResponse } from '../overview-feature-boundary';
 
 type QueryState = {
@@ -73,34 +74,28 @@ export function OverviewStrategyRecommendation({
   return (
     <section
       data-testid="overview-strategy-recommendation"
-      className="min-w-0 border-b border-[var(--app-divider)] py-4"
+      className="min-w-0 border-b border-[var(--app-divider)] py-4 lg:border-b-0"
       aria-label={dashboard.strategyRecommendationTitle}
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-semibold text-[var(--app-text)]">
-          {dashboard.strategyRecommendationTitle}
-        </h2>
-        {plan?.plan_date ? (
-          <span className="text-xs tabular-nums text-[var(--app-text-tertiary)]">
-            {plan.plan_date}
-          </span>
-        ) : null}
-      </div>
+      <SectionHeader
+        title={dashboard.strategyRecommendationTitle}
+        meta={plan?.plan_date}
+      />
 
       {query.isLoading && !plan ? (
-        <p className="mt-2 text-xs text-[var(--app-text-secondary)]">
+        <p className="app-type-compact mt-2 text-[var(--app-text-secondary)]">
           {dashboard.tradingPlanLoading}
         </p>
       ) : query.isError && !plan ? (
-        <p className="mt-2 text-xs leading-5 text-[var(--app-warning-text)]">
+        <p className="app-type-compact mt-2 text-[var(--app-warning-text)]">
           {dashboard.accountRecommendationUnavailable}
         </p>
       ) : plan ? (
         <>
-          <p className="mt-2 text-sm font-medium leading-5 text-[var(--app-text)]">
+          <p className="app-type-body mt-2 font-medium text-[var(--app-text)]">
             {recommendationHeading(plan, copy)}
           </p>
-          <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+          <p className="app-type-compact mt-1 text-[var(--app-text-secondary)]">
             {recommendationDetail(plan, copy)}
           </p>
 
@@ -111,7 +106,7 @@ export function OverviewStrategyRecommendation({
                   key={
                     action.action_id ?? `${action.symbol ?? 'action'}-${index}`
                   }
-                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 py-2 text-xs"
+                  className="app-type-compact grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 py-2"
                 >
                   <div className="min-w-0">
                     <span className="font-medium text-[var(--app-text)]">
@@ -143,7 +138,7 @@ export function OverviewStrategyRecommendation({
           </p>
           <a
             href="/decision"
-            className="mt-2 inline-block text-xs text-[var(--app-accent)] hover:underline"
+            className="app-type-compact mt-2 inline-block font-semibold text-[var(--app-accent)] hover:underline"
           >
             {dashboard.viewDecision}
           </a>

@@ -128,14 +128,14 @@ export function DataTable<TData extends RowData>({
                     onClick={handleClick}
                     onKeyDown={handleKeyDown}
                     className={cn(
-                      'h-10 text-[var(--app-text)] hover:bg-[var(--app-accent-bg)]',
+                      'h-9 text-[var(--app-text)] hover:bg-[var(--app-accent-bg)]',
                       href && 'cursor-pointer',
                     )}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
-                        className="whitespace-nowrap px-3 py-2 align-middle"
+                        className="whitespace-nowrap px-3 py-1.5 align-middle"
                       >
                         {flexRender(
                           cell.column.columnDef.cell,

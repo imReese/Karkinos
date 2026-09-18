@@ -1,5 +1,6 @@
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { SectionHeader, ExceptionBoundary } from '../../../shared/ui/workbench';
 import {
   operationsNextActionLabel,
   operationsSubsystemLabel,
@@ -16,54 +17,66 @@ export function DashboardTodayQueue({
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = overviewPresentation[locale];
+  const count =
+    overview.attention_status === 'available'
+      ? overview.user_attention.length
+      : null;
+
   return (
     <section
       data-testid="overview-today-queue"
       aria-label={labels.attention}
-      className="min-w-0 border-t border-[var(--app-divider)] py-4"
+      className="min-w-0 border-b border-[var(--app-divider)] py-3.5"
     >
-      <h2 className="flex items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)]">
-        {labels.attention}
-        <span className="font-medium tabular-nums text-[var(--app-text-secondary)]">
-          {overview.attention_status === 'available'
-            ? overview.user_attention.length
-            : '--'}
-        </span>
-      </h2>
+      <SectionHeader
+        title={labels.attention}
+        meta={count == null ? '--' : count}
+      />
+
       {overview.attention_status !== 'available' ? (
-        <div className="mt-3 text-xs leading-5 text-[var(--app-warning-text)]">
-          <p>{labels.attentionUnavailable}</p>
-          <a
-            href="/operations"
-            className="text-[var(--app-accent)] hover:underline"
-          >
-            {labels.attentionUnavailableDetail}
-          </a>
-        </div>
+        <ExceptionBoundary
+          tone="warning"
+          title={labels.attentionUnavailable}
+          description={labels.attentionUnavailableDetail}
+          className="mt-3"
+          actions={
+            <a
+              href="/operations"
+              className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+            >
+              {copy.overview.dashboard.viewOperations}
+            </a>
+          }
+        />
       ) : null}
-      {overview.user_attention.length === 0 ? (
-        overview.attention_status === 'available' ? (
-          <p className="mt-3 text-sm leading-6 text-[var(--app-text-secondary)]">
-            {copy.overview.dashboard.noActionItems}
-          </p>
-        ) : null
-      ) : (
-        <ul className="mt-2 divide-y divide-[var(--app-divider)]">
+
+      {overview.attention_status === 'available' &&
+      overview.user_attention.length === 0 ? (
+        <p className="app-type-compact mt-2 text-[var(--app-text-secondary)]">
+          {copy.overview.dashboard.noActionItems}
+        </p>
+      ) : null}
+
+      {overview.user_attention.length > 0 ? (
+        <ul className="mt-2 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
           {overview.user_attention.map((item) => (
-            <li key={item.task_fingerprint} className="py-3">
-              <div className="text-xs text-[var(--app-text-tertiary)]">
+            <li
+              key={item.task_fingerprint}
+              className="grid min-w-0 gap-1 py-2.5 sm:grid-cols-[minmax(9rem,0.45fr)_minmax(0,1fr)] sm:items-baseline sm:gap-4"
+            >
+              <div className="app-type-label text-[var(--app-text-tertiary)]">
                 {operationsSubsystemLabel(item.subsystem_id, locale)}
               </div>
               <a
                 href={operationsTargetHref(item.target)}
-                className="mt-1 block text-sm leading-6 font-medium text-[var(--app-accent)] hover:underline"
+                className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
               >
                 {operationsNextActionLabel(item.next_action, locale)}
               </a>
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </section>
   );
 }

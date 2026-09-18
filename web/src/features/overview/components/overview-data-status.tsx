@@ -5,6 +5,12 @@ import {
 } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import {
+  Disclosure,
+  Register,
+  RegisterRow,
+  SectionHeader,
+} from '../../../shared/ui/workbench';
 import type { AccountStateResponse } from '../overview-feature-boundary';
 import {
   overviewPresentation,
@@ -43,7 +49,7 @@ export function OverviewDataStatus({ state }: { state: AccountStateResponse }) {
     <div
       data-testid="overview-data-status"
       role="status"
-      className="flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 border-y border-[var(--app-divider)] py-2 text-xs leading-5 text-[var(--app-text-secondary)]"
+      className="app-type-label flex min-h-9 flex-wrap items-center gap-x-4 gap-y-1 border-b border-[var(--app-divider)] py-2 text-[var(--app-text-secondary)]"
     >
       <span>
         {labels.asOf} {shortDate(overview.pricing_as_of)}
@@ -112,22 +118,12 @@ export function OverviewMarketStatus({
       data-testid="overview-market-status"
       aria-label={labels.marketAndData}
     >
-      <h2 className="text-sm font-semibold text-[var(--app-text)]">
-        {labels.marketAndData}
-      </h2>
-      <dl className="mt-2 divide-y divide-[var(--app-divider)] text-xs">
+      <SectionHeader title={labels.marketAndData} className="mb-2" />
+      <Register ariaLabel={labels.marketAndData}>
         {rows.map(([label, value]) => (
-          <div
-            key={label}
-            className="flex items-center justify-between gap-4 py-2.5"
-          >
-            <dt className="text-[var(--app-text-secondary)]">{label}</dt>
-            <dd className="text-right font-medium tabular-nums text-[var(--app-text)]">
-              {value ?? '--'}
-            </dd>
-          </div>
+          <RegisterRow key={label} label={label} value={value ?? '--'} />
         ))}
-      </dl>
+      </Register>
     </section>
   );
 }
@@ -174,85 +170,69 @@ export function OverviewDataDetails({
     [labels.quoteFingerprint, snapshot.quote_set_fingerprint],
     [labels.policy, snapshot.valuation_policy],
   ];
+  const blockers = [
+    ...new Set([
+      ...overview.refresh_health.blockers,
+      ...overview.market_session.blockers,
+      ...(snapshot.valuation_blockers ?? []),
+    ]),
+  ];
+
   return (
-    <div className="border-t border-[var(--app-divider)]">
-      <details className="group py-4" data-testid="overview-data-details">
-        <summary className="cursor-pointer text-sm font-semibold text-[var(--app-text)]">
-          {labels.details}
-        </summary>
-        <dl className="mt-4 space-y-3 text-xs">
+    <div className="min-w-0 border-b border-[var(--app-divider)]">
+      <Disclosure title={labels.details} testId="overview-data-details">
+        <Register ariaLabel={labels.details}>
           {rows.map(([label, value]) => (
-            <div key={label} className="min-w-0">
-              <dt className="text-[var(--app-text-tertiary)]">{label}</dt>
-              <dd className="mt-1 break-all tabular-nums text-[var(--app-text-secondary)]">
-                {value ?? '--'}
-              </dd>
-            </div>
+            <RegisterRow
+              key={String(label)}
+              label={label}
+              value={value ?? '--'}
+              mono={String(label) === labels.snapshot}
+            />
           ))}
-        </dl>
+        </Register>
         {refreshFailed ? (
-          <p className="mt-3 text-xs leading-5 text-[var(--app-warning-text)]">
+          <p className="app-type-compact mt-3 text-[var(--app-warning-text)]">
             {labels.stateRefreshFailed}
           </p>
         ) : null}
-        {[
-          ...overview.refresh_health.blockers,
-          ...overview.market_session.blockers,
-          ...(snapshot.valuation_blockers ?? []),
-        ].length > 0 ? (
-          <ul className="mt-3 space-y-1 break-words text-xs text-[var(--app-text-secondary)]">
-            {[
-              ...new Set([
-                ...overview.refresh_health.blockers,
-                ...overview.market_session.blockers,
-                ...(snapshot.valuation_blockers ?? []),
-              ]),
-            ].map((blocker) => (
+        {blockers.length > 0 ? (
+          <ul className="app-type-compact mt-3 space-y-1 text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+            {blockers.map((blocker) => (
               <li key={blocker}>{blocker}</li>
             ))}
           </ul>
         ) : null}
         <a
-          className="mt-4 inline-block text-xs text-[var(--app-accent)] hover:underline"
+          className="app-type-compact mt-3 inline-block font-semibold text-[var(--app-accent)] hover:underline"
           href="/market"
         >
           {copy.overview.dashboard.viewData}
         </a>
-      </details>
-      <details className="border-t border-[var(--app-divider)] py-4">
-        <summary className="cursor-pointer text-sm font-semibold text-[var(--app-text)]">
-          {labels.financialDetails}
-        </summary>
-        <dl className="mt-3 space-y-2 text-xs">
-          {[
-            [
-              copy.overview.cards.unrealizedPnl,
-              formatCurrency(summary.unrealized_pnl),
-            ],
-            [
-              copy.portfolio.table.realized,
-              formatCurrency(summary.realized_pnl),
-            ],
-            [
-              copy.overview.cards.netDeposits,
-              formatCurrency(summary.total_deposits),
-            ],
-            ...(summary.current_drawdown == null
-              ? []
-              : [
-                  [
-                    copy.overview.cards.currentDrawdown,
-                    formatPercent(summary.current_drawdown),
-                  ],
-                ]),
-          ].map(([label, value]) => (
-            <div className="flex justify-between gap-3" key={label}>
-              <dt className="text-[var(--app-text-secondary)]">{label}</dt>
-              <dd className="tabular-nums text-[var(--app-text)]">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
+      </Disclosure>
+
+      <Disclosure title={labels.financialDetails}>
+        <Register ariaLabel={labels.financialDetails}>
+          <RegisterRow
+            label={copy.overview.cards.unrealizedPnl}
+            value={formatCurrency(summary.unrealized_pnl)}
+          />
+          <RegisterRow
+            label={copy.overview.breakdown.realizedPnl}
+            value={formatCurrency(summary.realized_pnl)}
+          />
+          <RegisterRow
+            label={copy.overview.cards.netDeposits}
+            value={formatCurrency(summary.total_deposits)}
+          />
+          {summary.current_drawdown == null ? null : (
+            <RegisterRow
+              label={copy.overview.cards.currentDrawdown}
+              value={formatPercent(summary.current_drawdown)}
+            />
+          )}
+        </Register>
+      </Disclosure>
     </div>
   );
 }

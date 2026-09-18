@@ -46,7 +46,7 @@ export function WorkspaceHeader({
     <header
       data-workbench-primitive="workspace-header"
       className={cn(
-        'app-workspace-header flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] pb-4 sm:flex-row sm:items-start sm:justify-between',
+        'app-workspace-header flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] sm:flex-row sm:items-start sm:justify-between',
         className,
       )}
     >
@@ -118,7 +118,7 @@ export function MetricStrip({
             {item.value}
           </dd>
           {item.detail ? (
-            <div className="app-type-label mt-0.5 truncate text-[var(--app-text-tertiary)]">
+            <div className="app-type-label mt-0.5 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
               {item.detail}
             </div>
           ) : null}

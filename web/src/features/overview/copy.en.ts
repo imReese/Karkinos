@@ -34,6 +34,7 @@ export const overviewCopyEn = {
     exposureUnavailable:
       'Portfolio exposure is unavailable because total equity is zero or missing.',
     exposurePartial: 'Partial valuation',
+    cumulativePnl: 'Cumulative P&L',
     cumulativeReturn: 'Cumulative Return',
     netDeposits: 'Net Deposits',
     unrealizedPnl: 'Unrealized PnL',

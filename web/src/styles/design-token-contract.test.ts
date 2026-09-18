@@ -91,6 +91,11 @@ const REQUIRED_GEOMETRY_TOKENS = [
   '--app-control-height',
   '--app-row-height-dense',
   '--app-touch-target',
+  '--app-space-2',
+  '--app-space-3',
+  '--app-space-4',
+  '--app-space-6',
+  '--app-space-8',
   '--app-section-gap',
 ] as const;
 
@@ -275,8 +280,14 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-radius-surface')).toBe('8px');
     expect(MOCHA.get('--app-radius-overlay')).toBe('12px');
     expect(MOCHA.get('--app-control-height')).toBe('32px');
-    expect(MOCHA.get('--app-row-height-dense')).toBe('40px');
+    expect(MOCHA.get('--app-row-height-dense')).toBe('36px');
     expect(MOCHA.get('--app-touch-target')).toBe('44px');
+    expect(MOCHA.get('--app-space-2')).toBe('8px');
+    expect(MOCHA.get('--app-space-3')).toBe('12px');
+    expect(MOCHA.get('--app-space-4')).toBe('16px');
+    expect(MOCHA.get('--app-space-6')).toBe('24px');
+    expect(MOCHA.get('--app-space-8')).toBe('32px');
+    expect(MOCHA.get('--app-section-gap')).toBe('var(--app-space-6)');
   });
 
   it('keeps compact actions and native selects on deterministic geometry', () => {
@@ -305,23 +316,23 @@ describe('application design token contract', () => {
     ]) {
       expect(MOCHA.has(token), token).toBe(true);
     }
-    expect(MOCHA.get('--app-font-size-page-title-mobile')).toBe('24px');
-    expect(MOCHA.get('--app-font-size-page-title')).toBe('28px');
-    expect(MOCHA.get('--app-font-size-section-title')).toBe('18px');
-    expect(MOCHA.get('--app-font-size-metric')).toBe('18px');
-    expect(MOCHA.get('--app-font-size-primary-metric-mobile')).toBe('32px');
-    expect(MOCHA.get('--app-font-size-primary-metric')).toBe('34px');
-    expect(MOCHA.get('--app-font-size-primary-metric-wide')).toBe('36px');
-    expect(MOCHA.get('--app-font-size-subsection-title')).toBe('15px');
-    expect(MOCHA.get('--app-font-size-body')).toBe('14px');
-    expect(MOCHA.get('--app-font-size-compact')).toBe('13px');
-    expect(MOCHA.get('--app-font-size-label')).toBe('12px');
+    expect(MOCHA.get('--app-font-size-page-title-mobile')).toBe('20px');
+    expect(MOCHA.get('--app-font-size-page-title')).toBe('22px');
+    expect(MOCHA.get('--app-font-size-section-title')).toBe('16px');
+    expect(MOCHA.get('--app-font-size-metric')).toBe('16px');
+    expect(MOCHA.get('--app-font-size-primary-metric-mobile')).toBe('28px');
+    expect(MOCHA.get('--app-font-size-primary-metric')).toBe('30px');
+    expect(MOCHA.get('--app-font-size-primary-metric-wide')).toBe('32px');
+    expect(MOCHA.get('--app-font-size-subsection-title')).toBe('14px');
+    expect(MOCHA.get('--app-font-size-body')).toBe('13px');
+    expect(MOCHA.get('--app-font-size-compact')).toBe('12px');
+    expect(MOCHA.get('--app-font-size-label')).toBe('11px');
     expect(MOCHA.get('--app-font-size-micro')).toBe('11px');
-    expect(MOCHA.get('--app-line-height-body')).toBe('22px');
-    expect(MOCHA.get('--app-line-height-metric')).toBe('24px');
-    expect(MOCHA.get('--app-line-height-primary-metric')).toBe('36px');
-    expect(MOCHA.get('--app-line-height-compact')).toBe('20px');
-    expect(MOCHA.get('--app-line-height-label')).toBe('18px');
+    expect(MOCHA.get('--app-line-height-body')).toBe('20px');
+    expect(MOCHA.get('--app-line-height-metric')).toBe('22px');
+    expect(MOCHA.get('--app-line-height-primary-metric')).toBe('32px');
+    expect(MOCHA.get('--app-line-height-compact')).toBe('18px');
+    expect(MOCHA.get('--app-line-height-label')).toBe('16px');
     expect(MOCHA.get('--app-line-height-micro')).toBe('16px');
     expect(MOCHA.get('--app-letter-spacing-product')).toBe('0.18em');
     expect(MOCHA.get('--app-letter-spacing-kicker')).toBe('0.14em');
@@ -329,8 +340,8 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-letter-spacing-label')).toBe('0.01em');
     expect(MOCHA.get('--app-letter-spacing-metric')).toBe('-0.015em');
     expect(MOCHA.get('--app-letter-spacing-primary-metric')).toBe('-0.045em');
-    expect(MOCHA.get('--app-motion-fast')).toBe('120ms');
-    expect(MOCHA.get('--app-motion-standard')).toBe('180ms');
+    expect(MOCHA.get('--app-motion-fast')).toBe('100ms');
+    expect(MOCHA.get('--app-motion-standard')).toBe('120ms');
     expect(MOCHA.get('--app-ease-standard')).toBe('cubic-bezier(0.2, 0, 0, 1)');
   });
 
