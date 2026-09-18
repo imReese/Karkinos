@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -117,15 +118,26 @@ def insert_event_sync(
     )
 
 
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_value(item) for item in value]
+    return value
+
+
 def serialize_event_payload_json(value: dict[str, Any] | str | None) -> str:
-    """Serialize event payloads with Decimal-safe stable JSON bytes."""
+    """Serialize event payloads as stable, standards-compliant JSON."""
     if value is None:
         return "{}"
     if isinstance(value, str):
         return value
     return json.dumps(
-        value,
+        _json_safe_value(value),
         ensure_ascii=False,
         separators=(",", ":"),
         default=str,
+        allow_nan=False,
     )

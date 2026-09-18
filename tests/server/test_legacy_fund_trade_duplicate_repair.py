@@ -690,7 +690,11 @@ def test_stock_pairs_and_ambiguous_pairs_fail_closed(tmp_path) -> None:
     ambiguous_path = tmp_path / "ambiguous.db"
     _fixture_database(ambiguous_path, group_sizes=(1,))
     with sqlite3.connect(ambiguous_path) as conn:
-        _simulate_offline_guard_bypass(conn, "guard_ledger_entries_exact_insert")
+        _simulate_offline_guard_bypass(
+            conn,
+            "guard_ledger_entries_exact_insert",
+            "guard_ledger_entries_canonical_decimal_insert",
+        )
         row = conn.execute(
             "SELECT * FROM ledger_entries WHERE source = 'manual' LIMIT 1"
         ).fetchone()
