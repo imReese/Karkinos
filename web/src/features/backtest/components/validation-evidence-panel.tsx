@@ -114,7 +114,7 @@ export function ValidationEvidencePanel({
   return (
     <section
       data-backtest-report-section="validation-evidence"
-      className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+      className="min-w-0 border-t border-[var(--app-divider)] pt-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">

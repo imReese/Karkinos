@@ -37,4 +37,20 @@ describe('backtest research workbench contract', () => {
       /rounded-(?:xl|2xl|3xl)[^\n]*bg-\[color-mix\(in_srgb,var\(--app-surface-[01]\)/,
     );
   });
+  it('removes the final workbench section shells from run setup and report evidence', () => {
+    const structuralSurfaces = [
+      source('features/backtest/components/backtest-run-setup-panel.tsx'),
+      source('features/backtest/components/backtest-run-results-panel.tsx'),
+      source(
+        'features/backtest/components/strategy-metadata-snapshot-panel.tsx',
+      ),
+      source('features/backtest/components/validation-evidence-panel.tsx'),
+      source('features/backtest/components/dataset-snapshot-panel.tsx'),
+      source('features/backtest/components/equity-drawdown-chart.tsx'),
+      source('features/backtest/components/fills-table.tsx'),
+    ].join('\n');
+
+    expect(structuralSurfaces).toContain('border-[var(--app-divider)]');
+    expect(structuralSurfaces).not.toContain('app-workbench-section');
+  });
 });

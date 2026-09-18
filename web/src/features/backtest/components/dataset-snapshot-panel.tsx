@@ -63,7 +63,7 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
   return (
     <section
       data-backtest-report-section="dataset-snapshot"
-      className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+      className="min-w-0 border-t border-[var(--app-divider)] pt-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
