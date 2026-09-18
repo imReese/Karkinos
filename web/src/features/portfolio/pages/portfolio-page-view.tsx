@@ -34,7 +34,10 @@ export function PortfolioPageView({
     return <PortfolioPageLoadingView copy={copy} />;
   }
   return (
-    <section className="space-y-4 sm:space-y-5">
+    <section
+      className="app-workbench-route space-y-4 sm:space-y-5"
+      data-workbench-route="portfolio"
+    >
       <WorkspaceHeader
         eyebrow={copy.portfolio.kicker}
         title={copy.portfolio.title}

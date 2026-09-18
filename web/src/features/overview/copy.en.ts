@@ -156,6 +156,14 @@ export const overviewCopyEn = {
     strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
     strategyCandidateEmptyDetail:
       'No buy, sell, hold, or rebalance signals have entered the queue.',
+    strategyRecommendationTitle: "Today's strategy recommendation",
+    strategyRecommendationQuantity: 'Qty',
+    strategyRecommendationReadOnly:
+      'Read-only recommendation · manual confirmation required · no broker order is created or submitted',
+    accountRecommendationPaperShadow:
+      'Strategy recommendation: paper-shadow evaluation',
+    accountRecommendationPaperShadowDetail:
+      'This enters paper-shadow evaluation only and does not create an executable order.',
     accountRecommendationNoAction: 'Account action today: no action',
     accountRecommendationNoActionDetail:
       'The daily promoted-strategy scan completed without an account action signal.',

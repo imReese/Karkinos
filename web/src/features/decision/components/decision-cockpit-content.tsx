@@ -75,7 +75,10 @@ export function DecisionCockpitContent({
     />
   );
   return (
-    <section className="min-w-0 space-y-5 sm:space-y-6">
+    <section
+      className="app-workbench-route min-w-0 space-y-5 sm:space-y-6"
+      data-workbench-route="decision"
+    >
       <WorkspaceHeader
         eyebrow={labels.kicker}
         title={labels.title}
@@ -285,7 +288,7 @@ export function DecisionCockpitContent({
       ) : (
         <div
           data-testid="decision-summary-grid"
-          className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4"
+          className="min-w-0 border-y border-[var(--app-divider)]"
         >
           {lanes.map((lane) => (
             <LaneStatusTile key={lane.lane} lane={lane} />

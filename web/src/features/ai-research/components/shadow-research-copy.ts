@@ -85,6 +85,10 @@ export const SHADOW_RESEARCH_COPY = {
     running: 'Checking evidence…',
     noCandidates:
       'No completed automated candidate is in the research pool yet.',
+    currentCandidates: 'Current research candidates',
+    candidateHistory: 'Historical research candidates',
+    candidateHistoryDetail: (count: number) =>
+      `${count} older candidates remain available for audit and replay.`,
     baseline: 'Current baseline',
     candidate: 'New candidate',
     return: 'Total return',
@@ -195,6 +199,10 @@ export const SHADOW_RESEARCH_COPY = {
     run: '立即检查并运行',
     running: '正在检查证据…',
     noCandidates: '研究池里还没有完成的自动候选。',
+    currentCandidates: '当前研究候选',
+    candidateHistory: '历史研究候选',
+    candidateHistoryDetail: (count: number) =>
+      `${count} 个较早候选保留用于审计与重放。`,
     baseline: '当前基线',
     candidate: '新候选',
     return: '总收益',

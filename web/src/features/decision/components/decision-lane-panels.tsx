@@ -49,12 +49,16 @@ export function SummaryTile({
   detail: string;
 }) {
   return (
-    <div className="min-w-0 border-l-2 border-[var(--app-divider)] px-3 py-2.5">
-      <div className="app-product-mark">{label}</div>
-      <div className="mt-1 break-words text-base font-semibold text-[var(--app-text)]">
+    <div className="grid min-w-0 gap-x-4 gap-y-1 border-b border-[var(--app-divider)] px-2 py-2.5 last:border-b-0 sm:grid-cols-[minmax(9rem,0.34fr)_minmax(12rem,0.32fr)_minmax(0,1fr)] sm:items-baseline">
+      <div className="app-type-overline text-[var(--app-text-tertiary)]">
+        {label}
+      </div>
+      <div className="break-words text-sm font-semibold text-[var(--app-text)]">
         {value}
       </div>
-      <div className="app-muted mt-1 break-words text-xs">{detail}</div>
+      <div className="app-type-compact break-words text-[var(--app-text-secondary)]">
+        {detail}
+      </div>
     </div>
   );
 }

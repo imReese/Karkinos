@@ -53,7 +53,7 @@ export function BacktestRunSetupPanel() {
   } = useBacktestPage();
   return (
     <div
-      className={`min-w-0 space-y-4 ${
+      className={`min-w-0 space-y-4 xl:border-r xl:border-[var(--app-divider)] xl:pr-6 ${
         mobileWorkspaceView === 'setup' ? '' : 'hidden xl:block'
       }`}
       id="backtest-mobile-setup"

@@ -41,7 +41,10 @@ export function HoldingDetailView({
   } = model.evidence;
   const { displayName, quoteNeedsReview, quoteTimestamp } = model.market;
   return (
-    <section className="space-y-5 sm:space-y-6">
+    <section
+      className="app-workbench-route space-y-5 sm:space-y-6"
+      data-workbench-route="holding-detail"
+    >
       <div data-testid="holding-detail-header">
         <WorkbenchWorkspaceHeader
           eyebrow={labels.kicker}

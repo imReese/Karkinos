@@ -1,3 +1,4 @@
+import { EvidenceState } from '../../../shared/ui/workbench';
 import type { RiskPageController } from '../model/use-risk-page-controller';
 import { RiskAnalysisDisclosure } from './risk-analysis-disclosure';
 import { RiskCommandWorkspace } from './risk-command-workspace';
@@ -13,12 +14,10 @@ export function RiskResolvedWorkspace({
   return (
     <div className="space-y-5 sm:space-y-6">
       {controller.hasRiskRefreshError ? (
-        <div
-          role="status"
-          className="rounded-[var(--app-radius-surface)] border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--app-warning-text)]"
-        >
-          {controller.copy.riskPage.refreshError}
-        </div>
+        <EvidenceState
+          kind="partial"
+          title={controller.copy.riskPage.refreshError}
+        />
       ) : null}
       <RiskCommandWorkspace controller={controller} />
       <RiskDecisionHandoff controller={controller} />

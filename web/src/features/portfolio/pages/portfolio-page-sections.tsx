@@ -118,7 +118,10 @@ export function PortfolioAnalysisSection({
   const { cockpit, copy, liveHoldings, snapshot, state, strategyContribution } =
     model.source;
   return (
-    <section className="min-w-0 space-y-3" data-testid="portfolio-analysis">
+    <section
+      className="min-w-0 space-y-3 border-t border-[var(--app-divider)] pt-4"
+      data-testid="portfolio-analysis"
+    >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="app-type-section-title text-[var(--app-text)]">
@@ -154,7 +157,7 @@ export function PortfolioAnalysisSection({
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
         {!model.primaryPortfolioQueriesSettled ? (
           <EvidenceState
             kind="error"
@@ -258,7 +261,10 @@ export function PortfolioHistorySection({
 }) {
   const { copy, snapshot } = model.source;
   return (
-    <section className="min-w-0" data-testid="portfolio-history">
+    <section
+      className="min-w-0 border-t border-[var(--app-divider)] pt-4"
+      data-testid="portfolio-history"
+    >
       <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="app-type-section-title text-[var(--app-text)]">

@@ -21,6 +21,9 @@ const sourceTree = (directory: string): string =>
     .join('\n');
 
 const OVERVIEW = sourceTree('features/overview');
+const PORTFOLIO = sourceTree('features/portfolio');
+const DECISION = sourceTree('features/decision');
+const RISK = sourceTree('features/risk');
 const ACTIVITY = source('features/activity/pages/activity-page.tsx');
 const MARKET = [
   source('features/market/pages/market-page.tsx'),
@@ -152,8 +155,12 @@ describe('remaining route workbench contract', () => {
     expect(OVERVIEW).toContain('<OverviewEquityCurve');
     expect(OVERVIEW).toContain('<OverviewDataStatus');
     expect(OVERVIEW).not.toContain('buildTodayQueueModel');
+    expect(PORTFOLIO).toContain('data-workbench-route="portfolio"');
     expect(MARKET).toContain('data-workbench-route="market"');
     expect(ACTIVITY).toContain('data-workbench-route="activity"');
+    expect(DECISION).toContain('data-workbench-route="decision"');
+    expect(RISK).toContain('data-workbench-route="risk"');
+    expect(OPERATIONS).toContain('data-workbench-route="operations"');
     expect(BACKTEST).toContain('data-workbench-route="backtest"');
     expect(AI_RESEARCH).toContain('data-workbench-route="ai-research"');
     expect(TRADING).toContain('data-workbench-route="trading"');
@@ -161,10 +168,14 @@ describe('remaining route workbench contract', () => {
     expect(ACCOUNT_TRUTH).toContain('data-workbench-route="account-truth"');
 
     for (const page of [
+      PORTFOLIO,
       MARKET,
       ACTIVITY,
       BACKTEST,
       AI_RESEARCH,
+      DECISION,
+      RISK,
+      OPERATIONS,
       TRADING,
       SETTINGS,
       ACCOUNT_TRUTH,
@@ -259,6 +270,12 @@ describe('remaining route workbench contract', () => {
 
   it('enforces local overflow, compact shape, touch, and reduced-motion rules', () => {
     expect(CSS).toContain('.app-workbench-route');
+    expect(CSS).toMatch(
+      /\.app-workbench-route\s*\{[\s\S]*max-width:\s*1560px;[\s\S]*margin-inline:\s*auto;/,
+    );
+    expect(CSS).toContain(
+      ".app-workbench-route [class*='rounded-[var(--app-radius-surface)]']",
+    );
     expect(CSS).toContain('overscroll-behavior-inline: contain');
     expect(CSS).toMatch(
       /max-width:\s*639px[\s\S]*\.account-support-metric-strip\s*{[\s\S]*grid-auto-flow:\s*column[\s\S]*overflow-x:\s*auto/,

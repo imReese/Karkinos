@@ -135,6 +135,13 @@ export const overviewCopyZh = {
     strategyDecisionUnavailable: '策略候选信号暂不可用',
     strategyCandidateEmptyDetail:
       '当前没有买入、卖出、持有或再平衡信号进入队列。',
+    strategyRecommendationTitle: '今日策略建议',
+    strategyRecommendationQuantity: '数量',
+    strategyRecommendationReadOnly:
+      '只读建议 · 需要人工确认 · 不创建或提交券商订单',
+    accountRecommendationPaperShadow: '今日策略建议：进入模拟评估',
+    accountRecommendationPaperShadowDetail:
+      '仅进入 Paper Shadow 评估，不形成可执行订单。',
     accountRecommendationNoAction: '今日账户操作：无操作',
     accountRecommendationNoActionDetail:
       '已完成当日晋级策略扫描，未产生账户操作信号。',

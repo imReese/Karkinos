@@ -4,7 +4,10 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
-import type { AccountStateResponse } from '../overview-feature-boundary';
+import type {
+  AccountStateResponse,
+  DailyTradingPlanResponse,
+} from '../overview-feature-boundary';
 import { OverviewPage } from './overview-page';
 
 function accountFixture(): AccountStateResponse {
@@ -88,6 +91,60 @@ function accountFixture(): AccountStateResponse {
   };
 }
 
+function tradingPlanFixture(): DailyTradingPlanResponse {
+  return {
+    schema_version: 'karkinos.decision.daily_trading_plan.v1',
+    plan_date: '2026-09-14',
+    generated_at: '2026-09-14T08:00:00+08:00',
+    source_decision: 'no_action',
+    conclusion_status: 'completed_no_action',
+    primary_target: 'manual_review',
+    candidate_pool_count: 0,
+    manual_ready_count: 0,
+    order_intent_count: 0,
+    blocked_count: 0,
+    available_cash: 6979.91,
+    total_equity: 18585.11,
+    default_execution_mode: 'manual_confirmation',
+    broker_bridge_status: 'disabled',
+    order_intents: [],
+    blockers: [],
+    account_action_recommendation: {
+      schema_version: 'karkinos.decision.account_action_recommendation.v1',
+      decision_date: '2026-09-14',
+      status: 'no_action',
+      reason_codes: ['promoted_strategy_scan_completed_without_signal'],
+      source_action_task_ids: [],
+      actions: [],
+      promoted_scan: {
+        run_id: 'scan-1',
+        status: 'completed_no_signal',
+        input_fingerprint: 'a'.repeat(64),
+        output_fingerprint: 'b'.repeat(64),
+        selected_signal_count: 0,
+      },
+      account_evidence: {
+        valuation_snapshot_id: 'synthetic-snapshot',
+        ledger_cutoff_id: 42,
+        quote_set_fingerprint: 'synthetic-quotes',
+        valuation_status: 'complete',
+        account_truth_status: 'passed',
+        account_qualification_status: 'passed',
+        account_positions_evaluated: true,
+      },
+      read_only: true,
+      manual_confirmation_required: true,
+      creates_oms_order: false,
+      submits_broker_order: false,
+      authorizes_execution: false,
+      changes_capital_authority: false,
+      authority_effect: 'none',
+      evidence_fingerprint: 'c'.repeat(64),
+    },
+    limitations: [],
+  };
+}
+
 const curve = [
   {
     timestamp: '2026-09-10T15:00:00+08:00',
@@ -107,7 +164,11 @@ const curve = [
   },
 ];
 
-function installFetch(state = accountFixture(), curveFailure = false) {
+function installFetch(
+  state = accountFixture(),
+  curveFailure = false,
+  tradingPlan = tradingPlanFixture(),
+) {
   const mock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/api/portfolio/state')) return Response.json(state);
@@ -115,6 +176,8 @@ function installFetch(state = accountFixture(), curveFailure = false) {
       return curveFailure
         ? new Response('unavailable', { status: 503 })
         : Response.json(curve);
+    if (url.includes('/api/decision/trading-plan'))
+      return Response.json(tradingPlan);
     throw new Error(`Unexpected request: ${url}`);
   });
   vi.stubGlobal('fetch', mock);
@@ -165,11 +228,14 @@ test('reads one coherent account projection and a separate canonical history', a
   const fetch = installFetch();
   renderPage();
   await screen.findByTestId('overview-summary');
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-  expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
-    '/api/portfolio/state',
-    '/api/portfolio/equity-curve/series?range=1m',
-  ]);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual(
+    [
+      '/api/portfolio/state',
+      '/api/portfolio/equity-curve/series?range=1m',
+      '/api/decision/trading-plan',
+    ].sort(),
+  );
   expect(screen.getByTestId('overview-total-value')).toHaveTextContent(
     '18,585.11',
   );
@@ -182,6 +248,54 @@ test('reads one coherent account projection and a separate canonical history', a
   expect(screen.getByText('Return unavailable')).toBeVisible();
   expect(screen.getByText(/37.6%/)).toBeVisible();
   expect(screen.queryByText('Current Drawdown')).not.toBeInTheDocument();
+});
+
+test('shows the canonical daily strategy recommendation separately from operations attention', async () => {
+  installFetch();
+  renderPage('zh');
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  expect(within(recommendation).getByText('今日策略建议')).toBeVisible();
+  expect(
+    await within(recommendation).findByText('今日账户操作：无操作'),
+  ).toBeVisible();
+  expect(recommendation).toHaveTextContent('未产生账户操作信号');
+  expect(recommendation).toHaveTextContent('只读建议');
+  expect(within(recommendation).getByRole('link')).toHaveAttribute(
+    'href',
+    '/decision',
+  );
+});
+
+test('shows a manual-review strategy action without implying automatic execution', async () => {
+  const plan = tradingPlanFixture();
+  plan.manual_ready_count = 1;
+  plan.order_intent_count = 1;
+  plan.account_action_recommendation!.status = 'manual_review_required';
+  plan.account_action_recommendation!.actions = [
+    {
+      action_id: 'action-1',
+      symbol: '600519',
+      asset_class: 'stock',
+      side: 'buy',
+      target_weight: 0.12,
+      estimated_quantity: 100,
+      submission_status: 'manual_review_required',
+    },
+  ];
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  await waitFor(() =>
+    expect(recommendation).toHaveTextContent('1 个交易计划意图待复核'),
+  );
+  expect(recommendation).toHaveTextContent('买入候选');
+  expect(recommendation).toHaveTextContent('600519');
+  expect(recommendation).toHaveTextContent('数量 100');
+  expect(recommendation).toHaveTextContent('不创建或提交券商订单');
 });
 
 test('latest completed-session data on a verified non-trading day is usable with an empty attention queue', async () => {
