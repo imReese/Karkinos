@@ -4304,7 +4304,8 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     db.upsert_automation_run_sync(
         {
             "run_id": (
-                f"market_universe_sync:v2:deterministic_fixture:{market_dates[-1]}"
+                "market_universe_sync:v3:deterministic_fixture:"
+                f"deterministic_fixture:{market_dates[-1]}"
             ),
             "run_type": "market_universe_sync",
             "run_date": market_dates[-1],
@@ -4312,7 +4313,9 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             "execution_mode": "market_data_ingestion",
             "source_ref": universe_snapshot["snapshot_id"],
             "payload": {
-                "schema_version": "karkinos.market_universe_automation.v2",
+                "schema_version": "karkinos.market_universe_automation.v3",
+                "security_master_provider": "deterministic_fixture",
+                "daily_bar_provider": "deterministic_fixture",
                 "market_universe_snapshot_id": universe_snapshot["snapshot_id"],
                 "full_market_history_frozen": True,
             },

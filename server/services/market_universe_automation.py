@@ -13,7 +13,9 @@ from typing import Any, Callable
 import pandas as pd
 
 from core.types import AssetClass, BarFrequency, Symbol
-from data.manager import DataManager, build_sources
+from data.manager import DataManager, build_sources_for_config
+from data.source_policy import MarketDataUseCase, source_policy_for_config
+from data.source_routing import configured_legacy_provider_names
 from data.store import DataStore
 from server.bootstrap import resolve_data_dir
 from server.release_activation import wait_for_release_activation
@@ -29,7 +31,7 @@ from server.services.market_universe_truth import (
 
 logger = logging.getLogger(__name__)
 
-MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v2"
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v3"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
 
@@ -52,23 +54,65 @@ class MarketUniverseAutomationService:
         self._db = db
         self._config = config
         self._data_store = data_store or DataStore(resolve_data_dir())
-        sources = None
-        if data_manager is None or source is None:
-            sources = build_sources(
-                data_source=str(getattr(config, "data_source", "akshare")),
-                tushare_token=str(getattr(config, "tushare_token", "") or ""),
-            )
-        self._source = source or sources[str(getattr(config, "data_source", "akshare"))]
-        self._data_manager = data_manager or DataManager(
-            sources=sources or {},
-            store=self._data_store,
-            default_source=str(getattr(config, "data_source", "akshare")),
-        )
         self._policy = policy or MarketUniversePolicy()
-        self._throttle_seconds = (
-            _provider_request_interval_seconds(
-                str(getattr(config, "data_source", "akshare"))
+
+        if source is not None:
+            injected_name = _injected_provider_name(config, source)
+            self._security_master_source = source
+            self._security_master_provider_name = injected_name
+            self._daily_batch_source = (
+                source
+                if callable(getattr(source, "fetch_market_daily_bars", None))
+                else None
             )
+            self._daily_bar_provider_name = injected_name
+            self._data_manager = data_manager or DataManager(
+                sources={injected_name: source},
+                store=self._data_store,
+                default_source=injected_name,
+            )
+        else:
+            source_policy = source_policy_for_config(config)
+            sources = build_sources_for_config(config)
+
+            master_names = configured_legacy_provider_names(
+                config,
+                MarketDataUseCase.SECURITY_MASTER,
+            )
+            if not master_names:
+                raise RuntimeError("market_universe_security_master_route_unavailable")
+            self._security_master_provider_name = master_names[0]
+            self._security_master_source = sources[self._security_master_provider_name]
+
+            daily_names = configured_legacy_provider_names(
+                config,
+                MarketDataUseCase.DAILY_BARS,
+            )
+            if not daily_names:
+                raise RuntimeError("market_universe_daily_bar_route_unavailable")
+            batch_name = next(
+                (
+                    name
+                    for name in daily_names
+                    if name in sources
+                    and callable(
+                        getattr(sources[name], "fetch_market_daily_bars", None)
+                    )
+                ),
+                None,
+            )
+            self._daily_bar_provider_name = batch_name or daily_names[0]
+            self._daily_batch_source = (
+                sources[batch_name] if batch_name is not None else None
+            )
+            self._data_manager = data_manager or DataManager(
+                sources=sources,
+                store=self._data_store,
+                source_policy=source_policy,
+            )
+
+        self._throttle_seconds = (
+            _provider_request_interval_seconds(self._daily_bar_provider_name)
             if throttle_seconds is None
             else float(throttle_seconds)
         )
@@ -80,7 +124,8 @@ class MarketUniverseAutomationService:
         current = get_shanghai_now(now)
         trade_date = latest_verified_closed_trading_date(self._db, current)
         run_date = current.date().isoformat()
-        provider_name = str(getattr(self._config, "data_source", "akshare"))
+        master_provider_name = self._security_master_provider_name
+        daily_provider_name = self._daily_bar_provider_name
         if trade_date is None:
             return self._record_run(
                 run_id=f"market_universe_sync:pending:{run_date}",
@@ -88,13 +133,19 @@ class MarketUniverseAutomationService:
                 status="blocked",
                 now=current,
                 payload={
-                    **self._base_payload(provider_name),
+                    **self._base_payload(
+                        master_provider_name,
+                        daily_provider_name,
+                    ),
                     "trade_date": None,
                     "blockers": ["verified_closed_trading_date_unavailable"],
                     "retryable": True,
                 },
             )
-        run_id = f"market_universe_sync:v2:{provider_name}:{trade_date}"
+        run_id = (
+            "market_universe_sync:v3:"
+            f"{master_provider_name}:{daily_provider_name}:{trade_date}"
+        )
         existing = self._db.get_automation_run_sync(run_id)
         if existing and str(existing.get("status")) == "completed":
             return existing
@@ -105,15 +156,18 @@ class MarketUniverseAutomationService:
         symbol_metadata: Any = None
         try:
             snapshot = self._data_store.get_market_universe_snapshot(
-                trade_date=trade_date
+                trade_date=trade_date,
+                provider_name=master_provider_name,
             )
             provider_contacted = False
             if snapshot is None:
-                metadata_lister = getattr(self._source, "list_symbol_metadata", None)
+                metadata_lister = getattr(
+                    self._security_master_source, "list_symbol_metadata", None
+                )
                 if callable(metadata_lister):
                     symbol_metadata = metadata_lister()
                 if symbol_metadata is None:
-                    symbols = self._source.list_symbols()
+                    symbols = self._security_master_source.list_symbols()
                 else:
                     stock_master_metadata_fetched = True
                     symbols = [
@@ -129,7 +183,7 @@ class MarketUniverseAutomationService:
                     metadata_items = _useful_stock_master_metadata(
                         symbol_metadata or [],
                         members=members,
-                        provider_name=provider_name,
+                        provider_name=master_provider_name,
                         fetched_at=current.isoformat(),
                         trade_date=trade_date,
                     )
@@ -151,7 +205,7 @@ class MarketUniverseAutomationService:
                             )
                 snapshot = self._data_store.save_market_universe_snapshot(
                     trade_date=trade_date,
-                    provider_name=provider_name,
+                    provider_name=master_provider_name,
                     members=members,
                 )
             snapshot = require_complete_market_universe_snapshot(
@@ -172,13 +226,21 @@ class MarketUniverseAutomationService:
             failed = 0
             remote_attempted = 0
             receipt_skipped = 0
-            batch_fetcher = getattr(self._source, "fetch_market_daily_bars", None)
+            batch_fetcher = (
+                None
+                if self._daily_batch_source is None
+                else getattr(
+                    self._daily_batch_source,
+                    "fetch_market_daily_bars",
+                    None,
+                )
+            )
             if callable(batch_fetcher):
                 member_set = set(members)
                 for market_date in trading_dates:
                     receipt = self._data_store.get_market_daily_ingestion_receipt(
                         trade_date=market_date,
-                        provider_name=provider_name,
+                        provider_name=daily_provider_name,
                     )
                     if receipt is not None:
                         receipt_skipped += 1
@@ -195,7 +257,7 @@ class MarketUniverseAutomationService:
                             raise ValueError("market_daily_batch_no_active_members")
                         self._data_store.ingest_market_daily_batch(
                             trade_date=market_date,
-                            provider_name=provider_name,
+                            provider_name=daily_provider_name,
                             bars=frame,
                         )
                         updated += 1
@@ -245,7 +307,7 @@ class MarketUniverseAutomationService:
                 if not failed:
                     _freeze_persisted_market_dates(
                         data_store=self._data_store,
-                        provider_name=provider_name,
+                        provider_name=daily_provider_name,
                         symbols=members,
                         start_date=start_date.isoformat(),
                         end_date=trade_date,
@@ -255,7 +317,7 @@ class MarketUniverseAutomationService:
             receipts = self._data_store.list_market_daily_ingestion_receipts(
                 start_date=start_date.isoformat(),
                 end_date=trade_date,
-                provider_name=provider_name,
+                provider_name=daily_provider_name,
             )
             receipt_dates = {str(item["trade_date"]) for item in receipts}
             frames = self._data_store.load_market_bar_windows(
@@ -304,7 +366,7 @@ class MarketUniverseAutomationService:
                 status=status,
                 now=current,
                 payload={
-                    **self._base_payload(provider_name),
+                    **self._base_payload(master_provider_name, daily_provider_name),
                     "trade_date": trade_date,
                     "market_universe_snapshot_id": snapshot["snapshot_id"],
                     "market_universe_member_count": snapshot["member_count"],
@@ -346,7 +408,10 @@ class MarketUniverseAutomationService:
                 status="failed",
                 now=current,
                 payload={
-                    **self._base_payload(provider_name),
+                    **self._base_payload(
+                        master_provider_name,
+                        daily_provider_name,
+                    ),
                     "trade_date": trade_date,
                     "stock_master_metadata_fetched": stock_master_metadata_fetched,
                     "stock_master_useful_name_count": (stock_master_useful_name_count),
@@ -358,11 +423,24 @@ class MarketUniverseAutomationService:
                 },
             )
 
-    def _base_payload(self, provider_name: str) -> dict[str, Any]:
+    def _base_payload(
+        self,
+        security_master_provider: str,
+        daily_bar_provider: str,
+    ) -> dict[str, Any]:
         return {
             "schema_version": MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION,
             "trigger": "server_background_market_data_ingestion",
-            "provider": provider_name,
+            "security_master_provider": security_master_provider,
+            "daily_bar_provider": daily_bar_provider,
+            "source_policy_id": str(
+                getattr(
+                    self._config,
+                    "market_data_source_policy",
+                    "legacy_injected_source",
+                )
+                or "legacy_injected_source"
+            ),
             "policy": self._policy.to_dict(),
             "asset_scope": ["stock"],
             "read_endpoints_contact_providers": False,
@@ -458,6 +536,17 @@ async def run_market_universe_automation_loop(
         except Exception:
             logger.exception("Unexpected market-universe automation failure")
         await asyncio.sleep(interval_seconds)
+
+
+def _injected_provider_name(config: Any, source: Any) -> str:
+    descriptor = getattr(source, "descriptor", None)
+    provider = str(getattr(descriptor, "provider", "") or "").strip().lower()
+    if provider:
+        return provider
+    legacy = str(getattr(config, "data_source", "") or "").strip().lower()
+    if legacy:
+        return legacy
+    return source.__class__.__name__.strip().lower()
 
 
 def _provider_request_interval_seconds(provider_name: str) -> float:

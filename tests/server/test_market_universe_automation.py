@@ -299,3 +299,117 @@ def test_market_universe_automation_resumes_without_refetching_frozen_dates(
     payload = json.loads(result["payload_json"])
     assert payload["persisted_receipt_skipped_count"] == 10
     assert payload["remote_bar_refresh_attempt_count"] == 70
+
+
+def test_market_universe_routes_security_master_and_daily_bars_separately(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from data.source_policy import MarketDataUseCase
+    from server.services import market_universe_automation
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    symbols = [f"{600000 + index:06d}" for index in range(1_000)]
+
+    class MasterSource:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def list_symbol_metadata(self):
+            self.calls += 1
+            return [
+                {
+                    "symbol": symbol,
+                    "display_name": f"主数据{symbol}",
+                    "provider_symbol": f"{symbol}.SH",
+                }
+                for symbol in symbols
+            ]
+
+    class DailySource:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
+            self.calls.append(trade_date)
+            return pd.DataFrame(
+                {
+                    "symbol": symbols,
+                    "timestamp": [pd.Timestamp(trade_date)] * len(symbols),
+                    "open": [10.0] * len(symbols),
+                    "high": [10.1] * len(symbols),
+                    "low": [9.9] * len(symbols),
+                    "close": [10.0] * len(symbols),
+                    "volume": [1_000_000] * len(symbols),
+                    "amount": [10_000_000] * len(symbols),
+                }
+            )
+
+    master = MasterSource()
+    daily = DailySource()
+    monkeypatch.setattr(
+        market_universe_automation,
+        "build_sources_for_config",
+        lambda config: {"akshare": master, "tushare": daily},
+    )
+
+    def route_names(config, use_case):
+        if use_case is MarketDataUseCase.SECURITY_MASTER:
+            return ("akshare",)
+        if use_case is MarketDataUseCase.DAILY_BARS:
+            return ("tushare", "akshare")
+        raise AssertionError(use_case)
+
+    monkeypatch.setattr(
+        market_universe_automation,
+        "configured_legacy_provider_names",
+        route_names,
+    )
+
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            market_data_source_policy="karkinos.market.source.cn_research.v1",
+            tushare_token="fixture",
+            start_date="2026-04-01",
+        ),
+        data_store=store,
+        throttle_seconds=0,
+    )
+    result = service.run_due(
+        now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+
+    assert result["status"] == "completed"
+    assert master.calls == 1
+    assert len(daily.calls) == 80
+
+    snapshot = store.get_market_universe_snapshot(
+        trade_date="2026-08-21",
+        provider_name="akshare",
+    )
+    assert snapshot is not None
+    assert snapshot["provider_name"] == "akshare"
+    assert (
+        store.get_market_universe_snapshot(
+            trade_date="2026-08-21",
+            provider_name="tushare",
+        )
+        is None
+    )
+
+    receipts = store.list_market_daily_ingestion_receipts(
+        start_date=daily.calls[0],
+        end_date=daily.calls[-1],
+        provider_name="tushare",
+    )
+    assert len(receipts) == 80
+
+    payload = json.loads(result["payload_json"])
+    assert payload["schema_version"] == "karkinos.market_universe_automation.v3"
+    assert payload["security_master_provider"] == "akshare"
+    assert payload["daily_bar_provider"] == "tushare"
+    assert payload["market_universe_snapshot_id"] == snapshot["snapshot_id"]
