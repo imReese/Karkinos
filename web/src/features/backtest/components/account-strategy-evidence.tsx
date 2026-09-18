@@ -72,7 +72,7 @@ export function AccountStrategyEvidence({
 
   return (
     <>
-      <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+      <div className="mt-4 border-t border-[var(--app-divider)] pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="app-kicker app-type-overline">
             {labels.accountStrategyScopedAssignmentsTitle}
@@ -98,7 +98,7 @@ export function AccountStrategyEvidence({
                 ) ?? null;
               return (
                 <div
-                  className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-3"
+                  className="border-t border-[var(--app-divider)] py-3"
                   key={`${item.scope}:${item.symbol}`}
                 >
                   <div className="text-sm font-semibold text-[var(--app-text)]">
@@ -127,7 +127,7 @@ export function AccountStrategyEvidence({
         )}
       </div>
 
-      <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+      <div className="mt-4 border-t border-[var(--app-divider)] pt-4">
         <div className="app-kicker app-type-overline">
           {labels.accountStrategyPnlAttributionStatus}
         </div>
@@ -167,7 +167,7 @@ export function AccountStrategyEvidence({
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+      <div className="mt-4 border-t border-[var(--app-divider)] pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="app-kicker app-type-overline">
             {labels.accountStrategyAttributionEvidence}
@@ -210,7 +210,7 @@ export function AccountStrategyEvidence({
               <div className="mt-3 grid gap-2">
                 {attribution.limitations.map((limitation) => (
                   <p
-                    className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_14%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
+                    className="border-t border-[var(--app-divider)] py-2.5 text-sm text-[var(--app-text)]"
                     key={limitation}
                   >
                     {formatPublicNote(limitation, locale)}
@@ -222,7 +222,7 @@ export function AccountStrategyEvidence({
         ) : null}
       </div>
 
-      <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+      <div className="mt-4 border-t border-[var(--app-divider)] pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="app-kicker app-type-overline">
             {labels.accountStrategyContributionReport}
@@ -297,7 +297,7 @@ export function AccountStrategyEvidence({
               ) : null}
             </div>
             {contribution.missing_valuation_symbols.length ? (
-              <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+              <p className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm text-[var(--app-warning-text)]">
                 {labels.accountStrategyMissingValuation(
                   formatInstrumentDisplayLabelsBySymbol(
                     contribution.missing_valuation_symbols,
@@ -307,7 +307,7 @@ export function AccountStrategyEvidence({
               </p>
             ) : null}
             {pnlAttributionTier === 'complete' ? null : (
-              <div className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm leading-6 text-[var(--app-text)]">
+              <div className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm leading-6 text-[var(--app-text)]">
                 <div className="text-xs font-semibold text-[var(--app-warning)]">
                   {labels.accountStrategyNextManualAction}
                 </div>
@@ -341,7 +341,7 @@ export function AccountStrategyEvidence({
               <div className="mt-3 grid gap-2">
                 {contribution.limitations.map((limitation) => (
                   <p
-                    className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_14%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
+                    className="border-t border-[var(--app-divider)] py-2.5 text-sm text-[var(--app-text)]"
                     key={limitation}
                   >
                     {formatPublicNote(limitation, locale)}
@@ -358,7 +358,7 @@ export function AccountStrategyEvidence({
 
 export function StatusTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3">
+    <div className="min-w-0 border-t border-[var(--app-divider)] py-2.5">
       <div className="app-muted text-xs font-semibold">{label}</div>
       <div className="mt-1.5 truncate text-base font-semibold text-[var(--app-text)]">
         {value}
