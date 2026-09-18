@@ -1,0 +1,60 @@
+from types import SimpleNamespace
+
+import pytest
+
+from data.source_policy import (
+    CN_RESEARCH_V1,
+    MarketDataUseCase,
+    legacy_preferred_provider_policy,
+    resolve_market_source_policy,
+    source_policy_for_config,
+)
+
+
+def test_cn_research_policy_requires_independent_raw_daily_sources() -> None:
+    route = CN_RESEARCH_V1.route(MarketDataUseCase.DAILY_BARS)
+    assert route.candidates == ("tushare", "tdx", "akshare")
+    assert route.min_sources == 2
+    assert route.verification_required
+    assert route.require_independent_upstream
+    assert route.price_basis == "unadjusted"
+
+
+def test_use_cases_have_distinct_source_routes() -> None:
+    assert CN_RESEARCH_V1.route(MarketDataUseCase.REALTIME_QUOTES).candidates == (
+        "tushare",
+        "akshare",
+    )
+    assert CN_RESEARCH_V1.route(MarketDataUseCase.INDEX_BARS).candidates == ("akshare",)
+    assert CN_RESEARCH_V1.route(MarketDataUseCase.FUND_NAV).candidates == (
+        "tushare",
+        "akshare",
+    )
+
+
+def test_policy_alias_resolves_to_stable_identity() -> None:
+    assert resolve_market_source_policy("cn_research_v1") is CN_RESEARCH_V1
+    assert resolve_market_source_policy(CN_RESEARCH_V1.policy_id) is CN_RESEARCH_V1
+
+
+def test_unknown_policy_fails_closed() -> None:
+    with pytest.raises(ValueError, match="market_source_policy_unsupported"):
+        resolve_market_source_policy("unknown")
+
+
+def test_legacy_provider_is_only_a_compatibility_ordering() -> None:
+    policy = legacy_preferred_provider_policy("akshare")
+    assert policy.route(MarketDataUseCase.DAILY_BARS).candidates == (
+        "akshare",
+        "tushare",
+        "tdx",
+    )
+    assert policy.route(MarketDataUseCase.DAILY_BARS).min_sources == 2
+
+
+def test_new_policy_config_wins_over_legacy_provider_compatibility() -> None:
+    config = SimpleNamespace(
+        market_data_source_policy=CN_RESEARCH_V1.policy_id,
+        data_source="akshare",
+    )
+    assert source_policy_for_config(config) is CN_RESEARCH_V1
