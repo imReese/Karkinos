@@ -75,7 +75,7 @@ function RevocationPreviewEvidence({
   preview: ControlledSessionRevocationPreview;
 }) {
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {locale === 'zh'
@@ -138,7 +138,7 @@ function RevocationPanelHeader({
       </div>
       <button
         type="button"
-        className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs"
+        className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs"
         onClick={close}
       >
         {locale === 'zh' ? '关闭' : 'Close'}
@@ -214,7 +214,7 @@ function RevocationFinalConfirmation({
   revoke: ReturnType<typeof useControlledSessionRevocationMutation>;
 }) {
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[var(--app-danger-border)] p-3">
+    <div className="mt-3 min-w-0 border-l-2 border-[var(--app-danger-border)] py-2 pl-3">
       <div className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh' ? '最终撤销确认' : 'Final revocation confirmation'}
       </div>
@@ -233,7 +233,7 @@ function RevocationFinalConfirmation({
       </label>
       <button
         type="button"
-        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+        className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
         disabled={!acknowledged || revoke.isPending}
         onClick={applyRevocation}
       >
@@ -384,7 +384,7 @@ export function ControlledSessionRevocationOperatorPanel({
       {!open ? (
         <button
           type="button"
-          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold"
+          className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
           onClick={() => setOpen(true)}
         >
           {locale === 'zh'
@@ -398,7 +398,7 @@ export function ControlledSessionRevocationOperatorPanel({
               ? '签名式受控会话撤销'
               : 'Signed controlled-session revocation'
           }
-          className="min-w-0 rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] p-3"
+          className="min-w-0 border-l-2 border-[var(--app-danger-border)] py-2 pl-3"
         >
           <RevocationPanelHeader close={close} locale={locale} />
           <RevocationScopeAndReason
@@ -410,7 +410,7 @@ export function ControlledSessionRevocationOperatorPanel({
 
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             disabled={preview.isPending}
             onClick={loadPreview}
           >
@@ -437,7 +437,7 @@ export function ControlledSessionRevocationOperatorPanel({
           ) : null}
 
           {preview.data?.ready ? (
-            <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+            <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
               <div className="text-sm font-semibold text-[var(--app-text)]">
                 {locale === 'zh' ? '离线签名' : 'Offline signature'}
               </div>
@@ -487,7 +487,7 @@ export function ControlledSessionRevocationOperatorPanel({
 
               <button
                 type="button"
-                className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+                className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                 disabled={!selectedIdentity || challenge.isPending}
                 onClick={createChallenge}
               >
@@ -559,7 +559,7 @@ export function ControlledSessionRevocationOperatorPanel({
                   </label>
                   <button
                     type="button"
-                    className="app-button-secondary min-h-9 justify-self-start rounded-xl px-3 py-2 text-xs font-semibold"
+                    className="app-button-secondary min-h-9 justify-self-start rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                     disabled={!signature.trim() || verification.isPending}
                     onClick={verifySignature}
                   >

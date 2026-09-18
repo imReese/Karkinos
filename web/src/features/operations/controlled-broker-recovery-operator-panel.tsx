@@ -37,7 +37,7 @@ function RecoveryPreviewEvidence({
   preview: ControlledBrokerRecoveryPreview;
 }) {
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {locale === 'zh' ? '绑定证据' : 'Bound evidence'}
@@ -140,7 +140,7 @@ function RecoveryPanelHeader({
       </div>
       <button
         type="button"
-        className="app-button-secondary min-h-8 rounded-xl px-3 py-1.5 text-xs"
+        className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs"
         onClick={close}
       >
         {locale === 'zh' ? '关闭' : 'Close'}
@@ -159,7 +159,7 @@ function RecoveryOpenButton({
   return (
     <button
       type="button"
-      className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold"
+      className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
       onClick={open}
     >
       {locale === 'zh'
@@ -285,13 +285,13 @@ export function ControlledBrokerRecoveryOperatorPanel({
               ? '签名式未知订单查询恢复'
               : 'Signed unknown-order query recovery'
           }
-          className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_38%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] p-3"
+          className="min-w-0 border-l-2 border-[var(--app-warning-border)] py-2 pl-3"
         >
           <RecoveryPanelHeader close={close} locale={locale} />
 
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             disabled={preview.isPending}
             onClick={loadPreview}
           >
@@ -319,7 +319,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
 
           {preview.data?.review_ready &&
           preview.data.required_operator_approval ? (
-            <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] p-3">
+            <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
               <div className="text-sm font-semibold text-[var(--app-text)]">
                 {locale === 'zh' ? '离线签名' : 'Offline signature'}
               </div>
@@ -368,7 +368,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
               ) : null}
               <button
                 type="button"
-                className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+                className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                 disabled={!selectedIdentity || challenge.isPending}
                 onClick={createChallenge}
               >
@@ -430,7 +430,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
                   </label>
                   <button
                     type="button"
-                    className="app-button-secondary min-h-9 justify-self-start rounded-xl px-3 py-2 text-xs font-semibold"
+                    className="app-button-secondary min-h-9 justify-self-start rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                     disabled={!signature.trim() || verification.isPending}
                     onClick={verifySignature}
                   >
@@ -456,7 +456,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
           ) : null}
 
           {verification.data ? (
-            <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_38%,transparent)] p-3">
+            <div className="mt-3 min-w-0 border-l-2 border-[var(--app-warning-border)] py-2 pl-3">
               <div className="text-sm font-semibold text-[var(--app-text)]">
                 {locale === 'zh' ? '最终确认' : 'Final query confirmation'}
               </div>
@@ -475,7 +475,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
               </label>
               <button
                 type="button"
-                className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+                className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                 disabled={!acknowledged || applyRecovery.isPending}
                 onClick={apply}
               >
