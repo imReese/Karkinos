@@ -157,7 +157,10 @@ export function StrategySignalPreviewPanel({
   };
 
   return (
-    <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
+    <section
+      className="border-y border-[var(--app-divider)] py-4"
+      data-testid="backtest-signal-preview-register"
+    >
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="app-kicker app-type-overline">
@@ -180,7 +183,7 @@ export function StrategySignalPreviewPanel({
       ) : loading ? (
         <p className="app-muted mt-4 text-sm">{labels.signalPreviewLoading}</p>
       ) : error ? (
-        <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+        <p className="mt-4 border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm text-[var(--app-warning-text)]">
           {labels.signalPreviewUnavailable}
         </p>
       ) : output ? (
@@ -200,7 +203,7 @@ export function StrategySignalPreviewPanel({
                 output.evidence.bar_count ?? 0,
               )}
             />
-            <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_22%,transparent)] px-3 py-2">
+            <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
               <div className="app-muted app-type-micro">
                 {labels.signalPreviewReferencePriceLabel}
               </div>
@@ -210,7 +213,7 @@ export function StrategySignalPreviewPanel({
             </div>
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_16%,transparent)] px-4 py-3">
+            <div className="border-t border-[var(--app-divider)] py-3">
               <div className="app-muted text-xs font-semibold">
                 {labels.signalPreviewReason}
               </div>
@@ -218,7 +221,7 @@ export function StrategySignalPreviewPanel({
                 {signalPreviewReason(output, labels)}
               </p>
             </div>
-            <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_16%,transparent)] px-4 py-3">
+            <div className="border-t border-[var(--app-divider)] py-3">
               <div className="app-muted text-xs font-semibold">
                 {labels.signalPreviewDataBasis}
               </div>
@@ -237,7 +240,7 @@ export function StrategySignalPreviewPanel({
             </div>
           </div>
           {reviewGates.length > 0 ? (
-            <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_16%,transparent)] px-4 py-3">
+            <div className="mt-4 border-t border-[var(--app-divider)] py-3">
               <div className="app-muted text-xs font-semibold">
                 {labels.signalPreviewReviewGates}
               </div>
@@ -245,7 +248,7 @@ export function StrategySignalPreviewPanel({
                 {reviewGates.map((gate) => (
                   <div
                     key={`${gate.key}:${gate.status}`}
-                    className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] px-3 py-2"
+                    className="min-w-0 border-t border-[var(--app-divider)] py-2"
                   >
                     <div className="truncate text-sm font-semibold text-[var(--app-text)]">
                       {signalPreviewGateLabel(gate, labels)}
@@ -275,7 +278,7 @@ export function StrategySignalPreviewPanel({
             riskQuantity={riskQuantity}
             setRiskQuantity={setRiskQuantity}
           />
-          <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold text-[var(--app-warning)]">
+          <p className="mt-4 border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm font-semibold text-[var(--app-warning-text)]">
             {gateRequired
               ? labels.signalPreviewGateRequired
               : labels.signalPreviewNoGateRequired}
@@ -287,7 +290,7 @@ export function StrategySignalPreviewPanel({
       ) : (
         <p className="app-muted mt-4 text-sm">{labels.signalPreviewPending}</p>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -329,13 +332,13 @@ function RiskPreviewWorkflow({
   return (
     <>
       {riskPreviewable ? (
-        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_16%,transparent)] px-4 py-3">
+        <div className="mt-4 border-t border-[var(--app-divider)] py-3">
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <label className="grid min-w-0 flex-1 gap-2 text-sm font-medium">
               {labels.signalPreviewRiskQuantity}
               <input
                 aria-label={labels.signalPreviewRiskQuantity}
-                className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                className="app-field rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
                 min="1"
                 step="1"
                 type="number"
@@ -344,7 +347,7 @@ function RiskPreviewWorkflow({
               />
             </label>
             <button
-              className="app-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
               disabled={riskPreviewLoading || !isPositiveNumber(riskQuantity)}
               onClick={onRiskPreview}
               type="button"
@@ -355,11 +358,11 @@ function RiskPreviewWorkflow({
             </button>
           </div>
           {riskPreviewError ? (
-            <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+            <p className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm text-[var(--app-warning-text)]">
               {labels.signalPreviewRiskPreviewUnavailable}
             </p>
           ) : riskPreviewResult ? (
-            <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
+            <div className="mt-4 border-y border-[var(--app-divider)] py-3">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="app-muted text-xs font-semibold">
@@ -403,7 +406,7 @@ function RiskPreviewWorkflow({
             </p>
           )}
           {riskPreviewResult ? (
-            <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
+            <div className="mt-4 border-y border-[var(--app-divider)] py-3">
               <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
                   <div className="app-muted text-xs font-semibold">
@@ -416,7 +419,7 @@ function RiskPreviewWorkflow({
                   </p>
                 </div>
                 <button
-                  className="app-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                  className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={
                     paperShadowPreviewLoading || !paperShadowPreviewable
                   }
@@ -429,7 +432,7 @@ function RiskPreviewWorkflow({
                 </button>
               </div>
               {paperShadowPreviewError ? (
-                <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+                <p className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm text-[var(--app-warning-text)]">
                   {labels.signalPreviewPaperShadowUnavailable}
                 </p>
               ) : paperShadowPreviewResult ? (
@@ -440,7 +443,7 @@ function RiskPreviewWorkflow({
                   {labels.signalPreviewAttributionLoading}
                 </p>
               ) : attributionPreviewError ? (
-                <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+                <p className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm text-[var(--app-warning-text)]">
                   {labels.signalPreviewAttributionUnavailable}
                 </p>
               ) : attributionPreviewResult ? (

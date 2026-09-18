@@ -30,7 +30,7 @@ export function PaperShadowPreviewResult({
   const hasFill = result.status === 'simulated' && fill !== null;
 
   return (
-    <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-3">
+    <div className="mt-4 border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <div>
           <div className="app-muted text-xs font-semibold">
@@ -117,7 +117,7 @@ export function AttributionPreviewResult({
   const isReady = result.status === 'ready_for_review_linkage';
 
   return (
-    <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-3">
+    <div className="mt-4 border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <div>
           <div className="app-muted text-xs font-semibold">
@@ -149,7 +149,7 @@ export function AttributionPreviewResult({
         />
       </div>
       {!result.can_attribute_pnl && productionFacts === 0 ? (
-        <div className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3">
+        <div className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3">
           <div className="text-sm font-semibold text-[var(--app-warning)]">
             {labels.signalPreviewAttributionNoLinkedFillsTitle}
           </div>
@@ -159,7 +159,7 @@ export function AttributionPreviewResult({
         </div>
       ) : null}
       {result.review_linkage_candidate ? (
-        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_28%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-4 py-3">
+        <div className="mt-3 border-l-2 border-[var(--app-accent-border)] py-2 pl-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="text-sm font-semibold text-[var(--app-text)]">
@@ -171,7 +171,7 @@ export function AttributionPreviewResult({
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
               <a
-                className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                className="inline-flex items-center rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 href={buildHoldingAttributionReviewHref(
                   result.review_linkage_candidate.symbol || result.symbol,
                 )}
@@ -194,7 +194,7 @@ export function AttributionPreviewResult({
         </div>
       ) : null}
       <div
-        className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3"
+        className="mt-3 border-y border-[var(--app-divider)] py-3"
         data-testid="backtest-attribution-evidence-chain"
       >
         <div className="text-sm font-semibold text-[var(--app-text)]">
@@ -207,7 +207,7 @@ export function AttributionPreviewResult({
           {attributionEvidenceChainItems.map((item) => (
             <li
               key={item.key}
-              className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] px-3 py-2 text-sm"
+              className="flex min-w-0 items-center justify-between gap-3 border-t border-[var(--app-divider)] py-2 text-sm"
             >
               <span className="min-w-0 break-words font-semibold text-[var(--app-text)]">
                 {item.label}
@@ -228,7 +228,7 @@ export function AttributionPreviewResult({
         </ul>
       </div>
       {holdingAttributionReadinessItems.length > 0 ? (
-        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
+        <div className="mt-3 border-y border-[var(--app-divider)] py-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-semibold text-[var(--app-text)]">
               {labels.signalPreviewHoldingAttributionReadiness}
@@ -263,7 +263,7 @@ export function AttributionPreviewResult({
             ))}
           </ul>
           {holdingAttributionNextAction ? (
-            <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-3">
+            <div className="mt-3 border-l-2 border-[var(--app-accent-border)] py-2 pl-3">
               <div className="app-product-mark">
                 {holdingLabels.strategyAttributionNextActionTitle}
               </div>
@@ -271,7 +271,7 @@ export function AttributionPreviewResult({
                 {holdingAttributionNextAction.detail}
               </p>
               <a
-                className="mt-3 inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                className="mt-3 inline-flex items-center rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 href={holdingAttributionNextAction.href}
               >
                 {holdingAttributionNextAction.label}
@@ -284,7 +284,7 @@ export function AttributionPreviewResult({
         <div className="mt-3 grid gap-2">
           {result.limitations.map((limitation) => (
             <p
-              className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
+              className="border-t border-[var(--app-divider)] py-2 text-sm text-[var(--app-text)]"
               key={limitation}
             >
               {formatPublicNote(limitation, locale)}

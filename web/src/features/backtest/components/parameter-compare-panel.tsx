@@ -240,7 +240,7 @@ export function ParameterComparePanel({
   };
 
   return (
-    <section className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+    <section className="mt-5 border-y border-[var(--app-divider)] py-4">
       <div className="app-kicker app-type-overline">{labels.kicker}</div>
       <h3 className="app-card-title mt-1.5">{labels.title}</h3>
       <p className="app-muted mt-2 text-sm leading-6">{labels.subtitle}</p>
@@ -249,7 +249,7 @@ export function ParameterComparePanel({
         <label className="grid gap-2 text-sm font-medium">
           {labels.parameterSets}
           <textarea
-            className="app-field min-h-24 rounded-2xl px-4 py-3 font-mono text-sm tabular-nums"
+            className="app-field min-h-24 rounded-[var(--app-radius-control)] px-3 py-2.5 font-mono text-sm tabular-nums"
             value={parameterSets}
             onChange={(event) => setParameterSets(event.target.value)}
             aria-label={labels.parameterSets}
@@ -260,7 +260,7 @@ export function ParameterComparePanel({
         </span>
         {error ? (
           <div
-            className="rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-3 text-sm text-[var(--app-danger)]"
+            className="border-l-2 border-[var(--app-danger-border)] py-2 pl-3 text-sm text-[var(--app-danger-text)]"
             role="alert"
           >
             {error}
@@ -269,7 +269,7 @@ export function ParameterComparePanel({
         <div className="flex justify-end">
           <button
             type="submit"
-            className="app-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold transition active:scale-[0.99]"
+            className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold"
             disabled={compare.isPending}
           >
             {compare.isPending ? labels.running : labels.run}
@@ -306,7 +306,7 @@ function CompareResults({ response }: { response: BacktestCompareResponse }) {
           ) : null}
         </div>
       </div>
-      <div className="overflow-x-auto rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)]">
+      <div className="overflow-x-auto border-y border-[var(--app-divider)]">
         <table className="min-w-[760px] w-full text-left text-sm">
           <thead className="app-type-overline bg-[color-mix(in_srgb,var(--app-surface-0)_35%,transparent)] text-[var(--app-muted)]">
             <tr>
@@ -353,7 +353,7 @@ function CompareResults({ response }: { response: BacktestCompareResponse }) {
         </table>
       </div>
       {response.warnings.length ? (
-        <div className="rounded-2xl border border-[color-mix(in_srgb,#f9e2af_34%,var(--app-border))] bg-[color-mix(in_srgb,#f9e2af_8%,transparent)] px-4 py-3 text-sm leading-6 text-[color-mix(in_srgb,#f9e2af_88%,white)]">
+        <div className="border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm leading-6 text-[var(--app-warning-text)]">
           {response.warnings.map((warning) => (
             <div key={warning}>{warning}</div>
           ))}

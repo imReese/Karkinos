@@ -67,11 +67,15 @@ describe('Karkinos workstation foundation contract', () => {
     expect(PORTFOLIO).toContain('<SectionHeader');
     expect(PORTFOLIO).toContain('<Button');
     expect(PORTFOLIO).toContain(
-      'min-[1440px]:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.5fr)]',
+      'min-[1600px]:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.3fr)]',
     );
     expect(PORTFOLIO).not.toContain(
       'xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]',
     );
+    expect(PORTFOLIO).toContain(
+      'data-portfolio-analysis-layout="primary-first"',
+    );
+    expect(PORTFOLIO).toContain('data-portfolio-analysis-secondary');
   });
 
   it('defines bounded workspace width modes', () => {

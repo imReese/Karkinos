@@ -151,7 +151,10 @@ export function PortfolioAnalysisSection({
         }
       />
 
-      <div className="grid min-w-0 gap-4 min-[1440px]:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.5fr)]">
+      <div
+        className="grid min-w-0 gap-4 min-[1600px]:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.3fr)]"
+        data-portfolio-analysis-layout="primary-first"
+      >
         {!model.primaryPortfolioQueriesSettled ? (
           <EvidenceState
             kind="error"
@@ -192,50 +195,57 @@ export function PortfolioAnalysisSection({
           />
         )}
 
-        {state.mode === 'strategy' ? (
-          !model.primaryPortfolioQueriesSettled ? (
+        <aside
+          className="min-w-0 border-t border-[var(--app-divider)] pt-4 min-[1600px]:border-l min-[1600px]:border-t-0 min-[1600px]:pl-4 min-[1600px]:pt-0"
+          data-portfolio-analysis-secondary
+        >
+          {state.mode === 'strategy' ? (
+            !model.primaryPortfolioQueriesSettled ? (
+              <EvidenceState
+                kind="error"
+                title={copy.states.error}
+                description={model.portfolioPrimaryFailureDetail}
+              />
+            ) : (
+              <PortfolioConstructionRecommendationsCard
+                recommendations={
+                  cockpit.data?.construction_recommendations ?? []
+                }
+                isLoading={cockpit.isLoading}
+                isError={cockpit.isError}
+                onRetry={actions.onRetryCockpit}
+              />
+            )
+          ) : snapshot.isLoading ? (
+            <EvidenceState
+              kind="loading"
+              title={copy.states.loading}
+              description={copy.portfolio.sidebarLoading}
+            />
+          ) : snapshot.isError ? (
             <EvidenceState
               kind="error"
               title={copy.states.error}
-              description={model.portfolioPrimaryFailureDetail}
+              description={copy.portfolio.sidebarError}
+              action={
+                <Button variant="secondary" onClick={actions.onRetrySnapshot}>
+                  {copy.states.retry}
+                </Button>
+              }
+            />
+          ) : snapshot.data ? (
+            <AllocationCard
+              items={snapshot.data.allocation}
+              onOpenPosition={actions.onOpenPosition}
             />
           ) : (
-            <PortfolioConstructionRecommendationsCard
-              recommendations={cockpit.data?.construction_recommendations ?? []}
-              isLoading={cockpit.isLoading}
-              isError={cockpit.isError}
-              onRetry={actions.onRetryCockpit}
+            <EvidenceState
+              kind="empty"
+              title={copy.states.empty}
+              description={copy.portfolio.sidebarEmpty}
             />
-          )
-        ) : snapshot.isLoading ? (
-          <EvidenceState
-            kind="loading"
-            title={copy.states.loading}
-            description={copy.portfolio.sidebarLoading}
-          />
-        ) : snapshot.isError ? (
-          <EvidenceState
-            kind="error"
-            title={copy.states.error}
-            description={copy.portfolio.sidebarError}
-            action={
-              <Button variant="secondary" onClick={actions.onRetrySnapshot}>
-                {copy.states.retry}
-              </Button>
-            }
-          />
-        ) : snapshot.data ? (
-          <AllocationCard
-            items={snapshot.data.allocation}
-            onOpenPosition={actions.onOpenPosition}
-          />
-        ) : (
-          <EvidenceState
-            kind="empty"
-            title={copy.states.empty}
-            description={copy.portfolio.sidebarEmpty}
-          />
-        )}
+          )}
+        </aside>
       </div>
     </section>
   );
