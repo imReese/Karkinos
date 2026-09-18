@@ -767,6 +767,49 @@ Creates or modifies research artifacts.
 
 Does not alter canonical financial state.
 
+### AI Research Interaction
+
+AI appears inside normal product workflows as contextual research intelligence,
+not as a generic chat authority.
+
+The supported interaction modes are:
+
+```text
+Explain
+Investigate
+Propose
+Orchestrate Research
+```
+
+**Explain** interprets already-authoritative facts, metrics, gates, and provenance.
+
+**Investigate** creates or advances a Research Task using approved evidence and
+tools.
+
+**Propose** creates falsifiable hypotheses, candidate specs, experiments,
+counter-theses, or missing-evidence requests.
+
+**Orchestrate Research** runs a bounded typed research workflow under explicit
+tool allowlists, budgets, and trace capture.
+
+There is no AI **Act on capital** interaction mode.
+
+AI may create research artifacts, but it cannot:
+
+```text
+establish financial truth
+mark deterministic gates as passed
+approve its own research promotion
+expand execution authority
+submit broker orders
+rewrite financial history
+```
+
+Research interfaces should expose model/provider details as trace or automation
+metadata, not as the primary research object. The primary user objects are the
+research question, hypothesis, evidence, evaluation, review state, and promotion
+state.
+
 ### Portfolio Proposal
 
 Creates or modifies Target or Rebalance intent.
