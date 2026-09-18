@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 
 from core.types import AssetClass, InstrumentKey, InstrumentType, Symbol
-from data.source_policy import MarketDataUseCase
-from data.source_routing import preferred_legacy_provider
+from data.source_policy import (
+    MarketDataUseCase,
+    preferred_source_for_config,
+)
 from server.models import (
     MarketCalendarSnapshotResponse,
     MarketHealthQuote,
@@ -127,7 +129,7 @@ def resolve_asset_display_name(
 
 def configured_provider_name(state) -> str:
     try:
-        return preferred_legacy_provider(
+        return preferred_source_for_config(
             state.config,
             MarketDataUseCase.REALTIME_QUOTES,
         )

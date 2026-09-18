@@ -12,8 +12,9 @@ from datetime import date, datetime
 from typing import Any
 
 from core.types import AssetClass, InstrumentType, Symbol
+from data.manager import build_sources
 from data.source_policy import MarketDataUseCase, source_policy_for_config
-from data.source_routing import legacy_sources_for_use_case, preferred_legacy_provider
+from data.source_routing import preferred_legacy_provider
 from server.services.market_hours import get_shanghai_now
 from server.services.market_quote_ingestion import (
     build_quote_ingestion_command,
@@ -219,11 +220,46 @@ def is_confirmed_fund_nav_quote(
 
 
 def _fund_nav_sources(config: Any) -> dict[str, Any]:
-    """Resolve configured FUND_NAV adapters through the versioned source policy."""
-    return legacy_sources_for_use_case(
-        config,
-        MarketDataUseCase.FUND_NAV,
+    """Build configured FUND_NAV adapters through the injectable legacy seam."""
+    return build_sources(
+        data_source=getattr(config, "data_source", None),
+        tushare_token=str(getattr(config, "tushare_token", "") or ""),
     )
+
+
+def _fund_nav_candidate_names(
+    config: Any,
+    sources: dict[str, Any],
+) -> tuple[str, ...]:
+    try:
+        return (
+            source_policy_for_config(config)
+            .route(MarketDataUseCase.FUND_NAV)
+            .candidates
+        )
+    except ValueError as exc:
+        if not str(exc).startswith("legacy_market_source_provider_unsupported:"):
+            raise
+        configured = str(getattr(config, "data_source", "") or "").strip().lower()
+        if configured and configured in sources:
+            return (configured,) + tuple(name for name in sources if name != configured)
+        raise
+
+
+def _preferred_fund_nav_provider(config: Any) -> str:
+    try:
+        return preferred_legacy_provider(
+            config,
+            MarketDataUseCase.FUND_NAV,
+        )
+    except ValueError as exc:
+        if not str(exc).startswith("legacy_market_source_provider_unsupported:"):
+            raise
+        sources = _fund_nav_sources(config)
+        names = _fund_nav_candidate_names(config, sources)
+        if not names:
+            raise
+        return names[0]
 
 
 def _source_chain(
@@ -235,8 +271,8 @@ def _source_chain(
     # output semantics decide whether a returned value is confirmed.
     del confirmation_only
     sources = _fund_nav_sources(config)
-    route = source_policy_for_config(config).route(MarketDataUseCase.FUND_NAV)
-    return [(name, sources[name]) for name in route.candidates if name in sources]
+    names = _fund_nav_candidate_names(config, sources)
+    return [(name, sources[name]) for name in names if name in sources]
 
 
 def _normalize_snapshot(
@@ -402,10 +438,7 @@ def refresh_fund_nav_quotes(
                 run_id=run_id,
                 started_at=current.isoformat(),
                 trigger="fund_nav_sync",
-                provider=preferred_legacy_provider(
-                    config,
-                    MarketDataUseCase.FUND_NAV,
-                ),
+                provider=_preferred_fund_nav_provider(config),
                 asset_type=InstrumentType.OPEN_END_FUND.value,
                 symbol_count=len(due_symbols),
                 status="running",
