@@ -63,7 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ref={shell.contentRef}
             className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto [contain:layout_paint]"
           >
-            <div className="w-full min-w-0 px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5 xl:px-6">
+            <div className="app-shell-canvas w-full min-w-0">
               <div className="app-route-stage" key={shell.pathname}>
                 {children}
               </div>

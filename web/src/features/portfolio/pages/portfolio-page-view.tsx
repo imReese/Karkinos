@@ -5,6 +5,7 @@ import {
 import { PublicationStatus } from '../../../shared/portfolio-evidence/publication-status';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import {
+  Button,
   EvidenceIdentityDisclosure,
   EvidenceState,
   MetricStrip,
@@ -35,8 +36,9 @@ export function PortfolioPageView({
   }
   return (
     <section
-      className="app-workbench-route space-y-4 sm:space-y-5"
+      className="app-workbench-route space-y-3 sm:space-y-4"
       data-workbench-route="portfolio"
+      data-workbench-width="wide"
     >
       <WorkspaceHeader
         eyebrow={copy.portfolio.kicker}
@@ -155,13 +157,9 @@ export function PortfolioPageView({
             }
             action={
               snapshot.isError ? (
-                <button
-                  type="button"
-                  className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
-                  onClick={actions.onRetrySnapshot}
-                >
+                <Button variant="secondary" onClick={actions.onRetrySnapshot}>
                   {copy.states.retry}
-                </button>
+                </Button>
               ) : undefined
             }
           />

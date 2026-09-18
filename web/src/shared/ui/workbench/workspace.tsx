@@ -46,22 +46,22 @@ export function WorkspaceHeader({
     <header
       data-workbench-primitive="workspace-header"
       className={cn(
-        'app-workspace-header flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] sm:flex-row sm:items-start sm:justify-between',
+        'app-workspace-header flex min-w-0 flex-col gap-2 border-b border-[var(--app-divider)] sm:flex-row sm:items-start sm:justify-between',
         className,
       )}
     >
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="app-workspace-eyebrow mb-1.5">{eyebrow}</div>
+          <div className="app-workspace-eyebrow mb-1">{eyebrow}</div>
         ) : null}
         <h1 className="app-workspace-title">{title}</h1>
         {description ? (
-          <p className="app-workspace-description mt-1 max-w-4xl">
+          <p className="app-workspace-description mt-0.5 max-w-4xl">
             {description}
           </p>
         ) : null}
         {context ? (
-          <div className="app-workspace-context mt-2 max-w-full overflow-hidden text-ellipsis [overflow-wrap:anywhere]">
+          <div className="app-workspace-context mt-1.5 max-w-full overflow-hidden text-ellipsis [overflow-wrap:anywhere]">
             {context}
           </div>
         ) : null}
