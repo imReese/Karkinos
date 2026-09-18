@@ -17,6 +17,7 @@ AUTHORITATIVE_TABLES = (
 )
 EXEMPT_HISTORY_MODULES = {
     "migrations.py",
+    "migration_registry.py",
     "financial_decimal_migrations.py",
 }
 
