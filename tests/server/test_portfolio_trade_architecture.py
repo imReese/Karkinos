@@ -189,7 +189,7 @@ def test_portfolio_writes_require_exact_command_and_operator_claims() -> None:
     contracts = _source("server/contracts/portfolio_trades.py")
     contracts += _source("server/contracts/portfolio_cash_flows.py")
     claims = _source("server/persistence/portfolio_mutation_claims.py")
-    migrations = _source("server/persistence/migrations.py")
+    migrations = _source("server/persistence/migration_registry.py")
 
     assert contracts.count("command_id: str") >= 6
     assert contracts.count("operator_id: str") >= 6

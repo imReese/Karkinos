@@ -100,7 +100,7 @@ def test_order_state_uows_own_explicit_write_transactions() -> None:
         ROOT / "server/persistence/schema_v1_financial_fragments.py"
     ).read_text(encoding="utf-8")
     assert "claim_atomic_order_state_commands" in (
-        ROOT / "server/persistence/migrations.py"
+        ROOT / "server/persistence/migration_registry.py"
     ).read_text(encoding="utf-8")
 
 
