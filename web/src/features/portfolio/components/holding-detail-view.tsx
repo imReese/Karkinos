@@ -157,8 +157,11 @@ export function HoldingDetailView({
         </section>
       </div>
 
-      <div className="space-y-5">
-        <div className="min-w-0 space-y-5">
+      <div
+        className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start"
+        data-testid="holding-detail-workspace"
+      >
+        <div className="min-w-0 space-y-4">
           <HoldingDetailTabs
             activeTab={activeTab}
             labels={model.metrics.tabLabels}
@@ -172,13 +175,12 @@ export function HoldingDetailView({
           <HoldingPnlCostsPanel activeTab={activeTab} model={model} />
           <HoldingTransactionsPanel activeTab={activeTab} model={model} />
         </div>
-        <aside className="min-w-0 space-y-5">
-          <HoldingEvidencePanel
-            activeTab={activeTab}
-            model={model}
-            onRefreshQuote={onRefreshQuote}
-          />
-          <HoldingReconciliationPanel activeTab={activeTab} model={model} />
+        <aside
+          className="min-w-0 space-y-4 xl:sticky xl:top-20 xl:self-start"
+          data-testid="holding-evidence-inspector-rail"
+        >
+          <HoldingEvidencePanel model={model} onRefreshQuote={onRefreshQuote} />
+          <HoldingReconciliationPanel model={model} />
           <HoldingRelatedActionsPanel model={model} />
         </aside>
       </div>

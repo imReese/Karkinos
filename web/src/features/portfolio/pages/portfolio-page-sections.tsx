@@ -271,39 +271,48 @@ export function PortfolioHistorySection({
 }) {
   const { copy, snapshot } = model.source;
   return (
-    <section
-      className="min-w-0 border-t border-[var(--app-divider)] pt-4"
+    <details
+      className="group min-w-0 border-t border-[var(--app-divider)]"
       data-testid="portfolio-history"
     >
-      <SectionHeader
-        title={copy.portfolio.detail.closedHistoryOnly}
-        description={
-          <>
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="app-type-section-title block text-[var(--app-text)]">
+            {copy.portfolio.detail.closedHistoryOnly}
+          </span>
+          <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
             {copy.portfolio.detail.realizedPnl}:{' '}
             {formatCurrency(snapshot.data?.realized_pnl_total)}
-          </>
-        }
-        actions={
+          </span>
+        </span>
+        <span
+          aria-hidden="true"
+          className="shrink-0 text-xs font-semibold text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+        >
+          ↓
+        </span>
+      </summary>
+      <div className="border-t border-[var(--app-divider)] pt-3">
+        <div className="mb-3 flex justify-end">
           <a
             href="/activity"
             className="app-button app-button-secondary app-button-sm"
           >
             {copy.portfolio.detail.actionViewActivity}
           </a>
-        }
-        className="mb-2"
-      />
-      {model.closedPositions.length > 0 ? (
-        <PositionsTable
-          positions={model.closedPositions}
-          variant="history"
-          onOpenPosition={actions.onOpenPosition}
-        />
-      ) : (
-        <div className="border-y border-[var(--app-divider)] px-3 py-3 text-sm text-[var(--app-text-secondary)]">
-          {copy.portfolio.detail.noLedger}
         </div>
-      )}
-    </section>
+        {model.closedPositions.length > 0 ? (
+          <PositionsTable
+            positions={model.closedPositions}
+            variant="history"
+            onOpenPosition={actions.onOpenPosition}
+          />
+        ) : (
+          <div className="border-y border-[var(--app-divider)] px-3 py-3 text-sm text-[var(--app-text-secondary)]">
+            {copy.portfolio.detail.noLedger}
+          </div>
+        )}
+      </div>
+    </details>
   );
 }

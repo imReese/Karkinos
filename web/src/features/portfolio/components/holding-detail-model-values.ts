@@ -10,15 +10,12 @@ export type DetailMetric = {
   tone?: 'pnl-positive' | 'pnl-negative' | 'warning';
 };
 
-export type HoldingDetailTab =
-  'position' | 'pnl-costs' | 'transactions' | 'evidence' | 'reconciliation';
+export type HoldingDetailTab = 'position' | 'pnl-costs' | 'transactions';
 
 export const HOLDING_DETAIL_TABS: HoldingDetailTab[] = [
   'position',
   'pnl-costs',
   'transactions',
-  'evidence',
-  'reconciliation',
 ];
 
 type EvidenceRefType =

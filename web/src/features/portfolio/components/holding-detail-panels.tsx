@@ -43,7 +43,7 @@ export function HoldingPositionPanel({
       aria-labelledby="holding-tab-position"
       hidden={activeTab !== 'position'}
       data-testid="holding-kline-panel"
-      className="app-workbench-section min-w-0 overflow-hidden"
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
     >
       {hasPersistedPriceStructure ? (
         <>
@@ -154,7 +154,7 @@ export function HoldingPnlCostsPanel({ activeTab, model }: HoldingPanelProps) {
       aria-labelledby="holding-tab-pnl-costs"
       hidden={activeTab !== 'pnl-costs'}
       data-testid="holding-pnl-costs-panel"
-      className="app-workbench-section min-w-0"
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
     >
       <div className="flex flex-col gap-3">
         <div>
@@ -197,7 +197,7 @@ export function HoldingTransactionsPanel({
       aria-labelledby="holding-tab-transactions"
       hidden={activeTab !== 'transactions'}
       data-testid="holding-transactions-panel"
-      className="app-workbench-section min-w-0"
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
     >
       <div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -223,10 +223,12 @@ export function HoldingTransactionsPanel({
 }
 
 export function HoldingEvidencePanel({
-  activeTab,
   model,
   onRefreshQuote,
-}: HoldingPanelProps & { onRefreshQuote: () => void }) {
+}: {
+  model: HoldingDetailModel;
+  onRefreshQuote: () => void;
+}) {
   const {
     isHistoricalClosedPosition,
     labels,
@@ -256,16 +258,10 @@ export function HoldingEvidencePanel({
     strategyEvidenceRefCount,
   } = model.strategy;
   return (
-    <div
-      id="holding-panel-evidence"
-      role="tabpanel"
-      aria-labelledby="holding-tab-evidence"
-      hidden={activeTab !== 'evidence'}
-      className="min-w-0 space-y-5"
-    >
+    <div data-testid="holding-evidence-inspector" className="min-w-0 space-y-4">
       <section
         data-testid="holding-quote-status-panel"
-        className="app-workbench-section min-w-0"
+        className="min-w-0 border-y border-[var(--app-divider)] py-4"
       >
         <div>
           <div className="app-product-mark">{labels.marketEvidence}</div>
@@ -351,7 +347,7 @@ export function HoldingEvidencePanel({
         <section
           data-testid="holding-strategy-attribution-boundary"
           id="holding-strategy-attribution-boundary"
-          className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+          className="min-w-0 border-t border-[var(--app-divider)] pt-4"
         >
           <div>
             <div className="app-product-mark">
@@ -498,18 +494,15 @@ export function HoldingEvidencePanel({
 }
 
 export function HoldingReconciliationPanel({
-  activeTab,
   model,
-}: HoldingPanelProps) {
+}: {
+  model: HoldingDetailModel;
+}) {
   const { labels } = model.source;
   return (
     <section
-      id="holding-panel-reconciliation"
-      role="tabpanel"
-      aria-labelledby="holding-tab-reconciliation"
-      hidden={activeTab !== 'reconciliation'}
       data-testid="holding-reconciliation-panel"
-      className="app-workbench-section min-w-0"
+      className="min-w-0 border-t border-[var(--app-divider)] pt-4"
     >
       <div className="app-product-mark">{labels.reconciliationTitle}</div>
       <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
