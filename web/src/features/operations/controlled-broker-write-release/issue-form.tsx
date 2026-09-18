@@ -53,7 +53,7 @@ export function IssueReleaseForm({
               ? '选择只读 adapter release'
               : 'Select read-only adapter release'
           }
-          className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+          className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           value={effectiveReleaseRef}
           onChange={(event) => onReleaseRefChange(event.target.value)}
         >
@@ -89,7 +89,7 @@ export function IssueReleaseForm({
         Execution-edge manifest JSON
         <textarea
           aria-label="Execution-edge manifest JSON"
-          className="app-field min-h-32 min-w-0 rounded-xl px-3 py-2 font-mono text-xs"
+          className="app-field min-h-32 min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
           spellCheck={false}
           value={manifestText}
           onChange={(event) => onManifestTextChange(event.target.value)}
@@ -103,7 +103,7 @@ export function IssueReleaseForm({
           aria-label={
             locale === 'zh' ? '选择放行期限' : 'Select release duration'
           }
-          className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+          className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           value={durationSeconds}
           onChange={(event) => onDurationChange(Number(event.target.value))}
         >
@@ -124,7 +124,7 @@ export function IssueReleaseForm({
             {ownerReviewLabel(field, locale)}
             <input
               aria-label={ownerReviewLabel(field, locale)}
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-xs"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-xs"
               value={ownerRefs[field]}
               onChange={(event) => onOwnerRefChange(field, event.target.value)}
               placeholder="review:…"
@@ -135,7 +135,7 @@ export function IssueReleaseForm({
 
       <button
         type="button"
-        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         disabled={previewPending}
         onClick={onLoadPreview}
       >

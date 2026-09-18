@@ -63,7 +63,7 @@ export function RevocationReview({
         </div>
       ) : null}
       {preview.data ? (
-        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger-border)_72%,transparent)] p-3 text-xs">
+        <div className="mt-3 border-l-2 border-[var(--app-danger-border)] py-2 pl-3 text-xs">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <span className="truncate" title={preview.data.release_evidence_id}>
               {shortenedIdentity(preview.data.release_evidence_id)}
@@ -120,7 +120,7 @@ export function RevocationReview({
           </label>
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             disabled={!acknowledged || revoke.isPending}
             onClick={onRevokeRelease}
           >

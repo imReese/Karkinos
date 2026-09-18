@@ -130,7 +130,7 @@ export function RevokeWriteReleaseFlow({
   };
 
   return (
-    <section className="min-w-0 rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] p-3 sm:p-4">
+    <section className="min-w-0 border-l-2 border-[var(--app-danger-border)] py-3 pl-3 sm:py-4">
       <h3 className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh' ? '单向撤销能力放行' : 'One-way capability revocation'}
       </h3>

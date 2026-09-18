@@ -58,7 +58,7 @@ export function IssueReleaseReview({
   return (
     <>
       {preview.data ? (
-        <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] p-3">
+        <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-semibold text-[var(--app-text)]">
               {preview.data.scope.provider || '—'} ·{' '}
@@ -126,7 +126,7 @@ export function IssueReleaseReview({
           </label>
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!acknowledged || issue.isPending}
             onClick={onIssueRelease}
           >
