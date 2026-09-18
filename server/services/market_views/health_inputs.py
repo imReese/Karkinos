@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 
 from core.types import AssetClass, InstrumentKey, InstrumentType, Symbol
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.models import (
     MarketCalendarSnapshotResponse,
     MarketHealthQuote,
@@ -124,7 +126,13 @@ def resolve_asset_display_name(
 
 
 def configured_provider_name(state) -> str:
-    return str(getattr(state.config, "data_source", "unknown") or "unknown")
+    try:
+        return preferred_legacy_provider(
+            state.config,
+            MarketDataUseCase.REALTIME_QUOTES,
+        )
+    except Exception:
+        return "unknown"
 
 
 def provider_requires_token(provider_name: str) -> bool:

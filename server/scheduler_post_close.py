@@ -9,6 +9,8 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from core.types import AssetClass, InstrumentType
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.scheduler_loop import runtime_quotes_from_persisted
 from server.services.fund_nav_sync import (
     is_confirmed_fund_nav_quote,
@@ -48,7 +50,10 @@ class SchedulerPostCloseMixin:
         try:
             receipt = receipt_reader(
                 trade_date=trade_date,
-                provider_name=str(getattr(self._config, "data_source", "") or ""),
+                provider_name=preferred_legacy_provider(
+                    self._config,
+                    MarketDataUseCase.DAILY_BARS,
+                ),
                 verify=True,
             )
         except Exception:
@@ -80,7 +85,10 @@ class SchedulerPostCloseMixin:
                 self._db,
                 data_store,
                 watchlist,
-                provider_name=str(getattr(self._config, "data_source", "") or ""),
+                provider_name=preferred_legacy_provider(
+                    self._config,
+                    MarketDataUseCase.DAILY_BARS,
+                ),
                 trade_date=trade_date,
                 calendar_evidence_refs=calendar_evidence_refs,
                 captured_at=captured_at,
@@ -217,7 +225,10 @@ class SchedulerPostCloseMixin:
         if resolved is None:
             return False
         target_trade_date = resolved.trade_date
-        provider_name = str(getattr(self._config, "data_source", "") or "")
+        provider_name = preferred_legacy_provider(
+            self._config,
+            MarketDataUseCase.DAILY_BARS,
+        )
         market_refresh_identity = self._post_close_market_refresh_identity(
             calendar_evidence_refs=resolved.calendar_evidence_refs,
         )

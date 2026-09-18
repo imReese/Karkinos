@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -250,21 +251,24 @@ async def backfill_market_bars(
     state,
     request: MarketBarsBackfillRequest,
 ) -> MarketBarsBackfillResponse:
-    from data.manager import DataManager, build_sources
+    from data.manager import DataManager, build_sources_for_config
+    from data.source_policy import MarketDataUseCase, source_policy_for_config
+    from data.source_routing import preferred_legacy_provider
     from data.store import DataStore
 
-    provider_name = str(getattr(state.config, "data_source", "akshare") or "akshare")
+    source_policy = source_policy_for_config(state.config)
+    provider_name = preferred_legacy_provider(
+        state.config,
+        MarketDataUseCase.DAILY_BARS,
+    )
     frequency = bar_frequency(request.interval)
     start, end = market_bar_backfill_range(state, request)
     targets = market_bar_backfill_targets(state, request)
     store = DataStore()
     manager = DataManager(
-        sources=build_sources(
-            data_source=provider_name,
-            tushare_token=getattr(state.config, "tushare_token", ""),
-        ),
+        sources=build_sources_for_config(state.config),
         store=store,
-        default_source=provider_name,
+        source_policy=source_policy,
     )
 
     def _run_backfill() -> list[MarketBarsBackfillItem]:
@@ -355,6 +359,19 @@ def extract_provider_display_name(payload: dict | None) -> str | None:
     return display_name or None
 
 
+def _metadata_sources(config, use_case):
+    from data.source_routing import legacy_sources_for_use_case
+
+    return legacy_sources_for_use_case(config, use_case)
+
+
+def _ordered_metadata_sources(config, use_case, sources):
+    from data.source_policy import source_policy_for_config
+
+    route = source_policy_for_config(config).route(use_case)
+    return [(name, sources[name]) for name in route.candidates if name in sources]
+
+
 async def backfill_instrument_metadata(
     state,
     request: InstrumentMetadataBackfillRequest,
@@ -365,27 +382,10 @@ async def backfill_instrument_metadata(
             status_code=503, detail="instrument metadata database is unavailable"
         )
 
-    from data.manager import build_sources
+    from data.source_policy import MarketDataUseCase
 
-    quote_provider_name = "akshare"
-    sources = build_sources(
-        data_source=getattr(state.config, "data_source", quote_provider_name),
-        tushare_token=getattr(state.config, "tushare_token", ""),
-    )
-    quote_source = sources.get(quote_provider_name)
-    if quote_source is None or not hasattr(quote_source, "fetch_latest"):
-        raise HTTPException(status_code=503, detail="akshare source is unavailable")
-    configured_provider_name = str(
-        getattr(state.config, "data_source", quote_provider_name) or quote_provider_name
-    ).strip()
-    stock_master_provider_name = (
-        configured_provider_name
-        if callable(
-            getattr(sources.get(configured_provider_name), "list_symbol_metadata", None)
-        )
-        else quote_provider_name
-    )
-    stock_master_source = sources.get(stock_master_provider_name) or quote_source
+    stock_master_provider_name: str | None = None
+    stock_master_source: Any | None = None
 
     items: list[InstrumentMetadataBackfillItem] = []
     timeout = float(
@@ -424,7 +424,24 @@ async def backfill_instrument_metadata(
             )
         )
     }
-    metadata_lister = getattr(stock_master_source, "list_symbol_metadata", None)
+    if pending_stock_symbols:
+        master_sources = _metadata_sources(
+            state.config,
+            MarketDataUseCase.SECURITY_MASTER,
+        )
+        master_chain = _ordered_metadata_sources(
+            state.config,
+            MarketDataUseCase.SECURITY_MASTER,
+            master_sources,
+        )
+        if master_chain:
+            stock_master_provider_name, stock_master_source = master_chain[0]
+
+    metadata_lister = (
+        None
+        if stock_master_source is None
+        else getattr(stock_master_source, "list_symbol_metadata", None)
+    )
     batch_upsert = getattr(db, "upsert_instrument_metadata_batch_sync", None)
     if pending_stock_symbols and callable(metadata_lister) and callable(batch_upsert):
         try:
@@ -472,6 +489,8 @@ async def backfill_instrument_metadata(
                 exc_info=True,
             )
 
+    quote_chain: list[tuple[str, Any]] | None = None
+
     for target in targets:
         symbol = target["symbol"]
         asset_class = target["asset_class"]
@@ -501,54 +520,68 @@ async def backfill_instrument_metadata(
             )
             continue
 
-        try:
-            payload = await asyncio.wait_for(
-                _run_blocking_fetch(
-                    quote_source.fetch_latest,
-                    Symbol(symbol),
-                    provider_asset_class(asset_class),
-                ),
-                timeout=timeout,
+        if quote_chain is None:
+            quote_sources = _metadata_sources(
+                state.config,
+                MarketDataUseCase.REALTIME_QUOTES,
             )
-        except asyncio.TimeoutError:
-            items.append(
-                InstrumentMetadataBackfillItem(
-                    symbol=symbol,
-                    asset_class=asset_class,
-                    status="failed",
-                    provider=quote_provider_name,
-                    error="provider_timeout",
+            quote_chain = _ordered_metadata_sources(
+                state.config,
+                MarketDataUseCase.REALTIME_QUOTES,
+                quote_sources,
+            )
+
+        payload = None
+        quote_provider_name = None
+        last_error = "metadata_not_available"
+        for candidate_name, candidate_source in quote_chain:
+            fetch_latest = getattr(candidate_source, "fetch_latest", None)
+            if not callable(fetch_latest):
+                continue
+            try:
+                candidate_payload = await asyncio.wait_for(
+                    _run_blocking_fetch(
+                        fetch_latest,
+                        Symbol(symbol),
+                        provider_asset_class(asset_class),
+                    ),
+                    timeout=timeout,
                 )
-            )
-            continue
-        except Exception as exc:
-            logger.warning(
-                "Instrument metadata backfill failed for %s", symbol, exc_info=True
-            )
+            except asyncio.TimeoutError:
+                last_error = "provider_timeout"
+                continue
+            except Exception as exc:
+                logger.warning(
+                    "Instrument metadata fallback failed for %s via %s",
+                    symbol,
+                    candidate_name,
+                    exc_info=True,
+                )
+                last_error = str(exc)
+                continue
+            if extract_provider_display_name(candidate_payload):
+                payload = candidate_payload
+                quote_provider_name = candidate_name
+                break
+
+        if payload is None or quote_provider_name is None:
             items.append(
                 InstrumentMetadataBackfillItem(
                     symbol=symbol,
                     asset_class=asset_class,
                     status="failed",
-                    provider=quote_provider_name,
-                    error=str(exc),
+                    provider=(
+                        quote_chain[0][0]
+                        if quote_chain
+                        else (stock_master_provider_name or "unavailable")
+                    ),
+                    error=last_error,
                 )
             )
             continue
 
         display_name = extract_provider_display_name(payload)
-        if not display_name:
-            items.append(
-                InstrumentMetadataBackfillItem(
-                    symbol=symbol,
-                    asset_class=asset_class,
-                    status="failed",
-                    provider=quote_provider_name,
-                    error="metadata_not_available",
-                )
-            )
-            continue
-
+        assert display_name is not None
         fetched_at = datetime.now().isoformat()
         db.upsert_instrument_metadata_sync(
             symbol=symbol,
@@ -578,10 +611,16 @@ async def backfill_instrument_metadata(
             )
         )
 
+    response_provider = (
+        stock_master_provider_name
+        if stock_master_updates and stock_master_provider_name
+        else next(
+            (str(item.provider) for item in items if getattr(item, "provider", None)),
+            "unavailable",
+        )
+    )
     return InstrumentMetadataBackfillResponse(
-        provider=(
-            stock_master_provider_name if stock_master_updates else quote_provider_name
-        ),
+        provider=response_provider,
         requested_count=len(items),
         updated_count=sum(1 for item in items if item.status == "updated"),
         skipped_count=sum(1 for item in items if item.status == "skipped"),
