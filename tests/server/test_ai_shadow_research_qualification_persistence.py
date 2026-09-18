@@ -342,6 +342,15 @@ def test_qualification_is_idempotent_private_and_human_approval_only(tmp_path) -
     assert public_run["initial_cash_redacted"] is True
     assert public_run["private_account_values_redacted"] is True
     assert public_run["provider_call_performed"] is False
+    outcome = public_run["qualification_outcome"]
+    assert outcome["status"] == "running"
+    assert outcome["deterministic"] is True
+    assert outcome["provider_call_performed"] is False
+    assert outcome["ai_generated"] is False
+    assert outcome["eligible_for_promotion_review"] is False
+    assert outcome["human_promotion_required"] is False
+    assert outcome["research_stage_effect"] == "none"
+    assert outcome["capital_authority_effect"] == "none"
 
     candidate = store.save_qualification_candidate(
         qualification_run_id=run["qualification_run_id"],
@@ -384,6 +393,17 @@ def test_qualification_is_idempotent_private_and_human_approval_only(tmp_path) -
     )
     assert completed["status"] == "completed"
     assert completed["selection"]["status"] == "winner_selected"
+    public_completed = store.get_public_qualification_run(run["qualification_run_id"])
+    completed_outcome = public_completed["qualification_outcome"]
+    assert completed_outcome["status"] == "passed"
+    assert (
+        completed_outcome["selected_qualification_candidate_id"]
+        == (candidate["qualification_candidate_id"])
+    )
+    assert completed_outcome["eligible_for_promotion_review"] is True
+    assert completed_outcome["human_promotion_required"] is True
+    assert completed_outcome["research_stage_effect"] == "none"
+    assert completed_outcome["capital_authority_effect"] == "none"
     assert (
         store.save_qualification_candidate(
             qualification_run_id=run["qualification_run_id"],

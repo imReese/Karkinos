@@ -7,6 +7,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from server.contracts.ai_shadow_research_automation import ShadowResearchRejected
+from server.contracts.ai_shadow_research_qualification import (
+    SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION,
+)
 from server.http.ai_shadow_research_qualification import create_router
 from server.services.ai_shadow_research_commands import AiShadowResearchCommandsMixin
 from server.services.strategy_promotion_support import (
@@ -128,8 +131,14 @@ def test_qualification_command_promotes_source_id_to_paper_shadow_only(
             calls["preflight_approval"] = {"candidate_id": candidate_id, **kwargs}
             return {
                 "qualification_approval_id": "qualification-approval",
+                "qualification_run_id": "qualification-run",
                 "qualification_candidate_id": candidate_id,
                 "target_stage": "paper_shadow",
+                "approved_by": kwargs["approved_by"],
+                "notes": kwargs["notes"],
+                "confirmation": kwargs["confirmation"],
+                "qualification_candidate_fingerprint": "sha256:candidate",
+                "created_at": kwargs["now"],
             }
 
         def approve_qualification_candidate_for_paper_shadow(
@@ -176,7 +185,7 @@ def test_qualification_command_promotes_source_id_to_paper_shadow_only(
         "qualified-candidate",
         approved_by="human:owner",
         notes="reviewed exact qualified evidence",
-        confirmation="exact-confirmation",
+        confirmation=SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION,
     )
 
     readiness = calls["atomic_promotion"]["readiness"]
@@ -187,6 +196,19 @@ def test_qualification_command_promotes_source_id_to_paper_shadow_only(
     assert readiness["broker_submission_enabled"] is False
     assert readiness["does_not_create_order"] is True
     assert readiness["does_not_authorize_execution"] is True
+    decision = result["promotion_decision"]
+    assert decision["promotion_decision_id"] == "qualification-approval"
+    assert decision["qualification_run_id"] == "qualification-run"
+    assert decision["qualification_candidate_id"] == "qualified-candidate"
+    assert decision["source"] == "human"
+    assert decision["target_stage"] == "paper_shadow"
+    assert decision["research_stage_effect"] == "paper_shadow"
+    assert decision["capital_authority_effect"] == "none"
+    assert decision["live_like_enabled"] is False
+    assert decision["broker_submission_enabled"] is False
+    assert decision["production_strategy_replaced"] is False
+    assert decision["strategy_registry_mutated"] is False
+    assert decision["ai_generated"] is False
     assert result["strategy_promotion_state_recorded"] is True
     assert result["production_strategy_registry_mutated"] is False
     assert result["broker_order_created"] is False

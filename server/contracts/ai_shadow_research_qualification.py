@@ -15,6 +15,12 @@ SHADOW_RESEARCH_QUALIFICATION_SCHEMA = (
 SHADOW_RESEARCH_QUALIFICATION_APPROVAL_SCHEMA = (
     "karkinos.ai.shadow_research_account_qualification_approval.v1"
 )
+SHADOW_RESEARCH_QUALIFICATION_OUTCOME_SCHEMA = (
+    "karkinos.ai.shadow_research_account_qualification_outcome.v1"
+)
+SHADOW_RESEARCH_PROMOTION_DECISION_SCHEMA = (
+    "karkinos.ai.shadow_research_promotion_decision.v1"
+)
 SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION = (
     "approve_exact_account_qualified_candidate_for_paper_shadow_only_without_"
     "order_trade_or_capital_authority"
@@ -499,6 +505,87 @@ def qualification_bounded_limit(limit: Any) -> int:
     return normalized
 
 
+def qualification_outcome_projection(run: Mapping[str, Any]) -> dict[str, Any]:
+    """Project the deterministic account-qualification result only."""
+
+    selection = run.get("selection")
+    if not isinstance(selection, Mapping):
+        selection = {}
+    run_status = str(run.get("status") or "")
+    selection_status = str(selection.get("status") or "")
+    selected_candidate_id = selection.get("winner_qualification_candidate_id")
+    if run_status == "completed" and selection_status == "winner_selected":
+        outcome_status = "passed"
+    elif run_status == "blocked":
+        outcome_status = "blocked"
+    elif run_status == "failed":
+        outcome_status = "failed"
+    elif run_status == "running":
+        outcome_status = "running"
+    else:
+        outcome_status = "not_evaluated"
+    eligible_for_promotion_review = outcome_status == "passed" and bool(
+        str(selected_candidate_id or "").strip()
+    )
+    return {
+        "schema_version": SHADOW_RESEARCH_QUALIFICATION_OUTCOME_SCHEMA,
+        "qualification_run_id": run.get("qualification_run_id"),
+        "status": outcome_status,
+        "selected_qualification_candidate_id": selected_candidate_id,
+        "blockers": list(run.get("blockers") or []),
+        "failure_code": run.get("failure_code"),
+        "deterministic": True,
+        "provider_call_performed": False,
+        "ai_generated": False,
+        "account_bound": True,
+        "eligible_for_promotion_review": eligible_for_promotion_review,
+        "human_promotion_required": eligible_for_promotion_review,
+        "research_stage_effect": "none",
+        "capital_authority_effect": "none",
+        "broker_submission_enabled": False,
+    }
+
+
+def public_promotion_decision_projection(
+    approval: Mapping[str, Any],
+    *,
+    strategy_id: str,
+    strategy_promotion: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project the explicit human research-stage promotion decision."""
+
+    if (
+        approval.get("target_stage") != SHADOW_RESEARCH_QUALIFICATION_TARGET_STAGE
+        or approval.get("confirmation") != SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION
+        or strategy_promotion.get("stage") != SHADOW_RESEARCH_QUALIFICATION_TARGET_STAGE
+        or bool(strategy_promotion.get("live_like_enabled"))
+    ):
+        raise ShadowResearchQualificationRejected(
+            "qualification_promotion_decision_binding_invalid"
+        )
+    return {
+        "schema_version": SHADOW_RESEARCH_PROMOTION_DECISION_SCHEMA,
+        "promotion_decision_id": approval.get("qualification_approval_id"),
+        "qualification_run_id": approval.get("qualification_run_id"),
+        "qualification_candidate_id": approval.get("qualification_candidate_id"),
+        "strategy_id": _required_text(strategy_id, "strategy_id"),
+        "source": "human",
+        "target_stage": SHADOW_RESEARCH_QUALIFICATION_TARGET_STAGE,
+        "approved_by": approval.get("approved_by"),
+        "notes": approval.get("notes"),
+        "confirmation": approval.get("confirmation"),
+        "created_at": approval.get("created_at"),
+        "manual_confirmation_recorded": True,
+        "research_stage_effect": "paper_shadow",
+        "capital_authority_effect": "none",
+        "live_like_enabled": False,
+        "broker_submission_enabled": False,
+        "production_strategy_replaced": False,
+        "strategy_registry_mutated": False,
+        "ai_generated": False,
+    }
+
+
 def public_qualification_run_projection(
     run: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -546,6 +633,7 @@ def public_qualification_run_projection(
         "broker_submission_enabled": False,
         "capital_authority_granted": False,
         "human_paper_shadow_approval_required": True,
+        "qualification_outcome": qualification_outcome_projection(run),
     }
 
 
@@ -638,6 +726,8 @@ def _positive_int(value: Any, *, field: str) -> int:
 
 __all__ = [
     "SHADOW_RESEARCH_QUALIFICATION_APPROVAL_SCHEMA",
+    "SHADOW_RESEARCH_QUALIFICATION_OUTCOME_SCHEMA",
+    "SHADOW_RESEARCH_PROMOTION_DECISION_SCHEMA",
     "SHADOW_RESEARCH_QUALIFICATION_ATTEMPT_RUN_TYPE",
     "SHADOW_RESEARCH_QUALIFICATION_ATTEMPT_SCHEMA",
     "SHADOW_RESEARCH_QUALIFICATION_CANDIDATE_STATUSES",
@@ -651,9 +741,11 @@ __all__ = [
     "ShadowResearchQualificationRejected",
     "build_qualification_candidate_values",
     "normalize_qualification_blockers",
+    "public_promotion_decision_projection",
     "public_qualification_approval_projection",
     "public_qualification_candidate_projection",
     "public_qualification_run_projection",
+    "qualification_outcome_projection",
     "qualification_payload_fingerprint",
     "qualification_bounded_limit",
     "qualification_candidate_record",
