@@ -213,7 +213,7 @@ export function IssueWriteReleaseFlow({
   };
 
   return (
-    <section className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] p-3 sm:p-4">
+    <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
       <h3 className="text-sm font-semibold text-[var(--app-text)]">
         {locale === 'zh'
           ? '签发限时能力放行'

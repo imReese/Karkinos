@@ -49,7 +49,7 @@ export function RevocationForm({
   }
   if (releases.length === 0) {
     return (
-      <div className="app-muted mt-3 rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] p-3 text-xs">
+      <div className="app-muted mt-3 border-y border-[var(--app-divider)] py-3 text-xs">
         {locale === 'zh'
           ? '尚无持久化 write release；系统保持默认关闭。'
           : 'No persisted write release exists; the system remains default closed.'}
@@ -64,7 +64,7 @@ export function RevocationForm({
           aria-label={
             locale === 'zh' ? '选择撤销 release' : 'Select release to revoke'
           }
-          className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+          className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           value={effectiveReleaseId}
           onChange={(event) => onReleaseChange(event.target.value)}
         >
@@ -92,7 +92,7 @@ export function RevocationForm({
           aria-label={
             locale === 'zh' ? '选择撤销原因' : 'Select revocation reason'
           }
-          className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+          className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           value={reason}
           onChange={(event) =>
             onReasonChange(
@@ -110,7 +110,7 @@ export function RevocationForm({
       </label>
       <button
         type="button"
-        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+        className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
         disabled={previewPending}
         onClick={onLoadPreview}
       >

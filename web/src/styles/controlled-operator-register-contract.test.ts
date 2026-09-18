@@ -8,6 +8,26 @@ import { describe, expect, it } from 'vitest';
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = (path: string) => readFileSync(resolve(SRC_ROOT, path), 'utf8');
 
+const WRITE_RELEASE_FLOW = [
+  source('features/operations/controlled-broker-write-release/issue-flow.tsx'),
+  source('features/operations/controlled-broker-write-release/issue-form.tsx'),
+  source(
+    'features/operations/controlled-broker-write-release/issue-review.tsx',
+  ),
+  source(
+    'features/operations/controlled-broker-write-release/revocation-flow.tsx',
+  ),
+  source(
+    'features/operations/controlled-broker-write-release/revocation-form.tsx',
+  ),
+  source(
+    'features/operations/controlled-broker-write-release/revocation-review.tsx',
+  ),
+  source(
+    'features/operations/controlled-broker-write-release/offline-signature-steps.tsx',
+  ),
+].join('\n');
+
 const CONTROLLED_OPERATORS = [
   source(
     'features/operations/controlled-broker-write-release-operator-panel.tsx',
@@ -42,5 +62,14 @@ describe('controlled operator register contract', () => {
       'rounded-[var(--app-radius-control)]',
     );
     expect(CONTROLLED_OPERATORS).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
+  });
+
+  it('keeps issue, offline-signature, and revocation flows register-like', () => {
+    expect(WRITE_RELEASE_FLOW).toContain('rounded-[var(--app-radius-control)]');
+    expect(WRITE_RELEASE_FLOW).toContain(
+      'border-y border-[var(--app-divider)]',
+    );
+    expect(WRITE_RELEASE_FLOW).toContain('border-l-2');
+    expect(WRITE_RELEASE_FLOW).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
   });
 });

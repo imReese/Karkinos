@@ -62,7 +62,7 @@ export function OfflineSignatureSteps({
                   ? '选择可信签名身份'
                   : 'Select trusted signer identity'
               }
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               value={effectiveKeyId}
               onChange={(event) => onIdentityChange(event.target.value)}
             >
@@ -81,7 +81,7 @@ export function OfflineSignatureSteps({
           ) : null}
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             disabled={!selectedIdentity || challenge.isPending}
             onClick={onCreateChallenge}
           >
@@ -112,7 +112,7 @@ export function OfflineSignatureSteps({
             aria-label={
               locale === 'zh' ? '离线签名 payload' : 'Offline signing payload'
             }
-            className="app-field mt-2 min-h-20 w-full rounded-xl px-3 py-2 font-mono text-xs"
+            className="app-field mt-2 min-h-20 w-full rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
             readOnly
             value={challenge.data.signing_payload_base64}
           />
@@ -122,14 +122,14 @@ export function OfflineSignatureSteps({
               aria-label={
                 locale === 'zh' ? '离线签名 Base64' : 'Offline signature Base64'
               }
-              className="app-field min-h-20 w-full rounded-xl px-3 py-2 font-mono text-xs"
+              className="app-field min-h-20 w-full rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
               value={signature}
               onChange={(event) => onSignatureChange(event.target.value)}
             />
           </label>
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!signature.trim() || verification.isPending}
             onClick={onVerifySignature}
           >
