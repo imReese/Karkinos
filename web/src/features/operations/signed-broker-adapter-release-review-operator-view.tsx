@@ -89,7 +89,7 @@ function ReleaseReviewHeader({
           </span>
           <button
             type="button"
-            className="app-button-secondary min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+            className="app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             onClick={toggleOpen}
           >
             {open
@@ -152,7 +152,7 @@ function ReleaseReviewForm({
             aria-label={
               locale === 'zh' ? '选择审查决策' : 'Select review decision'
             }
-            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+            className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
             value={decision}
             onChange={(event) =>
               onDecisionChange(
@@ -171,7 +171,7 @@ function ReleaseReviewForm({
           Review ID
           <input
             aria-label="Adapter release review ID"
-            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+            className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
             value={reviewId}
             onChange={(event) => onReviewIdChange(event.target.value)}
             placeholder="adapter-review:2026-001"
@@ -181,7 +181,7 @@ function ReleaseReviewForm({
           {locale === 'zh' ? '原因引用' : 'Reason reference'}
           <input
             aria-label="Adapter release reason reference"
-            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+            className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
             value={reasonRef}
             onChange={(event) => onReasonRefChange(event.target.value)}
             placeholder="owner-reviewed-boundary:v1"
@@ -195,7 +195,7 @@ function ReleaseReviewForm({
             : 'Select current accepted release'}
           <select
             aria-label="Select accepted adapter release to revoke"
-            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+            className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
             value={effectiveReleaseRef}
             onChange={(event) => onReleaseRefChange(event.target.value)}
           >
@@ -226,7 +226,7 @@ function ReleaseReviewForm({
         {locale === 'zh' ? 'Manifest 来源名称' : 'Manifest source name'}
         <input
           aria-label="Adapter manifest source name"
-          className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+          className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           value={sourceName}
           onChange={(event) => onSourceNameChange(event.target.value)}
         />
@@ -235,7 +235,7 @@ function ReleaseReviewForm({
         Read-only adapter release manifest JSON
         <textarea
           aria-label="Read-only adapter release manifest JSON"
-          className="app-field min-h-52 min-w-0 rounded-xl px-3 py-2 font-mono text-xs"
+          className="app-field min-h-52 min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
           spellCheck={false}
           readOnly={manifestReadOnly}
           value={effectiveManifestText}
@@ -245,7 +245,7 @@ function ReleaseReviewForm({
       </label>
       <button
         type="button"
-        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         disabled={preview.isPending}
         onClick={loadPreview}
       >
@@ -279,7 +279,7 @@ function ReleaseReviewEvidence({
   locale: Locale;
 }) {
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-semibold text-[var(--app-text)]">
           {decisionLabel(dossier.decision, locale)} ·{' '}
@@ -342,12 +342,12 @@ function ReleaseReviewSigning({
     verifySignature,
   } = controller;
   return (
-    <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] p-3">
+    <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
       <label className="grid min-w-0 gap-1.5 text-xs font-semibold text-[var(--app-text-secondary)]">
         {locale === 'zh' ? '可信签名身份' : 'Trusted signing identity'}
         <select
           aria-label="Adapter review signing identity"
-          className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+          className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           value={effectiveKeyId}
           onChange={(event) => onSelectedKeyIdChange(event.target.value)}
         >
@@ -367,7 +367,7 @@ function ReleaseReviewSigning({
       </label>
       <button
         type="button"
-        className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+        className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         disabled={!selectedIdentity || challenge.isPending}
         onClick={createChallenge}
       >
@@ -380,26 +380,26 @@ function ReleaseReviewSigning({
           <label className="grid min-w-0 gap-1.5 text-xs font-semibold text-[var(--app-text-secondary)]">
             Signing payload Base64
             <input
-              className="app-field min-w-0 rounded-xl px-3 py-2 font-mono text-xs"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
               readOnly
               value={challenge.data.signing_payload_base64}
             />
           </label>
-          <pre className="app-muted min-w-0 overflow-x-auto whitespace-pre-wrap break-all rounded-xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] p-2 text-[length:var(--app-font-size-micro)] leading-5">
+          <pre className="app-muted min-w-0 overflow-x-auto whitespace-pre-wrap break-all border-y border-[var(--app-divider)] py-2 text-[length:var(--app-font-size-micro)] leading-5">
             {`printf '%s' '${challenge.data.signing_payload_base64}' | uv run python scripts/broker/operator_signer.py sign --private-key /secure/path/operator.pem --operator-id '${challenge.data.operator_id}' --key-id '${challenge.data.key_id}' --expected-action '${challenge.data.action}' --expected-artifact-type '${challenge.data.artifact_type}'`}
           </pre>
           <label className="grid min-w-0 gap-1.5 text-xs font-semibold text-[var(--app-text-secondary)]">
             {locale === 'zh' ? '离线签名 Base64' : 'Offline signature Base64'}
             <input
               aria-label="Adapter review offline signature Base64"
-              className="app-field min-w-0 rounded-xl px-3 py-2 font-mono text-xs"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
               value={signature}
               onChange={(event) => onSignatureChange(event.target.value)}
             />
           </label>
           <button
             type="button"
-            className="app-button-secondary min-h-9 w-fit rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary min-h-9 w-fit rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!signature.trim() || verification.isPending}
             onClick={verifySignature}
           >
@@ -433,7 +433,7 @@ function ReleaseReviewSigning({
           </label>
           <button
             type="button"
-            className="app-button-primary min-h-9 w-fit rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-primary min-h-9 w-fit rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!acknowledged || record.isPending}
             onClick={recordDecision}
           >
@@ -449,7 +449,7 @@ function ReleaseReviewSigning({
         </div>
       ) : null}
       {record.data ? (
-        <div className="mt-3 rounded-xl border border-[var(--app-success-border)] p-3 text-xs text-[var(--app-success-text)]">
+        <div className="mt-3 border-l-2 border-[var(--app-success-border)] py-2 pl-3 text-xs text-[var(--app-success-text)]">
           {locale === 'zh' ? '已记录：' : 'Recorded: '}
           {record.data.decision} · {record.data.review_id} ·{' '}
           {shortenedIdentity(record.data.review_fingerprint)}
@@ -468,26 +468,24 @@ export function SignedBrokerAdapterReleaseReviewOperatorView({
 }) {
   return (
     <section
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
       data-testid="signed-broker-adapter-release-review-panel"
     >
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
-        <ReleaseReviewHeader controller={controller} locale={locale} />
-        {controller.open ? (
-          <div className="mt-4 min-w-0 border-t border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] pt-4">
-            <ReleaseReviewForm controller={controller} locale={locale} />
-            {controller.preview.data ? (
-              <ReleaseReviewEvidence
-                dossier={controller.preview.data}
-                locale={locale}
-              />
-            ) : null}
-            {controller.preview.data?.review_ready ? (
-              <ReleaseReviewSigning controller={controller} locale={locale} />
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      <ReleaseReviewHeader controller={controller} locale={locale} />
+      {controller.open ? (
+        <div className="mt-4 min-w-0 border-t border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] pt-4">
+          <ReleaseReviewForm controller={controller} locale={locale} />
+          {controller.preview.data ? (
+            <ReleaseReviewEvidence
+              dossier={controller.preview.data}
+              locale={locale}
+            />
+          ) : null}
+          {controller.preview.data?.review_ready ? (
+            <ReleaseReviewSigning controller={controller} locale={locale} />
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

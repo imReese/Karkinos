@@ -79,7 +79,7 @@ export function BrokerAdapterReadinessPanel({
 
   return (
     <section
-      className="app-workbench-section min-w-0"
+      className="min-w-0 border-y border-[var(--app-divider)]"
       data-testid="broker-adapter-readiness"
     >
       <div className="min-w-0 px-1 py-4 sm:px-3">

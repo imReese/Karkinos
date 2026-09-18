@@ -19,24 +19,22 @@ export function CurrentPerOrderDossierOperatorView({
 }: DossierViewProps) {
   return (
     <section
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
       data-testid="current-per-order-dossier-panel"
     >
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
-        <DossierHeader controller={controller} />
-        <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-xs">
-          <span className="app-chip">persisted facts only</span>
-          <span className="app-chip">broker submit: disabled</span>
-          <span className="app-chip">broker cancel: disabled</span>
-        </div>
-        {controller.open ? (
-          <div className="mt-4 min-w-0 border-t border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] pt-4">
-            <DossierCandidateSelection controller={controller} />
-            <DossierPreview controller={controller} />
-            <DossierFinalConfirmation controller={controller} />
-          </div>
-        ) : null}
+      <DossierHeader controller={controller} />
+      <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-xs">
+        <span className="app-chip">persisted facts only</span>
+        <span className="app-chip">broker submit: disabled</span>
+        <span className="app-chip">broker cancel: disabled</span>
       </div>
+      {controller.open ? (
+        <div className="mt-4 min-w-0 border-t border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] pt-4">
+          <DossierCandidateSelection controller={controller} />
+          <DossierPreview controller={controller} />
+          <DossierFinalConfirmation controller={controller} />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -62,7 +60,7 @@ function DossierHeader({ controller }: DossierViewProps) {
       </div>
       <button
         type="button"
-        className="app-button-secondary min-h-9 shrink-0 rounded-xl px-3 py-2 text-xs font-semibold"
+        className="app-button-secondary min-h-9 shrink-0 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
         onClick={controller.toggleOpen}
       >
         {open
@@ -93,7 +91,7 @@ function DossierCandidateSelection({ controller }: DossierViewProps) {
           {mutationError(candidates.error)}
         </div>
       ) : candidateRows.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] px-4 py-4 text-sm text-[var(--app-soft)]">
+        <div className="border-y border-[var(--app-divider)] py-4 text-sm text-[var(--app-soft)]">
           {locale === 'zh'
             ? '当前没有 canonical manually_confirmed OMS 订单。系统保持默认关闭，不会创建示例订单或联系券商。'
             : 'No canonical manually_confirmed OMS order is available. The system stays default-closed and creates no sample order or broker contact.'}
@@ -108,7 +106,7 @@ function DossierCandidateSelection({ controller }: DossierViewProps) {
               aria-label={
                 locale === 'zh' ? '选择逐单复核订单' : 'Select order to review'
               }
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               value={effectiveOrderId}
               onChange={(event) => controller.selectOrder(event.target.value)}
             >
@@ -122,7 +120,7 @@ function DossierCandidateSelection({ controller }: DossierViewProps) {
           </label>
           <button
             type="button"
-            className="app-button-secondary min-h-10 rounded-xl px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!effectiveOrderId || preview.isPending}
             onClick={controller.loadPreview}
           >
@@ -158,7 +156,7 @@ function DossierPreview({ controller }: DossierViewProps) {
     return null;
   }
   return (
-    <div className="mt-4 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] p-3 sm:p-4">
+    <div className="mt-4 min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {preview.data.order.symbol} ·{' '}
@@ -230,7 +228,7 @@ function DossierPreview({ controller }: DossierViewProps) {
         />
       </div>
       {preview.data.review_blockers.length ? (
-        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-3">
+        <div className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3">
           <div className="text-xs font-semibold text-[var(--app-text)]">
             {locale === 'zh'
               ? '当前证据不足，不能签名'
@@ -245,7 +243,7 @@ function DossierPreview({ controller }: DossierViewProps) {
           </ul>
         </div>
       ) : null}
-      <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_25%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_5%,transparent)] px-3 py-3 text-xs text-[var(--app-soft)]">
+      <div className="mt-3 border-l-2 border-[var(--app-danger-border)] py-2 pl-3 text-xs text-[var(--app-soft)]">
         {locale === 'zh'
           ? `提交状态固定为 blocked；仍有 ${preview.data.hard_submission_blockers.length} 个硬门禁。本步骤不会移除这些门禁。`
           : `Submission remains blocked with ${preview.data.hard_submission_blockers.length} hard gates. This review removes none of them.`}
@@ -283,7 +281,7 @@ function DossierSignature({ controller }: DossierViewProps) {
           {mutationError(approvalStatus.error)}
         </div>
       ) : eligibleIdentities.length === 0 ? (
-        <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] px-3 py-3 text-xs text-[var(--app-soft)]">
+        <div className="border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-xs text-[var(--app-soft)]">
           {locale === 'zh'
             ? '未配置启用的 Ed25519 可信操作员公钥，签名步骤保持禁用。'
             : 'No enabled trusted Ed25519 operator public key is configured; signing stays disabled.'}
@@ -293,7 +291,7 @@ function DossierSignature({ controller }: DossierViewProps) {
           <label className="grid min-w-0 gap-2 text-xs font-semibold text-[var(--app-soft)] sm:max-w-xl">
             {locale === 'zh' ? '可信操作员身份' : 'Trusted operator identity'}
             <select
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               value={effectiveKeyId}
               onChange={(event) => controller.selectKey(event.target.value)}
             >
@@ -306,7 +304,7 @@ function DossierSignature({ controller }: DossierViewProps) {
           </label>
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!selectedIdentity || challenge.isPending}
             onClick={controller.createChallenge}
           >
@@ -326,13 +324,13 @@ function DossierSignature({ controller }: DossierViewProps) {
         </div>
       ) : null}
       {challenge.data ? (
-        <div className="mt-3 min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_25%,transparent)] p-3">
+        <div className="mt-3 min-w-0 border-y border-[var(--app-divider)] py-3">
           <label className="grid min-w-0 gap-2 text-xs font-semibold text-[var(--app-soft)]">
             {locale === 'zh'
               ? '离线签名 payload（base64）'
               : 'Offline signing payload (base64)'}
             <textarea
-              className="app-field min-h-20 min-w-0 rounded-xl px-3 py-2 font-mono text-xs"
+              className="app-field min-h-20 min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
               readOnly
               value={challenge.data.signing_payload_base64}
             />
@@ -343,7 +341,7 @@ function DossierSignature({ controller }: DossierViewProps) {
               : 'Paste detached signature (base64)'}
             <input
               autoComplete="off"
-              className="app-field min-w-0 rounded-xl px-3 py-2 font-mono text-xs"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 font-mono text-xs"
               type="password"
               value={signature}
               onChange={(event) =>
@@ -353,7 +351,7 @@ function DossierSignature({ controller }: DossierViewProps) {
           </label>
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={signature.trim().length < 80 || verification.isPending}
             onClick={controller.verifySignature}
           >
@@ -381,7 +379,7 @@ function DossierFinalConfirmation({ controller }: DossierViewProps) {
   return (
     <>
       {verification.data ? (
-        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] p-3">
+        <div className="mt-4 border-l-2 border-[var(--app-warning-border)] py-2 pl-3">
           <label className="flex min-w-0 items-start gap-2 text-xs font-semibold text-[var(--app-text)]">
             <input
               checked={acknowledged}
@@ -399,7 +397,7 @@ function DossierFinalConfirmation({ controller }: DossierViewProps) {
           </label>
           <button
             type="button"
-            className="app-button-secondary mt-3 min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary mt-3 min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!acknowledged || confirmation.isPending}
             onClick={controller.recordConfirmation}
           >
@@ -422,7 +420,7 @@ function DossierFinalConfirmation({ controller }: DossierViewProps) {
         </div>
       ) : null}
       {confirmation.data ? (
-        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)] px-3 py-3 text-sm text-[var(--app-success)]">
+        <div className="mt-4 border-l-2 border-[var(--app-success-border)] py-2 pl-3 text-sm text-[var(--app-success-text)]">
           {locale === 'zh'
             ? '逐单复核事实已记录。券商提交、撤单和资本授权仍保持关闭。'
             : 'The per-order review fact is recorded. Broker submit, cancel, and capital authority remain disabled.'}

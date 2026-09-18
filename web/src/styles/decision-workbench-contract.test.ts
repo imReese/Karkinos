@@ -23,6 +23,7 @@ const DECISION_CORE = [
   readDecisionModule('decision-lane-panels.tsx'),
 ].join('\n');
 const DAILY_TRADING_PLAN = readDecisionModule('daily-trading-plan-panel.tsx');
+const AUTOMATION_COCKPIT = readDecisionModule('automation-cockpit-panel.tsx');
 const DECISION = `${DECISION_CONTENT}\n${DECISION_WORKSPACE}`;
 
 describe('decision workbench contract', () => {
@@ -90,5 +91,20 @@ describe('decision workbench contract', () => {
     );
     expect(DECISION).toContain('tradingPlan.data?.order_intent_count === 0');
     expect(DECISION).toContain('[&>[data-testid]>:first-child]:hidden');
+  });
+
+  it('keeps automation and lane evidence on direct register boundaries', () => {
+    expect(AUTOMATION_COCKPIT).toContain(
+      'data-testid="decision-automation-cockpit"',
+    );
+    expect(AUTOMATION_COCKPIT).toContain(
+      'border-y border-[var(--app-divider)]',
+    );
+    expect(AUTOMATION_COCKPIT).not.toContain('app-terminal-panel');
+    expect(AUTOMATION_COCKPIT).not.toContain('app-terminal-inner');
+    expect(AUTOMATION_COCKPIT).not.toContain(
+      'rounded-[var(--app-radius-surface)]',
+    );
+    expect(DECISION_CORE).not.toContain('app-workbench-section');
   });
 });
