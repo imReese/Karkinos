@@ -1447,7 +1447,16 @@ async function findDailyTradingPlanWith(expectedText: string) {
   return plan;
 }
 
+async function openDecisionSupportingDetails() {
+  const details = await screen.findByTestId('decision-supporting-details');
+  if (!details.hasAttribute('open')) {
+    fireEvent.click(details.querySelector('summary') as HTMLElement);
+  }
+  return details;
+}
+
 async function expandDecisionSummary(locale: 'en' | 'zh' = 'en') {
+  await openDecisionSupportingDetails();
   fireEvent.click(
     await screen.findByRole('button', {
       name: locale === 'zh' ? '展开状态明细' : 'Expand status details',
@@ -1456,6 +1465,7 @@ async function expandDecisionSummary(locale: 'en' | 'zh' = 'en') {
 }
 
 async function expandDecisionWorkflow(locale: 'en' | 'zh' = 'en') {
+  await openDecisionSupportingDetails();
   fireEvent.click(
     await screen.findByRole('button', {
       name: locale === 'zh' ? '展开通道明细' : 'Expand channel details',
@@ -1464,6 +1474,7 @@ async function expandDecisionWorkflow(locale: 'en' | 'zh' = 'en') {
 }
 
 async function expandDecisionCandidates(locale: 'en' | 'zh' = 'en') {
+  await openDecisionSupportingDetails();
   const buttons = await screen.findAllByRole('button', {
     name: locale === 'zh' ? '展开证据明细' : 'Expand evidence',
   });
@@ -1945,10 +1956,13 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   await expandDecisionCandidates();
 
   expect(await screen.findByText('Decision platform')).toBeTruthy();
-  const metricStrip = await screen.findByLabelText('Today operating posture');
-  expect(within(metricStrip).getByText('Candidate pool')).toBeTruthy();
-  expect(within(metricStrip).getByText('1 ready')).toBeTruthy();
-  expect(within(metricStrip).getByText('0 blocked')).toBeTruthy();
+  const supportingDetails = await screen.findByTestId(
+    'decision-supporting-details',
+  );
+  expect(supportingDetails.querySelector('summary')?.textContent).toContain(
+    'candidates',
+  );
+  expect(screen.queryByLabelText('Today operating posture')).toBeNull();
   expect(
     await screen.findByRole('table', {
       name: 'Evidence-first review order',
@@ -2011,12 +2025,11 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
 });
 
-test('labels decision candidates as a candidate pool in Chinese', async () => {
+test('labels supporting decision detail as a candidate pool in Chinese', async () => {
   renderDecisionCockpit({ locale: 'zh' });
 
-  const metricStrip = await screen.findByLabelText('今日运行姿态');
-  expect(within(metricStrip).getByText('候选池')).toBeTruthy();
-  expect(within(metricStrip).getByText('1')).toBeTruthy();
+  const details = await screen.findByTestId('decision-supporting-details');
+  expect(details.querySelector('summary')?.textContent).toContain('候选池 1');
   expect(document.body.textContent).not.toContain('候选动作 1');
 });
 
@@ -5723,7 +5736,7 @@ test('surfaces the one next action before dense decision evidence', async () => 
   );
   expect(collapsedSummary.textContent).toContain('50 个候选：状态明细已收起');
   expect(screen.queryByTestId('decision-summary-grid')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '展开状态明细' }));
+  await expandDecisionSummary('zh');
   expect(await screen.findByTestId('decision-summary-grid')).toBeTruthy();
   expect(await screen.findByText('50 个候选已汇总')).toBeTruthy();
   expect(screen.queryByTestId('decision-candidate-card-600519')).toBeNull();

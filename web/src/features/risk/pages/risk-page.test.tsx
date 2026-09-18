@@ -646,7 +646,7 @@ test('renders risk boundaries and blocking register without order approval contr
   ).toBe('/decision');
 
   const controlGrid = await screen.findByTestId('risk-trading-control-grid');
-  expect(controlGrid.className).toContain('gap-2');
+  expect(controlGrid.className).toContain('border-t');
   expect(
     within(controlGrid)
       .getByTestId('kill-switch-panel')
@@ -669,12 +669,11 @@ test('renders risk boundaries and blocking register without order approval contr
   const priorityList = within(blockRegister).getByRole('list', {
     name: 'Active risk priorities',
   });
-  const metrics = screen.getByLabelText('Risk metrics');
-  const metricRail = screen.getByTestId('risk-metric-rail');
-  expect(within(metrics).getByText('Healthy')).toBeTruthy();
-  expect(within(metrics).queryByText('Review required')).toBeNull();
-  expect(metricRail.className).toContain('content-start');
-  expect(metrics.className).toContain('app-risk-metric-strip');
+  const controlledAction = screen.getByTestId(
+    'risk-controlled-action-disclosure',
+  );
+  expect(controlledAction.tagName).toBe('DETAILS');
+  expect(controlledAction.hasAttribute('open')).toBe(false);
   expect(blockRegister.className).toContain('min-w-0');
   expect(priorityList.getAttribute('data-density')).toBe('compact');
   expect(priorityList.className).not.toContain('md:grid-cols-2');
@@ -703,27 +702,20 @@ test('renders risk boundaries and blocking register without order approval contr
       .getAttribute('data-density'),
   ).toBe('compact');
   expect(
-    blockRegister.compareDocumentPosition(metrics) &
+    blockRegister.compareDocumentPosition(thresholdTable) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    metrics.compareDocumentPosition(handoff) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    metrics.compareDocumentPosition(controlGrid) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(within(metricRail).getByTestId('risk-trading-control-grid')).toBe(
-    controlGrid,
-  );
-  expect(
-    controlGrid.compareDocumentPosition(handoff) &
+    thresholdTable.compareDocumentPosition(controlledAction) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    handoff.compareDocumentPosition(thresholdTable) &
+    controlledAction.compareDocumentPosition(handoff) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  expect(
+    within(controlledAction).getByTestId('risk-trading-control-grid'),
+  ).toBe(controlGrid);
   const analysisDisclosure = screen.getByTestId('risk-analysis-disclosure');
   expect(analysisDisclosure.tagName).toBe('DETAILS');
   expect(analysisDisclosure.hasAttribute('open')).toBe(false);
