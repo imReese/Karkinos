@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from server.persistence.financial_canonical_migrations import V18_SCHEMA_OBJECTS
 from server.persistence.financial_invariant_migrations import V17_SCHEMA_OBJECTS
+from server.persistence.structured_fact_migrations import V19_SCHEMA_OBJECTS
 
 
 class MigrationSpec(Protocol):
@@ -25,6 +26,7 @@ LEGACY_V1_REPAIR_TABLE = "controlled_submission_ledger_postings"
 LEGACY_V1_REPAIR_COLUMN = "account_truth_review_fingerprint"
 
 _VERSIONED_SCHEMA_OBJECTS = (
+    *((19, object_type, name) for object_type, name in V19_SCHEMA_OBJECTS),
     *((18, object_type, name) for object_type, name in V18_SCHEMA_OBJECTS),
     *((17, object_type, name) for object_type, name in V17_SCHEMA_OBJECTS),
     (14, "index", "idx_quote_snapshots_published_nav_date"),

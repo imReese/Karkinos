@@ -39,6 +39,9 @@ from server.persistence.quote_schema_migrations import (
     build_legacy_mutated_v14,
     build_quote_schema_migrations,
 )
+from server.persistence.structured_fact_migrations import (
+    build_structured_fact_migration,
+)
 
 
 @dataclass(frozen=True)
@@ -492,6 +495,7 @@ _MIGRATIONS = (
     build_financial_decimal_migration(SchemaMigration),
     build_financial_invariant_migration(SchemaMigration),
     build_financial_canonical_migration(SchemaMigration),
+    build_structured_fact_migration(SchemaMigration),
 )
 
 CURRENT_MIGRATION_HEAD = CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version
