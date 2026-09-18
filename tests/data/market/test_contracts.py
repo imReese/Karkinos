@@ -9,8 +9,10 @@ import pytest
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import (
+    DailyBarCapability,
     DailyBarProvider,
     DailyBarRequest,
+    MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
     ProviderDailyBarRow,
 )
@@ -434,6 +436,20 @@ def test_provider_daily_bar_batch_trims_text_metadata() -> None:
 
 def test_daily_bar_provider_protocol_accepts_matching_adapter() -> None:
     class FakeProvider:
+        @property
+        def descriptor(self) -> MarketDataProviderDescriptor:
+            return MarketDataProviderDescriptor(
+                provider="fixture",
+                upstream_group="fixture",
+                adapter_version="fixture.v1",
+                daily_bar_capabilities=(
+                    DailyBarCapability(
+                        endpoint="fixture.daily",
+                        instrument_types=(InstrumentType.STOCK,),
+                    ),
+                ),
+            )
+
         def fetch_daily_bars(
             self,
             request: DailyBarRequest,
