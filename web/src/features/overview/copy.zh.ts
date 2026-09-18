@@ -156,6 +156,9 @@ export const overviewCopyZh = {
     decisionBlockers: '决策阻断',
     decisionBlocked: 'BLOCKED',
     decisionEvidence: '证据',
+    decisionStrategyResearch: '研究策略',
+    decisionStrategyNotReady: 'NOT READY',
+    decisionStrategyNextStep: '进入证据研究并完成策略晋级',
     decisionTaskLabels: {
       data_refresh: '行情数据',
       account_truth: '账户事实',
@@ -165,7 +168,9 @@ export const overviewCopyZh = {
       manual_confirmation: '人工确认',
     },
     decisionReasonLabels: {
-      promoted_strategy_scan_missing: '缺少当前晋级策略扫描',
+      promoted_strategy_not_configured:
+        '当前没有已晋级到 Paper Shadow 的证据策略',
+      promoted_strategy_scan_missing: '已晋级策略缺少今日扫描',
       decision_generation_time_not_bound_to_plan_date:
         '决策生成时间未绑定计划日',
       plan_generation_time_not_bound_to_plan_date:

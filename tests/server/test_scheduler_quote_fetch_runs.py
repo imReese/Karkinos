@@ -1292,6 +1292,109 @@ def test_scheduler_post_close_promotes_new_stock_bar_into_current_quote(
     assert metadata["calendar_evidence_refs"]
 
 
+def test_scheduler_post_close_recovers_missing_daily_receipt_from_batch_provider(
+    tmp_path,
+    monkeypatch,
+):
+    from server.scheduler import TradingScheduler
+
+    valuation_now = datetime(2026, 5, 29, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: valuation_now,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    db.upsert_latest_quote_sync(
+        symbol="600001",
+        asset_type="stock",
+        price=10.0,
+        quote_timestamp="2026-05-28T15:00:00+08:00",
+        quote_source="tushare_realtime_quote",
+        provider_name="tushare",
+        quote_status="confirmed",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="manual_adjustment",
+        timestamp="2026-01-01T09:00:00+08:00",
+        symbol="600001",
+        quantity=100,
+        price=10.0,
+        asset_class="stock",
+        source="internal_fixture",
+        source_ref="opening-position-600001",
+    )
+
+    store = DataStore(tmp_path)
+    calls: list[str] = []
+
+    class BatchSource:
+        def fetch_market_daily_bars(self, trade_date: str):
+            calls.append(trade_date)
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": "600001",
+                        "timestamp": "2026-05-29T00:00:00",
+                        "open": 10.2,
+                        "high": 11.2,
+                        "low": 10.1,
+                        "close": 11.0,
+                        "volume": 1000,
+                        "amount": 11000,
+                    }
+                ]
+            )
+
+    manager = SimpleNamespace(
+        store=store,
+        sources={"tushare": BatchSource()},
+    )
+    scheduler = TradingScheduler(
+        _scheduler_config(data_source="tushare", tushare_token="fixture"),
+        FakeBridge(),
+        db=db,
+    )
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date="2026-05-29",
+            provider_name="tushare",
+        )
+        is None
+    )
+    assert scheduler._maybe_refresh_post_close_valuation_data(
+        manager,
+        now=datetime(2026, 5, 29, 16, 0),
+    )
+
+    receipt = store.get_market_daily_ingestion_receipt(
+        trade_date="2026-05-29",
+        provider_name="tushare",
+        verify=True,
+    )
+    latest = db.get_latest_quote_sync("600001", asset_type="stock")
+    assert receipt is not None
+    assert receipt["symbols"] == ["600001"]
+    assert calls == ["2026-05-29"]
+    assert latest is not None
+    assert latest["price"] == 11.0
+    assert latest["quote_source"] == "market_bar_close"
+    assert latest["quote_status"] == "confirmed"
+
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            manager,
+            now=datetime(2026, 5, 29, 16, 5),
+        )
+        is False
+    )
+    assert calls == ["2026-05-29"]
+
+
 def test_scheduler_post_close_does_not_publish_partial_stock_bar_scope(tmp_path):
     from server.scheduler import TradingScheduler
 
@@ -1312,7 +1415,9 @@ def test_scheduler_post_close_does_not_publish_partial_stock_bar_scope(tmp_path)
     store = DataStore(tmp_path)
 
     scheduler = TradingScheduler(
-        _scheduler_config(data_source="tushare"), FakeBridge(), db=db
+        _scheduler_config(data_source="tushare", tushare_token="fixture"),
+        FakeBridge(),
+        db=db,
     )
     scheduler._watchlist = [
         (Symbol("600001"), AssetClass.STOCK),
@@ -1358,7 +1463,9 @@ def test_scheduler_post_close_does_not_publish_partial_stock_bar_scope(tmp_path)
 
     snapshots_before_restart = db.list_quote_snapshots_sync()
     restarted = TradingScheduler(
-        _scheduler_config(data_source="tushare"), FakeBridge(), db=db
+        _scheduler_config(data_source="tushare", tushare_token="fixture"),
+        FakeBridge(),
+        db=db,
     )
     restarted._watchlist = list(scheduler._watchlist)
     assert restarted._maybe_refresh_post_close_valuation_data(
@@ -1545,7 +1652,9 @@ def test_scheduler_post_close_never_regresses_a_newer_trusted_quote(tmp_path):
         closes={"600001": 11.0},
     )
     scheduler = TradingScheduler(
-        _scheduler_config(data_source="tushare"), FakeBridge(), db=db
+        _scheduler_config(data_source="tushare", tushare_token="fixture"),
+        FakeBridge(),
+        db=db,
     )
     scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
 
@@ -1639,6 +1748,11 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
         fund_sync_calls.append((confirmation_only, captured_at, target_date))
         return True
 
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_ensure_post_close_market_daily_receipt",
+        lambda self, data_manager, **kwargs: True,
+    )
     monkeypatch.setattr(
         scheduler_module.TradingScheduler,
         "_publish_post_close_stock_quotes",

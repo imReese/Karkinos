@@ -178,6 +178,9 @@ export const overviewCopyEn = {
     decisionBlockers: 'Decision blockers',
     decisionBlocked: 'BLOCKED',
     decisionEvidence: 'Evidence',
+    decisionStrategyResearch: 'Research strategy',
+    decisionStrategyNotReady: 'NOT READY',
+    decisionStrategyNextStep: 'Open evidence research and promote a strategy',
     decisionTaskLabels: {
       data_refresh: 'Market data',
       account_truth: 'Account truth',
@@ -187,8 +190,10 @@ export const overviewCopyEn = {
       manual_confirmation: 'Manual confirmation',
     },
     decisionReasonLabels: {
+      promoted_strategy_not_configured:
+        'No evidence-bound strategy is promoted to Paper Shadow',
       promoted_strategy_scan_missing:
-        'Current promoted-strategy scan is missing',
+        "A promoted strategy exists but today's scan is missing",
       decision_generation_time_not_bound_to_plan_date:
         'Decision generation is not bound to the plan date',
       plan_generation_time_not_bound_to_plan_date:

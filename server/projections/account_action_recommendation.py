@@ -49,6 +49,16 @@ def resolve_latest_verified_promoted_strategy_scan(
         limit=1,
     )
     if not rows:
+        promotion_reader = getattr(db, "list_strategy_promotion_states_sync", None)
+        if callable(promotion_reader):
+            eligible_promotions = [
+                row
+                for row in (promotion_reader() or [])
+                if str(row.get("strategy_id") or "").startswith("ai_formula_shadow:")
+                and str(row.get("stage") or "") == "paper_shadow"
+            ]
+            if not eligible_promotions:
+                return _unavailable_scan("promoted_strategy_not_configured")
         return _unavailable_scan("promoted_strategy_scan_missing")
     row = dict(rows[0])
     payload = _json_object(row.get("payload_json"))
