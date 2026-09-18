@@ -284,10 +284,7 @@ function MarketResearchNoteHistory({
       ) : notes.data && notes.data.items.length > 0 ? (
         <div className="mt-4 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
           {notes.data.items.map((note) => (
-            <div
-              key={note.id}
-              className="px-1 py-4 sm:px-2"
-            >
+            <div key={note.id} className="px-1 py-4 sm:px-2">
               <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold">{note.title}</div>

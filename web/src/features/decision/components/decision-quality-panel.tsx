@@ -193,7 +193,11 @@ export function DecisionQualityPanel() {
               value={`${target.decision_date} · ${target.passed_dimension_count}/${target.dimension_count}`}
               mono
             />
-            <RegisterRow label={labels.history} value={report.evaluated_day_count} mono />
+            <RegisterRow
+              label={labels.history}
+              value={report.evaluated_day_count}
+              mono
+            />
             <RegisterRow
               label={labels.score}
               value={
@@ -239,13 +243,15 @@ export function DecisionQualityPanel() {
                 disabled={
                   capture.isPending ||
                   !capturedBy.trim() ||
-                  (view.current_day_captured && view.current_binding_valid === true)
+                  (view.current_day_captured &&
+                    view.current_binding_valid === true)
                 }
                 onClick={() => void submit()}
               >
                 {capture.isPending
                   ? labels.capturing
-                  : view.current_day_captured && view.current_binding_valid === true
+                  : view.current_day_captured &&
+                      view.current_binding_valid === true
                     ? labels.captured
                     : labels.capture}
               </button>

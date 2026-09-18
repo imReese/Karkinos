@@ -131,9 +131,7 @@ export function DecisionCockpitContent({
       >
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
           <span>
-            {locale === 'zh'
-              ? '决策证据登记'
-              : 'Decision evidence register'}
+            {locale === 'zh' ? '决策证据登记' : 'Decision evidence register'}
           </span>
           <span className="text-xs font-normal text-[var(--app-text-secondary)]">
             {locale === 'zh' ? '按需展开' : 'Expand on demand'}

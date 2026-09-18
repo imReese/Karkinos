@@ -148,7 +148,9 @@ export function SingleInstrumentLoopReadinessCard({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <StatusBadge tone={blocked ? 'danger' : allReady ? 'success' : 'warning'}>
+          <StatusBadge
+            tone={blocked ? 'danger' : allReady ? 'success' : 'warning'}
+          >
             {statusLabel}
           </StatusBadge>
           <span className="font-mono text-xs font-semibold tabular-nums text-[var(--app-text-secondary)]">
