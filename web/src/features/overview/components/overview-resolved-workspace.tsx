@@ -37,14 +37,16 @@ export function OverviewResolvedWorkspace({
 
   return (
     <div className="min-w-0" data-testid="overview-financial-canvas">
-      <OverviewDataStatus state={state} />
       <OverviewSummary summary={state.summary} />
-      <OverviewStrategyRecommendation
-        planQuery={controller.tradingPlan}
-        decisionQuery={controller.todayDecision}
-      />
+      <OverviewDataStatus state={state} />
       <DashboardTodayQueue overview={state.overview} />
-      <OverviewValuationCoverage snapshot={state.snapshot} />
+
+      <OverviewHoldingsSection
+        positions={state.snapshot.positions}
+        assetClassBySymbol={assetClassBySymbol}
+        weightBySymbol={weightBySymbol}
+        className="border-b border-[var(--app-divider)]"
+      />
 
       <section
         className="min-w-0 border-b border-[var(--app-divider)] py-4"
@@ -81,13 +83,11 @@ export function OverviewResolvedWorkspace({
         )}
       </section>
 
-      <OverviewHoldingsSection
-        positions={state.snapshot.positions}
-        assetClassBySymbol={assetClassBySymbol}
-        weightBySymbol={weightBySymbol}
-        className="border-b border-[var(--app-divider)]"
+      <OverviewStrategyRecommendation
+        planQuery={controller.tradingPlan}
+        decisionQuery={controller.todayDecision}
       />
-
+      <OverviewValuationCoverage snapshot={state.snapshot} />
       <OverviewMarketStatus state={state} />
 
       <OverviewDataDetails
