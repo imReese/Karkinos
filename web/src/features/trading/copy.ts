@@ -3,10 +3,10 @@ import type { Locale } from '../../shared/locale';
 export const tradingCopy = {
   en: {
     page: {
-      kicker: 'Manual review',
-      title: 'Trading review',
+      kicker: 'Manual execution',
+      title: 'Execution',
       subtitle:
-        'Review the recorded manual-order evidence and capture the operator decision. This page does not submit broker orders.',
+        'Review the execution blotter, capture manual decisions, and retain broker evidence. Karkinos does not submit broker orders from this page.',
       statusCheck: 'Status check',
       operatingMode: 'Operating mode',
       manualDefault: 'Manual confirmation default',
@@ -16,7 +16,7 @@ export const tradingCopy = {
       rejected: 'Rejected',
       canceled: 'Canceled',
       lastUpdated: 'Last order update',
-      filterTitle: 'Order filters',
+      filterTitle: 'Blotter filters',
       moreFilters: 'More filters',
       moreFiltersDetail: 'Symbol and side',
       statusFilter: 'Status',
@@ -28,7 +28,7 @@ export const tradingCopy = {
       buy: 'Buy',
       sell: 'Sell',
       filteredCount: (count: number) => `${count} visible`,
-      ordersTitle: 'Order queue',
+      ordersTitle: 'Execution blotter',
       historyKicker: 'Decision log',
       historyTitle: 'Audit trail',
       historyDetail:
@@ -210,10 +210,10 @@ export const tradingCopy = {
   },
   zh: {
     page: {
-      kicker: '人工复核',
-      title: '交易复核',
+      kicker: '人工执行',
+      title: '执行',
       subtitle:
-        '复核已记录的人工订单证据并登记操作决定；本页不会向券商提交订单。',
+        '复核执行清单、登记人工决定并保留券商证据；Karkinos 不会从本页向券商提交订单。',
       statusCheck: '状态检查',
       operatingMode: '运行模式',
       manualDefault: '默认人工确认',
@@ -223,7 +223,7 @@ export const tradingCopy = {
       rejected: '已拒绝',
       canceled: '已取消',
       lastUpdated: '最近订单更新',
-      filterTitle: '订单筛选',
+      filterTitle: '执行筛选',
       moreFilters: '更多筛选',
       moreFiltersDetail: '标的与方向',
       statusFilter: '状态',
@@ -235,7 +235,7 @@ export const tradingCopy = {
       buy: '买入',
       sell: '卖出',
       filteredCount: (count: number) => `${count} 条可见`,
-      ordersTitle: '订单队列',
+      ordersTitle: '执行清单',
       historyKicker: '决策日志',
       historyTitle: '审计记录',
       historyDetail: '已确认与已拒绝记录来自现有人工订单接口。',

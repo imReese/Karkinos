@@ -59,6 +59,8 @@ describe('trading workbench contract', () => {
 
     expect(tradingPage).toContain('data-testid="trading-secondary-filters"');
     expect(tradingPage).toContain('data-testid="trading-review-posture"');
+    expect(TRADING_WORKSPACE).toContain('data-workbench-route="trading"');
+    expect(TRADING_REVIEW_QUEUE).toContain('app-type-section-title mt-1.5');
     expect(tradingPage).toContain('data-testid="trading-safety-rail"');
     expect(tradingPage).toContain('app-trading-command-grid');
     expect(tradingPage).not.toContain(
@@ -96,6 +98,19 @@ describe('trading workbench contract', () => {
     expect(manualExecution).not.toMatch(
       /bg-\[color-mix\(in_srgb,var\(--app-surface-0\)/,
     );
+  });
+
+  it('keeps disabled automatic trading quiet while active states stay prominent', () => {
+    expect(AUTOMATIC_TRADING).toContain(
+      'data-testid="automatic-trading-panel"',
+    );
+    expect(AUTOMATIC_TRADING).toContain("state === 'enabled'");
+    expect(AUTOMATIC_TRADING).toContain("state === 'expired'");
+    expect(AUTOMATIC_TRADING).toContain('<details');
+    expect(AUTOMATIC_TRADING).toContain('<summary');
+    expect(AUTOMATIC_TRADING).toContain('data-layout="compact-control"');
+    expect(AUTOMATIC_TRADING).toContain('rounded-[var(--app-radius-control)]');
+    expect(AUTOMATIC_TRADING).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
   });
 
   it('isolates manual-order and paper-shadow mutations in controlled zones', () => {
