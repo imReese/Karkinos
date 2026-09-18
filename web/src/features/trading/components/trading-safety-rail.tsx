@@ -64,15 +64,15 @@ export function TradingSafetyRail({
             <span className="block text-sm font-semibold text-[var(--app-text)]">
               {labels.brokerBoundaryEvidence}
             </span>
-            <span className="mt-0.5 block text-xs font-normal text-[var(--app-text-secondary)]">
-              {labels.brokerBoundaryEvidenceDetail}
-            </span>
           </span>
           <span className="shrink-0 text-xs text-[var(--app-text-secondary)]">
             {labels.expandOnDemand}
           </span>
         </summary>
         <div className="space-y-5 py-4">
+          <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
+            {labels.brokerBoundaryEvidenceDetail}
+          </p>
           <BrokerAdapterReadinessPanel
             readiness={brokerAdapterReadiness}
             loading={operationsToday.isLoading}
