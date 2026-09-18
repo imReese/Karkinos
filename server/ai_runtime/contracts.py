@@ -511,6 +511,7 @@ class WorkflowDefinition:
     definition_id: str
     name: str
     stages: tuple[StageDefinition, ...]
+    research_budget: ResearchBudget | None = None
     schema_version: str = "karkinos.ai.workflow_definition.v1"
 
     def __post_init__(self) -> None:
@@ -527,15 +528,19 @@ class WorkflowDefinition:
         return content_fingerprint(self.to_dict())
 
     def to_dict(self) -> JsonObject:
-        return {
+        payload: JsonObject = {
             "definition_id": self.definition_id,
             "name": self.name,
             "stages": [stage.to_dict() for stage in self.stages],
             "schema_version": self.schema_version,
         }
+        if self.research_budget is not None:
+            payload["research_budget"] = self.research_budget.to_dict()
+        return payload
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> WorkflowDefinition:
+        budget_payload = payload.get("research_budget")
         return cls(
             definition_id=str(payload["definition_id"]),
             name=str(payload["name"]),
@@ -548,6 +553,24 @@ class WorkflowDefinition:
                     required=bool(stage.get("required", True)),
                 )
                 for stage in payload["stages"]
+            ),
+            research_budget=(
+                ResearchBudget(
+                    max_candidates=int(budget_payload["max_candidates"]),
+                    max_iterations=int(budget_payload["max_iterations"]),
+                    max_backtests=int(budget_payload["max_backtests"]),
+                    max_parameter_variants=int(
+                        budget_payload["max_parameter_variants"]
+                    ),
+                    max_provider_calls=int(budget_payload["max_provider_calls"]),
+                    max_external_searches=int(budget_payload["max_external_searches"]),
+                    schema_version=str(
+                        budget_payload.get("schema_version")
+                        or "karkinos.ai.research_budget.v1"
+                    ),
+                )
+                if isinstance(budget_payload, Mapping)
+                else None
             ),
             schema_version=str(
                 payload.get("schema_version") or "karkinos.ai.workflow_definition.v1"

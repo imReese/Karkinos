@@ -41,6 +41,9 @@ from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
     FORMULA_AST_CONTRACT,
 )
+from server.ai_runtime.formula_parameter_sweep import (
+    FORMULA_PARAMETER_SWEEP_MAX_VARIANTS,
+)
 from server.ai_runtime.orchestrator import _failure_code as _workflow_failure_code
 from server.ai_runtime.provider_call_window import (
     DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
@@ -59,7 +62,9 @@ from server.ai_runtime.strategy_research import (
     CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
     REVIEW_CONFIRMATION,
+    STRATEGY_RESEARCH_MAX_CANDIDATES,
     STRATEGY_RESEARCH_MAX_CITATION_PATHS,
+    STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
@@ -70,6 +75,10 @@ from server.ai_runtime.strategy_research import (
     _build_hypothesis_citation_catalog,
     _citation_path_exists,
     _compact_hypothesis_citation_catalog,
+)
+from server.composition.strategy_research import (
+    STRATEGY_RESEARCH_WORKFLOW_BUDGET,
+    strategy_research_workflow_definition,
 )
 
 NOW = "2026-07-15T01:00:00+00:00"
@@ -692,6 +701,23 @@ def _service(
         provider_send_admission=provider_send_admission,
     )
     return service, selection, transport, db_path
+
+
+@pytest.mark.unit
+def test_strategy_research_workflow_uses_existing_bounded_research_limits():
+    budget = STRATEGY_RESEARCH_WORKFLOW_BUDGET
+
+    assert budget.max_candidates == STRATEGY_RESEARCH_MAX_CANDIDATES
+    assert budget.max_iterations == STRATEGY_RESEARCH_MAX_CANDIDATES
+    assert budget.max_backtests == STRATEGY_RESEARCH_MAX_CANDIDATES
+    assert budget.max_parameter_variants == FORMULA_PARAMETER_SWEEP_MAX_VARIANTS
+    assert budget.max_provider_calls == STRATEGY_RESEARCH_MAX_PROVIDER_CALLS
+    assert budget.max_external_searches == 0
+
+    for mode in ("hypothesis", "critique"):
+        definition = strategy_research_workflow_definition("fixture.local/model", mode)
+        assert definition.research_budget == budget
+        assert definition.to_dict()["research_budget"] == budget.to_dict()
 
 
 @pytest.mark.unit

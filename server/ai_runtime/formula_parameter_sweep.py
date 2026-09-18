@@ -13,7 +13,7 @@ from .formula_dsl import FormulaValidationError, validate_formula_ast
 _SUPPORTED_PARAMETER_FIELDS = frozenset({"window", "period"})
 _MAX_PARAMETERS = 2
 _MAX_VALUES_PER_PARAMETER = 5
-_MAX_VARIANTS = 9
+FORMULA_PARAMETER_SWEEP_MAX_VARIANTS = 9
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,7 @@ def build_formula_parameter_variants(
         normalized_ranges.append(sorted(tested))
 
     combinations = list(itertools.product(*normalized_ranges))
-    if len(combinations) > _MAX_VARIANTS:
+    if len(combinations) > FORMULA_PARAMETER_SWEEP_MAX_VARIANTS:
         raise FormulaValidationError("parameter_grid_out_of_bounds", "parameter_ranges")
 
     variants: list[FormulaParameterVariant] = []

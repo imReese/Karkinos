@@ -11,6 +11,7 @@ from server.ai_runtime.contracts import (
     ArtifactKind,
     ModelRegistration,
     ProviderRegistration,
+    ResearchBudget,
     StageDefinition,
     WorkflowDefinition,
 )
@@ -19,6 +20,9 @@ from server.ai_runtime.evidence import (
     CanonicalEvidenceToolExecutors,
 )
 from server.ai_runtime.formula_dsl import formula_operator_catalog
+from server.ai_runtime.formula_parameter_sweep import (
+    FORMULA_PARAMETER_SWEEP_MAX_VARIANTS,
+)
 from server.ai_runtime.orchestrator import DeterministicWorkflowOrchestrator
 from server.ai_runtime.permissions import (
     ToolEffect,
@@ -40,7 +44,20 @@ from server.ai_runtime.strategy_research_values import (
     SELECTION_TOOL,
     STRATEGY_RESEARCH_PROMPT_VERSION,
 )
-from server.contracts.strategy_research import StrategyResearchSelection
+from server.contracts.strategy_research import (
+    STRATEGY_RESEARCH_MAX_CANDIDATES,
+    STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
+    StrategyResearchSelection,
+)
+
+STRATEGY_RESEARCH_WORKFLOW_BUDGET = ResearchBudget(
+    max_candidates=STRATEGY_RESEARCH_MAX_CANDIDATES,
+    max_iterations=STRATEGY_RESEARCH_MAX_CANDIDATES,
+    max_backtests=STRATEGY_RESEARCH_MAX_CANDIDATES,
+    max_parameter_variants=FORMULA_PARAMETER_SWEEP_MAX_VARIANTS,
+    max_provider_calls=STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
+    max_external_searches=0,
+)
 
 
 def build_strategy_research_orchestrator(
@@ -173,4 +190,5 @@ def strategy_research_workflow_definition(
                 output_kind=ArtifactKind.REPORT,
             ),
         ),
+        research_budget=STRATEGY_RESEARCH_WORKFLOW_BUDGET,
     )

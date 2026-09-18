@@ -190,6 +190,17 @@ class DeterministicWorkflowOrchestrator:
         return workflow
 
     def _validate_definition(self, definition: WorkflowDefinition) -> None:
+        if definition.research_budget is not None:
+            provider_call_upper_bound = (
+                len(definition.stages) * self._max_provider_turns
+            )
+            if (
+                provider_call_upper_bound
+                > definition.research_budget.max_provider_calls
+            ):
+                raise WorkflowValidationError(
+                    "workflow provider-call upper bound exceeds research budget"
+                )
         for stage in definition.stages:
             role = self._registry.require_role(stage.role_id)
             model = self._registry.require_model(stage.model_id)
