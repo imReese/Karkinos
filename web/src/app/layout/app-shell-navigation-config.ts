@@ -26,7 +26,7 @@ export const NAVIGATION_GROUPS = [
   },
   {
     key: 'decide',
-    label: { en: 'Decide', zh: '决策' },
+    label: { en: 'Decide', zh: '研判' },
     items: [
       { to: '/decision', key: 'decision', icon: DecisionNavIcon },
       { to: '/risk', key: 'risk', icon: RiskNavIcon },
@@ -36,7 +36,7 @@ export const NAVIGATION_GROUPS = [
   },
   {
     key: 'execute',
-    label: { en: 'Execute', zh: '执行' },
+    label: { en: 'Execute', zh: '执行与审计' },
     items: [
       { to: '/trading', key: 'trading', icon: TradingNavIcon },
       { to: '/operations', key: 'operations', icon: OperationsNavIcon },

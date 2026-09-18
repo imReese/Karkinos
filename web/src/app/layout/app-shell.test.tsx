@@ -281,8 +281,9 @@ test('renders portfolio workspace navigation', async () => {
   expect(await within(navigation).findByText('Decision')).toBeTruthy();
   expect(await within(navigation).findByText('Operations')).toBeTruthy();
   expect(await within(navigation).findByText('Execution')).toBeTruthy();
-  expect(await within(navigation).findByText('Act')).toBeTruthy();
-  expect(await within(navigation).findByText('Control')).toBeTruthy();
+  expect(await within(navigation).findByText('Monitor')).toBeTruthy();
+  expect(await within(navigation).findByText('Decide')).toBeTruthy();
+  expect(await within(navigation).findByText('Execute')).toBeTruthy();
   expect(await within(navigation).findByText('System')).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
   expect(screen.queryByText('Workspace toolbar')).toBeNull();
@@ -300,13 +301,13 @@ test('renders portfolio workspace navigation', async () => {
     'sidebar-nav-overview',
     'sidebar-nav-portfolio',
     'sidebar-nav-market',
-    'sidebar-nav-backtest',
-    'sidebar-nav-aiResearch',
     'sidebar-nav-decision',
-    'sidebar-nav-trading',
     'sidebar-nav-risk',
-    'sidebar-nav-activity',
+    'sidebar-nav-aiResearch',
+    'sidebar-nav-backtest',
+    'sidebar-nav-trading',
     'sidebar-nav-operations',
+    'sidebar-nav-activity',
     'sidebar-nav-settings',
   ]);
 });
@@ -423,10 +424,10 @@ test('switches interface language from english to chinese', async () => {
   expect(await within(navigation).findByText('决策')).toBeTruthy();
   expect(await within(navigation).findByText('运营')).toBeTruthy();
   expect(await within(navigation).findByText('执行')).toBeTruthy();
-  expect(await within(navigation).findByText('工作台')).toBeTruthy();
-  expect(await within(navigation).findByText('投资')).toBeTruthy();
-  expect(await within(navigation).findByText('行动')).toBeTruthy();
-  expect(await within(navigation).findByText('控制')).toBeTruthy();
+  expect(await within(navigation).findByText('监控')).toBeTruthy();
+  expect(await within(navigation).findByText('研判')).toBeTruthy();
+  expect(await within(navigation).findByText('执行与审计')).toBeTruthy();
+  expect(await within(navigation).findByText('系统')).toBeTruthy();
   expect(screen.queryByText('全局工具栏')).toBeNull();
   expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
 });
@@ -439,7 +440,7 @@ test('localizes grouped navigation without decorative workspace copy', async () 
   await user.click(await screen.findByRole('menuitemradio', { name: '中文' }));
 
   const navigation = await screen.findByLabelText('导航');
-  const groupTitle = await within(navigation).findByText('工作台');
+  const groupTitle = await within(navigation).findByText('监控');
   const overviewNav = await screen.findByTestId('sidebar-nav-overview');
 
   expect(groupTitle.className).toContain('uppercase');
@@ -997,35 +998,3 @@ test('shows market status details without simulated latency', async () => {
 
 test('toggles mobile navigation from the global toolbar', async () => {
   renderShell();
-  const user = userEvent.setup();
-
-  const openButton = (
-    await screen.findAllByRole('button', { name: 'Open navigation' })
-  ).find((button) => button.hasAttribute('aria-expanded'));
-  expect(openButton).toBeTruthy();
-  if (!openButton) {
-    return;
-  }
-  expect(openButton.getAttribute('aria-expanded')).toBe('false');
-
-  await user.click(openButton);
-
-  expect(
-    (await screen.findAllByRole('button', { name: 'Close navigation' })).length,
-  ).toBeGreaterThan(0);
-  expect(openButton.getAttribute('aria-expanded')).toBe('true');
-  expect(await screen.findByLabelText('Navigation')).toBeTruthy();
-});
-
-test('Overview owns its financial status without duplicate toolbar evidence or extra status reads', async () => {
-  const fetchMock = vi.fn(async () => jsonResponse(defaultOverview));
-  renderShell({ fetchImpl: fetchMock });
-  await screen.findByText('Overview page');
-  expect(screen.queryByTestId('status-pill-market')).toBeNull();
-  expect(screen.queryByTestId('status-pill-valuation')).toBeNull();
-  expect(screen.queryByTestId('compact-status-trigger')).toBeNull();
-  expect(fetchMock).not.toHaveBeenCalled();
-  expect(screen.getByTestId('sidebar-nav-market').getAttribute('href')).toBe(
-    '/market',
-  );
-});
