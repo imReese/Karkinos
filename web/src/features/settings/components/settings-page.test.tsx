@@ -247,6 +247,8 @@ test('keeps secondary settings workflows behind explicit disclosures', async () 
   await screen.findByText('Configuration register');
   for (const testId of [
     'settings-metadata-disclosure',
+    'settings-operational-controls-disclosure',
+    'settings-local-preferences-boundaries-disclosure',
     'settings-live-services-disclosure',
     'settings-data-safety-disclosure',
     'settings-preferences-disclosure',
@@ -364,13 +366,18 @@ test('shows cached quote guidance for cache-only and stale valuation states', as
     name: 'Review controlled refresh',
   });
   expect(refreshControlsLink.getAttribute('href')).toBe(
-    '#settings-data-source-disclosure',
+    '#settings-operational-controls-disclosure',
   );
+  const operationalWorkspace = screen.getByTestId(
+    'settings-operational-controls-disclosure',
+  ) as HTMLDetailsElement;
   const dataSourceDisclosure = screen.getByTestId(
     'settings-data-source-disclosure',
   ) as HTMLDetailsElement;
+  expect(operationalWorkspace.open).toBe(false);
   expect(dataSourceDisclosure.open).toBe(false);
   await user.click(refreshControlsLink);
+  expect(operationalWorkspace.open).toBe(true);
   expect(dataSourceDisclosure.open).toBe(true);
   expect(screen.queryByText(/real-time/i)).toBeNull();
 });

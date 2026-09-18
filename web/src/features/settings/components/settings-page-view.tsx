@@ -6,6 +6,7 @@ import { SettingsPreferencesWorkspace } from './settings-preferences-workspace';
 import {
   getErrorMessage,
   InlineNotice,
+  SettingsDisclosure,
   SettingsSection,
 } from './settings-view-primitives';
 
@@ -53,8 +54,22 @@ export function SettingsPageView({
       ) : null}
       <SettingsPersistedConfiguration controller={controller} />
       <SettingsDataStatus controller={controller} />
-      <SettingsOperationsWorkspace controller={controller} />
-      <SettingsPreferencesWorkspace controller={controller} />
+
+      <SettingsDisclosure
+        testId="settings-operational-controls-disclosure"
+        title={copy.settings.operationalControls}
+        detail={copy.settings.operationalControlsDetail}
+      >
+        <SettingsOperationsWorkspace controller={controller} />
+      </SettingsDisclosure>
+
+      <SettingsDisclosure
+        testId="settings-local-preferences-boundaries-disclosure"
+        title={copy.settings.localPreferencesBoundaries}
+        detail={copy.settings.localPreferencesBoundariesDetail}
+      >
+        <SettingsPreferencesWorkspace controller={controller} />
+      </SettingsDisclosure>
     </section>
   );
 }
@@ -172,13 +187,19 @@ function SettingsDataStatus({
             }
           />
           <a
-            aria-controls="settings-data-source-disclosure"
+            aria-controls="settings-operational-controls-disclosure settings-data-source-disclosure"
             className="app-button-secondary inline-flex min-h-10 w-max max-w-full items-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
-            href="#settings-data-source-disclosure"
+            href="#settings-operational-controls-disclosure"
             onClick={() => {
+              const workspace = document.getElementById(
+                'settings-operational-controls-disclosure',
+              );
               const disclosure = document.getElementById(
                 'settings-data-source-disclosure',
               );
+              if (workspace instanceof HTMLDetailsElement) {
+                workspace.open = true;
+              }
               if (disclosure instanceof HTMLDetailsElement) {
                 disclosure.open = true;
               }
