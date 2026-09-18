@@ -24,6 +24,7 @@ from server.ai_runtime.contracts import (
     ResearchBudget,
     ResearchClaim,
     ResearchClaimSupportStatus,
+    ResearchEvaluationBundle,
     ResearchHypothesis,
     Review,
     StageDefinition,
@@ -422,6 +423,41 @@ def test_provider_call_upper_bound_must_fit_research_budget_before_persistence(
     assert provider.invocations == ()
     with closing(sqlite3.connect(db_path)) as conn:
         assert conn.execute("SELECT COUNT(*) FROM ai_workflows").fetchone()[0] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_research_evaluation_bundle_cannot_be_ai_generated_or_authoritative():
+    base = dict(
+        evaluation_id="research-evaluation-001",
+        backtest_result_id=17,
+        source_fingerprint="sha256:" + "a" * 64,
+        dataset_snapshot_id="sha256:dataset-001",
+        research_gate_status="pass",
+        research_evidence_bundle={"gate_status": "pass"},
+        oos_validation={"validation_status": "passed"},
+        after_cost_evidence={"total_cost": 12.0},
+        cost_summary={"total_trades": 3},
+        parameter_robustness={},
+        market_regime_robustness={},
+        capacity_review={},
+        drawdown_evidence={},
+        signal_execution_evidence={},
+        lot_feasibility_evidence={},
+        missing_evidence=(),
+    )
+    bundle = ResearchEvaluationBundle(**base)
+
+    payload = bundle.to_dict()
+    assert payload["persisted_source_only"] is True
+    assert payload["deterministic"] is True
+    assert payload["ai_generated"] is False
+    assert payload["authority_effect"] == "none"
+
+    with pytest.raises(ValueError, match="AI cannot generate"):
+        ResearchEvaluationBundle(**base, ai_generated=True)
+    with pytest.raises(ValueError, match="cannot change execution authority"):
+        ResearchEvaluationBundle(**base, authority_effect="expand")
 
 
 @pytest.mark.unit

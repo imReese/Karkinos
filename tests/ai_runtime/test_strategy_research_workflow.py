@@ -76,6 +76,9 @@ from server.ai_runtime.strategy_research import (
     _citation_path_exists,
     _compact_hypothesis_citation_catalog,
 )
+from server.ai_runtime.strategy_research_support import (
+    build_research_evaluation_bundle,
+)
 from server.composition.strategy_research import (
     STRATEGY_RESEARCH_WORKFLOW_BUDGET,
     strategy_research_workflow_definition,
@@ -1102,6 +1105,38 @@ async def test_iteration_rejects_multiple_provider_drafts_fail_closed(tmp_path) 
 
 
 @pytest.mark.unit
+def test_sparse_persisted_backtest_evaluation_never_invents_passed_evidence():
+    bundle = build_research_evaluation_bundle(
+        backtest_result_id=7,
+        persisted_row={
+            "initial_cash": 100_000,
+            "final_equity": 100_000,
+            "total_return": 0.0,
+            "sharpe": 0.0,
+            "max_drawdown": 0.0,
+            "duration_days": 5,
+            "cost_summary_json": "{}",
+        },
+        metrics={},
+    )
+
+    payload = bundle.to_dict()
+    assert payload["research_gate_status"] == "not_evaluated"
+    assert payload["missing_evidence"] == [
+        "dataset_snapshot",
+        "after_cost_evidence",
+        "cost_summary",
+        "oos_validation",
+        "research_evidence_bundle",
+    ]
+    assert payload["research_evidence_bundle"] == {}
+    assert payload["oos_validation"] == {}
+    assert payload["deterministic"] is True
+    assert payload["ai_generated"] is False
+    assert payload["authority_effect"] == "none"
+
+
+@pytest.mark.unit
 def test_unbound_hypothesis_request_keeps_legacy_fingerprint_shape(tmp_path) -> None:
     _, selection, _, _ = _service(tmp_path)
     request = HypothesisGenerationRequest(
@@ -1407,9 +1442,42 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     saved_candidate = await service._db.get_backtest_result(
         backtest["canonical_backtest"]["result_id"]
     )
-    account_capital = json.loads(saved_candidate["metrics_json"])[
-        "account_capital_constraint"
-    ]
+    saved_metrics = json.loads(saved_candidate["metrics_json"])
+    evaluation = backtest["canonical_backtest"]["evaluation_bundle"]
+    assert evaluation["backtest_result_id"] == 18
+    assert evaluation["dataset_snapshot_id"] == selection.dataset_snapshot_id
+    assert (
+        evaluation["research_gate_status"]
+        == (saved_metrics["research_evidence_bundle"]["gate_status"])
+    )
+    assert (
+        evaluation["research_evidence_bundle"]
+        == (saved_metrics["research_evidence_bundle"])
+    )
+    assert evaluation["oos_validation"] == saved_metrics["oos_validation"]
+    assert evaluation["after_cost_evidence"] == saved_metrics["evidence_bundle"]
+    assert evaluation["parameter_robustness"] == (saved_metrics["parameter_robustness"])
+    assert (
+        evaluation["market_regime_robustness"]
+        == (saved_metrics["market_regime_robustness"])
+    )
+    assert evaluation["capacity_review"] == saved_metrics["capacity_review"]
+    assert evaluation["drawdown_evidence"] == saved_metrics["drawdown_evidence"]
+    assert (
+        evaluation["signal_execution_evidence"]
+        == (saved_metrics["signal_execution_evidence"])
+    )
+    assert (
+        evaluation["lot_feasibility_evidence"]
+        == (saved_metrics["lot_feasibility_evidence"])
+    )
+    assert evaluation["missing_evidence"] == []
+    assert evaluation["persisted_source_only"] is True
+    assert evaluation["deterministic"] is True
+    assert evaluation["ai_generated"] is False
+    assert evaluation["authority_effect"] == "none"
+    assert evaluation["source_fingerprint"].startswith("sha256:")
+    account_capital = saved_metrics["account_capital_constraint"]
     assert account_capital["status"] == "pass"
     assert account_capital["initial_cash_within_current_account_equity"] is True
     assert account_capital["current_account_total_equity_redacted"] is True
