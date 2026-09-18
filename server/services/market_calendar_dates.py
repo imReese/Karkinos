@@ -32,6 +32,7 @@ def project_market_session(
         "calendar_available": row is not None,
         "calendar_verified": validation.verified,
         "latest_completed_trade_date": None,
+        "previous_completed_trade_date": None,
         "expected_quote_date": None,
         "next_trading_date": None,
         "calendar_evidence_refs": [],
@@ -58,12 +59,14 @@ def project_market_session(
     )
     completed = _trading_dates_on_or_before(row, cutoff)
     refs = [validation.evidence_ref]
-    if not completed and callable(reader):
+    if len(completed) < 2 and callable(reader):
         previous = reader(exchange="SSE", year=current.year - 1)
         previous_validation = validate_verified_market_calendar(previous)
         if previous_validation.verified:
-            completed = _trading_dates_on_or_before(previous, cutoff)
-            refs.append(previous_validation.evidence_ref)
+            previous_completed = _trading_dates_on_or_before(previous, cutoff)
+            completed = [*previous_completed, *completed]
+            if previous_validation.evidence_ref not in refs:
+                refs.append(previous_validation.evidence_ref)
     next_dates = sorted(
         day["date"] for day in days if day["is_trading_day"] and day["date"] > today
     )
@@ -76,9 +79,11 @@ def project_market_session(
                 if day["is_trading_day"]
             )
     latest = completed[-1] if completed else None
+    previous_completed = completed[-2] if len(completed) > 1 else None
     result.update(
         status=status,
         latest_completed_trade_date=latest,
+        previous_completed_trade_date=previous_completed,
         expected_quote_date=today if trading_day and clock >= time(9, 30) else latest,
         next_trading_date=next_dates[0] if next_dates else None,
         calendar_evidence_refs=refs,

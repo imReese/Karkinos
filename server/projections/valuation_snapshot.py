@@ -29,9 +29,9 @@ from server.services.market_hours import get_shanghai_now
 from server.services.position_presence import is_economically_zero_quantity
 from server.valuation_snapshot_contract import validate_valuation_snapshot
 
-VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v7"
+VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v8"
 _VALUATION_SCOPE_POLICY = "current_nonzero_positions.v1"
-_VALUATION_FRESHNESS_POLICY = "expected_session_and_live_ttl.v1"
+_VALUATION_FRESHNESS_POLICY = "expected_session_live_ttl_and_nav_publication_lag.v2"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
 _UNCONFIRMED_FUND_ESTIMATE_REASON = "confirmed_fund_nav_missing_estimate_only"
