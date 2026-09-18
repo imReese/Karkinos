@@ -45,13 +45,50 @@ from server.services.backtest_result_projection import (
     build_backtest_report_metrics_json,
     fill_to_response,
 )
-from server.services.market_universe_automation import verified_trading_dates
+from server.services.market_universe_automation import (
+    MARKET_UNIVERSE_AUTOMATION_RUN_TYPE,
+    MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION,
+    verified_trading_dates,
+)
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
     MarketUniverseRejected,
     build_market_universe_truth,
 )
 from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
+
+
+def _market_universe_ingestion_v3(
+    db: Any,
+    *,
+    market_date: str,
+    snapshot_id: str,
+    security_master_provider: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    reader = getattr(db, "list_automation_runs_sync", None)
+    if not callable(reader):
+        raise MarketUniverseRejected("full_market_universe_ingestion_not_complete")
+    rows = reader(
+        run_type=MARKET_UNIVERSE_AUTOMATION_RUN_TYPE,
+        run_date=market_date,
+        limit=100,
+    )
+    matched: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for row in rows:
+        payload = shadow_research_json_object(row.get("payload_json"))
+        if (
+            row.get("status") == "completed"
+            and payload.get("schema_version")
+            == MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION
+            and payload.get("market_universe_snapshot_id") == snapshot_id
+            and payload.get("security_master_provider") == security_master_provider
+            and payload.get("full_market_history_frozen") is True
+            and str(payload.get("daily_bar_provider") or "").strip()
+        ):
+            matched.append((row, payload))
+    if len(matched) != 1:
+        raise MarketUniverseRejected("full_market_universe_ingestion_not_complete")
+    return matched[0]
 
 
 class AiShadowResearchBaselineMixin:
@@ -128,26 +165,19 @@ class AiShadowResearchBaselineMixin:
         market_date = str((market_universe_snapshot or {}).get("trade_date") or "")
         if expected_market_date is not None and market_date != expected_market_date:
             raise ShadowResearchRejected("baseline_market_date_replay_mismatch")
-        provider_name = str((market_universe_snapshot or {}).get("provider_name") or "")
+        security_master_provider = str(
+            (market_universe_snapshot or {}).get("provider_name") or ""
+        )
         try:
-            ingestion_run = self._db.get_automation_run_sync(
-                f"market_universe_sync:v2:{provider_name}:{market_date}"
+            ingestion_run, ingestion_payload = _market_universe_ingestion_v3(
+                self._db,
+                market_date=market_date,
+                snapshot_id=str(
+                    (market_universe_snapshot or {}).get("snapshot_id") or ""
+                ),
+                security_master_provider=security_master_provider,
             )
-            ingestion_payload = shadow_research_json_object(
-                ingestion_run.get("payload_json") if ingestion_run else None
-            )
-            if (
-                not ingestion_run
-                or ingestion_run.get("status") != "completed"
-                or ingestion_payload.get("schema_version")
-                != "karkinos.market_universe_automation.v2"
-                or ingestion_payload.get("market_universe_snapshot_id")
-                != (market_universe_snapshot or {}).get("snapshot_id")
-                or ingestion_payload.get("full_market_history_frozen") is not True
-            ):
-                raise MarketUniverseRejected(
-                    "full_market_universe_ingestion_not_complete"
-                )
+            daily_bar_provider = str(ingestion_payload.get("daily_bar_provider") or "")
             trading_dates = verified_trading_dates(
                 self._db,
                 start_date=start_date,
@@ -156,7 +186,7 @@ class AiShadowResearchBaselineMixin:
             receipts = self._data_store.list_market_daily_ingestion_receipts(
                 start_date=start_date,
                 end_date=market_date,
-                provider_name=provider_name,
+                provider_name=daily_bar_provider,
             )
             if [str(item.get("trade_date") or "") for item in receipts] != (
                 trading_dates

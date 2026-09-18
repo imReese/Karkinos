@@ -309,3 +309,33 @@ class TestDataStore:
                 provider_name="fixture",
                 bars=bars,
             )
+
+
+def test_market_universe_snapshot_reads_are_provider_bound(store: DataStore) -> None:
+    trade_date = "2026-09-18"
+    akshare = store.save_market_universe_snapshot(
+        trade_date=trade_date,
+        provider_name="akshare",
+        members=[{"symbol": "600000", "instrument_type": "stock"}],
+    )
+    tushare = store.save_market_universe_snapshot(
+        trade_date=trade_date,
+        provider_name="tushare",
+        members=[{"symbol": "000001", "instrument_type": "stock"}],
+    )
+
+    assert (
+        store.get_market_universe_snapshot(
+            trade_date=trade_date,
+            provider_name="akshare",
+        )
+        == akshare
+    )
+    assert (
+        store.get_market_universe_snapshot(
+            trade_date=trade_date,
+            provider_name="tushare",
+        )
+        == tushare
+    )
+    assert akshare["snapshot_id"] != tushare["snapshot_id"]

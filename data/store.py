@@ -431,19 +431,30 @@ class DataStore(MarketDailyIngestionMixin):
         self,
         *,
         trade_date: str | None = None,
+        provider_name: str | None = None,
     ) -> dict[str, object] | None:
-        """Read the exact-date or latest immutable market-universe snapshot."""
+        """Read a provider-bound exact-date or latest immutable universe snapshot."""
+        conditions: list[str] = []
+        params: list[str] = []
+        if trade_date is not None:
+            conditions.append("trade_date = ?")
+            params.append(str(trade_date))
+        if provider_name is not None:
+            normalized_provider = str(provider_name).strip()
+            if not normalized_provider:
+                raise ValueError("market_universe_provider_name_invalid")
+            conditions.append("provider_name = ?")
+            params.append(normalized_provider)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         query = """
             SELECT snapshot_json FROM market_universe_snapshots
             {where_clause}
             ORDER BY trade_date DESC, created_at DESC
             LIMIT 1
         """
-        where_clause = "WHERE trade_date = ?" if trade_date is not None else ""
-        params = (str(trade_date),) if trade_date is not None else ()
         with connect_meta_sqlite(self._meta_path) as conn:
             row = conn.execute(
-                query.format(where_clause=where_clause), params
+                query.format(where_clause=where_clause), tuple(params)
             ).fetchone()
         if row is None:
             return None
