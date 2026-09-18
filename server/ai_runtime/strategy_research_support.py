@@ -7,7 +7,14 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
-from server.ai_runtime.contracts import ArtifactKind, JsonObject, StoredArtifact
+from server.ai_runtime.contracts import (
+    ArtifactKind,
+    JsonObject,
+    ResearchEvaluationBundle,
+    StoredArtifact,
+    canonical_json,
+    content_fingerprint,
+)
 from server.ai_runtime.external_research_errors import (
     ExternalResearchInvalidResponseError,
 )
@@ -19,6 +26,109 @@ from server.contracts.strategy_research import (
     StrategyResearchRejected,
     StrategyResearchSelection,
 )
+
+
+def build_research_evaluation_bundle(
+    *,
+    backtest_result_id: int,
+    persisted_row: Mapping[str, Any],
+    metrics: Mapping[str, Any],
+) -> ResearchEvaluationBundle:
+    """Project persisted deterministic backtest evidence without re-scoring it."""
+
+    metrics_payload = dict(metrics)
+    dataset = strategy_research_json_object(metrics_payload.get("dataset_snapshot"))
+    research = strategy_research_json_object(
+        metrics_payload.get("research_evidence_bundle")
+    )
+    oos = strategy_research_json_object(metrics_payload.get("oos_validation"))
+    after_cost = strategy_research_json_object(metrics_payload.get("evidence_bundle"))
+    cost_summary = strategy_research_json_object(persisted_row.get("cost_summary_json"))
+    parameter_robustness = strategy_research_json_object(
+        metrics_payload.get("parameter_robustness")
+        or metrics_payload.get("sweep_robustness")
+    )
+    market_regime = strategy_research_json_object(
+        metrics_payload.get("market_regime_robustness")
+    )
+    capacity_review = strategy_research_json_object(
+        metrics_payload.get("capacity_review")
+    )
+    drawdown_evidence = strategy_research_json_object(
+        metrics_payload.get("drawdown_evidence")
+    )
+    signal_execution = strategy_research_json_object(
+        metrics_payload.get("signal_execution_evidence")
+    )
+    lot_feasibility = strategy_research_json_object(
+        metrics_payload.get("lot_feasibility_evidence")
+    )
+
+    dataset_snapshot_id = (
+        str(dataset.get("snapshot_id")) if dataset.get("snapshot_id") else None
+    )
+    research_gate_status = str(research.get("gate_status") or "not_evaluated")
+    required_evidence = (
+        ("dataset_snapshot", dataset_snapshot_id is not None),
+        ("after_cost_evidence", bool(after_cost)),
+        ("cost_summary", bool(cost_summary)),
+        ("oos_validation", bool(oos)),
+        ("research_evidence_bundle", bool(research)),
+    )
+    missing_evidence = tuple(
+        name for name, available in required_evidence if not available
+    )
+
+    source_payload: JsonObject = {
+        "backtest_result_id": backtest_result_id,
+        "initial_cash": persisted_row.get("initial_cash"),
+        "final_equity": persisted_row.get("final_equity"),
+        "total_return": persisted_row.get("total_return"),
+        "sharpe": persisted_row.get("sharpe"),
+        "max_drawdown": persisted_row.get("max_drawdown"),
+        "duration_days": persisted_row.get("duration_days"),
+        "dataset_snapshot": dataset,
+        "research_evidence_bundle": research,
+        "oos_validation": oos,
+        "after_cost_evidence": after_cost,
+        "cost_summary": cost_summary,
+        "parameter_robustness": parameter_robustness,
+        "market_regime_robustness": market_regime,
+        "capacity_review": capacity_review,
+        "drawdown_evidence": drawdown_evidence,
+        "signal_execution_evidence": signal_execution,
+        "lot_feasibility_evidence": lot_feasibility,
+    }
+    source_fingerprint = "sha256:" + content_fingerprint(source_payload)
+    evaluation_identity = {
+        "backtest_result_id": backtest_result_id,
+        "source_fingerprint": source_fingerprint,
+        "schema_version": "karkinos.ai.research_evaluation_bundle.v1",
+    }
+    evaluation_id = (
+        "research-evaluation-" + content_fingerprint(evaluation_identity)[:24]
+    )
+    # Round-trip once so nested mappings are detached from mutable DB payloads.
+    detached = json.loads(canonical_json(source_payload))
+
+    return ResearchEvaluationBundle(
+        evaluation_id=evaluation_id,
+        backtest_result_id=backtest_result_id,
+        source_fingerprint=source_fingerprint,
+        dataset_snapshot_id=dataset_snapshot_id,
+        research_gate_status=research_gate_status,
+        research_evidence_bundle=dict(detached["research_evidence_bundle"]),
+        oos_validation=dict(detached["oos_validation"]),
+        after_cost_evidence=dict(detached["after_cost_evidence"]),
+        cost_summary=dict(detached["cost_summary"]),
+        parameter_robustness=dict(detached["parameter_robustness"]),
+        market_regime_robustness=dict(detached["market_regime_robustness"]),
+        capacity_review=dict(detached["capacity_review"]),
+        drawdown_evidence=dict(detached["drawdown_evidence"]),
+        signal_execution_evidence=dict(detached["signal_execution_evidence"]),
+        lot_feasibility_evidence=dict(detached["lot_feasibility_evidence"]),
+        missing_evidence=missing_evidence,
+    )
 
 
 def report_artifact(ai_store: AiAuditStore, workflow_id: str) -> StoredArtifact:

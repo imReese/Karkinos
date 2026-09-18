@@ -17,6 +17,7 @@ from server.ai_runtime.strategy_research_backtest import (
     validated_fee_schedule_resolution,
 )
 from server.ai_runtime.strategy_research_support import (
+    build_research_evaluation_bundle,
     selection_from_session,
     strategy_research_json_object,
     strategy_research_request_json,
@@ -287,6 +288,11 @@ class StrategyResearchSessionMixin:
             row = await self._db.get_backtest_result(int(result_id))
             if isinstance(row, dict):
                 metrics = strategy_research_json_object(row.get("metrics_json"))
+                evaluation_bundle = build_research_evaluation_bundle(
+                    backtest_result_id=int(result_id),
+                    persisted_row=row,
+                    metrics=metrics,
+                )
                 canonical = {
                     "result_id": int(result_id),
                     "initial_cash": row.get("initial_cash"),
@@ -306,6 +312,7 @@ class StrategyResearchSessionMixin:
                         "signal_execution_evidence"
                     ),
                     "lot_feasibility_evidence": metrics.get("lot_feasibility_evidence"),
+                    "evaluation_bundle": evaluation_bundle.to_dict(),
                 }
         return {
             "schema_version": STRATEGY_RESEARCH_API_CONTRACT,

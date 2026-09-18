@@ -314,6 +314,81 @@ class AITrace:
 
 
 @dataclass(frozen=True)
+class ResearchEvaluationBundle:
+    evaluation_id: str
+    backtest_result_id: int
+    source_fingerprint: str
+    dataset_snapshot_id: str | None
+    research_gate_status: str
+    research_evidence_bundle: JsonObject
+    oos_validation: JsonObject
+    after_cost_evidence: JsonObject
+    cost_summary: JsonObject
+    parameter_robustness: JsonObject
+    market_regime_robustness: JsonObject
+    capacity_review: JsonObject
+    drawdown_evidence: JsonObject
+    signal_execution_evidence: JsonObject
+    lot_feasibility_evidence: JsonObject
+    missing_evidence: tuple[str, ...]
+    persisted_source_only: bool = True
+    deterministic: bool = True
+    ai_generated: bool = False
+    authority_effect: str = "none"
+    schema_version: str = "karkinos.ai.research_evaluation_bundle.v1"
+
+    def __post_init__(self) -> None:
+        for name in (
+            "evaluation_id",
+            "source_fingerprint",
+            "research_gate_status",
+            "schema_version",
+        ):
+            _require_text(str(getattr(self, name)), name)
+        if self.backtest_result_id <= 0:
+            raise ValueError("backtest_result_id must be positive")
+        if self.dataset_snapshot_id is not None:
+            _require_text(self.dataset_snapshot_id, "dataset_snapshot_id")
+        if len(self.missing_evidence) != len(set(self.missing_evidence)):
+            raise ValueError("missing_evidence must be unique")
+        if any(not item.strip() for item in self.missing_evidence):
+            raise ValueError("missing_evidence must not contain empty values")
+        if not self.persisted_source_only:
+            raise ValueError("research evaluation must use persisted sources only")
+        if not self.deterministic:
+            raise ValueError("research evaluation must remain deterministic")
+        if self.ai_generated:
+            raise ValueError("AI cannot generate canonical evaluation bundles")
+        if self.authority_effect != "none":
+            raise ValueError("research evaluation cannot change execution authority")
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "evaluation_id": self.evaluation_id,
+            "backtest_result_id": self.backtest_result_id,
+            "source_fingerprint": self.source_fingerprint,
+            "dataset_snapshot_id": self.dataset_snapshot_id,
+            "research_gate_status": self.research_gate_status,
+            "research_evidence_bundle": dict(self.research_evidence_bundle),
+            "oos_validation": dict(self.oos_validation),
+            "after_cost_evidence": dict(self.after_cost_evidence),
+            "cost_summary": dict(self.cost_summary),
+            "parameter_robustness": dict(self.parameter_robustness),
+            "market_regime_robustness": dict(self.market_regime_robustness),
+            "capacity_review": dict(self.capacity_review),
+            "drawdown_evidence": dict(self.drawdown_evidence),
+            "signal_execution_evidence": dict(self.signal_execution_evidence),
+            "lot_feasibility_evidence": dict(self.lot_feasibility_evidence),
+            "missing_evidence": list(self.missing_evidence),
+            "persisted_source_only": self.persisted_source_only,
+            "deterministic": self.deterministic,
+            "ai_generated": self.ai_generated,
+            "authority_effect": self.authority_effect,
+            "schema_version": self.schema_version,
+        }
+
+
+@dataclass(frozen=True)
 class ProviderRegistration:
     provider_id: str
     display_name: str
