@@ -28,6 +28,7 @@ type PresentedAutomaticTradingState = AutomaticTradingStatus | 'loading';
 export function AutomaticTradingPanel() {
   const copy = useCopy();
   const labels = copy.trading.automaticTrading;
+  const pageLabels = copy.trading.page;
   const { locale } = usePreferences();
   const automaticTrading = useAutomaticTradingQuery();
   const setAutomaticTrading = useSetAutomaticTradingMutation();
@@ -118,132 +119,166 @@ export function AutomaticTradingPanel() {
     </span>
   ) : null;
 
+  const controlledZone = (
+    <ControlledActionZone
+      title={labels.title}
+      description={labels.subtitle}
+      evidence={evidence}
+      layout="stack"
+    >
+      <div className="grid w-full min-w-0 gap-3">
+        {state === 'disabled' || state === 'loading' ? null : (
+          <AutomaticTradingStatusBadge state={state} />
+        )}
+
+        {automaticTrading.isError || state === 'unavailable' ? (
+          <p
+            className="app-error-text text-sm"
+            data-testid="automatic-trading-load-error"
+          >
+            {labels.loadFailed}
+          </p>
+        ) : null}
+
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          <label className="grid min-w-0 gap-1.5">
+            <span className="text-sm font-medium">{labels.operatorId}</span>
+            <input
+              value={operatorId}
+              onChange={(event) => {
+                setOperatorId(event.target.value);
+                setFormError(null);
+              }}
+              placeholder={labels.operatorPlaceholder}
+              className="app-field h-10 min-w-0 rounded-[var(--app-radius-control)] px-3 text-sm"
+              aria-label={labels.operatorId}
+              disabled={!controlsAvailable || setAutomaticTrading.isPending}
+            />
+          </label>
+          <label className="grid min-w-0 gap-1.5">
+            <span className="text-sm font-medium">{labels.reason}</span>
+            <input
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                setFormError(null);
+              }}
+              placeholder={labels.reasonPlaceholder}
+              className="app-field h-10 min-w-0 rounded-[var(--app-radius-control)] px-3 text-sm"
+              aria-label={labels.reason}
+              disabled={!controlsAvailable || setAutomaticTrading.isPending}
+            />
+          </label>
+        </div>
+
+        <label className="grid min-w-0 gap-1.5 sm:max-w-56">
+          <span className="text-sm font-medium">{labels.validity}</span>
+          <select
+            value={ttlSeconds}
+            onChange={(event) => setTtlSeconds(Number(event.target.value))}
+            className="app-field h-10 min-w-0 rounded-[var(--app-radius-control)] px-3 text-sm"
+            aria-label={labels.validity}
+            disabled={!canEnable || setAutomaticTrading.isPending}
+          >
+            {VALIDITY_OPTIONS.map((option) => (
+              <option key={option.seconds} value={option.seconds}>
+                {labels[option.label]}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {formError ? (
+          <p className="app-error-text text-sm" role="alert">
+            {formError}
+          </p>
+        ) : null}
+        {setAutomaticTrading.isError ? (
+          <p className="app-error-text text-sm" role="alert">
+            {getErrorMessage(setAutomaticTrading.error)}
+          </p>
+        ) : null}
+
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            className="app-button-danger min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!canEnable || setAutomaticTrading.isPending}
+            onClick={() => void updateGate(true)}
+          >
+            {setAutomaticTrading.isPending && canEnable
+              ? labels.submitting
+              : labels.enable}
+          </button>
+          <button
+            type="button"
+            className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!canDisable || setAutomaticTrading.isPending}
+            onClick={() => void updateGate(false)}
+          >
+            {setAutomaticTrading.isPending && canDisable
+              ? labels.submitting
+              : labels.disable}
+          </button>
+        </div>
+
+        <div className="grid gap-1 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-warning-text)]">
+          <p>{labels.noRestart}</p>
+          <p>{labels.noCapitalAuthority}</p>
+          <p>{labels.brokerSubmissionNotImplemented}</p>
+        </div>
+
+        {snapshot && Array.isArray(snapshot.blockers) ? (
+          <div className="text-xs leading-5 text-[var(--app-text-secondary)]">
+            <span className="font-semibold">{labels.blockers}: </span>
+            {snapshot.blockers.length
+              ? snapshot.blockers
+                  .map((blocker) =>
+                    formatPublicOperationalNote(blocker, locale),
+                  )
+                  .join('; ')
+              : labels.noBlockers}
+          </div>
+        ) : null}
+      </div>
+    </ControlledActionZone>
+  );
+
+  const quietState = state === 'disabled' || state === 'loading';
+
   return (
     <div
-      className="min-w-0 sm:col-span-2"
+      className="min-w-0"
       data-automatic-trading-state={state}
+      data-layout="compact-control"
       data-testid="automatic-trading-panel"
     >
-      <ControlledActionZone
-        title={labels.title}
-        description={labels.subtitle}
-        evidence={evidence}
-        layout="stack"
-      >
-        <div className="grid w-full min-w-0 gap-3">
-          <AutomaticTradingStatusBadge state={state} />
-
-          {automaticTrading.isError || state === 'unavailable' ? (
-            <p
-              className="app-error-text text-sm"
-              data-testid="automatic-trading-load-error"
-            >
-              {labels.loadFailed}
-            </p>
-          ) : null}
-
-          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-            <label className="grid min-w-0 gap-1.5">
-              <span className="text-sm font-medium">{labels.operatorId}</span>
-              <input
-                value={operatorId}
-                onChange={(event) => {
-                  setOperatorId(event.target.value);
-                  setFormError(null);
-                }}
-                placeholder={labels.operatorPlaceholder}
-                className="app-field h-10 min-w-0 rounded-xl px-3 text-sm"
-                aria-label={labels.operatorId}
-                disabled={!controlsAvailable || setAutomaticTrading.isPending}
-              />
-            </label>
-            <label className="grid min-w-0 gap-1.5">
-              <span className="text-sm font-medium">{labels.reason}</span>
-              <input
-                value={reason}
-                onChange={(event) => {
-                  setReason(event.target.value);
-                  setFormError(null);
-                }}
-                placeholder={labels.reasonPlaceholder}
-                className="app-field h-10 min-w-0 rounded-xl px-3 text-sm"
-                aria-label={labels.reason}
-                disabled={!controlsAvailable || setAutomaticTrading.isPending}
-              />
-            </label>
-          </div>
-
-          <label className="grid min-w-0 gap-1.5 sm:max-w-56">
-            <span className="text-sm font-medium">{labels.validity}</span>
-            <select
-              value={ttlSeconds}
-              onChange={(event) => setTtlSeconds(Number(event.target.value))}
-              className="app-field h-10 min-w-0 rounded-xl px-3 text-sm"
-              aria-label={labels.validity}
-              disabled={!canEnable || setAutomaticTrading.isPending}
-            >
-              {VALIDITY_OPTIONS.map((option) => (
-                <option key={option.seconds} value={option.seconds}>
-                  {labels[option.label]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {formError ? (
-            <p className="app-error-text text-sm" role="alert">
-              {formError}
-            </p>
-          ) : null}
-          {setAutomaticTrading.isError ? (
-            <p className="app-error-text text-sm" role="alert">
-              {getErrorMessage(setAutomaticTrading.error)}
-            </p>
-          ) : null}
-
-          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              className="app-button-danger min-h-10 rounded-xl px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={!canEnable || setAutomaticTrading.isPending}
-              onClick={() => void updateGate(true)}
-            >
-              {setAutomaticTrading.isPending && canEnable
-                ? labels.submitting
-                : labels.enable}
-            </button>
-            <button
-              type="button"
-              className="app-button-secondary min-h-10 rounded-xl px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={!canDisable || setAutomaticTrading.isPending}
-              onClick={() => void updateGate(false)}
-            >
-              {setAutomaticTrading.isPending && canDisable
-                ? labels.submitting
-                : labels.disable}
-            </button>
-          </div>
-
-          <div className="grid gap-1 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-warning-text)]">
-            <p>{labels.noRestart}</p>
-            <p>{labels.noCapitalAuthority}</p>
-            <p>{labels.brokerSubmissionNotImplemented}</p>
-          </div>
-
-          {snapshot && Array.isArray(snapshot.blockers) ? (
-            <div className="text-xs leading-5 text-[var(--app-text-secondary)]">
-              <span className="font-semibold">{labels.blockers}: </span>
-              {snapshot.blockers.length
-                ? snapshot.blockers
-                    .map((blocker) =>
-                      formatPublicOperationalNote(blocker, locale),
-                    )
-                    .join('; ')
-                : labels.noBlockers}
-            </div>
-          ) : null}
-        </div>
-      </ControlledActionZone>
+      {quietState ? (
+        <details
+          className="group min-w-0 border-y border-[var(--app-divider)]"
+          data-testid="automatic-trading-disclosure"
+        >
+          <summary className="flex min-h-14 cursor-pointer list-none flex-col items-start justify-between gap-2 px-1 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:flex-row sm:items-center sm:gap-4 sm:px-3 [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[var(--app-text)]">
+                {labels.title}
+              </span>
+              <span className="mt-0.5 hidden text-xs leading-5 text-[var(--app-text-secondary)] sm:block">
+                {labels.subtitle}
+              </span>
+            </span>
+            <span className="flex w-full shrink-0 items-center justify-between gap-2 sm:w-auto sm:flex-col sm:items-end sm:gap-1">
+              <AutomaticTradingStatusBadge state={state} />
+              <span className="text-xs font-semibold text-[var(--app-text-secondary)]">
+                {pageLabels.expandOnDemand}
+              </span>
+            </span>
+          </summary>
+          <div className="py-3">{controlledZone}</div>
+        </details>
+      ) : (
+        controlledZone
+      )}
     </div>
   );
 }

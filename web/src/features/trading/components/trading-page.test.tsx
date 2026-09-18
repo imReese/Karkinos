@@ -762,7 +762,7 @@ test('renders the trading approvals workspace', async () => {
   const user = userEvent.setup();
   renderTradingPage();
 
-  expect(await screen.findByText('Trading review')).toBeTruthy();
+  expect(await screen.findByText('Execution')).toBeTruthy();
   expect(document.body.textContent).not.toContain('Trading approvals');
   expect(await screen.findByText('Operating mode')).toBeTruthy();
   expect(await screen.findByText('Manual confirmation default')).toBeTruthy();
@@ -799,7 +799,7 @@ test('renders the trading approvals workspace', async () => {
   expect(await screen.findByText('Fill facts')).toBeTruthy();
   await user.click(orderHistory.querySelector('summary') as HTMLElement);
   expect(orderHistory.open).toBe(true);
-  expect(await screen.findByText('Order queue')).toBeTruthy();
+  expect(await screen.findByText('Execution blotter')).toBeTruthy();
   const secondaryFilters = screen.getByTestId('trading-secondary-filters');
   const secondaryFiltersSummary = secondaryFilters.querySelector('summary');
   expect((secondaryFilters as HTMLDetailsElement).open).toBe(false);

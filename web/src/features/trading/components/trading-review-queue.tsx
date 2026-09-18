@@ -59,7 +59,9 @@ export function TradingReviewQueue({
         <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.filterTitle}</div>
-            <h2 className="app-card-title mt-1.5">{labels.ordersTitle}</h2>
+            <h2 className="app-type-section-title mt-1.5 text-[var(--app-text)]">
+              {labels.ordersTitle}
+            </h2>
             <p className="app-muted mt-2 break-words text-sm">
               {labels.filteredCount(rows.length)}
             </p>

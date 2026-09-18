@@ -78,6 +78,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+async function openDisabledGate(user: ReturnType<typeof userEvent.setup>) {
+  const disclosure = await screen.findByTestId('automatic-trading-disclosure');
+  expect(disclosure.tagName).toBe('DETAILS');
+  if (!(disclosure as HTMLDetailsElement).open) {
+    await user.click(disclosure.querySelector('summary') as HTMLElement);
+  }
+  expect((disclosure as HTMLDetailsElement).open).toBe(true);
+}
+
 test.each([
   {
     name: 'missing response data',
@@ -138,7 +147,12 @@ test('enables a bounded gate with operator, reason, ttl, acknowledgement, and cu
   renderPanel();
   const user = userEvent.setup();
 
-  expect(await screen.findByText('自动化交易已关闭')).toBeTruthy();
+  await waitFor(() => {
+    expect(
+      screen.getByTestId('automatic-trading-status').textContent,
+    ).toContain('自动化交易已关闭');
+  });
+  await openDisabledGate(user);
   await user.type(screen.getByLabelText('操作员标识'), 'owner-web');
   await user.type(screen.getByLabelText('操作原因'), '开启日内限时门禁');
   expect((screen.getByLabelText('有效期') as HTMLSelectElement).value).toBe(
@@ -203,7 +217,11 @@ test('disables an enabled gate immediately with the observed revision and no ttl
     acknowledgement: 'disable_automatic_trading_gate_immediately',
   });
   expect(putBody).not.toHaveProperty('ttl_seconds');
-  expect(await screen.findByText('自动化交易已关闭')).toBeTruthy();
+  await waitFor(() => {
+    expect(
+      screen.getByTestId('automatic-trading-status').textContent,
+    ).toContain('自动化交易已关闭');
+  });
 });
 
 test('allows an expired configured gate only to be disabled', async () => {
