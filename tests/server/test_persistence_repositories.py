@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from datetime import datetime
 from decimal import Decimal
@@ -451,6 +452,31 @@ def test_event_log_repository_preserves_payload_and_query_contract(tmp_path) -> 
     assert repository.list_events(event_type="test.event", limit=1, offset=1) == [
         rows[1]
     ]
+
+
+def test_event_log_serializes_non_finite_evidence_as_standard_json(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    database.init_sync()
+    repository = EventLogRepository(database.path)
+
+    event_id = repository.append(
+        event_type="test.non_finite",
+        timestamp="2026-09-18T01:00:00+00:00",
+        source="unit",
+        payload={
+            "positive": float("inf"),
+            "negative": float("-inf"),
+            "nan": float("nan"),
+        },
+    )
+
+    row = repository.list_events(event_type="test.non_finite")[0]
+    assert row["id"] == event_id
+    assert json.loads(row["payload_json"]) == {
+        "positive": "inf",
+        "negative": "-inf",
+        "nan": "nan",
+    }
 
 
 def test_insert_event_sync_uses_caller_transaction(tmp_path) -> None:
