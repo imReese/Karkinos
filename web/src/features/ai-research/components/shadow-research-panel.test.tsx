@@ -274,6 +274,80 @@ test('shows the next off-peak window and disables manual run during peak', async
   ).toBe(true);
 });
 
+test('renders multiple current candidates as a registry with one inspector', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const baseCandidate = status.candidates[0];
+  const candidates = Array.from({ length: 5 }, (_, index) => ({
+    ...baseCandidate,
+    candidate_id: 'candidate-' + (index + 1),
+    draft_id: 'draft-' + (index + 1),
+    updated_at: '2026-08-11T08:0' + index + ':00Z',
+    comparison: {
+      ...baseCandidate.comparison,
+      economic_hypothesis: 'Candidate hypothesis ' + (index + 1),
+      iteration_lineage: {
+        ...baseCandidate.comparison.iteration_lineage,
+        iteration_number: index + 1,
+      },
+    },
+  }));
+  const multiCandidateStatus = {
+    ...status,
+    candidates,
+    daily_new_candidate_winner_id: 'candidate-5',
+    daily_winner_candidate_id: 'candidate-5',
+    daily_selections: status.daily_selections.map((selection) => ({
+      ...selection,
+      winner_candidate_id: 'candidate-5',
+    })),
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(multiCandidateStatus);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([]);
+      }
+      throw new Error('Unexpected request: ' + url);
+    }),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  const rows = await screen.findAllByTestId('shadow-research-candidate-row');
+  expect(rows).toHaveLength(5);
+  expect(screen.getAllByTestId('shadow-research-candidate')).toHaveLength(1);
+  expect(
+    screen.getByTestId('shadow-research-candidate-inspector').textContent,
+  ).toContain('Candidate hypothesis 5');
+
+  const firstCandidateRow = rows.find(
+    (row) => row.getAttribute('data-candidate-id') === 'candidate-1',
+  );
+  expect(firstCandidateRow).toBeTruthy();
+  fireEvent.click(firstCandidateRow as HTMLElement);
+  expect(
+    screen.getByTestId('shadow-research-candidate-inspector').textContent,
+  ).toContain('Candidate hypothesis 1');
+  expect(screen.getAllByTestId('shadow-research-candidate')).toHaveLength(1);
+});
+
 test('shows old/new OOS evidence and records only an explicit paper-shadow approval', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
@@ -315,11 +389,16 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
   ).toBeTruthy();
   expect(await screen.findByText('Current baseline')).toBeTruthy();
   expect(screen.getByText('New candidate')).toBeTruthy();
-  expect(screen.getByText('A slower trend filter reduces churn.')).toBeTruthy();
-  expect(
-    screen.getAllByText('Account-qualified promotion winner'),
-  ).toHaveLength(2);
-  expect(screen.getByText('Sequential round 1/5')).toBeTruthy();
+  const candidateInspector = screen.getByTestId(
+    'shadow-research-candidate-inspector',
+  );
+  expect(candidateInspector.textContent).toContain(
+    'A slower trend filter reduces churn.',
+  );
+  expect(candidateInspector.textContent).toContain(
+    'Account-qualified promotion winner',
+  );
+  expect(candidateInspector.textContent).toContain('Sequential round 1/5');
   expect(screen.getByText('Verified')).toBeTruthy();
   expect(
     screen.getByText('Today provider calls').parentElement?.textContent,
@@ -702,8 +781,9 @@ test('keeps the current strategy while blocking promotion without a verified new
   );
 
   expect(
-    await screen.findByText('A slower trend filter reduces churn.'),
-  ).toBeTruthy();
+    (await screen.findByTestId('shadow-research-candidate-inspector'))
+      .textContent,
+  ).toContain('A slower trend filter reduces churn.');
   expect(
     screen.getByText('No complete normalized research recommendation'),
   ).toBeTruthy();
@@ -787,7 +867,10 @@ test('pauses an approved candidate through the canonical lifecycle state', async
     </PreferencesProvider>,
   );
 
-  expect(await screen.findByText('Paper/shadow approved')).toBeTruthy();
+  expect(
+    (await screen.findByTestId('shadow-research-candidate-inspector'))
+      .textContent,
+  ).toContain('Paper/shadow approved');
   const pauseButton = screen.getByRole('button', {
     name: 'Pause / revoke paper-shadow',
   }) as HTMLButtonElement;
@@ -848,5 +931,8 @@ test('pauses an approved candidate through the canonical lifecycle state', async
   });
   await vi.waitFor(() => expect(queryClient.isMutating()).toBe(0));
   await vi.waitFor(() => expect(queryClient.isFetching()).toBe(0));
-  expect(await screen.findByText('Paper/shadow approved')).toBeTruthy();
+  expect(
+    (await screen.findByTestId('shadow-research-candidate-inspector'))
+      .textContent,
+  ).toContain('Paper/shadow approved');
 });

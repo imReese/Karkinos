@@ -57,7 +57,7 @@ export function CandidateCard({
   const critique = comparison.deepseek_critique;
   return (
     <article
-      className="rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] p-4"
+      className="border-y border-[var(--app-divider)] py-4"
       data-testid="shadow-research-candidate"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">

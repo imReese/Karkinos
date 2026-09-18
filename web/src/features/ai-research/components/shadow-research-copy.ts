@@ -86,6 +86,10 @@ export const SHADOW_RESEARCH_COPY = {
     noCandidates:
       'No completed automated candidate is in the research pool yet.',
     currentCandidates: 'Current research candidates',
+    candidateRegistry: 'Candidate registry',
+    candidateRegistryDetail:
+      'Scan candidate state, then inspect one evidence package at a time.',
+    selectedCandidate: 'Selected candidate evidence',
     candidateHistory: 'Historical research candidates',
     candidateHistoryDetail: (count: number) =>
       `${count} older candidates remain available for audit and replay.`,
@@ -200,6 +204,9 @@ export const SHADOW_RESEARCH_COPY = {
     running: '正在检查证据…',
     noCandidates: '研究池里还没有完成的自动候选。',
     currentCandidates: '当前研究候选',
+    candidateRegistry: '候选登记',
+    candidateRegistryDetail: '先扫描候选状态，再一次复核一个完整证据包。',
+    selectedCandidate: '当前候选证据',
     candidateHistory: '历史研究候选',
     candidateHistoryDetail: (count: number) =>
       `${count} 个较早候选保留用于审计与重放。`,
