@@ -183,30 +183,125 @@ Historical experiment identity is immutable. Promotion, weighting, degradation, 
 
 ## 8. AI and orchestration
 
+AI is a **Research Intelligence Layer**, not an investment or capital authority.
+
+Karkinos separates four authority layers:
+
+| Layer | Canonical owner | AI role |
+| --- | --- | --- |
+| Financial / Market Truth | Market Data, Dataset, Accounting, persisted evidence | read and explain |
+| Research Intelligence | Research domain + AI runtime | investigate, propose, critique, orchestrate bounded research |
+| Evaluation & Gates | deterministic Research, Risk, Simulation, Accounting code | consume and explain results; never override |
+| Capital Authority | explicit human-supervised execution controls | none |
+
 AI may:
 
 ```text
-propose hypotheses
-submit experiments
-inspect evidence
-critique results
-select follow-up research
+observe approved persisted evidence
+explain canonical facts and deterministic results
+investigate a research question
+propose falsifiable hypotheses and structured candidate specs
+critique evidence and identify contradictions / missing tests
+orchestrate bounded typed research workflows
 ```
 
-AI does not own:
+AI does not own or change:
 
 ```text
-Market Data
+Market Data facts
 Dataset identity
-quantitative metrics
-Published Forecasts
+canonical quantitative metrics
+deterministic evaluation gates
+Published Forecast publication authority
 Portfolio state
 Risk decisions
 Accounting state
-capital authority
+research promotion authority
+capital or broker execution authority
 ```
 
-Humans, schedulers, CLI, Web, and AI invoke the same platform capabilities.
+The product capability levels are:
+
+```text
+L0 Observe
+L1 Explain
+L2 Investigate
+L3 Propose
+L4 Orchestrate Research
+```
+
+There is deliberately no AI capital-execution level.
+
+The Research Intelligence lifecycle is:
+
+```text
+Research Task
+-> Research Run
+-> Hypothesis
+-> Claim / Evidence
+-> Candidate
+-> Deterministic Evaluation
+   -> rejected
+   -> needs revision
+   -> selected for further research
+-> Account Qualification (when applicable)
+-> Human Promotion Review
+-> Paper / Shadow
+```
+
+Research selection, account qualification, and promotion are distinct decisions.
+An AI-generated candidate never promotes itself.
+
+New research contracts should prefer provider-neutral entities:
+
+```text
+ResearchTask
+ResearchRun
+ResearchHypothesis
+ResearchClaim
+EvidenceRef
+ResearchCandidate
+EvaluationBundle
+CritiqueBundle
+ResearchSelection
+QualificationRun
+PromotionDecision
+AITrace
+```
+
+Model providers are adapters, not domain authorities.
+
+AI-generated claims are research artifacts, not facts. External websites, papers,
+PDFs, notes, and provider responses are untrusted evidence data; they never become
+runtime instructions merely because they appear in model context.
+
+Candidate generation should prefer typed DSL / AST output:
+
+```text
+AI candidate
+-> schema validation
+-> operator allowlist
+-> semantic / leakage validation
+-> deterministic compilation
+-> deterministic evaluation
+```
+
+Canonical evaluation remains deterministic and may include OOS, after-cost,
+walk-forward, sensitivity, regime robustness, leakage checks, turnover, and
+drawdown evidence.
+
+Research workflows must be bounded by explicit budgets such as candidate count,
+iteration count, backtest count, parameter variants, provider calls, and external
+searches. Repeated experimentation is recorded as overfitting evidence rather than
+hidden as model iteration.
+
+Every AI invocation or workflow stage must be traceable to provider/model identity,
+prompt/instruction version, input artifact identities, evidence references, tool
+calls, timing, usage, and output fingerprints where available.
+
+Humans, schedulers, CLI, Web, and AI invoke the same platform capabilities. AI gets
+no privileged path around normal Research, Risk, Portfolio, Execution, or Accounting
+boundaries.
 
 ## 9. Invariants
 

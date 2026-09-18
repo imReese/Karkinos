@@ -59,9 +59,13 @@ Alpha, models, scores, rankings, probabilities, and expected returns are investm
 | --- | --- |
 | **Local-first** | Core user state, research artifacts, portfolio state, financial state, and primary calculations remain locally owned by default |
 | **External services** | May provide data, models, notifications, remote computation, backup, or sync; they do not become core authority |
-| **AI** | May generate hypotheses, run research workflows, critique evidence, and assist the user; it does not own canonical facts, metrics, portfolio state, accounting, risk results, or capital authority |
+| **AI** | Research Intelligence Layer only: may explain, investigate, propose, critique, and orchestrate bounded research; it does not own canonical facts, deterministic gates, promotion authority, portfolio/accounting state, or capital execution |
 | **Capital** | Real-money automation is not the default mode; authority is explicit and human-supervised |
 | **Broker integration** | Outer capability, not the product center |
+
+AI output is always a research artifact or explanation. It never becomes a
+financial fact, deterministic gate result, promotion decision, or execution
+instruction merely because a model produced it.
 
 Karkinos must not:
 
