@@ -96,11 +96,19 @@ def _persisted_no_signal_scan() -> dict:
 
 
 class _Db:
-    def __init__(self, rows: list[dict]) -> None:
+    def __init__(
+        self,
+        rows: list[dict],
+        promotion_states: list[dict] | None = None,
+    ) -> None:
         self.rows = rows
+        self.promotion_states = promotion_states
 
     def list_automation_runs_sync(self, **_: object) -> list[dict]:
         return self.rows
+
+    def list_strategy_promotion_states_sync(self) -> list[dict]:
+        return list(self.promotion_states or [])
 
 
 def _current_gate_inputs() -> tuple[dict, dict]:
@@ -143,6 +151,32 @@ def _current_gate_inputs() -> tuple[dict, dict]:
         "blockers": [],
     }
     return decision, plan
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_missing_scan_distinguishes_no_promoted_strategy_from_automation_gap() -> None:
+    no_strategy = resolve_latest_verified_promoted_strategy_scan(
+        _Db([], promotion_states=[]),
+        decision_date="2026-09-18",
+    )
+    assert no_strategy["status"] == "unavailable"
+    assert no_strategy["blockers"] == ["promoted_strategy_not_configured"]
+
+    scan_gap = resolve_latest_verified_promoted_strategy_scan(
+        _Db(
+            [],
+            promotion_states=[
+                {
+                    "strategy_id": "ai_formula_shadow:candidate-1",
+                    "stage": "paper_shadow",
+                }
+            ],
+        ),
+        decision_date="2026-09-18",
+    )
+    assert scan_gap["status"] == "unavailable"
+    assert scan_gap["blockers"] == ["promoted_strategy_scan_missing"]
 
 
 @pytest.mark.unit

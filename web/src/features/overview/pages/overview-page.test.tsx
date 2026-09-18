@@ -296,6 +296,7 @@ test('explains why today has no actionable recommendation when evidence gates bl
   plan.conclusion_status = 'account_truth_blocked';
   plan.account_action_recommendation!.status = 'unavailable';
   plan.account_action_recommendation!.reason_codes = [
+    'promoted_strategy_not_configured',
     'valuation_snapshot_not_complete',
     'market_data_not_trusted',
     'account_truth_not_fresh',
@@ -337,6 +338,16 @@ test('explains why today has no actionable recommendation when evidence gates bl
   expect(blockers).toHaveTextContent('刷新或确认当前行情证据');
   expect(blockers).toHaveTextContent('账户事实');
   expect(blockers).toHaveTextContent('刷新账户事实快照');
+  expect(blockers).toHaveTextContent('研究策略');
+  expect(blockers).toHaveTextContent('NOT READY');
+  expect(blockers).toHaveTextContent(
+    '当前没有已晋级到 Paper Shadow 的证据策略',
+  );
+  expect(
+    within(blockers).getByRole('link', {
+      name: '进入证据研究并完成策略晋级',
+    }),
+  ).toHaveAttribute('href', '/ai-research');
   expect(blockers).not.toHaveTextContent('valuation_snapshot_not_complete');
 });
 

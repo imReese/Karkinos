@@ -39,6 +39,10 @@ export function OverviewResolvedWorkspace({
     <div className="min-w-0" data-testid="overview-financial-canvas">
       <OverviewDataStatus state={state} />
       <OverviewSummary summary={state.summary} />
+      <OverviewStrategyRecommendation
+        planQuery={controller.tradingPlan}
+        decisionQuery={controller.todayDecision}
+      />
       <DashboardTodayQueue overview={state.overview} />
       <OverviewValuationCoverage snapshot={state.snapshot} />
 
@@ -84,17 +88,7 @@ export function OverviewResolvedWorkspace({
         className="border-b border-[var(--app-divider)]"
       />
 
-      <div className="grid min-w-0 lg:grid-cols-2 lg:divide-x lg:divide-[var(--app-divider)]">
-        <div className="min-w-0 lg:pr-6">
-          <OverviewStrategyRecommendation
-            planQuery={controller.tradingPlan}
-            decisionQuery={controller.todayDecision}
-          />
-        </div>
-        <div className="min-w-0 lg:pl-6">
-          <OverviewMarketStatus state={state} />
-        </div>
-      </div>
+      <OverviewMarketStatus state={state} />
 
       <OverviewDataDetails
         state={state}

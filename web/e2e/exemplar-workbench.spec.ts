@@ -485,7 +485,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await expect(page.getByTestId('backtest-mobile-workspace-tabs')).toBeHidden();
 });
 
-test('overview prioritizes summary, performance and holdings across all viewports', async ({
+test('overview prioritizes account truth, today decision, performance and holdings across all viewports', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -497,6 +497,9 @@ test('overview prioritizes summary, performance and holdings across all viewport
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
     const summary = (await page.getByTestId('overview-summary').boundingBox())!;
+    const decision = (await page
+      .getByTestId('overview-strategy-recommendation')
+      .boundingBox())!;
     const performance = (await page
       .getByTestId('overview-performance-card')
       .boundingBox())!;
@@ -521,9 +524,14 @@ test('overview prioritizes summary, performance and holdings across all viewport
       document: 0,
       content: 0,
     });
-    expect(queue.y).toBeGreaterThanOrEqual(summary.y + summary.height);
+    expect(decision.y).toBeGreaterThanOrEqual(summary.y + summary.height);
+    expect(queue.y).toBeGreaterThanOrEqual(decision.y + decision.height);
     expect(performance.y).toBeGreaterThanOrEqual(queue.y + queue.height);
     expect(holdings.y).toBeGreaterThan(performance.y);
+    expect(
+      Math.abs(decision.x - queue.x),
+      JSON.stringify(viewport),
+    ).toBeLessThan(8);
     expect(
       Math.abs(queue.x - performance.x),
       JSON.stringify(viewport),
@@ -2169,17 +2177,23 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
         0,
       );
       if (path === '/overview') {
+        const decisionBox = await page
+          .getByTestId('overview-strategy-recommendation')
+          .boundingBox();
+        expect(
+          decisionBox?.y ?? Number.POSITIVE_INFINITY,
+          `${path} ${theme} today-decision first-screen priority`,
+        ).toBeLessThan(844);
         const queueBox = await page
           .getByTestId('overview-today-queue')
           .boundingBox();
-        expect(
-          queueBox?.y ?? Number.POSITIVE_INFINITY,
-          `${path} ${theme} queue first-screen priority`,
-        ).toBeLessThan(844);
+        expect(queueBox?.y ?? 0).toBeGreaterThanOrEqual(
+          (decisionBox?.y ?? 0) + (decisionBox?.height ?? 0),
+        );
         const holdingsBox = await page
           .getByTestId('overview-holdings-section')
           .boundingBox();
-        expect(holdingsBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(1400);
+        expect(holdingsBox?.y ?? 0).toBeGreaterThan(queueBox?.y ?? 0);
         await expect(
           page.getByTestId('overview-data-details'),
         ).not.toHaveAttribute('open', '');

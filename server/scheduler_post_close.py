@@ -65,6 +65,95 @@ class SchedulerPostCloseMixin:
             return None
         return receipt is None
 
+    def _ensure_post_close_market_daily_receipt(
+        self,
+        data_manager: Any,
+        *,
+        provider_name: str,
+        target_trade_date: str,
+    ) -> bool:
+        """Recover a missing exact-date daily receipt from the batch provider.
+
+        Existing receipts remain immutable and are never replaced here.  This
+        recovery path contacts the configured daily-batch provider only when
+        the verified receipt is absent, then atomically freezes that provider
+        batch before post-close quote publication can continue.
+        """
+
+        data_store = getattr(data_manager, "store", None)
+        if data_store is None:
+            return False
+        receipt_reader = getattr(data_store, "get_market_daily_ingestion_receipt", None)
+        receipt_writer = getattr(data_store, "ingest_market_daily_batch", None)
+        if not callable(receipt_reader) or not callable(receipt_writer):
+            return False
+        try:
+            existing = receipt_reader(
+                trade_date=target_trade_date,
+                provider_name=provider_name,
+                verify=True,
+            )
+        except Exception:
+            logger.exception(
+                "收盘行情凭证校验失败，拒绝自动恢复: date=%s provider=%s",
+                target_trade_date,
+                provider_name,
+            )
+            return False
+        if existing is not None:
+            return True
+
+        sources = getattr(data_manager, "sources", None)
+        source = sources.get(provider_name) if isinstance(sources, dict) else None
+        batch_fetcher = getattr(source, "fetch_market_daily_bars", None)
+        if not callable(batch_fetcher):
+            logger.warning(
+                "收盘行情凭证缺失且当前数据源不支持日批次恢复: date=%s provider=%s",
+                target_trade_date,
+                provider_name,
+            )
+            return False
+        try:
+            frame = batch_fetcher(target_trade_date)
+            if frame is None or getattr(frame, "empty", True):
+                logger.warning(
+                    "收盘行情日批次恢复为空，将等待重试: date=%s provider=%s",
+                    target_trade_date,
+                    provider_name,
+                )
+                return False
+            receipt_writer(
+                trade_date=target_trade_date,
+                provider_name=provider_name,
+                bars=frame,
+            )
+            verified = receipt_reader(
+                trade_date=target_trade_date,
+                provider_name=provider_name,
+                verify=True,
+            )
+        except Exception:
+            logger.exception(
+                "收盘行情日批次凭证恢复失败，将等待重试: date=%s provider=%s",
+                target_trade_date,
+                provider_name,
+            )
+            return False
+        if verified is None:
+            logger.warning(
+                "收盘行情日批次已写入但凭证不可验证，将等待重试: date=%s provider=%s",
+                target_trade_date,
+                provider_name,
+            )
+            return False
+        logger.info(
+            "收盘行情日批次凭证自动恢复完成: date=%s provider=%s rows=%s",
+            target_trade_date,
+            provider_name,
+            verified.get("row_count", "unknown"),
+        )
+        return True
+
     def _publish_post_close_stock_quotes(
         self,
         *,
@@ -241,6 +330,11 @@ class SchedulerPostCloseMixin:
         ):
             self._last_post_close_market_refresh_attempt_at = current
             data_store = getattr(data_manager, "store", None)
+            receipt_ready = self._ensure_post_close_market_daily_receipt(
+                data_manager,
+                provider_name=provider_name,
+                target_trade_date=target_trade_date,
+            )
             receipt_fingerprint = (
                 self._publish_post_close_stock_quotes(
                     data_store=data_store,
@@ -248,7 +342,7 @@ class SchedulerPostCloseMixin:
                     calendar_evidence_refs=resolved.calendar_evidence_refs,
                     captured_at=current,
                 )
-                if data_store is not None
+                if data_store is not None and receipt_ready
                 else None
             )
             if receipt_fingerprint is not None:

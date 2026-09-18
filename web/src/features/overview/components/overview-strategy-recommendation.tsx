@@ -92,6 +92,12 @@ export function OverviewStrategyRecommendation({
       (task) => task.status === 'blocked',
     ) ?? [];
   const reasonCodes = recommendation?.reason_codes ?? [];
+  const strategyReadinessReason = reasonCodes.find((reason) =>
+    [
+      'promoted_strategy_not_configured',
+      'promoted_strategy_scan_missing',
+    ].includes(reason),
+  );
   const decisionTaskLabels = dashboard.decisionTaskLabels as Record<
     string,
     string
@@ -112,7 +118,7 @@ export function OverviewStrategyRecommendation({
   return (
     <section
       data-testid="overview-strategy-recommendation"
-      className="min-w-0 border-b border-[var(--app-divider)] py-4 lg:border-b-0"
+      className="min-w-0 border-b border-[var(--app-divider)] py-3.5"
       aria-label={dashboard.strategyRecommendationTitle}
     >
       <SectionHeader
@@ -181,38 +187,64 @@ export function OverviewStrategyRecommendation({
             <div className="mt-3" data-testid="overview-decision-blockers">
               <SectionHeader
                 title={dashboard.decisionBlockers}
-                meta={blockedTasks.length || reasonCodes.length}
+                meta={
+                  blockedTasks.length + (strategyReadinessReason ? 1 : 0) ||
+                  reasonCodes.length
+                }
                 className="mb-2"
               />
               <Register ariaLabel={dashboard.decisionBlockers}>
-                {blockedTasks.length
-                  ? blockedTasks.map((task) => (
-                      <RegisterRow
-                        key={task.id}
-                        label={
-                          decisionTaskLabels[task.id] ??
-                          task.title ??
-                          readableCode(task.id, decisionTaskLabels)
-                        }
-                        value={dashboard.decisionBlocked}
-                        detail={
-                          task.required_actions?.length
-                            ? task.required_actions
-                                .map((action) =>
-                                  readableCode(action, decisionActionLabels),
-                                )
-                                .join(' · ')
-                            : task.blocking_reasons
-                                ?.map((reason) =>
-                                  readableCode(reason, decisionReasonLabels),
-                                )
-                                .join(' · ') || task.description
-                        }
-                        tone="warning"
-                      />
-                    ))
-                  : reasonCodes
-                      .slice(0, 6)
+                {blockedTasks.map((task) => (
+                  <RegisterRow
+                    key={task.id}
+                    label={
+                      decisionTaskLabels[task.id] ??
+                      task.title ??
+                      readableCode(task.id, decisionTaskLabels)
+                    }
+                    value={dashboard.decisionBlocked}
+                    detail={
+                      task.required_actions?.length
+                        ? task.required_actions
+                            .map((action) =>
+                              readableCode(action, decisionActionLabels),
+                            )
+                            .join(' · ')
+                        : task.blocking_reasons
+                            ?.map((reason) =>
+                              readableCode(reason, decisionReasonLabels),
+                            )
+                            .join(' · ') || task.description
+                    }
+                    tone="warning"
+                  />
+                ))}
+                {strategyReadinessReason ? (
+                  <RegisterRow
+                    label={dashboard.decisionStrategyResearch}
+                    value={dashboard.decisionStrategyNotReady}
+                    detail={
+                      <span>
+                        {readableCode(
+                          strategyReadinessReason,
+                          decisionReasonLabels,
+                        )}
+                        {' · '}
+                        <a
+                          href="/ai-research"
+                          className="font-semibold text-[var(--app-accent)] hover:underline"
+                        >
+                          {dashboard.decisionStrategyNextStep}
+                        </a>
+                      </span>
+                    }
+                    tone="warning"
+                  />
+                ) : null}
+                {!blockedTasks.length
+                  ? reasonCodes
+                      .filter((reason) => reason !== strategyReadinessReason)
+                      .slice(0, strategyReadinessReason ? 5 : 6)
                       .map((reason) => (
                         <RegisterRow
                           key={reason}
@@ -220,7 +252,8 @@ export function OverviewStrategyRecommendation({
                           value={readableCode(reason, decisionReasonLabels)}
                           tone="warning"
                         />
-                      ))}
+                      ))
+                  : null}
               </Register>
             </div>
           ) : null}

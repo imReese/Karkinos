@@ -12,6 +12,7 @@ from server.services.decision_contracts import (
     float_or_zero,
     parse_action_timestamp,
 )
+from server.services.position_presence import is_economically_zero_quantity
 
 
 def decision_portfolio_context(state: Any) -> dict[str, Any]:
@@ -164,6 +165,9 @@ def portfolio_state_summary(
     position_values: list[float] = []
     position_valuation_complete = True
     for symbol, position in position_items:
+        quantity = getattr(position, "quantity", getattr(position, "shares", None))
+        if is_economically_zero_quantity(quantity):
+            continue
         symbol_text = str(symbol)
         symbols.append(symbol_text)
         instrument = instruments.get(symbol)
@@ -298,20 +302,19 @@ def decision_symbols(
     symbols: list[str] = []
     for action in actions:
         append_unique_symbol(symbols, action.get("symbol"))
-    scheduler = getattr(state, "scheduler", None)
-    for item in getattr(scheduler, "watchlist", []) or []:
-        symbol = item[0] if isinstance(item, (list, tuple)) and item else item
-        append_unique_symbol(symbols, symbol)
     context = portfolio_context or decision_portfolio_context(state)
     portfolio = context.get("portfolio")
     positions = getattr(portfolio, "positions", {}) if portfolio else {}
     if isinstance(positions, dict):
-        for symbol in positions:
+        for symbol, position in positions.items():
+            quantity = getattr(
+                position,
+                "quantity",
+                getattr(position, "shares", None),
+            )
+            if is_economically_zero_quantity(quantity):
+                continue
             append_unique_symbol(symbols, symbol)
-    config = getattr(state, "config", None)
-    for asset in getattr(config, "assets", []) or []:
-        if isinstance(asset, dict):
-            append_unique_symbol(symbols, asset.get("symbol"))
     return symbols
 
 
