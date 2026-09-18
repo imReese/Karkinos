@@ -28,6 +28,15 @@ const WRITE_RELEASE_FLOW = [
   ),
 ].join('\n');
 
+const CONTROLLED_EXCEPTION_FLOWS = [
+  source(
+    'features/operations/controlled-session-revocation-operator-panel.tsx',
+  ),
+  source('features/operations/controlled-broker-recovery-operator-panel.tsx'),
+  source('features/operations/manual-broker-cancellation-ticket-panel.tsx'),
+  source('features/operations/controlled-broker-rejection-evidence-panel.tsx'),
+].join('\n');
+
 const CONTROLLED_FINANCIAL_FLOWS = [
   source('features/operations/controlled-ledger-correction-operator-view.tsx'),
   source('features/operations/controlled-ledger-posting-operator-view.tsx'),
@@ -88,5 +97,16 @@ describe('controlled operator register contract', () => {
     );
     expect(CONTROLLED_FINANCIAL_FLOWS).toContain('border-l-2');
     expect(CONTROLLED_FINANCIAL_FLOWS).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
+  });
+
+  it('keeps recovery, revocation, rejection, and cancellation as exception registers', () => {
+    expect(CONTROLLED_EXCEPTION_FLOWS).toContain(
+      'rounded-[var(--app-radius-control)]',
+    );
+    expect(CONTROLLED_EXCEPTION_FLOWS).toContain('border-l-2');
+    expect(CONTROLLED_EXCEPTION_FLOWS).toContain(
+      'border-y border-[var(--app-divider)]',
+    );
+    expect(CONTROLLED_EXCEPTION_FLOWS).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
   });
 });

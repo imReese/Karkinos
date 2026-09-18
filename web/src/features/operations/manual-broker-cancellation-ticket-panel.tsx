@@ -114,7 +114,7 @@ export function ManualBrokerCancellationTicketPanel({
   return (
     <div
       data-testid="manual-broker-cancellation-ticket-panel"
-      className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] p-3"
+      className="mt-3 border-l-2 border-[var(--app-warning-border)] py-2 pl-3"
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
@@ -166,7 +166,7 @@ export function ManualBrokerCancellationTicketPanel({
           {preview.data ? (
             <>
               <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-xl border border-[var(--app-border)] px-3 py-2">
+                <div className="border-t border-[var(--app-divider)] py-2">
                   <div className="app-muted">
                     {locale === 'zh' ? '生命周期' : 'Lifecycle'}
                   </div>
@@ -177,7 +177,7 @@ export function ManualBrokerCancellationTicketPanel({
                     )}
                   </div>
                 </div>
-                <div className="rounded-xl border border-[var(--app-border)] px-3 py-2">
+                <div className="border-t border-[var(--app-divider)] py-2">
                   <div className="app-muted">
                     {locale === 'zh' ? '已成交 / 剩余' : 'Filled / remaining'}
                   </div>
@@ -186,7 +186,7 @@ export function ManualBrokerCancellationTicketPanel({
                     {preview.data.order.remaining_quantity}
                   </div>
                 </div>
-                <div className="min-w-0 rounded-xl border border-[var(--app-border)] px-3 py-2">
+                <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
                   <div className="app-muted">broker_order_id</div>
                   <div
                     className="mt-1 truncate font-mono text-[var(--app-text)]"
@@ -195,7 +195,7 @@ export function ManualBrokerCancellationTicketPanel({
                     {shortenedIdentity(preview.data.identity.broker_order_id)}
                   </div>
                 </div>
-                <div className="min-w-0 rounded-xl border border-[var(--app-border)] px-3 py-2">
+                <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
                   <div className="app-muted">client_order_id</div>
                   <div
                     className="mt-1 truncate font-mono text-[var(--app-text)]"

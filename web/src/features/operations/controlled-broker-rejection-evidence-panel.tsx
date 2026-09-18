@@ -141,7 +141,7 @@ export function ControlledBrokerRejectionEvidencePanel({
   return (
     <div
       data-testid="controlled-broker-rejection-evidence-panel"
-      className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_6%,transparent)] p-3"
+      className="mt-3 border-l-2 border-[var(--app-danger-border)] py-2 pl-3"
     >
       <RejectionPanelHeader locale={locale} onReview={loadPreview} />
 
@@ -173,7 +173,7 @@ export function ControlledBrokerRejectionEvidencePanel({
           {preview.data ? (
             <>
               <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-xl border border-[var(--app-border)] px-3 py-2">
+                <div className="border-t border-[var(--app-divider)] py-2">
                   <div className="app-muted">
                     {locale === 'zh' ? '拒绝分类' : 'Classification'}
                   </div>
@@ -184,7 +184,7 @@ export function ControlledBrokerRejectionEvidencePanel({
                     )}
                   </div>
                 </div>
-                <div className="rounded-xl border border-[var(--app-border)] px-3 py-2">
+                <div className="border-t border-[var(--app-divider)] py-2">
                   <div className="app-muted">
                     {locale === 'zh' ? '结果 / 明确性' : 'Result / definitive'}
                   </div>
@@ -203,7 +203,7 @@ export function ControlledBrokerRejectionEvidencePanel({
                         : 'local block'}
                   </div>
                 </div>
-                <div className="min-w-0 rounded-xl border border-[var(--app-border)] px-3 py-2">
+                <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
                   <div className="app-muted">gateway_id</div>
                   <div
                     className="mt-1 truncate font-mono text-[var(--app-text)]"
@@ -212,7 +212,7 @@ export function ControlledBrokerRejectionEvidencePanel({
                     {shortenedIdentity(preview.data.identity.gateway_id)}
                   </div>
                 </div>
-                <div className="min-w-0 rounded-xl border border-[var(--app-border)] px-3 py-2">
+                <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
                   <div className="app-muted">client_order_id</div>
                   <div
                     className="mt-1 truncate font-mono text-[var(--app-text)]"
@@ -345,7 +345,7 @@ export function ControlledBrokerRejectionEvidencePanel({
           ) : null}
           {recordReview.data ? (
             <div
-              className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)] px-3 py-2 text-xs text-[var(--app-text)]"
+              className="mt-3 border-l-2 border-[var(--app-success-border)] py-2 pl-3 text-xs text-[var(--app-text)]"
               role="status"
             >
               <div className="font-semibold">
