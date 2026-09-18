@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .contracts import AgentRole, EvidenceBoundContextSnapshot
+from .contracts import AgentRole, AIResearchCapability, EvidenceBoundContextSnapshot
 
 
 class ToolEffect(StrEnum):
@@ -19,6 +19,7 @@ class ToolPermission:
     effect: ToolEffect
     requires_evidence_context: bool
     description: str
+    minimum_capability: AIResearchCapability = AIResearchCapability.OBSERVE
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,8 @@ class ToolPermissionRegistry:
             return ToolAuthorization(False, "tool_not_registered", None)
         if tool_name not in role.allowed_tools:
             return ToolAuthorization(False, "role_not_allowed", permission)
+        if not role.capability.allows(permission.minimum_capability):
+            return ToolAuthorization(False, "capability_too_low", permission)
         if permission.effect not in {
             ToolEffect.READ_PERSISTED,
             ToolEffect.PURE_COMPUTE,
@@ -144,6 +147,7 @@ def default_tool_permission_registry() -> ToolPermissionRegistry:
                 ToolEffect.PURE_COMPUTE,
                 False,
                 "Run deterministic arithmetic with no I/O or authority effect.",
+                minimum_capability=AIResearchCapability.EXPLAIN,
             ),
         )
     )

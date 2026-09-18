@@ -15,6 +15,7 @@ from server.contracts.external_memory_analysis import (
 
 from .contracts import (
     AgentRole,
+    AIResearchCapability,
     ArtifactKind,
     ModelRegistration,
     ProviderRegistration,
@@ -116,6 +117,7 @@ def register_external_memory_runtime(
                 role_id=role_id,
                 display_name=name,
                 purpose=purpose,
+                capability=AIResearchCapability.EXPLAIN,
                 allowed_tools=tuple(CANONICAL_EVIDENCE_KINDS),
                 allowed_artifact_kinds=(kind,),
                 instructions_version=EXTERNAL_MEMORY_ANALYSIS_PROMPT_VERSION,

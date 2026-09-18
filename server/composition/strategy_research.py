@@ -7,6 +7,7 @@ from typing import Literal
 
 from server.ai_runtime.contracts import (
     AgentRole,
+    AIResearchCapability,
     ArtifactKind,
     ModelRegistration,
     ProviderRegistration,
@@ -136,6 +137,11 @@ def register_strategy_research_runtime(
             purpose=(
                 "Propose or critique non-executable research hypotheses using only "
                 "bound evidence and the local Formula DSL; never create authority."
+            ),
+            capability=(
+                AIResearchCapability.PROPOSE
+                if mode == "hypothesis"
+                else AIResearchCapability.EXPLAIN
             ),
             allowed_tools=(
                 (

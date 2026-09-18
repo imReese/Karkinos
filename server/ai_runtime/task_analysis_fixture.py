@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .contracts import (
     AgentRole,
+    AIResearchCapability,
     ArtifactKind,
     Claim,
     Debate,
@@ -119,6 +120,7 @@ def _register_fixture_runtime(registry: AiRuntimeRegistry) -> None:
                 role_id=role_id,
                 display_name=display_name,
                 purpose=purpose,
+                capability=AIResearchCapability.EXPLAIN,
                 allowed_tools=allowed_tools,
                 allowed_artifact_kinds=artifact_kinds,
             )
