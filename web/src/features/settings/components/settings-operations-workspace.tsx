@@ -42,7 +42,7 @@ function SettingsDataSourceOperations({
     setManualTasksDone,
   } = controller;
   return (
-    <div className="order-3 min-w-0 xl:col-start-2 xl:row-start-2">
+    <div className="min-w-0">
       <SettingsDisclosure
         testId="settings-data-source-disclosure"
         title={copy.settings.dataSourceOperations}
@@ -153,7 +153,7 @@ function SettingsLiveServices({
 }) {
   const { boundaryRows, copy } = controller;
   return (
-    <div className="order-4 min-w-0 xl:col-start-2 xl:row-start-3">
+    <div className="min-w-0">
       <SettingsDisclosure
         testId="settings-live-services-disclosure"
         title={copy.settings.liveServices}

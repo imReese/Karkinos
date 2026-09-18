@@ -51,14 +51,10 @@ export function SettingsPageView({
             .join(' · ')}
         />
       ) : null}
+      <SettingsPersistedConfiguration controller={controller} />
       <SettingsDataStatus controller={controller} />
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-        <div className="contents">
-          <SettingsPersistedConfiguration controller={controller} />
-          <SettingsOperationsWorkspace controller={controller} />
-        </div>
-        <SettingsPreferencesWorkspace controller={controller} />
-      </div>
+      <SettingsOperationsWorkspace controller={controller} />
+      <SettingsPreferencesWorkspace controller={controller} />
     </section>
   );
 }

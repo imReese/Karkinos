@@ -85,6 +85,7 @@ function MarketResolvedWorkspace({
       <MarketInstrumentSelection controller={controller} />
       <MarketSummary controller={controller} />
       <MarketDataEvidenceWorkspace controller={controller} />
+      <MarketHoldingEvidenceReview controller={controller} />
       <MarketResearchNotesWorkspace controller={controller} />
     </div>
   );
@@ -209,52 +210,58 @@ function MarketSummary({ controller }: { controller: MarketPageController }) {
     copy,
     health,
     holdingItemsCount,
-    holdingMarketEvidenceReview,
-    holdingReviewNeedsAttention,
     items,
     latestQuoteLabel,
     marketStateLabel,
     staleCount,
   } = controller;
   return (
-    <>
-      <CurrentHoldingMarketEvidenceReviewPanel
-        report={holdingMarketEvidenceReview.data}
-        loading={holdingMarketEvidenceReview.isLoading}
-        error={holdingMarketEvidenceReview.isError}
-        compact={holdingReviewNeedsAttention}
-      />
+    <MetricStrip
+      ariaLabel={copy.market.title}
+      items={[
+        {
+          id: 'watchlist',
+          label: copy.market.watchlist,
+          value: items.length,
+          detail: copy.market.personalUniverse,
+        },
+        {
+          id: 'holdings',
+          label: copy.market.holdingsContext,
+          value: holdingItemsCount,
+          detail: `${items.length} ${copy.market.watchlist}`,
+        },
+        {
+          id: 'latest-quote',
+          label: copy.market.latestQuote,
+          value: latestQuoteLabel,
+          detail: `${copy.market.cacheAge} ${formatAge(health?.cache_age_seconds)}`,
+        },
+        {
+          id: 'market-state',
+          label: copy.market.marketOpen,
+          value: marketStateLabel,
+          detail: `${staleCount} ${copy.market.staleSymbols}`,
+          tone: staleCount > 0 ? 'warning' : 'neutral',
+        },
+      ]}
+    />
+  );
+}
 
-      <MetricStrip
-        ariaLabel={copy.market.title}
-        items={[
-          {
-            id: 'watchlist',
-            label: copy.market.watchlist,
-            value: items.length,
-            detail: copy.market.personalUniverse,
-          },
-          {
-            id: 'holdings',
-            label: copy.market.holdingsContext,
-            value: holdingItemsCount,
-            detail: `${items.length} ${copy.market.watchlist}`,
-          },
-          {
-            id: 'latest-quote',
-            label: copy.market.latestQuote,
-            value: latestQuoteLabel,
-            detail: `${copy.market.cacheAge} ${formatAge(health?.cache_age_seconds)}`,
-          },
-          {
-            id: 'market-state',
-            label: copy.market.marketOpen,
-            value: marketStateLabel,
-            detail: `${staleCount} ${copy.market.staleSymbols}`,
-            tone: staleCount > 0 ? 'warning' : 'neutral',
-          },
-        ]}
-      />
-    </>
+function MarketHoldingEvidenceReview({
+  controller,
+}: {
+  controller: MarketPageController;
+}) {
+  const { holdingMarketEvidenceReview, holdingReviewNeedsAttention } =
+    controller;
+  return (
+    <CurrentHoldingMarketEvidenceReviewPanel
+      report={holdingMarketEvidenceReview.data}
+      loading={holdingMarketEvidenceReview.isLoading}
+      error={holdingMarketEvidenceReview.isError}
+      compact={holdingReviewNeedsAttention}
+    />
   );
 }

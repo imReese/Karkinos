@@ -2303,7 +2303,7 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
 
   await page.goto('/settings');
   await expect(
-    page.getByRole('heading', { name: /Control center|控制中心/ }),
+    page.getByRole('heading', { name: /Configuration register|配置登记/ }),
   ).toBeVisible();
   await expect(
     page.getByTestId('settings-persisted-configuration'),
@@ -2345,8 +2345,8 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   const dataOperationsBox = (await page
     .getByTestId('settings-data-source-disclosure')
     .boundingBox())!;
-  expect(notificationsBox.y).toBeGreaterThan(persistedSettingsBox.y);
-  expect(dataOperationsBox.y).toBeGreaterThan(notificationsBox.y);
+  expect(dataOperationsBox.y).toBeGreaterThan(persistedSettingsBox.y);
+  expect(notificationsBox.y).toBeGreaterThan(dataOperationsBox.y);
 
   await page.goto('/backtest');
   await expect(
