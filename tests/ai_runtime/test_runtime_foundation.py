@@ -34,7 +34,10 @@ from server.ai_runtime.contracts import (
     canonical_json,
     content_fingerprint,
 )
-from server.ai_runtime.orchestrator import DeterministicWorkflowOrchestrator
+from server.ai_runtime.orchestrator import (
+    DeterministicWorkflowOrchestrator,
+    WorkflowValidationError,
+)
 from server.ai_runtime.permissions import default_tool_permission_registry
 from server.ai_runtime.provider import (
     DeterministicFixtureProvider,
@@ -350,6 +353,75 @@ def test_research_budget_is_explicit_bounded_and_fingerprint_stable():
             max_provider_calls=-1,
             max_external_searches=8,
         )
+
+
+@pytest.mark.unit
+def test_workflow_budget_round_trips_without_changing_legacy_definition_shape():
+    legacy = _definition(_stage("evidence"))
+    legacy_payload = legacy.to_dict()
+
+    assert "research_budget" not in legacy_payload
+    assert WorkflowDefinition.from_dict(legacy_payload) == legacy
+    assert (
+        WorkflowDefinition.from_dict(legacy_payload).fingerprint == legacy.fingerprint
+    )
+
+    budget = ResearchBudget(
+        max_candidates=5,
+        max_iterations=5,
+        max_backtests=5,
+        max_parameter_variants=9,
+        max_provider_calls=10,
+        max_external_searches=0,
+    )
+    budgeted = WorkflowDefinition(
+        definition_id="budgeted-research-v1",
+        name="Budgeted research",
+        stages=(_stage("evidence"),),
+        research_budget=budget,
+    )
+
+    assert budgeted.to_dict()["research_budget"] == budget.to_dict()
+    assert WorkflowDefinition.from_dict(budgeted.to_dict()) == budgeted
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_provider_call_upper_bound_must_fit_research_budget_before_persistence(
+    tmp_path,
+):
+    db_path = tmp_path / "budget-rejected.db"
+    store, provider, runtime = _runtime(
+        db_path,
+        responses={"evidence": (ProviderResponse(artifacts=(_claim(),)),)},
+    )
+    definition = WorkflowDefinition(
+        definition_id="budget-too-small-v1",
+        name="Budget too small",
+        stages=(_stage("evidence"),),
+        research_budget=ResearchBudget(
+            max_candidates=1,
+            max_iterations=1,
+            max_backtests=1,
+            max_parameter_variants=0,
+            max_provider_calls=1,
+            max_external_searches=0,
+        ),
+    )
+
+    with pytest.raises(
+        WorkflowValidationError,
+        match="provider-call upper bound exceeds research budget",
+    ):
+        runtime.create_workflow(
+            definition=definition,
+            context=_context(),
+            idempotency_key="budget-too-small",
+        )
+
+    assert provider.invocations == ()
+    with closing(sqlite3.connect(db_path)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM ai_workflows").fetchone()[0] == 0
 
 
 @pytest.mark.unit

@@ -82,11 +82,6 @@ class ToolPermissionRegistry:
             return ToolAuthorization(False, "role_not_allowed", permission)
         if not role.capability.allows(permission.minimum_capability):
             return ToolAuthorization(False, "capability_too_low", permission)
-        if permission.effect not in {
-            ToolEffect.READ_PERSISTED,
-            ToolEffect.PURE_COMPUTE,
-        }:
-            return ToolAuthorization(False, "tool_effect_not_read_only", permission)
         if permission.requires_evidence_context and not context.persisted_facts_only:
             return ToolAuthorization(False, "context_not_persisted_facts", permission)
         return ToolAuthorization(True, "allowed", permission)
