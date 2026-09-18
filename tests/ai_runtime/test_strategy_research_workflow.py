@@ -88,6 +88,63 @@ REVIEWED_COST_MODEL_REFERENCE = (
 )
 
 
+def _seed_research_task(
+    db_path,
+    *,
+    task_id: str,
+    research_question: str,
+    created_by: str = "human:reese",
+    status: str = "context_accepted",
+    authoritative: bool = True,
+) -> None:
+    from server.ai_runtime.tasks import ResearchTaskStore
+
+    ResearchTaskStore(db_path).init()
+    evidence = [
+        {
+            "evidence_reference_id": "research-task-evidence-001",
+            "tool_name": "research_evidence.read",
+            "status": "complete" if authoritative else "unreconciled",
+            "authoritative": authoritative,
+            "as_of": NOW,
+            "record_fingerprint": "sha256:" + "1" * 64,
+        }
+    ]
+    with sqlite3.connect(db_path) as conn, conn:
+        conn.execute(
+            """
+            INSERT INTO ai_research_tasks (
+                task_id, idempotency_key, request_json, request_fingerprint,
+                capture_id, context_snapshot_id, context_fingerprint,
+                account_alias, valuation_snapshot_id, ledger_cutoff_id,
+                ledger_fingerprint, created_by, title, research_question,
+                evidence_json, blockers_json, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                "seed-" + task_id,
+                "{}",
+                "seed-request-fingerprint-" + task_id,
+                "capture-" + task_id,
+                "context-" + task_id,
+                "context-fingerprint-" + task_id,
+                "primary",
+                "valuation-" + task_id,
+                1,
+                "ledger-fingerprint-" + task_id,
+                created_by,
+                "Seeded research task",
+                research_question,
+                json.dumps(evidence),
+                json.dumps([] if authoritative else ["evidence_not_authoritative"]),
+                status,
+                NOW,
+                NOW,
+            ),
+        )
+
+
 def _reviewed_fee_resolution() -> SimpleNamespace:
     calculator = MultiAssetCommission(fee_rule_version=REVIEWED_COST_MODEL_REFERENCE)
     calculator.set_commission(
@@ -1074,12 +1131,18 @@ def test_unbound_hypothesis_request_keeps_legacy_fingerprint_shape(tmp_path) -> 
 async def test_research_task_identity_is_persisted_and_idempotency_locked(
     tmp_path,
 ) -> None:
-    service, selection, transport, _ = _service(tmp_path)
+    service, selection, transport, db_path = _service(tmp_path)
+    research_question = "Test one task-bound research hypothesis."
+    _seed_research_task(
+        db_path,
+        task_id="research-task-001",
+        research_question=research_question,
+    )
     request = HypothesisGenerationRequest(
         idempotency_key="task-bound-hypothesis",
         requested_by="human:reese",
         account_alias="synthetic-research-only",
-        research_question="Test one task-bound research hypothesis.",
+        research_question=research_question,
         selection=selection,
         confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
         research_task_id="research-task-001",
@@ -1097,6 +1160,11 @@ async def test_research_task_identity_is_persisted_and_idempotency_locked(
     assert replay["research_task_id"] == "research-task-001"
     assert len(transport.calls) == 1
 
+    _seed_research_task(
+        db_path,
+        task_id="research-task-002",
+        research_question=research_question,
+    )
     with pytest.raises(IdempotencyConflict, match="idempotency conflict"):
         await service.generate_hypotheses(
             HypothesisGenerationRequest(
@@ -1108,6 +1176,71 @@ async def test_research_task_identity_is_persisted_and_idempotency_locked(
                 confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
                 research_task_id="research-task-002",
             )
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("case", "expected_error"),
+    [
+        ("missing", "research_task_not_found"),
+        ("pending", "research_task_context_not_accepted"),
+        ("non_authoritative", "research_task_evidence_not_authoritative"),
+        ("requester_mismatch", "research_task_requester_mismatch"),
+        ("question_mismatch", "research_task_question_mismatch"),
+    ],
+)
+async def test_task_bound_hypothesis_requires_accepted_matching_task(
+    tmp_path,
+    case,
+    expected_error,
+) -> None:
+    service, selection, transport, db_path = _service(tmp_path)
+    task_id = "research-task-gate"
+    research_question = "Evaluate one accepted task-bound hypothesis."
+
+    if case != "missing":
+        _seed_research_task(
+            db_path,
+            task_id=task_id,
+            research_question=(
+                "Different task question"
+                if case == "question_mismatch"
+                else research_question
+            ),
+            created_by=(
+                "human:other" if case == "requester_mismatch" else "human:reese"
+            ),
+            status=(
+                "awaiting_human_review" if case == "pending" else "context_accepted"
+            ),
+            authoritative=case != "non_authoritative",
+        )
+
+    with pytest.raises(StrategyResearchRejected, match=expected_error):
+        await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key="task-gate-hypothesis",
+                requested_by="human:reese",
+                account_alias="synthetic-research-only",
+                research_question=research_question,
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+                research_task_id=task_id,
+            )
+        )
+
+    assert transport.calls == []
+    with sqlite3.connect(db_path) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_strategy_research_sessions "
+                "WHERE idempotency_key=?",
+                ("task-gate-hypothesis",),
+            ).fetchone()[0]
+            == 0
         )
 
 

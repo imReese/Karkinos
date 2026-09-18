@@ -88,6 +88,7 @@ from server.ai_runtime.strategy_research_values import (
     TERMINAL_WORKFLOW_STATUSES,
     strategy_research_request_options,
 )
+from server.ai_runtime.tasks import ResearchTaskStatus, ResearchTaskStore
 from server.composition.strategy_research import (
     build_strategy_research_orchestrator,
     register_strategy_research_runtime,
@@ -159,6 +160,7 @@ class StrategyResearchService(
         self._evidence_repository = evidence_repository
         self._ai_store = ai_store
         self._research_store = research_store
+        self._task_store = ResearchTaskStore(db_path)
         self._data_store = data_store
         self._transport = transport or HttpxDeadlineJsonTransport()
         self._now = now or strategy_research_utc_now
@@ -167,6 +169,25 @@ class StrategyResearchService(
         self._reviewed_fee_schedule_resolver = reviewed_fee_schedule_resolver
         self._provider_send_admission = provider_send_admission
         self._execution_guard = execution_guard
+
+    def _require_accepted_research_task(
+        self,
+        request: HypothesisGenerationRequest,
+    ) -> None:
+        if request.research_task_id is None:
+            return
+        try:
+            task = self._task_store.get(request.research_task_id)
+        except LookupError as exc:
+            raise StrategyResearchRejected("research_task_not_found") from exc
+        if task.status != ResearchTaskStatus.CONTEXT_ACCEPTED:
+            raise StrategyResearchRejected("research_task_context_not_accepted")
+        if not task.all_evidence_authoritative:
+            raise StrategyResearchRejected("research_task_evidence_not_authoritative")
+        if task.created_by != request.requested_by:
+            raise StrategyResearchRejected("research_task_requester_mismatch")
+        if task.research_question != request.research_question:
+            raise StrategyResearchRejected("research_task_question_mismatch")
 
     def _require_provider_send_window(self) -> None:
         if self._provider_send_admission is not None:
