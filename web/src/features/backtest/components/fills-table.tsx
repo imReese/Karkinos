@@ -82,7 +82,7 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
   return (
     <section
       data-backtest-report-section="fills"
-      className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+      className="min-w-0 border-t border-[var(--app-divider)] pt-4"
     >
       <div className="flex flex-wrap items-end justify-between gap-3 pb-3">
         <div>

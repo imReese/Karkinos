@@ -68,7 +68,7 @@ export function BacktestRunSetupPanel() {
       </div>
 
       <section
-        className="app-workbench-section min-w-0"
+        className="min-w-0 border-y border-[var(--app-divider)]"
         data-testid="backtest-parameter-panel"
       >
         <div className="p-4 sm:p-5">

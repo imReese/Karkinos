@@ -148,7 +148,7 @@ export function EquityDrawdownChart({
   return (
     <section
       data-backtest-report-section="equity-drawdown"
-      className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+      className="min-w-0 border-t border-[var(--app-divider)] pt-4"
     >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
