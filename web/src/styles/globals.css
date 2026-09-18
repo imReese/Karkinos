@@ -3380,10 +3380,18 @@ h3 {
   }
 }
 
-@media (min-width: 1024px) and (max-height: 900px) and (orientation: landscape) {
+@media (min-width: 1024px) {
   .app-public-home {
     width: 100%;
-    min-height: 100dvh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-public-header {
+    flex: 0 0 auto;
   }
 
   .app-public-header-inner {
@@ -3396,23 +3404,42 @@ h3 {
   }
 
   .app-public-main {
-    overflow: visible;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
-  .app-public-panel {
+  .app-public-panel[data-active='false'] {
+    display: none !important;
+  }
+
+  .app-public-panel[data-active='true'] {
     display: grid;
+    flex: 1 1 auto;
+    min-height: 0;
+    align-content: center;
   }
 
-  .app-public-workflow-panel {
+  .app-public-workflow-panel[data-active='false'] {
+    display: none !important;
+  }
+
+  .app-public-workflow-panel[data-active='true'] {
     display: block;
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .app-public-hero {
-    min-height: calc(100dvh - 56px);
+    flex: 1 1 auto;
+    min-height: 0;
     grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
     align-items: center;
     gap: clamp(28px, 4vw, 60px);
-    padding-block: clamp(18px, 3vh, 28px);
+    padding-block: clamp(14px, 2.5vh, 26px);
   }
 
   .app-public-hero-title {
@@ -3506,9 +3533,9 @@ h3 {
 
   .app-public-panel.app-public-section,
   .app-public-workflow-panel .app-public-section {
-    min-height: min(640px, calc(100dvh - 56px));
-    border-top: 1px solid var(--app-divider);
-    padding-block: clamp(48px, 7vh, 76px);
+    min-height: 0;
+    border-top: 0;
+    padding-block: clamp(20px, 3vh, 36px);
   }
 
   #product.app-public-panel {
@@ -3591,7 +3618,7 @@ h3 {
   }
 
   .app-public-footer-grid {
-    display: grid;
+    display: none !important;
   }
 
   .app-public-footer-note {
