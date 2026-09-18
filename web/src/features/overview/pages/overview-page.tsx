@@ -9,10 +9,16 @@ export function OverviewPage() {
   const controller = useOverviewPageController();
   const { copy, account } = controller;
   return (
-    <section className="min-w-0 space-y-5" data-testid="overview-page">
-      <h1 className="text-xl font-semibold tracking-tight text-[var(--app-text)]">
-        {copy.overview.title}
-      </h1>
+    <section
+      className="app-workbench-route overview-terminal-route mx-auto min-w-0 w-full max-w-[1680px]"
+      data-testid="overview-page"
+      data-workbench-route="overview"
+    >
+      <header className="mb-3">
+        <h1 className="text-xl font-semibold tracking-tight text-[var(--app-text)]">
+          {copy.overview.title}
+        </h1>
+      </header>
       {account.data ? (
         <OverviewResolvedWorkspace
           controller={controller}

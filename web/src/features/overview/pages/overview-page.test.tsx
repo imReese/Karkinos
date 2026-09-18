@@ -387,7 +387,7 @@ test.each(['missing', 'conflicting', 'unknown'] as const)(
     installFetch(state);
     renderPage();
     expect(await screen.findByTestId('overview-total-value')).toHaveTextContent(
-      '--',
+      'Awaiting valuation',
     );
     expect(
       screen.getAllByTestId('position-pricing-fixture-fund')[0],

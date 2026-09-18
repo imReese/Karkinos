@@ -9,6 +9,7 @@ import { getEquityCurveErrorDetail } from '../model/overview-page-model';
 import {
   OverviewDataDetails,
   OverviewDataStatus,
+  OverviewMarketStatus,
 } from './overview-data-status';
 import { OverviewHoldingsSection } from './overview-holdings-section';
 import { OverviewPerformanceDrivers } from './overview-performance-drivers';
@@ -25,17 +26,24 @@ export function OverviewResolvedWorkspace({
 }) {
   const copy = useCopy();
   const { equityCurve, equityCurveRange, setEquityCurveRange } = controller;
+  const assetClassBySymbol = Object.fromEntries(
+    state.snapshot.allocation.map((item) => [item.symbol, item.asset_class]),
+  );
+  const weightBySymbol = Object.fromEntries(
+    state.snapshot.allocation.map((item) => [item.symbol, item.weight]),
+  );
+
   return (
     <div className="min-w-0">
       <OverviewDataStatus state={state} />
+      <OverviewSummary summary={state.summary} />
       <div
-        className="grid min-w-0 gap-x-8 xl:grid-cols-[minmax(0,1fr)_272px]"
+        className="grid min-w-0 items-start xl:grid-cols-[minmax(0,1fr)_20rem]"
         data-testid="overview-financial-canvas"
       >
-        <div className="min-w-0 xl:col-start-1 xl:row-start-1">
-          <OverviewSummary summary={state.summary} />
+        <div className="min-w-0 xl:border-r xl:border-[var(--app-divider)]">
           <section
-            className="min-w-0 border-t border-[var(--app-divider)] pt-4 pb-5"
+            className="min-w-0 py-4 xl:pr-7"
             data-testid="overview-performance-card"
           >
             {equityCurve.isLoading && !equityCurve.data ? (
@@ -68,27 +76,21 @@ export function OverviewResolvedWorkspace({
               </>
             )}
           </section>
+          <OverviewHoldingsSection
+            positions={state.snapshot.positions}
+            assetClassBySymbol={assetClassBySymbol}
+            weightBySymbol={weightBySymbol}
+            className="border-t border-[var(--app-divider)] xl:pr-7"
+          />
         </div>
-        <aside className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:pt-5">
+        <aside className="min-w-0 xl:pl-6">
+          <OverviewMarketStatus state={state} />
           <DashboardTodayQueue overview={state.overview} />
           <OverviewDataDetails
             state={state}
             refreshFailed={controller.account.isError}
           />
         </aside>
-        <OverviewHoldingsSection
-          positions={state.snapshot.positions}
-          assetClassBySymbol={Object.fromEntries(
-            state.snapshot.allocation.map((item) => [
-              item.symbol,
-              item.asset_class,
-            ]),
-          )}
-          weightBySymbol={Object.fromEntries(
-            state.snapshot.allocation.map((item) => [item.symbol, item.weight]),
-          )}
-          className="xl:col-start-1 xl:row-start-2"
-        />
       </div>
     </div>
   );

@@ -27,7 +27,7 @@ export function OverviewHoldingsSection({
 
   return (
     <section
-      className={`min-w-0 border-t border-[var(--app-divider)] pt-4 ${className ?? ''}`.trim()}
+      className={`min-w-0 py-4 ${className ?? ''}`.trim()}
       data-testid="overview-holdings-section"
     >
       <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
