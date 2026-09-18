@@ -2,13 +2,19 @@ import { useMemo, useState } from 'react';
 
 import { usePreferences } from '../../../shared/preferences/context';
 import {
+  ControlledActionZone,
+  EvidenceState,
+  Register,
+  RegisterRow,
+  StatusBadge,
+} from '../../../shared/ui/workbench';
+import {
   formatPublicCode,
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import {
   useCaptureDecisionQualityMutation,
   useDecisionQualityQuery,
-  type DecisionQualityDimension,
 } from '../api';
 
 const DIMENSION_LABELS = {
@@ -31,12 +37,6 @@ const DIMENSION_LABELS = {
 function requestKey(decisionDate: string, fingerprint: string) {
   const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`;
   return `decision-quality:${decisionDate}:${fingerprint.slice(0, 16)}:${suffix}`;
-}
-
-function dimensionTone(dimension: DecisionQualityDimension) {
-  return dimension.passed
-    ? 'border-[color-mix(in_srgb,var(--app-success)_30%,var(--app-border))] text-[var(--app-success)]'
-    : 'border-[color-mix(in_srgb,var(--app-warning)_38%,var(--app-border))] text-[var(--app-warning)]';
 }
 
 export function DecisionQualityPanel() {
@@ -113,158 +113,151 @@ export function DecisionQualityPanel() {
   };
 
   return (
-    <section
-      data-testid="decision-quality-panel"
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
-    >
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
-        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.kicker}</div>
-            <h2 className="app-card-title mt-1.5">{labels.title}</h2>
-            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
-              {labels.detail}
-            </p>
-          </div>
-          {target ? (
-            <div
-              className={`inline-flex min-h-9 shrink-0 items-center justify-center rounded-full border px-3 py-1 text-sm font-semibold tabular-nums ${
-                target.qualified
-                  ? 'border-[color-mix(in_srgb,var(--app-success)_38%,transparent)] text-[var(--app-success)]'
-                  : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] text-[var(--app-warning)]'
-              }`}
-            >
-              {target.diagnostic_score_percent.toFixed(0)}% ·{' '}
-              {target.qualified
-                ? locale === 'zh'
-                  ? '合格'
-                  : 'Qualified'
-                : locale === 'zh'
-                  ? '未合格'
-                  : 'Blocked'}
-            </div>
-          ) : null}
-        </div>
-
-        {quality.isLoading ? (
-          <p className="app-muted mt-4 text-sm">
-            {locale === 'zh'
-              ? '正在读取持久化证据…'
-              : 'Reading persisted evidence…'}
+    <section data-testid="decision-quality-panel" className="min-w-0">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="app-product-mark">{labels.kicker}</div>
+          <h2 className="app-type-section-title mt-1.5 text-[var(--app-text)]">
+            {labels.title}
+          </h2>
+          <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+            {labels.detail}
           </p>
-        ) : quality.isError || !view || !target || !report ? (
-          <div className="mt-4 grid justify-items-start gap-2">
-            <p role="alert" className="app-error-text text-sm">
-              {labels.error}
-            </p>
+        </div>
+        {target ? (
+          <StatusBadge tone={target.qualified ? 'success' : 'warning'}>
+            {target.diagnostic_score_percent.toFixed(0)}% ·{' '}
+            {target.qualified
+              ? locale === 'zh'
+                ? '合格'
+                : 'Qualified'
+              : locale === 'zh'
+                ? '未合格'
+                : 'Blocked'}
+          </StatusBadge>
+        ) : null}
+      </div>
+
+      {quality.isLoading ? (
+        <EvidenceState
+          className="mt-4"
+          kind="loading"
+          statusLabel={labels.kicker}
+          title={
+            locale === 'zh'
+              ? '正在读取持久化证据…'
+              : 'Reading persisted evidence…'
+          }
+          description={labels.detail}
+        />
+      ) : quality.isError || !view || !target || !report ? (
+        <EvidenceState
+          className="mt-4"
+          kind="error"
+          statusLabel={labels.kicker}
+          title={labels.error}
+          description={labels.detail}
+          action={
             <button
               type="button"
-              className="app-button-secondary min-h-9 rounded-xl px-3 py-2 text-xs font-semibold"
+              className="app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
               onClick={() => void quality.refetch()}
             >
               {labels.retry}
             </button>
-          </div>
-        ) : (
-          <>
-            <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
-              {target.dimensions.map((dimension) => (
-                <article
-                  key={dimension.name}
-                  className={`min-w-0 rounded-[var(--app-radius-surface)] border bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3 ${dimensionTone(
-                    dimension,
-                  )}`}
-                >
-                  <div className="text-xs font-semibold leading-5">
-                    {DIMENSION_LABELS[locale][dimension.name]}
-                  </div>
-                  <div className="app-muted app-type-compact mt-1">
+          }
+        />
+      ) : (
+        <>
+          <Register ariaLabel={labels.title} className="mt-4">
+            {target.dimensions.map((dimension) => (
+              <RegisterRow
+                key={dimension.name}
+                label={DIMENSION_LABELS[locale][dimension.name]}
+                value={
+                  <StatusBadge tone={dimension.passed ? 'success' : 'warning'}>
                     {formatPublicStatus(dimension.status, locale)}
-                  </div>
-                  {dimension.blockers.length > 0 ? (
-                    <div className="app-type-compact mt-2">
-                      {dimension.blockers
+                  </StatusBadge>
+                }
+                detail={
+                  dimension.blockers.length > 0
+                    ? dimension.blockers
                         .map((item) => formatPublicCode(item, locale))
-                        .join(' · ')}
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-            </div>
+                        .join(' · ')
+                    : undefined
+                }
+              />
+            ))}
+            <RegisterRow
+              label={labels.current}
+              value={`${target.decision_date} · ${target.passed_dimension_count}/${target.dimension_count}`}
+              mono
+            />
+            <RegisterRow label={labels.history} value={report.evaluated_day_count} mono />
+            <RegisterRow
+              label={labels.score}
+              value={
+                report.score_percent == null
+                  ? labels.empty
+                  : `${report.score_percent.toFixed(1)}%`
+              }
+              mono
+            />
+          </Register>
 
-            <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-3">
-              <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
-                <div className="app-muted app-type-micro">{labels.current}</div>
-                <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
-                  {target.decision_date} · {target.passed_dimension_count}/
-                  {target.dimension_count}
-                </div>
-              </div>
-              <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
-                <div className="app-muted app-type-micro">{labels.history}</div>
-                <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
-                  {report.evaluated_day_count}
-                </div>
-              </div>
-              <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
-                <div className="app-muted app-type-micro">{labels.score}</div>
-                <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
-                  {report.score_percent == null
-                    ? labels.empty
-                    : `${report.score_percent.toFixed(1)}%`}
-                </div>
-              </div>
-            </div>
+          {!target.qualified ? (
+            <p className="mt-3 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-warning-text)]">
+              {labels.blocked}
+            </p>
+          ) : null}
+          {view.current_day_captured && view.current_binding_valid === false ? (
+            <p className="mt-3 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-warning-text)]">
+              {labels.stale}
+            </p>
+          ) : null}
 
-            {!target.qualified ? (
-              <p className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-warning)_35%,transparent)] px-3 py-2 text-xs leading-5 text-[var(--app-warning)]">
-                {labels.blocked}
-              </p>
-            ) : null}
-            {view.current_day_captured &&
-            view.current_binding_valid === false ? (
-              <p className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-warning)_35%,transparent)] px-3 py-2 text-xs leading-5 text-[var(--app-warning)]">
-                {labels.stale}
-              </p>
-            ) : null}
-
-            <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-              <label className="grid gap-1 text-xs text-[var(--app-muted)]">
+          <ControlledActionZone
+            className="mt-4"
+            tone="info"
+            title={labels.capture}
+            description={labels.safety}
+            evidence={`${target.decision_date} · ${target.passed_dimension_count}/${target.dimension_count}`}
+            layout="stack"
+          >
+            <div className="grid w-full min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <label className="grid min-w-0 gap-1 text-xs text-[var(--app-muted)]">
                 {labels.operator}
                 <input
-                  className="app-field min-h-10 rounded-xl px-3 py-2 text-sm text-[var(--app-text)]"
+                  className="app-field min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm text-[var(--app-text)]"
                   value={capturedBy}
                   onChange={(event) => setCapturedBy(event.target.value)}
                 />
               </label>
               <button
                 type="button"
-                className="app-button-primary min-h-10 rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={
                   capture.isPending ||
                   !capturedBy.trim() ||
-                  (view.current_day_captured &&
-                    view.current_binding_valid === true)
+                  (view.current_day_captured && view.current_binding_valid === true)
                 }
                 onClick={() => void submit()}
               >
                 {capture.isPending
                   ? labels.capturing
-                  : view.current_day_captured &&
-                      view.current_binding_valid === true
+                  : view.current_day_captured && view.current_binding_valid === true
                     ? labels.captured
                     : labels.capture}
               </button>
             </div>
-            {capture.isError ? (
-              <p role="alert" className="app-error-text mt-3 text-xs">
-                {labels.error} {labels.retry}
-              </p>
-            ) : null}
-            <p className="app-muted app-type-compact mt-3">{labels.safety}</p>
-          </>
-        )}
-      </div>
+          </ControlledActionZone>
+          {capture.isError ? (
+            <p role="alert" className="app-error-text mt-3 text-xs">
+              {labels.error} {labels.retry}
+            </p>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }

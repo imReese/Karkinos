@@ -24,7 +24,7 @@ export function ActivityFeedLoading() {
     <section
       aria-busy="true"
       aria-live="polite"
-      className="app-workbench-section min-w-0 overflow-hidden"
+      className="min-w-0 overflow-hidden border-y border-[var(--app-divider)]"
       data-testid="activity-history-loading"
     >
       <span className="sr-only">{copy.activity.loading}</span>
@@ -198,7 +198,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   if (entries.length === 0) {
     return (
       <div
-        className="app-workbench-section p-5 text-sm app-muted"
+        className="border-y border-[var(--app-divider)] p-5 text-sm app-muted"
         data-testid="activity-history-empty"
       >
         {labels.empty}
@@ -207,7 +207,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   }
 
   return (
-    <div className="app-workbench-section min-w-0 overflow-hidden">
+    <div
+      className="min-w-0 overflow-hidden border-y border-[var(--app-divider)]"
+      data-ledger-register="activity"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3 px-3 py-4 sm:px-5">
         <div>
           <div className="app-product-mark">{labels.kicker}</div>

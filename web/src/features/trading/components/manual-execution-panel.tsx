@@ -73,7 +73,7 @@ export function ManualExecutionPanel({
     <>
       <form
         key={result.order_id}
-        className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-3"
+        className="mt-4 border-t border-[var(--app-divider)] pt-4"
         onSubmit={handlePreviewSubmit}
       >
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -88,7 +88,7 @@ export function ManualExecutionPanel({
           <button
             type="submit"
             disabled={previewPending}
-            className="app-button-secondary shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary shrink-0 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
           >
             {previewPending
               ? labels.previewingManualExecution
@@ -99,7 +99,7 @@ export function ManualExecutionPanel({
           <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
             {labels.manualExecutionFillPrice}
             <input
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               name="fill_price"
               inputMode="decimal"
               defaultValue={formInputValue(result.ticket.limit_price)}
@@ -109,7 +109,7 @@ export function ManualExecutionPanel({
           <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
             {labels.manualExecutionQuantity}
             <input
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               name="quantity"
               inputMode="decimal"
               defaultValue={formInputValue(result.ticket.quantity)}
@@ -119,7 +119,7 @@ export function ManualExecutionPanel({
           <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
             {labels.manualExecutionFee}
             <input
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               name="fee"
               inputMode="decimal"
               defaultValue={feeDefault}
@@ -128,7 +128,7 @@ export function ManualExecutionPanel({
           <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
             {labels.manualExecutionTax}
             <input
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               name="tax"
               inputMode="decimal"
               defaultValue={taxDefault}
@@ -137,7 +137,7 @@ export function ManualExecutionPanel({
           <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
             {labels.manualExecutionTransferFee}
             <input
-              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               name="transfer_fee"
               inputMode="decimal"
               defaultValue={transferFeeDefault}

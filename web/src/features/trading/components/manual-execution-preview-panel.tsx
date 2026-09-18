@@ -81,7 +81,7 @@ export function ManualExecutionPreviewPanel({
   };
 
   return (
-    <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)] p-3">
+    <div className="mt-3 border-y border-[var(--app-divider)] py-3">
       <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <PreviewMetric
           label={labels.manualExecutionGrossAmount}
@@ -101,7 +101,7 @@ export function ManualExecutionPreviewPanel({
         />
       </div>
       {executionPositionCost ? (
-        <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+        <div className="mt-3 border-y border-[var(--app-divider)] py-3">
           <div className="app-muted text-xs">
             {labels.manualExecutionPositionPreview}
           </div>
@@ -138,7 +138,7 @@ export function ManualExecutionPreviewPanel({
         </div>
       ) : null}
       <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-2">
-        <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+        <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
           <div className="app-muted text-xs">
             {labels.manualExecutionLedgerDraft}
           </div>
@@ -159,7 +159,7 @@ export function ManualExecutionPreviewPanel({
           </div>
         </div>
         {executionPreviewResult.preview_fingerprint ? (
-          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
             <div className="app-muted text-xs">
               {labels.manualExecutionPreviewFingerprint}
             </div>
@@ -178,7 +178,7 @@ export function ManualExecutionPreviewPanel({
             ) : null}
           </div>
         ) : null}
-        <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+        <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
           <div className="app-muted text-xs">
             {labels.manualExecutionSafety}
           </div>
@@ -200,7 +200,7 @@ export function ManualExecutionPreviewPanel({
         />
       ) : null}
       {executionPreviewResult.limitations?.length ? (
-        <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+        <div className="mt-3 border-t border-[var(--app-divider)] py-2">
           <div className="app-muted text-xs">
             {labels.manualExecutionLimitations}
           </div>
@@ -218,7 +218,7 @@ export function ManualExecutionPreviewPanel({
           <button
             type="button"
             disabled={recordPending}
-            className="app-button-secondary rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleRecordExecution}
           >
             {recordPending
@@ -233,7 +233,7 @@ export function ManualExecutionPreviewPanel({
         </div>
       ) : null}
       {record ? (
-        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-3 py-2">
+        <div className="mt-3 border-l-2 border-[var(--app-success-border)] py-2 pl-3">
           <div className="font-semibold text-[var(--app-success)]">
             {labels.manualExecutionRecordTitle}
           </div>
@@ -245,7 +245,7 @@ export function ManualExecutionPreviewPanel({
               label={labels.manualExecutionGatewayEvent}
               value={String(record.event_id)}
             />
-            <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+            <div className="min-w-0 border-t border-[var(--app-divider)] py-2">
               <div className="app-muted text-xs">
                 {labels.manualExecutionRecordSafety}
               </div>
@@ -270,7 +270,7 @@ export function ManualExecutionPreviewPanel({
             </div>
           </div>
           {record.limitations?.length ? (
-            <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+            <div className="mt-3 border-t border-[var(--app-divider)] py-2">
               <div className="app-muted text-xs">
                 {labels.manualExecutionLimitations}
               </div>

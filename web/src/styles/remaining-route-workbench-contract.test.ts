@@ -33,6 +33,9 @@ const MARKET = [
   source('features/market/pages/market-page-format.ts'),
   source('features/market/pages/market-research-notes-workspace.tsx'),
 ].join('\n');
+const SINGLE_INSTRUMENT_LOOP = source(
+  'features/backtest/components/single-instrument-loop-readiness-card.tsx',
+);
 const BACKTEST = [
   source('features/backtest/components/backtest-page.tsx'),
   source('features/backtest/components/use-backtest-page-controller.ts'),
@@ -41,9 +44,7 @@ const BACKTEST = [
   source('features/backtest/components/backtest-run-setup-panel.tsx'),
   source('features/backtest/components/backtest-run-results-panel.tsx'),
   source('features/backtest/components/backtest-page-primitives.tsx'),
-  source(
-    'features/backtest/components/single-instrument-loop-readiness-card.tsx',
-  ),
+  SINGLE_INSTRUMENT_LOOP,
   source('features/backtest/components/strategy-catalog-panel.tsx'),
   source('features/backtest/components/strategy-metadata-panel.tsx'),
 ].join('\n');
@@ -358,7 +359,8 @@ describe('remaining route workbench contract', () => {
       SETTINGS.indexOf('function SettingsDisclosure'),
     );
 
-    expect(activityFeed).toContain('app-workbench-section');
+    expect(activityFeed).toContain('data-ledger-register="activity"');
+    expect(activityFeed).not.toContain('app-workbench-section');
     expect(activityFeed).not.toContain('max-h-[min(68vh,42rem)]');
     expect(activityFeed).toContain(
       'data-testid="activity-history-table-scroll"',
@@ -484,7 +486,10 @@ describe('remaining route workbench contract', () => {
     );
 
     expect(activityTools).toContain('<ControlledActionZone');
-    expect(activityTools).toContain('app-workbench-section');
+    expect(activityTools).toContain(
+      'data-ledger-register="pending-fund-orders"',
+    );
+    expect(ACTIVITY_FEED).not.toContain('app-workbench-section');
     expect(activityTools).not.toContain('app-panel');
     expect(activityTools).not.toContain('rounded-2xl');
 
@@ -555,6 +560,7 @@ describe('remaining route workbench contract', () => {
     expect(reportSectionSource).not.toContain('title={label}');
 
     expect(SETTINGS).toContain('className="app-settings-metadata-strip"');
+    expect(SETTINGS).not.toContain('rounded-[var(--app-radius-surface)]');
     const settingsMetadataStyles = CSS.slice(
       CSS.indexOf('.app-settings-metadata-strip'),
       CSS.indexOf('.app-account-truth-filter-rail'),
@@ -626,6 +632,18 @@ describe('remaining route workbench contract', () => {
     );
     expect(BACKTEST_REPORT_SECTIONS.join('\n')).toContain(
       'backtest-drawdown-${chartId}',
+    );
+  });
+
+  it('renders single-instrument readiness as a register instead of a card grid', () => {
+    expect(SINGLE_INSTRUMENT_LOOP).toContain(
+      'data-testid="backtest-loop-readiness-register"',
+    );
+    expect(SINGLE_INSTRUMENT_LOOP).toContain('<Register');
+    expect(SINGLE_INSTRUMENT_LOOP).toContain('<RegisterRow');
+    expect(SINGLE_INSTRUMENT_LOOP).not.toMatch(/rounded-(?:2xl|3xl)/);
+    expect(SINGLE_INSTRUMENT_LOOP).not.toMatch(
+      /bg-\[color-mix\(in_srgb,var\(--app-surface-[01]\)/,
     );
   });
 

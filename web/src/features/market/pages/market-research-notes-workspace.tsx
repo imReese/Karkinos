@@ -44,7 +44,7 @@ function MarketResearchNoteEditor({
     updateResearchNote,
   } = controller;
   return (
-    <div className="app-workbench-section min-w-0 p-4 sm:p-5">
+    <div className="min-w-0 border-y border-[var(--app-divider)] px-1 py-4 sm:px-3 sm:py-5">
       <div className="app-kicker app-type-overline">
         {copy.market.notesTitle}
       </div>
@@ -213,7 +213,7 @@ function MarketResearchNoteHistory({
     setNoteType,
   } = controller;
   return (
-    <div className="app-workbench-section min-w-0 p-4 sm:p-5">
+    <div className="min-w-0 border-y border-[var(--app-divider)] px-1 py-4 sm:px-3 sm:py-5">
       <div className="app-kicker app-type-overline">
         {copy.market.notesTitle}
       </div>
@@ -282,11 +282,11 @@ function MarketResearchNoteHistory({
       ) : notes.isError ? (
         <div className="app-muted mt-4 text-sm">{copy.market.noteFailed}</div>
       ) : notes.data && notes.data.items.length > 0 ? (
-        <div className="mt-4 grid gap-3">
+        <div className="mt-4 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
           {notes.data.items.map((note) => (
             <div
               key={note.id}
-              className="app-panel-strong rounded-[var(--app-radius-surface)] px-4 py-4"
+              className="px-1 py-4 sm:px-2"
             >
               <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">

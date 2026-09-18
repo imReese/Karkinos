@@ -17,6 +17,21 @@ const TRADING_HISTORY = source(
 const TRADING_SAFETY_RAIL = source(
   'features/trading/components/trading-safety-rail.tsx',
 );
+const MANUAL_TICKET_EXPORT = source(
+  'features/trading/components/manual-ticket-export-panel.tsx',
+);
+const MANUAL_TICKET_SUMMARY = source(
+  'features/trading/components/manual-ticket-summary.tsx',
+);
+const MANUAL_TICKET_MODEL = source(
+  'features/trading/components/manual-ticket-model.tsx',
+);
+const MANUAL_EXECUTION = source(
+  'features/trading/components/manual-execution-panel.tsx',
+);
+const MANUAL_EXECUTION_PREVIEW = source(
+  'features/trading/components/manual-execution-preview-panel.tsx',
+);
 const EXECUTION_AUDIT = source(
   'features/trading/components/execution-audit-panel.tsx',
 );
@@ -61,6 +76,26 @@ describe('trading workbench contract', () => {
     expect(tradingPage).not.toContain('<FilterBar');
     expect(tradingPage).not.toContain('app-panel');
     expect(tradingPage).not.toMatch(/rounded-(?:2xl|3xl)/);
+  });
+
+  it('keeps manual execution, export, and broker evidence on a flat register path', () => {
+    const manualExecution = [
+      MANUAL_TICKET_EXPORT,
+      MANUAL_TICKET_SUMMARY,
+      MANUAL_TICKET_MODEL,
+      MANUAL_EXECUTION,
+      MANUAL_EXECUTION_PREVIEW,
+    ].join('\n');
+
+    expect(MANUAL_TICKET_EXPORT).toContain(
+      'data-testid="manual-execution-register"',
+    );
+    expect(manualExecution).toContain('border-y border-[var(--app-divider)]');
+    expect(manualExecution).not.toContain('app-panel');
+    expect(manualExecution).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
+    expect(manualExecution).not.toMatch(
+      /bg-\[color-mix\(in_srgb,var\(--app-surface-0\)/,
+    );
   });
 
   it('isolates manual-order and paper-shadow mutations in controlled zones', () => {

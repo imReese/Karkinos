@@ -657,7 +657,8 @@ function PendingFundOrdersCard({
       <section
         aria-busy="true"
         aria-live="polite"
-        className="app-workbench-section min-w-0 overflow-hidden"
+        className="min-w-0 overflow-hidden border-y border-[var(--app-divider)]"
+        data-ledger-register="pending-fund-orders"
         data-testid="pending-fund-orders-loading"
       >
         <span className="sr-only">{copy.activity.pending.loading}</span>
@@ -722,7 +723,10 @@ function PendingFundOrdersCard({
   }
 
   return (
-    <section className="app-workbench-section min-w-0 overflow-hidden">
+    <section
+      className="min-w-0 overflow-hidden border-y border-[var(--app-divider)]"
+      data-ledger-register="pending-fund-orders"
+    >
       <div className="flex items-start justify-between gap-3 border-b border-[var(--app-divider)] px-4 py-3">
         <div>
           <div className="app-product-mark">{copy.activity.pending.kicker}</div>

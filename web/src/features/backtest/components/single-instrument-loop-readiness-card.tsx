@@ -1,4 +1,9 @@
 import { useCopy } from '../../../shared/i18n/context';
+import {
+  Register,
+  RegisterRow,
+  StatusBadge,
+} from '../../../shared/ui/workbench';
 import type {
   BacktestAttributionPreviewResponse,
   BacktestPaperShadowPreviewResponse,
@@ -126,7 +131,10 @@ export function SingleInstrumentLoopReadinessCard({
               : labels.singleInstrumentLoopNextComplete;
 
   return (
-    <section className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
+    <section
+      className="min-w-0 border-y border-[var(--app-divider)] py-4"
+      data-testid="backtest-loop-readiness-register"
+    >
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="app-kicker app-type-overline">
@@ -140,23 +148,16 @@ export function SingleInstrumentLoopReadinessCard({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <span
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-              blocked
-                ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]'
-                : allReady
-                  ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]'
-                  : 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] text-[var(--app-warning)]'
-            }`}
-          >
+          <StatusBadge tone={blocked ? 'danger' : allReady ? 'success' : 'warning'}>
             {statusLabel}
-          </span>
-          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] tabular-nums">
+          </StatusBadge>
+          <span className="font-mono text-xs font-semibold tabular-nums text-[var(--app-text-secondary)]">
             {readyCount}/{steps.length}
           </span>
         </div>
       </div>
-      <div className="mt-4 flex min-w-0 flex-col gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_30%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_9%,transparent)] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+
+      <div className="mt-4 flex min-w-0 flex-col gap-2 border-l-2 border-[var(--app-accent-border)] py-1 pl-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="app-kicker app-type-overline">
             {labels.singleInstrumentLoopNextStep}
@@ -166,35 +167,42 @@ export function SingleInstrumentLoopReadinessCard({
           </p>
         </div>
         <a
-          className="inline-flex shrink-0 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+          className="app-link shrink-0 text-xs font-semibold"
           href="#backtest-signal-review-evidence"
         >
           {labels.singleInstrumentLoopEvidenceCta}
         </a>
       </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+
+      <Register ariaLabel={labels.singleInstrumentLoopTitle} className="mt-4">
         {steps.map((step) => (
-          <div
-            className={`min-w-0 rounded-2xl border px-3 py-2 text-sm font-semibold ${
-              step.state === 'ready'
-                ? 'border-[color-mix(in_srgb,var(--app-success)_40%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] text-[var(--app-success)]'
-                : step.state === 'blocked'
-                  ? 'border-[color-mix(in_srgb,var(--app-danger)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-danger)_10%,transparent)] text-[var(--app-danger)]'
-                  : 'border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_14%,transparent)] text-[var(--app-muted)]'
-            }`}
+          <RegisterRow
             key={step.key}
-          >
-            <div className="min-w-0">{step.label}</div>
-            <a
-              aria-label={step.evidenceLabel}
-              className="app-type-micro mt-2 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,currentColor_24%,transparent)] px-2.5 py-1 font-semibold text-inherit opacity-85 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-              href={step.evidenceHref}
-            >
-              {labels.singleInstrumentLoopEvidenceCta}
-            </a>
-          </div>
+            label={step.label}
+            value={
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    step.state === 'ready'
+                      ? 'bg-[var(--app-success-indicator)]'
+                      : step.state === 'blocked'
+                        ? 'bg-[var(--app-danger-indicator)]'
+                        : 'bg-[var(--app-warning-indicator)]'
+                  }`}
+                />
+                <a
+                  aria-label={step.evidenceLabel}
+                  className="app-link min-w-0 text-xs font-semibold"
+                  href={step.evidenceHref}
+                >
+                  {labels.singleInstrumentLoopEvidenceCta}
+                </a>
+              </span>
+            }
+          />
         ))}
-      </div>
+      </Register>
     </section>
   );
 }
