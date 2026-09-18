@@ -168,13 +168,41 @@ def signal_preview_symbol_asset_class(
     )[0]
 
 
+def resolve_backtest_data_plane(
+    config: Any,
+) -> tuple[dict[str, Any], Any | None, str | None]:
+    """Resolve production source policy while preserving injectable test providers."""
+    from data.manager import build_sources, build_sources_for_config
+    from data.source_policy import MarketDataUseCase, source_policy_for_config
+    from data.source_routing import preferred_legacy_provider
+
+    try:
+        source_policy = source_policy_for_config(config)
+    except ValueError as exc:
+        if not str(exc).startswith("legacy_market_source_provider_unsupported:"):
+            raise
+        legacy_source = str(getattr(config, "data_source", "") or "").strip()
+        sources = build_sources(
+            data_source=legacy_source or None,
+            tushare_token=str(getattr(config, "tushare_token", "") or ""),
+        )
+        return sources, None, legacy_source or None
+
+    sources = build_sources_for_config(config)
+    return (
+        sources,
+        source_policy,
+        preferred_legacy_provider(config, MarketDataUseCase.DAILY_BARS),
+    )
+
+
 def load_signal_preview_bars(
     request: StrategySignalPreviewRequest,
     config: Any,
 ) -> tuple[tuple[MarketEvent, ...], dict[str, Any]]:
     """Load single-symbol preview bars through the backtest data plane."""
     from analytics.dataset_snapshot import build_backtest_dataset_snapshot
-    from data.manager import DataManager, build_sources
+    from data.manager import DataManager
     from data.store import DataStore
 
     start_date = request.start_date or getattr(config, "start_date", None)
@@ -207,14 +235,16 @@ def load_signal_preview_bars(
     except Exception:
         pass
 
-    sources = build_sources(
-        data_source=getattr(config, "data_source", "akshare"),
-        tushare_token=getattr(config, "tushare_token", ""),
-    )
+    sources, source_policy, configured_source = resolve_backtest_data_plane(config)
     manager = DataManager(
         sources=sources,
         store=store,
-        default_source=getattr(config, "data_source", "akshare"),
+        source_policy=source_policy,
+        default_source=(
+            None
+            if source_policy is not None
+            else str(getattr(config, "data_source", "") or "") or None
+        ),
     )
     handler = manager.get_bars(
         symbol,
@@ -225,7 +255,7 @@ def load_signal_preview_bars(
     snapshot = build_backtest_dataset_snapshot(
         start_date=start_date,
         end_date=end_date,
-        configured_source=getattr(config, "data_source", None),
+        configured_source=configured_source,
         data_handlers={symbol: handler},
         store=store,
         source_names=list(sources.keys()),
@@ -266,6 +296,7 @@ __all__ = (
     "backtest_metrics_from_payload",
     "load_signal_preview_bars",
     "preview_bar_to_market_event",
+    "resolve_backtest_data_plane",
     "run_strategy_signal_preview",
     "signal_preview_symbol_asset_class",
     "validate_backtest_strategy_params",

@@ -31,6 +31,7 @@ from server.services.backtest_views.parameter_sweep import (
 )
 from server.services.backtest_views.strategy_inputs import (
     backtest_metrics_from_payload,
+    resolve_backtest_data_plane,
 )
 
 _DEFAULT_BACKTEST_REPORT_DIR = Path("reports/backtest")
@@ -164,7 +165,7 @@ def run_single_backtest(
 
     from analytics.dataset_snapshot import build_backtest_dataset_snapshot
     from backtest.engine import BacktestEngine
-    from data.manager import DataManager, build_sources
+    from data.manager import DataManager
     from data.store import DataStore
 
     dataset_binding = None
@@ -190,14 +191,16 @@ def run_single_backtest(
         except Exception:
             pass
 
-        sources = build_sources(
-            data_source=config.data_source,
-            tushare_token=config.tushare_token,
-        )
+        sources, source_policy, configured_source = resolve_backtest_data_plane(config)
         dm = DataManager(
             sources=sources,
             store=store,
-            default_source=config.data_source,
+            source_policy=source_policy,
+            default_source=(
+                None
+                if source_policy is not None
+                else str(getattr(config, "data_source", "") or "") or None
+            ),
         )
 
         watchlist = build_watchlist(BacktestConfig(assets=assets))
@@ -218,9 +221,7 @@ def run_single_backtest(
     dataset_snapshot_json = build_backtest_dataset_snapshot(
         start_date=request.start_date,
         end_date=request.end_date,
-        configured_source="tdx"
-        if dataset_binding
-        else getattr(config, "data_source", None),
+        configured_source=("tdx" if dataset_binding else configured_source),
         data_handlers=data_handlers,
         store=store,
         source_names=["tdx"] if dataset_binding else list(sources.keys()),
