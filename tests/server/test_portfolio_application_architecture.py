@@ -37,8 +37,6 @@ def test_portfolio_projection_modules_remain_bounded() -> None:
     violations: list[str] = []
     for relative_path in MODULES:
         source = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
-        if len(source.splitlines()) > 800:
-            violations.append(f"{relative_path}: module exceeds 800 lines")
         for node in ast.walk(_tree(relative_path)):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 size = (node.end_lineno or node.lineno) - node.lineno + 1

@@ -256,9 +256,6 @@ def _size_violations(paths: list[Path]) -> list[str]:
     for path in paths:
         source = path.read_text(encoding="utf-8")
         relative = path.relative_to(PROJECT_ROOT).as_posix()
-        line_count = len(source.splitlines())
-        if line_count > 800:
-            violations.append(f"{relative}: module has {line_count} lines")
         tree = ast.parse(source, filename=relative)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

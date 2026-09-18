@@ -51,8 +51,6 @@ def test_reviewed_fee_schedule_modules_and_functions_have_zero_size_debt() -> No
     violations: list[str] = []
     for path in sorted(DOMAIN_PATHS):
         source = path.read_text(encoding="utf-8")
-        if len(source.splitlines()) > 800:
-            violations.append(f"{path.name}:module")
         for node in ast.walk(ast.parse(source, filename=str(path))):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue

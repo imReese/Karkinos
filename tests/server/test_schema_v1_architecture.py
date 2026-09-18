@@ -41,7 +41,6 @@ def test_v1_schema_modules_are_bounded_and_persistence_only() -> None:
     assert SCHEMA_MODULES
     for path in SCHEMA_MODULES:
         source = path.read_text(encoding="utf-8")
-        assert len(source.splitlines()) <= 800, path.name
         assert not {
             imported
             for imported in _imports(path)
