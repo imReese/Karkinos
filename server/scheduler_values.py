@@ -13,6 +13,8 @@ from data.market_data import (
     is_fund_estimate_quote_source,
     normalize_market_data_status,
 )
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.projections.quote_status import (
     expected_quote_date,
     parse_quote_timestamp,
@@ -91,7 +93,9 @@ def quote_fetch_metadata(
     status_counts = Counter(quote_statuses or (["live"] * success_count))
     return {
         "trigger": "scheduler_poll",
-        "provider": config.data_source,
+        "provider": preferred_legacy_provider(
+            config, MarketDataUseCase.REALTIME_QUOTES
+        ),
         "provider_status": provider_status,
         "market_open": True,
         "poll_interval_seconds": config.live_poll_interval,
@@ -115,7 +119,9 @@ def quote_fetch_started_metadata(
 ) -> dict[str, Any]:
     return {
         "trigger": "scheduler_poll",
-        "provider": config.data_source,
+        "provider": preferred_legacy_provider(
+            config, MarketDataUseCase.REALTIME_QUOTES
+        ),
         "market_open": True,
         "poll_interval_seconds": config.live_poll_interval,
         "symbols": [str(symbol) for symbol, _ in watchlist],

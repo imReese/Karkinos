@@ -8,6 +8,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from core.types import AssetClass
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.ai_runtime.contracts import content_fingerprint
 
 DAILY_CANDIDATE_QUOTE_FREEZE_SCHEMA_VERSION = "karkinos.daily_candidate_quote_freeze.v1"
@@ -97,7 +99,10 @@ class DailyCandidateQuoteFreezeService:
                 run_id=run_id,
                 started_at=started_at,
                 trigger="daily_candidate_signal_quote_freeze",
-                provider=str(getattr(runtime_config, "data_source", "") or ""),
+                provider=preferred_legacy_provider(
+                    runtime_config,
+                    MarketDataUseCase.REALTIME_QUOTES,
+                ),
                 asset_type=AssetClass.STOCK.value,
                 symbol_count=len(symbols),
                 status="running",

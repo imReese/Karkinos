@@ -10,6 +10,8 @@ from datetime import datetime
 
 from core.events import MarketEvent
 from core.types import AssetClass, InstrumentType, Symbol
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.scheduler_contracts import SchedulerConfig, SchedulerDatabase, SchedulerFeed
 from server.scheduler_values import (
     provider_status_for_quote_run,
@@ -63,7 +65,9 @@ class SchedulerQuoteRunMixin:
                 run_id=run_id,
                 started_at=started_at,
                 trigger="scheduler_poll",
-                provider=self._config.data_source,
+                provider=preferred_legacy_provider(
+                    self._config, MarketDataUseCase.REALTIME_QUOTES
+                ),
                 asset_type=quote_fetch_asset_type(self._watchlist),
                 symbol_count=len(self._watchlist),
                 status="running",

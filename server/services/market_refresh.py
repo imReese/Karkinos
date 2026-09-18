@@ -10,6 +10,8 @@ from functools import partial
 from zoneinfo import ZoneInfo
 
 from core.types import AssetClass
+from data.source_policy import MarketDataUseCase
+from data.source_routing import preferred_legacy_provider
 from server.contracts.http.market import (
     QuoteRefreshSymbolResult,
 )
@@ -118,10 +120,13 @@ def quote_source(state, quote: dict | None) -> str | None:
     )
     if source:
         return str(source)
-    configured = getattr(state.config, "data_source", None)
-    if configured:
-        return str(configured)
-    return None
+    try:
+        return preferred_legacy_provider(
+            state.config,
+            MarketDataUseCase.REALTIME_QUOTES,
+        )
+    except Exception:
+        return None
 
 
 def mark_persistent_cache_quote(

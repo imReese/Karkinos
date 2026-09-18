@@ -69,7 +69,7 @@ def test_quote_freeze_refreshes_only_selected_buys_and_reuses_audit() -> None:
 
     service = DailyCandidateQuoteFreezeService(
         db=db,
-        state=SimpleNamespace(config=SimpleNamespace(data_source="fixture")),
+        state=SimpleNamespace(config=SimpleNamespace(data_source="akshare")),
         quote_refresher=refresh,
         clock=lambda: datetime(2026, 8, 24, 9, 36, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
@@ -110,7 +110,7 @@ def test_quote_freeze_fails_closed_on_wrong_day_quote() -> None:
 
     service = DailyCandidateQuoteFreezeService(
         db=db,
-        state=SimpleNamespace(config=SimpleNamespace(data_source="fixture")),
+        state=SimpleNamespace(config=SimpleNamespace(data_source="akshare")),
         quote_refresher=refresh,
     )
 
