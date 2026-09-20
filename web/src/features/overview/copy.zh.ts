@@ -156,6 +156,14 @@ export const overviewCopyZh = {
     strategyRecommendationSell: '卖出',
     strategyRecommendationRebalance: '再平衡',
     strategyRecommendationReview: '待人工复核',
+    strategyRecommendationPortfolioPreview: '组合预览',
+    strategyRecommendationSignal: '策略信号',
+    strategyRecommendationConfigurationRequired:
+      '尚未配置可用于账户建议的晋级策略',
+    strategyRecommendationRefreshForReview:
+      '刷新账户事实与行情后可进入人工复核',
+    strategyRecommendationSignalOnly:
+      '当前仅展示策略方向，账户状态确认后再计算仓位与数量',
     strategyRecommendationViewAll: '查看全部',
     strategyRecommendationReadOnly:
       '只读建议 · 需要人工确认 · 不创建或提交券商订单',

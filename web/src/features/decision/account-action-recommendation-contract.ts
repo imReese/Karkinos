@@ -1,3 +1,15 @@
+export type AccountRecommendationAction = {
+  action_id: string | number | null;
+  symbol: string | null;
+  display_name?: string | null;
+  name?: string | null;
+  asset_class: string | null;
+  side: string | null;
+  target_weight: number | null;
+  estimated_quantity: number | null;
+  submission_status: string | null;
+};
+
 export type AccountActionRecommendation = {
   schema_version: 'karkinos.decision.account_action_recommendation.v1';
   decision_date: string | null;
@@ -9,17 +21,26 @@ export type AccountActionRecommendation = {
     | 'unavailable';
   reason_codes: string[];
   source_action_task_ids: string[];
-  actions: Array<{
-    action_id: string | number | null;
-    symbol: string | null;
-    display_name?: string | null;
-    name?: string | null;
-    asset_class: string | null;
-    side: string | null;
-    target_weight: number | null;
-    estimated_quantity: number | null;
-    submission_status: string | null;
-  }>;
+  actions: AccountRecommendationAction[];
+  presentation?: {
+    level:
+      | 'manual_review'
+      | 'portfolio_preview'
+      | 'signal'
+      | 'no_action'
+      | 'blocked'
+      | 'unavailable';
+    actions: AccountRecommendationAction[];
+    signal_status: 'ready' | 'no_signal' | 'unavailable';
+    portfolio_preview_status: 'ready' | 'blocked';
+    manual_review_status: 'ready' | 'blocked';
+    configuration_blockers: string[];
+    signal_blockers: string[];
+    portfolio_preview_blockers: string[];
+    manual_review_blockers: string[];
+    read_only: true;
+    authorizes_execution: false;
+  };
   promoted_scan: {
     run_id: string | null;
     status: string;

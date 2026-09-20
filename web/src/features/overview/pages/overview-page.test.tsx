@@ -339,6 +339,129 @@ test('explains why today has no actionable recommendation when evidence gates bl
   ).not.toBeInTheDocument();
 });
 
+test('shows a read-only portfolio preview when strict execution freshness is blocked', async () => {
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.status = 'blocked';
+  plan.account_action_recommendation!.presentation = {
+    level: 'portfolio_preview',
+    actions: [
+      {
+        action_id: null,
+        symbol: 'fixture-fund',
+        display_name: '合成基金',
+        asset_class: 'fund',
+        side: 'buy',
+        target_weight: 0.12,
+        estimated_quantity: null,
+        submission_status: 'read_only_signal',
+      },
+    ],
+    signal_status: 'ready',
+    portfolio_preview_status: 'ready',
+    manual_review_status: 'blocked',
+    configuration_blockers: [],
+    signal_blockers: [],
+    portfolio_preview_blockers: [],
+    manual_review_blockers: ['account_truth_not_fresh'],
+    read_only: true,
+    authorizes_execution: false,
+  };
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+
+  await waitFor(() => expect(recommendation).toHaveTextContent('组合预览'));
+  expect(recommendation).toHaveTextContent('买入');
+  expect(recommendation).toHaveTextContent('合成基金');
+  expect(recommendation).toHaveTextContent('4.8%');
+  expect(recommendation).toHaveTextContent('12.0%');
+  expect(recommendation).toHaveTextContent(
+    '刷新账户事实与行情后可进入人工复核',
+  );
+  expect(recommendation).not.toHaveTextContent('预计数量');
+  expect(
+    within(recommendation).queryByRole('link', { name: '复核交易队列' }),
+  ).not.toBeInTheDocument();
+});
+
+test('shows only strategy direction when account structure is not coherent enough for sizing', async () => {
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.status = 'blocked';
+  plan.account_action_recommendation!.presentation = {
+    level: 'signal',
+    actions: [
+      {
+        action_id: null,
+        symbol: 'fixture-fund',
+        display_name: '合成基金',
+        asset_class: 'fund',
+        side: 'sell',
+        target_weight: 0,
+        estimated_quantity: null,
+        submission_status: 'read_only_signal',
+      },
+    ],
+    signal_status: 'ready',
+    portfolio_preview_status: 'blocked',
+    manual_review_status: 'blocked',
+    configuration_blockers: [],
+    signal_blockers: [],
+    portfolio_preview_blockers: ['portfolio_preview_unresolved_mismatch'],
+    manual_review_blockers: ['account_truth_unresolved_mismatch'],
+    read_only: true,
+    authorizes_execution: false,
+  };
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+
+  await waitFor(() => expect(recommendation).toHaveTextContent('策略信号'));
+  expect(recommendation).toHaveTextContent('卖出');
+  expect(recommendation).toHaveTextContent('合成基金');
+  expect(recommendation).toHaveTextContent(
+    '当前仅展示策略方向，账户状态确认后再计算仓位与数量',
+  );
+  expect(recommendation).not.toHaveTextContent('建议仓位');
+  expect(recommendation).not.toHaveTextContent('预计数量');
+  expect(
+    within(recommendation).queryByRole('link', { name: '复核交易队列' }),
+  ).not.toBeInTheDocument();
+});
+
+test('labels missing strategy promotion as configuration readiness rather than a safety failure', async () => {
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.status = 'unavailable';
+  plan.account_action_recommendation!.presentation = {
+    level: 'unavailable',
+    actions: [],
+    signal_status: 'unavailable',
+    portfolio_preview_status: 'blocked',
+    manual_review_status: 'blocked',
+    configuration_blockers: ['promoted_strategy_not_configured'],
+    signal_blockers: ['promoted_strategy_not_configured'],
+    portfolio_preview_blockers: [],
+    manual_review_blockers: ['promoted_strategy_not_configured'],
+    read_only: true,
+    authorizes_execution: false,
+  };
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+
+  await waitFor(() =>
+    expect(recommendation).toHaveTextContent(
+      '尚未配置可用于账户建议的晋级策略',
+    ),
+  );
+  expect(recommendation).not.toHaveTextContent('策略建议暂不可用');
+});
+
 test('shows a manual-review strategy action without implying automatic execution', async () => {
   const plan = tradingPlanFixture();
   plan.manual_ready_count = 1;

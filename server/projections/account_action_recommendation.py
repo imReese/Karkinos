@@ -119,6 +119,11 @@ def resolve_latest_verified_promoted_strategy_scan(
         "input_fingerprint": input_fingerprint,
         "output_fingerprint": output_fingerprint,
         "selected_signal_count": int(payload.get("selected_signal_count") or 0),
+        "signals": [
+            dict(item)
+            for item in payload.get("selected_signals") or []
+            if isinstance(item, Mapping)
+        ],
         "normal_no_signal": payload.get("normal_no_signal") is True,
         "blockers": _strings(payload.get("blockers")),
         "strategy_bindings": [
@@ -150,7 +155,7 @@ def build_account_action_recommendation(
     current_evidence_blockers: Sequence[str],
     current_evidence_fingerprint: str,
 ) -> dict[str, Any]:
-    """Project the account recommendation without borrowing research semantics."""
+    """Project strict action authority plus lower-risk read-only presentation tiers."""
 
     decision_date = str(decision_payload.get("decision_date") or "")
     candidates = [
@@ -176,6 +181,8 @@ def build_account_action_recommendation(
         and str(item.get("reason") or item.get("code") or "")
     ]
 
+    # `status` remains the strict authority state used by the manual-review path.
+    # Read-only display tiers below never weaken these fail-closed checks.
     if promoted_scan.get("verified") is not True:
         status = "unavailable"
         reasons = [*scan_blockers, *current_blockers] or [
@@ -230,6 +237,44 @@ def build_account_action_recommendation(
         if isinstance(item, Mapping)
     ]
     actions = [_action_projection(item) for item in order_intents]
+    signal_actions = [
+        _signal_projection(item)
+        for item in promoted_scan.get("signals") or []
+        if isinstance(item, Mapping)
+    ]
+    preview_blockers = _portfolio_preview_blockers(
+        summary=summary,
+        current_blockers=current_blockers,
+    )
+    signal_ready = (
+        promoted_scan.get("verified") is True
+        and scan_status == "completed"
+        and int(promoted_scan.get("selected_signal_count") or 0) > 0
+        and bool(signal_actions)
+    )
+    verified_no_signal = (
+        promoted_scan.get("verified") is True
+        and scan_status == "completed_no_signal"
+        and promoted_scan.get("normal_no_signal") is True
+        and int(promoted_scan.get("selected_signal_count") or 0) == 0
+        and not scan_blockers
+    )
+    if status == "manual_review_required":
+        presentation_level = "manual_review"
+    elif verified_no_signal:
+        presentation_level = "no_action"
+    elif signal_ready and not preview_blockers:
+        presentation_level = "portfolio_preview"
+    elif signal_ready:
+        presentation_level = "signal"
+    elif scan_status == "blocked":
+        presentation_level = "blocked"
+    else:
+        presentation_level = "unavailable"
+
+    configuration_blockers = [
+        item for item in scan_blockers if item == "promoted_strategy_not_configured"
+    ]
     source_action_task_ids = list(
         dict.fromkeys(
             [
@@ -249,6 +294,37 @@ def build_account_action_recommendation(
         "reason_codes": list(dict.fromkeys(reasons)),
         "source_action_task_ids": source_action_task_ids,
         "actions": actions,
+        "presentation": {
+            "level": presentation_level,
+            "actions": actions
+            if presentation_level == "manual_review"
+            else signal_actions,
+            "signal_status": (
+                "ready"
+                if signal_ready
+                else "no_signal"
+                if verified_no_signal
+                else "unavailable"
+            ),
+            "portfolio_preview_status": (
+                "ready" if signal_ready and not preview_blockers else "blocked"
+            ),
+            "manual_review_status": (
+                "ready" if status == "manual_review_required" else "blocked"
+            ),
+            "configuration_blockers": configuration_blockers,
+            "signal_blockers": []
+            if signal_ready or verified_no_signal
+            else scan_blockers,
+            "portfolio_preview_blockers": preview_blockers,
+            "manual_review_blockers": (
+                []
+                if status == "manual_review_required"
+                else list(dict.fromkeys([*reasons, *plan_blockers]))
+            ),
+            "read_only": True,
+            "authorizes_execution": False,
+        },
         "promoted_scan": {
             "run_id": promoted_scan.get("run_id"),
             "status": scan_status,
@@ -288,6 +364,65 @@ def build_account_action_recommendation(
         "authority_effect": "none",
     }
     return {**core, "evidence_fingerprint": "sha256:" + content_fingerprint(core)}
+
+
+def _portfolio_preview_blockers(
+    *,
+    summary: Mapping[str, Any],
+    current_blockers: Sequence[str],
+) -> list[str]:
+    """Require coherent account structure, but not execution-grade clock freshness."""
+
+    portfolio = _mapping(summary.get("portfolio"))
+    account_truth = _mapping(summary.get("account_truth"))
+    blockers: list[str] = []
+    if str(portfolio.get("valuation_status") or "").lower() != "complete":
+        blockers.append("portfolio_preview_valuation_not_complete")
+    if str(account_truth.get("reconciliation_status") or "").lower() != "pass":
+        blockers.append("portfolio_preview_reconciliation_not_pass")
+    if _nonnegative_int(account_truth.get("unresolved_mismatch_count")) != 0:
+        blockers.append("portfolio_preview_unresolved_mismatch")
+    if _mapping(account_truth.get("ledger_coverage")).get("status") != "covered":
+        blockers.append("portfolio_preview_ledger_coverage_not_complete")
+    if not str(account_truth.get("import_run_id") or ""):
+        blockers.append("portfolio_preview_import_run_missing")
+    if not _is_sha256(account_truth.get("source_fingerprint")):
+        blockers.append("portfolio_preview_source_fingerprint_invalid")
+
+    structural_markers = (
+        "contract_invalid",
+        "fingerprint_invalid",
+        "date_mismatch",
+        "date_missing",
+        "portfolio_changed",
+        "unresolved_mismatch",
+        "reconciliation_not_pass",
+        "ledger_coverage_not_complete",
+        "valuation_snapshot_not_complete",
+        "ledger_cutoff_id_invalid",
+        "after_decision_generation",
+        "plan_generated_before_decision",
+    )
+    blockers.extend(
+        blocker
+        for blocker in current_blockers
+        if any(marker in blocker for marker in structural_markers)
+    )
+    return list(dict.fromkeys(blockers))
+
+
+def _signal_projection(signal: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "action_id": None,
+        "symbol": signal.get("symbol"),
+        "display_name": signal.get("display_name") or signal.get("name"),
+        "name": signal.get("name") or signal.get("display_name"),
+        "asset_class": signal.get("asset_class") or "stock",
+        "side": signal.get("direction"),
+        "target_weight": signal.get("target_weight"),
+        "estimated_quantity": None,
+        "submission_status": "read_only_signal",
+    }
 
 
 def _action_projection(intent: Mapping[str, Any]) -> dict[str, Any]:
@@ -417,6 +552,7 @@ def _unavailable_scan(
         "input_fingerprint": None,
         "output_fingerprint": None,
         "selected_signal_count": 0,
+        "signals": [],
         "normal_no_signal": False,
         "blockers": list(dict.fromkeys(blockers or [reason])),
         "strategy_bindings": [],
