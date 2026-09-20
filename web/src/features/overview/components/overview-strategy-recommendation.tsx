@@ -78,9 +78,11 @@ function readableCode(code: string, labels: Record<string, string>): string {
 export function OverviewStrategyRecommendation({
   planQuery,
   decisionQuery,
+  className,
 }: {
   planQuery: QueryState<DailyTradingPlanResponse>;
   decisionQuery: QueryState<DecisionResponse>;
+  className?: string;
 }) {
   const copy = useCopy();
   const dashboard = copy.overview.dashboard;
@@ -118,7 +120,10 @@ export function OverviewStrategyRecommendation({
   return (
     <section
       data-testid="overview-strategy-recommendation"
-      className="min-w-0 border-b border-[var(--app-divider)] py-3.5"
+      className={(
+        'min-w-0 border-b border-[var(--app-divider)] py-3.5 ' +
+        (className ?? '')
+      ).trim()}
       aria-label={dashboard.strategyRecommendationTitle}
     >
       <SectionHeader

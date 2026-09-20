@@ -2,7 +2,7 @@ export const overviewCopyEn = {
   kicker: 'Overview',
   title: 'Portfolio overview',
   subtitle:
-    'Confirm account truth first, then review exceptions and current holdings before analysis.',
+    'Start with account facts, then review performance, holdings, risk, and research.',
   modeHelper:
     'Account view focuses on capital structure. Strategy view focuses on return quality.',
   loading: 'Loading account facts and current holdings.',
@@ -52,7 +52,8 @@ export const overviewCopyEn = {
     evidenceIdentity: (asOf: string) => `Valuation as of ${asOf}`,
   },
   dashboard: {
-    equityPanel: 'Equity curve',
+    equityPanel: 'Asset performance',
+    dataTrust: 'Data trust / system status',
     valuationCoverage: 'Valuation coverage',
     valuationCoverageDetail:
       'Authoritative total equity and P&L require evidence-gated valuation coverage across every current holding.',
@@ -169,18 +170,18 @@ export const overviewCopyEn = {
     strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
     strategyCandidateEmptyDetail:
       'No buy, sell, hold, or rebalance signals have entered the queue.',
-    strategyRecommendationTitle: "Today's decision & actions",
+    strategyRecommendationTitle: 'Research & signals',
     strategyRecommendationQuantity: 'Qty',
     strategyRecommendationReadOnly:
       'Read-only recommendation · manual confirmation required · no broker order is created or submitted',
     accountRecommendationUnavailableDetail:
-      'Current evidence is not sufficient to form a reviewable account action for today. Clear the blockers below first.',
-    decisionBlockers: 'Decision blockers',
-    decisionBlocked: 'BLOCKED',
-    decisionEvidence: 'Evidence',
+      'Current evidence is not sufficient for a reviewable account recommendation. Complete the pending items before reassessing.',
+    decisionBlockers: 'Needs attention',
+    decisionBlocked: 'Needs review',
+    decisionEvidence: 'Current status',
     decisionStrategyResearch: 'Research strategy',
-    decisionStrategyNotReady: 'NOT READY',
-    decisionStrategyNextStep: 'Open evidence research and promote a strategy',
+    decisionStrategyNotReady: 'Research pending',
+    decisionStrategyNextStep: 'Open evidence research',
     decisionTaskLabels: {
       data_refresh: 'Market data',
       account_truth: 'Account truth',
@@ -238,11 +239,10 @@ export const overviewCopyEn = {
     accountRecommendationNoAction: 'Account action today: no action',
     accountRecommendationNoActionDetail:
       'The daily promoted-strategy scan completed without an account action signal.',
-    accountRecommendationBlocked: "Today's account action is not ready",
-    accountRecommendationUnavailable:
-      "Today's account recommendation evidence is unavailable",
+    accountRecommendationBlocked: "Today's account action is unavailable",
+    accountRecommendationUnavailable: "Today's recommendation is unavailable",
     accountRecommendationReason: (reasons: string) =>
-      `Blocking evidence: ${reasons || 'no verifiable account recommendation is available'}.`,
+      `Current reason: ${reasons || 'no verifiable account recommendation is available'}.`,
     researchOperationCandidate:
       'Quant research operation candidates (non-executable; account qualification not evaluated)',
     researchOperationDetail: (summary: string) =>

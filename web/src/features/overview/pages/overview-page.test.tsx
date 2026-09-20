@@ -269,8 +269,14 @@ test('reads one coherent account projection and a separate canonical history', a
     '-¥314.51',
   );
   expect(screen.getByText('Return unavailable')).toBeVisible();
-  expect(screen.getByText(/37.6%/)).toBeVisible();
-  expect(screen.queryByText('Current Drawdown')).not.toBeInTheDocument();
+  expect(
+    within(screen.getByTestId('overview-summary')).getByText(/37.6%/),
+  ).toBeVisible();
+  expect(
+    within(screen.getByTestId('overview-summary')).queryByText(
+      'Current Drawdown',
+    ),
+  ).not.toBeInTheDocument();
 });
 
 test('shows the canonical daily strategy recommendation separately from operations attention', async () => {
@@ -279,7 +285,7 @@ test('shows the canonical daily strategy recommendation separately from operatio
   const recommendation = await screen.findByTestId(
     'overview-strategy-recommendation',
   );
-  expect(within(recommendation).getByText('今日决策与操作')).toBeVisible();
+  expect(within(recommendation).getByText('研究与信号')).toBeVisible();
   expect(
     await within(recommendation).findByText('今日账户操作：无操作'),
   ).toBeVisible();
@@ -329,7 +335,7 @@ test('explains why today has no actionable recommendation when evidence gates bl
     'overview-strategy-recommendation',
   );
   await waitFor(() =>
-    expect(recommendation).toHaveTextContent('今日账户建议证据不可用'),
+    expect(recommendation).toHaveTextContent('今日建议暂不可用'),
   );
   const blockers = within(recommendation).getByTestId(
     'overview-decision-blockers',
@@ -339,13 +345,13 @@ test('explains why today has no actionable recommendation when evidence gates bl
   expect(blockers).toHaveTextContent('账户事实');
   expect(blockers).toHaveTextContent('刷新账户事实快照');
   expect(blockers).toHaveTextContent('研究策略');
-  expect(blockers).toHaveTextContent('NOT READY');
+  expect(blockers).toHaveTextContent('待补研究');
   expect(blockers).toHaveTextContent(
     '当前没有已晋级到 Paper Shadow 的证据策略',
   );
   expect(
     within(blockers).getByRole('link', {
-      name: '进入证据研究并完成策略晋级',
+      name: '进入证据研究',
     }),
   ).toHaveAttribute('href', '/ai-research');
   expect(blockers).not.toHaveTextContent('valuation_snapshot_not_complete');
@@ -487,7 +493,7 @@ test('attention unavailable cannot masquerade as zero actions', async () => {
   installFetch(state);
   renderPage();
   const queue = await screen.findByTestId('overview-today-queue');
-  expect(within(queue).getByText('Attention status unavailable')).toBeVisible();
+  expect(within(queue).getByText('To-do status unavailable')).toBeVisible();
   expect(within(queue).queryByText('0')).not.toBeInTheDocument();
   expect(
     within(queue).queryByText('No items need your attention today.'),
@@ -692,7 +698,7 @@ test('known valuation repair remains actionable when unrelated Operations eviden
   renderPage();
   const queue = await screen.findByTestId('overview-today-queue');
   expect(within(queue).getByText('--')).toBeVisible();
-  expect(within(queue).getByText('Attention status unavailable')).toBeVisible();
+  expect(within(queue).getByText('To-do status unavailable')).toBeVisible();
   expect(within(queue).getAllByRole('link')).toHaveLength(2);
   expect(
     within(queue).getByRole('link', {

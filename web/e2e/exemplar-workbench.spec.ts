@@ -397,23 +397,30 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const overviewQueue = page.getByTestId('overview-today-queue');
   const overviewHoldings = page.getByTestId('overview-holdings-section');
   const overviewPerformance = page.getByTestId('overview-performance-card');
+  const overviewAllocationRisk = page.getByTestId('overview-allocation-risk');
+  const overviewResearchActions = page.getByTestId('overview-research-actions');
   await expect(overviewPrimary).toBeVisible({ timeout: 15_000 });
   await expect(
-    overviewPrimary.getByTestId('overview-today-queue'),
+    overviewPrimary.getByTestId('overview-today-digest'),
   ).toBeVisible();
-  await expect(
-    overviewPrimary.getByTestId('overview-holdings-section'),
-  ).toBeVisible();
-  const overviewQueueBox = (await overviewQueue.boundingBox())!;
+  await expect(overviewQueue).toBeVisible();
+  await expect(overviewHoldings).toBeVisible();
   const overviewPerformanceBox = (await overviewPerformance.boundingBox())!;
   const overviewHoldingsBox = (await overviewHoldings.boundingBox())!;
-  expect(overviewQueueBox.y).toBeLessThan(overviewPerformanceBox.y);
+  const overviewAllocationRiskBox =
+    (await overviewAllocationRisk.boundingBox())!;
+  const overviewResearchActionsBox =
+    (await overviewResearchActions.boundingBox())!;
   expect(overviewPerformanceBox.y).toBeLessThan(overviewHoldingsBox.y);
-  expect(Math.abs(overviewQueueBox.x - overviewPerformanceBox.x)).toBeLessThan(
-    8,
+  expect(overviewHoldingsBox.y).toBeLessThan(overviewAllocationRiskBox.y);
+  expect(overviewAllocationRiskBox.y).toBeLessThan(
+    overviewResearchActionsBox.y,
   );
   expect(
     Math.abs(overviewPerformanceBox.x - overviewHoldingsBox.x),
+  ).toBeLessThan(8);
+  expect(
+    Math.abs(overviewHoldingsBox.x - overviewAllocationRiskBox.x),
   ).toBeLessThan(8);
 
   await page.goto('/risk');
@@ -485,7 +492,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await expect(page.getByTestId('backtest-mobile-workspace-tabs')).toBeHidden();
 });
 
-test('overview prioritizes account truth, today decision, performance and holdings across all viewports', async ({
+test('overview prioritizes account context, performance, holdings, risk and low-priority diagnostics across all viewports', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -497,17 +504,20 @@ test('overview prioritizes account truth, today decision, performance and holdin
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
     const summary = (await page.getByTestId('overview-summary').boundingBox())!;
-    const decision = (await page
-      .getByTestId('overview-strategy-recommendation')
-      .boundingBox())!;
     const performance = (await page
       .getByTestId('overview-performance-card')
       .boundingBox())!;
-    const queue = (await page
-      .getByTestId('overview-today-queue')
-      .boundingBox())!;
     const holdings = (await page
       .getByTestId('overview-holdings-section')
+      .boundingBox())!;
+    const allocationRisk = (await page
+      .getByTestId('overview-allocation-risk')
+      .boundingBox())!;
+    const researchActions = (await page
+      .getByTestId('overview-research-actions')
+      .boundingBox())!;
+    const dataTrust = (await page
+      .getByTestId('overview-data-trust')
       .boundingBox())!;
     const overflow = await page.evaluate(() => {
       const content = document.querySelector(
@@ -524,22 +534,32 @@ test('overview prioritizes account truth, today decision, performance and holdin
       document: 0,
       content: 0,
     });
-    expect(decision.y).toBeGreaterThanOrEqual(summary.y + summary.height);
-    expect(queue.y).toBeGreaterThanOrEqual(decision.y + decision.height);
-    expect(performance.y).toBeGreaterThanOrEqual(queue.y + queue.height);
-    expect(holdings.y).toBeGreaterThan(performance.y);
-    expect(
-      Math.abs(decision.x - queue.x),
-      JSON.stringify(viewport),
-    ).toBeLessThan(8);
-    expect(
-      Math.abs(queue.x - performance.x),
-      JSON.stringify(viewport),
-    ).toBeLessThan(8);
+    expect(performance.y).toBeGreaterThanOrEqual(summary.y + summary.height);
+    expect(holdings.y).toBeGreaterThanOrEqual(
+      performance.y + performance.height,
+    );
+    expect(allocationRisk.y).toBeGreaterThanOrEqual(
+      holdings.y + holdings.height,
+    );
+    expect(researchActions.y).toBeGreaterThanOrEqual(
+      allocationRisk.y + allocationRisk.height,
+    );
+    expect(dataTrust.y).toBeGreaterThanOrEqual(
+      researchActions.y + researchActions.height,
+    );
     expect(
       Math.abs(performance.x - holdings.x),
       JSON.stringify(viewport),
     ).toBeLessThan(8);
+    expect(
+      Math.abs(holdings.x - allocationRisk.x),
+      JSON.stringify(viewport),
+    ).toBeLessThan(8);
+    expect(
+      Math.abs(allocationRisk.x - researchActions.x),
+      JSON.stringify(viewport),
+    ).toBeLessThan(8);
+    await expect(page.getByTestId('overview-today-digest')).toBeVisible();
     await expect(page.getByTestId('overview-data-status')).toContainText(
       'Current valuation usable',
     );

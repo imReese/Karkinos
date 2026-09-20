@@ -1,4 +1,5 @@
 import { useCopy } from '../../../shared/i18n/context';
+import { SectionHeader } from '../../../shared/ui/workbench';
 import {
   OverviewEquityCurve,
   EquityCurveSkeleton,
@@ -9,15 +10,16 @@ import { getEquityCurveErrorDetail } from '../model/overview-page-model';
 import {
   OverviewDataDetails,
   OverviewDataStatus,
-  OverviewMarketStatus,
 } from './overview-data-status';
+import { OverviewAllocationRiskSection } from './overview-allocation-risk-section';
+import { OverviewDataTrustStrip } from './overview-data-trust-strip';
 import { OverviewHoldingsSection } from './overview-holdings-section';
-import { OverviewPerformanceDrivers } from './overview-performance-drivers';
 import { OverviewStatusCard } from './overview-status-card';
 import { OverviewStrategyRecommendation } from './overview-strategy-recommendation';
 import { OverviewSummary } from './overview-summary';
-import { OverviewValuationCoverage } from './overview-valuation-coverage';
+import { OverviewTodayDigest } from './overview-today-digest';
 import { DashboardTodayQueue } from './overview-today-queue';
+import { OverviewValuationCoverage } from './overview-valuation-coverage';
 
 export function OverviewResolvedWorkspace({
   controller,
@@ -35,11 +37,50 @@ export function OverviewResolvedWorkspace({
     state.snapshot.allocation.map((item) => [item.symbol, item.weight]),
   );
 
+  const performance =
+    equityCurve.isLoading && !equityCurve.data ? (
+      <EquityCurveSkeleton />
+    ) : equityCurve.isError && !equityCurve.data ? (
+      <OverviewStatusCard
+        tone="danger"
+        title={copy.states.error}
+        detail={getEquityCurveErrorDetail(equityCurve.error, copy)}
+        actionLabel={copy.states.retry}
+        onAction={() => void equityCurve.refetch()}
+      />
+    ) : (
+      <>
+        {equityCurve.isError ? (
+          <p
+            role="status"
+            data-testid="equity-curve-refresh-warning"
+            className="app-type-compact mb-3 text-[var(--app-warning-text)]"
+          >
+            {copy.overview.curveRefreshError}
+          </p>
+        ) : null}
+        <OverviewEquityCurve
+          points={equityCurve.data ?? []}
+          range={equityCurveRange}
+          onRangeChange={setEquityCurveRange}
+        />
+      </>
+    );
+
   return (
     <div className="min-w-0" data-testid="overview-financial-canvas">
-      <OverviewSummary summary={state.summary} />
       <OverviewDataStatus state={state} />
-      <DashboardTodayQueue overview={state.overview} />
+      <OverviewSummary summary={state.summary} />
+
+      <section
+        className="min-w-0 border-b border-[var(--app-divider)] py-4"
+        data-testid="overview-performance-card"
+      >
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.72fr)]">
+          <div className="min-w-0">{performance}</div>
+          <OverviewTodayDigest state={state} />
+        </div>
+      </section>
 
       <OverviewHoldingsSection
         positions={state.snapshot.positions}
@@ -48,52 +89,34 @@ export function OverviewResolvedWorkspace({
         className="border-b border-[var(--app-divider)]"
       />
 
+      <OverviewAllocationRiskSection state={state} />
       <section
-        className="min-w-0 border-b border-[var(--app-divider)] py-4"
-        data-testid="overview-performance-card"
+        className="grid min-w-0 gap-6 border-b border-[var(--app-divider)] py-4 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-[var(--app-divider)]"
+        data-testid="overview-research-actions"
       >
-        {equityCurve.isLoading && !equityCurve.data ? (
-          <EquityCurveSkeleton />
-        ) : equityCurve.isError && !equityCurve.data ? (
-          <OverviewStatusCard
-            tone="danger"
-            title={copy.states.error}
-            detail={getEquityCurveErrorDetail(equityCurve.error, copy)}
-            actionLabel={copy.states.retry}
-            onAction={() => void equityCurve.refetch()}
-          />
-        ) : (
-          <>
-            {equityCurve.isError ? (
-              <p
-                role="status"
-                data-testid="equity-curve-refresh-warning"
-                className="app-type-compact mb-3 text-[var(--app-warning-text)]"
-              >
-                {copy.overview.curveRefreshError}
-              </p>
-            ) : null}
-            <OverviewEquityCurve
-              points={equityCurve.data ?? []}
-              range={equityCurveRange}
-              onRangeChange={setEquityCurveRange}
-            />
-            <OverviewPerformanceDrivers state={state} />
-          </>
-        )}
+        <OverviewStrategyRecommendation
+          planQuery={controller.tradingPlan}
+          decisionQuery={controller.todayDecision}
+          className="border-b-0 py-0 lg:pr-6"
+        />
+        <DashboardTodayQueue
+          overview={state.overview}
+          className="border-b-0 py-0 lg:pl-6"
+        />
       </section>
 
-      <OverviewStrategyRecommendation
-        planQuery={controller.tradingPlan}
-        decisionQuery={controller.todayDecision}
-      />
-      <OverviewValuationCoverage snapshot={state.snapshot} />
-      <OverviewMarketStatus state={state} />
-
-      <OverviewDataDetails
-        state={state}
-        refreshFailed={controller.account.isError}
-      />
+      <section className="min-w-0 py-4" data-testid="overview-data-trust">
+        <SectionHeader
+          title={copy.overview.dashboard.dataTrust}
+          className="mb-2"
+        />
+        <OverviewDataTrustStrip state={state} />
+        <OverviewValuationCoverage snapshot={state.snapshot} />
+        <OverviewDataDetails
+          state={state}
+          refreshFailed={controller.account.isError}
+        />
+      </section>
     </div>
   );
 }
