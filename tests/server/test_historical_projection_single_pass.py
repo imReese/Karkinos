@@ -349,6 +349,40 @@ def test_historical_projection_skips_verified_exchange_holiday_without_gap() -> 
     assert all(point.valuation_status == "reconstructed" for point in points)
 
 
+def test_historical_projection_ytd_starts_on_january_first() -> None:
+    db = _ProjectionDb({})
+    db.get_all_ledger_entries_sync = lambda: [
+        {
+            "id": 1,
+            "entry_type": "cash_deposit",
+            "timestamp": "2025-12-31T09:00:00+08:00",
+            "amount": 1000.0,
+            "asset_class": "cash",
+            "source": "manual",
+        },
+    ]
+
+    points = build_daily_equity_series_from_ledger_history(
+        SimpleNamespace(db=db),
+        selected_range="ytd",
+        current_point=_current_point().model_copy(
+            update={
+                "timestamp": "2026-09-18T15:00:00+08:00",
+                "total": 1000.0,
+                "stocks": 0.0,
+                "funds": 0.0,
+                "others": 0.0,
+                "cash": 1000.0,
+            }
+        ),
+        now=datetime(2026, 9, 18, 15, 1, tzinfo=_SHANGHAI),
+    )
+
+    assert points
+    assert points[0].timestamp[:10] == "2026-01-01"
+    assert points[0].total == pytest.approx(1000.0)
+
+
 def test_historical_projection_marks_missing_intermediate_weekday_as_gap() -> None:
     db = _ProjectionDb(
         {

@@ -81,6 +81,7 @@ export const RANGE_DAYS: Record<EquityCurveRange, number> = {
   '1m': 31,
   '6m': 183,
   '1y': 366,
+  ytd: Number.POSITIVE_INFINITY,
   all: Number.POSITIVE_INFINITY,
 };
 
@@ -248,18 +249,29 @@ export function clonePointAtTimestamp(point: ChartPoint, timestampMs: number) {
   };
 }
 
+function startOfShanghaiCalendarYear(timestampMs: number) {
+  const year = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    timeZone: 'Asia/Shanghai',
+  }).format(new Date(timestampMs));
+  return new Date(`${year}-01-01T00:00:00+08:00`).getTime();
+}
+
 export function filterByRange(points: ChartPoint[], range: EquityCurveRange) {
   if (range === 'all' || points.length < 2) {
     return points;
   }
 
   const latest = points[points.length - 1]?.timestampMs ?? Date.now();
-  const rangeStart = latest - RANGE_DAYS[range] * 86_400_000;
+  const rangeStart =
+    range === 'ytd'
+      ? startOfShanghaiCalendarYear(latest)
+      : latest - RANGE_DAYS[range] * 86_400_000;
   const filtered = points.filter((point) => {
     return point.timestampMs >= rangeStart && point.timestampMs <= latest;
   });
 
-  if (range === '1d') {
+  if (range === '1d' || range === 'ytd') {
     return filtered;
   }
 
@@ -279,6 +291,19 @@ export function filterByRange(points: ChartPoint[], range: EquityCurveRange) {
   return filtered;
 }
 
+function buildTimeTicksBetween(start: number, end: number, tickCount: number) {
+  if (tickCount <= 1) {
+    return [];
+  }
+  if (start === end) {
+    return [start];
+  }
+  const step = (end - start) / (tickCount - 1);
+  return Array.from({ length: tickCount }, (_, index) =>
+    Math.round(start + step * index),
+  );
+}
+
 export function buildTimeTicks(points: ChartPoint[], tickCount: number) {
   if (points.length === 0 || tickCount <= 1) {
     return [];
@@ -286,15 +311,7 @@ export function buildTimeTicks(points: ChartPoint[], tickCount: number) {
 
   const start = points[0]?.timestampMs ?? 0;
   const end = points[points.length - 1]?.timestampMs ?? start;
-
-  if (start === end) {
-    return [start];
-  }
-
-  const step = (end - start) / (tickCount - 1);
-  return Array.from({ length: tickCount }, (_, index) =>
-    Math.round(start + step * index),
-  );
+  return buildTimeTicksBetween(start, end, tickCount);
 }
 
 export function buildIntradaySessionTicks(points: ChartPoint[]) {
@@ -324,6 +341,17 @@ export function resolveXAxisTicks(
   if (range === '1d') {
     return buildIntradaySessionTicks(points);
   }
+  if (range === 'ytd') {
+    const latest = points[points.length - 1]?.timestampMs;
+    if (!latest) {
+      return [];
+    }
+    return buildTimeTicksBetween(
+      startOfShanghaiCalendarYear(latest),
+      latest,
+      6,
+    );
+  }
   return buildTimeTicks(points, 6);
 }
 
@@ -331,6 +359,13 @@ export function resolveXAxisDomain(
   points: ChartPoint[],
   range: EquityCurveRange,
 ): [number, number] | ['dataMin', 'dataMax'] {
+  if (range === 'ytd') {
+    const latest = points[points.length - 1]?.timestampMs;
+    if (!latest) {
+      return ['dataMin', 'dataMax'];
+    }
+    return [startOfShanghaiCalendarYear(latest), latest];
+  }
   if (range !== '1d') {
     return ['dataMin', 'dataMax'];
   }

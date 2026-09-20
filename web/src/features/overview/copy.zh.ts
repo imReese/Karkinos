@@ -336,6 +336,7 @@ export const overviewCopyZh = {
     oneMonth: '1M',
     sixMonths: '6M',
     oneYear: '1年',
+    yearToDate: '今年',
     all: 'ALL',
     empty: '还没有净值历史。',
     emptyTitle: '尚无净值历史',

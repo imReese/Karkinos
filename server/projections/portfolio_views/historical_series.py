@@ -74,7 +74,14 @@ def daily_equity_series_for_range(
     parsed_points.sort(key=lambda item: item[0])
     end_timestamp = parsed_points[-1][0]
     range_days = _EQUITY_SERIES_RANGE_DAYS.get(selected_range)
-    if range_days is None:
+    if selected_range == "ytd":
+        start_timestamp = datetime(
+            end_timestamp.year,
+            1,
+            1,
+            tzinfo=end_timestamp.tzinfo or _SH_TZ,
+        )
+    elif range_days is None:
         start_timestamp = parsed_points[0][0]
     else:
         start_timestamp = end_timestamp - timedelta(days=range_days)

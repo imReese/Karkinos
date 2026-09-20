@@ -342,9 +342,13 @@ def build_daily_equity_series_from_ledger_history(
     range_days = _EQUITY_SERIES_RANGE_DAYS.get(selected_range)
     first_entry_date = dated_entries[0][0].date()
     start_date = (
-        first_entry_date
-        if range_days is None
-        else (latest_timestamp - timedelta(days=range_days)).date()
+        date(latest_timestamp.year, 1, 1)
+        if selected_range == "ytd"
+        else (
+            first_entry_date
+            if range_days is None
+            else (latest_timestamp - timedelta(days=range_days)).date()
+        )
     )
     end_date = latest_timestamp.date()
     if start_date > end_date:

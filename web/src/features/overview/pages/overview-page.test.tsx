@@ -568,6 +568,19 @@ test('range control requests only a supported canonical series range', async () 
   );
 });
 
+test('calendar-year control requests year-to-date history from January 1', async () => {
+  const mock = installFetch();
+  renderPage('zh');
+  await screen.findByTestId('equity-range-controls');
+  await userEvent.click(screen.getByRole('button', { name: /今年/ }));
+  await waitFor(() =>
+    expect(mock).toHaveBeenCalledWith(
+      '/api/portfolio/equity-curve/series?range=ytd',
+      expect.anything(),
+    ),
+  );
+});
+
 test('Chinese presentation preserves published NAV and compact no-action semantics', async () => {
   installFetch();
   renderPage('zh');

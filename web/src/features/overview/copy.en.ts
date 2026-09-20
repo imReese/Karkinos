@@ -383,6 +383,7 @@ export const overviewCopyEn = {
     oneMonth: '1M',
     sixMonths: '6M',
     oneYear: '1Y',
+    yearToDate: 'YTD',
     all: 'ALL',
     empty: 'No equity history yet.',
     emptyTitle: 'No Equity History Yet',
