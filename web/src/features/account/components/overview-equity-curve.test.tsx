@@ -116,6 +116,55 @@ test.each([
   },
 );
 
+test('renders reconstructed history as the selected colored solid line', () => {
+  const { container } = render(
+    chart(
+      points.map((point) => ({
+        ...point,
+        valuation_status: 'reconstructed',
+        valuation_policy: 'karkinos.historical_replay.v1',
+        quote_status: 'live',
+      })),
+    ),
+  );
+  const paths = container.querySelectorAll('path.recharts-line-curve');
+  expect(paths).toHaveLength(1);
+  expect(paths[0]).toHaveAttribute('stroke', 'var(--app-accent)');
+  expect(paths[0]).not.toHaveAttribute('stroke-dasharray');
+});
+
+test('bridges a genuine missing valuation with a same-color dashed line', () => {
+  const data: EquitySeriesPoint[] = [
+    {
+      ...points[0],
+      valuation_status: 'reconstructed',
+      quote_status: 'live',
+    },
+    {
+      ...points[0],
+      timestamp: '2026-09-11T15:00:00+08:00',
+      total: null,
+      valuation_status: 'missing',
+      quote_status: 'missing',
+    },
+    {
+      ...points[1],
+      timestamp: '2026-09-12T15:00:00+08:00',
+      total: 10300,
+      valuation_status: 'reconstructed',
+      quote_status: 'live',
+    },
+  ];
+  const { container } = render(chart(data));
+  const bridge = container.querySelector(
+    'path.recharts-line-curve[stroke-dasharray="4 4"]',
+  );
+  expect(bridge).not.toBeNull();
+  expect(bridge).toHaveAttribute('stroke', 'var(--app-accent)');
+  expect(bridge?.getAttribute('d')?.match(/M/g)).toHaveLength(1);
+  expect(screen.getByTestId('equity-indicative-note')).toBeVisible();
+});
+
 test('lets overview switch the performance series without changing the time range', async () => {
   render(chart(points));
   const user = userEvent.setup();

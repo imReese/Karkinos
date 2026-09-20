@@ -384,6 +384,39 @@ class TestDataManager:
         assert handler.total_bars == 10
         assert source.fetch_count == 0
 
+    def test_zero_ttl_forces_backfill_of_older_partial_cache(self, tmp_path):
+        """Explicit backfill must contact the provider for an older incomplete range."""
+        source = MockSource()
+        from data.store import DataStore
+
+        store = DataStore(str(tmp_path / "store"))
+        store.save_bars(
+            Symbol("600519"),
+            BarFrequency.DAILY,
+            _make_bars_df(n=10),
+            instrument_type=InstrumentType.STOCK,
+        )
+        manager = DataManager({"mock": source}, store=store, default_source="mock")
+
+        handler = manager.get_bars(
+            Symbol("600519"),
+            start=_TEST_START,
+            end=_TEST_END,
+            allow_remote_refresh=True,
+            refresh_ttl_seconds=0,
+            degrade_to_cache=False,
+        )
+
+        assert source.fetch_count > 0
+        assert handler.total_bars == 30
+        stored = store.load_bars(
+            Symbol("600519"),
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.STOCK,
+        )
+        assert stored is not None
+        assert len(stored) == 30
+
     def test_partial_cache_with_recent_meta_skips_remote_refresh(self, tmp_path):
         """开市允许刷新时，若缓存刚更新过则仍应命中节流，不重复拉取。"""
         source = MockSource()

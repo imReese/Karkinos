@@ -83,7 +83,9 @@ export function OverviewEquityCurve({
         ? rawValue
         : null;
     const valuationComplete =
-      !point.valuation_status || point.valuation_status === 'complete';
+      !point.valuation_status ||
+      point.valuation_status === 'complete' ||
+      point.valuation_status === 'reconstructed';
     const quoteConfirmed = !unconfirmedQuoteStatuses.has(
       point.quote_status ?? '',
     );
@@ -101,6 +103,12 @@ export function OverviewEquityCurve({
       Number.isFinite(point.indicativeSeries),
   );
   const hasIndicativePoints = chartPoints.some((point) => point.indicativeOnly);
+  const hasSeriesGaps = chartPoints.some(
+    (point) =>
+      typeof point.indicativeSeries !== 'number' ||
+      !Number.isFinite(point.indicativeSeries),
+  );
+  const showBridgeLine = hasIndicativePoints || hasSeriesGaps;
   const [chartRef, size] = useChartContainerSize<HTMLDivElement>();
   const ranges: Array<[EquityCurveRange, string]> = [
     ['1m', labels.oneMonth],
@@ -117,6 +125,9 @@ export function OverviewEquityCurve({
       ? historyStartLabel(chartPoints[0]?.timestamp, locale)
       : null;
   const selectedLabel = seriesLabels[selectedSeries];
+  const selectedColor =
+    SERIES_META.find((series) => series.key === selectedSeries)?.color ??
+    'var(--app-accent)';
 
   return (
     <div className="min-w-0">
@@ -244,29 +255,26 @@ export function OverviewEquityCurve({
                   }}
                   cursor={{ stroke: 'var(--app-accent)', strokeOpacity: 0.3 }}
                 />
-                {hasIndicativePoints ? (
+                {showBridgeLine ? (
                   <Line
                     dataKey="indicativeSeries"
                     name={labels.indicativeSeries(selectedLabel)}
                     type="linear"
-                    stroke="var(--app-text-tertiary)"
+                    stroke={selectedColor}
                     strokeWidth={1.5}
                     strokeDasharray="4 4"
-                    strokeOpacity={0.8}
+                    strokeOpacity={0.48}
                     dot={false}
                     activeDot={{ r: 3 }}
                     isAnimationActive={false}
-                    connectNulls={false}
+                    connectNulls
                   />
                 ) : null}
                 <Line
                   dataKey="confirmedSeries"
                   name={selectedLabel}
                   type="linear"
-                  stroke={
-                    SERIES_META.find((series) => series.key === selectedSeries)
-                      ?.color ?? 'var(--app-accent)'
-                  }
+                  stroke={selectedColor}
                   strokeWidth={2}
                   dot={false}
                   activeDot={{ r: 4 }}
@@ -287,14 +295,14 @@ export function OverviewEquityCurve({
         )}
       </div>
 
-      {historyStart || hasIndicativePoints ? (
+      {historyStart || showBridgeLine ? (
         <div className="app-type-micro mt-2 space-y-1 text-[var(--app-text-tertiary)]">
           {historyStart ? (
             <p data-testid="equity-history-start">
               {labels.historyStart(historyStart)}
             </p>
           ) : null}
-          {hasIndicativePoints ? (
+          {showBridgeLine ? (
             <p data-testid="equity-indicative-note">
               {labels.indicativeHistoryNote}
             </p>

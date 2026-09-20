@@ -404,7 +404,7 @@ export const overviewCopyEn = {
     historyStart: (date: string) =>
       `Reconstructable account history starts on ${date}.`,
     indicativeHistoryNote:
-      'The dashed line shows historical values that exist but did not pass the complete valuation gate. Only the solid line is authoritative account valuation.',
+      'The same-color dashed line marks history outside the complete valuation gate or bridges missing evidence for continuity; missing dates are not treated as confirmed account valuations.',
     rangeHigh: 'Range high',
     quoteStatus: 'Quote status',
     realtimeUnrealizedPnl: 'Portfolio unrealized P/L',

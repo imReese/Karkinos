@@ -255,6 +255,7 @@ async def backfill_market_bars(
     from data.source_policy import MarketDataUseCase, source_policy_for_config
     from data.source_routing import preferred_legacy_provider
     from data.store import DataStore
+    from server.runtime_paths import resolve_data_dir
 
     source_policy = source_policy_for_config(state.config)
     provider_name = preferred_legacy_provider(
@@ -264,7 +265,7 @@ async def backfill_market_bars(
     frequency = bar_frequency(request.interval)
     start, end = market_bar_backfill_range(state, request)
     targets = market_bar_backfill_targets(state, request)
-    store = DataStore()
+    store = DataStore(resolve_data_dir())
     manager = DataManager(
         sources=build_sources_for_config(state.config),
         store=store,

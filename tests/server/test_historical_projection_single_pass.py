@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -51,6 +51,37 @@ def _ledger_rows() -> list[dict[str, object]]:
             "source": "manual",
         },
     ]
+
+
+def _verified_calendar(
+    year: int,
+    *,
+    holidays: set[str] | None = None,
+) -> dict[str, object]:
+    holidays = holidays or set()
+    current = date(year, 1, 1)
+    end = date(year + 1, 1, 1)
+    days: list[dict[str, object]] = []
+    while current < end:
+        value = current.isoformat()
+        is_trading_day = current.weekday() < 5 and value not in holidays
+        days.append({"date": value, "is_trading_day": is_trading_day})
+        current += timedelta(days=1)
+    trading_day_count = sum(bool(item["is_trading_day"]) for item in days)
+    return {
+        "exchange": "SSE",
+        "year": year,
+        "days": days,
+        "trading_day_count": trading_day_count,
+        "closed_day_count": len(days) - trading_day_count,
+        "official_verification_status": "verified",
+        "source_fingerprint": "a" * 64,
+        "verification_source_fingerprint": "a" * 64,
+        "official_source_fingerprint": "b" * 64,
+        "official_source_url": "https://example.test/calendar",
+        "official_verified_at": "2026-01-01T00:00:00+08:00",
+        "official_verified_by": "test",
+    }
 
 
 class _ProjectionDb:
@@ -247,6 +278,75 @@ def test_historical_projection_reads_once_and_applies_each_ledger_entry_once(
     assert [point.total for point in points] == pytest.approx([1010.0, 1025.0])
     assert [point.stocks for point in points] == pytest.approx([110.0, 120.0])
     assert all(point.missing_price_symbols == [] for point in points)
+
+
+def test_historical_projection_skips_verified_exchange_holiday_without_gap() -> None:
+    db = _ProjectionDb(
+        {
+            "600001": [
+                {
+                    "symbol": "600001",
+                    "trade_date": "2026-06-18",
+                    "timestamp": "2026-06-18T15:00:00+08:00",
+                    "price": 11.0,
+                    "source": "market_bars",
+                },
+                {
+                    "symbol": "600001",
+                    "trade_date": "2026-06-22",
+                    "timestamp": "2026-06-22T15:00:00+08:00",
+                    "price": 12.0,
+                    "source": "market_bars",
+                },
+            ]
+        }
+    )
+    db.get_all_ledger_entries_sync = lambda: [
+        {
+            "id": 1,
+            "entry_type": "cash_deposit",
+            "timestamp": "2026-06-18T09:00:00+08:00",
+            "amount": 1000.0,
+            "asset_class": "cash",
+            "source": "manual",
+        },
+        {
+            "id": 2,
+            "entry_type": "trade_buy",
+            "timestamp": "2026-06-18T10:00:00+08:00",
+            "symbol": "600001",
+            "direction": "buy",
+            "quantity": 10.0,
+            "price": 10.0,
+            "commission": 0.0,
+            "asset_class": "stock",
+            "source": "manual",
+        },
+    ]
+    db.get_market_calendar_snapshot_sync = lambda *, exchange, year: _verified_calendar(
+        year, holidays={"2026-06-19"}
+    )
+
+    points = build_daily_equity_series_from_ledger_history(
+        SimpleNamespace(db=db),
+        selected_range="all",
+        current_point=_current_point().model_copy(
+            update={
+                "timestamp": "2026-06-22T15:00:00+08:00",
+                "total": 1020.0,
+                "stocks": 120.0,
+                "cash": 900.0,
+            }
+        ),
+        now=datetime(2026, 6, 22, 15, 1, tzinfo=_SHANGHAI),
+    )
+
+    assert [point.timestamp[:10] for point in points] == [
+        "2026-06-18",
+        "2026-06-22",
+    ]
+    assert [point.total for point in points] == pytest.approx([1010.0, 1020.0])
+    assert all(point.valuation_status == "reconstructed" for point in points)
 
 
 def test_historical_projection_marks_missing_intermediate_weekday_as_gap() -> None:

@@ -385,6 +385,12 @@ export function useMarketBarsBackfillMutation() {
         queryClient.invalidateQueries({
           queryKey: ['market-quote-fetch-runs'],
         }),
+        queryClient.invalidateQueries({
+          queryKey: ['account-equity-curve-series'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['account-equity-curve'] }),
+        queryClient.invalidateQueries({ queryKey: ['account-state'] }),
+        queryClient.invalidateQueries({ queryKey: ['account-overview'] }),
       ]);
     },
   });

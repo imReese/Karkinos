@@ -353,7 +353,7 @@ export const overviewCopyZh = {
     indicativeSeries: (label: string) => `${label} · 指示估值`,
     historyStart: (date: string) => `当前可重建的账户历史从 ${date} 开始。`,
     indicativeHistoryNote:
-      '虚线仅表示已有但未通过完整估值门禁的历史数值；实线才是完整、可作为账户事实使用的估值。',
+      '同色虚线表示未通过完整估值门禁的历史，或跨接缺少估值证据的区间；用于连续阅读，不把缺失日期当作已确认账户估值。',
     rangeHigh: '区间最高',
     quoteStatus: '行情状态',
     realtimeUnrealizedPnl: '组合浮动盈亏',
