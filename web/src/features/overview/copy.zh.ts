@@ -156,6 +156,7 @@ export const overviewCopyZh = {
     strategyRecommendationSell: '卖出',
     strategyRecommendationRebalance: '再平衡',
     strategyRecommendationReview: '待人工复核',
+    strategyRecommendationViewAll: '查看全部',
     strategyRecommendationReadOnly:
       '只读建议 · 需要人工确认 · 不创建或提交券商订单',
     accountRecommendationUnavailableDetail:

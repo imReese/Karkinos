@@ -511,8 +511,8 @@ test('overview prioritizes account value, performance, holdings and risk across 
     const allocationRisk = (await page
       .getByTestId('overview-allocation-risk')
       .boundingBox())!;
-    const researchActions = (await page
-      .getByTestId('overview-research-actions')
+    const recommendation = (await page
+      .getByTestId('overview-strategy-recommendation')
       .boundingBox())!;
     const overflow = await page.evaluate(() => {
       const content = document.querySelector(
@@ -536,8 +536,9 @@ test('overview prioritizes account value, performance, holdings and risk across 
     expect(allocationRisk.y).toBeGreaterThanOrEqual(
       holdings.y + holdings.height,
     );
-    expect(researchActions.y).toBeGreaterThanOrEqual(
-      allocationRisk.y + allocationRisk.height,
+    expect(recommendation.y).toBeGreaterThanOrEqual(performance.y);
+    expect(recommendation.y).toBeLessThanOrEqual(
+      performance.y + performance.height,
     );
     expect(
       Math.abs(performance.x - holdings.x),
@@ -547,11 +548,8 @@ test('overview prioritizes account value, performance, holdings and risk across 
       Math.abs(holdings.x - allocationRisk.x),
       JSON.stringify(viewport),
     ).toBeLessThan(8);
-    expect(
-      Math.abs(allocationRisk.x - researchActions.x),
-      JSON.stringify(viewport),
-    ).toBeLessThan(8);
-    await expect(page.getByTestId('overview-today-digest')).toBeVisible();
+    await expect(page.getByTestId('overview-today-digest')).toHaveCount(0);
+    await expect(page.getByTestId('overview-research-actions')).toHaveCount(0);
     await expect(page.getByTestId('overview-data-status')).toHaveCount(0);
     await expect(page.getByTestId('overview-data-trust')).toHaveCount(0);
     await expect(page.getByTestId('overview-today-queue')).toHaveCount(0);

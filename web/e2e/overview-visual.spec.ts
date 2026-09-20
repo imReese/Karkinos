@@ -101,11 +101,13 @@ test('overview surfaces only manually reviewable strategy actions', async ({
   await page.goto('/overview');
 
   const recommendation = page.getByTestId('overview-strategy-recommendation');
-  await expect(recommendation).toContainText('1 个操作待人工确认');
+  await expect(recommendation).toContainText('待人工复核');
   await expect(recommendation).toContainText('买入');
   await expect(recommendation).toContainText('示例制造');
-  await expect(recommendation).toContainText('当前 59.7% → 目标 70.0%');
-  await expect(recommendation).toContainText('预计数量 100 股');
+  await expect(recommendation).toContainText('59.7%');
+  await expect(recommendation).toContainText('70.0%');
+  await expect(recommendation).toContainText('预计数量');
+  await expect(recommendation).toContainText('100 股');
   await expect(
     recommendation.getByRole('link', { name: '复核交易队列' }),
   ).toHaveAttribute('href', '/trading');

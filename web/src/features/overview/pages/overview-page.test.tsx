@@ -268,7 +268,10 @@ test('reads one coherent account projection and a separate canonical history', a
     '-¥314.51',
   );
   expect(
-    within(screen.getByTestId('overview-summary')).getByText(/37.6%/),
+    within(screen.getByTestId('overview-summary')).getByText('¥6,979.91'),
+  ).toBeVisible();
+  expect(
+    within(screen.getByTestId('overview-summary')).getByText('¥20,000.00'),
   ).toBeVisible();
   expect(
     within(screen.getByTestId('overview-summary')).queryByText(
@@ -285,10 +288,9 @@ test('shows the canonical daily strategy recommendation separately from operatio
   );
   expect(within(recommendation).getByText('最新策略建议')).toBeVisible();
   expect(await within(recommendation).findByText('无操作')).toBeVisible();
-  expect(within(recommendation).getByRole('link')).toHaveAttribute(
-    'href',
-    '/decision',
-  );
+  expect(
+    within(recommendation).getByRole('link', { name: '查看全部' }),
+  ).toHaveAttribute('href', '/decision');
 });
 
 test('explains why today has no actionable recommendation when evidence gates block it', async () => {
@@ -359,16 +361,16 @@ test('shows a manual-review strategy action without implying automatic execution
   const recommendation = await screen.findByTestId(
     'overview-strategy-recommendation',
   );
-  await waitFor(() =>
-    expect(recommendation).toHaveTextContent('1 个操作待人工确认'),
-  );
+  await waitFor(() => expect(recommendation).toHaveTextContent('待人工复核'));
   expect(recommendation).toHaveTextContent('最新策略建议');
-  expect(recommendation).toHaveTextContent('09/14');
+  expect(recommendation).toHaveTextContent('2026/09/14');
   expect(recommendation).toHaveTextContent('买入');
   expect(recommendation).toHaveTextContent('合成基金');
   expect(recommendation).toHaveTextContent('fixture-fund');
-  expect(recommendation).toHaveTextContent('当前 4.8% → 目标 12.0%');
-  expect(recommendation).toHaveTextContent('预计数量 25');
+  expect(recommendation).toHaveTextContent('4.8%');
+  expect(recommendation).toHaveTextContent('12.0%');
+  expect(recommendation).toHaveTextContent('预计数量');
+  expect(recommendation).toHaveTextContent('25 份');
   expect(
     within(recommendation).getByRole('link', { name: '复核交易队列' }),
   ).toHaveAttribute('href', '/trading');

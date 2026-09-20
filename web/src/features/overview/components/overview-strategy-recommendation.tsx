@@ -5,7 +5,11 @@ import {
 } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
-import { ExceptionBoundary, SectionHeader } from '../../../shared/ui/workbench';
+import {
+  ExceptionBoundary,
+  SectionHeader,
+  StatusBadge,
+} from '../../../shared/ui/workbench';
 import type {
   AccountStateResponse,
   DailyTradingPlanResponse,
@@ -110,25 +114,29 @@ export function OverviewStrategyRecommendation({
     recommendation?.status === 'manual_review_required'
       ? recommendation.actions
       : [];
+  const manualReview = recommendation?.status === 'manual_review_required';
 
   return (
     <section
       data-testid="overview-strategy-recommendation"
-      className={(
-        'min-w-0 border-b border-[var(--app-divider)] py-3.5 ' +
-        (className ?? '')
-      ).trim()}
+      className={('min-w-0 ' + (className ?? '')).trim()}
       aria-label={dashboard.strategyRecommendationTitle}
     >
       <SectionHeader
         title={dashboard.strategyRecommendationTitle}
         meta={recommendationDate === '--' ? undefined : recommendationDate}
+        actions={
+          <a
+            href="/decision"
+            className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+          >
+            {dashboard.strategyRecommendationViewAll}
+          </a>
+        }
       />
 
       {planQuery.isLoading && !plan ? (
-        <p className="app-type-compact mt-2 text-[var(--app-text-secondary)]">
-          {dashboard.tradingPlanLoading}
-        </p>
+        <div className="mt-3 h-28 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
       ) : planQuery.isError && !plan ? (
         <ExceptionBoundary
           tone="warning"
@@ -136,16 +144,24 @@ export function OverviewStrategyRecommendation({
           className="mt-3"
         />
       ) : plan ? (
-        <>
-          <p className="app-type-body mt-2 font-medium text-[var(--app-text)]">
-            {recommendationHeading(plan, copy)}
-          </p>
+        manualReview && actions.length ? (
+          <div
+            className="mt-3 min-w-0 rounded-[calc(var(--app-radius-control)*1.25)] border border-[var(--app-accent-border)] p-4"
+            style={{
+              background:
+                'linear-gradient(140deg, color-mix(in srgb, var(--app-accent) 10%, var(--app-surface)) 0%, color-mix(in srgb, var(--app-accent) 4%, var(--app-surface)) 100%)',
+            }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <StatusBadge tone="warning">
+                {dashboard.strategyRecommendationReview}
+              </StatusBadge>
+              <span className="app-type-label text-[var(--app-text-tertiary)]">
+                {locale === 'zh' ? '策略信号' : 'Strategy signal'}
+              </span>
+            </div>
 
-          {actions.length ? (
-            <ul
-              className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
-              data-testid="overview-decision-actions"
-            >
+            <ul className="mt-3 divide-y divide-[var(--app-divider)]">
               {actions.map((action, index) => {
                 const symbol = action.symbol ?? '';
                 const name = actionName(action, positions);
@@ -157,62 +173,80 @@ export function OverviewStrategyRecommendation({
                 return (
                   <li
                     key={action.action_id ?? `${symbol || 'action'}-${index}`}
-                    className="grid min-w-0 gap-1 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-x-5"
+                    className="min-w-0 py-3 first:pt-0 last:pb-0"
                   >
-                    <div className="min-w-0">
-                      <span className="font-semibold text-[var(--app-text)]">
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <span className="text-base font-semibold text-[var(--app-text)]">
                         {sideLabel(action.side, dashboard.decisionActionLabels)}
                       </span>
-                      <span className="ml-2 font-medium text-[var(--app-text)]">
+                      <span className="text-base font-semibold text-[var(--app-text)]">
                         {name}
                       </span>
                       {symbol && name !== symbol ? (
-                        <span className="ml-2 font-mono text-[var(--app-text-tertiary)]">
+                        <span className="font-mono text-sm text-[var(--app-text-tertiary)]">
                           {symbol}
                         </span>
                       ) : null}
                     </div>
-                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[var(--app-text-secondary)] sm:justify-end">
-                      <span className="whitespace-nowrap tabular-nums">
-                        {dashboard.strategyRecommendationCurrentWeight}{' '}
-                        {weight == null ? '--' : formatPercent(weight)}
-                        {' → '}
-                        {dashboard.strategyRecommendationTargetWeight}{' '}
-                        {action.target_weight == null
-                          ? '--'
-                          : formatPercent(action.target_weight)}
-                      </span>
-                      {action.estimated_quantity == null ? null : (
-                        <span className="whitespace-nowrap tabular-nums">
-                          {dashboard.strategyRecommendationQuantity}{' '}
-                          {formatQuantity(action.estimated_quantity)}{' '}
-                          {quantityUnit(action.asset_class, locale)}
-                        </span>
-                      )}
+
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="min-w-0">
+                        <div className="app-type-label text-[var(--app-text-tertiary)]">
+                          {locale === 'zh' ? '建议仓位' : 'Target allocation'}
+                        </div>
+                        <div className="mt-1 text-sm font-semibold tabular-nums text-[var(--app-text)]">
+                          {weight == null ? '--' : formatPercent(weight)}
+                          <span className="mx-1.5 text-[var(--app-text-tertiary)]">
+                            →
+                          </span>
+                          <span className="text-[var(--app-accent)]">
+                            {action.target_weight == null
+                              ? '--'
+                              : formatPercent(action.target_weight)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="app-type-label text-[var(--app-text-tertiary)]">
+                          {dashboard.strategyRecommendationQuantity}
+                        </div>
+                        <div className="mt-1 text-sm font-semibold tabular-nums text-[var(--app-text)]">
+                          {action.estimated_quantity == null
+                            ? '--'
+                            : `${formatQuantity(action.estimated_quantity)} ${quantityUnit(
+                                action.asset_class,
+                                locale,
+                              )}`}
+                        </div>
+                      </div>
                     </div>
                   </li>
                 );
               })}
             </ul>
-          ) : null}
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-            {recommendation?.status === 'manual_review_required' ? (
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--app-divider)] pt-3">
               <a
                 href="/trading"
                 className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
               >
                 {dashboard.viewTrading}
               </a>
-            ) : null}
-            <a
-              href="/decision"
-              className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
-            >
-              {dashboard.viewDecision}
-            </a>
+              <a
+                href="/decision"
+                className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+              >
+                {dashboard.viewDecision}
+              </a>
+            </div>
           </div>
-        </>
+        ) : (
+          <div className="mt-3 border-t border-[var(--app-divider)] pt-3">
+            <p className="app-type-body font-semibold text-[var(--app-text)]">
+              {recommendationHeading(plan, copy)}
+            </p>
+          </div>
+        )
       ) : null}
     </section>
   );

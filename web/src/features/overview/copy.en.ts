@@ -178,6 +178,7 @@ export const overviewCopyEn = {
     strategyRecommendationSell: 'Sell',
     strategyRecommendationRebalance: 'Rebalance',
     strategyRecommendationReview: 'Manual review',
+    strategyRecommendationViewAll: 'View all',
     strategyRecommendationReadOnly:
       'Read-only recommendation · manual confirmation required · no broker order is created or submitted',
     accountRecommendationUnavailableDetail:
