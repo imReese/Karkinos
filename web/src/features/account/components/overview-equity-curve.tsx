@@ -14,7 +14,7 @@ import { SectionHeader } from '../../../shared/ui/workbench';
 import type { EquityCurveRange, EquitySeriesPoint } from '../api';
 import {
   NO_VISIBLE_SERIES,
-  padYearToDateWithZeroBaseline,
+  padRangeWithZeroBaseline,
   resolveXAxisDomain,
   resolveXAxisTicks,
   resolveYAxisDomain,
@@ -66,7 +66,7 @@ export function OverviewEquityCurve({
     'conflicting',
   ]);
   const displayPoints =
-    range === 'ytd' ? padYearToDateWithZeroBaseline(points) : points;
+    range === 'all' ? points : padRangeWithZeroBaseline(points, range);
   const chartPoints = toChartPoints(displayPoints).map((point) => {
     const rawValue = point[selectedSeries];
     const finiteValue =

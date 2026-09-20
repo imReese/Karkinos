@@ -21,6 +21,7 @@ from server.projections.portfolio_read_snapshot_persistence import (
 from server.projections.portfolio_views.historical_ledger_series import (
     build_daily_equity_series_from_ledger_history,
     equity_series_bucket,
+    equity_series_range_start_date,
     historical_quote_for_equity_day,
     ledger_entry_timestamp,
     load_ledger_entries_for_equity_series,
@@ -41,13 +42,6 @@ from server.services.valuation_snapshot import (
 _CN_AFTERNOON_CLOSE = time(15, 0)
 
 _SH_TZ = ZoneInfo("Asia/Shanghai")
-
-_EQUITY_SERIES_RANGE_DAYS = {
-    "5d": 5,
-    "1m": 31,
-    "6m": 183,
-    "1y": 366,
-}
 
 _CAPITAL_INFLOW_LEDGER_TYPES = {"cash_deposit", "deposit"}
 
@@ -73,18 +67,17 @@ def daily_equity_series_for_range(
 
     parsed_points.sort(key=lambda item: item[0])
     end_timestamp = parsed_points[-1][0]
-    range_days = _EQUITY_SERIES_RANGE_DAYS.get(selected_range)
-    if selected_range == "ytd":
-        start_timestamp = datetime(
-            end_timestamp.year,
-            1,
-            1,
-            tzinfo=end_timestamp.tzinfo or _SH_TZ,
-        )
-    elif range_days is None:
+    requested_start_date = equity_series_range_start_date(
+        end_timestamp.date(), selected_range
+    )
+    if requested_start_date is None:
         start_timestamp = parsed_points[0][0]
     else:
-        start_timestamp = end_timestamp - timedelta(days=range_days)
+        start_timestamp = datetime.combine(
+            requested_start_date,
+            time.min,
+            tzinfo=end_timestamp.tzinfo or _SH_TZ,
+        )
 
     start_date = start_timestamp.date()
     end_date = end_timestamp.date()

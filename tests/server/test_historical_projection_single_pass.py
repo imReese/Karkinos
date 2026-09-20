@@ -10,6 +10,7 @@ from server.models import EquitySeriesPoint
 from server.projections import service as projection_service
 from server.projections.portfolio_views.historical_ledger_series import (
     build_daily_equity_series_from_ledger_history,
+    equity_series_range_start_date,
 )
 from server.projections.portfolio_views.historical_series import (
     bind_current_equity_valuation,
@@ -17,6 +18,11 @@ from server.projections.portfolio_views.historical_series import (
 )
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def test_equity_series_six_month_range_uses_calendar_months() -> None:
+    assert equity_series_range_start_date(date(2026, 9, 18), "6m") == date(2026, 3, 18)
+    assert equity_series_range_start_date(date(2026, 3, 31), "1m") == date(2026, 2, 28)
 
 
 def _ledger_rows() -> list[dict[str, object]]:

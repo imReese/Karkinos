@@ -3,7 +3,8 @@ import { expect, test } from 'vitest';
 import type { EquitySeriesPoint } from '../api';
 import {
   filterByRange,
-  padYearToDateWithZeroBaseline,
+  padRangeWithZeroBaseline,
+  resolveRangeStartTimestamp,
   resolveXAxisDomain,
   resolveXAxisTicks,
   toChartPoints,
@@ -23,16 +24,44 @@ function point(timestamp: string, total: number): EquitySeriesPoint {
 }
 
 test('year-to-date pads the pre-account part of the year with a flat zero baseline', () => {
-  const padded = padYearToDateWithZeroBaseline([
-    point('2026-04-01T15:00:00+08:00', 3000),
-    point('2026-04-02T15:00:00+08:00', 3000),
-  ]);
+  const padded = padRangeWithZeroBaseline(
+    [
+      point('2026-04-01T15:00:00+08:00', 3000),
+      point('2026-04-02T15:00:00+08:00', 3000),
+    ],
+    'ytd',
+  );
 
   expect(padded).toHaveLength(4);
   expect(padded[0]?.total).toBe(0);
   expect(padded[1]?.total).toBe(0);
-  expect(padded[0]?.timestamp.slice(0, 10)).toBe('2026-01-01');
+  expect(new Date(padded[0]?.timestamp ?? '').getTime()).toBe(
+    new Date('2026-01-01T00:00:00+08:00').getTime(),
+  );
   expect(padded[1]?.timestamp.slice(0, 10)).toBe('2026-03-31');
+  expect(padded[2]?.timestamp.slice(0, 10)).toBe('2026-04-01');
+  expect(padded[2]?.total).toBe(3000);
+});
+
+test('six-month range uses exact calendar-month semantics', () => {
+  const latest = new Date('2026-09-18T15:00:00+08:00').getTime();
+  expect(resolveRangeStartTimestamp(latest, '6m')).toBe(
+    new Date('2026-03-18T15:00:00+08:00').getTime(),
+  );
+});
+
+test('six-month range pads missing pre-account history with zero', () => {
+  const padded = padRangeWithZeroBaseline(
+    [
+      point('2026-04-01T15:00:00+08:00', 3000),
+      point('2026-09-18T15:00:00+08:00', 19000),
+    ],
+    '6m',
+  );
+  expect(padded[0]?.timestamp.slice(0, 10)).toBe('2026-03-18');
+  expect(padded[0]?.total).toBe(0);
+  expect(padded[1]?.timestamp.slice(0, 10)).toBe('2026-03-31');
+  expect(padded[1]?.total).toBe(0);
   expect(padded[2]?.timestamp.slice(0, 10)).toBe('2026-04-01');
   expect(padded[2]?.total).toBe(3000);
 });

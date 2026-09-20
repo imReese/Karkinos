@@ -11,7 +11,7 @@ export {
   isMissingQuoteObservation,
   isUnconfirmedQuoteStatus,
   NO_VISIBLE_SERIES,
-  padYearToDateWithZeroBaseline,
+  padRangeWithZeroBaseline,
   RANGE_DAYS,
   readChartElementSize,
   resolveDailyChange,
