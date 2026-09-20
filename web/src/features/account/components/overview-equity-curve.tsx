@@ -185,7 +185,7 @@ export function OverviewEquityCurve({
         ref={chartRef}
         className={
           (usablePoints.length >= 2
-            ? 'h-[200px] sm:h-[224px] xl:h-[236px]'
+            ? 'h-[220px] sm:h-[260px] xl:h-[300px]'
             : 'h-[72px] sm:h-[84px]') + ' min-w-0 overflow-hidden'
         }
       >

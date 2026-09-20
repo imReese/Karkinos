@@ -32,6 +32,9 @@ export function OverviewResolvedWorkspace({
   const showAttention =
     state.overview.attention_status !== 'available' ||
     state.overview.user_attention.length > 0;
+  const hasPerformanceDrivers = Boolean(
+    state.summary.today_contributors?.length,
+  );
 
   const performance =
     equityCurve.isLoading && !equityCurve.data ? (
@@ -68,12 +71,17 @@ export function OverviewResolvedWorkspace({
       <OverviewSummary summary={state.summary} />
 
       <section
-        className="min-w-0 border-b border-[var(--app-divider)] py-4"
+        className="min-w-0 border-b border-[var(--app-divider)] py-5"
         data-testid="overview-performance-card"
       >
-        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.72fr)]">
-          <div className="min-w-0">{performance}</div>
-          <OverviewTodayDigest state={state} />
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,2.15fr)_minmax(19rem,0.85fr)] xl:gap-0 xl:divide-x xl:divide-[var(--app-divider)]">
+          <div className="min-w-0 xl:pr-7">{performance}</div>
+          <OverviewStrategyRecommendation
+            planQuery={controller.tradingPlan}
+            positions={state.snapshot.positions}
+            currentWeightBySymbol={weightBySymbol}
+            className="xl:pl-7"
+          />
         </div>
       </section>
 
@@ -84,31 +92,28 @@ export function OverviewResolvedWorkspace({
         className="border-b border-[var(--app-divider)]"
       />
 
+      {hasPerformanceDrivers ? (
+        <section
+          className="min-w-0 border-b border-[var(--app-divider)] py-4"
+          data-testid="overview-session-impact"
+        >
+          <OverviewTodayDigest state={state} />
+        </section>
+      ) : null}
+
       <OverviewAllocationRiskSection state={state} />
-      <section
-        className={
-          'min-w-0 border-b border-[var(--app-divider)] py-4 ' +
-          (showAttention
-            ? 'grid gap-6 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-[var(--app-divider)]'
-            : '')
-        }
-        data-testid="overview-research-actions"
-      >
-        <OverviewStrategyRecommendation
-          planQuery={controller.tradingPlan}
-          positions={state.snapshot.positions}
-          currentWeightBySymbol={weightBySymbol}
-          className={
-            showAttention ? 'border-b-0 py-0 lg:pr-6' : 'border-b-0 py-0'
-          }
-        />
-        {showAttention ? (
+
+      {showAttention ? (
+        <section
+          className="min-w-0 border-b border-[var(--app-divider)] py-4"
+          data-testid="overview-research-actions"
+        >
           <DashboardTodayQueue
             overview={state.overview}
-            className="border-b-0 py-0 lg:pl-6"
+            className="border-b-0 py-0"
           />
-        ) : null}
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 }

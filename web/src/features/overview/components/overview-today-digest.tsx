@@ -59,8 +59,10 @@ function DriverList({ title, items }: { title: string; items: Driver[] }) {
 
 export function OverviewTodayDigest({
   state,
+  className,
 }: {
   state: AccountStateResponse;
+  className?: string;
 }) {
   const { locale } = usePreferences();
   const labels = overviewPresentation[locale];
@@ -76,7 +78,7 @@ export function OverviewTodayDigest({
 
   return (
     <aside
-      className="min-w-0 xl:border-l xl:border-[var(--app-divider)] xl:pl-6"
+      className={('min-w-0 ' + (className ?? '')).trim()}
       data-testid="overview-today-digest"
     >
       <SectionHeader title={overviewSessionLabels(state, locale).drivers} />
