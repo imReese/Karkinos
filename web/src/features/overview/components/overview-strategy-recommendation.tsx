@@ -25,12 +25,39 @@ type RecommendationAction = NonNullable<
   DailyTradingPlanResponse['account_action_recommendation']
 >['actions'][number];
 
+type PresentationLevel =
+  | 'manual_review'
+  | 'portfolio_preview'
+  | 'signal'
+  | 'no_action'
+  | 'blocked'
+  | 'unavailable';
+
 function sideLabel(
   side: string | null,
   labels: Record<string, string>,
 ): string {
   if (!side) return '--';
   return labels[side] ?? side;
+}
+
+function fallbackPresentationLevel(
+  recommendation:
+    DailyTradingPlanResponse['account_action_recommendation'] | undefined,
+): PresentationLevel {
+  switch (recommendation?.status) {
+    case 'manual_review_required':
+      return 'manual_review';
+    case 'no_action':
+      return 'no_action';
+    case 'blocked':
+      return 'blocked';
+    case 'paper_shadow_required':
+      return 'signal';
+    case 'unavailable':
+    default:
+      return 'unavailable';
+  }
 }
 
 function recommendationHeading(
@@ -40,15 +67,22 @@ function recommendationHeading(
   const recommendation = plan.account_action_recommendation;
   const dashboard = copy.overview.dashboard;
   if (!recommendation) return dashboard.accountRecommendationUnavailable;
+  if (
+    recommendation.presentation?.configuration_blockers.includes(
+      'promoted_strategy_not_configured',
+    )
+  ) {
+    return dashboard.strategyRecommendationConfigurationRequired;
+  }
   switch (recommendation.status) {
     case 'no_action':
       return dashboard.accountRecommendationNoAction;
-    case 'manual_review_required':
-      return dashboard.tradingPlanManualReady(recommendation.actions.length);
     case 'paper_shadow_required':
       return dashboard.accountRecommendationPaperShadow;
     case 'blocked':
       return dashboard.accountRecommendationBlocked;
+    case 'manual_review_required':
+      return dashboard.tradingPlanManualReady(recommendation.actions.length);
     case 'unavailable':
     default:
       return dashboard.accountRecommendationUnavailable;
@@ -91,6 +125,23 @@ function quantityUnit(assetClass: string | null, locale: 'en' | 'zh') {
   return assetClass === 'stock' ? '股' : '份';
 }
 
+function statusLabel(
+  level: PresentationLevel,
+  dashboard: ReturnType<typeof useCopy>['overview']['dashboard'],
+) {
+  if (level === 'manual_review') return dashboard.strategyRecommendationReview;
+  if (level === 'portfolio_preview') {
+    return dashboard.strategyRecommendationPortfolioPreview;
+  }
+  return dashboard.strategyRecommendationSignal;
+}
+
+function statusTone(level: PresentationLevel) {
+  if (level === 'manual_review') return 'warning' as const;
+  if (level === 'portfolio_preview') return 'info' as const;
+  return 'neutral' as const;
+}
+
 export function OverviewStrategyRecommendation({
   planQuery,
   positions,
@@ -107,14 +158,23 @@ export function OverviewStrategyRecommendation({
   const dashboard = copy.overview.dashboard;
   const plan = planQuery.data;
   const recommendation = plan?.account_action_recommendation;
+  const presentationLevel: PresentationLevel =
+    recommendation?.presentation?.level ??
+    fallbackPresentationLevel(recommendation);
   const recommendationDate = formatDate(
     plan?.plan_date ?? recommendation?.decision_date,
   );
-  const actions =
-    recommendation?.status === 'manual_review_required'
-      ? recommendation.actions
-      : [];
-  const manualReview = recommendation?.status === 'manual_review_required';
+  const presentationActions =
+    presentationLevel === 'manual_review'
+      ? (recommendation?.actions ?? [])
+      : (recommendation?.presentation?.actions ?? []);
+  const showDetailedActions =
+    ['manual_review', 'portfolio_preview', 'signal'].includes(
+      presentationLevel,
+    ) && presentationActions.length > 0;
+  const showPortfolioSizing =
+    presentationLevel === 'manual_review' ||
+    presentationLevel === 'portfolio_preview';
 
   return (
     <section
@@ -145,7 +205,7 @@ export function OverviewStrategyRecommendation({
           className="mt-3"
         />
       ) : plan ? (
-        manualReview && actions.length ? (
+        showDetailedActions ? (
           <div
             className="mt-3 min-w-0 rounded-[calc(var(--app-radius-control)*1.25)] border border-[var(--app-accent-border)] p-4"
             style={{
@@ -154,16 +214,16 @@ export function OverviewStrategyRecommendation({
             }}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <StatusBadge tone="warning">
-                {dashboard.strategyRecommendationReview}
+              <StatusBadge tone={statusTone(presentationLevel)}>
+                {statusLabel(presentationLevel, dashboard)}
               </StatusBadge>
               <span className="app-type-label text-[var(--app-text-tertiary)]">
-                {locale === 'zh' ? '策略信号' : 'Strategy signal'}
+                {locale === 'zh' ? '只读' : 'Read only'}
               </span>
             </div>
 
             <ul className="mt-3 divide-y divide-[var(--app-divider)]">
-              {actions.map((action, index) => {
+              {presentationActions.map((action, index) => {
                 const symbol = action.symbol ?? '';
                 const name = actionName(action, positions);
                 const weight = currentWeight(
@@ -190,49 +250,63 @@ export function OverviewStrategyRecommendation({
                       ) : null}
                     </div>
 
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="min-w-0">
-                        <div className="app-type-label text-[var(--app-text-tertiary)]">
-                          {locale === 'zh' ? '建议仓位' : 'Target allocation'}
+                    {showPortfolioSizing ? (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="min-w-0">
+                          <div className="app-type-label text-[var(--app-text-tertiary)]">
+                            {locale === 'zh' ? '建议仓位' : 'Target allocation'}
+                          </div>
+                          <div className="mt-1 text-sm font-semibold tabular-nums text-[var(--app-text)]">
+                            {weight == null ? '--' : formatPercent(weight)}
+                            <span className="mx-1.5 text-[var(--app-text-tertiary)]">
+                              →
+                            </span>
+                            <span className="text-[var(--app-accent)]">
+                              {action.target_weight == null
+                                ? '--'
+                                : formatPercent(action.target_weight)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="mt-1 text-sm font-semibold tabular-nums text-[var(--app-text)]">
-                          {weight == null ? '--' : formatPercent(weight)}
-                          <span className="mx-1.5 text-[var(--app-text-tertiary)]">
-                            →
-                          </span>
-                          <span className="text-[var(--app-accent)]">
-                            {action.target_weight == null
-                              ? '--'
-                              : formatPercent(action.target_weight)}
-                          </span>
-                        </div>
+                        {presentationLevel === 'manual_review' ? (
+                          <div className="min-w-0">
+                            <div className="app-type-label text-[var(--app-text-tertiary)]">
+                              {dashboard.strategyRecommendationQuantity}
+                            </div>
+                            <div className="mt-1 text-sm font-semibold tabular-nums text-[var(--app-text)]">
+                              {action.estimated_quantity == null
+                                ? '--'
+                                : `${formatQuantity(action.estimated_quantity)} ${quantityUnit(
+                                    action.asset_class,
+                                    locale,
+                                  )}`}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="min-w-0">
-                        <div className="app-type-label text-[var(--app-text-tertiary)]">
-                          {dashboard.strategyRecommendationQuantity}
-                        </div>
-                        <div className="mt-1 text-sm font-semibold tabular-nums text-[var(--app-text)]">
-                          {action.estimated_quantity == null
-                            ? '--'
-                            : `${formatQuantity(action.estimated_quantity)} ${quantityUnit(
-                                action.asset_class,
-                                locale,
-                              )}`}
-                        </div>
-                      </div>
-                    </div>
+                    ) : null}
                   </li>
                 );
               })}
             </ul>
 
+            {presentationLevel !== 'manual_review' ? (
+              <p className="app-type-compact mt-3 border-t border-[var(--app-divider)] pt-3 text-[var(--app-text-secondary)]">
+                {presentationLevel === 'portfolio_preview'
+                  ? dashboard.strategyRecommendationRefreshForReview
+                  : dashboard.strategyRecommendationSignalOnly}
+              </p>
+            ) : null}
+
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--app-divider)] pt-3">
-              <a
-                href="/trading"
-                className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
-              >
-                {dashboard.viewTrading}
-              </a>
+              {presentationLevel === 'manual_review' ? (
+                <a
+                  href="/trading"
+                  className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+                >
+                  {dashboard.viewTrading}
+                </a>
+              ) : null}
               <a
                 href="/decision"
                 className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"

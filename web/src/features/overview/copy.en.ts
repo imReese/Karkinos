@@ -178,6 +178,14 @@ export const overviewCopyEn = {
     strategyRecommendationSell: 'Sell',
     strategyRecommendationRebalance: 'Rebalance',
     strategyRecommendationReview: 'Manual review',
+    strategyRecommendationPortfolioPreview: 'Portfolio preview',
+    strategyRecommendationSignal: 'Strategy signal',
+    strategyRecommendationConfigurationRequired:
+      'No promoted strategy is configured for account recommendations',
+    strategyRecommendationRefreshForReview:
+      'Refresh account truth and market data before manual review',
+    strategyRecommendationSignalOnly:
+      'Showing strategy direction only; confirm account state before sizing',
     strategyRecommendationViewAll: 'View all',
     strategyRecommendationReadOnly:
       'Read-only recommendation · manual confirmation required · no broker order is created or submitted',

@@ -317,6 +317,128 @@ def test_manual_review_projection_preserves_display_name_for_overview() -> None:
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+def test_stale_execution_evidence_keeps_verified_signal_as_portfolio_preview() -> None:
+    decision, plan = _current_gate_inputs()
+    decision["candidates"] = [{"action_id": 7, "symbol": "600519"}]
+    current_blockers = [
+        "account_truth_not_fresh",
+        "account_truth_not_bound_to_plan_date",
+        "account_truth_age_exceeds_reviewed_limit",
+        "account_truth_too_old_for_decision",
+        "market_quote_too_old_for_decision",
+        "decision_generation_time_not_bound_to_plan_date",
+        "plan_generation_time_not_bound_to_plan_date",
+    ]
+    recommendation = build_account_action_recommendation(
+        decision_payload=decision,
+        trading_plan=plan,
+        promoted_scan={
+            "verified": True,
+            "status": "completed",
+            "blockers": [],
+            "selected_signal_count": 1,
+            "signals": [
+                {
+                    "strategy_id": "ai_formula_shadow:one",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "target_weight": 0.12,
+                }
+            ],
+            "strategy_bindings": [
+                {
+                    "strategy_id": "ai_formula_shadow:one",
+                    "order_generation_gate_fingerprint": "sha256:" + "a" * 64,
+                }
+            ],
+        },
+        current_evidence_blockers=current_blockers,
+        current_evidence_fingerprint="e" * 64,
+    )
+
+    assert recommendation["status"] == "blocked"
+    assert recommendation["presentation"]["level"] == "portfolio_preview"
+    assert recommendation["presentation"]["portfolio_preview_status"] == "ready"
+    assert recommendation["presentation"]["manual_review_status"] == "blocked"
+    assert recommendation["presentation"]["actions"][0]["symbol"] == "600519"
+    assert recommendation["presentation"]["actions"][0]["target_weight"] == 0.12
+    assert recommendation["presentation"]["actions"][0]["estimated_quantity"] is None
+    assert recommendation["presentation"]["authorizes_execution"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_structural_account_mismatch_downgrades_preview_to_signal_only() -> None:
+    decision, plan = _current_gate_inputs()
+    decision["summary"]["account_truth"]["unresolved_mismatch_count"] = 1
+    recommendation = build_account_action_recommendation(
+        decision_payload=decision,
+        trading_plan=plan,
+        promoted_scan={
+            "verified": True,
+            "status": "completed",
+            "blockers": [],
+            "selected_signal_count": 1,
+            "signals": [
+                {
+                    "strategy_id": "ai_formula_shadow:one",
+                    "symbol": "600519",
+                    "direction": "sell",
+                    "target_weight": 0.0,
+                }
+            ],
+            "strategy_bindings": [],
+        },
+        current_evidence_blockers=["account_truth_unresolved_mismatch"],
+        current_evidence_fingerprint="e" * 64,
+    )
+
+    assert recommendation["status"] == "blocked"
+    assert recommendation["presentation"]["level"] == "signal"
+    assert recommendation["presentation"]["signal_status"] == "ready"
+    assert (
+        "portfolio_preview_unresolved_mismatch"
+        in (recommendation["presentation"]["portfolio_preview_blockers"])
+    )
+    assert recommendation["presentation"]["manual_review_status"] == "blocked"
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_missing_promoted_strategy_is_configuration_readiness_not_action_authority() -> (
+    None
+):
+    recommendation = build_account_action_recommendation(
+        decision_payload={"decision_date": "2026-09-01", "candidates": []},
+        trading_plan={
+            "manual_ready_count": 0,
+            "paper_shadow_ready_count": 0,
+            "blocked_count": 0,
+            "blockers": [],
+            "order_intents": [],
+        },
+        promoted_scan={
+            "verified": False,
+            "status": "unavailable",
+            "blockers": ["promoted_strategy_not_configured"],
+            "selected_signal_count": 0,
+            "signals": [],
+            "strategy_bindings": [],
+        },
+        current_evidence_blockers=[],
+        current_evidence_fingerprint="e" * 64,
+    )
+
+    assert recommendation["status"] == "unavailable"
+    assert recommendation["presentation"]["level"] == "unavailable"
+    assert recommendation["presentation"]["configuration_blockers"] == [
+        "promoted_strategy_not_configured"
+    ]
+    assert recommendation["presentation"]["authorizes_execution"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_unverified_scan_cannot_borrow_manual_ready_plan_authority() -> None:
     recommendation = build_account_action_recommendation(
         decision_payload={
