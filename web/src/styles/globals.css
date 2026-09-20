@@ -27,8 +27,8 @@
   --app-font-size-primary-metric-mobile: 28px;
   --app-font-size-primary-metric: 30px;
   --app-font-size-primary-metric-wide: 32px;
-  --app-font-size-overview-hero: clamp(2.75rem, 4.7vw, 4.9rem);
-  --app-font-size-overview-headline: clamp(1.55rem, 2.2vw, 2.15rem);
+  --app-font-size-overview-hero: clamp(2.35rem, 3.5vw, 3.65rem);
+  --app-font-size-overview-headline: clamp(1.3rem, 1.65vw, 1.75rem);
   --app-font-size-overview-section: 18px;
   --app-font-size-subsection-title: 14px;
   --app-font-size-body: 13px;
@@ -43,8 +43,8 @@
   --app-line-height-section-title: 22px;
   --app-line-height-metric: 22px;
   --app-line-height-primary-metric: 32px;
-  --app-line-height-overview-hero: 0.96;
-  --app-line-height-overview-headline: 1.05;
+  --app-line-height-overview-hero: 0.98;
+  --app-line-height-overview-headline: 1.08;
   --app-line-height-overview-section: 24px;
   --app-line-height-subsection-title: 20px;
   --app-line-height-body: 20px;
@@ -1492,6 +1492,10 @@ select:is(.app-field, .app-input):not([multiple]) {
 .overview-spotlight-heading .app-type-section-title {
   font-size: var(--app-font-size-overview-section);
   line-height: var(--app-line-height-overview-section);
+}
+
+.overview-hero-support .app-metric-strip-item {
+  padding-block: 7px;
 }
 
 @media (min-width: 640px) {
