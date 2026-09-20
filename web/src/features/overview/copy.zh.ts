@@ -1,7 +1,7 @@
 export const overviewCopyZh = {
   kicker: '总览',
   title: '投资总览',
-  subtitle: '先确认账户事实，再处理异常与当前持仓，最后进入分析与历史。',
+  subtitle: '从账户事实出发，先看资产与收益，再看持仓、风险与研究。',
   modeHelper: '账户视角看资本结构，策略视角看收益质量和执行结果。',
   loading: '正在读取账户事实和当前持仓。',
   error: '账户总览或当前持仓读取失败。',
@@ -47,7 +47,8 @@ export const overviewCopyZh = {
     evidenceIdentity: (asOf: string) => `估值截至 ${asOf}`,
   },
   dashboard: {
-    equityPanel: '资金曲线',
+    equityPanel: '资产表现',
+    dataTrust: '数据可信度 / 系统状态',
     valuationCoverage: '估值覆盖',
     valuationCoverageDetail:
       '只有覆盖全部当前持仓且通过证据门禁的估值，才会进入权威总资产与盈亏。',
@@ -147,18 +148,18 @@ export const overviewCopyZh = {
     strategyDecisionUnavailable: '策略候选信号暂不可用',
     strategyCandidateEmptyDetail:
       '当前没有买入、卖出、持有或再平衡信号进入队列。',
-    strategyRecommendationTitle: '今日决策与操作',
+    strategyRecommendationTitle: '研究与信号',
     strategyRecommendationQuantity: '数量',
     strategyRecommendationReadOnly:
       '只读建议 · 需要人工确认 · 不创建或提交券商订单',
     accountRecommendationUnavailableDetail:
-      '当前证据链尚不足以形成可复核的今日账户操作；先处理下面的阻断项。',
-    decisionBlockers: '决策阻断',
-    decisionBlocked: 'BLOCKED',
-    decisionEvidence: '证据',
+      '当前证据尚不足以形成可复核的账户建议；先完成待处理事项后再判断。',
+    decisionBlockers: '需要补齐',
+    decisionBlocked: '待处理',
+    decisionEvidence: '当前状态',
     decisionStrategyResearch: '研究策略',
-    decisionStrategyNotReady: 'NOT READY',
-    decisionStrategyNextStep: '进入证据研究并完成策略晋级',
+    decisionStrategyNotReady: '待补研究',
+    decisionStrategyNextStep: '进入证据研究',
     decisionTaskLabels: {
       data_refresh: '行情数据',
       account_truth: '账户事实',
@@ -202,10 +203,10 @@ export const overviewCopyZh = {
     accountRecommendationNoAction: '今日账户操作：无操作',
     accountRecommendationNoActionDetail:
       '已完成当日晋级策略扫描，未产生账户操作信号。',
-    accountRecommendationBlocked: '今日账户操作尚未就绪',
-    accountRecommendationUnavailable: '今日账户建议证据不可用',
+    accountRecommendationBlocked: '今日账户操作暂不可用',
+    accountRecommendationUnavailable: '今日建议暂不可用',
     accountRecommendationReason: (reasons: string) =>
-      `阻断证据：${reasons || '尚未形成可核验的账户建议'}。`,
+      `当前原因：${reasons || '尚未形成可核验的账户建议'}。`,
     researchOperationCandidate:
       '研究型量化操作候选（不可执行，账户资格未评估）',
     researchOperationDetail: (summary: string) =>

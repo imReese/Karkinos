@@ -40,16 +40,6 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
         copy.overview.cards.positionsCount + ' · ' + summary.positions_count,
     },
     {
-      key: 'latest',
-      label: labels.latestPnl,
-      value: financialValue(summary.today_pnl, labels.pendingValuation),
-      tone: latestUnavailable
-        ? 'text-[var(--app-text)]'
-        : pnlTone(summary.today_pnl),
-      testId: 'overview-session-pnl',
-      detail: shortDate(summary.latest_session_date),
-    },
-    {
       key: 'cumulative',
       label: copy.overview.cards.cumulativePnl,
       value: financialValue(summary.cumulative_pnl, labels.pendingValuation),
@@ -61,6 +51,16 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
         summary.cumulative_return == null
           ? labels.returnUnavailable
           : formatPercent(summary.cumulative_return),
+    },
+    {
+      key: 'latest',
+      label: labels.latestPnl,
+      value: financialValue(summary.today_pnl, labels.pendingValuation),
+      tone: latestUnavailable
+        ? 'text-[var(--app-text)]'
+        : pnlTone(summary.today_pnl),
+      testId: 'overview-session-pnl',
+      detail: shortDate(summary.latest_session_date),
     },
     {
       key: 'cash',
@@ -115,13 +115,12 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
         className="overview-supporting-metrics border-b-0"
         items={[
           {
-            id: 'unrealized',
-            label: copy.overview.cards.unrealizedPnl,
+            id: 'deposits',
+            label: copy.overview.cards.netDeposits,
             value: financialValue(
-              summary.unrealized_pnl,
+              summary.total_deposits,
               labels.pendingValuation,
             ),
-            tone: metricTone(summary.unrealized_pnl),
           },
           {
             id: 'realized',
@@ -133,12 +132,13 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
             tone: metricTone(summary.realized_pnl),
           },
           {
-            id: 'deposits',
-            label: copy.overview.cards.netDeposits,
+            id: 'unrealized',
+            label: copy.overview.cards.unrealizedPnl,
             value: financialValue(
-              summary.total_deposits,
+              summary.unrealized_pnl,
               labels.pendingValuation,
             ),
+            tone: metricTone(summary.unrealized_pnl),
           },
           {
             id: 'positions',

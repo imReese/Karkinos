@@ -11,8 +11,10 @@ import { overviewPresentation } from '../model/overview-presentation';
 
 export function DashboardTodayQueue({
   overview,
+  className,
 }: {
   overview: AccountStateResponse['overview'];
+  className?: string;
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -26,7 +28,10 @@ export function DashboardTodayQueue({
     <section
       data-testid="overview-today-queue"
       aria-label={labels.attention}
-      className="min-w-0 border-b border-[var(--app-divider)] py-3.5"
+      className={(
+        'min-w-0 border-b border-[var(--app-divider)] py-3.5 ' +
+        (className ?? '')
+      ).trim()}
     >
       <SectionHeader
         title={labels.attention}

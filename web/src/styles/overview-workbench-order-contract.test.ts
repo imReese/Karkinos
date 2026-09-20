@@ -20,25 +20,29 @@ function indexOfRequired(fragment: string) {
   return index;
 }
 
-test('overview reads like an investment summary before diagnostics', () => {
-  const summary = indexOfRequired('<OverviewSummary');
+test('overview reads from account context into performance, holdings and low-priority diagnostics', () => {
   const status = indexOfRequired('<OverviewDataStatus');
-  const attention = indexOfRequired('<DashboardTodayQueue');
-  const holdings = indexOfRequired('<OverviewHoldingsSection');
+  const summary = indexOfRequired('<OverviewSummary');
   const performance = indexOfRequired(
     'data-testid="overview-performance-card"',
   );
+  const todayDigest = indexOfRequired('<OverviewTodayDigest');
+  const holdings = indexOfRequired('<OverviewHoldingsSection');
+  const allocationRisk = indexOfRequired('<OverviewAllocationRiskSection');
   const recommendation = indexOfRequired('<OverviewStrategyRecommendation');
+  const attention = indexOfRequired('<DashboardTodayQueue');
+  const dataTrust = indexOfRequired('<OverviewDataTrustStrip');
   const valuationCoverage = indexOfRequired('<OverviewValuationCoverage');
-  const marketStatus = indexOfRequired('<OverviewMarketStatus');
   const details = indexOfRequired('<OverviewDataDetails');
 
-  expect(summary).toBeLessThan(status);
-  expect(status).toBeLessThan(attention);
-  expect(attention).toBeLessThan(holdings);
-  expect(holdings).toBeLessThan(performance);
-  expect(performance).toBeLessThan(recommendation);
-  expect(recommendation).toBeLessThan(valuationCoverage);
-  expect(valuationCoverage).toBeLessThan(marketStatus);
-  expect(marketStatus).toBeLessThan(details);
+  expect(status).toBeLessThan(summary);
+  expect(summary).toBeLessThan(performance);
+  expect(performance).toBeLessThan(todayDigest);
+  expect(todayDigest).toBeLessThan(holdings);
+  expect(holdings).toBeLessThan(allocationRisk);
+  expect(allocationRisk).toBeLessThan(recommendation);
+  expect(recommendation).toBeLessThan(attention);
+  expect(attention).toBeLessThan(dataTrust);
+  expect(dataTrust).toBeLessThan(valuationCoverage);
+  expect(valuationCoverage).toBeLessThan(details);
 });
