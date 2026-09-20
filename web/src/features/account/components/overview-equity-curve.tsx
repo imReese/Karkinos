@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -120,7 +121,7 @@ export function OverviewEquityCurve({
     <div className="min-w-0">
       <SectionHeader
         title={copy.overview.dashboard.equityPanel}
-        className="mb-2"
+        className="overview-spotlight-heading mb-3"
         actions={
           <div
             className="app-inline-segmented"
@@ -196,12 +197,32 @@ export function OverviewEquityCurve({
             aria-label={selectedLabel}
           >
             {size ? (
-              <LineChart
+              <ComposedChart
                 width={size.width}
                 height={size.height}
                 data={chartPoints}
                 margin={{ left: 0, right: 14, top: 12, bottom: 10 }}
               >
+                <defs>
+                  <linearGradient
+                    id={`overview-equity-area-${selectedSeries}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="0%"
+                      stopColor={selectedColor}
+                      stopOpacity={0.16}
+                    />
+                    <stop
+                      offset="100%"
+                      stopColor={selectedColor}
+                      stopOpacity={0.01}
+                    />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid
                   stroke="var(--app-divider)"
                   strokeOpacity={0.65}
@@ -242,6 +263,15 @@ export function OverviewEquityCurve({
                   }}
                   cursor={{ stroke: 'var(--app-accent)', strokeOpacity: 0.3 }}
                 />
+                <Area
+                  dataKey="indicativeSeries"
+                  type="linear"
+                  stroke="none"
+                  fill={`url(#overview-equity-area-${selectedSeries})`}
+                  fillOpacity={1}
+                  isAnimationActive={false}
+                  connectNulls
+                />
                 {showBridgeLine ? (
                   <Line
                     dataKey="indicativeSeries"
@@ -268,7 +298,7 @@ export function OverviewEquityCurve({
                   isAnimationActive={false}
                   connectNulls={false}
                 />
-              </LineChart>
+              </ComposedChart>
             ) : null}
           </div>
         ) : (

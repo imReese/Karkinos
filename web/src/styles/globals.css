@@ -29,6 +29,7 @@
   --app-font-size-primary-metric-wide: 32px;
   --app-font-size-overview-hero: clamp(2.75rem, 4.7vw, 4.9rem);
   --app-font-size-overview-headline: clamp(1.55rem, 2.2vw, 2.15rem);
+  --app-font-size-overview-section: 18px;
   --app-font-size-subsection-title: 14px;
   --app-font-size-body: 13px;
   --app-font-size-compact: 12px;
@@ -44,6 +45,7 @@
   --app-line-height-primary-metric: 32px;
   --app-line-height-overview-hero: 0.96;
   --app-line-height-overview-headline: 1.05;
+  --app-line-height-overview-section: 24px;
   --app-line-height-subsection-title: 20px;
   --app-line-height-body: 20px;
   --app-line-height-compact: 18px;
@@ -360,26 +362,18 @@ textarea {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: var(--app-radius-control);
-  background: color-mix(
-    in srgb,
-    var(--app-accent) 12%,
-    var(--app-surface-overlay)
-  );
-  border: 1px solid color-mix(in srgb, var(--app-accent) 26%, var(--app-border));
+  background: transparent;
+  border: none;
   color: var(--app-accent);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: none;
   transition:
-    border-color var(--app-motion-fast) var(--app-ease-standard),
-    box-shadow var(--app-motion-fast) var(--app-ease-standard),
-    background-color var(--app-motion-fast) var(--app-ease-standard);
+    color var(--app-motion-fast) var(--app-ease-standard),
+    filter var(--app-motion-fast) var(--app-ease-standard);
 }
 
 .app-brand-glyph > svg {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
 .app-brand-glyph-compact {
@@ -388,19 +382,19 @@ textarea {
 }
 
 .app-brand-glyph-compact > svg {
-  width: 15px;
-  height: 15px;
+  width: 20px;
+  height: 20px;
 }
 
 .app-public-brand:hover .app-brand-glyph,
 .app-brand-lockup a:hover .app-brand-glyph {
-  background: color-mix(
-    in srgb,
-    var(--app-accent) 18%,
-    var(--app-surface-overlay)
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--app-accent-hover, var(--app-accent));
+  filter: drop-shadow(
+    0 0 6px color-mix(in srgb, var(--app-accent) 45%, transparent)
   );
-  border-color: color-mix(in srgb, var(--app-accent) 42%, var(--app-border));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--app-accent) 22%, transparent);
 }
 
 .app-sidebar-brand-copy .app-product-mark,
@@ -1493,6 +1487,11 @@ select:is(.app-field, .app-input):not([multiple]) {
   font-weight: var(--app-font-weight-semibold);
   letter-spacing: var(--app-letter-spacing-overview-headline);
   line-height: var(--app-line-height-overview-headline);
+}
+
+.overview-spotlight-heading .app-type-section-title {
+  font-size: var(--app-font-size-overview-section);
+  line-height: var(--app-line-height-overview-section);
 }
 
 @media (min-width: 640px) {
