@@ -33,6 +33,11 @@ AKSHARE_PROVIDER_DESCRIPTOR = MarketDataProviderDescriptor(
             instrument_types=(InstrumentType.ETF,),
             price_basis="qfq",
         ),
+        DailyBarCapability(
+            endpoint="fund_open_fund_info_em",
+            instrument_types=(InstrumentType.OPEN_END_FUND,),
+            price_basis="published_unit_nav",
+        ),
     ),
 )
 

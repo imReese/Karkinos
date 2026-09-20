@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -21,6 +22,7 @@ from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
 from server.projections.service import PortfolioReplayAccumulator
+from server.services.market_calendar_evidence import validate_verified_market_calendar
 
 _CN_AFTERNOON_CLOSE = time(15, 0)
 _SH_TZ = ZoneInfo("Asia/Shanghai")
@@ -30,6 +32,47 @@ _EQUITY_SERIES_RANGE_DAYS = {
     "6m": 183,
     "1y": 366,
 }
+
+
+def _verified_trading_days(
+    db,
+    *,
+    start_date: date,
+    end_date: date,
+) -> dict[date, bool]:
+    reader = getattr(db, "get_market_calendar_snapshot_sync", None)
+    if not callable(reader):
+        return {}
+
+    resolved: dict[date, bool] = {}
+    for year in range(start_date.year, end_date.year + 1):
+        try:
+            raw = reader(exchange="SSE", year=year)
+        except Exception:
+            continue
+        row = None if raw is None else dict(raw)
+        validation = validate_verified_market_calendar(row)
+        if row is None or not validation.verified:
+            continue
+        days = row.get("days")
+        if not isinstance(days, list):
+            try:
+                days = json.loads(str(row.get("days_json") or "[]"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+        for item in days:
+            if not isinstance(item, dict):
+                continue
+            value = str(item.get("date") or "")
+            try:
+                current = date.fromisoformat(value)
+            except ValueError:
+                continue
+            if start_date <= current <= end_date and isinstance(
+                item.get("is_trading_day"), bool
+            ):
+                resolved[current] = bool(item["is_trading_day"])
+    return resolved
 
 
 def load_ledger_entries_for_equity_series(
@@ -339,6 +382,11 @@ def build_daily_equity_series_from_ledger_history(
     entry_index = 0
     asset_classes: dict[str, str] = {}
     points: list[EquitySeriesPoint] = []
+    trading_days = _verified_trading_days(
+        state.db,
+        start_date=start_date,
+        end_date=end_date,
+    )
     current_date = start_date
 
     while current_date <= end_date:
@@ -355,7 +403,11 @@ def build_daily_equity_series_from_ledger_history(
                 )
             entry_index += 1
 
-        should_emit_day = current_date == start_date or current_date.weekday() < 5
+        calendar_state = trading_days.get(current_date)
+        is_trading_day = (
+            calendar_state if calendar_state is not None else current_date.weekday() < 5
+        )
+        should_emit_day = current_date == start_date or is_trading_day
         if replay.applied_entry_count and should_emit_day:
             historical_quotes: dict[str, dict] = {}
             for symbol in replay.active_symbols:
@@ -413,6 +465,12 @@ def build_daily_equity_series_from_ledger_history(
                     ),
                     quote_status=quote_status,
                     missing_price_symbols=missing_price_symbols,
+                    valuation_policy="karkinos.historical_replay.v1",
+                    valuation_status=(
+                        "reconstructed"
+                        if valuation.total is not None and not missing_price_symbols
+                        else "missing"
+                    ),
                 )
             )
 

@@ -35,6 +35,10 @@ def test_akshare_legacy_source_explicitly_declares_qfq_semantics() -> None:
     assert descriptor.upstream_group == "eastmoney"
     assert descriptor.supports_daily_bars(InstrumentType.STOCK, price_basis="qfq")
     assert descriptor.supports_daily_bars(InstrumentType.ETF, price_basis="qfq")
+    assert descriptor.supports_daily_bars(
+        InstrumentType.OPEN_END_FUND,
+        price_basis="published_unit_nav",
+    )
     assert not descriptor.supports_daily_bars(
         InstrumentType.STOCK, price_basis="unadjusted"
     )

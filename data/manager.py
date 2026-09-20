@@ -475,6 +475,10 @@ class DataManager:
         *,
         instrument_type: InstrumentType,
     ) -> bool:
+        # A zero TTL is the explicit backfill/refresh contract: callers are
+        # asking us to contact the provider even for an older incomplete range.
+        if refresh_ttl_seconds == 0:
+            return True
         if not self._targets_recent_range(end, frequency):
             return False
         if refresh_ttl_seconds is None or self.store is None:

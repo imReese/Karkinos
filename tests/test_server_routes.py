@@ -3975,7 +3975,8 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
     from data.store import DataStore as RealStore
     from server.routes import market as market_routes
 
-    store = RealStore(root=tmp_path / "store")
+    store_root = tmp_path / "store"
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(store_root))
     router = market_routes.create_router()
     backfill_route = next(
         route
@@ -4013,7 +4014,6 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
             )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr("data.store.DataStore", lambda: store)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
@@ -4035,6 +4035,7 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
     assert response.items[0].symbol == "600001"
     assert response.items[0].row_count == 2
 
+    store = RealStore(root=store_root)
     stored = store.load_bars(
         Symbol("600001"),
         instrument_type=InstrumentType.STOCK,
@@ -4080,7 +4081,7 @@ def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
             raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr("data.store.DataStore", lambda: store)
+    monkeypatch.setattr("data.store.DataStore", lambda *_args, **_kwargs: store)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FailingSource()},
