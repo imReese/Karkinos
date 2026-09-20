@@ -28,21 +28,12 @@ for (const target of [
     await expect(page.getByTestId('overview-session-pnl')).toContainText(
       '-¥450.00',
     );
-    await expect(page.getByTestId('overview-data-status')).toContainText(
-      target.locale === 'zh' ? '当前估值可用' : 'Current valuation usable',
-    );
-    await expect(page.getByTestId('overview-today-queue')).toContainText(
-      target.locale === 'zh'
-        ? '今天没有需要处理的事项'
-        : 'No items need your attention today.',
-    );
+    await expect(page.getByTestId('overview-data-status')).toHaveCount(0);
+    await expect(page.getByTestId('overview-data-trust')).toHaveCount(0);
+    await expect(page.getByTestId('overview-today-queue')).toContainText('0');
     await expect(
       page.getByTestId('equity-chart-frame').locator('.recharts-line-curve'),
     ).toBeVisible();
-    await expect(page.getByTestId('overview-data-details')).not.toHaveAttribute(
-      'open',
-      '',
-    );
     expect(
       await page.evaluate(
         () =>
@@ -63,13 +54,6 @@ for (const target of [
       path: testInfo.outputPath('02-holdings.png'),
       animations: 'disabled',
     });
-    await page.getByTestId('overview-data-details').locator('summary').click();
-    await expect(page.getByTestId('overview-data-details')).toContainText(
-      target.locale === 'zh' ? '最近刷新失败' : 'Latest refresh failed',
-    );
-    await expect(page.getByTestId('overview-data-status')).toContainText(
-      target.locale === 'zh' ? '当前估值可用' : 'Current valuation usable',
-    );
     expect(errors).toEqual([]);
   });
 }

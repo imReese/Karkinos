@@ -47,30 +47,6 @@ function recommendationHeading(
   }
 }
 
-function recommendationDetail(
-  plan: DailyTradingPlanResponse,
-  copy: ReturnType<typeof useCopy>,
-) {
-  const recommendation = plan.account_action_recommendation;
-  const dashboard = copy.overview.dashboard;
-  if (!recommendation) return dashboard.accountRecommendationReason('');
-  switch (recommendation.status) {
-    case 'no_action':
-      return dashboard.accountRecommendationNoActionDetail;
-    case 'manual_review_required':
-      return dashboard.tradingPlanManualReadyDetail(
-        recommendation.actions.length,
-      );
-    case 'paper_shadow_required':
-      return dashboard.accountRecommendationPaperShadowDetail;
-    case 'blocked':
-      return dashboard.tradingPlanBlockedDetail(plan.blocked_count);
-    case 'unavailable':
-    default:
-      return dashboard.accountRecommendationUnavailableDetail;
-  }
-}
-
 function readableCode(code: string, labels: Record<string, string>): string {
   return labels[code] ?? code.split('_').join(' ');
 }
@@ -108,10 +84,6 @@ export function OverviewStrategyRecommendation({
     string,
     string
   >;
-  const decisionActionLabels = dashboard.decisionRequiredActionLabels as Record<
-    string,
-    string
-  >;
   const isBlocked =
     recommendation?.status === 'blocked' ||
     recommendation?.status === 'unavailable' ||
@@ -126,10 +98,7 @@ export function OverviewStrategyRecommendation({
       ).trim()}
       aria-label={dashboard.strategyRecommendationTitle}
     >
-      <SectionHeader
-        title={dashboard.strategyRecommendationTitle}
-        meta={plan?.plan_date ?? decision?.decision_date}
-      />
+      <SectionHeader title={dashboard.strategyRecommendationTitle} />
 
       {planQuery.isLoading && !plan ? (
         <p className="app-type-compact mt-2 text-[var(--app-text-secondary)]">
@@ -146,9 +115,6 @@ export function OverviewStrategyRecommendation({
         <>
           <p className="app-type-body mt-2 font-medium text-[var(--app-text)]">
             {recommendationHeading(plan, copy)}
-          </p>
-          <p className="app-type-compact mt-1 text-[var(--app-text-secondary)]">
-            {recommendationDetail(plan, copy)}
           </p>
 
           {recommendation?.actions.length ? (
@@ -208,19 +174,6 @@ export function OverviewStrategyRecommendation({
                       readableCode(task.id, decisionTaskLabels)
                     }
                     value={dashboard.decisionBlocked}
-                    detail={
-                      task.required_actions?.length
-                        ? task.required_actions
-                            .map((action) =>
-                              readableCode(action, decisionActionLabels),
-                            )
-                            .join(' · ')
-                        : task.blocking_reasons
-                            ?.map((reason) =>
-                              readableCode(reason, decisionReasonLabels),
-                            )
-                            .join(' · ') || task.description
-                    }
                     tone="warning"
                   />
                 ))}
@@ -229,19 +182,12 @@ export function OverviewStrategyRecommendation({
                     label={dashboard.decisionStrategyResearch}
                     value={dashboard.decisionStrategyNotReady}
                     detail={
-                      <span>
-                        {readableCode(
-                          strategyReadinessReason,
-                          decisionReasonLabels,
-                        )}
-                        {' · '}
-                        <a
-                          href="/ai-research"
-                          className="font-semibold text-[var(--app-accent)] hover:underline"
-                        >
-                          {dashboard.decisionStrategyNextStep}
-                        </a>
-                      </span>
+                      <a
+                        href="/ai-research"
+                        className="font-semibold text-[var(--app-accent)] hover:underline"
+                      >
+                        {dashboard.decisionStrategyNextStep}
+                      </a>
                     }
                     tone="warning"
                   />
@@ -249,7 +195,7 @@ export function OverviewStrategyRecommendation({
                 {!blockedTasks.length
                   ? reasonCodes
                       .filter((reason) => reason !== strategyReadinessReason)
-                      .slice(0, strategyReadinessReason ? 5 : 6)
+                      .slice(0, 2)
                       .map((reason) => (
                         <RegisterRow
                           key={reason}
@@ -263,9 +209,6 @@ export function OverviewStrategyRecommendation({
             </div>
           ) : null}
 
-          <p className="app-type-micro mt-2 text-[var(--app-text-tertiary)]">
-            {dashboard.strategyRecommendationReadOnly}
-          </p>
           <a
             href="/decision"
             className="app-type-compact mt-2 inline-block font-semibold text-[var(--app-accent)] hover:underline"

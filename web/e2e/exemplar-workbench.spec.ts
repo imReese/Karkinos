@@ -492,7 +492,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await expect(page.getByTestId('backtest-mobile-workspace-tabs')).toBeHidden();
 });
 
-test('overview prioritizes account context, performance, holdings, risk and low-priority diagnostics across all viewports', async ({
+test('overview prioritizes account value, performance, holdings and risk across all viewports', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -515,9 +515,6 @@ test('overview prioritizes account context, performance, holdings, risk and low-
       .boundingBox())!;
     const researchActions = (await page
       .getByTestId('overview-research-actions')
-      .boundingBox())!;
-    const dataTrust = (await page
-      .getByTestId('overview-data-trust')
       .boundingBox())!;
     const overflow = await page.evaluate(() => {
       const content = document.querySelector(
@@ -544,9 +541,6 @@ test('overview prioritizes account context, performance, holdings, risk and low-
     expect(researchActions.y).toBeGreaterThanOrEqual(
       allocationRisk.y + allocationRisk.height,
     );
-    expect(dataTrust.y).toBeGreaterThanOrEqual(
-      researchActions.y + researchActions.height,
-    );
     expect(
       Math.abs(performance.x - holdings.x),
       JSON.stringify(viewport),
@@ -560,16 +554,9 @@ test('overview prioritizes account context, performance, holdings, risk and low-
       JSON.stringify(viewport),
     ).toBeLessThan(8);
     await expect(page.getByTestId('overview-today-digest')).toBeVisible();
-    await expect(page.getByTestId('overview-data-status')).toContainText(
-      'Current valuation usable',
-    );
-    await expect(page.getByTestId('overview-today-queue')).toContainText(
-      'No items need your attention today.',
-    );
-    await expect(page.getByTestId('overview-data-details')).not.toHaveAttribute(
-      'open',
-      '',
-    );
+    await expect(page.getByTestId('overview-data-status')).toHaveCount(0);
+    await expect(page.getByTestId('overview-data-trust')).toHaveCount(0);
+    await expect(page.getByTestId('overview-today-queue')).toContainText('0');
   }
 });
 
@@ -1361,9 +1348,7 @@ test('overview preserves usable account values when performance history fails', 
   await expect(page.getByTestId('overview-total-value')).toContainText(
     '100,500.00',
   );
-  await expect(page.getByTestId('overview-data-status')).toContainText(
-    'Current valuation usable',
-  );
+  await expect(page.getByTestId('overview-data-status')).toHaveCount(0);
   await expect(
     page
       .getByTestId('overview-performance-card')
@@ -2197,26 +2182,20 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
         0,
       );
       if (path === '/overview') {
-        const decisionBox = await page
-          .getByTestId('overview-strategy-recommendation')
-          .boundingBox();
-        expect(
-          decisionBox?.y ?? Number.POSITIVE_INFINITY,
-          `${path} ${theme} today-decision first-screen priority`,
-        ).toBeLessThan(844);
-        const queueBox = await page
-          .getByTestId('overview-today-queue')
-          .boundingBox();
-        expect(queueBox?.y ?? 0).toBeGreaterThanOrEqual(
-          (decisionBox?.y ?? 0) + (decisionBox?.height ?? 0),
-        );
         const holdingsBox = await page
           .getByTestId('overview-holdings-section')
           .boundingBox();
-        expect(holdingsBox?.y ?? 0).toBeGreaterThan(queueBox?.y ?? 0);
-        await expect(
-          page.getByTestId('overview-data-details'),
-        ).not.toHaveAttribute('open', '');
+        const decisionBox = await page
+          .getByTestId('overview-strategy-recommendation')
+          .boundingBox();
+        const queueBox = await page
+          .getByTestId('overview-today-queue')
+          .boundingBox();
+        expect(holdingsBox?.y ?? 0).toBeLessThan(decisionBox?.y ?? 0);
+        expect(queueBox?.y ?? 0).toBeGreaterThanOrEqual(
+          (decisionBox?.y ?? 0) + (decisionBox?.height ?? 0),
+        );
+        await expect(page.getByTestId('overview-data-details')).toHaveCount(0);
       }
       expect(geometry.contentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(
         0,
@@ -3079,16 +3058,8 @@ test('overview performance range selection preserves financial identity and avoi
   expect(
     requests.some((url) => url.includes('/api/portfolio/explainability')),
   ).toBe(false);
-  await page.getByTestId('overview-data-details').locator('summary').click();
-  await expect(page.getByTestId('overview-data-details')).toContainText(
-    'overview-sanitized-friday',
-  );
-  await expect(page.getByTestId('overview-data-details')).toContainText(
-    'Latest refresh failed',
-  );
-  await expect(page.getByTestId('overview-data-status')).toContainText(
-    'Current valuation usable',
-  );
+  await expect(page.getByTestId('overview-data-details')).toHaveCount(0);
+  await expect(page.getByTestId('overview-data-status')).toHaveCount(0);
 });
 
 test('reduced-motion preference removes branded and routine transition timing', async ({

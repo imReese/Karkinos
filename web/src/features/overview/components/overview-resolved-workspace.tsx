@@ -1,5 +1,4 @@
 import { useCopy } from '../../../shared/i18n/context';
-import { SectionHeader } from '../../../shared/ui/workbench';
 import {
   OverviewEquityCurve,
   EquityCurveSkeleton,
@@ -7,19 +6,13 @@ import {
 } from '../overview-feature-boundary';
 import type { useOverviewPageController } from '../model/use-overview-page-controller';
 import { getEquityCurveErrorDetail } from '../model/overview-page-model';
-import {
-  OverviewDataDetails,
-  OverviewDataStatus,
-} from './overview-data-status';
 import { OverviewAllocationRiskSection } from './overview-allocation-risk-section';
-import { OverviewDataTrustStrip } from './overview-data-trust-strip';
 import { OverviewHoldingsSection } from './overview-holdings-section';
 import { OverviewStatusCard } from './overview-status-card';
 import { OverviewStrategyRecommendation } from './overview-strategy-recommendation';
 import { OverviewSummary } from './overview-summary';
 import { OverviewTodayDigest } from './overview-today-digest';
 import { DashboardTodayQueue } from './overview-today-queue';
-import { OverviewValuationCoverage } from './overview-valuation-coverage';
 
 export function OverviewResolvedWorkspace({
   controller,
@@ -69,7 +62,6 @@ export function OverviewResolvedWorkspace({
 
   return (
     <div className="min-w-0" data-testid="overview-financial-canvas">
-      <OverviewDataStatus state={state} />
       <OverviewSummary summary={state.summary} />
 
       <section
@@ -102,19 +94,6 @@ export function OverviewResolvedWorkspace({
         <DashboardTodayQueue
           overview={state.overview}
           className="border-b-0 py-0 lg:pl-6"
-        />
-      </section>
-
-      <section className="min-w-0 py-4" data-testid="overview-data-trust">
-        <SectionHeader
-          title={copy.overview.dashboard.dataTrust}
-          className="mb-2"
-        />
-        <OverviewDataTrustStrip state={state} />
-        <OverviewValuationCoverage snapshot={state.snapshot} />
-        <OverviewDataDetails
-          state={state}
-          refreshFailed={controller.account.isError}
         />
       </section>
     </div>

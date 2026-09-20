@@ -62,18 +62,14 @@ export function OverviewAllocationRiskSection({
     (a, b) => b.weight - a.weight,
   )[0];
   const drawdown = state.summary.current_drawdown;
-  const decision =
-    state.overview.decision_readiness === 'ready'
-      ? labels.ready
-      : state.overview.decision_readiness === 'blocked'
-        ? labels.blocked
-        : labels.unknownHealth;
+  const investmentRisks = state.risks.filter((risk) => risk.kind !== 'data');
   const riskRows = [
     {
       key: 'largest',
-      label: copy.overview.risk.concentration,
+      label: largest
+        ? `${copy.overview.risk.concentration} · ${largest.name ?? largest.symbol}`
+        : copy.overview.risk.concentration,
       value: largest ? formatPercent(largest.weight) : '--',
-      detail: largest?.name ?? largest?.symbol ?? labels.noOpenExposure,
     },
     {
       key: 'cash',
@@ -82,29 +78,17 @@ export function OverviewAllocationRiskSection({
         state.summary.cash_ratio == null
           ? '--'
           : formatPercent(state.summary.cash_ratio),
-      detail: formatCurrency(state.summary.available_cash),
     },
     {
       key: 'drawdown',
       label: copy.overview.cards.currentDrawdown,
       value:
         drawdown == null ? labels.unavailableShort : formatPercent(drawdown),
-      detail:
-        drawdown == null
-          ? copy.overview.cards.drawdownUnavailable
-          : copy.overview.cards.drawdownBasis,
     },
-    {
-      key: 'decision',
-      label: labels.decisionReadiness,
-      value: decision,
-      detail: state.next_step || undefined,
-    },
-    ...state.risks.slice(0, 2).map((risk, index) => ({
+    ...investmentRisks.slice(0, 1).map((risk, index) => ({
       key: `risk-${index}`,
       label: risk.title,
       value: risk.level,
-      detail: risk.detail,
     })),
   ];
 
@@ -162,15 +146,8 @@ export function OverviewAllocationRiskSection({
                 <dt className="app-type-label text-[var(--app-text-tertiary)]">
                   {row.label}
                 </dt>
-                <dd className="min-w-0">
-                  <div className="app-type-compact font-semibold text-[var(--app-text)]">
-                    {row.value}
-                  </div>
-                  {row.detail ? (
-                    <div className="app-type-label mt-0.5 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
-                      {row.detail}
-                    </div>
-                  ) : null}
+                <dd className="app-type-compact min-w-0 font-semibold text-[var(--app-text)]">
+                  {row.value}
                 </dd>
               </div>
             ))}

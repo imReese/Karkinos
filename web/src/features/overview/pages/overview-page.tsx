@@ -16,11 +16,7 @@ export function OverviewPage() {
       data-workbench-route="overview"
       data-workbench-width="wide"
     >
-      <WorkspaceHeader
-        eyebrow={copy.overview.kicker}
-        title={copy.overview.title}
-        description={copy.overview.subtitle}
-      />
+      <WorkspaceHeader title={copy.overview.title} />
       {account.data ? (
         <OverviewResolvedWorkspace
           controller={controller}
