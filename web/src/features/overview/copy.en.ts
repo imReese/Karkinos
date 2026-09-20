@@ -371,6 +371,7 @@ export const overviewCopyEn = {
   equityCurve: {
     title: 'Performance Analysis',
     range: 'Range',
+    series: 'Asset class',
     total: 'Total',
     stocks: 'Stocks',
     funds: 'Funds',
@@ -399,6 +400,9 @@ export const overviewCopyEn = {
     portfolioTotal: 'Portfolio total',
     confirmedPortfolioTotal: 'Confirmed valuation',
     indicativePortfolioTotal: 'Indicative valuation',
+    indicativeSeries: (label: string) => `${label} · indicative valuation`,
+    historyStart: (date: string) =>
+      `Reconstructable account history starts on ${date}.`,
     indicativeHistoryNote:
       'The dashed line shows historical values that exist but did not pass the complete valuation gate. Only the solid line is authoritative account valuation.',
     rangeHigh: 'Range high',

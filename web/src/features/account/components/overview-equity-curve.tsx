@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -12,21 +13,36 @@ import { useCopy } from '../../../shared/i18n/context';
 import { SectionHeader } from '../../../shared/ui/workbench';
 import type { EquityCurveRange, EquitySeriesPoint } from '../api';
 import {
+  NO_VISIBLE_SERIES,
   resolveXAxisDomain,
   resolveXAxisTicks,
   resolveYAxisDomain,
+  SERIES_META,
   TimeAxisTick,
   toChartPoints,
+  type SeriesKey,
   useChartContainerSize,
 } from './equity-curve-chart-support';
 
-const portfolioSeries = {
-  total: true,
-  cash: false,
-  stocks: false,
-  funds: false,
-  others: false,
-};
+const OVERVIEW_SERIES: SeriesKey[] = [
+  'total',
+  'cash',
+  'stocks',
+  'funds',
+  'others',
+];
+
+function historyStartLabel(timestamp: string | undefined, locale: 'en' | 'zh') {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Shanghai',
+  }).format(date);
+}
 
 export function OverviewEquityCurve({
   points,
@@ -39,11 +55,19 @@ export function OverviewEquityCurve({
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
+  const [selectedSeries, setSelectedSeries] = useState<SeriesKey>('total');
   const axisNumber = new Intl.NumberFormat(
     locale === 'zh' ? 'zh-CN' : 'en-US',
     { maximumFractionDigits: 2 },
   );
   const labels = copy.overview.equityCurve;
+  const seriesLabels: Record<SeriesKey, string> = {
+    total: copy.overview.cards.totalAssets,
+    cash: labels.cash,
+    stocks: labels.stocks,
+    funds: labels.funds,
+    others: labels.others,
+  };
   const unconfirmedQuoteStatuses = new Set([
     'estimated',
     'confirmed_nav_missing',
@@ -53,9 +77,10 @@ export function OverviewEquityCurve({
     'conflicting',
   ]);
   const chartPoints = toChartPoints(points).map((point) => {
-    const rawTotal =
-      typeof point.total === 'number' && Number.isFinite(point.total)
-        ? point.total
+    const rawValue = point[selectedSeries];
+    const finiteValue =
+      typeof rawValue === 'number' && Number.isFinite(rawValue)
+        ? rawValue
         : null;
     const valuationComplete =
       !point.valuation_status || point.valuation_status === 'complete';
@@ -65,15 +90,15 @@ export function OverviewEquityCurve({
     const confirmed = valuationComplete && quoteConfirmed;
     return {
       ...point,
-      confirmedTotal: confirmed ? rawTotal : null,
-      indicativeTotal: rawTotal,
-      indicativeOnly: rawTotal != null && !confirmed,
+      confirmedSeries: confirmed ? finiteValue : null,
+      indicativeSeries: finiteValue,
+      indicativeOnly: finiteValue != null && !confirmed,
     };
   });
   const usablePoints = chartPoints.filter(
     (point) =>
-      typeof point.indicativeTotal === 'number' &&
-      Number.isFinite(point.indicativeTotal),
+      typeof point.indicativeSeries === 'number' &&
+      Number.isFinite(point.indicativeSeries),
   );
   const hasIndicativePoints = chartPoints.some((point) => point.indicativeOnly);
   const [chartRef, size] = useChartContainerSize<HTMLDivElement>();
@@ -83,6 +108,16 @@ export function OverviewEquityCurve({
     ['1y', labels.oneYear],
     ['all', labels.all],
   ];
+  const visibleSeries = {
+    ...NO_VISIBLE_SERIES,
+    [selectedSeries]: true,
+  };
+  const historyStart =
+    range === 'all'
+      ? historyStartLabel(chartPoints[0]?.timestamp, locale)
+      : null;
+  const selectedLabel = seriesLabels[selectedSeries];
+
   return (
     <div className="min-w-0">
       <SectionHeader
@@ -113,6 +148,41 @@ export function OverviewEquityCurve({
           </div>
         }
       />
+
+      <div
+        className="mb-2 flex min-w-0 flex-wrap items-center gap-1"
+        data-testid="equity-series-controls"
+        role="group"
+        aria-label={labels.series}
+      >
+        {OVERVIEW_SERIES.map((seriesKey) => {
+          const active = selectedSeries === seriesKey;
+          const meta = SERIES_META.find((series) => series.key === seriesKey);
+          return (
+            <button
+              key={seriesKey}
+              type="button"
+              aria-pressed={active}
+              aria-label={seriesLabels[seriesKey]}
+              onClick={() => setSelectedSeries(seriesKey)}
+              className={
+                'app-chart-control app-type-micro inline-flex min-h-7 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 font-medium ' +
+                (active
+                  ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-text)]'
+                  : 'border-transparent bg-transparent text-[var(--app-text-secondary)] hover:border-[var(--app-divider)] hover:bg-[var(--app-surface-overlay)]')
+              }
+            >
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: meta?.color }}
+              />
+              {seriesLabels[seriesKey]}
+            </button>
+          );
+        })}
+      </div>
+
       <div
         ref={chartRef}
         className={
@@ -125,7 +195,7 @@ export function OverviewEquityCurve({
           <div
             data-testid="equity-chart-frame"
             role="img"
-            aria-label={labels.portfolioTotal}
+            aria-label={selectedLabel}
           >
             {size ? (
               <LineChart
@@ -155,7 +225,7 @@ export function OverviewEquityCurve({
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={(value: number) => axisNumber.format(value)}
-                  domain={resolveYAxisDomain(chartPoints, portfolioSeries)}
+                  domain={resolveYAxisDomain(chartPoints, visibleSeries)}
                   tick={{ fontSize: 11, fill: 'var(--app-text-tertiary)' }}
                 />
                 <Tooltip
@@ -176,8 +246,8 @@ export function OverviewEquityCurve({
                 />
                 {hasIndicativePoints ? (
                   <Line
-                    dataKey="indicativeTotal"
-                    name={labels.indicativePortfolioTotal}
+                    dataKey="indicativeSeries"
+                    name={labels.indicativeSeries(selectedLabel)}
                     type="linear"
                     stroke="var(--app-text-tertiary)"
                     strokeWidth={1.5}
@@ -190,10 +260,13 @@ export function OverviewEquityCurve({
                   />
                 ) : null}
                 <Line
-                  dataKey="confirmedTotal"
-                  name={labels.confirmedPortfolioTotal}
+                  dataKey="confirmedSeries"
+                  name={selectedLabel}
                   type="linear"
-                  stroke="var(--app-accent)"
+                  stroke={
+                    SERIES_META.find((series) => series.key === selectedSeries)
+                      ?.color ?? 'var(--app-accent)'
+                  }
                   strokeWidth={2}
                   dot={false}
                   activeDot={{ r: 4 }}
@@ -213,13 +286,20 @@ export function OverviewEquityCurve({
           </div>
         )}
       </div>
-      {hasIndicativePoints ? (
-        <p
-          className="app-type-micro mt-2 text-[var(--app-text-tertiary)]"
-          data-testid="equity-indicative-note"
-        >
-          {labels.indicativeHistoryNote}
-        </p>
+
+      {historyStart || hasIndicativePoints ? (
+        <div className="app-type-micro mt-2 space-y-1 text-[var(--app-text-tertiary)]">
+          {historyStart ? (
+            <p data-testid="equity-history-start">
+              {labels.historyStart(historyStart)}
+            </p>
+          ) : null}
+          {hasIndicativePoints ? (
+            <p data-testid="equity-indicative-note">
+              {labels.indicativeHistoryNote}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

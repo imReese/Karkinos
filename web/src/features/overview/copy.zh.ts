@@ -324,6 +324,7 @@ export const overviewCopyZh = {
   equityCurve: {
     title: '净值分析',
     range: '区间',
+    series: '资产类别',
     total: '总计',
     stocks: '股票',
     funds: '基金',
@@ -349,6 +350,8 @@ export const overviewCopyZh = {
     portfolioTotal: '组合总计',
     confirmedPortfolioTotal: '已确认估值',
     indicativePortfolioTotal: '指示估值',
+    indicativeSeries: (label: string) => `${label} · 指示估值`,
+    historyStart: (date: string) => `当前可重建的账户历史从 ${date} 开始。`,
     indicativeHistoryNote:
       '虚线仅表示已有但未通过完整估值门禁的历史数值；实线才是完整、可作为账户事实使用的估值。',
     rangeHigh: '区间最高',
