@@ -125,6 +125,7 @@ export function OverviewStrategyRecommendation({
       <SectionHeader
         title={dashboard.strategyRecommendationTitle}
         meta={recommendationDate === '--' ? undefined : recommendationDate}
+        className="overview-spotlight-heading"
         actions={
           <a
             href="/decision"
@@ -241,7 +242,13 @@ export function OverviewStrategyRecommendation({
             </div>
           </div>
         ) : (
-          <div className="mt-3 border-t border-[var(--app-divider)] pt-3">
+          <div
+            className="mt-3 flex min-h-36 items-center rounded-[calc(var(--app-radius-control)*1.25)] border border-[var(--app-divider)] px-4 py-5"
+            style={{
+              background:
+                'linear-gradient(140deg, color-mix(in srgb, var(--app-accent) 5%, var(--app-surface)) 0%, color-mix(in srgb, var(--app-accent) 2%, var(--app-surface)) 100%)',
+            }}
+          >
             <p className="app-type-body font-semibold text-[var(--app-text)]">
               {recommendationHeading(plan, copy)}
             </p>
