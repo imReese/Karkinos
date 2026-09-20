@@ -5,7 +5,6 @@ import {
   formatCurrency,
   formatDate,
   formatPercent,
-  formatPrice,
 } from '../../../shared/format';
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
@@ -49,7 +48,12 @@ export function buildPositionColumns({
   const detailLabels = copy.portfolio.detail;
   const symbolColumn: ColumnDef<Position, unknown> = {
     id: 'symbol',
-    header: labels.symbol,
+    header:
+      model.variant === 'dashboard'
+        ? locale === 'zh'
+          ? '标的'
+          : 'Holding'
+        : labels.symbol,
     cell: ({ row }) => {
       const position = row.original;
       const displayName = resolvePositionName(position);
@@ -70,13 +74,20 @@ export function buildPositionColumns({
           <span className="block max-w-52 truncate">{displayName}</span>
           <span className="app-type-micro mt-0.5 flex items-center gap-1.5 font-medium text-[var(--app-text-tertiary)]">
             <span className="font-mono">{position.symbol}</span>
-            <span aria-hidden="true">·</span>
-            <span className="truncate">
-              {formatAssetClassLabel(
-                resolvePositionAssetClass(position, model.assetClassBySymbol),
-                copy.common,
-              )}
-            </span>
+            {model.variant === 'dashboard' ? null : (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="truncate">
+                  {formatAssetClassLabel(
+                    resolvePositionAssetClass(
+                      position,
+                      model.assetClassBySymbol,
+                    ),
+                    copy.common,
+                  )}
+                </span>
+              </>
+            )}
           </span>
         </a>
       );
@@ -199,26 +210,9 @@ export function buildPositionColumns({
           } satisfies ColumnDef<Position, unknown>,
         ]
       : []),
-    ...(model.variant === 'dashboard' ? [] : [todayColumn]),
+    todayColumn,
     unrealizedColumn,
     ...(model.showFullColumns ? [realizedColumn] : []),
-    ...(model.variant === 'dashboard'
-      ? [
-          {
-            id: 'latest-price',
-            header: () => (
-              <span className="block text-right">
-                {locale === 'zh' ? '价格 / 净值' : 'Price / NAV'}
-              </span>
-            ),
-            cell: ({ row }: { row: { original: Position } }) => (
-              <PositionNumericCell
-                value={formatPrice(row.original.latest_price)}
-              />
-            ),
-          } satisfies ColumnDef<Position, unknown>,
-        ]
-      : []),
-    quoteColumn,
+    ...(model.variant === 'dashboard' ? [] : [quoteColumn]),
   ];
 }

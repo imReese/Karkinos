@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { installOverviewFixture } from './overview-fixture';
+import {
+  installOverviewFixture,
+  overviewTradingPlanFixture,
+} from './overview-fixture';
 
 for (const target of [
   { width: 1440, height: 1000, theme: 'light', locale: 'en' },
@@ -30,7 +33,7 @@ for (const target of [
     );
     await expect(page.getByTestId('overview-data-status')).toHaveCount(0);
     await expect(page.getByTestId('overview-data-trust')).toHaveCount(0);
-    await expect(page.getByTestId('overview-today-queue')).toContainText('0');
+    await expect(page.getByTestId('overview-today-queue')).toHaveCount(0);
     await expect(
       page.getByTestId('equity-chart-frame').locator('.recharts-line-curve'),
     ).toBeVisible();
@@ -48,6 +51,9 @@ for (const target of [
     const holdings = page.getByTestId('overview-holdings-section');
     await holdings.scrollIntoViewIfNeeded();
     await expect(holdings).toContainText(
+      target.locale === 'zh' ? '今日收益' : 'Today PnL',
+    );
+    await expect(holdings).not.toContainText(
       target.locale === 'zh' ? '已公布净值' : 'Published NAV',
     );
     await page.screenshot({
@@ -57,3 +63,50 @@ for (const target of [
     expect(errors).toEqual([]);
   });
 }
+
+test('overview surfaces only manually reviewable strategy actions', async ({
+  page,
+}) => {
+  await installOverviewFixture(page);
+  await page.unroute('**/api/decision/trading-plan');
+  await page.route('**/api/decision/trading-plan', (route) =>
+    route.fulfill({
+      json: {
+        ...overviewTradingPlanFixture,
+        manual_ready_count: 1,
+        order_intent_count: 1,
+        account_action_recommendation: {
+          ...overviewTradingPlanFixture.account_action_recommendation,
+          status: 'manual_review_required',
+          actions: [
+            {
+              action_id: 'fixture-action',
+              symbol: 'fixture-stock',
+              display_name: '示例制造',
+              asset_class: 'stock',
+              side: 'buy',
+              target_weight: 0.7,
+              estimated_quantity: 100,
+              submission_status: 'manual_confirmation_required',
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await page.addInitScript(() => {
+    localStorage.setItem('karkinos.locale', 'zh');
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/overview');
+
+  const recommendation = page.getByTestId('overview-strategy-recommendation');
+  await expect(recommendation).toContainText('1 个操作待人工确认');
+  await expect(recommendation).toContainText('买入');
+  await expect(recommendation).toContainText('示例制造');
+  await expect(recommendation).toContainText('当前 59.7% → 目标 70.0%');
+  await expect(recommendation).toContainText('预计数量 100 股');
+  await expect(
+    recommendation.getByRole('link', { name: '复核交易队列' }),
+  ).toHaveAttribute('href', '/trading');
+});

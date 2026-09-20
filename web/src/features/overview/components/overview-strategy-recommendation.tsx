@@ -1,14 +1,14 @@
-import { formatPercent } from '../../../shared/format';
-import { useCopy } from '../../../shared/i18n/context';
 import {
-  ExceptionBoundary,
-  Register,
-  RegisterRow,
-  SectionHeader,
-} from '../../../shared/ui/workbench';
+  formatDate,
+  formatPercent,
+  formatQuantity,
+} from '../../../shared/format';
+import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
+import { ExceptionBoundary, SectionHeader } from '../../../shared/ui/workbench';
 import type {
+  AccountStateResponse,
   DailyTradingPlanResponse,
-  DecisionResponse,
 } from '../overview-feature-boundary';
 
 type QueryState<T> = {
@@ -16,6 +16,10 @@ type QueryState<T> = {
   isLoading: boolean;
   isError: boolean;
 };
+
+type RecommendationAction = NonNullable<
+  DailyTradingPlanResponse['account_action_recommendation']
+>['actions'][number];
 
 function sideLabel(
   side: string | null,
@@ -47,47 +51,65 @@ function recommendationHeading(
   }
 }
 
-function readableCode(code: string, labels: Record<string, string>): string {
-  return labels[code] ?? code.split('_').join(' ');
+function actionName(
+  action: RecommendationAction,
+  positions: AccountStateResponse['snapshot']['positions'],
+) {
+  const symbol = action.symbol ?? '';
+  const position = positions.find((item) => item.symbol === symbol);
+  return (
+    action.display_name ||
+    action.name ||
+    position?.display_name ||
+    position?.name ||
+    symbol ||
+    '--'
+  );
+}
+
+function currentWeight(
+  symbol: string | null,
+  positions: AccountStateResponse['snapshot']['positions'],
+  currentWeightBySymbol: Record<string, number>,
+) {
+  if (!symbol) return null;
+  const weight = currentWeightBySymbol[symbol];
+  if (typeof weight === 'number' && Number.isFinite(weight)) {
+    return weight;
+  }
+  return positions.some((item) => item.symbol === symbol) ? null : 0;
+}
+
+function quantityUnit(assetClass: string | null, locale: 'en' | 'zh') {
+  if (locale === 'en') {
+    return assetClass === 'stock' ? 'shares' : 'units';
+  }
+  return assetClass === 'stock' ? '股' : '份';
 }
 
 export function OverviewStrategyRecommendation({
   planQuery,
-  decisionQuery,
+  positions,
+  currentWeightBySymbol,
   className,
 }: {
   planQuery: QueryState<DailyTradingPlanResponse>;
-  decisionQuery: QueryState<DecisionResponse>;
+  positions: AccountStateResponse['snapshot']['positions'];
+  currentWeightBySymbol: Record<string, number>;
   className?: string;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const dashboard = copy.overview.dashboard;
   const plan = planQuery.data;
-  const decision = decisionQuery.data;
   const recommendation = plan?.account_action_recommendation;
-  const blockedTasks =
-    decision?.summary.workflow_tasks?.filter(
-      (task) => task.status === 'blocked',
-    ) ?? [];
-  const reasonCodes = recommendation?.reason_codes ?? [];
-  const strategyReadinessReason = reasonCodes.find((reason) =>
-    [
-      'promoted_strategy_not_configured',
-      'promoted_strategy_scan_missing',
-    ].includes(reason),
+  const recommendationDate = formatDate(
+    plan?.plan_date ?? recommendation?.decision_date,
   );
-  const decisionTaskLabels = dashboard.decisionTaskLabels as Record<
-    string,
-    string
-  >;
-  const decisionReasonLabels = dashboard.decisionReasonLabels as Record<
-    string,
-    string
-  >;
-  const isBlocked =
-    recommendation?.status === 'blocked' ||
-    recommendation?.status === 'unavailable' ||
-    blockedTasks.length > 0;
+  const actions =
+    recommendation?.status === 'manual_review_required'
+      ? recommendation.actions
+      : [];
 
   return (
     <section
@@ -98,7 +120,10 @@ export function OverviewStrategyRecommendation({
       ).trim()}
       aria-label={dashboard.strategyRecommendationTitle}
     >
-      <SectionHeader title={dashboard.strategyRecommendationTitle} />
+      <SectionHeader
+        title={dashboard.strategyRecommendationTitle}
+        meta={recommendationDate === '--' ? undefined : recommendationDate}
+      />
 
       {planQuery.isLoading && !plan ? (
         <p className="app-type-compact mt-2 text-[var(--app-text-secondary)]">
@@ -108,7 +133,6 @@ export function OverviewStrategyRecommendation({
         <ExceptionBoundary
           tone="warning"
           title={dashboard.accountRecommendationUnavailable}
-          description={dashboard.accountRecommendationUnavailableDetail}
           className="mt-3"
         />
       ) : plan ? (
@@ -117,104 +141,77 @@ export function OverviewStrategyRecommendation({
             {recommendationHeading(plan, copy)}
           </p>
 
-          {recommendation?.actions.length ? (
+          {actions.length ? (
             <ul
               className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
               data-testid="overview-decision-actions"
             >
-              {recommendation.actions.map((action, index) => (
-                <li
-                  key={
-                    action.action_id ?? `${action.symbol ?? 'action'}-${index}`
-                  }
-                  className="app-type-compact grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <span className="font-medium text-[var(--app-text)]">
-                      {sideLabel(action.side, dashboard.decisionActionLabels)}
-                    </span>
-                    <span className="ml-2 font-mono text-[var(--app-text-secondary)]">
-                      {action.symbol ?? '--'}
-                    </span>
-                  </div>
-                  <div className="text-right tabular-nums text-[var(--app-text-secondary)]">
-                    {action.target_weight == null
-                      ? null
-                      : formatPercent(action.target_weight)}
-                    {action.target_weight != null &&
-                    action.estimated_quantity != null
-                      ? ' · '
-                      : null}
-                    {action.estimated_quantity == null
-                      ? null
-                      : `${dashboard.strategyRecommendationQuantity} ${action.estimated_quantity}`}
-                  </div>
-                </li>
-              ))}
+              {actions.map((action, index) => {
+                const symbol = action.symbol ?? '';
+                const name = actionName(action, positions);
+                const weight = currentWeight(
+                  symbol,
+                  positions,
+                  currentWeightBySymbol,
+                );
+                return (
+                  <li
+                    key={action.action_id ?? `${symbol || 'action'}-${index}`}
+                    className="grid min-w-0 gap-1 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-x-5"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-semibold text-[var(--app-text)]">
+                        {sideLabel(action.side, dashboard.decisionActionLabels)}
+                      </span>
+                      <span className="ml-2 font-medium text-[var(--app-text)]">
+                        {name}
+                      </span>
+                      {symbol && name !== symbol ? (
+                        <span className="ml-2 font-mono text-[var(--app-text-tertiary)]">
+                          {symbol}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[var(--app-text-secondary)] sm:justify-end">
+                      <span className="whitespace-nowrap tabular-nums">
+                        {dashboard.strategyRecommendationCurrentWeight}{' '}
+                        {weight == null ? '--' : formatPercent(weight)}
+                        {' → '}
+                        {dashboard.strategyRecommendationTargetWeight}{' '}
+                        {action.target_weight == null
+                          ? '--'
+                          : formatPercent(action.target_weight)}
+                      </span>
+                      {action.estimated_quantity == null ? null : (
+                        <span className="whitespace-nowrap tabular-nums">
+                          {dashboard.strategyRecommendationQuantity}{' '}
+                          {formatQuantity(action.estimated_quantity)}{' '}
+                          {quantityUnit(action.asset_class, locale)}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
 
-          {isBlocked ? (
-            <div className="mt-3" data-testid="overview-decision-blockers">
-              <SectionHeader
-                title={dashboard.decisionBlockers}
-                meta={
-                  blockedTasks.length + (strategyReadinessReason ? 1 : 0) ||
-                  reasonCodes.length
-                }
-                className="mb-2"
-              />
-              <Register ariaLabel={dashboard.decisionBlockers}>
-                {blockedTasks.map((task) => (
-                  <RegisterRow
-                    key={task.id}
-                    label={
-                      decisionTaskLabels[task.id] ??
-                      task.title ??
-                      readableCode(task.id, decisionTaskLabels)
-                    }
-                    value={dashboard.decisionBlocked}
-                    tone="warning"
-                  />
-                ))}
-                {strategyReadinessReason ? (
-                  <RegisterRow
-                    label={dashboard.decisionStrategyResearch}
-                    value={dashboard.decisionStrategyNotReady}
-                    detail={
-                      <a
-                        href="/ai-research"
-                        className="font-semibold text-[var(--app-accent)] hover:underline"
-                      >
-                        {dashboard.decisionStrategyNextStep}
-                      </a>
-                    }
-                    tone="warning"
-                  />
-                ) : null}
-                {!blockedTasks.length
-                  ? reasonCodes
-                      .filter((reason) => reason !== strategyReadinessReason)
-                      .slice(0, 2)
-                      .map((reason) => (
-                        <RegisterRow
-                          key={reason}
-                          label={dashboard.decisionEvidence}
-                          value={readableCode(reason, decisionReasonLabels)}
-                          tone="warning"
-                        />
-                      ))
-                  : null}
-              </Register>
-            </div>
-          ) : null}
-
-          <a
-            href="/decision"
-            className="app-type-compact mt-2 inline-block font-semibold text-[var(--app-accent)] hover:underline"
-          >
-            {dashboard.viewDecision}
-          </a>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+            {recommendation?.status === 'manual_review_required' ? (
+              <a
+                href="/trading"
+                className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+              >
+                {dashboard.viewTrading}
+              </a>
+            ) : null}
+            <a
+              href="/decision"
+              className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+            >
+              {dashboard.viewDecision}
+            </a>
+          </div>
         </>
       ) : null}
     </section>

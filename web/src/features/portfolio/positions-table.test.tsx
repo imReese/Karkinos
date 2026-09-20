@@ -103,27 +103,32 @@ test('keeps the overview dashboard table compact', () => {
     .getAllByRole('columnheader')
     .map((header) => header.textContent);
   expect(headers).toEqual([
-    'Symbol',
+    'Holding',
     'Market Value',
     'Weight',
+    'Today PnL',
     'Unrealized',
-    'Price / NAV',
-    'Quote State',
   ]);
   expect(within(table).queryByRole('button')).toBeNull();
 });
 
 test('uses a watchlist-density mobile row for the overview dashboard', () => {
   renderTable(
-    <PositionsTable positions={[basePosition]} variant="dashboard" />,
+    <PositionsTable
+      positions={[basePosition]}
+      weightBySymbol={{ '600519': 0.42 }}
+      variant="dashboard"
+    />,
   );
 
   const row = screen.getByTestId('position-mobile-row-600519');
   expect(row.className).toContain('py-2.5');
   expect(row.textContent).toContain('贵州茅台');
   expect(row.textContent).toContain('¥96,000.00');
-  expect(row.textContent).toContain('Session close · 09/11');
-  expect(row.textContent).toContain('1,600.0000');
+  expect(row.textContent).toContain('42.0%');
+  expect(row.textContent).not.toContain('Session close · 09/11');
+  expect(row.textContent).not.toContain('1,600.0000');
+  expect(row.textContent).toContain('Today PnL ¥30.00');
   expect(row.textContent).toContain('Unrealized ¥6,000.00');
   expect(within(row).queryByText('Weight')).toBeNull();
 });
@@ -176,7 +181,7 @@ test('shows stale quote reason as compact visible evidence', () => {
   ).not.toContain('truncate');
 });
 
-test('valid cached storage retains session-close pricing without a freshness warning', () => {
+test('overview dashboard leaves quote evidence to the holding detail', () => {
   renderTable(
     <PositionsTable
       positions={[
@@ -186,7 +191,7 @@ test('valid cached storage retains session-close pricing without a freshness war
     />,
   );
   const table = screen.getByTestId('positions-table-desktop');
-  expect(within(table).getByText('Session close · 09/11')).toBeTruthy();
+  expect(within(table).queryByText('Session close · 09/11')).toBeNull();
   expect(within(table).queryByText(/cache|27h|update required/i)).toBeNull();
 });
 

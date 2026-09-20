@@ -394,7 +394,6 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
 
   await page.goto('/overview');
   const overviewPrimary = page.getByTestId('overview-financial-canvas');
-  const overviewQueue = page.getByTestId('overview-today-queue');
   const overviewHoldings = page.getByTestId('overview-holdings-section');
   const overviewPerformance = page.getByTestId('overview-performance-card');
   const overviewAllocationRisk = page.getByTestId('overview-allocation-risk');
@@ -403,7 +402,6 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await expect(
     overviewPrimary.getByTestId('overview-today-digest'),
   ).toBeVisible();
-  await expect(overviewQueue).toBeVisible();
   await expect(overviewHoldings).toBeVisible();
   const overviewPerformanceBox = (await overviewPerformance.boundingBox())!;
   const overviewHoldingsBox = (await overviewHoldings.boundingBox())!;
@@ -556,7 +554,7 @@ test('overview prioritizes account value, performance, holdings and risk across 
     await expect(page.getByTestId('overview-today-digest')).toBeVisible();
     await expect(page.getByTestId('overview-data-status')).toHaveCount(0);
     await expect(page.getByTestId('overview-data-trust')).toHaveCount(0);
-    await expect(page.getByTestId('overview-today-queue')).toContainText('0');
+    await expect(page.getByTestId('overview-today-queue')).toHaveCount(0);
   }
 });
 
@@ -1310,7 +1308,6 @@ test('overview loads one account projection before history without fabricated fi
   await expect(page.getByTestId('overview-summary')).toHaveCount(0);
   for (const path of [
     '/api/portfolio/equity-curve/series',
-    '/api/decision/today',
     '/api/decision/trading-plan',
   ]) {
     expect(requestedPaths).not.toContain(path);
@@ -1321,7 +1318,6 @@ test('overview loads one account projection before history without fabricated fi
   );
   for (const path of [
     '/api/portfolio/equity-curve/series',
-    '/api/decision/today',
     '/api/decision/trading-plan',
   ]) {
     await expect.poll(() => requestedPaths.includes(path), path).toBe(true);
@@ -2188,13 +2184,14 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
         const decisionBox = await page
           .getByTestId('overview-strategy-recommendation')
           .boundingBox();
-        const queueBox = await page
-          .getByTestId('overview-today-queue')
-          .boundingBox();
+        const queue = page.getByTestId('overview-today-queue');
         expect(holdingsBox?.y ?? 0).toBeLessThan(decisionBox?.y ?? 0);
-        expect(queueBox?.y ?? 0).toBeGreaterThanOrEqual(
-          (decisionBox?.y ?? 0) + (decisionBox?.height ?? 0),
-        );
+        if ((await queue.count()) > 0) {
+          const queueBox = await queue.boundingBox();
+          expect(queueBox?.y ?? 0).toBeGreaterThanOrEqual(
+            (decisionBox?.y ?? 0) + (decisionBox?.height ?? 0),
+          );
+        }
         await expect(page.getByTestId('overview-data-details')).toHaveCount(0);
       }
       expect(geometry.contentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(

@@ -294,6 +294,8 @@ def _action_projection(intent: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "action_id": intent.get("action_id"),
         "symbol": intent.get("symbol"),
+        "display_name": intent.get("display_name") or intent.get("name"),
+        "name": intent.get("name") or intent.get("display_name"),
         "asset_class": intent.get("asset_class"),
         "side": intent.get("side"),
         "target_weight": intent.get("target_weight"),

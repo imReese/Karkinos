@@ -71,16 +71,20 @@ export function PositionsTableMobileList({
                     <span className="shrink-0 font-mono font-medium">
                       {position.symbol}
                     </span>
-                    <span aria-hidden="true">·</span>
-                    <span className="truncate">
-                      {formatAssetClassLabel(
-                        resolvePositionAssetClass(
-                          position,
-                          model.assetClassBySymbol,
-                        ),
-                        copy.common,
-                      )}
-                    </span>
+                    {model.variant === 'dashboard' ? null : (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="truncate">
+                          {formatAssetClassLabel(
+                            resolvePositionAssetClass(
+                              position,
+                              model.assetClassBySymbol,
+                            ),
+                            copy.common,
+                          )}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
@@ -96,14 +100,29 @@ export function PositionsTableMobileList({
                         ? position.realized_pnl
                         : position.market_value,
                     )}
+                    {model.variant === 'dashboard' ? (
+                      <span className="ml-1.5 font-medium text-[var(--app-text-tertiary)]">
+                        · {formatPercent(model.weightBySymbol[position.symbol])}
+                      </span>
+                    ) : null}
                   </div>
-                  <div className="mt-0.5 text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
-                    {model.showHistoryColumns
-                      ? labels.realized
-                      : labels.marketValue}
-                  </div>
+                  {model.variant === 'dashboard' ? null : (
+                    <div className="mt-0.5 text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
+                      {model.showHistoryColumns
+                        ? labels.realized
+                        : labels.marketValue}
+                    </div>
+                  )}
                   {model.variant === 'dashboard' ? (
                     <>
+                      <div
+                        className={`mt-0.5 text-[length:var(--app-font-size-micro)] tabular-nums ${resolvePositionTone(
+                          position.today_change,
+                        )}`}
+                      >
+                        {labels.todayChange}{' '}
+                        {formatCurrency(position.today_change)}
+                      </div>
                       <div
                         className={`mt-0.5 text-[length:var(--app-font-size-micro)] tabular-nums ${resolvePositionTone(
                           position.unrealized_pnl,
@@ -195,14 +214,8 @@ export function PositionsTableMobileList({
                 </dl>
               ) : null}
 
-              {!model.showHistoryColumns ? (
-                <div
-                  className={`flex min-w-0 items-center gap-2 ${
-                    model.variant === 'dashboard'
-                      ? 'mt-1.5'
-                      : 'mt-3 border-t border-[var(--app-divider)] pt-2'
-                  }`}
-                >
+              {!model.showHistoryColumns && model.variant !== 'dashboard' ? (
+                <div className="mt-3 flex min-w-0 items-center gap-2 border-t border-[var(--app-divider)] pt-2">
                   <PositionPricing position={position} locale={locale} />
                   <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-[var(--app-text-secondary)]">
                     {formatPrice(position.latest_price)}

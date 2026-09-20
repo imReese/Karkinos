@@ -74,11 +74,13 @@ def build_account_state_projection(
         missing_price_symbols=snapshot.missing_price_symbols,
         valuation_blockers=snapshot.valuation_blockers,
     )
-    summary.cumulative_pnl = (
-        summary.realized_pnl + summary.unrealized_pnl
-        if summary.unrealized_pnl is not None
-        else None
-    )
+    if summary.total_equity is not None and summary.unrealized_pnl is not None:
+        summary.realized_pnl = (
+            summary.total_equity - summary.total_deposits - summary.unrealized_pnl
+        )
+        summary.cumulative_pnl = summary.realized_pnl + summary.unrealized_pnl
+    else:
+        summary.cumulative_pnl = None
     if not valuation_complete:
         next_step = "补齐并复核市场数据证据"
     elif any(item.level in {"medium", "high"} for item in risks):

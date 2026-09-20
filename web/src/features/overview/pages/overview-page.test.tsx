@@ -250,12 +250,11 @@ test('reads one coherent account projection and a separate canonical history', a
   const fetch = installFetch();
   renderPage();
   await screen.findByTestId('overview-summary');
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
   expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual(
     [
       '/api/portfolio/state',
-      '/api/portfolio/equity-curve/series?range=1m',
-      '/api/decision/today',
+      '/api/portfolio/equity-curve/series?range=ytd',
       '/api/decision/trading-plan',
     ].sort(),
   );
@@ -284,10 +283,8 @@ test('shows the canonical daily strategy recommendation separately from operatio
   const recommendation = await screen.findByTestId(
     'overview-strategy-recommendation',
   );
-  expect(within(recommendation).getByText('研究与信号')).toBeVisible();
-  expect(
-    await within(recommendation).findByText('今日账户操作：无操作'),
-  ).toBeVisible();
+  expect(within(recommendation).getByText('最新策略建议')).toBeVisible();
+  expect(await within(recommendation).findByText('无操作')).toBeVisible();
   expect(within(recommendation).getByRole('link')).toHaveAttribute(
     'href',
     '/decision',
@@ -332,21 +329,12 @@ test('explains why today has no actionable recommendation when evidence gates bl
     'overview-strategy-recommendation',
   );
   await waitFor(() =>
-    expect(recommendation).toHaveTextContent('今日建议暂不可用'),
+    expect(recommendation).toHaveTextContent('策略建议暂不可用'),
   );
-  const blockers = within(recommendation).getByTestId(
-    'overview-decision-blockers',
-  );
-  expect(blockers).toHaveTextContent('行情数据');
-  expect(blockers).toHaveTextContent('账户事实');
-  expect(blockers).toHaveTextContent('研究策略');
-  expect(blockers).toHaveTextContent('待补研究');
+  expect(recommendation).toHaveTextContent('策略建议暂不可用');
   expect(
-    within(blockers).getByRole('link', {
-      name: '进入证据研究',
-    }),
-  ).toHaveAttribute('href', '/ai-research');
-  expect(blockers).not.toHaveTextContent('valuation_snapshot_not_complete');
+    within(recommendation).queryByTestId('overview-decision-actions'),
+  ).not.toBeInTheDocument();
 });
 
 test('shows a manual-review strategy action without implying automatic execution', async () => {
@@ -357,12 +345,13 @@ test('shows a manual-review strategy action without implying automatic execution
   plan.account_action_recommendation!.actions = [
     {
       action_id: 'action-1',
-      symbol: '600519',
-      asset_class: 'stock',
+      symbol: 'fixture-fund',
+      display_name: '合成基金',
+      asset_class: 'fund',
       side: 'buy',
       target_weight: 0.12,
-      estimated_quantity: 100,
-      submission_status: 'manual_review_required',
+      estimated_quantity: 25,
+      submission_status: 'manual_confirmation_required',
     },
   ];
   installFetch(accountFixture(), false, plan);
@@ -371,20 +360,57 @@ test('shows a manual-review strategy action without implying automatic execution
     'overview-strategy-recommendation',
   );
   await waitFor(() =>
-    expect(recommendation).toHaveTextContent('1 个交易计划意图待复核'),
+    expect(recommendation).toHaveTextContent('1 个操作待人工确认'),
   );
-  expect(recommendation).toHaveTextContent('买入候选');
-  expect(recommendation).toHaveTextContent('600519');
-  expect(recommendation).toHaveTextContent('数量 100');
+  expect(recommendation).toHaveTextContent('最新策略建议');
+  expect(recommendation).toHaveTextContent('09/14');
+  expect(recommendation).toHaveTextContent('买入');
+  expect(recommendation).toHaveTextContent('合成基金');
+  expect(recommendation).toHaveTextContent('fixture-fund');
+  expect(recommendation).toHaveTextContent('当前 4.8% → 目标 12.0%');
+  expect(recommendation).toHaveTextContent('预计数量 25');
+  expect(
+    within(recommendation).getByRole('link', { name: '复核交易队列' }),
+  ).toHaveAttribute('href', '/trading');
+  expect(
+    within(recommendation).getByRole('link', { name: '查看决策证据' }),
+  ).toHaveAttribute('href', '/decision');
+});
+
+test('never surfaces blocked recommendation actions as buy or sell operations', async () => {
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.status = 'blocked';
+  plan.account_action_recommendation!.actions = [
+    {
+      action_id: 'blocked-action',
+      symbol: 'fixture-fund',
+      display_name: '合成基金',
+      asset_class: 'fund',
+      side: 'sell',
+      target_weight: 0,
+      estimated_quantity: 100,
+      submission_status: 'blocked_by_market_data',
+    },
+  ];
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  await waitFor(() =>
+    expect(recommendation).toHaveTextContent('策略建议暂不可用'),
+  );
+  expect(
+    within(recommendation).queryByTestId('overview-decision-actions'),
+  ).not.toBeInTheDocument();
+  expect(recommendation).not.toHaveTextContent('卖出');
 });
 
 test('verified non-trading-day state stays compact when there is nothing to do', async () => {
   installFetch();
   renderPage();
   await screen.findByTestId('overview-summary');
-  const queue = screen.getByTestId('overview-today-queue');
-  expect(within(queue).getByText('0')).toBeVisible();
-  expect(within(queue).queryByRole('link')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('overview-today-queue')).not.toBeInTheDocument();
   expect(screen.queryByTestId('overview-data-status')).not.toBeInTheDocument();
   expect(screen.queryByTestId('overview-data-trust')).not.toBeInTheDocument();
 });
@@ -424,14 +450,15 @@ test.each(['degraded', 'unavailable'] as const)(
   },
 );
 
-test('confirmed open-end fund NAV is instrument aware with no realtime or cache claim', async () => {
+test('keeps fund pricing evidence out of overview while preserving holding drill-down', async () => {
   const state = accountFixture();
   state.snapshot.positions[0].quote_status = 'cached';
   installFetch(state);
   renderPage();
   await screen.findByTestId('overview-summary');
-  for (const label of screen.getAllByTestId('position-pricing-fixture-fund'))
-    expect(label).toHaveTextContent('Published NAV · 09/11');
+  expect(
+    screen.queryByTestId('position-pricing-fixture-fund'),
+  ).not.toBeInTheDocument();
   expect(screen.queryByText('Live quote')).not.toBeInTheDocument();
   expect(screen.queryByText(/27h|Cached quote/)).not.toBeInTheDocument();
   expect(screen.getAllByRole('link', { name: /合成基金/ })[0]).toHaveAttribute(
@@ -441,7 +468,7 @@ test('confirmed open-end fund NAV is instrument aware with no realtime or cache 
 });
 
 test.each(['estimated_nav', 'nav_pending'] as const)(
-  'keeps fund %s visibly non-authoritative',
+  'keeps fund %s diagnostics out of overview holdings',
   async (kind) => {
     const state = accountFixture();
     state.snapshot.positions[0].pricing_kind = kind;
@@ -450,13 +477,9 @@ test.each(['estimated_nav', 'nav_pending'] as const)(
     renderPage();
     await screen.findByTestId('overview-summary');
     expect(
-      screen.getAllByTestId('position-pricing-fixture-fund')[0],
-    ).toHaveTextContent(
-      kind === 'estimated_nav' ? 'Estimated NAV' : 'Confirmed NAV unavailable',
-    );
-    expect(
-      screen.getAllByTestId('position-pricing-fixture-fund')[0],
-    ).toHaveTextContent('Unconfirmed data');
+      screen.queryByTestId('position-pricing-fixture-fund'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('overview-holdings-section')).toBeVisible();
   },
 );
 
@@ -560,14 +583,10 @@ test('Chinese presentation keeps zero-action state compact', async () => {
     await screen.findByRole('heading', { name: '投资总览' }),
   ).toBeVisible();
   await screen.findByTestId('overview-summary');
-  const queue = screen.getByTestId('overview-today-queue');
-  expect(within(queue).getByText('0')).toBeVisible();
+  expect(screen.queryByTestId('overview-today-queue')).not.toBeInTheDocument();
   expect(
-    within(queue).queryByText('今天没有需要处理的事项'),
+    screen.queryByTestId('position-pricing-fixture-fund'),
   ).not.toBeInTheDocument();
-  expect(
-    screen.getAllByTestId('position-pricing-fixture-fund')[0],
-  ).toHaveTextContent('已公布净值 · 09/11');
 });
 
 test('keeps valuation coverage diagnostics in drill-down pages instead of overview', async () => {
@@ -595,14 +614,8 @@ test.each(['missing', 'conflicting', 'unknown'] as const)(
       'Awaiting valuation',
     );
     expect(
-      screen.getAllByTestId('position-pricing-fixture-fund')[0],
-    ).toHaveTextContent(
-      authority === 'missing'
-        ? 'Price evidence missing'
-        : authority === 'conflicting'
-          ? 'Conflicting price evidence'
-          : 'Pricing unverified',
-    );
+      screen.queryByTestId('position-pricing-fixture-fund'),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId('overview-data-status'),
     ).not.toBeInTheDocument();
@@ -633,9 +646,9 @@ test('usable authoritative fund NAV stays published when live-decision quote fre
   installFetch(state);
   renderPage();
   await screen.findByTestId('overview-summary');
-  const pricing = screen.getAllByTestId('position-pricing-fixture-fund')[0];
-  expect(pricing).toHaveTextContent('Published NAV · 09/11');
-  expect(pricing).not.toHaveTextContent(/update required|older than expected/);
+  expect(
+    screen.queryByTestId('position-pricing-fixture-fund'),
+  ).not.toBeInTheDocument();
   expect(screen.queryByTestId('overview-data-status')).not.toBeInTheDocument();
 });
 

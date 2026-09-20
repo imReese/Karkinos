@@ -61,6 +61,7 @@ def _candidate(
     action_id: int = 1,
     action: str = "buy",
     symbol: str = "600519",
+    display_name: str = "贵州茅台",
     asset_class: str = "stock",
     target_weight: float = 0.2,
     price: float = 10.0,
@@ -74,6 +75,7 @@ def _candidate(
         "action_id": action_id,
         "action": action,
         "symbol": symbol,
+        "display_name": display_name,
         "asset_class": asset_class,
         "title": f"{action} candidate",
         "target_weight": target_weight,
@@ -225,6 +227,7 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
     intent = plan["order_intents"][0]
     assert intent["action_id"] == 1
     assert intent["symbol"] == "600519"
+    assert intent["display_name"] == "贵州茅台"
     assert intent["side"] == "buy"
     assert intent["target_weight"] == pytest.approx(0.2)
     assert intent["estimated_price"] == pytest.approx(10.0)

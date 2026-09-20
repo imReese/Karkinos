@@ -47,7 +47,7 @@ export const overviewCopyZh = {
     evidenceIdentity: (asOf: string) => `估值截至 ${asOf}`,
   },
   dashboard: {
-    equityPanel: '资产表现',
+    equityPanel: '资产走势',
     dataTrust: '数据可信度 / 系统状态',
     valuationCoverage: '估值覆盖',
     valuationCoverageDetail:
@@ -148,8 +148,14 @@ export const overviewCopyZh = {
     strategyDecisionUnavailable: '策略候选信号暂不可用',
     strategyCandidateEmptyDetail:
       '当前没有买入、卖出、持有或再平衡信号进入队列。',
-    strategyRecommendationTitle: '研究与信号',
-    strategyRecommendationQuantity: '数量',
+    strategyRecommendationTitle: '最新策略建议',
+    strategyRecommendationQuantity: '预计数量',
+    strategyRecommendationCurrentWeight: '当前',
+    strategyRecommendationTargetWeight: '目标',
+    strategyRecommendationBuy: '买入',
+    strategyRecommendationSell: '卖出',
+    strategyRecommendationRebalance: '再平衡',
+    strategyRecommendationReview: '待人工复核',
     strategyRecommendationReadOnly:
       '只读建议 · 需要人工确认 · 不创建或提交券商订单',
     accountRecommendationUnavailableDetail:
@@ -197,14 +203,14 @@ export const overviewCopyZh = {
       restore_complete_portfolio_valuation_snapshot: '恢复完整账户估值快照',
       review_current_holding_market_evidence: '复核当前持仓行情与基金净值',
     },
-    accountRecommendationPaperShadow: '今日策略建议：进入模拟评估',
+    accountRecommendationPaperShadow: '模拟评估中',
     accountRecommendationPaperShadowDetail:
       '仅进入 Paper Shadow 评估，不形成可执行订单。',
-    accountRecommendationNoAction: '今日账户操作：无操作',
+    accountRecommendationNoAction: '无操作',
     accountRecommendationNoActionDetail:
       '已完成当日晋级策略扫描，未产生账户操作信号。',
-    accountRecommendationBlocked: '今日账户操作暂不可用',
-    accountRecommendationUnavailable: '今日建议暂不可用',
+    accountRecommendationBlocked: '策略建议暂不可用',
+    accountRecommendationUnavailable: '策略建议暂不可用',
     accountRecommendationReason: (reasons: string) =>
       `当前原因：${reasons || '尚未形成可核验的账户建议'}。`,
     researchOperationCandidate:
@@ -223,7 +229,7 @@ export const overviewCopyZh = {
     tradingPlanLoading: '正在加载今日交易计划',
     tradingPlanNeedsReview: '今日交易计划需要复核',
     tradingPlanCashShortfall: '买入预览因现金不足阻断',
-    tradingPlanManualReady: (count: number) => `${count} 个交易计划意图待复核`,
+    tradingPlanManualReady: (count: number) => `${count} 个操作待人工确认`,
     tradingPlanManualReadyDetail: (count: number) =>
       `先复核 ${count} 个带证据引用的订单意图，再准备手工订单。`,
     tradingPlanManualIntentDetail: (
@@ -255,12 +261,12 @@ export const overviewCopyZh = {
     viewAiResearch: '查看 AI 策略研究',
     candidateCount: (count: number) => `${count} 个候选信号`,
     decisionActionLabels: {
-      buy: '买入候选',
-      sell: '卖出候选',
-      hold: '持有候选',
-      rebalance: '再平衡候选',
+      buy: '买入',
+      sell: '卖出',
+      hold: '持有',
+      rebalance: '调整',
       no_action: '不操作',
-      review_required: '需要复核',
+      review_required: '待复核',
     },
     marketPulse: '市场脉搏',
     marketPulseDetail:

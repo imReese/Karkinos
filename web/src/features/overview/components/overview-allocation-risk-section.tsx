@@ -27,12 +27,12 @@ function allocationRows(
 
   const rows: AllocationRow[] = [...grouped.entries()].map(([key, item]) => ({
     key,
-    label: assetLabels[key] ?? key,
+    label: key === 'cash' ? cashLabel : (assetLabels[key] ?? key),
     value: item.value,
     weight: item.weight,
   }));
   const cash = state.summary.available_cash;
-  if (cash > 0) {
+  if (!grouped.has('cash') && cash > 0) {
     rows.push({
       key: 'cash',
       label: cashLabel,
@@ -41,6 +41,26 @@ function allocationRows(
     });
   }
   return rows.sort((a, b) => b.value - a.value);
+}
+
+function allocationColor(assetClass: string) {
+  if (assetClass === 'cash') return 'var(--app-chart-sell)';
+  if (assetClass === 'stock') return 'var(--app-accent-secondary)';
+  if (assetClass === 'fund') return 'var(--app-success)';
+  return 'var(--app-warning)';
+}
+
+function riskLevelLabel(level: string, locale: 'en' | 'zh') {
+  const normalized = level.toLowerCase();
+  if (locale === 'zh') {
+    if (normalized === 'high') return '高';
+    if (normalized === 'medium') return '中';
+    if (normalized === 'low') return '低';
+  }
+  if (normalized === 'high') return 'High';
+  if (normalized === 'medium') return 'Medium';
+  if (normalized === 'low') return 'Low';
+  return level;
 }
 
 export function OverviewAllocationRiskSection({
@@ -58,9 +78,9 @@ export function OverviewAllocationRiskSection({
     assetLabels,
     copy.overview.breakdown.cashReserve,
   );
-  const largest = [...state.snapshot.allocation].sort(
-    (a, b) => b.weight - a.weight,
-  )[0];
+  const largest = state.snapshot.allocation
+    .filter((item) => item.asset_class !== 'cash')
+    .sort((a, b) => b.weight - a.weight)[0];
   const drawdown = state.summary.current_drawdown;
   const investmentRisks = state.risks.filter((risk) => risk.kind !== 'data');
   const riskRows = [
@@ -79,16 +99,19 @@ export function OverviewAllocationRiskSection({
           ? '--'
           : formatPercent(state.summary.cash_ratio),
     },
-    {
-      key: 'drawdown',
-      label: copy.overview.cards.currentDrawdown,
-      value:
-        drawdown == null ? labels.unavailableShort : formatPercent(drawdown),
-    },
+    ...(drawdown == null
+      ? []
+      : [
+          {
+            key: 'drawdown',
+            label: copy.overview.cards.currentDrawdown,
+            value: formatPercent(drawdown),
+          },
+        ]),
     ...investmentRisks.slice(0, 1).map((risk, index) => ({
       key: `risk-${index}`,
       label: risk.title,
-      value: risk.level,
+      value: riskLevelLabel(risk.level, locale),
     })),
   ];
 
@@ -117,8 +140,9 @@ export function OverviewAllocationRiskSection({
                   <div className="mt-1 h-1 overflow-hidden bg-[var(--app-divider)]">
                     <span
                       aria-hidden="true"
-                      className="block h-full bg-[var(--app-accent)]"
+                      className="block h-full"
                       style={{
+                        backgroundColor: allocationColor(row.key),
                         width: `${Math.max(
                           0,
                           Math.min(100, (row.weight ?? 0) * 100),

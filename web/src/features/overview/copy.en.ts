@@ -52,7 +52,7 @@ export const overviewCopyEn = {
     evidenceIdentity: (asOf: string) => `Valuation as of ${asOf}`,
   },
   dashboard: {
-    equityPanel: 'Asset performance',
+    equityPanel: 'Portfolio value',
     dataTrust: 'Data trust / system status',
     valuationCoverage: 'Valuation coverage',
     valuationCoverageDetail:
@@ -170,8 +170,14 @@ export const overviewCopyEn = {
     strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
     strategyCandidateEmptyDetail:
       'No buy, sell, hold, or rebalance signals have entered the queue.',
-    strategyRecommendationTitle: 'Research & signals',
-    strategyRecommendationQuantity: 'Qty',
+    strategyRecommendationTitle: 'Latest strategy recommendation',
+    strategyRecommendationQuantity: 'Est. qty',
+    strategyRecommendationCurrentWeight: 'Current',
+    strategyRecommendationTargetWeight: 'Target',
+    strategyRecommendationBuy: 'Buy',
+    strategyRecommendationSell: 'Sell',
+    strategyRecommendationRebalance: 'Rebalance',
+    strategyRecommendationReview: 'Manual review',
     strategyRecommendationReadOnly:
       'Read-only recommendation · manual confirmation required · no broker order is created or submitted',
     accountRecommendationUnavailableDetail:
@@ -232,15 +238,14 @@ export const overviewCopyEn = {
       review_current_holding_market_evidence:
         'Review current holding prices and fund NAV evidence',
     },
-    accountRecommendationPaperShadow:
-      'Strategy recommendation: paper-shadow evaluation',
+    accountRecommendationPaperShadow: 'Paper shadow evaluation',
     accountRecommendationPaperShadowDetail:
       'This enters paper-shadow evaluation only and does not create an executable order.',
-    accountRecommendationNoAction: 'Account action today: no action',
+    accountRecommendationNoAction: 'No action',
     accountRecommendationNoActionDetail:
       'The daily promoted-strategy scan completed without an account action signal.',
-    accountRecommendationBlocked: "Today's account action is unavailable",
-    accountRecommendationUnavailable: "Today's recommendation is unavailable",
+    accountRecommendationBlocked: 'Strategy recommendation unavailable',
+    accountRecommendationUnavailable: 'Strategy recommendation unavailable',
     accountRecommendationReason: (reasons: string) =>
       `Current reason: ${reasons || 'no verifiable account recommendation is available'}.`,
     researchOperationCandidate:
@@ -261,8 +266,8 @@ export const overviewCopyEn = {
     tradingPlanCashShortfall: 'Cash shortfall blocks buy preview',
     tradingPlanManualReady: (count: number) =>
       count === 1
-        ? '1 plan intent needs decision review'
-        : `${count} plan intents need decision review`,
+        ? '1 action awaits confirmation'
+        : `${count} actions await confirmation`,
     tradingPlanManualReadyDetail: (count: number) =>
       count === 1
         ? 'Review the evidence-linked order intent before preparing a manual order.'
@@ -299,12 +304,12 @@ export const overviewCopyEn = {
     candidateCount: (count: number) =>
       `${count} candidate signal${count === 1 ? '' : 's'}`,
     decisionActionLabels: {
-      buy: 'Buy candidate',
-      sell: 'Sell candidate',
-      hold: 'Hold candidate',
-      rebalance: 'Rebalance candidate',
+      buy: 'Buy',
+      sell: 'Sell',
+      hold: 'Hold',
+      rebalance: 'Rebalance',
       no_action: 'No action',
-      review_required: 'Review required',
+      review_required: 'Review',
     },
     marketPulse: 'Market pulse',
     marketPulseDetail:
