@@ -287,7 +287,7 @@ test('renders portfolio workspace navigation', async () => {
   expect(await within(navigation).findByText('System')).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
   expect(screen.queryByText('Workspace toolbar')).toBeNull();
-  expect(screen.queryByLabelText('Account Status')).toBeNull();
+  expect(await screen.findByLabelText('Account Status')).toBeTruthy();
   expect(
     screen.getByRole('link', { name: 'Public home' }).getAttribute('href'),
   ).toBe('/');
@@ -1018,14 +1018,14 @@ test('toggles mobile navigation from the global toolbar', async () => {
   expect(await screen.findByLabelText('Navigation')).toBeTruthy();
 });
 
-test('Overview owns its financial status without duplicate toolbar evidence or extra status reads', async () => {
+test('Overview keeps the shared financial status rail in the global toolbar', async () => {
   const fetchMock = vi.fn(async () => jsonResponse(defaultOverview));
   renderShell({ fetchImpl: fetchMock });
   await screen.findByText('Overview page');
-  expect(screen.queryByTestId('status-pill-market')).toBeNull();
-  expect(screen.queryByTestId('status-pill-valuation')).toBeNull();
+  expect(await screen.findByTestId('status-pill-market')).toBeTruthy();
+  expect(await screen.findByTestId('status-pill-valuation')).toBeTruthy();
   expect(screen.queryByTestId('compact-status-trigger')).toBeNull();
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock).toHaveBeenCalled();
   expect(screen.getByTestId('sidebar-nav-market').getAttribute('href')).toBe(
     '/market',
   );

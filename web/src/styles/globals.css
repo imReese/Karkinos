@@ -420,7 +420,10 @@ textarea {
 
 .app-toolbar-mode {
   gap: 8px;
-  padding-inline: 10px 4px;
+  margin-left: 2px;
+  border-radius: var(--app-radius-control);
+  background: color-mix(in srgb, var(--app-accent) 6%, transparent);
+  padding-inline: 10px 8px;
 }
 
 .app-toolbar-mode > span {
@@ -677,6 +680,59 @@ textarea {
 .app-status-chip > button {
   font-size: var(--app-font-size-label);
   line-height: var(--app-line-height-label);
+}
+
+.app-status-chip-button {
+  transition:
+    border-color var(--app-motion-standard) var(--app-ease-standard),
+    background-color var(--app-motion-standard) var(--app-ease-standard),
+    box-shadow var(--app-motion-standard) var(--app-ease-standard),
+    color var(--app-motion-standard) var(--app-ease-standard),
+    translate var(--app-motion-fast) var(--app-ease-enter);
+}
+
+.app-status-chip-button:hover {
+  border-color: color-mix(in srgb, var(--app-accent) 24%, var(--app-divider));
+  background: color-mix(
+    in srgb,
+    var(--app-accent) 7%,
+    var(--app-surface-overlay)
+  );
+  color: var(--app-text);
+}
+
+.app-status-chip-button[aria-expanded='true'] {
+  border-color: var(--app-accent-border);
+  background: var(--app-accent-bg);
+  box-shadow: inset 0 -1px 0
+    color-mix(in srgb, var(--app-accent) 24%, transparent);
+  color: var(--app-text);
+}
+
+.app-status-chip-button:active {
+  translate: 0 1px;
+}
+
+.app-status-indicator-dot {
+  animation: app-status-indicator-arrive 420ms var(--app-ease-enter) both;
+}
+
+@keyframes app-status-indicator-arrive {
+  0% {
+    opacity: 0.5;
+    scale: 0.7;
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 26%, transparent);
+  }
+  55% {
+    opacity: 1;
+    scale: 1;
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
 .app-status-chip > button > span:first-child,
@@ -1708,6 +1764,10 @@ select:is(.app-field, .app-input):not([multiple]) {
   pointer-events: none;
   animation: app-popover-exit var(--app-motion-standard) var(--app-ease-exit)
     both;
+}
+
+.app-status-popover-root [role='dialog'] {
+  transform-origin: top left;
 }
 
 .app-status-tooltip {

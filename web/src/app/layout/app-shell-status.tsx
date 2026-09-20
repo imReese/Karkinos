@@ -56,7 +56,7 @@ export function StatusChip({
         aria-haspopup={popup ? 'dialog' : undefined}
         title={title ?? hoverHint}
         onClick={onClick}
-        className={`inline-flex h-full min-w-0 items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-transparent bg-transparent px-1 text-xs text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] ${
+        className={`app-status-chip-button inline-flex h-full min-w-0 items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-transparent bg-transparent px-1 text-xs text-[var(--app-text-secondary)] ${
           expanded
             ? 'bg-[var(--app-surface-overlay)] text-[var(--app-text)]'
             : ''
@@ -75,8 +75,12 @@ export function StatusChip({
               />
             ) : (
               <span
-                className="absolute inset-[2px] rounded-full"
-                style={{ backgroundColor: TOOLBAR_STATUS_COLORS[tone] }}
+                key={`${tone}-${value}-${meta ?? ''}`}
+                className="app-status-indicator-dot absolute inset-[2px] rounded-full"
+                style={{
+                  color: TOOLBAR_STATUS_COLORS[tone],
+                  backgroundColor: TOOLBAR_STATUS_COLORS[tone],
+                }}
                 aria-hidden="true"
                 data-testid={testId ? `${testId}-indicator` : undefined}
               />
