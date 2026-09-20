@@ -96,7 +96,7 @@ export type EquitySeriesPoint = {
   quote_set_fingerprint?: string | null;
 };
 
-export type EquityCurveRange = '1d' | '5d' | '1m' | '6m' | '1y' | 'all';
+export type EquityCurveRange = '1d' | '5d' | '1m' | '6m' | '1y' | 'ytd' | 'all';
 
 export type RiskSummaryItem = {
   kind: string;

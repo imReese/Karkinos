@@ -113,7 +113,7 @@ export function OverviewEquityCurve({
   const ranges: Array<[EquityCurveRange, string]> = [
     ['1m', labels.oneMonth],
     ['6m', labels.sixMonths],
-    ['1y', labels.oneYear],
+    ['ytd', labels.yearToDate],
     ['all', labels.all],
   ];
   const visibleSeries = {
