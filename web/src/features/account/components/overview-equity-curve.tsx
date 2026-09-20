@@ -14,6 +14,7 @@ import { SectionHeader } from '../../../shared/ui/workbench';
 import type { EquityCurveRange, EquitySeriesPoint } from '../api';
 import {
   NO_VISIBLE_SERIES,
+  padYearToDateWithZeroBaseline,
   resolveXAxisDomain,
   resolveXAxisTicks,
   resolveYAxisDomain,
@@ -31,18 +32,6 @@ const OVERVIEW_SERIES: SeriesKey[] = [
   'funds',
   'others',
 ];
-
-function historyStartLabel(timestamp: string | undefined, locale: 'en' | 'zh') {
-  if (!timestamp) return null;
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: 'Asia/Shanghai',
-  }).format(date);
-}
 
 export function OverviewEquityCurve({
   points,
@@ -76,7 +65,9 @@ export function OverviewEquityCurve({
     'conflict',
     'conflicting',
   ]);
-  const chartPoints = toChartPoints(points).map((point) => {
+  const displayPoints =
+    range === 'ytd' ? padYearToDateWithZeroBaseline(points) : points;
+  const chartPoints = toChartPoints(displayPoints).map((point) => {
     const rawValue = point[selectedSeries];
     const finiteValue =
       typeof rawValue === 'number' && Number.isFinite(rawValue)
@@ -120,10 +111,6 @@ export function OverviewEquityCurve({
     ...NO_VISIBLE_SERIES,
     [selectedSeries]: true,
   };
-  const historyStart =
-    range === 'all'
-      ? historyStartLabel(chartPoints[0]?.timestamp, locale)
-      : null;
   const selectedLabel = seriesLabels[selectedSeries];
   const selectedColor =
     SERIES_META.find((series) => series.key === selectedSeries)?.color ??
@@ -294,21 +281,6 @@ export function OverviewEquityCurve({
           </div>
         )}
       </div>
-
-      {historyStart || showBridgeLine ? (
-        <div className="app-type-micro mt-2 space-y-1 text-[var(--app-text-tertiary)]">
-          {historyStart ? (
-            <p data-testid="equity-history-start">
-              {labels.historyStart(historyStart)}
-            </p>
-          ) : null}
-          {showBridgeLine ? (
-            <p data-testid="equity-indicative-note">
-              {labels.indicativeHistoryNote}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }

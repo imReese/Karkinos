@@ -154,7 +154,7 @@ describe('remaining route workbench contract', () => {
     expect(OVERVIEW).toContain('overview-financial-canvas');
     expect(OVERVIEW).toContain('<OverviewSummary');
     expect(OVERVIEW).toContain('<OverviewEquityCurve');
-    expect(OVERVIEW).toContain('<OverviewDataStatus');
+    expect(OVERVIEW).not.toContain('<OverviewDataStatus');
     expect(OVERVIEW).not.toContain('buildTodayQueueModel');
     expect(PORTFOLIO).toContain('data-workbench-route="portfolio"');
     expect(MARKET).toContain('data-workbench-route="market"');

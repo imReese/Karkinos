@@ -3,11 +3,7 @@ import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import { MetricStrip } from '../../../shared/ui/workbench';
 import type { AccountOverview } from '../overview-feature-boundary';
-import {
-  overviewPresentation,
-  pnlTone,
-  shortDate,
-} from '../model/overview-presentation';
+import { overviewPresentation, pnlTone } from '../model/overview-presentation';
 
 function financialValue(
   value: number | null | undefined,
@@ -36,21 +32,22 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
       tone: 'text-[var(--app-text)]',
       testId: 'overview-total-value',
       primary: true,
-      detail:
-        copy.overview.cards.positionsCount + ' · ' + summary.positions_count,
     },
     {
       key: 'cumulative',
       label: copy.overview.cards.cumulativePnl,
-      value: financialValue(summary.cumulative_pnl, labels.pendingValuation),
+      value:
+        summary.cumulative_pnl == null
+          ? labels.pendingValuation
+          : summary.cumulative_return == null
+            ? formatCurrency(summary.cumulative_pnl)
+            : `${formatCurrency(summary.cumulative_pnl)} · ${formatPercent(
+                summary.cumulative_return,
+              )}`,
       tone: cumulativeUnavailable
         ? 'text-[var(--app-text)]'
         : pnlTone(summary.cumulative_pnl),
       testId: 'overview-cumulative-pnl',
-      detail:
-        summary.cumulative_return == null
-          ? labels.returnUnavailable
-          : formatPercent(summary.cumulative_return),
     },
     {
       key: 'latest',
@@ -60,19 +57,17 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
         ? 'text-[var(--app-text)]'
         : pnlTone(summary.today_pnl),
       testId: 'overview-session-pnl',
-      detail: shortDate(summary.latest_session_date),
     },
     {
       key: 'cash',
       label: copy.overview.cards.availableCash,
-      value: formatCurrency(summary.available_cash),
-      tone: 'text-[var(--app-text)]',
-      detail:
+      value:
         summary.cash_ratio == null
-          ? labels.cashRatioUnavailable
-          : copy.overview.cards.cashRatio +
-            ' ' +
-            formatPercent(summary.cash_ratio),
+          ? formatCurrency(summary.available_cash)
+          : `${formatCurrency(summary.available_cash)} · ${formatPercent(
+              summary.cash_ratio,
+            )}`,
+      tone: 'text-[var(--app-text)]',
     },
   ];
 
@@ -102,9 +97,6 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
               }
             >
               {metric.value}
-            </dd>
-            <dd className="app-type-label mt-1 tabular-nums text-[var(--app-text-tertiary)]">
-              {metric.detail}
             </dd>
           </div>
         ))}
@@ -144,7 +136,6 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
             id: 'positions',
             label: copy.overview.cards.positionsCount,
             value: String(summary.positions_count),
-            detail: labels.holdingsDetail,
           },
         ]}
       />

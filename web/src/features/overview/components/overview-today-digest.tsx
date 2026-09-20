@@ -7,25 +7,13 @@ import {
   operationsTargetHref,
   type AccountStateResponse,
 } from '../overview-feature-boundary';
-import {
-  overviewPresentation,
-  overviewSessionLabels,
-  shortDate,
-} from '../model/overview-presentation';
+import { overviewPresentation } from '../model/overview-presentation';
 
 type Driver = NonNullable<
   AccountStateResponse['summary']['today_contributors']
 >[number];
 
-function DriverList({
-  title,
-  items,
-  emptyLabel,
-}: {
-  title: string;
-  items: Driver[];
-  emptyLabel: string;
-}) {
+function DriverList({ title, items }: { title: string; items: Driver[] }) {
   return (
     <div className="min-w-0">
       <h3 className="app-type-label font-semibold text-[var(--app-text-secondary)]">
@@ -63,9 +51,9 @@ function DriverList({
           ))}
         </ul>
       ) : (
-        <p className="app-type-compact mt-1.5 text-[var(--app-text-tertiary)]">
-          {emptyLabel}
-        </p>
+        <span className="app-type-compact mt-1.5 block text-[var(--app-text-tertiary)]">
+          —
+        </span>
       )}
     </div>
   );
@@ -93,60 +81,45 @@ export function OverviewTodayDigest({
       className="min-w-0 xl:border-l xl:border-[var(--app-divider)] xl:pl-6"
       data-testid="overview-today-digest"
     >
-      <SectionHeader
-        title={labels.todayNarrative}
-        meta={shortDate(state.summary.latest_session_date)}
-      />
-      <div className="mt-3" data-testid="overview-performance-drivers">
-        <p className="app-type-micro mb-2 text-[var(--app-text-tertiary)]">
-          {overviewSessionLabels(state, locale).drivers}
-        </p>
-        <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
-          <DriverList
-            title={labels.contributors}
-            items={gains}
-            emptyLabel={labels.noPositiveDrivers}
-          />
-          <DriverList
-            title={labels.detractors}
-            items={drags}
-            emptyLabel={labels.noNegativeDrivers}
-          />
-        </div>
+      <SectionHeader title={labels.todayNarrative} />
+      <div
+        className="mt-3 grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2"
+        data-testid="overview-performance-drivers"
+      >
+        <DriverList title={labels.contributors} items={gains} />
+        <DriverList title={labels.detractors} items={drags} />
       </div>
-      <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
-        <h3 className="app-type-label font-semibold text-[var(--app-text-secondary)]">
-          {labels.accountEvents}
-        </h3>
-        {state.overview.attention_status !== 'available' ? (
-          <p className="app-type-compact mt-1.5 text-[var(--app-warning-text)]">
-            {labels.attentionUnavailable}
-          </p>
-        ) : attention.length ? (
-          <ul className="mt-1.5 divide-y divide-[var(--app-divider)]">
-            {attention.map((item) => (
-              <li
-                key={item.task_fingerprint}
-                className="app-type-compact flex min-w-0 items-baseline justify-between gap-3 py-1.5"
-              >
-                <span className="shrink-0 text-[var(--app-text-tertiary)]">
-                  {operationsSubsystemLabel(item.subsystem_id, locale)}
-                </span>
-                <a
-                  href={operationsTargetHref(item.target)}
-                  className="min-w-0 truncate text-right font-medium text-[var(--app-accent)] hover:underline"
+      {state.overview.attention_status !== 'available' || attention.length ? (
+        <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
+          <h3 className="app-type-label font-semibold text-[var(--app-text-secondary)]">
+            {labels.accountEvents}
+          </h3>
+          {state.overview.attention_status !== 'available' ? (
+            <span className="app-type-compact mt-1.5 block text-[var(--app-warning-text)]">
+              {labels.attentionUnavailable}
+            </span>
+          ) : (
+            <ul className="mt-1.5 divide-y divide-[var(--app-divider)]">
+              {attention.map((item) => (
+                <li
+                  key={item.task_fingerprint}
+                  className="app-type-compact flex min-w-0 items-baseline justify-between gap-3 py-1.5"
                 >
-                  {operationsNextActionLabel(item.next_action, locale)}
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="app-type-compact mt-1.5 text-[var(--app-text-secondary)]">
-            {labels.noAccountEvents}
-          </p>
-        )}
-      </div>
+                  <span className="shrink-0 text-[var(--app-text-tertiary)]">
+                    {operationsSubsystemLabel(item.subsystem_id, locale)}
+                  </span>
+                  <a
+                    href={operationsTargetHref(item.target)}
+                    className="min-w-0 truncate text-right font-medium text-[var(--app-accent)] hover:underline"
+                  >
+                    {operationsNextActionLabel(item.next_action, locale)}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
     </aside>
   );
 }

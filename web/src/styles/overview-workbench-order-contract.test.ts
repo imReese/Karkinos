@@ -20,8 +20,7 @@ function indexOfRequired(fragment: string) {
   return index;
 }
 
-test('overview reads from account context into performance, holdings and low-priority diagnostics', () => {
-  const status = indexOfRequired('<OverviewDataStatus');
+test('overview stays investment-first and leaves diagnostics to drill-down pages', () => {
   const summary = indexOfRequired('<OverviewSummary');
   const performance = indexOfRequired(
     'data-testid="overview-performance-card"',
@@ -31,18 +30,15 @@ test('overview reads from account context into performance, holdings and low-pri
   const allocationRisk = indexOfRequired('<OverviewAllocationRiskSection');
   const recommendation = indexOfRequired('<OverviewStrategyRecommendation');
   const attention = indexOfRequired('<DashboardTodayQueue');
-  const dataTrust = indexOfRequired('<OverviewDataTrustStrip');
-  const valuationCoverage = indexOfRequired('<OverviewValuationCoverage');
-  const details = indexOfRequired('<OverviewDataDetails');
 
-  expect(status).toBeLessThan(summary);
   expect(summary).toBeLessThan(performance);
   expect(performance).toBeLessThan(todayDigest);
   expect(todayDigest).toBeLessThan(holdings);
   expect(holdings).toBeLessThan(allocationRisk);
   expect(allocationRisk).toBeLessThan(recommendation);
   expect(recommendation).toBeLessThan(attention);
-  expect(attention).toBeLessThan(dataTrust);
-  expect(dataTrust).toBeLessThan(valuationCoverage);
-  expect(valuationCoverage).toBeLessThan(details);
+  expect(source).not.toContain('<OverviewDataStatus');
+  expect(source).not.toContain('<OverviewDataTrustStrip');
+  expect(source).not.toContain('<OverviewValuationCoverage');
+  expect(source).not.toContain('<OverviewDataDetails');
 });

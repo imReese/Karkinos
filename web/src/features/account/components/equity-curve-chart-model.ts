@@ -176,6 +176,65 @@ export function readChartElementSize(
   return { width, height };
 }
 
+export function padYearToDateWithZeroBaseline(
+  points: EquitySeriesPoint[],
+): EquitySeriesPoint[] {
+  if (!points.length) {
+    return points;
+  }
+
+  const ordered = [...points].sort(
+    (left, right) =>
+      new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime(),
+  );
+  const latestTimestamp = new Date(
+    ordered[ordered.length - 1]?.timestamp ?? '',
+  ).getTime();
+  const firstTimestamp = new Date(ordered[0]?.timestamp ?? '').getTime();
+  if (!Number.isFinite(latestTimestamp) || !Number.isFinite(firstTimestamp)) {
+    return ordered;
+  }
+
+  const year = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    timeZone: 'Asia/Shanghai',
+  }).format(new Date(latestTimestamp));
+  const yearStartTimestamp = new Date(`${year}-01-01T15:00:00+08:00`).getTime();
+  if (firstTimestamp <= yearStartTimestamp) {
+    return ordered;
+  }
+
+  const zeroPoint = (timestamp: number): EquitySeriesPoint => ({
+    ...ordered[0],
+    timestamp: new Date(timestamp).toISOString(),
+    total: 0,
+    stocks: 0,
+    funds: 0,
+    others: 0,
+    cash: 0,
+    unrealized_pnl: 0,
+    total_daily_change: 0,
+    stocks_daily_change: 0,
+    funds_daily_change: 0,
+    others_daily_change: 0,
+    quote_status: 'live',
+    valuation_status: 'reconstructed',
+    valuation_policy: 'karkinos.overview.ytd_zero_baseline.v1',
+    valuation_snapshot_id: null,
+    valuation_as_of: null,
+    valuation_trade_date: null,
+    ledger_fingerprint: null,
+    quote_set_fingerprint: null,
+  });
+
+  const dayBeforeFirst = firstTimestamp - 86_400_000;
+  const baseline = [zeroPoint(yearStartTimestamp)];
+  if (dayBeforeFirst > yearStartTimestamp) {
+    baseline.push(zeroPoint(dayBeforeFirst));
+  }
+  return [...baseline, ...ordered];
+}
+
 export function toChartPoints(points: EquitySeriesPoint[]): ChartPoint[] {
   return points
     .map((point) => {

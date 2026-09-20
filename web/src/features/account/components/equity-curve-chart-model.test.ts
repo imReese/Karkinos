@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import type { EquitySeriesPoint } from '../api';
 import {
   filterByRange,
+  padYearToDateWithZeroBaseline,
   resolveXAxisDomain,
   resolveXAxisTicks,
   toChartPoints,
@@ -20,6 +21,21 @@ function point(timestamp: string, total: number): EquitySeriesPoint {
     valuation_status: 'reconstructed',
   };
 }
+
+test('year-to-date pads the pre-account part of the year with a flat zero baseline', () => {
+  const padded = padYearToDateWithZeroBaseline([
+    point('2026-04-01T15:00:00+08:00', 3000),
+    point('2026-04-02T15:00:00+08:00', 3000),
+  ]);
+
+  expect(padded).toHaveLength(4);
+  expect(padded[0]?.total).toBe(0);
+  expect(padded[1]?.total).toBe(0);
+  expect(padded[0]?.timestamp.slice(0, 10)).toBe('2026-01-01');
+  expect(padded[1]?.timestamp.slice(0, 10)).toBe('2026-03-31');
+  expect(padded[2]?.timestamp.slice(0, 10)).toBe('2026-04-01');
+  expect(padded[2]?.total).toBe(3000);
+});
 
 test('year-to-date filters prior-year points but keeps the calendar axis anchored at January 1', () => {
   const points = toChartPoints([

@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
-import type { EquitySeriesPoint } from '../api';
+import type { EquityCurveRange, EquitySeriesPoint } from '../api';
 import { OverviewEquityCurve } from './overview-equity-curve';
 
 const points: EquitySeriesPoint[] = [
@@ -67,12 +67,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function chart(data: EquitySeriesPoint[]) {
+function chart(data: EquitySeriesPoint[], range: EquityCurveRange = 'all') {
   return (
     <PreferencesProvider>
       <OverviewEquityCurve
         points={data}
-        range="all"
+        range={range}
         onRangeChange={() => undefined}
       />
     </PreferencesProvider>
@@ -112,7 +112,6 @@ test.each([
     expect(paths).toHaveLength(2);
     expect(paths[0]?.getAttribute('d')?.match(/M/g)).toHaveLength(1);
     expect(paths[1]?.getAttribute('d')?.match(/M/g)).toHaveLength(2);
-    expect(screen.getByTestId('equity-indicative-note')).toBeVisible();
   },
 );
 
@@ -162,7 +161,6 @@ test('bridges a genuine missing valuation with a same-color dashed line', () => 
   expect(bridge).not.toBeNull();
   expect(bridge).toHaveAttribute('stroke', 'var(--app-accent)');
   expect(bridge?.getAttribute('d')?.match(/M/g)).toHaveLength(1);
-  expect(screen.getByTestId('equity-indicative-note')).toBeVisible();
 });
 
 test('lets overview switch the performance series without changing the time range', async () => {
@@ -184,11 +182,34 @@ test('lets overview switch the performance series without changing the time rang
   );
 });
 
-test('makes the all-history starting date explicit instead of implying older data', () => {
-  render(chart(points));
-  expect(screen.getByTestId('equity-history-start')).toHaveTextContent(
-    '09/10/2026',
-  );
+test('year-to-date renders a flat zero baseline before the first account point', () => {
+  const ytdPoints: EquitySeriesPoint[] = [
+    {
+      timestamp: '2026-04-01T15:00:00+08:00',
+      total: 3000,
+      stocks: 0,
+      funds: 0,
+      others: 0,
+      cash: 3000,
+      valuation_status: 'reconstructed',
+      quote_status: 'live',
+    },
+    {
+      timestamp: '2026-04-02T15:00:00+08:00',
+      total: 3000,
+      stocks: 0,
+      funds: 0,
+      others: 0,
+      cash: 3000,
+      valuation_status: 'reconstructed',
+      quote_status: 'live',
+    },
+  ];
+  const { container } = render(chart(ytdPoints, 'ytd'));
+  const line = container.querySelector('path.recharts-line-curve');
+  expect(line).not.toBeNull();
+  expect(line?.getAttribute('d')).toContain('L');
+  expect(screen.queryByTestId('equity-history-start')).not.toBeInTheDocument();
 });
 
 test('financial axis labels preserve the difference between nearby equity values', async () => {

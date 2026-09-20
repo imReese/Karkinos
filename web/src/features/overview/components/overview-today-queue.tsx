@@ -55,13 +55,6 @@ export function DashboardTodayQueue({
         />
       ) : null}
 
-      {overview.attention_status === 'available' &&
-      overview.user_attention.length === 0 ? (
-        <p className="app-type-compact mt-2 text-[var(--app-text-secondary)]">
-          {copy.overview.dashboard.noActionItems}
-        </p>
-      ) : null}
-
       {overview.user_attention.length > 0 ? (
         <ul className="mt-2 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
           {overview.user_attention.map((item) => (

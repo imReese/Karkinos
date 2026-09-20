@@ -268,7 +268,6 @@ test('reads one coherent account projection and a separate canonical history', a
   expect(screen.getByTestId('overview-session-pnl')).toHaveTextContent(
     '-¥314.51',
   );
-  expect(screen.getByText('Return unavailable')).toBeVisible();
   expect(
     within(screen.getByTestId('overview-summary')).getByText(/37.6%/),
   ).toBeVisible();
@@ -289,8 +288,6 @@ test('shows the canonical daily strategy recommendation separately from operatio
   expect(
     await within(recommendation).findByText('今日账户操作：无操作'),
   ).toBeVisible();
-  expect(recommendation).toHaveTextContent('未产生账户操作信号');
-  expect(recommendation).toHaveTextContent('只读建议');
   expect(within(recommendation).getByRole('link')).toHaveAttribute(
     'href',
     '/decision',
@@ -341,14 +338,9 @@ test('explains why today has no actionable recommendation when evidence gates bl
     'overview-decision-blockers',
   );
   expect(blockers).toHaveTextContent('行情数据');
-  expect(blockers).toHaveTextContent('刷新或确认当前行情证据');
   expect(blockers).toHaveTextContent('账户事实');
-  expect(blockers).toHaveTextContent('刷新账户事实快照');
   expect(blockers).toHaveTextContent('研究策略');
   expect(blockers).toHaveTextContent('待补研究');
-  expect(blockers).toHaveTextContent(
-    '当前没有已晋级到 Paper Shadow 的证据策略',
-  );
   expect(
     within(blockers).getByRole('link', {
       name: '进入证据研究',
@@ -384,29 +376,20 @@ test('shows a manual-review strategy action without implying automatic execution
   expect(recommendation).toHaveTextContent('买入候选');
   expect(recommendation).toHaveTextContent('600519');
   expect(recommendation).toHaveTextContent('数量 100');
-  expect(recommendation).toHaveTextContent('不创建或提交券商订单');
 });
 
-test('latest completed-session data on a verified non-trading day is usable with an empty attention queue', async () => {
+test('verified non-trading-day state stays compact when there is nothing to do', async () => {
   installFetch();
   renderPage();
-  expect(await screen.findByTestId('overview-data-status')).toHaveTextContent(
-    'Data as of 09/11 · Market closed · Current valuation usable',
-  );
+  await screen.findByTestId('overview-summary');
   const queue = screen.getByTestId('overview-today-queue');
   expect(within(queue).getByText('0')).toBeVisible();
-  expect(
-    within(queue).getByText('No items need your attention today.'),
-  ).toBeVisible();
   expect(within(queue).queryByRole('link')).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(
-      /Evidence complete|Evidence degraded|Cached quotes|Broker disabled/,
-    ),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByTestId('overview-data-status')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('overview-data-trust')).not.toBeInTheDocument();
 });
 
-test('a later failed refresh does not contradict a usable published valuation', async () => {
+test('a later failed refresh does not crowd a usable overview with diagnostics', async () => {
   const state = accountFixture();
   state.overview.refresh_health = {
     status: 'degraded',
@@ -418,36 +401,26 @@ test('a later failed refresh does not contradict a usable published valuation', 
   };
   installFetch(state);
   renderPage();
-  expect(await screen.findByTestId('overview-data-status')).toHaveTextContent(
-    'Current valuation usable',
-  );
-  expect(screen.getAllByRole('status')).toHaveLength(1);
-  const details = screen.getByTestId('overview-data-details');
-  expect(details).not.toHaveAttribute('open');
-  expect(within(details).getByText('Latest refresh failed')).not.toBeVisible();
-  await userEvent.click(within(details).getByText('Data details'));
-  expect(within(details).getByText('Latest refresh failed')).toBeVisible();
-  expect(within(details).getByText('synthetic-snapshot')).toBeVisible();
-  expect(screen.getByTestId('overview-data-status')).not.toHaveTextContent(
-    'review',
-  );
+  expect(await screen.findByTestId('overview-summary')).toBeVisible();
+  expect(screen.queryByTestId('overview-data-details')).not.toBeInTheDocument();
+  expect(
+    screen.queryByText('synthetic-provider-error'),
+  ).not.toBeInTheDocument();
 });
 
 test.each(['degraded', 'unavailable'] as const)(
-  'renders canonical %s valuation without normalizing a closed market',
+  'keeps %s valuation diagnostics out of the overview body',
   async (status) => {
     const state = accountFixture();
     state.overview.valuation_usability = status;
     state.overview.pricing_as_of = '2026-09-10';
     installFetch(state);
     renderPage();
-    const banner = await screen.findByTestId('overview-data-status');
-    expect(banner).toHaveTextContent(
-      status === 'degraded'
-        ? 'Valuation evidence needs review'
-        : 'Valuation unavailable',
-    );
-    expect(banner).not.toHaveTextContent('Current valuation usable');
+    expect(await screen.findByTestId('overview-summary')).toBeVisible();
+    expect(
+      screen.queryByTestId('overview-data-status'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('overview-data-trust')).not.toBeInTheDocument();
   },
 );
 
@@ -551,8 +524,7 @@ test('a failed account refresh retains the prior coherent financial view', async
   expect(screen.getByTestId('overview-total-value')).toHaveTextContent(
     '18,585.11',
   );
-  await userEvent.click(screen.getByText('Data details'));
-  expect(screen.getByText(/Could not refresh this view/)).toBeVisible();
+  expect(screen.queryByTestId('overview-data-details')).not.toBeInTheDocument();
 });
 
 test('range control requests only a supported canonical series range', async () => {
@@ -581,50 +553,33 @@ test('calendar-year control requests year-to-date history from January 1', async
   );
 });
 
-test('Chinese presentation preserves published NAV and compact no-action semantics', async () => {
+test('Chinese presentation keeps zero-action state compact', async () => {
   installFetch();
   renderPage('zh');
   expect(
     await screen.findByRole('heading', { name: '投资总览' }),
   ).toBeVisible();
-  expect(await screen.findByText('今天没有需要处理的事项')).toBeVisible();
+  await screen.findByTestId('overview-summary');
+  const queue = screen.getByTestId('overview-today-queue');
+  expect(within(queue).getByText('0')).toBeVisible();
+  expect(
+    within(queue).queryByText('今天没有需要处理的事项'),
+  ).not.toBeInTheDocument();
   expect(
     screen.getAllByTestId('position-pricing-fixture-fund')[0],
   ).toHaveTextContent('已公布净值 · 09/11');
 });
 
-test('shows valuation coverage when current holdings are not fully evidence-gated', async () => {
+test('keeps valuation coverage diagnostics in drill-down pages instead of overview', async () => {
   const state = accountFixture();
   state.snapshot.valuation_status = 'degraded';
   state.overview.valuation_usability = 'degraded';
-  state.snapshot.valuation_lanes = [
-    {
-      asset_class: 'stock',
-      status: 'degraded',
-      quote_count: 2,
-      complete_quote_count: 1,
-      review_required_quote_count: 1,
-      blocker_statuses: ['stale'],
-    },
-    {
-      asset_class: 'fund',
-      status: 'degraded',
-      quote_count: 3,
-      complete_quote_count: 0,
-      review_required_quote_count: 3,
-      blocker_statuses: ['stale'],
-    },
-  ];
-
   installFetch(state);
   renderPage('zh');
-  const coverage = await screen.findByTestId('overview-valuation-coverage');
-  expect(coverage).toHaveTextContent('估值覆盖');
-  expect(coverage).toHaveTextContent('股票');
-  expect(coverage).toHaveTextContent('1/2');
-  expect(coverage).toHaveTextContent('基金');
-  expect(coverage).toHaveTextContent('0/3');
-  expect(coverage).toHaveTextContent('3 个标的待补证据');
+  expect(await screen.findByTestId('overview-summary')).toBeVisible();
+  expect(
+    screen.queryByTestId('overview-valuation-coverage'),
+  ).not.toBeInTheDocument();
 });
 
 test.each(['missing', 'conflicting', 'unknown'] as const)(
@@ -648,13 +603,13 @@ test.each(['missing', 'conflicting', 'unknown'] as const)(
           ? 'Conflicting price evidence'
           : 'Pricing unverified',
     );
-    expect(screen.getByTestId('overview-data-status')).toHaveTextContent(
-      'Valuation unavailable',
-    );
+    expect(
+      screen.queryByTestId('overview-data-status'),
+    ).not.toBeInTheDocument();
   },
 );
 
-test('stock closing prices use the close basis in the primary as-of summary', async () => {
+test('stock closing-price metadata stays out of the overview headline', async () => {
   const state = accountFixture();
   state.snapshot.positions[0] = {
     ...state.snapshot.positions[0],
@@ -664,9 +619,8 @@ test('stock closing prices use the close basis in the primary as-of summary', as
   };
   installFetch(state);
   renderPage('zh');
-  expect(await screen.findByTestId('overview-data-status')).toHaveTextContent(
-    '数据截至 09/11 收盘 · 市场休市 · 当前估值可用',
-  );
+  expect(await screen.findByTestId('overview-summary')).toBeVisible();
+  expect(screen.queryByTestId('overview-data-status')).not.toBeInTheDocument();
 });
 
 test('usable authoritative fund NAV stays published when live-decision quote freshness is blocked', async () => {
@@ -682,9 +636,7 @@ test('usable authoritative fund NAV stays published when live-decision quote fre
   const pricing = screen.getAllByTestId('position-pricing-fixture-fund')[0];
   expect(pricing).toHaveTextContent('Published NAV · 09/11');
   expect(pricing).not.toHaveTextContent(/update required|older than expected/);
-  expect(screen.getByTestId('overview-data-status')).toHaveTextContent(
-    'Current valuation usable',
-  );
+  expect(screen.queryByTestId('overview-data-status')).not.toBeInTheDocument();
 });
 
 test('known valuation repair remains actionable when unrelated Operations evidence is unavailable', async () => {
@@ -734,7 +686,6 @@ test('shows previous-session performance contributors from canonical account sta
   installFetch(state);
   renderPage('zh');
   const drivers = await screen.findByTestId('overview-performance-drivers');
-  expect(drivers).toHaveTextContent('上一交易日主要影响');
   expect(drivers).toHaveTextContent('合成基金');
   expect(drivers).toHaveTextContent('-¥314.51');
 });
