@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import type { EquitySeriesPoint } from '../api';
@@ -114,6 +115,32 @@ test.each([
     expect(screen.getByTestId('equity-indicative-note')).toBeVisible();
   },
 );
+
+test('lets overview switch the performance series without changing the time range', async () => {
+  render(chart(points));
+  const user = userEvent.setup();
+  const controls = screen.getByTestId('equity-series-controls');
+  const total = within(controls).getByRole('button', { name: 'Total Assets' });
+  const cash = within(controls).getByRole('button', { name: 'Cash' });
+  expect(total).toHaveAttribute('aria-pressed', 'true');
+  expect(cash).toHaveAttribute('aria-pressed', 'false');
+
+  await user.click(cash);
+
+  expect(total).toHaveAttribute('aria-pressed', 'false');
+  expect(cash).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByTestId('equity-chart-frame')).toHaveAttribute(
+    'aria-label',
+    'Cash',
+  );
+});
+
+test('makes the all-history starting date explicit instead of implying older data', () => {
+  render(chart(points));
+  expect(screen.getByTestId('equity-history-start')).toHaveTextContent(
+    '09/10/2026',
+  );
+});
 
 test('financial axis labels preserve the difference between nearby equity values', async () => {
   const { container } = render(chart(points));
