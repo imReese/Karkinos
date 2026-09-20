@@ -176,8 +176,62 @@ export function readChartElementSize(
   return { width, height };
 }
 
-export function padYearToDateWithZeroBaseline(
+function shanghaiDateParts(timestampMs: number) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Shanghai',
+  }).formatToParts(new Date(timestampMs));
+  return {
+    year: Number(parts.find((part) => part.type === 'year')?.value),
+    month: Number(parts.find((part) => part.type === 'month')?.value),
+    day: Number(parts.find((part) => part.type === 'day')?.value),
+  };
+}
+
+function shiftShanghaiCalendarMonths(timestampMs: number, months: number) {
+  const { year, month, day } = shanghaiDateParts(timestampMs);
+  const targetIndex = year * 12 + (month - 1) - months;
+  const targetYear = Math.floor(targetIndex / 12);
+  const targetMonthIndex = targetIndex - targetYear * 12;
+  const targetMonth = targetMonthIndex + 1;
+  const daysInTargetMonth = new Date(
+    Date.UTC(targetYear, targetMonth, 0),
+  ).getUTCDate();
+  const targetDay = Math.min(day, daysInTargetMonth);
+  return new Date(
+    `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(
+      targetDay,
+    ).padStart(2, '0')}T15:00:00+08:00`,
+  ).getTime();
+}
+
+export function resolveRangeStartTimestamp(
+  latestTimestamp: number,
+  range: EquityCurveRange,
+) {
+  if (!Number.isFinite(latestTimestamp) || range === 'all') {
+    return null;
+  }
+  if (range === 'ytd') {
+    return startOfShanghaiCalendarYear(latestTimestamp);
+  }
+  if (range === '1m') {
+    return shiftShanghaiCalendarMonths(latestTimestamp, 1);
+  }
+  if (range === '6m') {
+    return shiftShanghaiCalendarMonths(latestTimestamp, 6);
+  }
+  if (range === '1y') {
+    return shiftShanghaiCalendarMonths(latestTimestamp, 12);
+  }
+  return latestTimestamp - RANGE_DAYS[range] * 86_400_000;
+}
+
+export function padRangeWithZeroBaseline(
   points: EquitySeriesPoint[],
+  range: EquityCurveRange,
 ): EquitySeriesPoint[] {
   if (!points.length) {
     return points;
@@ -195,12 +249,15 @@ export function padYearToDateWithZeroBaseline(
     return ordered;
   }
 
-  const year = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    timeZone: 'Asia/Shanghai',
-  }).format(new Date(latestTimestamp));
-  const yearStartTimestamp = new Date(`${year}-01-01T15:00:00+08:00`).getTime();
-  if (firstTimestamp <= yearStartTimestamp) {
+  const rangeStartTimestamp = resolveRangeStartTimestamp(
+    latestTimestamp,
+    range,
+  );
+  if (
+    rangeStartTimestamp == null ||
+    firstTimestamp <= rangeStartTimestamp ||
+    !['1m', '6m', '1y', 'ytd'].includes(range)
+  ) {
     return ordered;
   }
 
@@ -219,7 +276,7 @@ export function padYearToDateWithZeroBaseline(
     others_daily_change: 0,
     quote_status: 'live',
     valuation_status: 'reconstructed',
-    valuation_policy: 'karkinos.overview.ytd_zero_baseline.v1',
+    valuation_policy: 'karkinos.overview.range_zero_baseline.v1',
     valuation_snapshot_id: null,
     valuation_as_of: null,
     valuation_trade_date: null,
@@ -228,8 +285,8 @@ export function padYearToDateWithZeroBaseline(
   });
 
   const dayBeforeFirst = firstTimestamp - 86_400_000;
-  const baseline = [zeroPoint(yearStartTimestamp)];
-  if (dayBeforeFirst > yearStartTimestamp) {
+  const baseline = [zeroPoint(rangeStartTimestamp)];
+  if (dayBeforeFirst > rangeStartTimestamp) {
     baseline.push(zeroPoint(dayBeforeFirst));
   }
   return [...baseline, ...ordered];
@@ -322,10 +379,10 @@ export function filterByRange(points: ChartPoint[], range: EquityCurveRange) {
   }
 
   const latest = points[points.length - 1]?.timestampMs ?? Date.now();
-  const rangeStart =
-    range === 'ytd'
-      ? startOfShanghaiCalendarYear(latest)
-      : latest - RANGE_DAYS[range] * 86_400_000;
+  const rangeStart = resolveRangeStartTimestamp(latest, range);
+  if (rangeStart == null) {
+    return points;
+  }
   const filtered = points.filter((point) => {
     return point.timestampMs >= rangeStart && point.timestampMs <= latest;
   });
@@ -400,16 +457,10 @@ export function resolveXAxisTicks(
   if (range === '1d') {
     return buildIntradaySessionTicks(points);
   }
-  if (range === 'ytd') {
-    const latest = points[points.length - 1]?.timestampMs;
-    if (!latest) {
-      return [];
-    }
-    return buildTimeTicksBetween(
-      startOfShanghaiCalendarYear(latest),
-      latest,
-      6,
-    );
+  const latest = points[points.length - 1]?.timestampMs;
+  const rangeStart = latest ? resolveRangeStartTimestamp(latest, range) : null;
+  if (latest && rangeStart != null) {
+    return buildTimeTicksBetween(rangeStart, latest, 6);
   }
   return buildTimeTicks(points, 6);
 }
@@ -418,15 +469,14 @@ export function resolveXAxisDomain(
   points: ChartPoint[],
   range: EquityCurveRange,
 ): [number, number] | ['dataMin', 'dataMax'] {
-  if (range === 'ytd') {
-    const latest = points[points.length - 1]?.timestampMs;
-    if (!latest) {
-      return ['dataMin', 'dataMax'];
-    }
-    return [startOfShanghaiCalendarYear(latest), latest];
-  }
   if (range !== '1d') {
-    return ['dataMin', 'dataMax'];
+    const latest = points[points.length - 1]?.timestampMs;
+    const rangeStart = latest
+      ? resolveRangeStartTimestamp(latest, range)
+      : null;
+    return latest && rangeStart != null
+      ? [rangeStart, latest]
+      : ['dataMin', 'dataMax'];
   }
   const intradayTicks = buildIntradaySessionTicks(points);
   if (intradayTicks.length >= 2) {

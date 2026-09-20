@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -28,10 +29,23 @@ _CN_AFTERNOON_CLOSE = time(15, 0)
 _SH_TZ = ZoneInfo("Asia/Shanghai")
 _EQUITY_SERIES_RANGE_DAYS = {
     "5d": 5,
-    "1m": 31,
-    "6m": 183,
-    "1y": 366,
 }
+
+
+def equity_series_range_start_date(end_date: date, selected_range: str) -> date | None:
+    if selected_range == "all":
+        return None
+    if selected_range == "ytd":
+        return date(end_date.year, 1, 1)
+    calendar_months = {"1m": 1, "6m": 6, "1y": 12}.get(selected_range)
+    if calendar_months is not None:
+        target_index = end_date.year * 12 + (end_date.month - 1) - calendar_months
+        target_year, target_month_index = divmod(target_index, 12)
+        target_month = target_month_index + 1
+        target_day = min(end_date.day, monthrange(target_year, target_month)[1])
+        return date(target_year, target_month, target_day)
+    range_days = _EQUITY_SERIES_RANGE_DAYS.get(selected_range)
+    return end_date - timedelta(days=range_days) if range_days is not None else None
 
 
 def _verified_trading_days(
@@ -339,17 +353,11 @@ def build_daily_equity_series_from_ledger_history(
         else None
     ) or now
     latest_timestamp = latest_timestamp.astimezone(_SH_TZ)
-    range_days = _EQUITY_SERIES_RANGE_DAYS.get(selected_range)
     first_entry_date = dated_entries[0][0].date()
-    start_date = (
-        date(latest_timestamp.year, 1, 1)
-        if selected_range == "ytd"
-        else (
-            first_entry_date
-            if range_days is None
-            else (latest_timestamp - timedelta(days=range_days)).date()
-        )
+    requested_start_date = equity_series_range_start_date(
+        latest_timestamp.date(), selected_range
     )
+    start_date = requested_start_date or first_entry_date
     end_date = latest_timestamp.date()
     if start_date > end_date:
         return []
