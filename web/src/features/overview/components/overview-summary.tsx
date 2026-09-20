@@ -22,15 +22,6 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
   const { locale } = usePreferences();
   const labels = overviewPresentation[locale];
 
-  const cumulativeValue =
-    summary.cumulative_pnl == null
-      ? labels.pendingValuation
-      : formatCurrency(summary.cumulative_pnl);
-  const cumulativeReturn =
-    summary.cumulative_return == null
-      ? null
-      : formatPercent(summary.cumulative_return);
-
   const headlineMetrics = [
     {
       key: 'latest',
@@ -46,8 +37,11 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
     {
       key: 'cumulative',
       label: copy.overview.cards.cumulativePnl,
-      value: cumulativeValue,
-      returnValue: cumulativeReturn,
+      value: financialValue(summary.cumulative_pnl, labels.pendingValuation),
+      returnValue:
+        summary.cumulative_return == null
+          ? null
+          : formatPercent(summary.cumulative_return),
       tone:
         summary.cumulative_pnl == null
           ? 'text-[var(--app-text)]'
@@ -88,66 +82,53 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
       data-testid="overview-summary"
       aria-label={copy.overview.cards.totalAssets}
       className="overview-hero min-w-0 border-b border-[var(--app-divider)]"
-      style={{
-        background:
-          'linear-gradient(112deg, transparent 0%, transparent 68%, color-mix(in srgb, var(--app-accent) 6%, transparent) 100%)',
-      }}
     >
-      <div className="grid min-w-0 gap-5 py-5 lg:grid-cols-[minmax(18rem,0.78fr)_minmax(0,1.22fr)] lg:gap-0">
-        <div className="min-w-0 lg:border-r lg:border-[var(--app-divider)] lg:pr-8">
-          <div className="app-type-subsection-title font-semibold text-[var(--app-text-secondary)]">
+      <div className="grid min-w-0 gap-4 py-3.5 md:grid-cols-[minmax(16rem,1.25fr)_minmax(12rem,0.9fr)_minmax(12rem,0.9fr)] md:items-end md:gap-0 md:divide-x md:divide-[var(--app-divider)]">
+        <div className="min-w-0 md:pr-7">
+          <div className="app-type-label font-semibold text-[var(--app-text-secondary)]">
             {copy.overview.cards.totalAssets}
           </div>
           <div
             data-testid="overview-total-value"
-            className="app-type-overview-hero mt-2 whitespace-nowrap tabular-nums text-[var(--app-text)]"
+            className="app-type-overview-hero mt-1 whitespace-nowrap tabular-nums text-[var(--app-text)]"
           >
             {financialValue(summary.total_equity, labels.pendingValuation)}
           </div>
         </div>
 
-        <div className="min-w-0 lg:pl-8">
-          <dl className="grid min-w-0 gap-4 sm:grid-cols-2 sm:divide-x sm:divide-[var(--app-divider)]">
-            {headlineMetrics.map((metric, index) => (
-              <div
-                key={metric.key}
-                className={'min-w-0 ' + (index === 0 ? 'sm:pr-6' : 'sm:pl-6')}
-              >
-                <dt className="app-type-label font-semibold text-[var(--app-text-secondary)]">
-                  {metric.label}
-                </dt>
-                <dd
-                  data-testid={metric.testId}
-                  className={
-                    'mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 tabular-nums ' +
-                    metric.tone
-                  }
-                >
-                  <span className="app-type-overview-headline">
-                    {metric.value}
-                  </span>
-                  {metric.returnValue ? (
-                    <span className="app-type-compact font-semibold">
-                      {metric.returnValue}
-                    </span>
-                  ) : null}
-                </dd>
-              </div>
-            ))}
-          </dl>
-
-          <MetricStrip
-            ariaLabel={copy.overview.cards.supportingMetrics}
-            className="mt-5 border-b-0 bg-transparent"
-            items={supportMetrics.map((metric) => ({
-              id: metric.key,
-              label: metric.label,
-              value: metric.value,
-              tone: metric.tone,
-            }))}
-          />
-        </div>
+        {headlineMetrics.map((metric) => (
+          <div key={metric.key} className="min-w-0 md:px-7">
+            <div className="app-type-label font-semibold text-[var(--app-text-secondary)]">
+              {metric.label}
+            </div>
+            <div
+              data-testid={metric.testId}
+              className={
+                'mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 tabular-nums ' +
+                metric.tone
+              }
+            >
+              <span className="app-type-overview-headline">{metric.value}</span>
+              {metric.returnValue ? (
+                <span className="app-type-compact font-semibold">
+                  {metric.returnValue}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ))}
       </div>
+
+      <MetricStrip
+        ariaLabel={copy.overview.cards.supportingMetrics}
+        className="overview-hero-support border-b-0 bg-transparent"
+        items={supportMetrics.map((metric) => ({
+          id: metric.key,
+          label: metric.label,
+          value: metric.value,
+          tone: metric.tone,
+        }))}
+      />
     </section>
   );
 }
