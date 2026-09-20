@@ -260,6 +260,63 @@ def test_missing_or_tampered_scan_never_degrades_to_no_action() -> None:
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+def test_manual_review_projection_preserves_display_name_for_overview() -> None:
+    recommendation = build_account_action_recommendation(
+        decision_payload={
+            "decision_date": "2026-09-01",
+            "candidates": [{"action_id": 7, "symbol": "600519"}],
+            "summary": {
+                "portfolio": {"valuation_status": "complete"},
+                "account_truth": {"gate_status": "pass"},
+            },
+        },
+        trading_plan={
+            "manual_ready_count": 1,
+            "paper_shadow_ready_count": 0,
+            "blocked_count": 0,
+            "blockers": [],
+            "order_intents": [
+                {
+                    "action_id": 7,
+                    "symbol": "600519",
+                    "display_name": "贵州茅台",
+                    "asset_class": "stock",
+                    "side": "buy",
+                    "target_weight": 0.12,
+                    "estimated_quantity": 100,
+                    "submission_status": "manual_confirmation_required",
+                }
+            ],
+        },
+        promoted_scan={
+            "verified": True,
+            "status": "completed",
+            "blockers": [],
+            "strategy_bindings": [],
+            "selected_signal_count": 1,
+        },
+        current_evidence_blockers=[],
+        current_evidence_fingerprint="e" * 64,
+    )
+
+    assert recommendation["status"] == "manual_review_required"
+    assert recommendation["actions"] == [
+        {
+            "action_id": 7,
+            "symbol": "600519",
+            "display_name": "贵州茅台",
+            "name": "贵州茅台",
+            "asset_class": "stock",
+            "side": "buy",
+            "target_weight": 0.12,
+            "estimated_quantity": 100,
+            "submission_status": "manual_confirmation_required",
+        }
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_unverified_scan_cannot_borrow_manual_ready_plan_authority() -> None:
     recommendation = build_account_action_recommendation(
         decision_payload={

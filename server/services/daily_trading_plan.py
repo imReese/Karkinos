@@ -313,6 +313,8 @@ def _order_intent_preview(
     return {
         "action_id": candidate.get("action_id"),
         "symbol": candidate.get("symbol"),
+        "display_name": candidate.get("display_name") or candidate.get("name"),
+        "name": candidate.get("name") or candidate.get("display_name"),
         "asset_class": candidate.get("asset_class"),
         "side": side,
         "raw_target_weight": _float(

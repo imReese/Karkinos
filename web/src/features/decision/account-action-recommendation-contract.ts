@@ -10,8 +10,10 @@ export type AccountActionRecommendation = {
   reason_codes: string[];
   source_action_task_ids: string[];
   actions: Array<{
-    action_id: string | null;
+    action_id: string | number | null;
     symbol: string | null;
+    display_name?: string | null;
+    name?: string | null;
     asset_class: string | null;
     side: string | null;
     target_weight: number | null;

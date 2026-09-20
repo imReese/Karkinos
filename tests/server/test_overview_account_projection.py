@@ -18,7 +18,10 @@ from server.projections.account_state import (
 from server.projections.portfolio_application import (
     build_account_state_response as build_base_account_state,
 )
-from server.services.account_state import build_overview_state
+from server.services.account_state import (
+    build_account_state_projection,
+    build_overview_state,
+)
 
 NOW = datetime(2026, 9, 12, 17, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
 SESSION = {
@@ -133,6 +136,16 @@ async def test_valid_snapshot_and_later_failed_refresh_are_independent(
     assert response.overview.refresh_health.status == "degraded"
     assert response.overview.user_attention == []
     assert response.overview.decision_readiness == "unknown"
+
+
+def test_cumulative_pnl_includes_account_level_cash_income() -> None:
+    snapshot = portfolio_snapshot().model_copy(
+        update={"total_equity": 1600.27, "total_deposits": 1480.0}
+    )
+    projection = build_account_state_projection(snapshot, [])
+    assert projection.summary.realized_pnl == pytest.approx(20.27)
+    assert projection.summary.unrealized_pnl == pytest.approx(100.0)
+    assert projection.summary.cumulative_pnl == pytest.approx(120.27)
 
 
 @pytest.mark.asyncio

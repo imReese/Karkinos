@@ -25,6 +25,11 @@ export function OverviewHoldingsSection({
   const navigate = useNavigate();
   const { locale } = usePreferences();
   const labels = overviewPresentation[locale];
+  const sortedPositions = [...positions].sort(
+    (left, right) =>
+      (right.market_value ?? Number.NEGATIVE_INFINITY) -
+      (left.market_value ?? Number.NEGATIVE_INFINITY),
+  );
 
   return (
     <section
@@ -51,7 +56,7 @@ export function OverviewHoldingsSection({
         />
       ) : (
         <PositionsTable
-          positions={positions}
+          positions={sortedPositions}
           assetClassBySymbol={assetClassBySymbol}
           weightBySymbol={weightBySymbol}
           variant="dashboard"

@@ -29,6 +29,9 @@ export function OverviewResolvedWorkspace({
   const weightBySymbol = Object.fromEntries(
     state.snapshot.allocation.map((item) => [item.symbol, item.weight]),
   );
+  const showAttention =
+    state.overview.attention_status !== 'available' ||
+    state.overview.user_attention.length > 0;
 
   const performance =
     equityCurve.isLoading && !equityCurve.data ? (
@@ -83,18 +86,28 @@ export function OverviewResolvedWorkspace({
 
       <OverviewAllocationRiskSection state={state} />
       <section
-        className="grid min-w-0 gap-6 border-b border-[var(--app-divider)] py-4 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-[var(--app-divider)]"
+        className={
+          'min-w-0 border-b border-[var(--app-divider)] py-4 ' +
+          (showAttention
+            ? 'grid gap-6 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-[var(--app-divider)]'
+            : '')
+        }
         data-testid="overview-research-actions"
       >
         <OverviewStrategyRecommendation
           planQuery={controller.tradingPlan}
-          decisionQuery={controller.todayDecision}
-          className="border-b-0 py-0 lg:pr-6"
+          positions={state.snapshot.positions}
+          currentWeightBySymbol={weightBySymbol}
+          className={
+            showAttention ? 'border-b-0 py-0 lg:pr-6' : 'border-b-0 py-0'
+          }
         />
-        <DashboardTodayQueue
-          overview={state.overview}
-          className="border-b-0 py-0 lg:pl-6"
-        />
+        {showAttention ? (
+          <DashboardTodayQueue
+            overview={state.overview}
+            className="border-b-0 py-0 lg:pl-6"
+          />
+        ) : null}
       </section>
     </div>
   );

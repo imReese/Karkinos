@@ -1,13 +1,11 @@
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import { SectionHeader } from '../../../shared/ui/workbench';
+import type { AccountStateResponse } from '../overview-feature-boundary';
 import {
-  operationsNextActionLabel,
-  operationsSubsystemLabel,
-  operationsTargetHref,
-  type AccountStateResponse,
-} from '../overview-feature-boundary';
-import { overviewPresentation } from '../model/overview-presentation';
+  overviewPresentation,
+  overviewSessionLabels,
+} from '../model/overview-presentation';
 
 type Driver = NonNullable<
   AccountStateResponse['summary']['today_contributors']
@@ -58,6 +56,7 @@ function DriverList({ title, items }: { title: string; items: Driver[] }) {
     </div>
   );
 }
+
 export function OverviewTodayDigest({
   state,
 }: {
@@ -74,14 +73,13 @@ export function OverviewTodayDigest({
     .filter((item) => item.today_change < 0)
     .sort((a, b) => a.today_change - b.today_change)
     .slice(0, 3);
-  const attention = state.overview.user_attention.slice(0, 3);
 
   return (
     <aside
       className="min-w-0 xl:border-l xl:border-[var(--app-divider)] xl:pl-6"
       data-testid="overview-today-digest"
     >
-      <SectionHeader title={labels.todayNarrative} />
+      <SectionHeader title={overviewSessionLabels(state, locale).drivers} />
       <div
         className="mt-3 grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2"
         data-testid="overview-performance-drivers"
@@ -89,37 +87,6 @@ export function OverviewTodayDigest({
         <DriverList title={labels.contributors} items={gains} />
         <DriverList title={labels.detractors} items={drags} />
       </div>
-      {state.overview.attention_status !== 'available' || attention.length ? (
-        <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
-          <h3 className="app-type-label font-semibold text-[var(--app-text-secondary)]">
-            {labels.accountEvents}
-          </h3>
-          {state.overview.attention_status !== 'available' ? (
-            <span className="app-type-compact mt-1.5 block text-[var(--app-warning-text)]">
-              {labels.attentionUnavailable}
-            </span>
-          ) : (
-            <ul className="mt-1.5 divide-y divide-[var(--app-divider)]">
-              {attention.map((item) => (
-                <li
-                  key={item.task_fingerprint}
-                  className="app-type-compact flex min-w-0 items-baseline justify-between gap-3 py-1.5"
-                >
-                  <span className="shrink-0 text-[var(--app-text-tertiary)]">
-                    {operationsSubsystemLabel(item.subsystem_id, locale)}
-                  </span>
-                  <a
-                    href={operationsTargetHref(item.target)}
-                    className="min-w-0 truncate text-right font-medium text-[var(--app-accent)] hover:underline"
-                  >
-                    {operationsNextActionLabel(item.next_action, locale)}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : null}
     </aside>
   );
 }
