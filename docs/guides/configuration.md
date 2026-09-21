@@ -59,23 +59,38 @@ notification
 
 非本机部署使用明确可信的 CORS origins。
 
-## `data_source`
+## `market_data`
 
 ```text
-provider = akshare | tushare
+source_policy
 live_poll_interval
-tushare_token_env
+provider_config.tushare_token_env
 ```
 
-默认数据源是 AKShare，无需 Token。当前本地 workspace 可以交互配置：
+默认策略：
 
-```bash
-uv run python scripts/data/configure_data_source.py \
-  --config-path ~/.karkinos/development/config/config.json \
-  --env-file ~/.karkinos/development/config/.env
+```text
+karkinos.market.source.free_cn_research.v1
 ```
 
-使用自定义 `KARKINOS_DEV_HOME` 时，相应调整这两个配置路径。
+它不是“选择一个永远可信的主 Provider”，而是按用途解析版本化来源策略。当前研究日线要求未复权数据与两个独立 upstream：
+
+```text
+BaoStock
+   + Tencent（通过 AKShare）
+   ↓
+Quality + cross-source verification
+   ↓
+verified Dataset v2
+```
+
+如果其中一个来源在本次请求中因网络、SDK/API 不可用或空响应而无法形成市场事实，运行时可以按 policy 尝试下一组独立来源，例如 Tencent + Eastmoney。已经形成有效市场事实后的 Quality BLOCKED 或跨源冲突不会通过换源“洗绿”，而是 fail closed。
+
+免费来源优先级后仍可使用可选增强来源：
+
+- `akshare`：Eastmoney upstream，免费 fallback / diagnostic；
+- `tushare`：配置 Token 后加入候选；
+- `tdx`：配置数据服务凭据后可用于显式支持它的流程。
 
 TuShare Token 使用环境变量：
 
@@ -84,6 +99,8 @@ KARKINOS_TUSHARE_TOKEN
 ```
 
 Token 写入 `.env`，不写入 `config.json`。
+
+新配置应使用 `market_data.source_policy`。历史 `data_source.provider` / `KARKINOS_DATA_SOURCE` 仅保留兼容读取，不作为新数据飞轮的配置方式。
 
 ## `ai`
 
@@ -132,7 +149,8 @@ AI 配置不授予金融事实、Portfolio、Risk、Accounting 或资本权限�
 | `KARKINOS_HOST` | API 监听地址 |
 | `KARKINOS_PORT` | API 监听端口 |
 | `KARKINOS_CORS_ALLOWED_ORIGINS` | 浏览器可信 origin |
-| `KARKINOS_DATA_SOURCE` | 市场数据 provider |
+| `KARKINOS_MARKET_SOURCE_POLICY` | 版本化市场数据来源策略 |
+| `KARKINOS_DATA_SOURCE` | 旧 provider 兼容覆盖；新配置不要使用 |
 | `KARKINOS_LIVE_POLL_INTERVAL` | 数据轮询间隔 |
 | `KARKINOS_TUSHARE_TOKEN` | TuShare Token |
 | `KARKINOS_AI_ENABLED` | 外部 AI 开关 |
@@ -165,9 +183,9 @@ AI 配置不授予金融事实、Portfolio、Risk、Accounting 或资本权限�
 - 开发环境运行当前 working tree；安装环境运行不可变 release。
 - 同一开发 workspace 同时只运行一个实例；并行开发使用独立状态目录。
 
-## TDX 持久研究数据与回测
+## 可选 TDX 持久研究数据与回测
 
-TDX 研究数据已经接入回测页面，不需要执行 `check_tdx_daily.py`。
+TDX 是可选增强来源；默认 `free_cn_research_v1` 不依赖 TDX 凭据。TDX 研究数据仍保留显式回测准备流程，不需要执行 `check_tdx_daily.py`。
 在**当前 Server 启动时读取的** `.env` 中配置 `KARKINOS_TDX_DATA_SERVICE_KEY`，
 必要时设置 `KARKINOS_TDX_USER`，再重启服务。不要把 Key 写进 JSON、命令行或 Git。
 使用 `start_server.sh dev` 时，这是开发 workspace 的 `config/.env`，不是 checkout 根目录的 `.env`。
