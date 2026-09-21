@@ -99,6 +99,7 @@ def project_shadow_research_candidate_status(
         ("deltas", _DELTA_STATUS_FIELDS),
         ("deepseek_critique", _CRITIQUE_STATUS_FIELDS),
         ("iteration_lineage", _ITERATION_STATUS_FIELDS),
+        ("research_gate", _PROMOTION_GATE_STATUS_FIELDS),
         ("promotion_gate", _PROMOTION_GATE_STATUS_FIELDS),
     )
     for key, fields in nested_fields:

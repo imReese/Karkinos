@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -263,32 +263,70 @@ class MarketDailyIngestionMixin:
         symbols: list[str],
         start_date: str,
         end_date: str,
+        receipts: Sequence[Mapping[str, object]] | None = None,
     ) -> dict[str, pd.DataFrame]:
-        """Load one stock-only frozen window without provider contact."""
+        """Load frozen stock rows from the storage authority bound by receipts.
+
+        Legacy v1 receipts prove stock identity for their exact dates in
+        ``market_bars``; v2 receipts bind their dates to typed
+        ``market_bars_v2`` stock rows.  Reading both authorities through the
+        verified receipt chain keeps historical windows continuous across the
+        storage migration without guessing identity or contacting providers.
+        """
 
         wanted = {str(symbol).strip() for symbol in symbols if str(symbol).strip()}
         if not wanted:
             return {}
+        start = pd.Timestamp(start_date).isoformat()
+        end = (pd.Timestamp(end_date) + pd.Timedelta(days=1)).isoformat()
+        legacy_dates, typed_dates = _receipt_storage_dates(receipts or ())
         with connect_meta_sqlite(self._meta_path) as conn:
-            frame = pd.read_sql_query(
-                """
-                SELECT symbol, timestamp, open, high, low, close, volume, amount
-                FROM market_bars_v2
-                WHERE instrument_type = 'stock' AND frequency = '1d'
-                  AND timestamp >= ?
-                  AND timestamp < ?
-                ORDER BY symbol, timestamp
-                """,
-                conn,
-                params=(
-                    pd.Timestamp(start_date).isoformat(),
-                    (pd.Timestamp(end_date) + pd.Timedelta(days=1)).isoformat(),
-                ),
-            )
+            if receipts:
+                parts = [
+                    _read_market_window_authority(
+                        conn,
+                        table="market_bars",
+                        identity_filter="",
+                        dates=legacy_dates,
+                        start=start,
+                        end=end,
+                        authority_rank=1,
+                    ),
+                    _read_market_window_authority(
+                        conn,
+                        table="market_bars_v2",
+                        identity_filter="instrument_type = 'stock' AND",
+                        dates=typed_dates,
+                        start=start,
+                        end=end,
+                        authority_rank=2,
+                    ),
+                ]
+                available = [part for part in parts if not part.empty]
+                frame = (
+                    pd.concat(available, ignore_index=True)
+                    if available
+                    else pd.DataFrame()
+                )
+            else:
+                frame = _read_market_window_authority(
+                    conn,
+                    table="market_bars_v2",
+                    identity_filter="instrument_type = 'stock' AND",
+                    dates=None,
+                    start=start,
+                    end=end,
+                    authority_rank=2,
+                )
         if frame.empty:
             return {}
         frame = frame.loc[frame["symbol"].isin(wanted)].copy()
         frame["timestamp"] = pd.to_datetime(frame["timestamp"])
+        frame = (
+            frame.sort_values(["symbol", "timestamp", "_authority_rank"])
+            .drop_duplicates(["symbol", "timestamp"], keep="last")
+            .drop(columns=["_authority_rank"])
+        )
         return {
             str(symbol): group.drop(columns=["symbol"]).reset_index(drop=True)
             for symbol, group in frame.groupby("symbol", sort=True)
@@ -300,6 +338,64 @@ class MarketDailyIngestionMixin:
         receipt: dict[str, object],
     ) -> bool:
         return verify_market_daily_receipt_on_connection(conn, receipt)
+
+
+def _receipt_storage_dates(
+    receipts: Sequence[Mapping[str, object]],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    legacy_dates: set[str] = set()
+    typed_dates: set[str] = set()
+    for receipt in receipts:
+        if not is_supported_stock_receipt_identity(receipt):
+            raise ValueError("market_daily_receipt_storage_authority_invalid")
+        trade_date = str(receipt.get("trade_date") or "")
+        if not trade_date:
+            raise ValueError("market_daily_receipt_trade_date_invalid")
+        schema_version = str(receipt.get("schema_version") or "")
+        target = (
+            typed_dates
+            if schema_version == "karkinos.market_daily_ingestion_receipt.v2"
+            else legacy_dates
+        )
+        target.add(trade_date)
+    if legacy_dates & typed_dates:
+        raise ValueError("market_daily_receipt_storage_authority_conflict")
+    return tuple(sorted(legacy_dates)), tuple(sorted(typed_dates))
+
+
+def _read_market_window_authority(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    identity_filter: str,
+    dates: Sequence[str] | None,
+    start: str,
+    end: str,
+    authority_rank: int,
+) -> pd.DataFrame:
+    if dates is not None and not dates:
+        return pd.DataFrame()
+    if table not in {"market_bars", "market_bars_v2"}:
+        raise ValueError("market_bar_storage_authority_invalid")
+    date_sql = ""
+    params: list[object] = [start, end]
+    if dates is not None:
+        placeholders = ",".join("?" for _ in dates)
+        date_sql = f" AND substr(timestamp, 1, 10) IN ({placeholders})"
+        params.extend(dates)
+    frame = pd.read_sql_query(
+        f"""
+        SELECT symbol, timestamp, open, high, low, close, volume, amount,
+               {int(authority_rank)} AS _authority_rank
+        FROM {table}
+        WHERE {identity_filter} frequency = '1d'
+          AND timestamp >= ? AND timestamp < ?{date_sql}
+        ORDER BY symbol, timestamp
+        """,
+        conn,
+        params=params,
+    )
+    return frame
 
 
 def verify_market_daily_receipt_on_connection(

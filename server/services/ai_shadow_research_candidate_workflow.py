@@ -6,6 +6,10 @@ import asyncio
 from collections.abc import Mapping
 from typing import Any
 
+from analytics.normalized_research_gate import (
+    build_normalized_research_advancement_gate,
+    candidate_research_evidence_blockers,
+)
 from analytics.strategy_advancement_gate import (
     build_strategy_advancement_gate,
     strategy_advancement_backtest_view,
@@ -199,6 +203,21 @@ class AiShadowResearchCandidateWorkflowMixin:
                         "completed_formula_backtest_checkpoint_invalid"
                     )
             self._require_runtime_authorization(policy)
+            if (
+                policy.research_capital_mode
+                == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            ):
+                candidate_row = await self._db.get_backtest_result(candidate_result_id)
+                if not isinstance(candidate_row, dict):
+                    raise ShadowResearchRejected(
+                        "candidate_research_backtest_result_missing"
+                    )
+                local_evidence_blockers = candidate_research_evidence_blockers(
+                    strategy_advancement_backtest_view(candidate_row)
+                )
+                if local_evidence_blockers:
+                    raise ShadowResearchRejected(local_evidence_blockers[0])
+            self._require_runtime_authorization(policy)
             call_id = f"{run['run_id']}:critique:{draft_id}"
             if critique_resume_extension_id:
                 call_id += (
@@ -372,18 +391,33 @@ class AiShadowResearchCandidateWorkflowMixin:
             if isinstance(critique.get("artifact"), Mapping)
             else {}
         )
-        advancement_gate = build_strategy_advancement_gate(
-            baseline=baseline_view,
-            candidate=candidate_view,
-            critique_evidence={
-                "status": critique.get("status"),
-                "critique_id": critique.get("critique_id"),
-                "artifact_fingerprint": (
-                    content_fingerprint(critique_artifact)
-                    if critique_artifact
-                    else None
-                ),
-            },
+        critique_evidence = {
+            "status": critique.get("status"),
+            "critique_id": critique.get("critique_id"),
+            "artifact_fingerprint": (
+                content_fingerprint(critique_artifact) if critique_artifact else None
+            ),
+        }
+        normalized_research = (
+            research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+        )
+        research_gate = (
+            build_normalized_research_advancement_gate(
+                baseline=baseline_view,
+                candidate=candidate_view,
+                critique_evidence=critique_evidence,
+            )
+            if normalized_research
+            else None
+        )
+        advancement_gate = (
+            None
+            if normalized_research
+            else build_strategy_advancement_gate(
+                baseline=baseline_view,
+                candidate=candidate_view,
+                critique_evidence=critique_evidence,
+            )
         )
         improvements = {
             "total_return": candidate_view["total_return"]
@@ -393,7 +427,20 @@ class AiShadowResearchCandidateWorkflowMixin:
             <= abs(baseline_view["max_drawdown"]),
         }
         recommendation = (
-            "paper_shadow_review" if advancement_gate.passed else "keep_researching"
+            "keep_researching"
+            if normalized_research
+            else (
+                "paper_shadow_review"
+                if advancement_gate is not None and advancement_gate.passed
+                else "keep_researching"
+            )
+        )
+        promotion_gate = (
+            _account_qualification_required_gate()
+            if normalized_research
+            else advancement_gate.to_json_dict()
+            if advancement_gate is not None
+            else {}
         )
         return {
             "schema_version": "karkinos.ai.shadow_research_comparison.v1",
@@ -439,9 +486,29 @@ class AiShadowResearchCandidateWorkflowMixin:
                 current_formula_fingerprint=draft.get("formula_fingerprint"),
             ),
             "recommendation": recommendation,
-            "promotion_gate": advancement_gate.to_json_dict(),
+            **(
+                {"research_gate": research_gate.to_json_dict()}
+                if research_gate is not None
+                else {}
+            ),
+            "promotion_gate": promotion_gate,
             "automatic_strategy_replacement_enabled": False,
             "production_strategy_mutation_enabled": False,
             "broker_submission_enabled": False,
             "authority_effect": "research_only",
         }
+
+
+def _account_qualification_required_gate() -> dict[str, Any]:
+    core = {
+        "schema_version": "karkinos.account_qualification_required.v1",
+        "status": "not_evaluated",
+        "blockers": ["account_qualification_required"],
+        "provider_call_performed": False,
+        "human_confirmation_required": True,
+        "does_not_register_strategy": True,
+        "does_not_create_order": True,
+        "does_not_authorize_execution": True,
+        "does_not_change_capital_authority": True,
+    }
+    return {**core, "evidence_fingerprint": content_fingerprint(core)}

@@ -286,6 +286,77 @@ def qualification_initial_cash(total_equity: Decimal) -> Decimal:
     return min(Decimal(str(NORMALIZED_RESEARCH_NOTIONAL)), total_equity)
 
 
+_RESEARCH_ADDRESSABLE_QUALIFICATION_BLOCKERS = frozenset(
+    {
+        "candidate_after_cost_oos_excess_not_positive",
+        "candidate_after_tax_excess_return_not_positive",
+        "candidate_capacity_or_liquidity_not_passing",
+        "candidate_drawdown_exceeds_reviewed_baseline",
+        "candidate_market_regime_robustness_not_passing",
+        "candidate_parameter_robustness_not_passing",
+        "candidate_turnover_exceeds_reviewed_baseline",
+    }
+)
+
+
+def qualification_research_retry_advice(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    replay_failed: bool,
+) -> dict[str, Any]:
+    """Say whether another paid research batch can address this qualification result."""
+
+    if replay_failed:
+        return {
+            "recommended": False,
+            "reason": "qualification_replay_failed",
+            "research_addressable_blockers": [],
+            "systemic_blockers": ["qualification_candidate_replay_incomplete"],
+        }
+
+    if any(candidate.get("status") == "qualified" for candidate in candidates):
+        return {
+            "recommended": False,
+            "reason": "qualified_candidate_available",
+            "research_addressable_blockers": [],
+            "systemic_blockers": [],
+        }
+
+    blockers: set[str] = set()
+    for candidate in candidates:
+        comparison = candidate.get("comparison")
+        comparison = comparison if isinstance(comparison, Mapping) else {}
+        gate = comparison.get("promotion_gate")
+        gate = gate if isinstance(gate, Mapping) else {}
+        blockers.update(
+            str(item) for item in gate.get("blockers") or [] if str(item or "").strip()
+        )
+
+    research_addressable = sorted(
+        blocker
+        for blocker in blockers
+        if blocker in _RESEARCH_ADDRESSABLE_QUALIFICATION_BLOCKERS
+    )
+    systemic = sorted(
+        blocker
+        for blocker in blockers
+        if blocker not in _RESEARCH_ADDRESSABLE_QUALIFICATION_BLOCKERS
+    )
+    recommended = bool(research_addressable) and not systemic
+    return {
+        "recommended": recommended,
+        "reason": (
+            "candidate_quality_can_improve"
+            if recommended
+            else "systemic_evidence_must_be_fixed"
+            if systemic
+            else "qualification_evidence_missing"
+        ),
+        "research_addressable_blockers": research_addressable,
+        "systemic_blockers": systemic,
+    }
+
+
 def qualification_selection(
     *,
     qualification_run_id: str,
@@ -328,6 +399,10 @@ def qualification_selection(
                 )
             )
     ranked.sort(key=lambda item: item[0])
+    research_retry = qualification_research_retry_advice(
+        candidates,
+        replay_failed=replay_failed,
+    )
     selection = {
         "schema_version": SHADOW_RESEARCH_QUALIFICATION_SCHEMA,
         "qualification_run_id": qualification_run_id,
@@ -363,6 +438,7 @@ def qualification_selection(
         "candidate_outcomes": sorted(
             outcomes, key=lambda item: str(item["source_candidate_id"])
         ),
+        "research_retry": research_retry,
         "provider_call_performed": False,
         "broker_order_created": False,
         "capital_authority_granted": False,

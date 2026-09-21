@@ -74,6 +74,7 @@ export type ShadowResearchCandidate = {
     recommendation?: string;
     research_capital_mode?: 'normalized_notional' | 'account_bound';
     account_qualification_status?: 'not_evaluated' | 'passed' | 'blocked';
+    research_gate?: { status: string; blockers: string[] };
     promotion_gate: { status: string; blockers: string[] };
   };
   automatic_strategy_replacement_enabled: false;

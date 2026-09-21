@@ -194,7 +194,6 @@ def build_ai_shadow_research_automation_service(
 _QUALIFICATION_BLOCKERS_THAT_JUSTIFY_NEW_RESEARCH = {
     "qualification_verified_source_backlog_empty",
     "qualification_compatible_source_backlog_empty",
-    "no_candidate_passed_account_qualification",
 }
 
 
@@ -231,9 +230,18 @@ def qualification_allows_new_research(
         ]
         if str(item or "").strip()
     }
-    return bool(codes) and codes.issubset(
+    if bool(codes) and codes.issubset(
         _QUALIFICATION_BLOCKERS_THAT_JUSTIFY_NEW_RESEARCH
-    )
+    ):
+        return True
+    if codes == {"no_candidate_passed_account_qualification"}:
+        research_retry = run.get("research_retry")
+        return (
+            isinstance(research_retry, Mapping)
+            and research_retry.get("recommended") is True
+            and research_retry.get("reason") == "candidate_quality_can_improve"
+        )
+    return False
 
 
 def _has_promoted_paper_shadow_strategy(state: AppState) -> bool:
