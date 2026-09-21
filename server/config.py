@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from server.config_contract import DEFAULT_MARKET_SOURCE_POLICY
 from server.config_loading import load_config
 from server.config_types import (
     AIProviderConfig,
@@ -39,7 +40,7 @@ class BacktestConfig:
     commission_rate: Decimal = Decimal("0.0003")
     account_commission_rate: Decimal = Decimal("0.0001")
     account_min_commission: Decimal = Decimal("5")
-    market_data_source_policy: str = "karkinos.market.source.cn_research.v1"
+    market_data_source_policy: str = DEFAULT_MARKET_SOURCE_POLICY
     # Deprecated compatibility shim for old callers/tests. Production routing
     # uses market_data_source_policy via data.source_policy.
     data_source: str = "akshare"

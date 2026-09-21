@@ -194,7 +194,12 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
                     "legacy data_source.provider must be akshare or tushare"
                 )
             data["data_source"] = provider
-        data.setdefault("market_data_source_policy", DEFAULT_MARKET_SOURCE_POLICY)
+            data.setdefault(
+                "market_data_source_policy",
+                f"karkinos.market.source.compat.{provider}.v1",
+            )
+        else:
+            data.setdefault("market_data_source_policy", DEFAULT_MARKET_SOURCE_POLICY)
         if "live_poll_interval" in group:
             data["live_poll_interval"] = group["live_poll_interval"]
         if "provider_config" in group:

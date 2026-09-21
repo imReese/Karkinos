@@ -12,7 +12,7 @@ from data.handler import DataHandler
 from data.provider_registry import build_provider_registry
 from data.source import DataSource
 from data.source_policy import (
-    CN_RESEARCH_V1,
+    FREE_CN_RESEARCH_V1,
     MarketDataUseCase,
     MarketSourcePolicy,
     legacy_preferred_provider_policy,
@@ -46,7 +46,7 @@ def build_sources(
         policy = (
             legacy_preferred_provider_policy(data_source)
             if data_source
-            else CN_RESEARCH_V1
+            else FREE_CN_RESEARCH_V1
         )
     elif isinstance(source_policy, MarketSourcePolicy):
         policy = source_policy
@@ -155,7 +155,7 @@ class DataManager:
             else (
                 legacy_preferred_provider_policy(default_source)
                 if default_source
-                else CN_RESEARCH_V1
+                else FREE_CN_RESEARCH_V1
             )
         )
         self.default_source = (
