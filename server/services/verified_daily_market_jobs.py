@@ -11,6 +11,7 @@ from data.source_policy import source_policy_for_config
 from server.contracts.jobs import JobRun, JobStore
 from server.services.market_calendar_dates import (
     resolve_latest_verified_closed_trading_date,
+    resolve_verified_closed_trading_dates,
 )
 from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
 
@@ -41,15 +42,23 @@ def enqueue_latest_verified_daily_market_jobs(
     store: JobStore,
     *,
     now: datetime,
+    lookback_days: int = 30,
 ) -> VerifiedDailyMarketJobPlan:
-    """Enqueue one idempotent job per supported watchlist instrument."""
+    """Enqueue idempotent instrument/day jobs over verified closed sessions."""
     if not isinstance(now, datetime):
         raise TypeError("verified_daily_market_job_plan_now_must_be_datetime")
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("verified_daily_market_job_plan_now_must_be_timezone_aware")
 
-    resolved = resolve_latest_verified_closed_trading_date(db, now)
-    if resolved is None:
+    resolved_dates = resolve_verified_closed_trading_dates(
+        db,
+        now,
+        lookback_days=lookback_days,
+    )
+    if not resolved_dates:
+        latest = resolve_latest_verified_closed_trading_date(db, now)
+        resolved_dates = () if latest is None else (latest,)
+    if not resolved_dates:
         return VerifiedDailyMarketJobPlan(
             trade_date=None,
             calendar_evidence_refs=(),
@@ -73,25 +82,30 @@ def enqueue_latest_verified_daily_market_jobs(
     policy = source_policy_for_config(config)
 
     jobs: list[JobRun] = []
-    trade_date = date.fromisoformat(resolved.trade_date)
-    for instrument in instruments:
-        request = VerifiedDailyMarketJobRequest(
-            trade_date=trade_date,
-            instruments=(instrument,),
-            source_policy_id=policy.policy_id,
-            calendar_evidence_refs=resolved.calendar_evidence_refs,
-        )
-        jobs.append(
-            store.enqueue(
-                VERIFIED_DAILY_MARKET_JOB,
-                request.to_payload(),
-                now=now,
+    all_refs: list[str] = []
+    for resolved in resolved_dates:
+        trade_date = date.fromisoformat(resolved.trade_date)
+        for ref in resolved.calendar_evidence_refs:
+            if ref not in all_refs:
+                all_refs.append(ref)
+        for instrument in instruments:
+            request = VerifiedDailyMarketJobRequest(
+                trade_date=trade_date,
+                instruments=(instrument,),
+                source_policy_id=policy.policy_id,
+                calendar_evidence_refs=resolved.calendar_evidence_refs,
             )
-        )
+            jobs.append(
+                store.enqueue(
+                    VERIFIED_DAILY_MARKET_JOB,
+                    request.to_payload(),
+                    now=now,
+                )
+            )
 
     return VerifiedDailyMarketJobPlan(
-        trade_date=trade_date,
-        calendar_evidence_refs=resolved.calendar_evidence_refs,
+        trade_date=date.fromisoformat(resolved_dates[-1].trade_date),
+        calendar_evidence_refs=tuple(all_refs),
         instruments=instruments,
         jobs=tuple(jobs),
     )

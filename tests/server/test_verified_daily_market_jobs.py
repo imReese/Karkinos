@@ -18,13 +18,14 @@ NOW = datetime(2026, 9, 18, 8, 30, tzinfo=timezone.utc)
 TRADE_DATE = date(2026, 9, 18)
 
 
-def _calendar(year: int = 2026) -> dict:
+def _calendar(year: int = 2026, *, trading_dates: set[date] | None = None) -> dict:
+    trading_dates = {TRADE_DATE} if trading_dates is None else trading_dates
     start = date(year, 1, 1)
     end = date(year + 1, 1, 1)
     days = []
     current = start
     while current < end:
-        trading = current == TRADE_DATE
+        trading = current in trading_dates
         days.append(
             {
                 "date": current.isoformat(),
@@ -40,8 +41,8 @@ def _calendar(year: int = 2026) -> dict:
         "year": year,
         "exchange": "SSE",
         "days": days,
-        "trading_day_count": 1,
-        "closed_day_count": len(days) - 1,
+        "trading_day_count": sum(day["is_trading_day"] for day in days),
+        "closed_day_count": sum(not day["is_trading_day"] for day in days),
         "source_fingerprint": source,
         "verification_source_fingerprint": source,
         "official_source_fingerprint": official,
@@ -121,6 +122,27 @@ def test_planner_is_idempotent_for_same_market_facts(tmp_path):
 
     assert first.jobs[0].job_id == second.jobs[0].job_id
     assert first.jobs[0].input_fingerprint == second.jobs[0].input_fingerprint
+
+
+def test_planner_backfills_verified_days_within_window_without_duplicate_jobs(tmp_path):
+    db = _planner_db([{"symbol": "600000", "instrument_type": "stock"}])
+    db.get_market_calendar_snapshot_sync = lambda *, exchange, year: _calendar(
+        year, trading_dates={date(2026, 9, day) for day in (15, 16, 18)}
+    )
+    store = _store(tmp_path)
+    first = enqueue_latest_verified_daily_market_jobs(
+        db, _config(), store, now=NOW, lookback_days=3
+    )
+    second = enqueue_latest_verified_daily_market_jobs(
+        db, _config(), store, now=NOW + timedelta(seconds=5), lookback_days=3
+    )
+    assert [job.payload["trade_date"] for job in first.jobs] == [
+        "2026-09-16",
+        "2026-09-18",
+    ]
+    assert first.trade_date == TRADE_DATE
+    assert [job.job_id for job in first.jobs] == [job.job_id for job in second.jobs]
+    assert len({job.job_id for job in first.jobs}) == 2
 
 
 def test_planner_returns_empty_without_verified_closed_calendar(tmp_path):

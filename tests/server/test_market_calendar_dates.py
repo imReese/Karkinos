@@ -9,6 +9,7 @@ import pytest
 
 from server.services.market_calendar_dates import (
     resolve_latest_verified_closed_trading_date,
+    resolve_verified_closed_trading_dates,
 )
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -154,3 +155,29 @@ def test_closed_trading_date_allows_verified_january_cross_year_fallback() -> No
         _evidence_ref(previous_calendar),
     )
     assert db.calls == [("SSE", 2026), ("SSE", 2025)]
+
+
+def test_closed_session_window_preserves_cutoff_holidays_and_calendar_evidence():
+    calendar = _verified_calendar(2026, closed_dates={"2026-06-17"})
+    db = _CalendarDb({2026: calendar})
+    before = resolve_verified_closed_trading_dates(
+        db, datetime(2026, 6, 18, 15, 59, tzinfo=_SHANGHAI), lookback_days=4
+    )
+    after = resolve_verified_closed_trading_dates(
+        db, datetime(2026, 6, 18, 16, 0, tzinfo=_SHANGHAI), lookback_days=4
+    )
+    assert [item.trade_date for item in before] == ["2026-06-15", "2026-06-16"]
+    assert [item.trade_date for item in after] == [
+        "2026-06-15",
+        "2026-06-16",
+        "2026-06-18",
+    ]
+    assert all(
+        item.calendar_evidence_refs == (_evidence_ref(calendar),) for item in after
+    )
+    assert (
+        resolve_verified_closed_trading_dates(
+            db, datetime(2026, 1, 2, 16, 0, tzinfo=_SHANGHAI), lookback_days=4
+        )
+        == ()
+    )
