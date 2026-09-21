@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -191,6 +191,68 @@ def build_ai_shadow_research_automation_service(
     )
 
 
+_QUALIFICATION_BLOCKERS_THAT_JUSTIFY_NEW_RESEARCH = {
+    "qualification_verified_source_backlog_empty",
+    "qualification_compatible_source_backlog_empty",
+    "no_candidate_passed_account_qualification",
+}
+
+
+def qualification_allows_new_research(
+    result: Mapping[str, Any] | None,
+    *,
+    has_promoted_strategy: bool,
+) -> bool:
+    """Allow provider work only when new research can resolve the current state.
+
+    Unknown, stale-account, fee, reconciliation, artifact, and other operational
+    blockers fail closed. A completed qualification pauses new provider work
+    until the human-reviewed winner is promoted; once an incumbent paper-shadow
+    strategy exists, daily improvement research may continue.
+    """
+
+    if not isinstance(result, Mapping):
+        return False
+    status = str(result.get("status") or "")
+    if status == "completed":
+        return has_promoted_strategy
+    if status != "blocked":
+        return False
+
+    run = result.get("run")
+    run = run if isinstance(run, Mapping) else {}
+    codes = {
+        str(item)
+        for item in [
+            result.get("failure_code"),
+            run.get("failure_code"),
+            *(result.get("blockers") or []),
+            *(run.get("blockers") or []),
+        ]
+        if str(item or "").strip()
+    }
+    return bool(codes) and codes.issubset(
+        _QUALIFICATION_BLOCKERS_THAT_JUSTIFY_NEW_RESEARCH
+    )
+
+
+def _has_promoted_paper_shadow_strategy(state: AppState) -> bool:
+    db = state.db
+    reader = getattr(db, "list_strategy_promotion_states_sync", None)
+    if not callable(reader):
+        return False
+    try:
+        states = reader() or []
+    except Exception:
+        return False
+    return any(
+        isinstance(item, Mapping)
+        and item.get("stage") == "paper_shadow"
+        and item.get("gate_status") == "paper_shadow_enabled"
+        for item in states
+    )
+
+
 async def run_ai_shadow_research_automation_loop(
     *,
     state: AppState,
@@ -198,21 +260,13 @@ async def run_ai_shadow_research_automation_loop(
     qualification_service_builder: Callable[[], Any] | None = None,
     interval_seconds: float = 300.0,
 ) -> None:
-    """Run provider-free qualification and enqueue isolated research work."""
+    """Run provider-free qualification before deciding whether AI work is useful."""
     qualification_service: Any | None = None
     job_scheduler: Any | None = None
     while True:
         await wait_for_release_activation()
-        try:
-            if job_scheduler is None:
-                job_scheduler = job_scheduler_builder()
-            await asyncio.to_thread(job_scheduler.enqueue_if_authorized)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning(
-                "Shadow research durable enqueue failed closed", exc_info=True
-            )
+        qualification_result: Mapping[str, Any] | None = None
+        qualification_checked = qualification_service_builder is not None
         if qualification_service_builder is not None:
             try:
                 if qualification_service is None:
@@ -237,8 +291,30 @@ async def run_ai_shadow_research_automation_loop(
             except asyncio.CancelledError:
                 raise
             except Exception:
+                qualification_result = None
                 logger.warning(
                     "Shadow research account qualification failed closed",
                     exc_info=True,
                 )
+
+        may_enqueue = not qualification_checked or qualification_allows_new_research(
+            qualification_result,
+            has_promoted_strategy=_has_promoted_paper_shadow_strategy(state),
+        )
+        if may_enqueue:
+            try:
+                if job_scheduler is None:
+                    job_scheduler = job_scheduler_builder()
+                await asyncio.to_thread(job_scheduler.enqueue_if_authorized)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning(
+                    "Shadow research durable enqueue failed closed", exc_info=True
+                )
+        else:
+            logger.info(
+                "Shadow research enqueue skipped: provider-free qualification "
+                "does not justify another research batch"
+            )
         await asyncio.sleep(max(30.0, interval_seconds))

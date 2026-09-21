@@ -19,10 +19,12 @@ from server.ai_runtime.strategy_research_privacy import (
     NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
 )
 from server.contracts.ai_shadow_research_qualification import (
+    ShadowResearchQualificationRejected,
     public_qualification_candidate_projection,
     public_qualification_run_projection,
     qualification_formula_semantic_fingerprint,
 )
+from server.contracts.daily_strategy_artifacts import DailyStrategyArtifactRejected
 from server.contracts.strategy_research import StrategyResearchSelection
 from server.services.account_qualification_reuse import (
     select_oldest_retryable_source_run_id,
@@ -897,6 +899,69 @@ async def test_oldest_retryable_source_catches_up_after_newer_publication() -> N
     assert caught_up["status"] == "completed"
     assert caught_up["run"]["source_run_id"] == "source-run"
     assert select_oldest_retryable_source_run_id(daily, store) == "source-run-2"
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_legacy_incompatible_source_cannot_starve_newer_qualification_batch() -> None:
+    class Daily:
+        @staticmethod
+        def list_verified_research_artifact_pairs() -> list[dict[str, str]]:
+            return [
+                {"run_id": "legacy-run", "market_date": "2026-08-21"},
+                {"run_id": "current-run", "market_date": "2026-09-04"},
+            ]
+
+        @staticmethod
+        def load_verified_research_candidate_strategies(*, run_id: str) -> dict:
+            if run_id == "legacy-run":
+                raise DailyStrategyArtifactRejected(
+                    "daily_research_candidate_artifact_set_invalid"
+                )
+            return {"run_id": run_id}
+
+    class Qualifications:
+        @staticmethod
+        def list_qualification_runs(*, limit: int, source_run_id: str):
+            assert limit == 200
+            assert source_run_id == "current-run"
+            return []
+
+    assert (
+        select_oldest_retryable_source_run_id(Daily(), Qualifications())
+        == "current-run"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_all_legacy_sources_report_compatible_backlog_empty() -> None:
+    class Daily:
+        @staticmethod
+        def list_verified_research_artifact_pairs() -> list[dict[str, str]]:
+            return [
+                {"run_id": "legacy-one"},
+                {"run_id": "legacy-two"},
+            ]
+
+        @staticmethod
+        def load_verified_research_candidate_strategies(*, run_id: str) -> dict:
+            raise DailyStrategyArtifactRejected(
+                f"daily_research_candidate_artifact_set_invalid:{run_id}"
+            )
+
+    class Qualifications:
+        @staticmethod
+        def list_qualification_runs(*, limit: int, source_run_id: str):
+            raise AssertionError(
+                "incompatible sources must not reach qualification history"
+            )
+
+    with pytest.raises(
+        ShadowResearchQualificationRejected,
+        match="qualification_compatible_source_backlog_empty",
+    ):
+        select_oldest_retryable_source_run_id(Daily(), Qualifications())
 
 
 @pytest.mark.unit

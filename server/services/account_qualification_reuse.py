@@ -22,6 +22,7 @@ from server.contracts.ai_shadow_research_qualification import (
     ShadowResearchQualificationRejected,
 )
 from server.contracts.content_identity import content_fingerprint
+from server.contracts.daily_strategy_artifacts import DailyStrategyArtifactRejected
 from server.contracts.strategy_research import StrategyResearchSelection
 from server.services.ai_shadow_research_qualification_support import (
     QUALIFICATION_COMPARISON_SCHEMA,
@@ -61,13 +62,33 @@ def select_oldest_retryable_source_run_id(
     daily_artifact_store: Any,
     qualification_store: Any,
 ) -> str:
+    """Select the oldest retryable batch that still satisfies today's artifact contract.
+
+    Historical research snapshots remain immutable and auditable, but a legacy
+    snapshot must never starve newer compatible batches forever. Compatibility
+    validation is provider-free and performs no financial-state mutation.
+    """
+
     pairs = daily_artifact_store.list_verified_research_artifact_pairs()
     if not isinstance(pairs, list) or not pairs:
         raise ShadowResearchQualificationRejected(
             "qualification_verified_source_backlog_empty"
         )
+
+    compatible_run_ids: list[str] = []
+    loader = getattr(
+        daily_artifact_store,
+        "load_verified_research_candidate_strategies",
+        None,
+    )
     for pair in pairs:
         run_id = require_qualification_source_run_id(pair.get("run_id"))
+        if callable(loader):
+            try:
+                loader(run_id=run_id)
+            except DailyStrategyArtifactRejected:
+                continue
+        compatible_run_ids.append(run_id)
         runs = qualification_store.list_qualification_runs(
             limit=200,
             source_run_id=run_id,
@@ -79,7 +100,12 @@ def select_oldest_retryable_source_run_id(
             not in SHADOW_RESEARCH_QUALIFICATION_TERMINAL_STATUSES
         ):
             return run_id
-    return require_qualification_source_run_id(pairs[-1].get("run_id"))
+
+    if not compatible_run_ids:
+        raise ShadowResearchQualificationRejected(
+            "qualification_compatible_source_backlog_empty"
+        )
+    return compatible_run_ids[-1]
 
 
 def _latest_valid_qualification_run(
