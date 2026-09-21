@@ -339,3 +339,61 @@ def test_market_universe_snapshot_reads_are_provider_bound(store: DataStore) -> 
         == tushare
     )
     assert akshare["snapshot_id"] != tushare["snapshot_id"]
+
+
+@pytest.mark.parametrize("writer", ["cache", "daily_batch"])
+def test_provider_refresh_cannot_overwrite_frozen_daily_values(store, writer):
+    frame = pd.DataFrame(
+        {
+            "symbol": ["600519"],
+            "timestamp": pd.to_datetime(["2026-09-14"]),
+            "open": [10.0],
+            "high": [11.0],
+            "low": [9.0],
+            "close": [10.5],
+            "volume": [1000.0],
+            "amount": [10500.0],
+        }
+    )
+    receipt = store.ingest_market_daily_batch(
+        trade_date="2026-09-14",
+        provider_name="fixture",
+        bars=frame,
+    )
+    store.save_bars(
+        Symbol("600519"),
+        BarFrequency.DAILY,
+        frame.drop(columns="symbol"),
+        instrument_type="stock",
+    )
+    mirror = store._root / "bars" / "1d" / "stock" / "600519.parquet"
+    mirror_before = mirror.read_bytes()
+    drifted = frame.copy()
+    drifted["volume"] = 999.0
+    drifted["amount"] = 9990.0
+    with pytest.raises(ValueError, match="frozen_market_bar_conflict"):
+        if writer == "cache":
+            store.save_bars(
+                Symbol("600519"),
+                BarFrequency.DAILY,
+                drifted.drop(columns="symbol"),
+                instrument_type="stock",
+                provider_name="another_provider",
+            )
+        else:
+            store.ingest_market_daily_batch(
+                trade_date="2026-09-14", provider_name="another_provider", bars=drifted
+            )
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date="2026-09-14", provider_name="fixture"
+        )
+        == receipt
+    )
+    assert mirror.read_bytes() == mirror_before
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date="2026-09-14", provider_name="another_provider"
+        )
+        is None
+    )

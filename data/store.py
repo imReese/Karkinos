@@ -14,6 +14,7 @@ from core.types import BarFrequency, InstrumentKey, InstrumentType, Symbol
 from data.market_bar_identity import migrate_legacy_market_bars_to_v2
 from data.market_daily_store import (
     MarketDailyIngestionMixin,
+    require_frozen_stock_bars_unchanged,
 )
 from data.market_daily_store import build_bar_diagnostics as _build_bar_diagnostics
 from data.market_daily_store import build_dataset_id as _build_dataset_id
@@ -57,8 +58,8 @@ class DataStore(MarketDailyIngestionMixin):
         freq_dir = self._root / "bars" / frequency.value / key.instrument_type.value
         freq_dir.mkdir(parents=True, exist_ok=True)
         path = freq_dir / f"{key.symbol}.parquet"
-        df.to_parquet(path, index=False)
         self._save_bars_to_db(key, frequency, df)
+        df.to_parquet(path, index=False)
         provider_name = _metadata_value(df, "provider_name", provider_name)
         data_source = _metadata_value(df, "data_source", data_source or provider_name)
         adjustment_mode = _metadata_value(df, "adjustment_mode", adjustment_mode)
@@ -507,6 +508,14 @@ class DataStore(MarketDailyIngestionMixin):
             )
 
         with connect_meta_sqlite(self._meta_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if (
+                key.instrument_type is InstrumentType.STOCK
+                and frequency is BarFrequency.DAILY
+            ):
+                require_frozen_stock_bars_unchanged(
+                    conn, [(row[0], row[3], *row[4:10]) for row in rows]
+                )
             conn.executemany(
                 """
                 INSERT INTO market_bars_v2 (

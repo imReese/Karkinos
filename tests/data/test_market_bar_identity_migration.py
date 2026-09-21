@@ -3,7 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from pathlib import Path
 
+import pandas as pd
+import pytest
+
+from core.types import BarFrequency, InstrumentType, Symbol
 from data.market_bar_identity import migrate_legacy_market_bars_to_v2
 from data.store import DataStore
 
@@ -143,8 +148,7 @@ def test_legacy_market_bar_migration_rolls_back_typed_target_on_failure(
         assert conn.execute("SELECT COUNT(*) FROM bar_meta_v2").fetchone()[0] == 0
 
 
-def test_verified_legacy_daily_receipt_proves_only_stock_identity(tmp_path) -> None:
-    store = DataStore(tmp_path)
+def _seed_verified_legacy_daily_receipt(store: DataStore) -> None:
     record = (
         "600001",
         "2026-09-03T15:00:00+08:00",
@@ -236,6 +240,10 @@ def test_verified_legacy_daily_receipt_proves_only_stock_identity(tmp_path) -> N
             ),
         )
 
+
+def test_verified_legacy_daily_receipt_proves_only_stock_identity(tmp_path) -> None:
+    store = DataStore(tmp_path)
+    _seed_verified_legacy_daily_receipt(store)
     result = migrate_legacy_market_bars_to_v2(
         store._meta_path,
         dry_run=False,
@@ -248,3 +256,172 @@ def test_verified_legacy_daily_receipt_proves_only_stock_identity(tmp_path) -> N
             ).fetchone()[0]
             == "stock"
         )
+
+
+def test_receipt_migration_extends_typed_history_preserving_recent_data(tmp_path):
+    store = DataStore(tmp_path)
+    _seed_verified_legacy_daily_receipt(store)
+    recent = pd.DataFrame(
+        {
+            "symbol": ["600001"],
+            "timestamp": pd.to_datetime(["2026-09-04T15:00:00+08:00"]),
+            "open": [11.0],
+            "high": [12.0],
+            "low": [10.0],
+            "close": [11.5],
+            "volume": [200.0],
+            "amount": [2300.0],
+        }
+    )
+    typed_receipt = store.ingest_market_daily_batch(
+        trade_date="2026-09-04",
+        provider_name="fixture",
+        bars=recent,
+    )
+    store.save_bars(
+        Symbol("600001"),
+        BarFrequency.DAILY,
+        recent.drop(columns="symbol"),
+        instrument_type=InstrumentType.STOCK,
+        provider_name="recent_provider",
+    )
+    metadata = store.get_meta(
+        Symbol("600001"), BarFrequency.DAILY, instrument_type="stock"
+    )
+    dry_run = migrate_legacy_market_bars_to_v2(store._meta_path)
+    assert dry_run["blocker_count"] == 0
+    with pytest.raises(RuntimeError, match="market_bar_migration_plan_changed"):
+        migrate_legacy_market_bars_to_v2(
+            store._meta_path,
+            dry_run=False,
+            expected_plan_fingerprint="different-plan",
+        )
+    result = migrate_legacy_market_bars_to_v2(
+        store._meta_path,
+        dry_run=False,
+        expected_plan_fingerprint=dry_run["plan_fingerprint"],
+    )
+    assert result["source_fingerprint"] == dry_run["source_fingerprint"]
+    assert result["migrated_bar_rows"] == 1
+    assert result["migrated_meta_rows"] == 0
+    assert (
+        store.get_meta(Symbol("600001"), BarFrequency.DAILY, instrument_type="stock")
+        == metadata
+    )
+    bars = store.load_bars(
+        Symbol("600001"), BarFrequency.DAILY, instrument_type="stock"
+    )
+    assert bars["close"].tolist() == [10.5, 11.5]
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date="2026-09-04", provider_name="fixture"
+        )
+        == typed_receipt
+    )
+    receipts = store.list_market_daily_ingestion_receipts(
+        start_date="2026-09-03", end_date="2026-09-04", provider_name="fixture"
+    )
+    assert len(receipts) == 2
+    replay = migrate_legacy_market_bars_to_v2(store._meta_path, dry_run=False)
+    assert replay["migrated_bar_rows"] == 0
+    assert replay["target_fingerprint"] == result["target_fingerprint"]
+
+
+def test_typed_receipt_does_not_prove_untyped_source_identity(tmp_path):
+    store = DataStore(tmp_path)
+    _seed_verified_legacy_daily_receipt(store)
+    with sqlite3.connect(store._meta_path) as conn:
+        _insert_legacy_bar(
+            conn, symbol="600002", timestamp="2026-09-04T00:00:00", close=999.0
+        )
+    store.ingest_market_daily_batch(
+        trade_date="2026-09-04",
+        provider_name="fixture",
+        bars=pd.DataFrame(
+            {
+                "symbol": ["600002"],
+                "timestamp": pd.to_datetime(["2026-09-04"]),
+                "open": [10.0],
+                "high": [11.0],
+                "low": [9.0],
+                "close": [10.5],
+                "volume": [100.0],
+            }
+        ),
+    )
+    result = migrate_legacy_market_bars_to_v2(store._meta_path, dry_run=False)
+    assert result["migrated_bar_rows"] == 1
+    assert result["blockers"] == [
+        {
+            "reason": "identity_unresolved",
+            "symbol": "600002",
+            "frequency": "1d",
+            "timestamp": "2026-09-04T00:00:00",
+            "candidate_types": [],
+        }
+    ]
+    assert store.load_bars(Symbol("600002"), instrument_type="stock")[
+        "close"
+    ].tolist() == [10.5]
+
+
+def test_migration_rejects_conflicting_target_and_preserves_both_sources(tmp_path):
+    store = DataStore(tmp_path)
+    _seed_verified_legacy_daily_receipt(store)
+    migrate_legacy_market_bars_to_v2(store._meta_path, dry_run=False)
+    with sqlite3.connect(store._meta_path) as conn:
+        conn.execute("UPDATE market_bars_v2 SET close=99 WHERE symbol='600001'")
+    with pytest.raises(RuntimeError, match="target conflicts with legacy evidence"):
+        migrate_legacy_market_bars_to_v2(store._meta_path, dry_run=False)
+    with sqlite3.connect(store._meta_path) as conn:
+        assert conn.execute("SELECT close FROM market_bars").fetchone()[0] == 10.5
+        assert conn.execute("SELECT close FROM market_bars_v2").fetchone()[0] == 99
+
+
+def test_migration_command_previews_then_backs_up_before_apply(tmp_path, capsys):
+    from scripts.data.migrate_market_bars import main
+
+    store = DataStore(tmp_path)
+    _seed_verified_legacy_daily_receipt(store)
+    assert main(["--root", str(tmp_path)]) == 0
+    preview = json.loads(capsys.readouterr().out)
+    assert preview["dry_run"] is True
+    assert not (tmp_path / "backups").exists()
+    assert (
+        main(
+            [
+                "--root",
+                str(tmp_path),
+                "--apply",
+                "--expected-plan",
+                preview["plan_fingerprint"],
+            ]
+        )
+        == 0
+    )
+    applied = json.loads(capsys.readouterr().out)
+    assert applied["migrated_bar_rows"] == 1
+    backup = Path(applied["backup_path"])
+    with sqlite3.connect(backup.as_uri() + "?mode=ro", uri=True) as conn:
+        assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        assert conn.execute("SELECT COUNT(*) FROM market_bars_v2").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM market_bars").fetchone()[0] == 1
+
+
+def test_cache_refresh_cannot_change_restored_legacy_receipt_values(tmp_path):
+    store = DataStore(tmp_path)
+    _seed_verified_legacy_daily_receipt(store)
+    migrate_legacy_market_bars_to_v2(store._meta_path, dry_run=False)
+    bars = store.load_bars(Symbol("600001"), instrument_type="stock")
+    bars["volume"] = 999.0
+    with pytest.raises(ValueError, match="frozen_market_bar_conflict"):
+        store.save_bars(
+            Symbol("600001"),
+            BarFrequency.DAILY,
+            bars,
+            instrument_type="stock",
+            provider_name="another_provider",
+        )
+    assert store.load_bars(Symbol("600001"), instrument_type="stock")[
+        "volume"
+    ].tolist() == [100.0]
