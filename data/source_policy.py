@@ -192,12 +192,19 @@ _POLICIES = {
 
 
 def resolve_market_source_policy(policy_id: str | None) -> MarketSourcePolicy:
-    normalized = str(policy_id or CN_RESEARCH_V1.policy_id).strip()
+    normalized = str(policy_id or FREE_CN_RESEARCH_V1.policy_id).strip()
     normalized = _POLICY_ALIASES.get(normalized, normalized)
     try:
         return _POLICIES[normalized]
-    except KeyError as exc:
-        raise ValueError(f"market_source_policy_unsupported:{normalized}") from exc
+    except KeyError:
+        pass
+    prefix = "karkinos.market.source.compat."
+    suffix = ".v1"
+    if normalized.startswith(prefix) and normalized.endswith(suffix):
+        provider = normalized[len(prefix) : -len(suffix)]
+        if provider in {"akshare", "tushare"}:
+            return legacy_preferred_provider_policy(provider)
+    raise ValueError(f"market_source_policy_unsupported:{normalized}")
 
 
 def legacy_preferred_provider_policy(provider: str) -> MarketSourcePolicy:
@@ -244,7 +251,7 @@ def source_policy_for_config(config: object) -> MarketSourcePolicy:
         if normalized not in {"akshare", "tushare"}:
             raise ValueError(f"legacy_market_source_provider_unsupported:{normalized}")
         return legacy_preferred_provider_policy(normalized)
-    return CN_RESEARCH_V1
+    return FREE_CN_RESEARCH_V1
 
 
 def source_candidates_for_config(

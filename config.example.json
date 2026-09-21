@@ -110,7 +110,7 @@
         "port": 8000
     },
     "market_data": {
-        "source_policy": "karkinos.market.source.cn_research.v1",
+        "source_policy": "karkinos.market.source.free_cn_research.v1",
         "live_poll_interval": 60,
         "provider_config": {
             "tushare_token_env": "KARKINOS_TUSHARE_TOKEN"

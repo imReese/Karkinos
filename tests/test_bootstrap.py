@@ -90,6 +90,9 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
     assert not hasattr(config, "live_auto_start")
     assert config.market_calendar_auto_sync is False
     assert config.data_source == "tushare"
+    assert (
+        config.market_data_source_policy == "karkinos.market.source.compat.tushare.v1"
+    )
     assert config.tushare_token == ""
     assert config.data_source_provider_config == DataSourceProviderConfig(
         tushare_token_env="LOCAL_TUSHARE_TOKEN"
@@ -675,7 +678,10 @@ def test_create_runtime_context_builds_data_manager_with_default_store(monkeypat
 
     assert created["store_path"] == "data/store"
     assert created["store"].__class__ is FakeStore
-    assert created["source_policy"].policy_id == "karkinos.market.source.cn_research.v1"
+    assert (
+        created["source_policy"].policy_id
+        == "karkinos.market.source.free_cn_research.v1"
+    )
     assert context.watchlist == []
 
 
@@ -1335,7 +1341,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "notification": {"type": "console"},
     }
     assert example["market_data"] == {
-        "source_policy": "karkinos.market.source.cn_research.v1",
+        "source_policy": "karkinos.market.source.free_cn_research.v1",
         "live_poll_interval": 60,
         "provider_config": {
             "tushare_token_env": "KARKINOS_TUSHARE_TOKEN",

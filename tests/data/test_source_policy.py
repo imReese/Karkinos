@@ -77,3 +77,19 @@ def test_new_policy_config_wins_over_legacy_provider_compatibility() -> None:
         data_source="akshare",
     )
     assert source_policy_for_config(config) is CN_RESEARCH_V1
+
+
+def test_missing_policy_defaults_to_free_cn_research() -> None:
+    assert resolve_market_source_policy(None) is FREE_CN_RESEARCH_V1
+    config = SimpleNamespace(
+        market_data_source_policy="",
+        data_source="",
+    )
+    assert source_policy_for_config(config) is FREE_CN_RESEARCH_V1
+
+
+def test_legacy_compat_policy_id_preserves_explicit_provider_order() -> None:
+    policy = resolve_market_source_policy("karkinos.market.source.compat.tushare.v1")
+    route = policy.route(MarketDataUseCase.DAILY_BARS)
+    assert policy.policy_id == "karkinos.market.source.compat.tushare.v1"
+    assert route.candidates[:3] == ("tushare", "tdx", "akshare")
