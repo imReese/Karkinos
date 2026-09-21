@@ -1610,7 +1610,72 @@ select:is(.app-field, .app-input):not([multiple]) {
   .app-data-table
   tbody
   tr {
-  height: 36px;
+  height: 38px;
+}
+
+.app-workbench-route.overview-terminal-route {
+  max-width: 1560px;
+  margin-inline: auto;
+}
+
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  th:nth-child(1),
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  td:nth-child(1) {
+  width: 28%;
+  min-width: 180px;
+}
+
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  th:nth-child(2),
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  td:nth-child(2) {
+  width: 18%;
+  min-width: 120px;
+}
+
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  th:nth-child(3),
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  td:nth-child(3) {
+  width: 18%;
+  min-width: 120px;
+}
+
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  th:nth-child(4),
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  td:nth-child(4) {
+  width: 18%;
+  min-width: 120px;
+}
+
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  th:nth-child(5),
+.overview-terminal-route
+  .app-positions-table-dashboard
+  .app-data-table
+  td:nth-child(5) {
+  width: 18%;
+  min-width: 120px;
 }
 
 /*
