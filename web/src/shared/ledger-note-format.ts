@@ -6,6 +6,8 @@ import {
   finiteNumber,
   isCashLedgerEntry,
   isLedgerCorrection,
+  isVoidedDuplicate,
+  verifiedLedgerAccountingEffect,
   normalizeLedgerKind,
 } from './ledger-format-values';
 
@@ -46,10 +48,20 @@ export function formatLedgerPublicNote(
   entry: PublicLedgerEntry,
   locale: Locale = 'en',
 ) {
-  if (isLedgerCorrection(entry)) {
+  if (isVoidedDuplicate(entry)) {
     return locale === 'zh'
-      ? '抵消历史重复记账；非新增买卖、非入金或收益。'
-      : 'Offsets historical duplicate entries; not a new trade, deposit, or return.';
+      ? '原记录保留供追溯，已从原交易日期起排除重复扣款和份额。'
+      : 'Original record retained for audit; duplicate cash and quantity excluded from the trade date.';
+  }
+  if (isLedgerCorrection(entry)) {
+    if (verifiedLedgerAccountingEffect(entry) !== 'historical_restatement') {
+      return locale === 'zh'
+        ? '历史修正记录；原流水处理状态待核验。'
+        : 'Historical correction record; original entry treatment requires verification.';
+    }
+    return locale === 'zh'
+      ? '重复买入按原日期作废；保留修正依据，不产生新增资金变动。'
+      : 'Duplicate buys voided at their original dates; retained for audit with no new cash movement.';
   }
   const instrumentName = resolveLedgerInstrumentName(entry).trim();
   const segments = readableLedgerNoteSegments(entry.note)

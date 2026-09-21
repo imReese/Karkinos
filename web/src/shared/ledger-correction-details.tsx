@@ -1,6 +1,9 @@
 import { formatCurrency, formatQuantity, formatTimestamp } from './format';
 import type { PublicLedgerEntry } from './ledger-format-contracts';
-import { isLedgerCorrection } from './ledger-format-values';
+import {
+  isLedgerCorrection,
+  verifiedLedgerAccountingEffect,
+} from './ledger-format-values';
 import type { Locale } from './locale';
 
 export function LedgerEntryTime({
@@ -19,7 +22,7 @@ export function LedgerEntryTime({
         {formatCorrectionTimestamp(entry.created_at, locale)}
       </div>
       <div>
-        {locale === 'zh' ? '账本生效于' : 'Ledger effective at'}{' '}
+        {locale === 'zh' ? '旧补偿时间' : 'Legacy compensation time'}{' '}
         {formatCorrectionTimestamp(entry.timestamp, locale)}
       </div>
     </>
@@ -42,6 +45,7 @@ export function LedgerCorrectionDetails({
       'karkinos.legacy_fund_trade_duplicate_correction_plan.v1' &&
     evidence?.status === 'verified' &&
     evidence.blockers.length === 0 &&
+    verifiedLedgerAccountingEffect(entry) === 'historical_restatement' &&
     !!entry.entry_fingerprint &&
     evidence.entry_fingerprint === entry.entry_fingerprint;
   const number = (value: unknown) => {
@@ -88,8 +92,8 @@ export function LedgerCorrectionDetails({
       <p className="mt-2" role="status">
         {verified
           ? zh
-            ? '关联原流水与修正内容已核验；不代表历史收益或授权已核验。'
-            : 'Referenced entries and correction content verified; historical returns and authorization are not verified.'
+            ? '重复买入从原交易日期起作废；此记录保留修正依据，不再产生一笔资金变动。'
+            : 'Duplicate buys are voided from their original dates. This audit record adds no cash movement.'
           : zh
             ? '修正证据待核验'
             : 'Correction evidence requires review'}

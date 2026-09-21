@@ -175,7 +175,7 @@ export const ACTIVITY_LABELS: Record<
     historical_correction: {
       label: 'Historical duplicate correction',
       shortLabel: 'A',
-      cashImpactLabel: 'Ledger adjustment; no new trade or deposit',
+      cashImpactLabel: 'Original trades restated; audit record only',
       tone: 'adjustment',
     },
     other: {
@@ -231,7 +231,7 @@ export const ACTIVITY_LABELS: Record<
     historical_correction: {
       label: '历史重复记账修正',
       shortLabel: '修',
-      cashImpactLabel: '账面修正，非新增买卖、非入金',
+      cashImpactLabel: '原交易已更正，仅保留审计记录',
       tone: 'adjustment',
     },
     other: {

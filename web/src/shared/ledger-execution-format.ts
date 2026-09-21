@@ -22,11 +22,11 @@ export function formatLedgerExecutionDetailLines(
   if (isLedgerCorrection(entry)) {
     return [
       {
-        label: _locale === 'zh' ? '账面现金修正' : 'Ledger cash adjustment',
+        label: _locale === 'zh' ? '原重复扣款' : 'Original duplicate debit',
         value: formatCurrency(entry.amount),
       },
       {
-        label: _locale === 'zh' ? '账面份额修正' : 'Ledger quantity adjustment',
+        label: _locale === 'zh' ? '原份额修正' : 'Original quantity correction',
         value: formatQuantity(entry.quantity),
       },
     ];

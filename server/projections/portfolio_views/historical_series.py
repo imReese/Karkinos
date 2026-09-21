@@ -14,7 +14,7 @@ from server.models import (
     EquityPoint,
     EquitySeriesPoint,
 )
-from server.projections.ledger_correction_read import is_fund_duplicate_correction
+from server.projections.ledger_correction_read import restated_ledger_rows
 from server.projections.portfolio_read_snapshot_persistence import (
     portfolio_read_snapshot_for_state,
 )
@@ -187,17 +187,26 @@ def historical_performance_from_series(
     db = getattr(state, "db", None)
     try:
         ledger_entries = (
-            [LedgerEntry.from_row(dict(row)) for row in read_snapshot.ledger_rows]
+            [
+                LedgerEntry.from_row(row)
+                for row in restated_ledger_rows(
+                    [dict(row) for row in read_snapshot.ledger_rows]
+                )
+            ]
             if read_snapshot is not None
             else load_ledger_entries_for_equity_series(db)
         )
     except (KeyError, TypeError, ValueError, OSError, sqlite3.Error):
         return HistoricalPerformanceEvaluation([], ["drawdown_history_unavailable"])
 
-    blockers = historical_correction_performance_blockers(ledger_entries)
+    blockers = []
     equity_curve = _unitized_equity_points(points, ledger_entries)
     if (
         not equity_curve
+        or any(
+            point.valuation_policy == "karkinos.historical_replay.v1"
+            for point in points
+        )
         or not equity_series_matches_valuation(points, valuation_snapshot_id)
         or (
             read_snapshot is not None
@@ -207,15 +216,6 @@ def historical_performance_from_series(
         blockers.append("drawdown_history_unavailable")
     return HistoricalPerformanceEvaluation(
         [] if blockers else equity_curve, sorted(set(blockers))
-    )
-
-
-def historical_correction_performance_blockers(entries: list[LedgerEntry]) -> list[str]:
-    # Correction validation proves bookkeeping, not a restated return history.
-    return (
-        ["historical_correction_performance_unverified"]
-        if any(is_fund_duplicate_correction(entry) for entry in entries)
-        else []
     )
 
 
