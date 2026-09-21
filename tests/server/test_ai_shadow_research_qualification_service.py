@@ -790,7 +790,11 @@ async def test_provider_free_qualification_replays_all_five_and_is_idempotent():
         ("2026-09-01T08:59:00+08:00", False),
         ("2026-09-01T09:00:00+08:00", True),
         ("2026-09-01T09:35:00+08:00", True),
-        ("2026-09-01T10:00:00+08:00", False),
+        ("2026-09-01T10:00:00+08:00", True),
+        ("2026-09-01T12:00:00+08:00", True),
+        ("2026-09-01T15:04:59+08:00", True),
+        ("2026-09-01T15:05:00+08:00", False),
+        ("2026-09-06T11:00:00+08:00", False),
     ],
 )
 async def test_qualification_market_open_blackout_boundaries(
@@ -867,7 +871,7 @@ async def test_0859_admission_crossing_0900_defers_without_capture_or_attempt() 
 @pytest.mark.trading_safety
 async def test_oldest_retryable_source_catches_up_after_newer_publication() -> None:
     service, store, _capture, _baseline, _adapter, _fee_calls = _harness(
-        now="2026-09-01T10:00:00+08:00",
+        now="2026-09-01T15:10:00+08:00",
     )
     daily = service._daily_artifact_store
     original_identity_reader = service._account_identity_reader

@@ -172,15 +172,13 @@ def qualification_clock_time(clock: Callable[[], datetime | str]) -> datetime:
 
 
 def qualification_market_open_blackout(value: datetime) -> bool:
-    """Keep account qualification outside the Shanghai 09:00-10:00 window."""
+    """Keep closed-session account qualification out of the live A-share session."""
 
     current = get_shanghai_now(value)
-    return (current.hour, current.minute, current.second, current.microsecond) >= (
-        9,
-        0,
-        0,
-        0,
-    ) and current.hour < 10
+    if current.weekday() >= 5:
+        return False
+    clock = (current.hour, current.minute, current.second, current.microsecond)
+    return (9, 0, 0, 0) <= clock < (15, 5, 0, 0)
 
 
 def require_current_valuation_trade_date(
