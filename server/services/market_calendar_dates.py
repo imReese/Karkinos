@@ -137,6 +137,46 @@ def resolve_latest_verified_closed_trading_date(
     )
 
 
+def resolve_verified_closed_trading_dates(
+    db: Any,
+    now: datetime,
+    *,
+    lookback_days: int = 30,
+    ingestion_time: time = POST_CLOSE_INGESTION_TIME,
+) -> tuple[VerifiedClosedTradingDate, ...]:
+    """Resolve a bounded natural-day window of verified closed SSE sessions."""
+    if isinstance(lookback_days, bool) or not isinstance(lookback_days, int):
+        raise TypeError("verified_trading_date_lookback_days_must_be_int")
+    if lookback_days <= 0 or lookback_days > 366:
+        raise ValueError("verified_trading_date_lookback_days_invalid")
+
+    current = get_shanghai_now(now)
+    cutoff_date = current.date()
+    if current.time() < ingestion_time:
+        cutoff_date -= timedelta(days=1)
+    start_date = cutoff_date - timedelta(days=lookback_days - 1)
+
+    resolved: list[VerifiedClosedTradingDate] = []
+    for year in range(start_date.year, cutoff_date.year + 1):
+        row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
+        validation = validate_verified_market_calendar(row)
+        if not validation.verified or validation.evidence_ref is None:
+            return ()
+        for value in _trading_dates_on_or_before(row, cutoff_date.isoformat()):
+            parsed = datetime.fromisoformat(value).date()
+            if parsed < start_date:
+                continue
+            resolved.append(
+                VerifiedClosedTradingDate(
+                    trade_date=value,
+                    calendar_evidence_refs=(validation.evidence_ref,),
+                )
+            )
+
+    resolved.sort(key=lambda item: item.trade_date)
+    return tuple(resolved)
+
+
 def latest_verified_closed_trading_date(
     db: Any,
     now: datetime,
@@ -187,4 +227,5 @@ __all__ = [
     "latest_verified_closed_trading_date",
     "project_market_session",
     "resolve_latest_verified_closed_trading_date",
+    "resolve_verified_closed_trading_dates",
 ]
