@@ -92,6 +92,17 @@ class DailyBarReconciliationPolicy:
 
 STRICT_DAILY_RECONCILIATION = DailyBarReconciliationPolicy()
 
+# Tencent's reviewed daily endpoint exposes volume in lots for most SSE/SZSE
+# instruments and amount in 0.01 万元 increments. AKShare normalizes those to
+# shares and CNY, which means the resulting values carry at most 100-share /
+# 100-CNY source precision. Keep price exact and tolerate only sub-unit-grid
+# rounding when reconciling against BaoStock's finer-grained values.
+BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
+    price_tolerance=Decimal("0"),
+    volume_tolerance=Decimal("99"),
+    amount_tolerance=Decimal("99.99"),
+)
+
 
 @dataclass(frozen=True, slots=True)
 class MarketReconciliationDifference:

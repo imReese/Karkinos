@@ -17,6 +17,7 @@ from data.market.quality import (
     MarketQualitySeverity,
 )
 from data.market.reconciliation import (
+    BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1,
     DailyBarReconciliationPolicy,
     ReconciliationDifferenceKind,
     reconcile_daily_bar_revisions,
@@ -851,3 +852,52 @@ def test_corrupted_materialization_cannot_be_reconciled(
             comparison_revision=comparison_revision,
             comparison_materialization=comparison_materialization,
         )
+
+
+def test_baostock_tencent_policy_only_tolerates_reviewed_source_precision() -> None:
+    within = reconcile_daily_bars(
+        (
+            _bar(
+                "600000",
+                volume="45671103",
+                amount="414887057.39",
+            ),
+        ),
+        (
+            _bar(
+                "600000",
+                volume="45671100",
+                amount="414887100",
+            ),
+        ),
+        primary_revision_id="revision-baostock",
+        comparison_revision_id="revision-tencent",
+        primary_provider="baostock",
+        comparison_provider="akshare_tencent",
+        policy=BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1,
+    )
+    assert within.matched is True
+
+    volume_outside = reconcile_daily_bars(
+        (_bar("600000", volume="45671103", amount="414887057.39"),),
+        (_bar("600000", volume="45671203", amount="414887057.39"),),
+        primary_revision_id="revision-baostock",
+        comparison_revision_id="revision-tencent",
+        primary_provider="baostock",
+        comparison_provider="akshare_tencent",
+        policy=BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1,
+    )
+    assert volume_outside.matched is False
+    assert volume_outside.differences[0].field == "volume"
+
+    amount_outside = reconcile_daily_bars(
+        (_bar("600000", volume="45671103", amount="414887057.39"),),
+        (_bar("600000", volume="45671103", amount="414887157.39"),),
+        primary_revision_id="revision-baostock",
+        comparison_revision_id="revision-tencent",
+        primary_provider="baostock",
+        comparison_provider="akshare_tencent",
+        policy=BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1,
+    )
+    assert amount_outside.matched is False
+    assert amount_outside.differences[0].field == "amount"
