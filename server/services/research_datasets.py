@@ -48,6 +48,9 @@ from data.market.serving import MarketServingStore
 from data.providers.tdx_runtime import TdxRuntimeSettings, prepare_tdx_runtime
 from data.storage.objects import ContentAddressedObjectStore
 from server.services.market_calendar_evidence import validate_verified_market_calendar
+from server.services.verified_daily_market_data import (
+    is_verified_daily_resolver_policy,
+)
 
 _POLICY = DailyBarDatasetResolverPolicy(
     policy_id="karkinos.dataset.pit.strict.v1",
@@ -61,10 +64,14 @@ class ResearchDatasetError(RuntimeError):
 
 
 def require_supported_snapshot(snapshot: DailyBarDatasetSnapshot) -> None:
-    """只为这条已核对的 TDX 未复权管线声明价格口径，不猜其他数据集。"""
-    if snapshot.resolver_policy_id != _POLICY.policy_id or any(
-        partition.provider != "tdx" for partition in snapshot.partitions
-    ):
+    """Accept the legacy TDX lane and verification-bound v2 daily datasets."""
+    legacy_tdx = snapshot.resolver_policy_id == _POLICY.policy_id and all(
+        partition.provider == "tdx" for partition in snapshot.partitions
+    )
+    verified_v2 = snapshot.verification_bound and is_verified_daily_resolver_policy(
+        snapshot.resolver_policy_id
+    )
+    if not legacy_tdx and not verified_v2:
         raise ResearchDatasetError("dataset_provider_or_policy_unsupported")
 
 
@@ -85,6 +92,7 @@ def dataset_summary(root: Path, ref: DatasetRef) -> dict[str, Any]:
         "partition_count": snapshot.partition_count,
         "price_basis": "unadjusted",
         "point_in_time_verified": False,
+        "cross_source_verified": snapshot.verification_bound,
     }
 
 
