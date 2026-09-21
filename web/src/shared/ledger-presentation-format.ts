@@ -27,6 +27,8 @@ import {
   formatSignedCurrency,
   isCashLedgerEntry,
   isLedgerCorrection,
+  isVoidedDuplicate,
+  verifiedLedgerAccountingEffect,
   normalizeLedgerKind,
 } from './ledger-format-values';
 import {
@@ -42,6 +44,8 @@ export function summarizeLedgerEntry(
   const kind = isLedgerCorrection(entry)
     ? 'historical_correction'
     : normalizeLedgerKind(entry.entry_type);
+
+  if (isVoidedDuplicate(entry)) return { kind, grossAmount, cashImpact: null };
 
   if (kind === 'trade_buy' || kind === 'cash_withdrawal') {
     return {
@@ -65,6 +69,18 @@ export function formatLedgerActivitySummary(
   entry: PublicLedgerEntry,
   locale: Locale,
 ): LedgerActivitySummary {
+  if (isVoidedDuplicate(entry)) {
+    return {
+      label: locale === 'zh' ? '重复买入已作废' : 'Duplicate buy voided',
+      shortLabel: locale === 'zh' ? '废' : 'V',
+      cashImpactLabel:
+        locale === 'zh'
+          ? '从原交易日期起不计入现金及份额'
+          : 'Excluded from cash and holdings from the original trade date',
+      amount: '--',
+      tone: 'neutral',
+    };
+  }
   const summary = summarizeLedgerEntry(entry);
   const labels = ACTIVITY_LABELS[locale][summary.kind];
   const amount =
@@ -74,7 +90,16 @@ export function formatLedgerActivitySummary(
 
   return {
     ...labels,
-    amount,
+    amount: isLedgerCorrection(entry) ? '--' : amount,
+    ...(isLedgerCorrection(entry) &&
+    verifiedLedgerAccountingEffect(entry) !== 'historical_restatement'
+      ? {
+          cashImpactLabel:
+            locale === 'zh'
+              ? '修正证据待核验'
+              : 'Correction evidence requires review',
+        }
+      : {}),
   };
 }
 
@@ -127,6 +152,9 @@ export function formatLedgerEntryTypeLabel(
   entryOrType: PublicLedgerEntry | string,
   locale: Locale,
 ) {
+  if (typeof entryOrType !== 'string' && isVoidedDuplicate(entryOrType)) {
+    return locale === 'zh' ? '重复买入已作废' : 'Duplicate buy voided';
+  }
   const entryType =
     typeof entryOrType === 'string' ? entryOrType : entryOrType.entry_type;
   const kind =

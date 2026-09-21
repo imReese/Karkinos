@@ -611,11 +611,11 @@ test('explains historical corrections with recorded time and referenced entries'
   renderActivityPage('zh', [correctionFixture]);
   expect(await screen.findByText('历史重复记账修正')).toBeTruthy();
   expect(screen.getByText(/记录于/)).toHaveTextContent('02/20');
-  expect(screen.getByText(/账本生效于/)).toHaveTextContent('02/10');
+  expect(screen.getByText(/旧补偿时间/)).toHaveTextContent('02/10');
   fireEvent.click(screen.getByText('查看修正依据'));
   expect(screen.getByText('重复原流水 #101')).toBeVisible();
   expect(screen.getByText('保留流水 #102')).toBeVisible();
-  expect(screen.getByText(/账面份额修正/)).toBeTruthy();
+  expect(screen.getByText(/原份额修正/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '交易 1 条' }));
   expect(screen.queryByText('历史重复记账修正')).toBeNull();
 });

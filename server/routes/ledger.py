@@ -31,7 +31,6 @@ from server.models import (
 )
 from server.projections.ledger_correction_read import (
     correction_read_evidence,
-    is_fund_duplicate_correction,
 )
 from server.services.manual_trade_fees import (
     MANUAL_FEE_INPUT_RULE_ID,
@@ -324,7 +323,7 @@ def create_router() -> APIRouter:
         entries = repo.list_entries(limit=limit, offset=offset)
         evidence = (
             correction_read_evidence(entries, state.db.get_all_ledger_entries_sync())
-            if any(is_fund_duplicate_correction(entry) for entry in entries)
+            if entries
             else {}
         )
         return [

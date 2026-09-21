@@ -30,6 +30,7 @@ export const correctionFixture = {
   },
   correction_evidence: {
     status: 'verified',
+    accounting_effect: 'historical_restatement',
     entry_fingerprint: 'fixture-entry',
     blockers: [],
     related_entries: [

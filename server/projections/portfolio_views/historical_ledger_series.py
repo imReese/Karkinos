@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from data.market_data import is_fund_estimate_quote_source
 from server.ledger.models import LedgerEntry
 from server.models import EquitySeriesPoint
+from server.projections.ledger_correction_read import restated_ledger_rows
 from server.projections.portfolio_application import (
     collect_latest_quotes as _collect_latest_quotes,
 )
@@ -105,7 +106,7 @@ def load_ledger_entries_for_equity_series(
             raise RuntimeError(
                 "historical equity requires a single-statement ledger snapshot reader"
             )
-    entries = [LedgerEntry.from_row(dict(row)) for row in rows]
+    entries = [LedgerEntry.from_row(row) for row in restated_ledger_rows(rows)]
     return sorted(entries, key=lambda entry: (entry.timestamp, entry.id or 0))
 
 
@@ -332,7 +333,12 @@ def build_daily_equity_series_from_ledger_history(
     read_snapshot = portfolio_read_snapshot_for_state(state)
     entries = (
         sorted(
-            (LedgerEntry.from_row(dict(row)) for row in read_snapshot.ledger_rows),
+            (
+                LedgerEntry.from_row(row)
+                for row in restated_ledger_rows(
+                    [dict(row) for row in read_snapshot.ledger_rows]
+                )
+            ),
             key=lambda entry: (entry.timestamp, entry.id or 0),
         )
         if read_snapshot is not None
@@ -477,7 +483,7 @@ def build_daily_equity_series_from_ledger_history(
                     ),
                     quote_status=quote_status,
                     missing_price_symbols=missing_price_symbols,
-                    valuation_policy="karkinos.historical_replay.v1",
+                    valuation_policy="karkinos.historical_replay.v2",
                     valuation_status=(
                         "reconstructed"
                         if valuation.total is not None and not missing_price_symbols

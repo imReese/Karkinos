@@ -24,6 +24,8 @@ export type PublicLedgerEntry = {
   correction_payload?: Record<string, unknown> | null;
   correction_evidence?: {
     status: 'verified' | 'unverified';
+    accounting_effect?:
+      'original_trade_voided' | 'historical_restatement' | null;
     entry_fingerprint: string;
     blockers: string[];
     related_entries: (PublicLedgerEntry & { role: 'original' | 'retained' })[];

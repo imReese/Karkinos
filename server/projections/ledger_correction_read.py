@@ -1,4 +1,4 @@
-"""Read-only explanation of persisted fund duplicate corrections."""
+"""Apply verified duplicate invalidations and explain their audit records."""
 
 from dataclasses import asdict
 
@@ -7,8 +7,43 @@ from server.ledger.models import LedgerEntry
 from server.projections.legacy_fund_trade_duplicate_correction import (
     LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE,
     LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
+    LegacyFundTradeDuplicateExclusionResolution,
     resolve_legacy_fund_trade_duplicate_exclusions,
 )
+from server.projections.service import build_portfolio_projection
+
+
+def restated_ledger_rows(rows: list[dict]) -> list[dict]:
+    """Void exact duplicate buys at their original dates, retaining raw audit facts.
+
+    Legacy compensation events describe the same invalidation. They must not
+    be applied again after removing the duplicate buys. Validate against the
+    complete snapshot before any caller filters it by date or instrument.
+    """
+    resolution = resolve_legacy_fund_trade_duplicate_exclusions(rows)
+    return _restated_rows(rows, resolution)
+
+
+def _restated_rows(
+    rows: list[dict], resolution: LegacyFundTradeDuplicateExclusionResolution
+) -> list[dict]:
+    if resolution.blockers:
+        raise ValueError(";".join(resolution.blockers))
+    if not resolution.correction_entry_ids:
+        return rows
+    excluded = resolution.excluded_manual_entry_ids | set(
+        resolution.correction_entry_ids
+    )
+    restated = [row for row in rows if row.get("id") not in excluded]
+    # Preserve the existing correction's drift checks and prove that changing
+    # historical attribution cannot change today's financial state.
+    booked = build_portfolio_projection([LedgerEntry.from_row(row) for row in rows])
+    corrected = build_portfolio_projection(
+        [LedgerEntry.from_row(row) for row in restated]
+    )
+    if booked != corrected:
+        raise ValueError("historical_restatement_closing_state_mismatch")
+    return restated
 
 
 def is_fund_duplicate_correction(entry: LedgerEntry) -> bool:
@@ -21,24 +56,42 @@ def is_fund_duplicate_correction(entry: LedgerEntry) -> bool:
 def correction_read_evidence(entries: list[LedgerEntry], rows: list[dict]) -> dict:
     """Bind explanations to the same rows checked by the canonical resolver."""
     resolution = resolve_legacy_fund_trade_duplicate_exclusions(rows)
+    restatement_blockers = list(resolution.blockers)
+    if not restatement_blockers:
+        try:
+            _restated_rows(rows, resolution)
+        except (ArithmeticError, TypeError, ValueError) as exc:
+            restatement_blockers.append(str(exc))
     by_id = {row["id"]: LedgerEntry.from_row(row) for row in rows}
+    correction_by_original = {
+        original_id: by_id[correction_id]
+        for correction_id in resolution.correction_entry_ids
+        for original_id in (by_id[correction_id].correction_payload or {}).get(
+            "original_ledger_entry_ids", []
+        )
+    }
     result = {}
     for entry in entries:
-        if not is_fund_duplicate_correction(entry):
+        correction = (
+            entry
+            if is_fund_duplicate_correction(entry)
+            else correction_by_original.get(entry.id)
+        )
+        if correction is None:
             continue
         fingerprint = ledger_entry_state_fingerprint(asdict(entry))
         current = by_id.get(entry.id)
-        blockers = list(resolution.blockers)
+        blockers = list(restatement_blockers)
         if (
             current is None
             or ledger_entry_state_fingerprint(asdict(current)) != fingerprint
         ):
             blockers.append("correction_read_snapshot_changed")
-        if entry.id not in resolution.correction_entry_ids:
+        if correction.id not in resolution.correction_entry_ids:
             blockers.append("correction_evidence_unverified")
         related = []
         if not blockers:
-            payload = entry.correction_payload or {}
+            payload = correction.correction_payload or {}
             for role, key in (
                 ("original", "original_ledger_entry_ids"),
                 ("retained", "canonical_ledger_entry_ids"),
@@ -63,6 +116,13 @@ def correction_read_evidence(entries: list[LedgerEntry], rows: list[dict]) -> di
                     )
         result[entry.id] = {
             "status": "unverified" if blockers else "verified",
+            "accounting_effect": (
+                None
+                if blockers
+                else "historical_restatement"
+                if entry.id == correction.id
+                else "original_trade_voided"
+            ),
             "entry_fingerprint": fingerprint,
             "blockers": sorted(set(blockers)),
             "related_entries": related,

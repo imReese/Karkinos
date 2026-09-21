@@ -91,3 +91,17 @@ export function isLedgerCorrection(entry: PublicLedgerEntry) {
     entry.source === 'legacy_fund_trade_duplicate_repair'
   );
 }
+
+export function isVoidedDuplicate(entry: PublicLedgerEntry) {
+  return verifiedLedgerAccountingEffect(entry) === 'original_trade_voided';
+}
+
+export function verifiedLedgerAccountingEffect(entry: PublicLedgerEntry) {
+  const evidence = entry.correction_evidence;
+  return evidence?.status === 'verified' &&
+    evidence.blockers.length === 0 &&
+    !!entry.entry_fingerprint &&
+    evidence.entry_fingerprint === entry.entry_fingerprint
+    ? evidence.accounting_effect
+    : null;
+}

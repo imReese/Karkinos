@@ -14,6 +14,7 @@ from server.ledger.models import LedgerEntry
 from server.persistence import migrations
 from server.persistence.financial_facts_ledger import insert_ledger_entry_on_connection
 from server.persistence.initializer import initialize_database
+from server.projections.ledger_correction_read import restated_ledger_rows
 from server.projections.legacy_fund_trade_duplicate_correction import (
     LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE,
     LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
@@ -266,6 +267,18 @@ def test_correction_read_evidence_validates_references_and_page_identity(
     assert item["id"] == entry.id
     assert item["correction_evidence"] == evidence
     assert item["correction_evidence"]["entry_fingerprint"] == item["entry_fingerprint"]
+    original_id = next(
+        r["id"] for r in evidence["related_entries"] if r["role"] == "original"
+    )
+    original_page = TestClient(app).get("/api/ledger/entries?limit=50").json()
+    original = next(item for item in original_page if item["id"] == original_id)
+    assert (
+        original["correction_evidence"]["accounting_effect"] == "original_trade_voided"
+    )
+    assert (
+        original["correction_evidence"]["entry_fingerprint"]
+        == original["entry_fingerprint"]
+    )
     assert _counts(path) == before
     assert _rows(path) == rows
     for mutation in ("missing", "schema", "payload", "page"):
@@ -288,7 +301,9 @@ def test_correction_read_evidence_validates_references_and_page_identity(
         assert result["related_entries"] == []
 
 
-def test_daily_history_characterizes_tail_correction_without_restating_facts(tmp_path):
+def test_daily_history_voids_original_duplicates_without_a_later_cash_movement(
+    tmp_path,
+):
     from server.projections.portfolio_views.historical_ledger_series import (
         build_daily_equity_series_from_ledger_history,
     )
@@ -351,7 +366,7 @@ def test_daily_history_characterizes_tail_correction_without_restating_facts(tmp
     original_ids = set(
         json.loads(correction["correction_payload_json"])["original_ledger_entry_ids"]
     )
-    # Test-only restatement is a counterfactual, never a production write policy.
+    # Independent expected effective ledger, retaining the unmodified audit rows.
     restated = [
         r for r in rows if r["id"] not in original_ids and r["id"] != correction["id"]
     ]
@@ -386,24 +401,39 @@ def test_daily_history_characterizes_tail_correction_without_restating_facts(tmp
         )
 
     actual, adjusted = history(rows)
-    reference, _ = history(restated)
-    assert [p.total for p in actual] == pytest.approx(
-        [100, 99.8, 119.8, 109.9, 119.9, 119.9]
+    reference, reference_adjusted = history(restated)
+    assert [p.total for p in actual] == [p.total for p in reference]
+    assert [p.cash for p in actual] == pytest.approx(
+        [100, 79.9, 79.9, 79.9, 89.9, 86.9]
     )
+    assert [p.funds for p in actual] == pytest.approx([0, 20, 30, 30, 30, 33])
     assert [p.total for p in reference] == pytest.approx(
         [100, 99.9, 109.9, 109.9, 119.9, 119.9]
     )
     assert actual[-1].total == reference[-1].total
-    # A valid correction and matching final balance do not prove historical returns.
-    assert actual[3].total < actual[2].total
-    assert adjusted.equity_curve == []
-    assert adjusted.blockers == ["historical_correction_performance_unverified"]
+    assert actual[3].total == actual[2].total
+    assert adjusted.equity_curve == reference_adjusted.equity_curve
+    assert adjusted.equity_curve
+    assert adjusted.blockers == []
+    # An old compensation-timed series cannot authorize historical risk metrics.
+    old_points = [
+        p.model_copy(update={"valuation_policy": "karkinos.historical_replay.v1"})
+        for p in actual
+    ]
+    old_state = SimpleNamespace(
+        db=SimpleNamespace(get_all_ledger_entries_sync=lambda: rows)
+    )
+    old_performance = historical_performance_from_series(
+        old_state, old_points, valuation_snapshot_id=None
+    )
+    assert old_performance.equity_curve == []
+    assert old_performance.blockers == ["drawdown_history_unavailable"]
     assert resolve_legacy_fund_trade_duplicate_exclusions(rows).valid
     assert json.dumps(_rows(path), sort_keys=True) == before
 
 
 @pytest.mark.parametrize("price_gap", [False, True])
-def test_correction_performance_is_blocked_in_bound_snapshot_http_reads(
+def test_restated_history_and_performance_share_bound_snapshot_and_price_gaps(
     tmp_path, monkeypatch, price_gap
 ):
     import socket
@@ -491,27 +521,25 @@ def test_correction_performance_is_blocked_in_bound_snapshot_http_reads(
         risk_response,
     ):
         assert response.status_code == 200, response.text
-    assert coverage_response.json()["performance_blockers"] == [
-        "historical_correction_performance_unverified"
-    ]
+    assert coverage_response.json()["performance_blockers"] == []
     series = series_response.json()
     assert any(point["total"] is None for point in series) == price_gap
     assert series[-1]["valuation_snapshot_id"] == valuation["snapshot_id"]
     overview = overview_response.json()
     risk = risk_response.json()
-    expected = ["historical_correction_performance_unverified"]
-    if price_gap:
-        expected.insert(0, "drawdown_history_unavailable")
+    expected = ["drawdown_history_unavailable"] if price_gap else []
     assert overview["valuation_snapshot_id"] == valuation["snapshot_id"]
     assert overview["ledger_cutoff_id"] == valuation["ledger_cutoff_id"]
-    assert overview["current_drawdown"] is None
-    assert overview["drawdown_peak_equity"] is None
+    assert overview["current_drawdown"] == (None if price_gap else 0)
+    assert overview["drawdown_peak_equity"] == (
+        None if price_gap else pytest.approx(110)
+    )
     assert overview["drawdown_blockers"] == expected
     assert overview["total_equity"] == pytest.approx(110)
-    assert risk["status"] == "partial"
+    assert risk["status"] == ("partial" if price_gap else "complete")
     assert risk["blockers"] == expected
-    assert risk["drawdown"] is None
-    assert risk["drawdown_series"] == []
+    assert (risk["drawdown"] is None) == price_gap
+    assert bool(risk["drawdown_series"]) != price_gap
     assert risk["exposure_buckets"]
     assert risk["concentration"][0]["market_value"] == 30
     assert len(reads) == 1
@@ -824,6 +852,8 @@ def test_resolver_uses_repair_cutoff_and_rejects_pre_cutoff_tampering(
     assert resolution.valid
     assert len(resolution.excluded_manual_entry_ids) == 2
     build_portfolio_projection([LedgerEntry.from_row(row) for row in _rows(path)])
+    effective = restated_ledger_rows(_rows(path))
+    assert len(effective) == len(_rows(path)) - 2 - len(resolution.correction_entry_ids)
 
     # A post-cutoff row backfilled before the correction remains outside the
     # historical fingerprint, but protected projection replay rejects its
@@ -850,6 +880,8 @@ def test_resolver_uses_repair_cutoff_and_rejects_pre_cutoff_tampering(
     assert resolve_legacy_fund_trade_duplicate_exclusions(_rows(path)).valid
     with pytest.raises(ValueError, match="position evidence drifted"):
         build_portfolio_projection([LedgerEntry.from_row(row) for row in _rows(path)])
+    with pytest.raises(ValueError, match="position evidence drifted"):
+        restated_ledger_rows(_rows(path))
 
     with sqlite3.connect(path) as conn:
         _simulate_offline_guard_bypass(conn, "ledger_entries_update_guard")
@@ -861,6 +893,8 @@ def test_resolver_uses_repair_cutoff_and_rejects_pre_cutoff_tampering(
     resolution = resolve_legacy_fund_trade_duplicate_exclusions(_rows(path))
     assert not resolution.valid
     assert not resolution.excluded_manual_entry_ids
+    with pytest.raises(ValueError):
+        restated_ledger_rows(_rows(path))
 
 
 def test_resolver_rejects_tampered_fingerprint_and_returns_no_exclusions(

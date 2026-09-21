@@ -188,6 +188,9 @@ class LedgerEntryCreatedResponse(BaseModel):
 
 class LedgerCorrectionEvidenceResponse(BaseModel):
     status: Literal["verified", "unverified"]
+    accounting_effect: (
+        Literal["original_trade_voided", "historical_restatement"] | None
+    ) = None
     entry_fingerprint: str
     blockers: list[str]
     related_entries: list[dict[str, Any]]

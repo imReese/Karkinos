@@ -19,6 +19,7 @@ from server.persistence.database_normalization import stable_json_fingerprint
 from server.persistence.valuation_publication_recovery import (
     publication_affects_instruments,
 )
+from server.projections.ledger_correction_read import restated_ledger_rows
 from server.projections.portfolio_read_snapshot import (
     PortfolioReadSnapshot,
     PortfolioReadSnapshotIdentity,
@@ -27,9 +28,6 @@ from server.projections.portfolio_read_snapshot import (
 from server.projections.portfolio_views.historical_ledger_series import (
     ledger_entry_timestamp,
     quote_valuation_date,
-)
-from server.projections.portfolio_views.historical_series import (
-    historical_correction_performance_blockers,
 )
 from server.projections.quote_status import parse_quote_timestamp
 from server.projections.service import PortfolioReplayAccumulator
@@ -78,13 +76,14 @@ def _build(
     if as_of is None:
         raise PortfolioReadSnapshotRejected("coverage valuation time unavailable")
     as_of = as_of.astimezone(_SH)
-    entries = [LedgerEntry.from_row(dict(row)) for row in snapshot.ledger_rows]
+    rows = restated_ledger_rows([dict(row) for row in snapshot.ledger_rows])
+    entries = [LedgerEntry.from_row(row) for row in rows]
     dated = [(ledger_entry_timestamp(entry), entry) for entry in entries]
     if any(stamp is None or stamp > as_of for stamp, _ in dated):
         raise PortfolioReadSnapshotRejected("coverage ledger time unavailable")
     dated.sort(key=lambda pair: (pair[0], pair[1].id or 0))
     keys = {}
-    for row, entry in zip(snapshot.ledger_rows, entries, strict=True):
+    for row, entry in zip(rows, entries, strict=True):
         if not entry.symbol:
             continue
         key = InstrumentKey.from_values(
@@ -217,7 +216,7 @@ def _build(
         confirmed_gap_instrument_dates=len(gaps),
         unknown_requirement_instrument_dates=unknown,
         unavailable_required_instrument_dates=unavailable,
-        performance_blockers=historical_correction_performance_blockers(entries),
+        performance_blockers=[],
         items=items,
     )
 
