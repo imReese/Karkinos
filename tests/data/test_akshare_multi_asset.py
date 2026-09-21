@@ -229,7 +229,20 @@ class TestAKShareMultiAsset:
         )
 
         mock_ak.assert_called_once()
+        assert mock_ak.call_args.kwargs["adjust"] == ""
         assert "timestamp" in df.columns
+        assert df["volume"].tolist() == [1_000_000.0] * len(df)
+        assert df["amount"].tolist() == [1_000_000.0] * len(df)
+        assert df.attrs["adjustment_mode"] == "none"
+        assert df.attrs["volume_unit"] == "shares"
+
+    @patch("akshare.stock_zh_a_hist")
+    def test_stock_without_historical_bars_returns_empty(self, mock_ak, source):
+        mock_ak.return_value = pd.DataFrame()
+        frame = source.fetch_bars(
+            Symbol("600519"), datetime(2025, 1, 2), datetime(2025, 3, 1)
+        )
+        assert frame.empty
 
     @patch("akshare.fund_etf_hist_em")
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")

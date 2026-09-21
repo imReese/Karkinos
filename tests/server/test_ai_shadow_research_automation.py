@@ -4481,12 +4481,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             [f"{600000 + index:06d}" for index in range(1_000)]
         ),
     )
-    panel_symbols = list(
-        preliminary_research_panel_symbols(
-            universe_snapshot,
-            policy=MarketUniversePolicy(),
-        )
-    )
+    panel_symbols = [str(member["symbol"]) for member in universe_snapshot["members"]]
     for panel_symbol in panel_symbols:
         market.save_bars(
             Symbol(panel_symbol),
@@ -4506,16 +4501,14 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             "provider": "deterministic_fixture",
             "status": "available",
             "trading_day_count": len(market_dates),
-            "closed_day_count": 0,
+            "closed_day_count": 365 - len(market_dates),
             "source_fingerprint": calendar_source_fingerprint,
             "days": [
                 {
-                    "date": market_date,
-                    "is_trading_day": True,
-                    "day_type": "trading",
-                    "reason_code": "scheduled_trading_day",
+                    "date": day.date().isoformat(),
+                    "is_trading_day": day.date().isoformat() in market_dates,
                 }
-                for market_date in market_dates
+                for day in pd.date_range("2026-01-01", "2026-12-31")
             ],
             "limitations": [],
         }
@@ -4545,26 +4538,8 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
                 }
             ),
         )
-    db.upsert_automation_run_sync(
-        {
-            "run_id": (
-                "market_universe_sync:v3:deterministic_fixture:"
-                f"deterministic_fixture:{market_dates[-1]}"
-            ),
-            "run_type": "market_universe_sync",
-            "run_date": market_dates[-1],
-            "status": "completed",
-            "execution_mode": "market_data_ingestion",
-            "source_ref": universe_snapshot["snapshot_id"],
-            "payload": {
-                "schema_version": "karkinos.market_universe_automation.v3",
-                "security_master_provider": "deterministic_fixture",
-                "daily_bar_provider": "deterministic_fixture",
-                "market_universe_snapshot_id": universe_snapshot["snapshot_id"],
-                "full_market_history_frozen": True,
-            },
-        }
-    )
+    # Research readiness comes from verified persisted data, without a job
+    # marked completed on this trading date (weekend catch-up works too).
     seed_result_id = asyncio.run(
         db.save_backtest_result(
             config_json=json.dumps(
@@ -4664,8 +4639,17 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
 
     resolver_call_count = len(resolver_calls)
     normalized = service._prepare_baseline(
-        ShadowResearchPolicy(baseline_backtest_result_id=seed_result_id)
+        ShadowResearchPolicy(baseline_backtest_result_id=seed_result_id),
+        research_start_date="2026-01-05",
     )
+    assert normalized.request.start_date == "2026-01-05"
+    assert (
+        json.loads(asyncio.run(db.get_backtest_result(seed_result_id))["config_json"])[
+            "start_date"
+        ]
+        == "2026-01-02"
+    )
+    assert normalized.snapshot["snapshot_id"] != prepared.snapshot["snapshot_id"]
     assert len(resolver_calls) == resolver_call_count
     assert normalized.cost_model_reference == (
         "karkinos.backtest.multi_asset_commission.default.v1"

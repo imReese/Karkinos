@@ -239,7 +239,10 @@ def _read_receipts(conn, refs, observed):
         receipt = json.loads(row["receipt_json"])
         _require(
             receipt.get("schema_version")
-            == "karkinos.market_daily_ingestion_receipt.v2"
+            in {
+                "karkinos.market_daily_ingestion_receipt.v2",
+                "karkinos.market_daily_ingestion_receipt.v3",
+            }
             and receipt.get("trade_date") == ref["trade_date"]
             and receipt.get("provider_name") == ref["provider_name"]
             and receipt.get("row_count") == row["row_count"]

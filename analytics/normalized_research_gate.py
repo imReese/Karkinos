@@ -21,6 +21,7 @@ from analytics.strategy_advancement_evidence import (
     market_regime_robustness_check,
     parameter_robustness_check,
     payload_fingerprint,
+    research_execution_policy_matches,
     rolling_oos_comparison,
     turnover_ratio,
     valid_snapshot_id,
@@ -106,14 +107,17 @@ def build_normalized_research_advancement_gate(
     record(
         "frozen_dataset_identity",
         passed=(
-            valid_snapshot_id(baseline_snapshot)
+            research_execution_policy_matches(baseline, candidate)
+            and valid_snapshot_id(baseline_snapshot)
             and valid_snapshot_id(candidate_snapshot)
             and baseline_snapshot == candidate_snapshot
             and candidate.get("dataset_quality_status") == "ok"
             and int(candidate.get("dataset_issue_count") or 0) == 0
         ),
         blocker=(
-            "candidate_dataset_snapshot_missing"
+            "research_execution_policy_mismatch"
+            if not research_execution_policy_matches(baseline, candidate)
+            else "candidate_dataset_snapshot_missing"
             if not candidate_snapshot
             else (
                 "candidate_dataset_snapshot_mismatch"

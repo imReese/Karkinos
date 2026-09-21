@@ -539,3 +539,23 @@ fee_schedule_bindings_match = _fee_schedule_bindings_match
 valid_fingerprint = _valid_fingerprint
 valid_snapshot_id = _valid_snapshot_id
 payload_fingerprint = _payload_fingerprint
+
+
+def research_execution_policy_matches(
+    baseline: Mapping[str, Any], candidate: Mapping[str, Any]
+) -> bool:
+    """New normalized snapshots must compare the same simulation assumptions."""
+    if not (
+        baseline.get("normalized_market_data")
+        or candidate.get("normalized_market_data")
+    ):
+        return True  # Persisted historical evaluations keep their old contract.
+    left = baseline.get("research_execution_policy") or {}
+    right = candidate.get("research_execution_policy") or {}
+    return bool(
+        left == right
+        and left.get("execution_policy")
+        == "karkinos.research.next_bar_close.four_slots.v1"
+        and left.get("allocation_slots")
+        and left.get("canonical_target_weight")
+    )

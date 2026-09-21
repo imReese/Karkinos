@@ -28,18 +28,18 @@ def test_tushare_legacy_source_declares_unadjusted_stock_daily_capability() -> N
     assert not descriptor.supports_daily_bars(InstrumentType.ETF)
 
 
-def test_akshare_legacy_source_explicitly_declares_qfq_semantics() -> None:
+def test_akshare_source_declares_unadjusted_stocks_and_qfq_etfs() -> None:
     descriptor = AKShareSource().descriptor
     assert descriptor == AKSHARE_PROVIDER_DESCRIPTOR
     assert descriptor.provider == "akshare"
     assert descriptor.upstream_group == "eastmoney"
-    assert descriptor.supports_daily_bars(InstrumentType.STOCK, price_basis="qfq")
+    assert not descriptor.supports_daily_bars(InstrumentType.STOCK, price_basis="qfq")
     assert descriptor.supports_daily_bars(InstrumentType.ETF, price_basis="qfq")
     assert descriptor.supports_daily_bars(
         InstrumentType.OPEN_END_FUND,
         price_basis="published_unit_nav",
     )
-    assert not descriptor.supports_daily_bars(
+    assert descriptor.supports_daily_bars(
         InstrumentType.STOCK, price_basis="unadjusted"
     )
 

@@ -18,7 +18,11 @@ _OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
 _STOCK_RECEIPT_STORAGE_AUTHORITY_BY_SCHEMA = {
     "karkinos.market_daily_ingestion_receipt.v1": "sqlite_market_bars",
     "karkinos.market_daily_ingestion_receipt.v2": "sqlite_market_bars_v2:stock",
+    "karkinos.market_daily_ingestion_receipt.v3": "sqlite_market_bars_v2:stock",
 }
+
+RESEARCH_BAR_NORMALIZATION = "karkinos.receipt_stock_units.v1"
+CANONICAL_STOCK_BAR_UNITS = {"volume": "shares", "amount": "CNY"}
 
 
 def is_supported_stock_receipt_identity(receipt: Mapping[str, object]) -> bool:
@@ -26,6 +30,11 @@ def is_supported_stock_receipt_identity(receipt: Mapping[str, object]) -> bool:
 
     schema_version = str(receipt.get("schema_version") or "")
     expected_authority = _STOCK_RECEIPT_STORAGE_AUTHORITY_BY_SCHEMA.get(schema_version)
+    if schema_version == "karkinos.market_daily_ingestion_receipt.v3" and (
+        receipt.get("units") != CANONICAL_STOCK_BAR_UNITS
+        or receipt.get("price_basis") != "unadjusted"
+    ):
+        return False
     return expected_authority is not None and (
         receipt.get("storage_authority") == expected_authority
     )
@@ -95,6 +104,10 @@ class MarketDailyIngestionMixin:
         same transaction.  An existing receipt is immutable: a later provider
         correction or local row drift is rejected instead of silently changing
         a previously frozen decision input.
+
+        Callers supply unadjusted stock prices, volume in shares, and amount
+        in CNY. Provider-specific conversions belong in the adapter. New v3
+        receipts record these units; v1/v2 receipts retain their original values.
         """
 
         normalized_date = str(trade_date).strip()
@@ -131,7 +144,9 @@ class MarketDailyIngestionMixin:
         )
         symbols = [record[0] for record in records]
         receipt_core: dict[str, object] = {
-            "schema_version": "karkinos.market_daily_ingestion_receipt.v2",
+            "schema_version": "karkinos.market_daily_ingestion_receipt.v3",
+            "units": CANONICAL_STOCK_BAR_UNITS,
+            "price_basis": "unadjusted",
             "trade_date": normalized_date,
             "provider_name": normalized_provider,
             "row_count": len(records),
@@ -280,7 +295,7 @@ class MarketDailyIngestionMixin:
         *,
         start_date: str,
         end_date: str,
-        provider_name: str,
+        provider_name: str | None = None,
         verify: bool = True,
     ) -> list[dict[str, object]]:
         """Read a date-ordered receipt window for deterministic replay."""
@@ -290,10 +305,10 @@ class MarketDailyIngestionMixin:
             rows = conn.execute(
                 """
                 SELECT receipt_json FROM market_daily_ingestion_receipts
-                WHERE provider_name = ? AND trade_date BETWEEN ? AND ?
-                ORDER BY trade_date
+                WHERE (? IS NULL OR provider_name = ?) AND trade_date BETWEEN ? AND ?
+                ORDER BY trade_date, provider_name
                 """,
-                (str(provider_name), str(start_date), str(end_date)),
+                (provider_name, provider_name, str(start_date), str(end_date)),
             ).fetchall()
             payloads = [json.loads(str(row["receipt_json"])) for row in rows]
             if any(not isinstance(payload, dict) for payload in payloads):
@@ -402,7 +417,7 @@ def _receipt_storage_dates(
         schema_version = str(receipt.get("schema_version") or "")
         target = (
             typed_dates
-            if schema_version == "karkinos.market_daily_ingestion_receipt.v2"
+            if schema_version != "karkinos.market_daily_ingestion_receipt.v1"
             else legacy_dates
         )
         target.add(trade_date)
@@ -461,7 +476,7 @@ def verify_market_daily_receipt_on_connection(
     symbols = receipt.get("symbols")
     if not isinstance(symbols, list) or not symbols:
         return False
-    if schema_version == "karkinos.market_daily_ingestion_receipt.v2":
+    if schema_version != "karkinos.market_daily_ingestion_receipt.v1":
         storage_table = "market_bars_v2"
         identity_filter = "instrument_type = 'stock' AND"
     else:

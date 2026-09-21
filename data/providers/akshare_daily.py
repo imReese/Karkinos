@@ -189,6 +189,17 @@ def _endpoint_for(instrument: InstrumentKey) -> str:
     )
 
 
+def normalize_akshare_stock_daily_units(frame: pd.DataFrame) -> pd.DataFrame:
+    """Eastmoney stock daily volume is lots; amount is already CNY."""
+    result = frame.copy()
+    if not result.empty:
+        result["volume"] = result["volume"].map(
+            lambda value: float(_decimal(value, field="成交量") * _LOT_TO_SHARES)
+        )
+    result.attrs.update(volume_unit="shares", amount_unit="CNY", adjustment_mode="none")
+    return result
+
+
 def _rows_from_frame(
     frame: pd.DataFrame,
     *,

@@ -33,10 +33,12 @@ from core.events import MarketEvent
 from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
+from data.research_market_data import load_research_market_frames
 from data.store import DataStore
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
+    FORMULA_AST_CONTRACT,
     FormulaBinding,
     FormulaValidationError,
     evaluate_formula,
@@ -67,8 +69,9 @@ class _FormulaSignalStrategy(Strategy):
         universe_size: int,
         *,
         allocation_slots: int = 4,
+        strategy_id: str = "ai_formula_research",
     ) -> None:
-        super().__init__("ai_formula_research", _NullEventBus())
+        super().__init__(strategy_id, _NullEventBus())
         self._formula_ast = formula_ast
         self._universe_size = universe_size
         self._allocation_slots = min(max(allocation_slots, 1), universe_size)
@@ -163,6 +166,7 @@ class _FormulaSignalStrategy(Strategy):
             ),
             "allocation_slots": self._allocation_slots,
             "canonical_target_weight": self._canonical_target_weight,
+            "execution_policy": "karkinos.research.next_bar_close.four_slots.v1",
             "model_position_size_ignored": True,
             "contains_absolute_balance": False,
             "contains_holding_quantity": False,
@@ -662,6 +666,33 @@ def validate_persisted_fee_schedule_binding(
         raise StrategyResearchRejected("persisted_fee_schedule_binding_drift")
 
 
+def build_dual_ma_research_strategy(
+    params: Mapping[str, Any], universe_size: int
+) -> _FormulaSignalStrategy:
+    """Run the fixed MA hypothesis under the candidate's exact execution policy."""
+
+    def average(window: int) -> dict[str, Any]:
+        field = {"op": "field", "name": "close"}
+        return (
+            field
+            if window == 1
+            else {"op": "rolling_mean", "input": field, "window": window}
+        )
+
+    short = average(int(params["short_period"]))
+    long = average(int(params["long_period"]))
+    return _FormulaSignalStrategy(
+        {
+            "schema_version": FORMULA_AST_CONTRACT,
+            "entry": {"op": "cross", "left": short, "right": long},
+            "exit": {"op": "lte", "left": short, "right": long},
+            "position_size": {"op": "equal_weight"},
+        },
+        universe_size,
+        strategy_id="dual_ma",
+    )
+
+
 def rolling_oos_parameters(equity_point_count: int) -> tuple[int, int, int]:
     """Choose deterministic rolling windows while requiring real holdout data."""
     if equity_point_count < 6:
@@ -698,6 +729,20 @@ def _load_bound_inputs(
     effective_end = end_date or selection.end_date
     handlers: dict[Symbol, DataHandler] = {}
     instruments: dict[Symbol, Any] = {}
+    market_binding = (expected_dataset_snapshot or {}).get("market_data_binding")
+    frozen_frames = None
+    if market_binding is not None:
+        if effective_end > selection.end_date:
+            raise StrategyResearchRejected(
+                "research_snapshot_extension_requires_new_binding"
+            )
+        frozen_frames = load_research_market_frames(
+            data_store._root,
+            binding=market_binding,
+            symbols=selection.universe,
+            start_date=selection.start_date,
+            end_date=selection.end_date,
+        )
     for symbol_text, asset_class_text in zip(
         selection.universe, selection.asset_classes, strict=True
     ):
@@ -711,10 +756,14 @@ def _load_bound_inputs(
             )
         except ValueError as exc:
             raise StrategyResearchRejected("asset_class_invalid") from exc
-        frame = data_store.load_bars(
-            symbol,
-            BarFrequency.DAILY,
-            instrument_type=instrument_type,
+        frame = (
+            frozen_frames.get(symbol_text)
+            if frozen_frames is not None
+            else data_store.load_bars(
+                symbol,
+                BarFrequency.DAILY,
+                instrument_type=instrument_type,
+            )
         )
         if frame is None:
             raise StrategyResearchRejected(f"persisted_bars_missing:{symbol_text}")
@@ -762,6 +811,7 @@ def _load_bound_inputs(
         data_handlers=handlers,
         store=data_store,
         source_names=source_names,
+        market_data_binding=market_binding,
     )
     if verify_snapshot and snapshot.get("snapshot_id") != selection.dataset_snapshot_id:
         raise StrategyResearchRejected("dataset_snapshot_drift")

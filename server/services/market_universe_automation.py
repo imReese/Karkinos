@@ -13,8 +13,8 @@ from typing import Any, Callable
 import pandas as pd
 
 from core.types import AssetClass, BarFrequency, Symbol
-from data.manager import DataManager, build_sources_for_config
-from data.source_policy import MarketDataUseCase, source_policy_for_config
+from data.manager import build_sources_for_config
+from data.source_policy import MarketDataUseCase
 from data.source_routing import configured_legacy_provider_names
 from data.store import DataStore
 from server.bootstrap import resolve_data_dir
@@ -22,6 +22,7 @@ from server.release_activation import wait_for_release_activation
 from server.services.market_calendar_dates import (
     latest_verified_closed_trading_date,
 )
+from server.services.market_calendar_evidence import validate_verified_market_calendar
 from server.services.market_hours import get_shanghai_now
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
@@ -45,7 +46,6 @@ class MarketUniverseAutomationService:
         db: Any,
         config: Any,
         data_store: DataStore | None = None,
-        data_manager: DataManager | None = None,
         source: Any | None = None,
         policy: MarketUniversePolicy | None = None,
         throttle_seconds: float | None = None,
@@ -66,13 +66,8 @@ class MarketUniverseAutomationService:
                 else None
             )
             self._daily_bar_provider_name = injected_name
-            self._data_manager = data_manager or DataManager(
-                sources={injected_name: source},
-                store=self._data_store,
-                default_source=injected_name,
-            )
+            self._daily_source = source
         else:
-            source_policy = source_policy_for_config(config)
             sources = build_sources_for_config(config)
 
             master_names = configured_legacy_provider_names(
@@ -105,11 +100,7 @@ class MarketUniverseAutomationService:
             self._daily_batch_source = (
                 sources[batch_name] if batch_name is not None else None
             )
-            self._data_manager = data_manager or DataManager(
-                sources=sources,
-                store=self._data_store,
-                source_policy=source_policy,
-            )
+            self._daily_source = sources[self._daily_bar_provider_name]
 
         self._throttle_seconds = (
             _provider_request_interval_seconds(self._daily_bar_provider_name)
@@ -270,48 +261,54 @@ class MarketUniverseAutomationService:
                         )
                         break
             else:
-                for symbol_text in members:
-                    symbol = Symbol(symbol_text)
-                    if _persisted_window_ready(
-                        self._data_store,
-                        symbol=symbol,
-                        start_date=start_date.isoformat(),
-                        end_date=trade_date,
-                        minimum_rows=self._policy.minimum_history_rows,
-                    ):
-                        continue
+                missing_dates = [
+                    day
+                    for day in trading_dates
+                    if self._data_store.get_market_daily_ingestion_receipt(
+                        trade_date=day, provider_name=daily_provider_name
+                    )
+                    is None
+                ]
+                receipt_skipped = len(trading_dates) - len(missing_dates)
+                fresh_frames = {}
+                for symbol_text in members if missing_dates else ():
                     if self._throttle_seconds:
                         self._sleep(self._throttle_seconds)
                     remote_attempted += 1
                     try:
-                        self._data_manager.get_bars(
-                            symbol,
-                            start=datetime.combine(start_date, time.min),
+                        frame = self._daily_source.fetch_bars(
+                            Symbol(symbol_text),
+                            start=datetime.fromisoformat(missing_dates[0]),
                             end=datetime.combine(
-                                datetime.fromisoformat(trade_date).date(), time.min
+                                datetime.fromisoformat(missing_dates[-1]).date(),
+                                time.max,
                             ),
                             frequency=BarFrequency.DAILY,
                             asset_class=AssetClass.STOCK,
-                            allow_remote_refresh=True,
-                            refresh_ttl_seconds=0,
-                            degrade_to_cache=False,
                         )
+                        if (
+                            frame.attrs.get("volume_unit") != "shares"
+                            or frame.attrs.get("amount_unit") != "CNY"
+                            or frame.attrs.get("adjustment_mode") != "none"
+                        ):
+                            raise ValueError("market_daily_provider_units_unverified")
+                        if not frame.empty:
+                            fresh_frames[symbol_text] = frame
                         updated += 1
                     except Exception:
                         failed += 1
                         logger.warning(
-                            "Full-market per-symbol bar refresh failed for %s",
+                            "Full-market per-symbol refresh failed for %s",
                             symbol_text,
                             exc_info=True,
                         )
-                if not failed:
-                    _freeze_persisted_market_dates(
+                        break
+                if not failed and missing_dates:
+                    _freeze_market_dates(
                         data_store=self._data_store,
                         provider_name=daily_provider_name,
-                        symbols=members,
-                        start_date=start_date.isoformat(),
-                        end_date=trade_date,
-                        trading_dates=trading_dates,
+                        frames=fresh_frames,
+                        trading_dates=missing_dates,
                     )
 
             receipts = self._data_store.list_market_daily_ingestion_receipts(
@@ -324,6 +321,7 @@ class MarketUniverseAutomationService:
                 symbols=members,
                 start_date=start_date.isoformat(),
                 end_date=trade_date,
+                receipts=receipts,
             )
             ready = sum(
                 1
@@ -560,7 +558,7 @@ def _history_start(config: Any, trade_date: str):
     configured = str(getattr(config, "start_date", "") or "").strip()
     if configured:
         try:
-            start = min(start, datetime.fromisoformat(configured).date())
+            start = datetime.fromisoformat(configured).date()
         except ValueError:
             pass
     return start
@@ -577,12 +575,12 @@ def verified_trading_dates(
     dates: set[str] = set()
     for year in range(start.year, end.year + 1):
         row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
-        if not row or row.get("official_verification_status") != "verified":
-            continue
-        try:
-            days = json.loads(str(row.get("days_json") or "[]"))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            continue
+        validation = validate_verified_market_calendar(row)
+        if not validation.verified:
+            raise ValueError(
+                f"research_calendar_incomplete:{year}:{validation.blockers[0]}"
+            )
+        days = row.get("days") or json.loads(str(row.get("days_json") or "[]"))
         dates.update(
             str(day.get("date"))
             for day in days
@@ -593,20 +591,13 @@ def verified_trading_dates(
     return sorted(dates)
 
 
-def _freeze_persisted_market_dates(
+def _freeze_market_dates(
     *,
     data_store: DataStore,
     provider_name: str,
-    symbols: list[str],
-    start_date: str,
-    end_date: str,
+    frames: Mapping[str, pd.DataFrame],
     trading_dates: list[str],
 ) -> None:
-    frames = data_store.load_market_bar_windows(
-        symbols=symbols,
-        start_date=start_date,
-        end_date=end_date,
-    )
     rows_by_date: dict[str, list[pd.DataFrame]] = {
         market_date: [] for market_date in trading_dates
     }
@@ -650,31 +641,4 @@ def _frame_window_ready(
     return bool(
         len(timestamps) >= minimum_rows
         and timestamps.iloc[-1].date().isoformat() == end_date
-    )
-
-
-def _persisted_window_ready(
-    data_store: DataStore,
-    *,
-    symbol: Symbol,
-    start_date: str,
-    end_date: str,
-    minimum_rows: int,
-) -> bool:
-    frame = data_store.load_bars(
-        symbol,
-        BarFrequency.DAILY,
-        instrument_type="stock",
-    )
-    if frame is None or frame.empty or "timestamp" not in frame.columns:
-        return False
-    timestamps = pd.to_datetime(frame["timestamp"])
-    mask = (timestamps >= pd.Timestamp(start_date)) & (
-        timestamps
-        <= pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
-    )
-    selected = timestamps.loc[mask].sort_values()
-    return bool(
-        len(selected) >= minimum_rows
-        and selected.iloc[-1].date().isoformat() == end_date
     )

@@ -171,6 +171,7 @@ def build_market_universe_truth(
     receipt_fingerprints: Sequence[str] = (),
     required_trading_date_count: int = 0,
     policy: MarketUniversePolicy | None = None,
+    frames: Mapping[str, pd.DataFrame] | None = None,
 ) -> dict[str, Any]:
     """Build exact 40-stock research evidence from immutable persisted inputs."""
     active_policy = policy or MarketUniversePolicy()
@@ -200,11 +201,12 @@ def build_market_universe_truth(
     member_by_symbol = {
         str(member["symbol"]): dict(member) for member in verified["members"]
     }
-    frames = data_store.load_market_bar_windows(
-        symbols=sorted(member_by_symbol),
-        start_date=start_date,
-        end_date=end_date,
-    )
+    if frames is None:
+        frames = data_store.load_market_bar_windows(
+            symbols=sorted(member_by_symbol),
+            start_date=start_date,
+            end_date=end_date,
+        )
     eligible: list[dict[str, Any]] = []
     excluded_reason_counts: dict[str, int] = {}
     for symbol_text, member in sorted(member_by_symbol.items()):

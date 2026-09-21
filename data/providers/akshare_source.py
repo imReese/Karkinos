@@ -21,12 +21,12 @@ logger = logging.getLogger(__name__)
 AKSHARE_PROVIDER_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="akshare",
     upstream_group="eastmoney",
-    adapter_version="karkinos.akshare.source.v1",
+    adapter_version="karkinos.akshare.source.v2",
     daily_bar_capabilities=(
         DailyBarCapability(
             endpoint="stock_zh_a_hist",
             instrument_types=(InstrumentType.STOCK,),
-            price_basis="qfq",
+            price_basis="unadjusted",
         ),
         DailyBarCapability(
             endpoint="fund_etf_hist_em",
@@ -280,7 +280,7 @@ class AKShareSource(OpenEndFundMixin, DataSource):
                     period="daily",
                     start_date=start.strftime("%Y%m%d"),
                     end_date=end.strftime("%Y%m%d"),
-                    adjust="qfq",
+                    adjust="" if asset_class == AssetClass.STOCK else "qfq",
                 )
         else:
             # 黄金/债券：全量拉取
@@ -290,6 +290,11 @@ class AKShareSource(OpenEndFundMixin, DataSource):
             df.columns
         ):
             df = self._normalize_bars(df, col_map, has_volume)
+
+        if asset_class == AssetClass.STOCK:
+            from data.providers.akshare_daily import normalize_akshare_stock_daily_units
+
+            df = normalize_akshare_stock_daily_units(df)
 
         # 按日期范围过滤
         if "timestamp" in df.columns and len(df) > 0:
