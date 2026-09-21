@@ -9,6 +9,7 @@ from decimal import Decimal
 
 import pandas as pd
 
+from backtest.equity_curve import canonicalize_equity_curve
 from backtest.metrics import (
     build_after_cost_evidence,
     calculate_backtest_metrics,
@@ -333,8 +334,9 @@ class BacktestEngine:
         """构建回测结果。"""
         cost_summary = summarize_fill_costs(self.fills)
         final_equity = self._calculate_equity()
+        equity_curve = canonicalize_equity_curve(self.portfolio.equity_curve)
         metrics = calculate_backtest_metrics(
-            self.portfolio.equity_curve,
+            equity_curve,
             initial_cash=self.initial_cash,
             final_equity=final_equity,
             cost_summary=cost_summary,
@@ -345,7 +347,7 @@ class BacktestEngine:
             cost_summary=cost_summary,
         )
         return BacktestResult(
-            equity_curve=self.portfolio.equity_curve,
+            equity_curve=equity_curve,
             positions=self.portfolio.positions,
             initial_cash=self.initial_cash,
             final_equity=final_equity,

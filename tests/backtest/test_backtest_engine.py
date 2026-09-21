@@ -102,6 +102,32 @@ class TestBacktestEngine:
         assert len(result.equity_curve) > 0
         assert result.initial_cash == Decimal("1000000")
 
+    def test_multi_asset_equity_curve_keeps_one_point_per_timestamp(self):
+        """Performance history must represent portfolio timestamps, not symbol events."""
+        left = Symbol("600001")
+        right = Symbol("600002")
+        left_df = make_price_df(base=20.0, n=8, seed=1)
+        right_df = make_price_df(base=30.0, n=8, seed=2)
+
+        engine = BacktestEngine(
+            strategy=SimpleBuyStrategy(EventBus()),
+            instruments={
+                left: make_stock(str(left), "left"),
+                right: make_stock(str(right), "right"),
+            },
+            data_handlers={
+                left: DataHandler(left_df, left),
+                right: DataHandler(right_df, right),
+            },
+            initial_cash=Decimal("100000"),
+        )
+        result = engine.run()
+
+        assert len(result.equity_curve) == 8
+        timestamps = [timestamp for timestamp, _ in result.equity_curve]
+        assert timestamps == sorted(set(timestamps))
+        assert result.final_equity == result.equity_curve[-1][1]
+
     def test_portfolio_updates_after_fill(self):
         """回测后持仓应正确更新。"""
         symbol = Symbol("600519")

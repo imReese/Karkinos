@@ -55,6 +55,7 @@ export function CandidateCard({
     candidate.promotion_status === 'paper_shadow_approved' &&
     promotionStage === 'paper_shadow';
   const critique = comparison.deepseek_critique;
+  const evidenceGate = comparison.research_gate ?? comparison.promotion_gate;
   return (
     <article
       className="border-y border-[var(--app-divider)] py-4"
@@ -113,8 +114,8 @@ export function CandidateCard({
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <EvidenceList
           items={
-            comparison.promotion_gate.blockers.length
-              ? comparison.promotion_gate.blockers
+            evidenceGate.blockers.length
+              ? evidenceGate.blockers
               : comparison.failure_conditions || []
           }
           title={copy.blockers}

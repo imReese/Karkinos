@@ -621,6 +621,11 @@ def public_qualification_run_projection(
             "winner_qualification_candidate_id"
         ),
         "selection_fingerprint": run.get("selection_fingerprint"),
+        "research_retry": (
+            dict(selection.get("research_retry"))
+            if isinstance(selection.get("research_retry"), Mapping)
+            else None
+        ),
         "blockers": list(run.get("blockers") or []),
         "failure_code": run.get("failure_code"),
         "created_at": run.get("created_at"),

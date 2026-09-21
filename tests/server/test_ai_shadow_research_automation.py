@@ -11,10 +11,17 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
+from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
+from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
+from analytics.normalized_research_gate import baseline_research_evidence_blockers
+from analytics.oos_validation import build_rolling_out_of_sample_validation
 from analytics.strategy_advancement_gate import (
     STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
     StrategyAdvancementGate,
+    strategy_advancement_backtest_view,
 )
+from analytics.sweep_robustness import build_sweep_robustness_evidence
+from backtest.result import BacktestResult
 from core.types import BarFrequency, CommissionType, InstrumentType, Symbol
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
@@ -2991,6 +2998,127 @@ def _result(
     }
 
 
+def _normalized_research_result(
+    *,
+    total_return: float,
+    sharpe: float,
+    drawdown: float,
+    initial_cash: float = 1_000_000.0,
+    include_parameter_panel: bool,
+) -> dict:
+    payload = _result(
+        total_return=total_return,
+        sharpe=sharpe,
+        drawdown=drawdown,
+        initial_cash=initial_cash,
+    )
+    timestamps = list(pd.date_range("2026-01-01", periods=8, freq="D"))
+    final_equity = initial_cash * (1 + total_return)
+    trough = initial_cash * (1 - drawdown)
+    values = [
+        initial_cash,
+        trough,
+        initial_cash * 0.97,
+        initial_cash * 1.00,
+        initial_cash * 1.01,
+        initial_cash * 1.02,
+        initial_cash * 1.03,
+        final_equity,
+    ]
+    payload["initial_cash"] = initial_cash
+    payload["final_equity"] = final_equity
+    payload["equity_curve"] = [
+        {"timestamp": timestamp.isoformat(), "equity": equity}
+        for timestamp, equity in zip(timestamps, values, strict=True)
+    ]
+    oos_result = BacktestResult(
+        equity_curve=[
+            (timestamp.to_pydatetime(), Decimal(str(equity)))
+            for timestamp, equity in zip(timestamps, values, strict=True)
+        ],
+        positions={},
+        initial_cash=Decimal(str(initial_cash)),
+        final_equity=Decimal(str(final_equity)),
+    )
+    fill = SimpleNamespace(
+        fee_breakdown={
+            "commission": Decimal("8"),
+            "stamp_tax": Decimal("0"),
+            "transfer_fee": Decimal("0"),
+            "other_fees": Decimal("0"),
+            "total_fee": Decimal("8"),
+            "fee_rule_id": CANONICAL_COST_MODEL_REFERENCE,
+            "limitations": [],
+        },
+        commission=Decimal("8"),
+        slippage=Decimal("2"),
+        fee_rule_id=CANONICAL_COST_MODEL_REFERENCE,
+        fee_rule_version=CANONICAL_COST_MODEL_REFERENCE,
+    )
+    fee_evidence = build_backtest_fee_tax_evidence(
+        fills=[fill],
+        cost_model_reference=CANONICAL_COST_MODEL_REFERENCE,
+        account_specific=False,
+        fee_schedule_source="canonical_default_estimate",
+        broker_statement_reconciled=False,
+        fee_schedule_binding={
+            "account_specific": False,
+            "fee_schedule_source": "canonical_default_estimate",
+        },
+    )
+    metrics = payload["metrics_json"]
+    metrics.update(
+        {
+            "evidence_bundle": {
+                "total_cost": 10.0,
+                "net_pnl": final_equity - initial_cash,
+                "gross_pnl_before_costs": final_equity - initial_cash + 10.0,
+                "net_return": total_return,
+                "gross_return_before_costs": (final_equity - initial_cash + 10.0)
+                / initial_cash,
+                "cost_to_initial_cash": 10.0 / initial_cash,
+                "fill_count": 1,
+                "gross_turnover": 20_000.0,
+            },
+            "dataset_snapshot": {
+                "snapshot_id": "sha256:" + "1" * 64,
+                "data_quality": {"status": "ok", "issues": []},
+            },
+            "drawdown_evidence": build_backtest_drawdown_evidence(
+                equity_curve=payload["equity_curve"]
+            ),
+            "oos_validation": build_rolling_out_of_sample_validation(
+                strategy_id="candidate" if include_parameter_panel else "baseline",
+                benchmark_role="normalized_research_fixture",
+                result=oos_result,
+                min_train_points=2,
+                test_window_points=2,
+                step_points=1,
+            ).to_json_dict(),
+            "fee_component_evidence": fee_evidence,
+        }
+    )
+    if include_parameter_panel:
+        metrics["formula_binding"] = {"parameter_values": {"window": 20}}
+        metrics["parameter_robustness"] = build_sweep_robustness_evidence(
+            results=[
+                {"params": {"window": 10}, "score": 0.9},
+                {"params": {"window": 20}, "score": 1.0},
+                {"params": {"window": 30}, "score": 0.9},
+            ],
+            rank_by="after_cost_total_return",
+            rank_direction="desc",
+            selected_params={"window": 20},
+        )
+    payload["cost_summary_json"] = {
+        "total_commission": 8.0,
+        "total_slippage": 2.0,
+        "total_trades": 1,
+        "gross_turnover": 20_000.0,
+    }
+    return payload
+
+
 def _prepared_baseline(*, account_bound: bool = False) -> PreparedBaseline:
     cost_model_reference = (
         (
@@ -3001,14 +3129,17 @@ def _prepared_baseline(*, account_bound: bool = False) -> PreparedBaseline:
         else CANONICAL_COST_MODEL_REFERENCE
     )
     initial_cash = 100_000 if account_bound else 1_000_000
-    result = _result(total_return=0.05, sharpe=0.6, drawdown=0.12)
-    if not account_bound:
-        result["initial_cash"] = initial_cash
-        result["final_equity"] = initial_cash * 1.05
-        result["equity_curve"] = [
-            {**point, "equity": initial_cash * (1.05 if index else 1.0)}
-            for index, point in enumerate(result["equity_curve"])
-        ]
+    result = (
+        _result(total_return=0.05, sharpe=0.6, drawdown=0.12)
+        if account_bound
+        else _normalized_research_result(
+            total_return=0.05,
+            sharpe=0.6,
+            drawdown=0.12,
+            initial_cash=initial_cash,
+            include_parameter_panel=False,
+        )
+    )
     return PreparedBaseline(
         seed_result_id=7,
         market_date="2026-08-11",
@@ -3409,11 +3540,12 @@ async def test_five_round_policy_runs_sequential_generation_backtest_and_critiqu
     db.init_sync()
     store = ShadowResearchStore(tmp_path / "app.db")
     store.init()
-    candidate_payload = _result(
+    candidate_payload = _normalized_research_result(
         total_return=0.12,
         sharpe=1.2,
         drawdown=0.08,
         initial_cash=1_000_000.0,
+        include_parameter_panel=True,
     )
     candidate_result_id = await db.save_backtest_result(
         config_json=json.dumps({"strategy": "ai_formula_research"}),
@@ -3863,11 +3995,12 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     db.init_sync()
     store = ShadowResearchStore(tmp_path / "app.db")
     store.init()
-    candidate_payload = _result(
+    candidate_payload = _normalized_research_result(
         total_return=0.12,
         sharpe=1.2,
         drawdown=0.08,
         initial_cash=1_000_000.0,
+        include_parameter_panel=True,
     )
     candidate_result_id = await db.save_backtest_result(
         config_json=json.dumps({"strategy": "ai_formula_research"}),
@@ -3919,15 +4052,25 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     assert candidate["recommendation"] == "formula_research_candidate"
     assert candidate["status"] == "evaluated_research_only"
     assert candidate["promotion_status"] == "account_qualification_required"
-    assert candidate["comparison"]["promotion_gate"]["status"] == "blocked"
+    promotion_gate = candidate["comparison"]["promotion_gate"]
+    assert promotion_gate == {
+        "status": "not_evaluated",
+        "blockers": ["account_qualification_required"],
+    }
+    assert candidate["comparison"]["research_gate"]["status"] == "blocked"
+    research_blockers = set(candidate["comparison"]["research_gate"]["blockers"])
     assert {
-        "candidate_dataset_quality_not_clear",
-        "baseline_rolling_oos_evidence_not_reproducible",
-        "candidate_parameter_robustness_not_passing",
+        "candidate_after_cost_oos_excess_not_positive",
         "candidate_market_regime_robustness_not_passing",
-        "candidate_capacity_or_liquidity_not_passing",
-        "candidate_fee_or_tax_evidence_incomplete",
-    }.issubset(candidate["comparison"]["promotion_gate"]["blockers"])
+    }.issubset(research_blockers)
+    assert research_blockers.isdisjoint(
+        {
+            "candidate_real_account_capital_constraint_not_passing",
+            "candidate_capacity_or_liquidity_not_passing",
+            "baseline_fee_or_tax_evidence_incomplete",
+            "candidate_fee_or_tax_evidence_incomplete",
+        }
+    )
     assert candidate["automatic_strategy_replacement_enabled"] is False
     assert candidate["broker_submission_enabled"] is False
 
@@ -4189,6 +4332,101 @@ async def test_missing_market_evidence_creates_provider_free_preflight_audit(
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
+async def test_invalid_normalized_baseline_blocks_before_any_provider_call(
+    tmp_path, monkeypatch
+) -> None:
+    service = _service(tmp_path)
+    service.update_policy(_policy_payload(enabled=True))
+    prepared = _prepared_baseline()
+    prepared.result["metrics_json"].pop("oos_validation", None)
+    monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "blocked_by_research_evidence"
+    assert result["failure_code"] == "research_baseline_rolling_oos_evidence_invalid"
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        provider_calls = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_provider_calls"
+        ).fetchone()[0]
+        shadow_runs = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_runs"
+        ).fetchone()[0]
+        audit = conn.execute(
+            "SELECT status, payload_json FROM automation_runs WHERE run_id=?",
+            (result["preflight_run_id"],),
+        ).fetchone()
+    assert provider_calls == 0
+    assert shadow_runs == 0
+    assert audit is not None
+    assert audit[0] == "blocked_by_research_evidence"
+    assert json.loads(audit[1])["provider_call_performed"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_invalid_local_candidate_stops_before_critique_and_remaining_rounds(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    candidate_payload = _normalized_research_result(
+        total_return=0.12,
+        sharpe=1.2,
+        drawdown=0.08,
+        initial_cash=1_000_000.0,
+        include_parameter_panel=True,
+    )
+    candidate_payload["metrics_json"].pop("parameter_robustness", None)
+    candidate_result_id = await db.save_backtest_result(
+        config_json=json.dumps({"strategy": "ai_formula_research"}),
+        initial_cash=candidate_payload["initial_cash"],
+        final_equity=candidate_payload["final_equity"],
+        total_return=candidate_payload["total_return"],
+        sharpe=candidate_payload["sharpe"],
+        max_dd=candidate_payload["max_drawdown"],
+        equity_curve_json=json.dumps(candidate_payload["equity_curve"]),
+        annual_return=candidate_payload["annual_return"],
+        sortino=candidate_payload["sortino"],
+        win_rate=candidate_payload["win_rate"],
+        duration_days=candidate_payload["duration_days"],
+        metrics_json=json.dumps(candidate_payload["metrics_json"]),
+        cost_summary_json=json.dumps(candidate_payload["cost_summary_json"]),
+    )
+    fixture = _FixtureResearch(candidate_result_id)
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    monkeypatch.setattr(
+        service, "_prepare_baseline", lambda policy: _prepared_baseline()
+    )
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "failed"
+    assert result["failure_code"] == "sequential_iteration_not_complete"
+    assert fixture.hypothesis_calls == 1
+    assert fixture.backtest_calls == 1
+    assert fixture.critique_calls == 0
+    assert result["usage"]["provider_calls"] == 1
+    candidate = result["candidates"][0]
+    assert candidate["status"] == "failed_closed"
+    assert candidate["comparison"]["failure_code"] == (
+        "research_candidate_parameter_panel_invalid"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
 async def test_missing_reviewed_fee_schedule_is_account_evidence_no_action(
     tmp_path, monkeypatch
 ) -> None:
@@ -4432,6 +4670,12 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     assert normalized_fee_evidence["account_specific"] is False
     assert normalized_fee_evidence["authorizes_execution"] is False
     assert normalized.fee_schedule_evidence["authorizes_promotion"] is False
+    assert (
+        baseline_research_evidence_blockers(
+            strategy_advancement_backtest_view(normalized.result)
+        )
+        == []
+    )
 
     etf_seed_result_id = asyncio.run(
         db.save_backtest_result(

@@ -434,7 +434,7 @@ def build_shadow_research_iteration_context(
         )
         deltas = comparison.get("deltas")
         deltas = deltas if isinstance(deltas, Mapping) else {}
-        gate = comparison.get("promotion_gate")
+        gate = comparison.get("research_gate") or comparison.get("promotion_gate")
         gate = gate if isinstance(gate, Mapping) else {}
         critique = comparison.get("deepseek_critique")
         critique = critique if isinstance(critique, Mapping) else {}

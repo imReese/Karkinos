@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from datetime import timezone
 from typing import Any
 
+from analytics.normalized_research_gate import baseline_research_evidence_blockers
+from analytics.strategy_advancement_gate import strategy_advancement_backtest_view
 from core.types import BarFrequency
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.provider_call_window import (
@@ -75,15 +77,13 @@ class AiShadowResearchWorkflowMixin:
             )
         if deadline_preflight := self._batch_deadline_preflight(batch_deadline_at):
             return deadline_preflight
-        now_dt = self._now().astimezone(SHADOW_RESEARCH_TIMEZONE)
-        if not is_after_shadow_research_close(
-            prepared.market_date, now_dt, policy.after_close_time
+        if research_preflight := self._normalized_baseline_research_preflight(
+            policy=policy,
+            prepared=prepared,
         ):
-            return {
-                **self.status(),
-                "run_status": "waiting_for_market_close",
-                "market_date": prepared.market_date,
-            }
+            return research_preflight
+        if close_preflight := self._market_close_preflight(policy, prepared):
+            return close_preflight
 
         research_context, context_preflight = await self._research_context_for_run(
             policy=policy,
@@ -395,6 +395,47 @@ class AiShadowResearchWorkflowMixin:
                 "run_id": run["run_id"],
                 "failure_code": shadow_research_failure_code(exc),
             }
+
+    def _market_close_preflight(
+        self,
+        policy: Any,
+        prepared: Any,
+    ) -> dict[str, Any] | None:
+        now_dt = self._now().astimezone(SHADOW_RESEARCH_TIMEZONE)
+        if is_after_shadow_research_close(
+            prepared.market_date,
+            now_dt,
+            policy.after_close_time,
+        ):
+            return None
+        return {
+            **self.status(),
+            "run_status": "waiting_for_market_close",
+            "market_date": prepared.market_date,
+        }
+
+    def _normalized_baseline_research_preflight(
+        self,
+        *,
+        policy: Any,
+        prepared: Any,
+    ) -> dict[str, Any] | None:
+        if (
+            policy.research_capital_mode
+            != SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+        ):
+            return None
+        blockers = baseline_research_evidence_blockers(
+            strategy_advancement_backtest_view(prepared.result)
+        )
+        if not blockers:
+            return None
+        return self._record_preflight(
+            status="blocked_by_research_evidence",
+            failure_code=blockers[0],
+            market_date=prepared.market_date,
+            evidence={"blockers": blockers},
+        )
 
     @staticmethod
     def _selection_components(

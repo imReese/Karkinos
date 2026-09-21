@@ -64,3 +64,85 @@ def test_parameter_variants_reject_unbound_or_insufficient_grids(
         )
 
     assert exc_info.value.code == code
+
+
+def test_parameter_variants_support_semantic_names_and_min_max_ranges() -> None:
+    formula = {
+        "schema_version": FORMULA_AST_CONTRACT,
+        "entry": {
+            "op": "and",
+            "left": {
+                "op": "gt",
+                "left": {"op": "field", "name": "close"},
+                "right": {
+                    "op": "rolling_mean",
+                    "input": {"op": "field", "name": "close"},
+                    "window": 20,
+                },
+            },
+            "right": {
+                "op": "lt",
+                "left": {
+                    "op": "return",
+                    "input": {"op": "field", "name": "close"},
+                    "period": 1,
+                },
+                "right": {"op": "constant", "value": 0},
+            },
+        },
+        "exit": {
+            "op": "gte",
+            "left": {
+                "op": "rolling_std",
+                "input": {"op": "field", "name": "close"},
+                "window": 10,
+            },
+            "right": {
+                "op": "rolling_mean",
+                "input": {
+                    "op": "rolling_std",
+                    "input": {"op": "field", "name": "close"},
+                    "window": 10,
+                },
+                "window": 60,
+            },
+        },
+        "position_size": {"op": "equal_weight"},
+    }
+
+    variants = build_formula_parameter_variants(
+        formula_ast=formula,
+        parameter_values={
+            "long_window": 20,
+            "reversal_period": 1,
+            "volatility_mean_window": 60,
+            "volatility_window": 10,
+        },
+        parameter_ranges={
+            "long_window": {"min": 10, "max": 60},
+            "reversal_period": {"min": 1, "max": 3},
+            "volatility_mean_window": {"min": 30, "max": 120},
+            "volatility_window": {"min": 5, "max": 20},
+        },
+    )
+
+    assert len(variants) == 8
+    selected = next(
+        item
+        for item in variants
+        if item.params
+        == {
+            "long_window": 20,
+            "reversal_period": 1,
+            "volatility_mean_window": 60,
+            "volatility_window": 10,
+        }
+    )
+    assert selected.formula_ast == formula
+    long_variant = next(item for item in variants if item.params["long_window"] == 10)
+    assert long_variant.formula_ast["entry"]["left"]["right"]["window"] == 10
+    volatility_variant = next(
+        item for item in variants if item.params["volatility_window"] == 5
+    )
+    assert volatility_variant.formula_ast["exit"]["left"]["window"] == 5
+    assert volatility_variant.formula_ast["exit"]["right"]["input"]["window"] == 5
