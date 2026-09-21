@@ -33,11 +33,17 @@ function allocationRows(
   }));
   const cash = state.summary.available_cash;
   if (!grouped.has('cash') && cash > 0) {
+    const totalEquity = state.summary.total_equity;
+    const cashWeight =
+      state.summary.cash_ratio ??
+      (typeof totalEquity === 'number' && totalEquity > 0
+        ? cash / totalEquity
+        : null);
     rows.push({
       key: 'cash',
       label: cashLabel,
       value: cash,
-      weight: state.summary.cash_ratio,
+      weight: cashWeight,
     });
   }
   return rows.sort((a, b) => b.value - a.value);
@@ -124,35 +130,53 @@ export function OverviewAllocationRiskSection({
         <div className="min-w-0 lg:pr-6">
           <SectionHeader title={labels.assetAllocation} />
           {rows.length ? (
-            <ul className="mt-3 divide-y divide-[var(--app-divider)]">
-              {rows.map((row) => (
-                <li key={row.key} className="py-2">
-                  <div className="app-type-compact flex items-baseline justify-between gap-3">
-                    <span className="font-medium text-[var(--app-text)]">
-                      {row.label}
-                    </span>
-                    <span className="shrink-0 tabular-nums text-[var(--app-text-secondary)]">
-                      {row.weight == null ? '--' : formatPercent(row.weight)}
-                      {' · '}
-                      {formatCurrency(row.value)}
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1 overflow-hidden bg-[var(--app-divider)]">
+            <div className="mt-3 space-y-3">
+              <div
+                aria-hidden="true"
+                className="flex h-2.5 w-full overflow-hidden rounded-full bg-[var(--app-divider)]"
+              >
+                {rows.map((row, idx) => {
+                  const pct = Math.max(
+                    0,
+                    Math.min(100, (row.weight ?? 0) * 100),
+                  );
+                  if (pct <= 0) return null;
+                  return (
                     <span
-                      aria-hidden="true"
-                      className="block h-full"
+                      key={row.key}
+                      className={`h-full ${idx === 0 ? 'rounded-l-full' : ''} ${idx === rows.length - 1 ? 'rounded-r-full' : ''}`}
                       style={{
                         backgroundColor: allocationColor(row.key),
-                        width: `${Math.max(
-                          0,
-                          Math.min(100, (row.weight ?? 0) * 100),
-                        )}%`,
+                        width: `${pct}%`,
                       }}
+                      title={`${row.label} ${row.weight == null ? '' : formatPercent(row.weight)}`}
                     />
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  );
+                })}
+              </div>
+
+              <ul className="divide-y divide-[var(--app-divider)]">
+                {rows.map((row) => (
+                  <li key={row.key} className="py-2">
+                    <div className="app-type-compact flex items-baseline justify-between gap-3">
+                      <span className="flex items-center gap-2 font-medium text-[var(--app-text)]">
+                        <span
+                          aria-hidden="true"
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{ backgroundColor: allocationColor(row.key) }}
+                        />
+                        {row.label}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-[var(--app-text-secondary)]">
+                        {row.weight == null ? '--' : formatPercent(row.weight)}
+                        {' · '}
+                        {formatCurrency(row.value)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : (
             <p className="app-type-compact mt-3 text-[var(--app-text-tertiary)]">
               {labels.allocationUnavailable}
@@ -161,16 +185,16 @@ export function OverviewAllocationRiskSection({
         </div>
         <div className="min-w-0 lg:pl-6">
           <SectionHeader title={labels.riskSummary} />
-          <dl className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
+          <dl className="mt-3 grid gap-2.5 sm:grid-cols-2">
             {riskRows.map((row) => (
               <div
                 key={row.key}
-                className="grid min-w-0 gap-1 py-2.5 sm:grid-cols-[minmax(9rem,0.48fr)_minmax(0,1fr)] sm:items-baseline sm:gap-4"
+                className="flex flex-col justify-between rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 p-3"
               >
                 <dt className="app-type-label text-[var(--app-text-tertiary)]">
                   {row.label}
                 </dt>
-                <dd className="app-type-compact min-w-0 font-semibold text-[var(--app-text)]">
+                <dd className="app-type-body mt-1 min-w-0 font-semibold tabular-nums text-[var(--app-text)]">
                   {row.value}
                 </dd>
               </div>

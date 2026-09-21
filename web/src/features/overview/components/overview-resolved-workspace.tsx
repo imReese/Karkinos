@@ -67,20 +67,19 @@ export function OverviewResolvedWorkspace({
     );
 
   return (
-    <div className="min-w-0" data-testid="overview-financial-canvas">
+    <div className="min-w-0 space-y-6" data-testid="overview-financial-canvas">
       <OverviewSummary summary={state.summary} />
 
       <section
-        className="min-w-0 border-b border-[var(--app-divider)] py-5"
+        className="min-w-0 border-b border-[var(--app-divider)] pb-6"
         data-testid="overview-performance-card"
       >
-        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,2.15fr)_minmax(19rem,0.85fr)] xl:gap-0 xl:divide-x xl:divide-[var(--app-divider)]">
-          <div className="min-w-0 xl:pr-7">{performance}</div>
+        <div className="min-w-0">{performance}</div>
+        <div className="mt-3 min-w-0">
           <OverviewStrategyRecommendation
             planQuery={controller.tradingPlan}
             positions={state.snapshot.positions}
             currentWeightBySymbol={weightBySymbol}
-            className="xl:pl-7"
           />
         </div>
       </section>
@@ -89,7 +88,7 @@ export function OverviewResolvedWorkspace({
         positions={state.snapshot.positions}
         assetClassBySymbol={assetClassBySymbol}
         weightBySymbol={weightBySymbol}
-        className="border-b border-[var(--app-divider)]"
+        className="border-b border-[var(--app-divider)] pb-6"
       />
 
       {hasPerformanceDrivers ? (

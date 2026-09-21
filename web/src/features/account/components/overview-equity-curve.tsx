@@ -165,9 +165,9 @@ export function OverviewEquityCurve({
               aria-label={seriesLabels[seriesKey]}
               onClick={() => setSelectedSeries(seriesKey)}
               className={
-                'app-chart-control app-type-micro inline-flex min-h-7 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 font-medium ' +
+                'app-chart-control app-type-micro inline-flex min-h-7 items-center gap-1.5 rounded-full border px-3 py-0.5 font-medium transition-colors ' +
                 (active
-                  ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-text)]'
+                  ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-text)] font-semibold shadow-sm'
                   : 'border-transparent bg-transparent text-[var(--app-text-secondary)] hover:border-[var(--app-divider)] hover:bg-[var(--app-surface-overlay)]')
               }
             >
@@ -186,7 +186,7 @@ export function OverviewEquityCurve({
         ref={chartRef}
         className={
           (usablePoints.length >= 2
-            ? 'h-[220px] sm:h-[260px] xl:h-[300px]'
+            ? 'h-[260px] sm:h-[320px] lg:h-[380px]'
             : 'h-[72px] sm:h-[84px]') + ' min-w-0 overflow-hidden'
         }
       >
@@ -214,7 +214,7 @@ export function OverviewEquityCurve({
                     <stop
                       offset="0%"
                       stopColor={selectedColor}
-                      stopOpacity={0.16}
+                      stopOpacity={0.22}
                     />
                     <stop
                       offset="100%"
@@ -225,7 +225,8 @@ export function OverviewEquityCurve({
                 </defs>
                 <CartesianGrid
                   stroke="var(--app-divider)"
-                  strokeOpacity={0.65}
+                  strokeOpacity={0.5}
+                  strokeDasharray="4 4"
                   vertical={false}
                 />
                 <XAxis
@@ -248,23 +249,29 @@ export function OverviewEquityCurve({
                   tick={{ fontSize: 11, fill: 'var(--app-text-tertiary)' }}
                 />
                 <Tooltip
-                  formatter={(value, name) => [
-                    formatCurrency(typeof value === 'number' ? value : null),
-                    String(name),
-                  ]}
+                  formatter={(value, name) => {
+                    if (name === 'indicativeSeries') return null;
+                    return [
+                      formatCurrency(typeof value === 'number' ? value : null),
+                      String(name),
+                    ];
+                  }}
+                  filterNull={true}
                   labelFormatter={(value) =>
                     formatTimestamp(new Date(Number(value)).toISOString())
                   }
                   contentStyle={{
-                    background: 'var(--app-surface)',
-                    border: '1px solid var(--app-divider)',
+                    background: 'var(--app-surface-raised)',
+                    border: '1px solid var(--app-border)',
                     borderRadius: 'var(--app-radius-control)',
                     fontSize: 12,
+                    boxShadow: 'var(--app-shadow-overlay)',
                   }}
                   cursor={{ stroke: 'var(--app-accent)', strokeOpacity: 0.3 }}
                 />
                 <Area
                   dataKey="indicativeSeries"
+                  tooltipType="none"
                   type="linear"
                   stroke="none"
                   fill={`url(#overview-equity-area-${selectedSeries})`}

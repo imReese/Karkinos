@@ -197,22 +197,23 @@ export function OverviewStrategyRecommendation({
       />
 
       {planQuery.isLoading && !plan ? (
-        <div className="mt-3 h-28 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+        <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5 text-[var(--app-text-secondary)]">
+          <span className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)] opacity-70" />
+          <span className="app-type-compact font-medium">
+            {locale === 'zh'
+              ? '正在同步全市场最新策略与决策建议...'
+              : 'Syncing latest strategy and decision recommendations...'}
+          </span>
+        </div>
       ) : planQuery.isError && !plan ? (
         <ExceptionBoundary
           tone="warning"
           title={dashboard.accountRecommendationUnavailable}
-          className="mt-3"
+          className="mt-2"
         />
       ) : plan ? (
         showDetailedActions ? (
-          <div
-            className="mt-3 min-w-0 rounded-[calc(var(--app-radius-control)*1.25)] border border-[var(--app-accent-border)] p-4"
-            style={{
-              background:
-                'linear-gradient(140deg, color-mix(in srgb, var(--app-accent) 10%, var(--app-surface)) 0%, color-mix(in srgb, var(--app-accent) 4%, var(--app-surface)) 100%)',
-            }}
-          >
+          <div className="mt-2 min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <StatusBadge tone={statusTone(presentationLevel)}>
                 {statusLabel(presentationLevel, dashboard)}
@@ -316,16 +317,21 @@ export function OverviewStrategyRecommendation({
             </div>
           </div>
         ) : (
-          <div
-            className="mt-3 flex min-h-36 items-center rounded-[calc(var(--app-radius-control)*1.25)] border border-[var(--app-divider)] px-4 py-5"
-            style={{
-              background:
-                'linear-gradient(140deg, color-mix(in srgb, var(--app-accent) 5%, var(--app-surface)) 0%, color-mix(in srgb, var(--app-accent) 2%, var(--app-surface)) 100%)',
-            }}
-          >
-            <p className="app-type-body font-semibold text-[var(--app-text)]">
-              {recommendationHeading(plan, copy)}
-            </p>
+          <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-[var(--app-success-indicator)]" />
+              <p className="app-type-body font-semibold text-[var(--app-text)]">
+                {recommendationHeading(plan, copy)}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <a
+                href="/decision"
+                className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+              >
+                {dashboard.viewDecision}
+              </a>
+            </div>
           </div>
         )
       ) : null}

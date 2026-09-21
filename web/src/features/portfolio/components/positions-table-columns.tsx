@@ -74,19 +74,21 @@ export function buildPositionColumns({
           <span className="block max-w-52 truncate">{displayName}</span>
           <span className="app-type-micro mt-0.5 flex items-center gap-1.5 font-medium text-[var(--app-text-tertiary)]">
             <span className="font-mono">{position.symbol}</span>
-            {model.variant === 'dashboard' ? null : (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="truncate">
-                  {formatAssetClassLabel(
-                    resolvePositionAssetClass(
-                      position,
-                      model.assetClassBySymbol,
-                    ),
-                    copy.common,
-                  )}
-                </span>
-              </>
+            <span aria-hidden="true">·</span>
+            {model.variant === 'dashboard' ? (
+              <span className="rounded px-1.5 py-0.5 font-sans font-medium bg-[var(--app-surface-overlay)] text-[var(--app-text-secondary)] border border-[var(--app-divider)]">
+                {formatAssetClassLabel(
+                  resolvePositionAssetClass(position, model.assetClassBySymbol),
+                  copy.common,
+                )}
+              </span>
+            ) : (
+              <span className="truncate">
+                {formatAssetClassLabel(
+                  resolvePositionAssetClass(position, model.assetClassBySymbol),
+                  copy.common,
+                )}
+              </span>
             )}
           </span>
         </a>
@@ -198,15 +200,28 @@ export function buildPositionColumns({
             header: () => (
               <span className="block text-right">{labels.weight}</span>
             ),
-            cell: ({ row }: { row: { original: Position } }) => (
-              <span data-testid={`position-weight-${row.original.symbol}`}>
-                <PositionNumericCell
-                  value={formatPercent(
-                    model.weightBySymbol[row.original.symbol],
-                  )}
-                />
-              </span>
-            ),
+            cell: ({ row }: { row: { original: Position } }) => {
+              const weight = model.weightBySymbol[row.original.symbol];
+              const fillWidth = Math.max(0, Math.min(100, (weight ?? 0) * 100));
+              return (
+                <span data-testid={`position-weight-${row.original.symbol}`}>
+                  <span className="inline-flex items-center justify-end gap-2.5">
+                    <PositionNumericCell value={formatPercent(weight)} />
+                    {model.variant === 'dashboard' ? (
+                      <span
+                        aria-hidden="true"
+                        className="hidden sm:inline-block w-16 h-1.5 rounded-full bg-[var(--app-divider)] overflow-hidden"
+                      >
+                        <span
+                          className="block h-full rounded-full bg-[var(--app-accent)]"
+                          style={{ width: `${fillWidth}%` }}
+                        />
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+              );
+            },
           } satisfies ColumnDef<Position, unknown>,
         ]
       : []),
