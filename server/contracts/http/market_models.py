@@ -105,6 +105,44 @@ class MarketDataHealthResponse(BaseModel):
     persistent_cache_status: str = "unknown"
 
 
+class VerifiedSourcePairCount(BaseModel):
+    primary: str
+    comparison: str
+    count: int = 0
+
+
+class VerifiedSourceProviderCount(BaseModel):
+    provider: str
+    count: int = 0
+
+
+class VerifiedSourceLatestResolution(BaseModel):
+    timestamp: str
+    outcome: str
+    source_policy_id: str
+    selected_pair: dict[str, str] | None = None
+    unavailable_providers: list[str] = Field(default_factory=list)
+    result_ref: str | None = None
+    error_type: str | None = None
+
+
+class VerifiedSourceHealthResponse(BaseModel):
+    schema_version: str = "karkinos.market_source_health.v1"
+    status: str = "no_samples"
+    window_limit: int = 100
+    sample_count: int = 0
+    invalid_event_count: int = 0
+    outcome_counts: dict[str, int] = Field(default_factory=dict)
+    failover_count: int = 0
+    attempted_pair_counts: list[VerifiedSourcePairCount] = Field(default_factory=list)
+    selected_pair_counts: list[VerifiedSourcePairCount] = Field(default_factory=list)
+    unavailable_provider_counts: list[VerifiedSourceProviderCount] = Field(
+        default_factory=list
+    )
+    source_policy_ids: list[str] = Field(default_factory=list)
+    latest: VerifiedSourceLatestResolution | None = None
+
+
 class QuoteFetchRunResponse(BaseModel):
     run_id: str
     trigger: str

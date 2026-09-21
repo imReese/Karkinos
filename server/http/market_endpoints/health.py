@@ -15,6 +15,7 @@ from server.contracts.http.market import (
 from server.contracts.http.market_models import (
     MarketDataHealthResponse,
     QuoteFetchRunResponse,
+    VerifiedSourceHealthResponse,
 )
 from server.http.market_endpoints.dependencies import HealthEndpointDependencies
 
@@ -24,6 +25,9 @@ def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:
     _backfill_instrument_metadata = dependencies.backfill_instrument_metadata
     _backfill_market_bars = dependencies.backfill_market_bars
     _build_market_data_health_response = dependencies.build_market_data_health_response
+    _build_verified_source_health_response = (
+        dependencies.build_verified_source_health_response
+    )
     _merged_watchlist_assets = dependencies.merged_watchlist_assets
     _quote_fetch_run_response = dependencies.quote_fetch_run_response
     _refresh_confirmed_fund_nav = dependencies.refresh_confirmed_fund_nav
@@ -41,6 +45,26 @@ def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:
             _merged_watchlist_assets(state)
         )
         return _build_market_data_health_response(state, market_health_assets)
+
+    @r.get(
+        "/verified-source-health",
+        response_model=VerifiedSourceHealthResponse,
+    )
+    async def get_verified_source_health(
+        limit: int = 100,
+    ) -> VerifiedSourceHealthResponse:
+        """Summarize durable source-resolution telemetry for verified research data."""
+        from server.dependencies import get_app_state
+
+        if not 1 <= limit <= 500:
+            raise HTTPException(status_code=422, detail="limit must be within [1, 500]")
+        state = get_app_state()
+        return VerifiedSourceHealthResponse.model_validate(
+            _build_verified_source_health_response(
+                getattr(state, "db", None),
+                limit=limit,
+            )
+        )
 
     @r.get("/quote-fetch-runs", response_model=list[QuoteFetchRunResponse])
     async def get_quote_fetch_runs(

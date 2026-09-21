@@ -33,6 +33,7 @@ from data.source_routing import (
 from data.storage.objects import ContentAddressedObjectStore
 
 VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION = "karkinos.market_daily_verified_job.v1"
+VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT = "market.daily.source_resolution"
 _NORMALIZER_VERSION = "karkinos.market.normalize.v1"
 _RESOLVER_POLICY_PREFIX = "karkinos.dataset.pit.verified.daily.v1:"
 
@@ -437,6 +438,7 @@ def _utc_now(value: datetime | None) -> datetime:
 
 __all__ = [
     "VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION",
+    "VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT",
     "VerifiedDailyMarketDataError",
     "VerifiedDailyMarketDataNotPublishable",
     "VerifiedDailyMarketDataRequestError",
