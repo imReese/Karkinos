@@ -94,6 +94,50 @@ class MarketSourcePolicy:
         raise KeyError(f"market_source_policy_route_missing:{use_case.value}")
 
 
+FREE_CN_RESEARCH_V1 = MarketSourcePolicy(
+    policy_id="karkinos.market.source.free_cn_research.v1",
+    routes=(
+        (
+            MarketDataUseCase.DAILY_BARS,
+            SourceRoute(
+                candidates=("baostock", "akshare", "tushare", "tdx"),
+                min_sources=2,
+                require_independent_upstream=True,
+                price_basis="unadjusted",
+            ),
+        ),
+        (
+            MarketDataUseCase.REALTIME_QUOTES,
+            SourceRoute(candidates=("akshare", "tushare")),
+        ),
+        (
+            MarketDataUseCase.FUND_NAV,
+            SourceRoute(candidates=("akshare", "tushare")),
+        ),
+        (
+            MarketDataUseCase.SECURITY_MASTER,
+            SourceRoute(candidates=("akshare", "tushare")),
+        ),
+        (
+            MarketDataUseCase.MARKET_CALENDAR,
+            SourceRoute(candidates=("akshare", "tushare")),
+        ),
+        (
+            MarketDataUseCase.INDEX_BARS,
+            SourceRoute(candidates=("akshare",)),
+        ),
+        (
+            MarketDataUseCase.GOLD_BARS,
+            SourceRoute(candidates=("akshare",)),
+        ),
+        (
+            MarketDataUseCase.BOND_BARS,
+            SourceRoute(candidates=("akshare",)),
+        ),
+    ),
+)
+
+
 CN_RESEARCH_V1 = MarketSourcePolicy(
     policy_id="karkinos.market.source.cn_research.v1",
     routes=(
@@ -138,9 +182,11 @@ CN_RESEARCH_V1 = MarketSourcePolicy(
 )
 
 _POLICY_ALIASES = {
+    "free_cn_research_v1": FREE_CN_RESEARCH_V1.policy_id,
     "cn_research_v1": CN_RESEARCH_V1.policy_id,
 }
 _POLICIES = {
+    FREE_CN_RESEARCH_V1.policy_id: FREE_CN_RESEARCH_V1,
     CN_RESEARCH_V1.policy_id: CN_RESEARCH_V1,
 }
 

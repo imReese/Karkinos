@@ -4,6 +4,7 @@ import pytest
 
 from data.source_policy import (
     CN_RESEARCH_V1,
+    FREE_CN_RESEARCH_V1,
     MarketDataUseCase,
     legacy_preferred_provider_policy,
     resolve_market_source_policy,
@@ -20,6 +21,19 @@ def test_cn_research_policy_requires_independent_raw_daily_sources() -> None:
     assert route.price_basis == "unadjusted"
 
 
+def test_free_cn_research_policy_prioritizes_zero_subscription_daily_sources() -> None:
+    route = FREE_CN_RESEARCH_V1.route(MarketDataUseCase.DAILY_BARS)
+    assert route.candidates == ("baostock", "akshare", "tushare", "tdx")
+    assert route.min_sources == 2
+    assert route.verification_required
+    assert route.require_independent_upstream
+    assert route.price_basis == "unadjusted"
+    assert FREE_CN_RESEARCH_V1.route(MarketDataUseCase.REALTIME_QUOTES).candidates == (
+        "akshare",
+        "tushare",
+    )
+
+
 def test_use_cases_have_distinct_source_routes() -> None:
     assert CN_RESEARCH_V1.route(MarketDataUseCase.REALTIME_QUOTES).candidates == (
         "tushare",
@@ -33,6 +47,11 @@ def test_use_cases_have_distinct_source_routes() -> None:
 
 
 def test_policy_alias_resolves_to_stable_identity() -> None:
+    assert resolve_market_source_policy("free_cn_research_v1") is FREE_CN_RESEARCH_V1
+    assert (
+        resolve_market_source_policy(FREE_CN_RESEARCH_V1.policy_id)
+        is FREE_CN_RESEARCH_V1
+    )
     assert resolve_market_source_policy("cn_research_v1") is CN_RESEARCH_V1
     assert resolve_market_source_policy(CN_RESEARCH_V1.policy_id) is CN_RESEARCH_V1
 
