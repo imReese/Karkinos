@@ -26,7 +26,7 @@ STRATEGY_RESEARCH_API_CONTRACT = "karkinos.ai.strategy_research_api.v1"
 STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT = (
     "karkinos.ai.strategy_iteration_context.v1"
 )
-STRATEGY_RESEARCH_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v14"
+STRATEGY_RESEARCH_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v17"
 SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 
 HYPOTHESIS_EXPORT_CONFIRMATION = (

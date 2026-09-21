@@ -8,6 +8,7 @@ from server.ai_runtime.strategy_research_privacy import (
     NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
     build_normalized_lot_feasibility_evidence,
     build_normalized_research_pack,
+    build_normalized_robustness_evidence,
     build_normalized_signal_execution_evidence,
     research_pack_privacy_violations,
 )
@@ -118,6 +119,70 @@ def test_privacy_guard_reports_nested_absolute_account_and_notional_keys() -> No
         "cost.total_commission",
         "lot.lot_size",
     ]
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_robustness_feedback_preserves_losses_and_excludes_raw_financial_rows() -> None:
+    feedback = build_normalized_robustness_evidence(
+        {
+            "parameter_robustness": {
+                "rank_by": "after_cost_total_return",
+                "selected_params": {"window": 20},
+                "best_params": {"window": 40},
+                "tested_count": 3,
+                "tested_results": [
+                    {
+                        "params": {"window": window, "initial_cash": 100_000},
+                        "score": score,
+                        "private_extension": {"quantity": 100},
+                    }
+                    for window, score in [(10, -0.1), (20, -0.05), (40, 0.07)]
+                ],
+                "local_stability": {"stability_ratio": -0.9, "cash": 50_000},
+                "overfitting_warnings": [
+                    {"code": "local_peak_risk", "message": "Unstable", "cash": 50_000}
+                ],
+            },
+            "market_regime_robustness": {
+                "regime_definition": "equal_weight_frozen_close_return_sign.v1",
+                "status": "blocked",
+                "regimes": [
+                    {
+                        "name": "falling",
+                        "observation_count": 12,
+                        "candidate_net_return": "-0.12",
+                        "market_return": "-0.2",
+                        "status": "blocked",
+                        "final_equity": 88_000,
+                    }
+                ],
+                "aligned_observations": [{"cash": 50_000}],
+            },
+            "account_capital_constraint": {"total_equity": 100_000},
+        }
+    )
+    parameter = feedback["parameter_robustness"]
+    assert parameter["selected_params"] == {"window": 20}
+    assert parameter["best_params"] == {"window": 40}
+    assert parameter["tested_results"] == [
+        {"params": {"window": window}, "score": score}
+        for window, score in [(10, -0.1), (20, -0.05), (40, 0.07)]
+    ]
+    assert parameter["local_stability"]["stability_ratio"] == -0.9
+    regime = feedback["market_regime_robustness"]
+    assert regime["regimes"] == [
+        {
+            "name": "falling",
+            "observation_count": 12,
+            "candidate_net_return": -0.12,
+            "market_return": -0.2,
+            "status": "blocked",
+        }
+    ]
+    assert "aligned_observations" not in regime
+    assert "private_extension" not in str(feedback)
+    assert research_pack_privacy_violations(feedback) == []
 
 
 @pytest.mark.unit

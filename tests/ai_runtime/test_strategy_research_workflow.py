@@ -391,7 +391,7 @@ def _hypothesis_response(
             },
         },
         "parameter_values": {"window": 3},
-        "parameter_ranges": {"window": [3, 5]},
+        "parameter_ranges": {"window": [2, 3, 5]},
         "entry_conditions": "收盘价从下向上穿越三日均线。",
         "exit_conditions": "收盘价低于三日均线。",
         "position_sizing_hypothesis": "使用受最大权重约束的等权目标。",
@@ -1543,15 +1543,15 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v8" in role_ids
     assert "external.strategy_hypothesis_researcher.v9" in role_ids
     assert "external.strategy_hypothesis_researcher.v10" in role_ids
-    assert "external.strategy_hypothesis_researcher.v13" in role_ids
+    assert "external.strategy_hypothesis_researcher.v16" in role_ids
     current_role = next(
         item
         for item in service._ai_store.list_roles()
-        if item.role_id == "external.strategy_hypothesis_researcher.v13"
+        if item.role_id == "external.strategy_hypothesis_researcher.v16"
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v14"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v17"
     )
 
     backtest = await service.run_formula_backtest(
@@ -1740,6 +1740,27 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     critique_input = json.loads(critique_payload["messages"][1]["content"])
     assert "prior baseline, not the formula result" in critique_system_prompt
     assert critique_input["critique_input"]["canonical_backtest"]["result_id"] == 18
+    external_result = critique_input["critique_input"]["canonical_backtest"]
+    assert (
+        external_result["parameter_robustness"]["tested_results"]
+        == (saved_metrics["parameter_robustness"]["tested_results"])
+    )
+    for actual, saved_regime in zip(
+        external_result["market_regime_robustness"]["regimes"],
+        saved_metrics["market_regime_robustness"]["regimes"],
+        strict=True,
+    ):
+        assert actual["candidate_net_return"] == float(
+            saved_regime["candidate_net_return"]
+        )
+        assert actual["status"] == saved_regime["status"]
+        assert actual["observation_count"] == saved_regime["observation_count"]
+    assert external_result["robustness_evidence_fingerprint"] == content_fingerprint(
+        {
+            key: external_result[key]
+            for key in ("parameter_robustness", "market_regime_robustness")
+        }
+    )
     external_oos = critique_input["critique_input"]["canonical_backtest"][
         "oos_validation"
     ]
@@ -1765,6 +1786,12 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert (
         "critique_input.canonical_backtest.cost_summary"
         in critique_contract["citation_catalog"].values()
+    )
+    assert "critique_input.canonical_backtest.parameter_robustness" in (
+        critique_contract["citation_catalog"].values()
+    )
+    assert "critique_input.canonical_backtest.market_regime_robustness" in (
+        critique_contract["citation_catalog"].values()
     )
     external_messages = json.dumps(
         [call["payload"]["messages"] for call in transport.calls],
@@ -2152,6 +2179,64 @@ async def test_provider_changed_dataset_is_saved_as_blocked_not_executable(
     assert draft["validation"]["status"] == "blocked"
     assert "provider_changed_dataset_snapshot" in draft["validation"]["errors"]
     assert draft["executable"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("values", "ranges", "failure"),
+    [
+        (
+            {"window": 3},
+            {"window": "2 到 5 之间的整数"},
+            "parameter_range_invalid:window",
+        ),
+        ({"window": 3}, {"window": [3, 5]}, "parameter_range_invalid:window"),
+        (
+            {"entry_window": 3, "exit_window": 3},
+            {"entry_window": [2, 3, 5], "exit_window": [2, 3, 5]},
+            "parameter_binding_ambiguous:exit_window",
+        ),
+        ({"window": 3}, [], "parameter_object_required:parameter_ranges"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_unexecutable_parameter_panel_is_rejected_before_backtest(
+    tmp_path, values, ranges, failure
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    response = transport._responses[0].payload
+    content = json.loads(response["choices"][0]["message"]["content"])
+    content["drafts"][0].update(parameter_values=values, parameter_ranges=ranges)
+    response["choices"][0]["message"]["content"] = json.dumps(content)
+
+    result = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="invalid-parameter-panel",
+            requested_by="human:owner",
+            account_alias="synthetic-research-only",
+            research_question="验证可执行的参数稳健性面板。",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        )
+    )
+    draft = result["drafts"][0]
+    assert draft["validation"] == {
+        "status": "blocked",
+        "errors": [f"formula:{failure}"],
+        "validated_locally": True,
+    }
+    with pytest.raises(
+        StrategyResearchRejected, match="hypothesis_draft_not_validated"
+    ):
+        await service.run_formula_backtest(
+            FormulaBacktestRequest(
+                idempotency_key="invalid-parameter-backtest",
+                requested_by="human:owner",
+                session_id=result["session_id"],
+                draft_id=draft["draft_id"],
+                confirmation=BACKTEST_CONFIRMATION,
+            )
+        )
 
 
 @pytest.mark.unit

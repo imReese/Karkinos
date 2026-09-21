@@ -17,6 +17,35 @@ _MAX_VALUES_PER_PARAMETER = 5
 FORMULA_PARAMETER_SWEEP_MAX_VARIANTS = 9
 
 
+def formula_parameter_contract() -> JsonObject:
+    """Describe the executable parameter panel at the model boundary."""
+
+    return {
+        "parameter_count": {"min": 1, "max": _MAX_PARAMETERS},
+        "values_and_ranges_must_have_identical_keys": True,
+        "selected_values": "integers, matching literal window/period values in the AST",
+        "names": "window, period, or descriptive names ending in _window or _period",
+        "ranges": {
+            "allowed_forms": [
+                "array of 3..5 distinct integers including the selected value",
+                "object with exactly integer min and max; min < max and min <= selected <= max; at least 3 integer values",
+            ],
+            "natural_language_or_dependent_ranges_allowed": False,
+        },
+        "binding": (
+            "One parameter controls ALL AST nodes with the same field (window or "
+            "period) and selected integer value. Use ONE shared parameter for "
+            "matching entry/exit windows. Two names may not claim the same nodes. "
+            "Parameter names do not select entry/exit branches."
+        ),
+        "maximum_variants": FORMULA_PARAMETER_SWEEP_MAX_VARIANTS,
+        "example_for_shared_20_day_windows": {
+            "parameter_values": {"trend_window": 20},
+            "parameter_ranges": {"trend_window": [10, 20, 30]},
+        },
+    }
+
+
 @dataclass(frozen=True)
 class FormulaParameterVariant:
     params: JsonObject

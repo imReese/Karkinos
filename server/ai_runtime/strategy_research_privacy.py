@@ -146,6 +146,85 @@ def research_pack_privacy_violations(value: Any) -> list[str]:
     return violations
 
 
+def build_normalized_robustness_evidence(metrics: Mapping[str, Any]) -> JsonObject:
+    """Expose measured sensitivity and regime results, without raw account rows."""
+
+    parameter = metrics.get("parameter_robustness")
+    parameter = parameter if isinstance(parameter, Mapping) else {}
+    stability = parameter.get("local_stability")
+    stability = stability if isinstance(stability, Mapping) else {}
+    regime = metrics.get("market_regime_robustness")
+    regime = regime if isinstance(regime, Mapping) else {}
+    return {
+        "parameter_robustness": {
+            "schema_version": _text(parameter.get("schema_version")),
+            "source_evidence_fingerprint": _text(parameter.get("evidence_fingerprint")),
+            "rank_by": _text(parameter.get("rank_by")),
+            "rank_direction": _text(parameter.get("rank_direction")),
+            "tested_count": _integer(parameter.get("tested_count")),
+            "selected_params": _numeric_parameters(parameter.get("selected_params")),
+            "best_params": _numeric_parameters(parameter.get("best_params")),
+            "tested_results": [
+                {
+                    "params": _numeric_parameters(row.get("params")),
+                    "score": _finite_float(row.get("score")),
+                }
+                for row in parameter.get("tested_results") or []
+                if isinstance(row, Mapping)
+            ],
+            "local_stability": {
+                "neighbor_count": _integer(stability.get("neighbor_count")),
+                **{
+                    key: _finite_float(stability.get(key))
+                    for key in ("best_score", "mean_neighbor_score", "stability_ratio")
+                },
+            },
+            "overfitting_warnings": [
+                {key: _text(row.get(key)) for key in ("code", "message")}
+                for row in parameter.get("overfitting_warnings") or []
+                if isinstance(row, Mapping)
+            ],
+            "limitations": _strings(parameter.get("limitations")),
+        },
+        "market_regime_robustness": {
+            "schema_version": _text(regime.get("schema_version")),
+            "source_evidence_fingerprint": _text(regime.get("evidence_fingerprint")),
+            "status": _text(regime.get("status")),
+            "regime_definition": _text(regime.get("regime_definition")),
+            "regime_count": _integer(regime.get("regime_count")),
+            "failed_regime_count": _integer(regime.get("failed_regime_count")),
+            "required_regimes": _strings(regime.get("required_regimes")),
+            "regimes": [
+                {
+                    "name": _text(row.get("name")),
+                    "observation_count": _integer(row.get("observation_count")),
+                    "market_return": _finite_float(row.get("market_return")),
+                    "candidate_net_return": _finite_float(
+                        row.get("candidate_net_return")
+                    ),
+                    "status": _text(row.get("status")),
+                }
+                for row in regime.get("regimes") or []
+                if isinstance(row, Mapping)
+            ],
+            "issues": _strings(regime.get("issues")),
+            "assumptions": _strings(regime.get("assumptions")),
+            "limitations": _strings(regime.get("limitations")),
+        },
+    }
+
+
+def _numeric_parameters(value: Any) -> JsonObject:
+    source = value if isinstance(value, Mapping) else {}
+    return {
+        key: number
+        for key, raw in source.items()
+        if isinstance(key, str)
+        and key not in _FORBIDDEN_EXTERNAL_KEYS
+        and (number := _finite_float(raw)) is not None
+    }
+
+
 def build_normalized_signal_execution_evidence(value: Any) -> JsonObject:
     """Project the signal diagnostics through a fixed outbound field set."""
 

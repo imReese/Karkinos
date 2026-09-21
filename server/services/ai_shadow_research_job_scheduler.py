@@ -17,6 +17,7 @@ from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_ID,
     ShadowResearchPolicy,
 )
+from server.contracts.strategy_research import STRATEGY_RESEARCH_PROMPT_VERSION
 from server.dependencies import AppState
 
 
@@ -131,6 +132,7 @@ def shadow_research_provider_config_fingerprint(ai_config: Any) -> str:
 
     return content_fingerprint(
         {
+            "prompt_version": STRATEGY_RESEARCH_PROMPT_VERSION,
             "enabled": getattr(ai_config, "enabled", False) is True,
             "provider": str(getattr(ai_config, "provider", "")).strip().casefold(),
             "model": str(getattr(ai_config, "model", "")),

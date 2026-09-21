@@ -13,6 +13,9 @@ import pytest
 
 from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
 from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
+from analytics.backtest_market_regime_evidence import (
+    build_backtest_market_regime_evidence,
+)
 from analytics.normalized_research_gate import (
     baseline_research_evidence_blockers,
     candidate_research_evidence_blockers,
@@ -45,6 +48,7 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchAuditStore,
     StrategyResearchSelection,
 )
+from server.ai_runtime.strategy_research_privacy import research_pack_privacy_violations
 from server.config import AIProviderConfig, ServerConfig
 from server.db import AppDatabase
 from server.dependencies import AppState
@@ -3246,6 +3250,142 @@ class _FixtureResearch:
         }
 
 
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "repair_succeeds,prior_calls", [(True, 0), (False, 0), (True, 9)]
+)
+async def test_formula_repair_is_bounded_and_charged_to_existing_budget(
+    tmp_path, repair_succeeds, prior_calls
+) -> None:
+    service = _service(tmp_path)
+    service.update_policy(_policy_payload(enabled=True))
+    store = service._store
+    run, _ = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="invalid-formula",
+        baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+        research_context_id="normalized-repair",
+        valuation_snapshot_id=None,
+        ledger_cutoff_id=0,
+        now="2026-08-11T08:00:00+00:00",
+    )
+    for index in range(prior_calls):
+        store.claim_provider_call(
+            call_id=f"earlier-{index}",
+            run_id="earlier",
+            market_date=run["market_date"],
+            call_kind="hypothesis_iteration",
+            call_limit=10,
+            now="2026-08-11T08:00:00+00:00",
+        )
+    error = "formula:expression_keys_mismatch:formula_ast.exit:required=left,op,right:actual=left,op"
+
+    class RepairResearch(_FixtureResearch):
+        async def generate_hypotheses(self, request):
+            result = await super().generate_hypotheses(request)
+            if self.hypothesis_calls == 1 or not repair_succeeds:
+                result["drafts"][0]["validation"] = {
+                    "status": "blocked",
+                    "errors": [error],
+                }
+            self.last_result = result
+            return result
+
+    fixture = RepairResearch(candidate_result_id=99)
+    operation = service._generate_iteration_hypothesis(
+        run=run,
+        policy=service.get_policy(),
+        selection=StrategyResearchSelection(
+            saved_backtest_result_id=1,
+            universe=("600000",),
+            asset_classes=("stock",),
+            dataset_snapshot_id="sha256:" + "a" * 64,
+            start_date="2026-01-05",
+            end_date="2026-08-11",
+            frequency="1d",
+            initial_cash=1_000_000.0,
+        ),
+        external_research=fixture,
+        iteration_context=_build_iteration_context(
+            iteration_number=1,
+            total_iterations=5,
+            previous_iteration=None,
+        ),
+    )
+    if repair_succeeds and not prior_calls:
+        _, draft = await operation
+        assert draft["validation"]["status"] == "valid"
+    else:
+        expected = (
+            "daily_provider_call_limit_reached"
+            if prior_calls
+            else ("formula:expression_keys_mismatch:formula_ast.exit")
+        )
+        with pytest.raises(ShadowResearchRejected, match=expected):
+            await operation
+    assert fixture.hypothesis_calls == (1 if prior_calls else 2)
+    assert fixture.backtest_calls == fixture.critique_calls == 0
+    usage = store.usage_for_market_date(run["market_date"])
+    assert usage["provider_calls"] == prior_calls + fixture.hypothesis_calls
+    if not prior_calls:
+        assert error in fixture.hypothesis_requests[1].research_question
+        assert fixture.hypothesis_requests[1].idempotency_key.endswith(
+            ":formula-repair:01"
+        )
+        assert usage["actual_tokens"] == 2000
+    if not repair_succeeds:
+        audit = StrategyResearchAuditStore(tmp_path / "app.db")
+        audit.init()
+        audit.save_drafts(
+            fixture.last_result["session_id"],
+            fixture.last_result["drafts"],
+            created_at="2026-08-11T08:01:00+00:00",
+        )
+        store.update_run(
+            run["run_id"],
+            status="failed",
+            failure_code=expected,
+            now="2026-08-11T08:01:00+00:00",
+        )
+        replacement, reused = store.claim_run(
+            market_date=run["market_date"],
+            input_fingerprint="corrected-formula-contract",
+            baseline_seed_result_id=1,
+            research_capital_mode=run["research_capital_mode"],
+            research_context_id=run["research_context_id"],
+            valuation_snapshot_id=None,
+            ledger_cutoff_id=0,
+            now="2026-08-11T08:02:00+00:00",
+        )
+        # Eight remaining calls cannot fund five hypothesis/critique pairs.
+        assert reused is True
+        assert replacement["run_id"] == run["run_id"]
+        store.authorize_retry(
+            run["run_id"],
+            approved_by="human:owner",
+            notes="Retry repaired formula.",
+            confirmation=SHADOW_RESEARCH_RETRY_CONFIRMATION,
+            now="2026-08-11T08:03:00+00:00",
+        )
+        replacement, reused = store.claim_run(
+            market_date=run["market_date"],
+            input_fingerprint="corrected-formula-contract",
+            baseline_seed_result_id=1,
+            research_capital_mode=run["research_capital_mode"],
+            research_context_id=run["research_context_id"],
+            valuation_snapshot_id=None,
+            ledger_cutoff_id=0,
+            now="2026-08-11T08:04:00+00:00",
+        )
+        assert reused is False
+        assert replacement["run_id"] != run["run_id"]
+        assert store.usage_for_market_date(run["market_date"])["provider_calls"] == 2
+        assert len(audit.list_drafts(fixture.last_result["session_id"])) == 1
+
+
 def _seed_four_round_timeout_resume_state(
     *,
     store: ShadowResearchStore,
@@ -3542,7 +3682,7 @@ def _seed_four_round_timeout_resume_state(
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
-async def test_five_round_policy_uses_local_gate_before_optional_critique(
+async def test_five_round_policy_critiques_blocked_candidates_and_feeds_measured_results(
     tmp_path, monkeypatch
 ) -> None:
     db = AppDatabase(tmp_path / "app.db")
@@ -3555,6 +3695,24 @@ async def test_five_round_policy_uses_local_gate_before_optional_critique(
         drawdown=0.08,
         initial_cash=1_000_000.0,
         include_parameter_panel=True,
+    )
+    curve = candidate_payload["equity_curve"]
+    candidate_payload["metrics_json"]["market_regime_robustness"] = (
+        build_backtest_market_regime_evidence(
+            result=SimpleNamespace(
+                equity_curve=[(row["timestamp"], row["equity"]) for row in curve]
+            ),
+            data_handlers={
+                "fixture": SimpleNamespace(
+                    _df=pd.DataFrame(
+                        {
+                            "timestamp": [row["timestamp"] for row in curve],
+                            "close": [100, 90, 95, 93, 96, 94, 98, 99],
+                        }
+                    )
+                )
+            },
+        )
     )
     candidate_result_id = await db.save_backtest_result(
         config_json=json.dumps({"strategy": "ai_formula_research"}),
@@ -3610,9 +3768,9 @@ async def test_five_round_policy_uses_local_gate_before_optional_critique(
     assert persisted_run["ledger_cutoff_id"] == 0
     assert fixture.hypothesis_calls == 5
     assert fixture.backtest_calls == 5
-    assert fixture.critique_calls == 0
+    assert fixture.critique_calls == 5
     assert len(result["candidates"]) == 5
-    assert result["usage"]["provider_calls"] == 5
+    assert result["usage"]["provider_calls"] == 10
     assert [
         request.iteration_context["iteration_number"]
         for request in fixture.hypothesis_requests
@@ -3624,7 +3782,26 @@ async def test_five_round_policy_uses_local_gate_before_optional_critique(
         assert parent["draft_id"] == f"draft-auto-{ordinal - 1}"
         assert parent["formula_fingerprint"] == f"sha256:{ordinal - 1:064x}"
         assert parent["critique"]["evidence_gaps"]
-        assert parent["critique_id"].startswith("provider-free-research-gate:")
+        assert parent["critique_id"] == f"critique-draft-auto-{ordinal - 1}"
+        feedback = parent["evaluation"]["research_feedback"]
+        assert feedback["comparison_reference"] == "baseline"
+        assert feedback["candidate"]["result_id"] == candidate_result_id
+        assert (
+            feedback["candidate"]["parameter_robustness"]["tested_results"]
+            == (
+                candidate_payload["metrics_json"]["parameter_robustness"][
+                    "tested_results"
+                ]
+            )
+        )
+        regime = feedback["candidate"]["market_regime_robustness"]
+        assert regime["status"] == "blocked"
+        assert regime["regimes"]
+        assert (
+            feedback["candidate"]["cost_summary"]["total_trades"]
+            == (candidate_payload["cost_summary_json"]["total_trades"])
+        )
+        assert research_pack_privacy_violations(feedback) == []
     assert result["daily_selections"][0]["observed_candidate_count"] == 5
     assert result["daily_selections"][0]["status"] == "no_selection"
     assert result["daily_backups"][0]["verification_status"] == "verified"
@@ -4057,13 +4234,13 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     assert fixture.hypothesis_requests[0].selection.ledger_cutoff_id is None
     assert fixture.hypothesis_requests[0].selection.has_account_binding is False
     assert fixture.backtest_calls == 5
-    assert fixture.critique_calls == 0
-    assert first["usage"]["provider_calls"] == 5
+    assert fixture.critique_calls == 5
+    assert first["usage"]["provider_calls"] == 10
     assert all(item["status"] == "research_blocked" for item in first["candidates"])
     candidate = first["candidates"][0]
     assert candidate["recommendation"] == "keep_researching"
     assert candidate["promotion_status"] == "blocked_by_evidence"
-    assert candidate["critique_id"] is None
+    assert candidate["critique_id"] == f"critique-{candidate['draft_id']}"
     research_gate = candidate["comparison"]["research_gate"]
     assert research_gate["status"] == "blocked"
     research_blockers = set(research_gate["blockers"])
@@ -4418,7 +4595,7 @@ async def test_invalid_local_candidate_stops_before_critique_and_remaining_round
     result = await service.run_once()
 
     assert result["run_status"] == "failed"
-    assert result["failure_code"] == "sequential_iteration_not_complete"
+    assert result["failure_code"] == "research_candidate_parameter_panel_invalid"
     assert fixture.hypothesis_calls == 1
     assert fixture.backtest_calls == 1
     assert fixture.critique_calls == 0
@@ -4426,6 +4603,38 @@ async def test_invalid_local_candidate_stops_before_critique_and_remaining_round
     candidate = result["candidates"][0]
     assert candidate["status"] == "failed_closed"
     assert candidate["comparison"]["failure_code"] == (
+        "research_candidate_parameter_panel_invalid"
+    )
+    original_candidate = store.get_candidate(candidate["candidate_id"])
+    authorization = store.authorize_retry(
+        result["run_id"],
+        approved_by="human:owner",
+        notes="Repair the parameter contract and rerun within the research budget.",
+        confirmation=SHADOW_RESEARCH_RETRY_CONFIRMATION,
+        now="2026-08-11T08:05:00+00:00",
+    )
+    original_run = store.get_run(result["run_id"])
+    replacement, reused = store.claim_run(
+        market_date=original_run["market_date"],
+        input_fingerprint="corrected-parameter-contract",
+        baseline_seed_result_id=original_run["baseline_seed_result_id"],
+        research_capital_mode=original_run["research_capital_mode"],
+        research_context_id=original_run["research_context_id"],
+        valuation_snapshot_id=original_run["valuation_snapshot_id"],
+        ledger_cutoff_id=original_run["ledger_cutoff_id"],
+        now="2026-08-11T08:06:00+00:00",
+    )
+    assert reused is False
+    assert replacement["run_id"] != original_run["run_id"]
+    assert authorization["provider_call_ceiling"] == 11
+    assert store.get_candidate(candidate["candidate_id"]) == original_candidate
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        archived = conn.execute(
+            "SELECT run_snapshot_json FROM ai_shadow_research_run_attempts "
+            "WHERE superseded_run_id=?",
+            (original_run["run_id"],),
+        ).fetchone()
+    assert json.loads(archived[0])["failure_code"] == (
         "research_candidate_parameter_panel_invalid"
     )
 
@@ -4890,7 +5099,7 @@ async def test_kill_switch_change_after_local_backtest_blocks_deepseek_critique(
     result = await service.run_once()
 
     assert result["run_status"] == "failed"
-    assert result["failure_code"] == "sequential_iteration_not_complete"
+    assert result["failure_code"] == "blocked_by_kill_switch"
     assert fixture.hypothesis_calls == 1
     assert fixture.backtest_calls == 1
     assert fixture.critique_calls == 0
