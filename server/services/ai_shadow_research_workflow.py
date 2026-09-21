@@ -31,6 +31,7 @@ from server.contracts.ai_shadow_research_automation import (
     ShadowResearchRejected,
     build_shadow_research_iteration_context,
 )
+from server.contracts.strategy_research import STRATEGY_RESEARCH_PROMPT_VERSION
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
 )
@@ -98,6 +99,7 @@ class AiShadowResearchWorkflowMixin:
         input_fingerprint = content_fingerprint(
             {
                 "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
+                "prompt_version": STRATEGY_RESEARCH_PROMPT_VERSION,
                 "policy": policy.to_dict(),
                 **self._provider_window_input_evidence(batch_deadline_at),
                 "baseline_fingerprint": prepared.fingerprint,
@@ -298,7 +300,10 @@ class AiShadowResearchWorkflowMixin:
                     "evaluated_research_only",
                     "research_blocked",
                 }:
-                    raise ShadowResearchRejected("sequential_iteration_not_complete")
+                    raise ShadowResearchRejected(
+                        candidate.get("comparison", {}).get("failure_code")
+                        or "sequential_iteration_not_complete"
+                    )
                 candidates.append(candidate)
                 valid_drafts.append(dict(draft))
                 previous_iteration = {
@@ -308,14 +313,10 @@ class AiShadowResearchWorkflowMixin:
                 }
                 self._require_provider_batch_deadline(batch_deadline_at)
             self._require_provider_batch_deadline(batch_deadline_at)
+            # Only complete local evaluations are appended above.
             terminal_status = (
                 "completed"
-                if candidates
-                and all(
-                    item["status"] in {"awaiting_human_approval", "research_blocked"}
-                    or item["status"] == "evaluated_research_only"
-                    for item in candidates
-                )
+                if len(candidates) == policy.max_candidates_per_run
                 else "partial"
             )
             daily_artifacts: dict[str, Any] | None = None

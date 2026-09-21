@@ -41,6 +41,7 @@ class ShadowResearchRunReplacementRepositoryMixin:
             market_date=market_date,
             rebind_prior_consumptions=(
                 bool(claim["provider_free_rearm"])
+                or bool(claim["rejected_hypothesis_rearm"])
                 or claim["citation_extension"] is not None
                 or claim["output_truncation_extension"] is not None
             ),
@@ -83,6 +84,9 @@ class ShadowResearchRunReplacementRepositoryMixin:
         provider_free_rearm = input_fingerprint != run[
             "input_fingerprint"
         ] and self._can_rearm_provider_free_failure(conn, run)
+        rejected_hypothesis_rearm = input_fingerprint != run[
+            "input_fingerprint"
+        ] and self._can_rearm_rejected_hypothesis(conn, run)
         if retry is not None:
             input_fingerprint = content_fingerprint(
                 {
@@ -130,7 +134,7 @@ class ShadowResearchRunReplacementRepositoryMixin:
                     ],
                 }
             )
-        elif not provider_free_rearm:
+        elif not provider_free_rearm and not rejected_hypothesis_rearm:
             return None
         return {
             "input_fingerprint": input_fingerprint,
@@ -139,6 +143,7 @@ class ShadowResearchRunReplacementRepositoryMixin:
             "output_truncation_extension": output_truncation,
             "corrected_panel_rearm": corrected_panel,
             "provider_free_rearm": provider_free_rearm,
+            "rejected_hypothesis_rearm": rejected_hypothesis_rearm,
         }
 
     def _load_replacement_consumptions(

@@ -17,6 +17,7 @@ from server.ai_runtime.strategy_research_backtest import (
 from server.ai_runtime.strategy_research_privacy import (
     build_normalized_lot_feasibility_evidence,
     build_normalized_research_pack,
+    build_normalized_robustness_evidence,
     build_normalized_signal_execution_evidence,
 )
 from server.ai_runtime.strategy_research_provider import StrategyResearchModelProvider
@@ -147,6 +148,7 @@ class StrategyResearchCritiqueMixin:
         )
         normalized_performance = normalized_pack["performance_summary"]
         normalized_cost = normalized_pack["cost_summary"]
+        robustness = build_normalized_robustness_evidence(metrics)
         required_binding_echo = {
             "canonical_backtest_result_id": int(
                 backtest["canonical_backtest_result_id"]
@@ -159,6 +161,7 @@ class StrategyResearchCritiqueMixin:
             **normalized_cost,
             "oos_validation_fingerprint": content_fingerprint(oos_validation),
             "research_evidence_fingerprint": content_fingerprint(evidence),
+            "robustness_evidence_fingerprint": content_fingerprint(robustness),
         }
         registry = AiRuntimeRegistry(self._ai_store)
         register_strategy_research_runtime(
@@ -185,6 +188,7 @@ class StrategyResearchCritiqueMixin:
                     "performance_summary": normalized_performance,
                     "after_cost_evidence": normalized_pack["after_cost_summary"],
                     "cost_summary": normalized_cost,
+                    **robustness,
                     "oos_validation": normalized_pack["oos_validation"],
                     "research_evidence_bundle": normalized_pack[
                         "research_evidence_bundle"

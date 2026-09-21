@@ -508,6 +508,11 @@ def build_shadow_research_iteration_context(
                 if key in critique
             },
         }
+        # Historical comparisons omit feedback; preserve their replay fingerprints.
+        if isinstance(comparison.get("research_feedback"), Mapping):
+            parent_core["evaluation"]["research_feedback"] = dict(
+                comparison["research_feedback"]
+            )
         parent_iteration = {
             **parent_core,
             "parent_artifact_fingerprint": "sha256:" + content_fingerprint(parent_core),

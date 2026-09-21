@@ -282,35 +282,6 @@ def build_normalized_research_advancement_gate(
     )
 
 
-def candidate_research_advancement_preflight_blockers(
-    *,
-    baseline: Mapping[str, Any],
-    candidate: Mapping[str, Any],
-) -> list[str]:
-    """Return deterministic advancement blockers before spending critique tokens.
-
-    The independent critique is intentionally treated as pending here. The helper
-    reuses the exact normalized research gate for every provider-free check and
-    suppresses only the future critique requirement. It never persists or grants
-    promotion authority.
-    """
-
-    gate = build_normalized_research_advancement_gate(
-        baseline=baseline,
-        candidate=candidate,
-        critique_evidence={
-            "status": "completed",
-            "critique_id": "provider-free-preflight-placeholder",
-            "artifact_fingerprint": "sha256:" + "0" * 64,
-        },
-    )
-    return [
-        blocker
-        for blocker in gate.blockers
-        if blocker != "completed_research_critique_missing"
-    ]
-
-
 def baseline_research_evidence_blockers(
     baseline: Mapping[str, Any],
 ) -> list[str]:
@@ -436,7 +407,6 @@ __all__ = [
     "NormalizedResearchAdvancementGate",
     "baseline_research_evidence_blockers",
     "build_normalized_research_advancement_gate",
-    "candidate_research_advancement_preflight_blockers",
     "candidate_research_evidence_blockers",
     "research_backtest_infrastructure_blockers",
 ]

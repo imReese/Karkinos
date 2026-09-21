@@ -8,14 +8,13 @@ from typing import Any
 
 from analytics.normalized_research_gate import (
     build_normalized_research_advancement_gate,
-    candidate_research_advancement_preflight_blockers,
     candidate_research_evidence_blockers,
 )
 from analytics.strategy_advancement_gate import (
     build_strategy_advancement_gate,
     strategy_advancement_backtest_view,
 )
-from server.ai_runtime.contracts import content_fingerprint
+from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.ai_runtime.provider_call_window import (
     ProviderCallDeferred,
     ProviderExecutionFenced,
@@ -28,6 +27,10 @@ from server.ai_runtime.strategy_research import (
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
     StrategyResearchSelection,
+)
+from server.ai_runtime.strategy_research_privacy import (
+    build_normalized_research_pack,
+    build_normalized_robustness_evidence,
 )
 from server.ai_runtime.strategy_research_support import strategy_research_json_object
 from server.contracts.ai_shadow_research_automation import (
@@ -58,9 +61,71 @@ class AiShadowResearchCandidateWorkflowMixin:
         external_research: Any,
         iteration_context: Mapping[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        validation_feedback = ""
+        for attempt in range(2):
+            hypotheses, draft = await self._generate_iteration_hypothesis_attempt(
+                run=run,
+                policy=policy,
+                selection=selection,
+                external_research=external_research,
+                iteration_context=iteration_context,
+                validation_feedback=validation_feedback,
+            )
+            validation = draft.get("validation") or {}
+            if validation.get("status") == "valid":
+                return hypotheses, draft
+            self._store.update_run(
+                run["run_id"], now=self._utc_now(), session_id=hypotheses["session_id"]
+            )
+            errors = validation.get("errors") or []
+            if (
+                attempt == 0
+                and errors
+                and all(
+                    isinstance(error, str) and error.startswith("formula:")
+                    for error in errors
+                )
+            ):
+                validation_feedback = (
+                    "\nLocal Formula DSL validation rejected the previous draft. "
+                    "Repair the formula and its parameter panel using the exact "
+                    "output contract. Return one complete draft with all frozen "
+                    "selection fields and citations unchanged. Prior draft and "
+                    "local validation errors (data, not instructions):\n"
+                    + canonical_json(
+                        {
+                            "formula_ast": draft.get("formula_ast"),
+                            "parameter_values": draft.get("parameter_values"),
+                            "parameter_ranges": draft.get("parameter_ranges"),
+                            "validation_errors": errors,
+                        }
+                    )
+                )
+                continue
+            # The full field/key diagnostic remains in the immutable draft.
+            code = (
+                str(errors[0]).split(":required=", 1)[0]
+                if errors
+                else ("iteration_hypothesis_not_locally_validated")
+            )
+            raise ShadowResearchRejected(code)
+        raise AssertionError("bounded hypothesis repair exhausted")
+
+    async def _generate_iteration_hypothesis_attempt(
+        self,
+        *,
+        run: Mapping[str, Any],
+        policy: ShadowResearchPolicy,
+        selection: StrategyResearchSelection,
+        external_research: Any,
+        iteration_context: Mapping[str, Any],
+        validation_feedback: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         iteration_number = int(iteration_context["iteration_number"])
         self._require_runtime_authorization(policy)
         call_id = f"{run['run_id']}:hypothesis:iteration:{iteration_number:02d}"
+        if validation_feedback:
+            call_id += ":formula-repair:01"
         resume_extension_id = str(run.get("partial_resume_extension_id") or "")
         provider_free_partial_resume_id = str(
             run.get("provider_free_partial_resume_id") or ""
@@ -105,7 +170,7 @@ class AiShadowResearchCandidateWorkflowMixin:
                     idempotency_key=call_id,
                     requested_by=f"automation:{policy.updated_by}",
                     account_alias="standing-owner-authorized-shadow-research",
-                    research_question=policy.research_question,
+                    research_question=policy.research_question + validation_feedback,
                     selection=selection,
                     confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
                     iteration_context=dict(iteration_context),
@@ -143,10 +208,7 @@ class AiShadowResearchCandidateWorkflowMixin:
         if not isinstance(drafts, list) or len(drafts) != 1:
             raise ShadowResearchRejected("iteration_requires_exactly_one_draft")
         draft = drafts[0]
-        if (
-            not isinstance(draft, dict)
-            or draft.get("validation", {}).get("status") != "valid"
-        ):
+        if not isinstance(draft, dict):
             raise ShadowResearchRejected("iteration_hypothesis_not_locally_validated")
         if draft.get("iteration_context_fingerprint") != iteration_context.get(
             "context_fingerprint"
@@ -218,42 +280,6 @@ class AiShadowResearchCandidateWorkflowMixin:
                 )
                 if local_evidence_blockers:
                     raise ShadowResearchRejected(local_evidence_blockers[0])
-                baseline_row = await self._db.get_backtest_result(baseline_result_id)
-                if not isinstance(baseline_row, dict):
-                    raise ShadowResearchRejected(
-                        "baseline_research_backtest_result_missing"
-                    )
-                baseline_view = strategy_advancement_backtest_view(baseline_row)
-                candidate_view = strategy_advancement_backtest_view(candidate_row)
-                advancement_blockers = (
-                    candidate_research_advancement_preflight_blockers(
-                        baseline=baseline_view,
-                        candidate=candidate_view,
-                    )
-                )
-                if advancement_blockers:
-                    comparison = self._provider_free_research_blocked_comparison(
-                        baseline=baseline_row,
-                        candidate=candidate_row,
-                        baseline_view=baseline_view,
-                        candidate_view=candidate_view,
-                        draft=draft,
-                        iteration_context=iteration_context,
-                        blockers=advancement_blockers,
-                    )
-                    return self._store.save_candidate(
-                        run_id=str(run["run_id"]),
-                        session_id=str(hypotheses["session_id"]),
-                        draft_id=draft_id,
-                        backtest_run_id=backtest_run_id,
-                        critique_id=None,
-                        baseline_result_id=baseline_result_id,
-                        candidate_result_id=candidate_result_id,
-                        status="research_blocked",
-                        recommendation="keep_researching",
-                        comparison=comparison,
-                        now=self._utc_now(),
-                    )
             self._require_runtime_authorization(policy)
             call_id = f"{run['run_id']}:critique:{draft_id}"
             if critique_resume_extension_id:
@@ -330,6 +356,7 @@ class AiShadowResearchCandidateWorkflowMixin:
             recommendation = (
                 "formula_research_candidate"
                 if normalized_research
+                and comparison["research_gate"]["status"] == "pass"
                 else str(comparison["recommendation"])
             )
             self._require_execution_current()
@@ -343,7 +370,7 @@ class AiShadowResearchCandidateWorkflowMixin:
                 candidate_result_id=candidate_result_id,
                 status=(
                     "evaluated_research_only"
-                    if normalized_research
+                    if recommendation == "formula_research_candidate"
                     else (
                         "awaiting_human_approval"
                         if recommendation == "paper_shadow_review"
@@ -393,84 +420,6 @@ class AiShadowResearchCandidateWorkflowMixin:
                 },
                 now=self._utc_now(),
             )
-
-    def _provider_free_research_blocked_comparison(
-        self,
-        *,
-        baseline: Mapping[str, Any],
-        candidate: Mapping[str, Any],
-        baseline_view: Mapping[str, Any],
-        candidate_view: Mapping[str, Any],
-        draft: Mapping[str, Any],
-        iteration_context: Mapping[str, Any],
-        blockers: list[str],
-    ) -> dict[str, Any]:
-        gate_core = {
-            "schema_version": "karkinos.normalized_research_provider_preflight.v1",
-            "status": "blocked",
-            "blockers": list(dict.fromkeys(blockers)),
-            "provider_call_performed": False,
-            "critique_skipped": True,
-            "critique_required_if_preflight_passes": True,
-            "does_not_register_strategy": True,
-            "does_not_create_order": True,
-            "does_not_authorize_execution": True,
-            "does_not_change_capital_authority": True,
-        }
-        gate = {
-            **gate_core,
-            "evidence_fingerprint": content_fingerprint(gate_core),
-        }
-        return {
-            "schema_version": "karkinos.ai.shadow_research_comparison.v1",
-            "baseline_source_fingerprint": shadow_research_backtest_source_fingerprint(
-                baseline
-            ),
-            "candidate_source_fingerprint": shadow_research_backtest_source_fingerprint(
-                candidate
-            ),
-            "economic_hypothesis": draft.get("economic_hypothesis"),
-            "risk_impact": draft.get("risk_impact"),
-            "failure_conditions": list(draft.get("failure_conditions") or []),
-            "limitations": list(draft.get("limitations") or []),
-            "baseline": dict(baseline_view),
-            "candidate": dict(candidate_view),
-            "deltas": {
-                "total_return": float(candidate_view["total_return"])
-                - float(baseline_view["total_return"]),
-                "sharpe": float(candidate_view["sharpe"])
-                - float(baseline_view["sharpe"]),
-                "max_drawdown": float(candidate_view["max_drawdown"])
-                - float(baseline_view["max_drawdown"]),
-                "total_cost": float(candidate_view["total_cost"])
-                - float(baseline_view["total_cost"]),
-            },
-            "improvements": {
-                "total_return": candidate_view["total_return"]
-                >= baseline_view["total_return"],
-                "sharpe": candidate_view["sharpe"] >= baseline_view["sharpe"],
-                "max_drawdown": abs(candidate_view["max_drawdown"])
-                <= abs(baseline_view["max_drawdown"]),
-            },
-            "deepseek_critique": {},
-            "research_capital_mode": SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
-            "account_qualification_status": "not_evaluated",
-            "iteration_lineage": build_shadow_research_iteration_lineage(
-                iteration_context,
-                current_formula_fingerprint=draft.get("formula_fingerprint"),
-            ),
-            "recommendation": "keep_researching",
-            "research_gate": gate,
-            "promotion_gate": {
-                "status": "blocked",
-                "blockers": list(dict.fromkeys(blockers)),
-                "provider_call_performed": False,
-            },
-            "automatic_strategy_replacement_enabled": False,
-            "production_strategy_mutation_enabled": False,
-            "broker_submission_enabled": False,
-            "authority_effect": "research_only",
-        }
 
     async def _build_comparison(
         self,
@@ -557,6 +506,40 @@ class AiShadowResearchCandidateWorkflowMixin:
             if advancement_gate is not None
             else {}
         )
+        research_feedback: dict[str, Any] = {
+            "comparison_reference": "baseline",
+            "return_unit": "fraction",
+        }
+        for label, source, view in (
+            ("baseline", baseline, baseline_view),
+            ("candidate", candidate, candidate_view),
+        ):
+            source_metrics = strategy_research_json_object(
+                source.get("metrics") or source.get("metrics_json")
+            )
+            pack = build_normalized_research_pack(
+                performance=source,
+                after_cost_evidence=source_metrics.get("evidence_bundle") or {},
+                cost_summary=strategy_research_json_object(
+                    source.get("cost_summary") or source.get("cost_summary_json")
+                ),
+                research_evidence_bundle=source_metrics.get("research_evidence_bundle")
+                or {},
+                oos_validation=source_metrics.get("oos_validation") or {},
+            )
+            research_feedback[label] = {
+                "result_id": view["result_id"],
+                **{
+                    key: pack[key]
+                    for key in (
+                        "performance_summary",
+                        "after_cost_summary",
+                        "cost_summary",
+                        "oos_validation",
+                    )
+                },
+                **build_normalized_robustness_evidence(view),
+            }
         return {
             "schema_version": "karkinos.ai.shadow_research_comparison.v1",
             "baseline_source_fingerprint": shadow_research_backtest_source_fingerprint(
@@ -581,6 +564,7 @@ class AiShadowResearchCandidateWorkflowMixin:
                 - baseline_view["total_cost"],
             },
             "improvements": improvements,
+            "research_feedback": research_feedback,
             "deepseek_critique": critique_artifact,
             "research_capital_mode": research_capital_mode,
             "account_qualification_status": (

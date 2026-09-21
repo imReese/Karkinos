@@ -298,18 +298,20 @@ def _research_candidate_completion(
         and recommendation == "formula_research_candidate"
         and bool(str(candidate.get("critique_id") or ""))
     )
-    provider_free_blocked = (
+    research_blocked = (
         status == "research_blocked"
         and recommendation == "keep_researching"
-        and not str(candidate.get("critique_id") or "")
         and research_gate.get("status") == "blocked"
-        and research_gate.get("provider_call_performed") is False
         and bool(research_gate.get("blockers"))
+        and (
+            bool(str(candidate.get("critique_id") or ""))
+            or research_gate.get("provider_call_performed") is False
+        )
     )
     if (
         not candidate_id
         or str(candidate.get("run_id") or "") != run_id
-        or not (evaluated or provider_free_blocked)
+        or not (evaluated or research_blocked)
         or comparison.get("research_capital_mode") != "normalized_notional"
         or comparison.get("account_qualification_status") != "not_evaluated"
         or not _valid_fingerprint(comparison.get("baseline_source_fingerprint"))

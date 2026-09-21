@@ -129,6 +129,8 @@ def build_critique_citation_catalog(
             "critique_input.canonical_backtest.oos_validation.aggregate.mean_out_of_sample_return",
             "critique_input.canonical_backtest.oos_validation",
         ),
+        ("critique_input.canonical_backtest.parameter_robustness",),
+        ("critique_input.canonical_backtest.market_regime_robustness",),
         (
             "critique_input.hypothesis_draft.failure_conditions",
             "critique_input.hypothesis_draft.limitations",

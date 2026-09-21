@@ -16,6 +16,10 @@ from server.ai_runtime.formula_dsl import (
     FormulaValidationError,
     validate_formula_ast,
 )
+from server.ai_runtime.formula_parameter_sweep import (
+    build_formula_parameter_variants,
+    formula_parameter_contract,
+)
 from server.ai_runtime.strategy_research_citations import citation_path_exists
 from server.ai_runtime.strategy_research_values import STRATEGY_RESEARCH_PROMPT_VERSION
 from server.contracts.strategy_research import (
@@ -107,6 +111,14 @@ def bind_and_validate_drafts(
             if not isinstance(formula_ast, dict):
                 raise FormulaValidationError("formula_must_be_object")
             validate_formula_ast(formula_ast, universe_size=len(selection.universe))
+            for name in ("parameter_values", "parameter_ranges"):
+                if not isinstance(candidate.get(name), dict):
+                    raise FormulaValidationError("parameter_object_required", name)
+            build_formula_parameter_variants(
+                formula_ast=formula_ast,
+                parameter_values=candidate["parameter_values"],
+                parameter_ranges=candidate["parameter_ranges"],
+            )
             binding = FormulaBinding(
                 formula_ast=formula_ast,
                 universe=selection.universe,
@@ -411,8 +423,8 @@ def hypothesis_output_contract(
             ),
             "frequency": "string, exact operator_frozen_selection.frequency",
             "formula_ast": "object matching formula_shape_example_only",
-            "parameter_values": "object",
-            "parameter_ranges": "object",
+            "parameter_values": "object of integers matching parameter_contract",
+            "parameter_ranges": "object of numeric ranges matching parameter_contract",
             "entry_conditions": "non-empty string",
             "exit_conditions": "non-empty string",
             "position_sizing_hypothesis": "non-empty string",
@@ -431,6 +443,7 @@ def hypothesis_output_contract(
                 "non-empty array[string] copied only from citation_catalog keys"
             ),
         },
+        "parameter_contract": formula_parameter_contract(),
         "citation_catalog": dict(citation_catalog),
         "required_citation_ids": list(citation_catalog),
         "citation_catalog_fingerprint": "sha256:"
@@ -558,11 +571,25 @@ def strategy_research_system_prompt(mode: Literal["hypothesis", "critique"]) -> 
             'position_size must be exactly {"op":"equal_weight"}; local Karkinos '
             "policy owns allocation slots, lot rounding, fees, and capital limits, so "
             "the model must not propose a weight or cap. "
+            "Follow output_contract.parameter_contract exactly: parameter_ranges "
+            "must contain numeric arrays or min/max objects, never prose, step "
+            "descriptions, or references to another parameter. A parameter binds "
+            "all AST nodes sharing its field and selected value; use one shared "
+            "parameter when entry and exit use the same window. "
             "Prefer one compact draft unless the evidence clearly supports additional "
             "materially distinct hypotheses; never pad the response. "
             "When iteration_context is present, emit exactly one draft. For iteration "
             "two or later, use the bound parent formula, canonical metric summary, "
             "promotion blockers, and critique to produce a changed revision, and cite "
+            "the measured parameter sweep, regime returns, and cost/turnover data in "
+            "parent_iteration.evaluation.research_feedback when present. Its candidate is the "
+            "previous iteration; its baseline is the fixed research comparator. "
+            "The evaluation delta fields compare the parent to that baseline, not "
+            "to its own parent. Preserve numeric signs and distinguish full-window "
+            "returns from OOS returns. Do not infer sensitivity or regime failures "
+            "from blocker names alone, or describe an equivalent formula rewrite "
+            "as a new mechanism. State which measured failure the revision targets "
+            "and how the next backtest can falsify it. Cite "
             "the citation ID bound to iteration_context.parent_iteration. Set every "
             "draft citations field to exactly output_contract.required_citation_ids, "
             "in the given order, with no other values. Copy those short IDs verbatim; "
@@ -584,5 +611,12 @@ def strategy_research_system_prompt(mode: Literal["hypothesis", "critique"]) -> 
         "sensitivity, concentration, sample dependence, possible overfitting, "
         "ablations, walk-forward/stress tests, failure conditions, uncertainty, "
         "and citations. Every required array must be non-empty. Do not propose an "
+        "automatic promotion. A failed advancement check is a research finding: "
+        "use canonical_backtest.parameter_robustness and market_regime_robustness "
+        "to identify the measured failure and recommend a targeted next experiment. "
+        "A parameter sweep ranks full-window after-cost returns, not OOS returns. "
+        "Respect the stated regime definition; daily return-sign groups are not "
+        "continuous bull/bear periods. Preserve signs, and keep the frozen baseline "
+        "distinct from the previous candidate. Do not propose an "
         "executable trade plan."
     )

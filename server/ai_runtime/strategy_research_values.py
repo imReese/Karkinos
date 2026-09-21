@@ -25,8 +25,8 @@ RESEARCH_TOOL = "research_evidence.read"
 ACCOUNT_STATE_TOOL = "account_state_projection.read"
 CATALOG_TOOL = "formula_operator_catalog.read"
 SELECTION_TOOL = "strategy_research_selection.read"
-HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v13"
-CRITIQUE_ROLE = "external.strategy_backtest_critic.v13"
+HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v16"
+CRITIQUE_ROLE = "external.strategy_backtest_critic.v16"
 HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 CRITIQUE_STAGE = "strategy_backtest_critique"
 
@@ -70,6 +70,8 @@ CRITIQUE_CITATION_PATHS = (
     "critique_input.canonical_backtest.research_evidence_bundle.analyzers",
     "critique_input.canonical_backtest.research_evidence_bundle.evidence_references",
     "critique_input.canonical_backtest.research_evidence_bundle.promotion_gate",
+    "critique_input.canonical_backtest.parameter_robustness",
+    "critique_input.canonical_backtest.market_regime_robustness",
     "critique_input.canonical_backtest.signal_execution_evidence",
     "critique_input.canonical_backtest.lot_feasibility_evidence",
     "critique_input.hypothesis_draft.economic_hypothesis",

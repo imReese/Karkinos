@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Mapping
 from typing import Any
@@ -64,12 +65,23 @@ class ShadowResearchRetryAuthorizationRepositoryMixin:
                 or int(failed_run["candidate_count"] or 0) != 0
             ):
                 raise ShadowResearchRejected("retry_requires_failed_zero_candidate_run")
-            candidate = conn.execute(
-                "SELECT 1 FROM ai_shadow_research_candidates WHERE run_id=? LIMIT 1",
+            candidates = conn.execute(
+                "SELECT * FROM ai_shadow_research_candidates WHERE run_id=?",
                 (failed_run_id,),
-            ).fetchone()
-            if candidate is not None:
-                raise ShadowResearchRejected("retry_requires_no_candidate_artifact")
+            ).fetchall()
+            # A rejected local evaluation is an audit artifact, not a completed
+            # candidate. Preserve it when the owner authorizes a fresh run.
+            if any(
+                row["status"] != "failed_closed"
+                or row["recommendation"] != "reject"
+                or row["promotion_status"] != "blocked_by_evidence"
+                or not shadow_research_json_object(row["comparison_json"]).get(
+                    "failure_code"
+                )
+                for row in candidates
+            ):
+                raise ShadowResearchRejected("retry_requires_no_evaluated_candidate")
+            locally_rejected = bool(candidates)
             placeholders = ", ".join("?" for _ in PROVIDER_FREE_RETRYABLE_FAILURE_CODES)
             failed_provider_call = conn.execute(
                 f"""
@@ -85,9 +97,27 @@ class ShadowResearchRetryAuthorizationRepositoryMixin:
                 (failed_run_id, *PROVIDER_FREE_RETRYABLE_FAILURE_CODES),
             ).fetchone()
             if (
-                failed_provider_call is None
-                or failed_provider_call["status"] != "failed"
-                or not str(failed_provider_call["failure_code"] or "")
+                not locally_rejected
+                and failed_run["session_id"]
+                and failed_provider_call is not None
+                and failed_provider_call["status"] == "completed"
+            ):
+                locally_rejected = (
+                    conn.execute(
+                        """
+                        SELECT 1 FROM ai_strategy_hypothesis_drafts
+                        WHERE session_id=? AND validation_status='blocked' LIMIT 1
+                        """,
+                        (failed_run["session_id"],),
+                    ).fetchone()
+                    is not None
+                )
+            if failed_provider_call is None or not (
+                (
+                    failed_provider_call["status"] == "failed"
+                    and str(failed_provider_call["failure_code"] or "")
+                )
+                or (locally_rejected and failed_provider_call["status"] == "completed")
             ):
                 raise ShadowResearchRejected(
                     "retry_requires_failed_real_provider_call_evidence"
@@ -397,6 +427,57 @@ class ShadowResearchRetryAuthorizationRepositoryMixin:
             (run["run_id"], *PROVIDER_FREE_RETRYABLE_FAILURE_CODES),
         ).fetchone()
         return contacted is None
+
+    def _can_rearm_rejected_hypothesis(
+        self, conn: sqlite3.Connection, run: Mapping[str, Any]
+    ) -> bool:
+        """Retry a changed input after local formula rejection using remaining budget."""
+        failure = str(run.get("failure_code") or "")
+        if (
+            run.get("status") != "failed"
+            or int(run.get("candidate_count") or 0) != 0
+            or not run.get("session_id")
+            or not (
+                failure.startswith("formula:") or failure == "ShadowResearchRejected"
+            )
+        ):
+            return False
+        if conn.execute(
+            "SELECT 1 FROM ai_shadow_research_candidates WHERE run_id=? LIMIT 1",
+            (run["run_id"],),
+        ).fetchone():
+            return False
+        drafts = conn.execute(
+            "SELECT validation_status,validation_errors_json "
+            "FROM ai_strategy_hypothesis_drafts WHERE session_id=?",
+            (run["session_id"],),
+        ).fetchall()
+        if len(drafts) != 1 or drafts[0]["validation_status"] != "blocked":
+            return False
+        errors = json.loads(drafts[0]["validation_errors_json"])
+        if not errors or not all(
+            isinstance(error, str) and error.startswith("formula:") for error in errors
+        ):
+            return False
+        calls = conn.execute(
+            "SELECT call_kind,status FROM ai_shadow_research_provider_calls WHERE run_id=?",
+            (run["run_id"],),
+        ).fetchall()
+        if not calls or any(
+            row["call_kind"] != "hypothesis_iteration" or row["status"] != "completed"
+            for row in calls
+        ):
+            return False
+        ceiling = self._effective_provider_call_ceiling(
+            conn,
+            run_id=str(run["run_id"]),
+            market_date=str(run["market_date"]),
+            call_limit=SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
+        )
+        return (
+            ceiling - self._real_provider_call_count(conn, str(run["market_date"]))
+            >= SHADOW_RESEARCH_MAX_PROVIDER_CALLS
+        )
 
     def _retry_authorization_row(
         self,
