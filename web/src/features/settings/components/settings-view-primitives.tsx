@@ -47,23 +47,28 @@ export function SettingsDisclosure({
   testId,
   title,
   detail,
+  badge,
   children,
 }: {
   testId: string;
   title: string;
   detail: string;
+  badge?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <details
-      className="min-w-0 border-y border-[var(--app-divider)]"
+      className="group/details min-w-0 border-y border-[var(--app-divider)]"
       id={testId}
       data-testid={testId}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+      <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 py-3.5 -mx-1 px-1 rounded-[var(--app-radius-control)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
         <span className="min-w-0">
-          <span className="block text-sm font-semibold text-[var(--app-text)]">
-            {title}
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="block text-sm font-semibold text-[var(--app-text)]">
+              {title}
+            </span>
+            {badge ? <span className="shrink-0">{badge}</span> : null}
           </span>
           <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
             {detail}
@@ -71,7 +76,7 @@ export function SettingsDisclosure({
         </span>
         <span
           aria-hidden="true"
-          className="shrink-0 text-sm text-[var(--app-text-secondary)]"
+          className="shrink-0 text-sm font-mono font-semibold text-[var(--app-text-secondary)] group-hover/details:text-[var(--app-accent)] transition-colors"
         >
           +
         </span>

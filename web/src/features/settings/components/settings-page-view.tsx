@@ -35,6 +35,7 @@ export function SettingsPageView({
         title={copy.settings.title}
         description={copy.settings.subtitle}
       />
+      <SettingsCategoryBar controller={controller} />
       {statusLoadFailed ? (
         <InlineNotice
           tone="danger"
@@ -210,5 +211,85 @@ function SettingsDataStatus({
         </div>
       ) : null}
     </SettingsSection>
+  );
+}
+
+function SettingsCategoryBar({
+  controller,
+}: {
+  controller: SettingsPageController;
+}) {
+  const {
+    accountCommissionRate,
+    locale,
+    pollInterval,
+    providerName,
+    trackedAssets,
+  } = controller;
+
+  const jumpTo = (targetId: string, parentDisclosureId?: string) => {
+    if (parentDisclosureId) {
+      const parent = document.getElementById(parentDisclosureId);
+      if (parent instanceof HTMLDetailsElement) {
+        parent.open = true;
+      }
+    }
+    const target = document.getElementById(targetId);
+    if (target instanceof HTMLDetailsElement) {
+      target.open = true;
+    }
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const commissionBp = (Number(accountCommissionRate) * 10000).toFixed(1);
+
+  const categories = [
+    {
+      id: 'settings-persisted-configuration',
+      label: locale === 'zh' ? '基础参数' : 'Core Defaults',
+      meta: `${providerName} · ${pollInterval}s`,
+    },
+    {
+      id: 'settings-configuration-editor',
+      label: locale === 'zh' ? '费率与数据源' : 'Costs & Source',
+      meta: locale === 'zh' ? `万 ${commissionBp}` : `${commissionBp} bp`,
+    },
+    {
+      id: 'settings-metadata-disclosure',
+      label: locale === 'zh' ? '标的元数据' : 'Metadata',
+      meta:
+        locale === 'zh' ? `${trackedAssets} 标的` : `${trackedAssets} symbols`,
+    },
+    {
+      id: 'settings-operational-controls-disclosure',
+      label: locale === 'zh' ? '接口能力' : 'Capabilities',
+      meta: locale === 'zh' ? '服务就绪' : 'Services',
+    },
+    {
+      id: 'settings-local-preferences-boundaries-disclosure',
+      label: locale === 'zh' ? '安全与偏好' : 'Safety & UI',
+      meta: locale === 'zh' ? '主题与语言' : locale.toUpperCase(),
+    },
+  ];
+
+  return (
+    <nav
+      aria-label="Settings Categories"
+      className="flex flex-wrap items-center gap-2 py-1"
+    >
+      {categories.map((cat) => (
+        <button
+          key={cat.id}
+          type="button"
+          onClick={() => jumpTo(cat.id)}
+          className="app-interactive-surface inline-flex items-center gap-2 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] hover:border-[var(--app-accent-border)] hover:text-[var(--app-accent-text)] transition-colors"
+        >
+          <span>{cat.label}</span>
+          <span className="app-type-micro font-mono text-[var(--app-muted)]">
+            {cat.meta}
+          </span>
+        </button>
+      ))}
+    </nav>
   );
 }

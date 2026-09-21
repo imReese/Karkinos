@@ -75,6 +75,18 @@ export function SettingsPreferencesWorkspace({
                 )}`
               : copy.settings.notificationsDetail}
         </div>
+        <div className="rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3 text-xs leading-5 text-[var(--app-soft)]">
+          <span className="font-semibold text-[var(--app-text)]">
+            {locale === 'zh'
+              ? '💡 如何配置消息通知通道？'
+              : '💡 How to configure notifications?'}
+          </span>
+          <p className="app-muted mt-1">
+            {locale === 'zh'
+              ? '在根目录 .env 文件中添加对应通道的密钥（如 Telegram: KARKINOS_TELEGRAM_BOT_TOKEN / KARKINOS_TELEGRAM_CHAT_ID，微信: KARKINOS_WECHAT_SENDKEY），重启服务后即可使用。'
+              : 'Add channel credentials to your local .env file (e.g. Telegram: KARKINOS_TELEGRAM_BOT_TOKEN / KARKINOS_TELEGRAM_CHAT_ID, WeChat: KARKINOS_WECHAT_SENDKEY), then restart Karkinos.'}
+          </p>
+        </div>
       </SettingsDisclosure>
 
       <SettingsDisclosure
