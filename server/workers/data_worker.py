@@ -20,11 +20,14 @@ from server.release_activation import (
 )
 from server.services.market_calendar_automation import MarketCalendarAutomationService
 from server.services.verified_daily_market_data import VerifiedDailyMarketDataService
+from server.services.verified_daily_market_jobs import (
+    VERIFIED_DAILY_MARKET_JOB,
+    enqueue_latest_verified_daily_market_jobs,
+)
 from server.workers.presence import run_with_presence
 
 logger = logging.getLogger(__name__)
 CALENDAR_JOB = "market_calendar_sync"
-VERIFIED_DAILY_MARKET_JOB = "market_daily_verified"
 
 
 class WorkerExecutionAborted(RuntimeError):
@@ -237,6 +240,22 @@ async def run_data_worker(config) -> None:
                         raise
                     except Exception:
                         logger.exception("Calendar job lease or completion failed")
+
+            try:
+                plan = enqueue_latest_verified_daily_market_jobs(
+                    db,
+                    config,
+                    store,
+                    now=now,
+                )
+                if plan.planned_count:
+                    logger.info(
+                        "Planned verified daily market jobs date=%s count=%d",
+                        plan.trade_date.isoformat() if plan.trade_date else "none",
+                        plan.planned_count,
+                    )
+            except Exception:
+                logger.exception("Verified daily market job planning failed")
 
             market_job = store.claim(VERIFIED_DAILY_MARKET_JOB, owner, now=now)
             if market_job:

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from threading import Event
 from unittest.mock import Mock
@@ -15,6 +16,7 @@ from server.workers.data_worker import (
     WorkerExecutionAborted,
     execute_calendar_job,
     execute_verified_daily_market_job,
+    run_data_worker,
 )
 from server.workers.presence import run_with_presence
 from server.workers.supervisor import supervised_worker
@@ -352,3 +354,71 @@ async def test_verified_market_worker_rejects_non_dataset_result_ref(tmp_path):
     result = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
     assert result.status == "queued"
     assert result.error == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_data_worker_plans_verified_market_jobs_before_claim(monkeypatch):
+    calls: list[tuple[str, object]] = []
+
+    class FakeDb:
+        path = __import__("pathlib").Path("/tmp/fake-app.db")
+
+        async def init(self):
+            calls.append(("db_init", None))
+
+    class FakeStore:
+        def __init__(self, path):
+            calls.append(("store_init", path))
+
+        def claim(self, kind, owner, *, now):
+            calls.append(("claim", kind))
+            return None
+
+    class FakeControls:
+        def __init__(self, path):
+            calls.append(("controls_init", path))
+
+    async def fake_presence(controls, name, owner, work):
+        calls.append(("presence", name))
+        await work
+
+    async def fake_wait_for_release_activation():
+        calls.append(("activation", None))
+
+    async def stop_after_first_cycle(_seconds):
+        raise asyncio.CancelledError
+
+    def fake_plan(db, config, store, *, now):
+        calls.append(("plan", now))
+        return type(
+            "Plan",
+            (),
+            {"planned_count": 0, "trade_date": None},
+        )()
+
+    monkeypatch.setattr("server.workers.data_worker.AppDatabase", FakeDb)
+    monkeypatch.setattr("server.workers.data_worker.SQLiteJobStore", FakeStore)
+    monkeypatch.setattr(
+        "server.workers.data_worker.RuntimeControlRepository", FakeControls
+    )
+    monkeypatch.setattr("server.workers.data_worker.run_with_presence", fake_presence)
+    monkeypatch.setattr(
+        "server.workers.data_worker.wait_for_release_activation",
+        fake_wait_for_release_activation,
+    )
+    monkeypatch.setattr(
+        "server.workers.data_worker.enqueue_latest_verified_daily_market_jobs",
+        fake_plan,
+    )
+    monkeypatch.setattr(
+        "server.workers.data_worker.asyncio.sleep", stop_after_first_cycle
+    )
+
+    config = type("Config", (), {"market_calendar_auto_sync": False})()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_data_worker(config)
+
+    names = [name for name, _ in calls]
+    assert names.index("plan") < names.index("claim")
+    assert ("claim", VERIFIED_DAILY_MARKET_JOB) in calls
