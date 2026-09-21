@@ -13,14 +13,17 @@ from typing import Any, Mapping
 from analytics.backtest_capacity_evidence import (
     is_valid_passed_backtest_capacity_evidence,
 )
-from analytics.backtest_drawdown_evidence import (
-    is_valid_complete_backtest_drawdown_evidence,
-)
 from analytics.multiple_testing import build_deflated_sharpe
 from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
 from analytics.strategy_advancement_evidence import difference as _difference
+from analytics.strategy_advancement_evidence import (
+    drawdown_check,
+    market_regime_robustness_check,
+    parameter_robustness_check,
+    research_execution_policy_matches,
+)
 from analytics.strategy_advancement_evidence import (
     fee_component_evidence_complete as _fee_component_evidence_complete,
 )
@@ -34,11 +37,6 @@ from analytics.strategy_advancement_evidence import integer as _integer
 from analytics.strategy_advancement_evidence import json_list as _json_list
 from analytics.strategy_advancement_evidence import json_object as _json_object
 from analytics.strategy_advancement_evidence import mapping as _mapping
-from analytics.strategy_advancement_evidence import (
-    market_regime_robustness_check,
-    parameter_robustness_check,
-    research_execution_policy_matches,
-)
 from analytics.strategy_advancement_evidence import number as _number
 from analytics.strategy_advancement_evidence import (
     payload_fingerprint as _payload_fingerprint,
@@ -344,60 +342,7 @@ def build_strategy_advancement_gate(
         **market_regime_robustness_check(candidate),
     )
 
-    baseline_drawdown_evidence = _mapping(baseline.get("drawdown_evidence"))
-    candidate_drawdown_evidence = _mapping(candidate.get("drawdown_evidence"))
-    baseline_drawdown_value = _number(baseline.get("max_drawdown"))
-    candidate_drawdown_value = _number(candidate.get("max_drawdown"))
-    baseline_drawdown = (
-        abs(baseline_drawdown_value) if baseline_drawdown_value is not None else None
-    )
-    candidate_drawdown = (
-        abs(candidate_drawdown_value) if candidate_drawdown_value is not None else None
-    )
-    baseline_drawdown_complete = is_valid_complete_backtest_drawdown_evidence(
-        baseline_drawdown_evidence,
-        expected_max_drawdown=baseline.get("max_drawdown"),
-        expected_equity_curve=baseline.get("equity_curve"),
-        expected_initial_equity=baseline.get("initial_cash"),
-        expected_final_equity=baseline.get("final_equity"),
-    )
-    candidate_drawdown_complete = is_valid_complete_backtest_drawdown_evidence(
-        candidate_drawdown_evidence,
-        expected_max_drawdown=candidate.get("max_drawdown"),
-        expected_equity_curve=candidate.get("equity_curve"),
-        expected_initial_equity=candidate.get("initial_cash"),
-        expected_final_equity=candidate.get("final_equity"),
-    )
-    drawdown_passed = (
-        baseline_drawdown_complete
-        and candidate_drawdown_complete
-        and baseline_drawdown is not None
-        and candidate_drawdown is not None
-        and candidate_drawdown <= baseline_drawdown
-    )
-    record(
-        "drawdown",
-        passed=drawdown_passed,
-        blocker=(
-            "baseline_drawdown_evidence_not_reproducible"
-            if not baseline_drawdown_complete
-            else (
-                "candidate_drawdown_evidence_not_reproducible"
-                if not candidate_drawdown_complete
-                else "candidate_drawdown_exceeds_reviewed_baseline"
-            )
-        ),
-        evidence={
-            "baseline_max_drawdown": baseline_drawdown,
-            "candidate_max_drawdown": candidate_drawdown,
-            "baseline_evidence_fingerprint": baseline_drawdown_evidence.get(
-                "evidence_fingerprint"
-            ),
-            "candidate_evidence_fingerprint": candidate_drawdown_evidence.get(
-                "evidence_fingerprint"
-            ),
-        },
-    )
+    record("drawdown", **drawdown_check(baseline, candidate))
 
     baseline_capacity = _mapping(baseline.get("capacity_review"))
     candidate_capacity = _mapping(candidate.get("capacity_review"))

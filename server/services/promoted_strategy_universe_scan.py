@@ -243,11 +243,15 @@ class PromotedStrategyUniverseScanService:
         if not snapshot:
             blockers.append("full_market_universe_snapshot_missing")
         start_date = history_start(self._config, market_date)
-        trading_dates = verified_trading_dates(
-            self._db,
-            start_date=start_date,
-            end_date=market_date,
-        )
+        try:
+            trading_dates = verified_trading_dates(
+                self._db,
+                start_date=start_date,
+                end_date=market_date,
+            )
+        except ValueError as exc:
+            trading_dates = []
+            blockers.append(str(exc))
         if not trading_dates:
             blockers.append("verified_market_history_window_incomplete")
         receipts: list[dict[str, Any]] = []
