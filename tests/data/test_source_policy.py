@@ -23,7 +23,13 @@ def test_cn_research_policy_requires_independent_raw_daily_sources() -> None:
 
 def test_free_cn_research_policy_prioritizes_zero_subscription_daily_sources() -> None:
     route = FREE_CN_RESEARCH_V1.route(MarketDataUseCase.DAILY_BARS)
-    assert route.candidates == ("baostock", "akshare", "tushare", "tdx")
+    assert route.candidates == (
+        "baostock",
+        "akshare_tencent",
+        "akshare",
+        "tushare",
+        "tdx",
+    )
     assert route.min_sources == 2
     assert route.verification_required
     assert route.require_independent_upstream

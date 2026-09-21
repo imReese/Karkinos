@@ -100,7 +100,7 @@ FREE_CN_RESEARCH_V1 = MarketSourcePolicy(
         (
             MarketDataUseCase.DAILY_BARS,
             SourceRoute(
-                candidates=("baostock", "akshare", "tushare", "tdx"),
+                candidates=("baostock", "akshare_tencent", "akshare", "tushare", "tdx"),
                 min_sources=2,
                 require_independent_upstream=True,
                 price_basis="unadjusted",

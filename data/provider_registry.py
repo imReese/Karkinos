@@ -119,6 +119,7 @@ def build_provider_registry(
     """Build the supported local provider registry without performing I/O."""
     from data.providers.akshare_daily import AkshareDailyBarProvider
     from data.providers.akshare_source import AKShareSource
+    from data.providers.akshare_tencent_daily import AkshareTencentDailyBarProvider
     from data.providers.baostock_daily import BaoStockDailyBarProvider
     from data.providers.tdx import TdxDailyBarProvider
     from data.providers.tushare_daily import TushareDailyBarProvider
@@ -130,6 +131,11 @@ def build_provider_registry(
             upstream_group="eastmoney",
             legacy_factory=AKShareSource,
             daily_bar_factory=AkshareDailyBarProvider,
+        ),
+        ProviderRegistration(
+            name="akshare_tencent",
+            upstream_group="tencent",
+            daily_bar_factory=AkshareTencentDailyBarProvider,
         ),
         ProviderRegistration(
             name="baostock",
