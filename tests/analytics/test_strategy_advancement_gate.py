@@ -74,7 +74,9 @@ def _rolling_oos_evidence(*, candidate: bool) -> dict:
     )
     return build_rolling_out_of_sample_validation(
         strategy_id="candidate" if candidate else "baseline",
-        benchmark_role="reviewed_persisted_baseline",
+        benchmark_role=(
+            "formula_candidate" if candidate else "current_persisted_baseline"
+        ),
         result=BacktestResult(
             equity_curve=[
                 (timestamp, Decimal(value))

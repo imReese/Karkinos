@@ -127,10 +127,11 @@ def _rolling_oos_comparison(
         )
     baseline_oos = _mapping(baseline.get("oos_validation"))
     candidate_oos = _mapping(candidate.get("oos_validation"))
+    # Roles describe the strategies (baseline versus candidate), not the fold
+    # schedule. Their independently validated identities need not be identical.
     if any(
         baseline_oos.get(key) != candidate_oos.get(key)
         for key in (
-            "benchmark_role",
             "min_train_points",
             "test_window_points",
             "step_points",

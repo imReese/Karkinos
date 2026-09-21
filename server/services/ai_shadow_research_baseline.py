@@ -18,7 +18,9 @@ from analytics.backtest_market_regime_evidence import (
 )
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
 from analytics.oos_validation import build_rolling_out_of_sample_validation
+from analytics.sweep_robustness import build_sweep_robustness_evidence
 from backtest.engine import BacktestEngine
+from backtest.result import BacktestResult
 from core.types import BarFrequency, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
@@ -45,6 +47,9 @@ from server.services.backtest_result_projection import (
     build_backtest_report_metrics_json,
     fill_to_response,
 )
+from server.services.backtest_views.strategy_inputs import (
+    validate_backtest_strategy_params,
+)
 from server.services.market_universe_automation import (
     MARKET_UNIVERSE_AUTOMATION_RUN_TYPE,
     MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION,
@@ -56,6 +61,8 @@ from server.services.market_universe_truth import (
     build_market_universe_truth,
 )
 from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
+from strategy.registry import StrategyRegistry
+from strategy.schema import StrategyParameterValidationError
 
 
 def _market_universe_ingestion_v3(
@@ -275,10 +282,11 @@ class AiShadowResearchBaselineMixin:
             strategy=str(config.get("strategy")),
             short_period=int(config.get("short_period") or 5),
             long_period=int(config.get("long_period") or 20),
-            params=dict(config.get("params") or {}),
+            params=config.get("params"),
             assets=normalized_assets,
             oos_mode="rolling",
         )
+        request = validate_backtest_strategy_params(request)
         if (
             policy.research_capital_mode
             == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
@@ -395,6 +403,14 @@ class AiShadowResearchBaselineMixin:
                 "persisted_market_data_only": True,
             }
         )
+        if request.strategy == "dual_ma":
+            metrics_json["parameter_robustness"] = _dual_ma_parameter_robustness(
+                request=request,
+                selected_result=result,
+                handlers=handlers,
+                instruments=instruments,
+                commission_calc=commission_calc,
+            )
         payload = {
             "initial_cash": float(result.initial_cash),
             "final_equity": float(result.final_equity),
@@ -427,3 +443,45 @@ class AiShadowResearchBaselineMixin:
             cost_model_reference=cost_model_reference,
             fee_schedule_evidence=fee_schedule_evidence,
         )
+
+
+def _dual_ma_parameter_robustness(
+    *,
+    request: BacktestRequest,
+    selected_result: BacktestResult,
+    handlers: dict[Symbol, DataHandler],
+    instruments: dict[Symbol, Any],
+    commission_calc: Any,
+) -> dict[str, Any]:
+    """Measure the configured baseline's adjacent windows without retuning it.
+
+    Reuse the same frozen bars, cash and fees as the selected run. This is a
+    sensitivity report; even when a neighbor wins, the seed remains unchanged.
+    """
+    selected = dict(request.params or {})
+    results = [{"params": selected, "score": float(selected_result.total_return)}]
+    for name in ("short_period", "long_period"):
+        for delta in (-1, 1):
+            params = {**selected, name: selected[name] + delta}
+            try:
+                params = StrategyRegistry.validate_params(request.strategy, params)
+            except StrategyParameterValidationError:
+                continue
+            result = BacktestEngine(
+                strategy=build_strategy(
+                    SimpleNamespace(strategy=request.strategy, params=params),
+                    NullShadowResearchEventBus(),
+                ),
+                instruments=instruments,
+                data_handlers=handlers,
+                initial_cash=selected_result.initial_cash,
+                commission_calc=commission_calc,
+                db=None,
+            ).run()
+            results.append({"params": params, "score": float(result.total_return)})
+    return build_sweep_robustness_evidence(
+        results=results,
+        rank_by="after_cost_total_return",
+        rank_direction="desc",
+        selected_params=selected,
+    )
