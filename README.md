@@ -143,7 +143,7 @@ The standalone `bootstrap_installer.sh` asset is for the managed release/update 
 
 ### Configuration
 
-The default market-data provider is **AKShare** and requires no token. TuShare, AI providers, notifications, fees, server settings, paths, and environment-variable precedence are documented in the [configuration guide](docs/guides/configuration.md).
+The default market-data policy is **`free_cn_research_v1`**. Verified daily research data prefers independent free sources (BaoStock + Tencent via AKShare), can fall back to other independent free observations when a provider is unavailable, and fails closed on real cross-source conflicts. TuShare and TDX are optional enhancement sources rather than requirements for the default data flywheel. AI providers, notifications, fees, server settings, paths, and environment-variable precedence are documented in the [configuration guide](docs/guides/configuration.md).
 
 ## Development
 

@@ -140,7 +140,7 @@ python -m server
 
 ### 配置
 
-默认行情数据源是 **AKShare**，无需 Token。TuShare、AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
+默认行情策略是 **`free_cn_research_v1`**：研究日线优先使用独立的免费来源（BaoStock + AKShare/Tencent）做交叉验证；单个来源不可用时可切换到其他独立免费观察，真实跨源冲突则 fail closed。TuShare 与 TDX 是可选增强来源，不是默认数据飞轮的前提。AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
 
 ## 开发 Karkinos
 
