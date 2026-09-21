@@ -96,15 +96,21 @@ def _handler_content_digest(handler: Any) -> str | None:
     return _frame_content_digest(frame)
 
 
-def _frame_content_digest(frame: Any) -> str | None:
+def _frame_content_digest(frame: Any, *, include_amount: bool = False) -> str | None:
     """Hash an ordered timestamp/OHLCV frame with backtest engine semantics."""
 
     required_columns = ("open", "high", "low", "close", "volume")
+    if include_amount:
+        required_columns += ("amount",)
     if any(column not in getattr(frame, "columns", []) for column in required_columns):
         return None
 
     digest = hashlib.sha256()
-    digest.update(b"karkinos.dataset_rows.timestamp_ohlcv.v1\n")
+    digest.update(
+        b"karkinos.dataset_rows.timestamp_ohlcva.v2\n"
+        if include_amount
+        else b"karkinos.dataset_rows.timestamp_ohlcv.v1\n"
+    )
     for index, row in frame.iterrows():
         timestamp = row.get("timestamp", row.get("日期", index))
         values = {
@@ -216,6 +222,7 @@ def build_backtest_dataset_snapshot(
     data_handlers: dict[Any, Any],
     store: Any,
     source_names: list[str],
+    market_data_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build an audit identity for the exact bars given to the backtest engine."""
     rows: list[dict[str, Any]] = []
@@ -226,11 +233,15 @@ def build_backtest_dataset_snapshot(
     for symbol, handler in sorted(data_handlers.items(), key=lambda item: str(item[0])):
         frequency = _handler_frequency(handler)
         instrument_type = _handler_instrument_type(handler)
-        meta = _safe_store_meta(
-            store,
-            symbol,
-            frequency,
-            instrument_type=instrument_type,
+        meta = (
+            {}
+            if market_data_binding is not None
+            else _safe_store_meta(
+                store,
+                symbol,
+                frequency,
+                instrument_type=instrument_type,
+            )
         )
         metadata_available = metadata_available or bool(meta)
         attrs = _handler_attrs(handler)
@@ -243,7 +254,11 @@ def build_backtest_dataset_snapshot(
         )
         row_count = _handler_row_count(handler)
         first_timestamp, last_timestamp = _handler_timestamp_bounds(handler)
-        content_digest = _handler_content_digest(handler)
+        content_digest = (
+            _frame_content_digest(frame, include_amount=True)
+            if market_data_binding is not None
+            else _handler_content_digest(handler)
+        )
         adjustment_mode = (
             meta.get("adjustment_mode") or attrs.get("adjustment_mode") or None
         )
@@ -318,12 +333,16 @@ def build_backtest_dataset_snapshot(
         "adjustment_mode": adjustment_mode,
         "content_identity": {
             "algorithm": "sha256",
-            "row_contract": "timestamp_ohlcv.v1",
+            "row_contract": "timestamp_ohlcva.v2"
+            if market_data_binding is not None
+            else "timestamp_ohlcv.v1",
             "complete": bool(rows) and all(row.get("content_digest") for row in rows),
         },
         "data_quality": top_level_quality,
         "symbol_universe": rows,
     }
+    if market_data_binding is not None:
+        snapshot["market_data_binding"] = dict(market_data_binding)
     snapshot["snapshot_id"] = _dataset_snapshot_id(snapshot)
     return snapshot
 
@@ -353,7 +372,8 @@ def verify_backtest_dataset_snapshot_replay(
     if (
         not isinstance(content_identity, Mapping)
         or content_identity.get("algorithm") != "sha256"
-        or content_identity.get("row_contract") != "timestamp_ohlcv.v1"
+        or content_identity.get("row_contract")
+        not in {"timestamp_ohlcv.v1", "timestamp_ohlcva.v2"}
         or content_identity.get("complete") is not True
     ):
         blockers.append("dataset_snapshot_content_identity_incomplete")
@@ -405,6 +425,20 @@ def verify_backtest_dataset_snapshot_replay(
         blockers.append("dataset_snapshot_universe_identity_invalid")
 
     verified_symbols = 0
+    replay_frames = None
+    if value.get("market_data_binding") is not None and not blockers:
+        from data.research_market_data import load_research_market_frames
+
+        try:
+            replay_frames = load_research_market_frames(
+                store_root,
+                binding=value["market_data_binding"],
+                symbols=[str(row["symbol"]) for row in universe],
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except (ValueError, sqlite3.Error, OSError):
+            blockers.append("dataset_replay_market_binding_invalid")
     if not blockers:
         meta_path = Path(store_root).expanduser() / "meta.db"
         if not meta_path.is_file():
@@ -425,6 +459,13 @@ def verify_backtest_dataset_snapshot_replay(
                             manifest=manifest,
                             start=start,
                             end=end,
+                            frame=None
+                            if replay_frames is None
+                            else replay_frames.get(
+                                str(manifest["symbol"]), pd.DataFrame()
+                            ),
+                            include_amount=content_identity.get("row_contract")
+                            == "timestamp_ohlcva.v2",
                         )
                         if replay_blocker is not None:
                             blockers.append(replay_blocker)
@@ -459,27 +500,39 @@ def _verify_symbol_replay(
     manifest: Mapping[str, Any],
     start: pd.Timestamp | None,
     end: pd.Timestamp | None,
+    frame: pd.DataFrame | None = None,
+    include_amount: bool = False,
 ) -> str | None:
     symbol = str(manifest.get("symbol") or "")
     instrument_type = str(manifest.get("instrument_type") or "")
     frequency = str(manifest.get("frequency") or "")
     if start is None or end is None:
         return "dataset_snapshot_date_range_invalid"
-    rows = connection.execute(
-        """
-        SELECT timestamp, open, high, low, close, volume
+    rows = (
+        connection.execute(
+            """
+        SELECT timestamp, open, high, low, close, volume, amount
         FROM market_bars_v2
         WHERE symbol=? AND instrument_type=? AND frequency=?
         ORDER BY timestamp ASC
         """,
-        (symbol, instrument_type, frequency),
-    ).fetchall()
-    if not rows:
-        return f"dataset_replay_bars_missing:{symbol}:{frequency}"
-    frame = pd.DataFrame(
-        rows,
-        columns=["timestamp", "open", "high", "low", "close", "volume"],
+            (symbol, instrument_type, frequency),
+        ).fetchall()
+        if frame is None
+        else None
     )
+    if frame is None and not rows:
+        return f"dataset_replay_bars_missing:{symbol}:{frequency}"
+    frame = (
+        pd.DataFrame(
+            rows,
+            columns=["timestamp", "open", "high", "low", "close", "volume", "amount"],
+        )
+        if frame is None
+        else frame.copy()
+    )
+    if frame.empty:
+        return f"dataset_replay_window_empty:{symbol}:{frequency}"
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
     if frame["timestamp"].isna().any():
         return f"dataset_replay_timestamp_invalid:{symbol}:{frequency}"
@@ -493,7 +546,7 @@ def _verify_symbol_replay(
         return f"dataset_replay_timestamp_invalid:{symbol}:{frequency}"
     if frozen.empty:
         return f"dataset_replay_window_empty:{symbol}:{frequency}"
-    actual_digest = _frame_content_digest(frozen)
+    actual_digest = _frame_content_digest(frozen, include_amount=include_amount)
     first_timestamp = _iso_timestamp(frozen["timestamp"].min())
     last_timestamp = _iso_timestamp(frozen["timestamp"].max())
     if (

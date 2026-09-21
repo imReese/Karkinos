@@ -8,10 +8,14 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
 from analytics.backtest_market_regime_evidence import (
     build_backtest_market_regime_evidence,
+)
+from analytics.normalized_research_gate import (
+    build_normalized_research_advancement_gate,
 )
 from analytics.oos_validation import build_rolling_out_of_sample_validation
 from analytics.research_account_capital_evidence import (
@@ -326,6 +330,35 @@ def test_strategy_advancement_gate_passes_only_complete_deterministic_evidence()
     drifted = deepcopy(payload)
     drifted["checks"][0]["evidence"]["candidate_snapshot_id"] = "sha256:" + "f" * 64
     assert is_valid_passed_strategy_advancement_gate(drifted) is False
+
+
+@pytest.mark.parametrize(
+    "build_gate",
+    [build_strategy_advancement_gate, build_normalized_research_advancement_gate],
+)
+def test_normalized_data_requires_matching_execution_assumptions(build_gate):
+    baseline, candidate = _view(candidate=False), _view(candidate=True)
+    policy = {
+        "execution_policy": "karkinos.research.next_bar_close.four_slots.v1",
+        "allocation_slots": 4,
+        "canonical_target_weight": 0.25,
+    }
+    for view in (baseline, candidate):
+        view["normalized_market_data"] = True
+        view["research_execution_policy"] = dict(policy)
+    gate = build_gate(baseline=baseline, candidate=candidate, critique_evidence={})
+    assert (
+        next(
+            check for check in gate.checks if check["name"] == "frozen_dataset_identity"
+        )["status"]
+        == "pass"
+    )
+    candidate["research_execution_policy"]["canonical_target_weight"] = 1.0
+    gate = build_gate(baseline=baseline, candidate=candidate, critique_evidence={})
+    assert "research_execution_policy_mismatch" in gate.blockers
+    candidate.pop("research_execution_policy")
+    gate = build_gate(baseline=baseline, candidate=candidate, critique_evidence={})
+    assert "research_execution_policy_mismatch" in gate.blockers
 
 
 def test_strategy_advancement_gate_blocks_when_dsr_not_significant():

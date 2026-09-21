@@ -32,6 +32,50 @@ from server.ai_runtime.strategy_research import (
 from server.ai_runtime.strategy_research_privacy import NORMALIZED_RESEARCH_NOTIONAL
 
 
+def test_dual_ma_baseline_and_formula_share_sizing_delay_and_tradeability():
+    from core.event_bus import EventBus
+    from core.events import SignalEvent
+    from server.ai_runtime.strategy_research_backtest import (
+        _FormulaSignalStrategy,
+        build_dual_ma_research_strategy,
+    )
+
+    baseline = build_dual_ma_research_strategy(
+        {"short_period": 1, "long_period": 3}, 40
+    )
+    formula = _formula()
+    formula["exit"]["op"] = "lte"
+    candidate = _FormulaSignalStrategy(formula, 40)
+    outputs = []
+    for strategy in [baseline, candidate]:
+        bus = EventBus()
+        emitted = []
+        bus.subscribe(SignalEvent, emitted.append)
+        strategy.event_bus = bus
+        strategy.on_init([Symbol("600000")])
+        # Cross above on day 4, buy on day 5; day 5 itself isn't limit-up.
+        prices = [10, 9.9, 9.8, 10.1, 10.2, 10.3, 10, 9.9]
+        for index, close in enumerate(prices):
+            strategy.on_data(
+                MarketEvent(
+                    timestamp=datetime(2026, 1, 5) + timedelta(days=index),
+                    symbol=Symbol("600000"),
+                    open=Decimal(str(close)),
+                    high=Decimal(str(close)),
+                    low=Decimal(str(close)),
+                    close=Decimal(str(close)),
+                    volume=Decimal("100000"),
+                )
+            )
+            bus.drain()
+        outputs.append(
+            [(event.timestamp, event.target_weight, event.price) for event in emitted]
+        )
+    assert outputs[0] == outputs[1]
+    assert outputs[0][0] == (datetime(2026, 1, 9), Decimal("0.25"), Decimal("10.2"))
+    assert outputs[0][-1][1] == Decimal("0.0")
+
+
 def _bars() -> pd.DataFrame:
     start = datetime(2025, 1, 2)
     closes = [10, 9, 8, 12, 13, 14, 7, 6]

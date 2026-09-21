@@ -37,6 +37,7 @@ from analytics.strategy_advancement_evidence import mapping as _mapping
 from analytics.strategy_advancement_evidence import (
     market_regime_robustness_check,
     parameter_robustness_check,
+    research_execution_policy_matches,
 )
 from analytics.strategy_advancement_evidence import number as _number
 from analytics.strategy_advancement_evidence import (
@@ -209,6 +210,15 @@ def strategy_advancement_backtest_view(
         "oos_validation_status": str(oos.get("validation_status") or "missing"),
         "evidence_gate_status": str(research.get("gate_status") or "missing"),
         "dataset_snapshot_id": dataset.get("snapshot_id"),
+        "normalized_market_data": bool(dataset.get("market_data_binding")),
+        "research_execution_policy": {
+            key: _json_object(metrics.get("signal_execution_evidence")).get(key)
+            for key in (
+                "execution_policy",
+                "allocation_slots",
+                "canonical_target_weight",
+            )
+        },
         "dataset_quality_status": dataset_quality.get("status"),
         "dataset_issue_count": len(dataset_quality.get("issues") or []),
         "parameter_robustness": _json_object(
@@ -262,13 +272,16 @@ def build_strategy_advancement_gate(
     candidate_snapshot = str(candidate.get("dataset_snapshot_id") or "")
     record(
         "frozen_dataset_identity",
-        passed=_valid_snapshot_id(baseline_snapshot)
+        passed=research_execution_policy_matches(baseline, candidate)
+        and _valid_snapshot_id(baseline_snapshot)
         and _valid_snapshot_id(candidate_snapshot)
         and candidate_snapshot == baseline_snapshot
         and candidate.get("dataset_quality_status") == "ok"
         and _integer(candidate.get("dataset_issue_count")) == 0,
         blocker=(
-            "candidate_dataset_snapshot_missing"
+            "research_execution_policy_mismatch"
+            if not research_execution_policy_matches(baseline, candidate)
+            else "candidate_dataset_snapshot_missing"
             if not candidate_snapshot
             else (
                 "candidate_dataset_snapshot_mismatch"

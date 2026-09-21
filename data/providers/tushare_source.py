@@ -24,7 +24,7 @@ _CHINA_MARKET_TZ = ZoneInfo("Asia/Shanghai")
 TUSHARE_PROVIDER_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="tushare",
     upstream_group="tushare",
-    adapter_version="karkinos.tushare.source.v1",
+    adapter_version="karkinos.tushare.source.v2",
     daily_bar_capabilities=(
         DailyBarCapability(
             endpoint="daily",
@@ -458,4 +458,8 @@ class TushareSource(DataSource):
         df = df.rename(columns=column_map)
         if "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"])
+        # daily reports lots and thousand CNY; all consumers use shares and CNY.
+        from data.providers.tushare_daily import normalize_tushare_daily_units
+
+        df = normalize_tushare_daily_units(df)
         return df

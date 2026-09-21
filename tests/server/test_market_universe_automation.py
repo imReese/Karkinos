@@ -6,12 +6,14 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from core.types import BarFrequency, InstrumentType
 from data.store import DataStore
 from server.db import AppDatabase
 from server.services.market_universe_automation import (
     MarketUniverseAutomationService,
+    verified_trading_dates,
 )
 from server.services.market_universe_truth import (
     normalize_a_share_members,
@@ -56,37 +58,6 @@ class _Source:
                 "amount": [10_000_000] * len(symbols),
             }
         )
-
-
-class _PersistingManager:
-    def __init__(self, store: DataStore) -> None:
-        self._store = store
-        self.calls = 0
-
-    def get_bars(self, symbol, *args, **kwargs):
-        self.calls += 1
-        dates = pd.bdate_range(end="2026-08-21", periods=80)
-        frame = pd.DataFrame(
-            {
-                "timestamp": dates,
-                "open": [10.0] * len(dates),
-                "high": [10.1] * len(dates),
-                "low": [9.9] * len(dates),
-                "close": [10.0] * len(dates),
-                "volume": [1_000_000] * len(dates),
-                "amount": [10_000_000] * len(dates),
-            }
-        )
-        self._store.save_bars(
-            symbol,
-            BarFrequency.DAILY,
-            frame,
-            provider_name="unit_fixture",
-            data_source="unit_fixture",
-            adjustment_mode="none",
-            instrument_type=InstrumentType.STOCK,
-        )
-        return SimpleNamespace(total_bars=len(frame))
 
 
 def _verified_calendar(db: AppDatabase) -> None:
@@ -143,7 +114,6 @@ def test_market_universe_automation_ingests_once_and_never_changes_authority(
     _verified_calendar(db)
     store = DataStore(tmp_path / "market")
     source = _Source()
-    manager = _PersistingManager(store)
     sleeps = []
     service = MarketUniverseAutomationService(
         db=db,
@@ -154,7 +124,6 @@ def test_market_universe_automation_ingests_once_and_never_changes_authority(
             initial_cash=100_000,
         ),
         data_store=store,
-        data_manager=manager,
         source=source,
         sleep_fn=sleeps.append,
     )
@@ -166,7 +135,6 @@ def test_market_universe_automation_ingests_once_and_never_changes_authority(
     assert first["status"] == "completed"
     assert second["run_id"] == first["run_id"]
     assert source.calls == 1
-    assert manager.calls == 0
     assert len(source.daily_calls) == 80
     assert sleeps == [2.0] * 80
     payload = json.loads(first["payload_json"])
@@ -201,7 +169,6 @@ def test_market_universe_automation_blocks_without_verified_calendar(tmp_path) -
         db=db,
         config=SimpleNamespace(data_source="unit_fixture", tushare_token=""),
         data_store=DataStore(tmp_path / "market"),
-        data_manager=SimpleNamespace(),
         source=source,
     )
 
@@ -236,7 +203,6 @@ def test_market_universe_does_not_freeze_snapshot_before_name_batch_persists(
             start_date="2026-04-01",
         ),
         data_store=store,
-        data_manager=SimpleNamespace(),
         source=source,
     )
 
@@ -275,7 +241,6 @@ def test_market_universe_automation_resumes_without_refetching_frozen_dates(
             bars=source.fetch_market_daily_bars(market_date),
         )
     source.daily_calls.clear()
-    manager = _PersistingManager(store)
     service = MarketUniverseAutomationService(
         db=db,
         config=SimpleNamespace(
@@ -285,7 +250,6 @@ def test_market_universe_automation_resumes_without_refetching_frozen_dates(
             initial_cash=100_000,
         ),
         data_store=store,
-        data_manager=manager,
         source=source,
     )
 
@@ -294,7 +258,6 @@ def test_market_universe_automation_resumes_without_refetching_frozen_dates(
     )
 
     assert result["status"] == "completed"
-    assert manager.calls == 0
     assert source.daily_calls == trading_dates[10:]
     payload = json.loads(result["payload_json"])
     assert payload["persisted_receipt_skipped_count"] == 10
@@ -413,3 +376,86 @@ def test_market_universe_routes_security_master_and_daily_bars_separately(
     assert payload["security_master_provider"] == "akshare"
     assert payload["daily_bar_provider"] == "tushare"
     assert payload["market_universe_snapshot_id"] == snapshot["snapshot_id"]
+
+
+def test_research_calendar_rejects_missing_year_and_broken_verification(
+    tmp_path, monkeypatch
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    with pytest.raises(ValueError, match="research_calendar_incomplete:2025"):
+        verified_trading_dates(db, start_date="2025-01-02", end_date="2026-08-21")
+    assert (
+        len(verified_trading_dates(db, start_date="2026-01-01", end_date="2026-08-21"))
+        == 80
+    )
+    read_calendar = db.get_market_calendar_snapshot_sync
+
+    def stale_verification(**kwargs):
+        row = read_calendar(**kwargs)
+        return {**row, "verification_source_fingerprint": "a" * 64}
+
+    monkeypatch.setattr(db, "get_market_calendar_snapshot_sync", stale_verification)
+    with pytest.raises(
+        ValueError, match="market_calendar_verification_binding_invalid"
+    ):
+        verified_trading_dates(db, start_date="2026-01-01", end_date="2026-08-21")
+
+
+def test_per_symbol_ingestion_never_relabels_existing_cache_as_provider_evidence(
+    tmp_path,
+):
+    from server.services.market_universe_truth import MarketUniversePolicy
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    calls = []
+
+    class Source:
+        def list_symbols(self):
+            return [f"{600000 + i:06d}" for i in range(41)]
+
+        def fetch_bars(self, symbol, **kwargs):
+            calls.append(symbol)
+            frame = pd.DataFrame(
+                {
+                    "timestamp": pd.bdate_range(end="2026-08-21", periods=80),
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 10.0,
+                    "volume": 10000.0,
+                    "amount": 100000.0,
+                }
+            )
+            frame.attrs.update(
+                volume_unit="shares", amount_unit="CNY", adjustment_mode="none"
+            )
+            # One newly listed member has no bars in this historical window.
+            return frame.iloc[:0] if symbol == "600040" else frame
+
+    # A complete-looking cache is not a source-bound observation.
+    source = Source()
+    stale = source.fetch_bars("600000")
+    stale["volume"] = 100
+    store.save_bars("600000", BarFrequency.DAILY, stale, instrument_type="stock")
+    calls.clear()
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(data_source="fixture", start_date="2026-01-01"),
+        data_store=store,
+        source=source,
+        policy=MarketUniversePolicy(minimum_master_member_count=40),
+        throttle_seconds=0,
+    )
+    result = service.run_due(
+        now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    assert result["status"] == "completed"
+    assert len(calls) == 41
+    assert store.load_bars("600000", instrument_type="stock")["volume"].eq(10000).all()
+    service.run_due(now=datetime(2026, 8, 23, 11, tzinfo=ZoneInfo("Asia/Shanghai")))
+    assert len(calls) == 41

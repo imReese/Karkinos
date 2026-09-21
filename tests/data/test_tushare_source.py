@@ -77,7 +77,8 @@ def test_tushare_fetches_one_full_market_daily_cross_section(monkeypatch):
     assert calls["trade_date"] == "20260821"
     assert frame["symbol"].tolist() == ["600001", "000001", "430001"]
     assert frame["timestamp"].dt.date.astype(str).unique().tolist() == ["2026-08-21"]
-    assert frame["volume"].tolist() == [100.0, 200.0, 300.0]
+    assert frame["volume"].tolist() == [10000.0, 20000.0, 30000.0]
+    assert frame["amount"].tolist() == [1000000.0, 4000000.0, 9000000.0]
 
 
 def test_tushare_fetch_bars_uses_beijing_exchange_symbol(monkeypatch):

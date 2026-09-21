@@ -71,6 +71,8 @@ Rules:
 - Experiments bind an identifiable Dataset.
 - Later provider corrections do not mutate prior experiment input.
 - Dataset identity must be reproducible; a full physical copy is not required.
+- Research views bind exact daily receipts and a versioned units conversion. Original receipts and prior experiments retain their original values; unknown historical units block normalization.
+- Replaying captured historical prices does not establish historical availability or point-in-time universe membership. Those limitations remain explicit in the dataset.
 - Trading calendars, historical universe membership, corporate actions, suspensions, price limits, and lot rules are shared market semantics.
 
 ## 4. Research and forecasts
@@ -86,6 +88,8 @@ Dataset
 ```
 
 Published Forecast is the Research -> Portfolio contract.
+
+Baseline and candidate comparisons use the same frozen research window, cost assumptions, position allocation, signal delay, and market trading constraints. Choosing a new research window creates a new baseline; it does not rewrite an existing experiment.
 
 It binds the predictive view to the required research identity, dataset identity, as-of boundary, universe, and forecast horizon.
 

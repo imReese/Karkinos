@@ -177,6 +177,21 @@ class TushareDailyBarProvider:
             raise TushareDailyBarError("tushare_client_initialization_failed") from exc
 
 
+def normalize_tushare_daily_units(frame: pd.DataFrame) -> pd.DataFrame:
+    """Convert a renamed daily frame using the same units as the typed adapter."""
+    result = frame.copy()
+    for column, factor in (
+        ("volume", _LOT_TO_SHARES),
+        ("amount", _THOUSAND_YUAN_TO_YUAN),
+    ):
+        if column in result:
+            result[column] = result[column].map(
+                lambda value: float(_decimal(value, field=column) * factor)
+            )
+    result.attrs.update(volume_unit="shares", amount_unit="CNY", adjustment_mode="none")
+    return result
+
+
 def _request_target(instrument: InstrumentKey) -> tuple[str, str]:
     if instrument.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}:
         raise TushareDailyBarRequestError(
