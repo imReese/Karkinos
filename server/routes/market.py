@@ -62,6 +62,7 @@ from server.models import (
     ResearchNoteListResponse,
     ResearchNoteResponse,
     ResearchNoteUpdate,
+    VerifiedSourceHealthResponse,
     WatchlistCreateRequest,
     WatchlistItem,
 )
@@ -247,6 +248,9 @@ from server.services.market_views.health_projection import (
     refresh_quote_snapshot as _refresh_quote_snapshot,
 )
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.verified_source_health import (
+    build_verified_source_health_response as _build_verified_source_health_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +322,9 @@ def create_router() -> APIRouter:
                 ),
                 build_market_data_health_response=lambda *args, **kwargs: (
                     _build_market_data_health_response(*args, **kwargs)
+                ),
+                build_verified_source_health_response=lambda *args, **kwargs: (
+                    _build_verified_source_health_response(*args, **kwargs)
                 ),
                 merged_watchlist_assets=lambda *args, **kwargs: (
                     _merged_watchlist_assets(*args, **kwargs)

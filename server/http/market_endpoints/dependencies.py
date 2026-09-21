@@ -23,6 +23,7 @@ class HealthEndpointDependencies:
     backfill_instrument_metadata: Operation
     backfill_market_bars: Operation
     build_market_data_health_response: Operation
+    build_verified_source_health_response: Operation
     merged_watchlist_assets: Operation
     quote_fetch_run_response: Operation
     refresh_confirmed_fund_nav: Operation

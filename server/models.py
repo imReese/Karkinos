@@ -48,6 +48,7 @@ from server.contracts.http.market_models import (
     ResearchNoteListResponse,
     ResearchNoteResponse,
     ResearchNoteUpdate,
+    VerifiedSourceHealthResponse,
     WatchlistCreateRequest,
     WatchlistItem,
 )
@@ -138,6 +139,7 @@ __all__ = [
     "MarketHealthQuote",
     "MarketDataHealthResponse",
     "QuoteFetchRunResponse",
+    "VerifiedSourceHealthResponse",
     "MarketCalendarDayResponse",
     "MarketCalendarSnapshotResponse",
     "MarketCalendarSyncRequest",

@@ -21,6 +21,7 @@ from server.release_activation import (
 )
 from server.services.market_calendar_automation import MarketCalendarAutomationService
 from server.services.verified_daily_market_data import (
+    VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
     VerifiedDailyMarketDataService,
     VerifiedDailySourceResolution,
 )
@@ -32,7 +33,6 @@ from server.workers.presence import run_with_presence
 
 logger = logging.getLogger(__name__)
 CALENDAR_JOB = "market_calendar_sync"
-VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT = "market.daily.source_resolution"
 
 
 class WorkerExecutionAborted(RuntimeError):
