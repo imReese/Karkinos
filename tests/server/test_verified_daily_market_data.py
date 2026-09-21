@@ -11,6 +11,7 @@ from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.reader import read_daily_bar_dataset
 from data.market.contracts import (
+    DailyBarProviderUnavailableError,
     DailyBarRequest,
     MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
@@ -18,6 +19,7 @@ from data.market.contracts import (
 )
 from data.market.serving import MarketServingStore
 from data.provider_registry import ProviderRegistration, ProviderRegistry
+from data.providers.akshare_daily import AKSHARE_DAILY_BAR_DESCRIPTOR
 from data.providers.akshare_tencent_daily import (
     AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR,
 )
@@ -45,9 +47,13 @@ class FakeDailyProvider:
         descriptor: MarketDataProviderDescriptor,
         *,
         close_offset: Decimal = Decimal("0"),
+        unavailable: bool = False,
+        call_log: list[str] | None = None,
     ) -> None:
         self._descriptor = descriptor
         self._close_offset = close_offset
+        self._unavailable = unavailable
+        self._call_log = call_log
         self.calls: list[DailyBarRequest] = []
 
     @property
@@ -56,6 +62,12 @@ class FakeDailyProvider:
 
     def fetch_daily_bars(self, request: DailyBarRequest) -> ProviderDailyBarBatch:
         self.calls.append(request)
+        if self._call_log is not None:
+            self._call_log.append(self._descriptor.provider)
+        if self._unavailable:
+            raise DailyBarProviderUnavailableError(
+                f"fixture_unavailable:{self._descriptor.provider}"
+            )
         rows = tuple(self._row(instrument) for instrument in request.instruments)
         return ProviderDailyBarBatch(
             provider=self._descriptor.provider,
@@ -114,26 +126,44 @@ class FakeDailyProvider:
 def _registry(
     *,
     comparison_close_offset: Decimal = Decimal("0"),
+    baostock_unavailable: bool = False,
+    include_eastmoney: bool = False,
+    eastmoney_close_offset: Decimal = Decimal("0"),
+    call_log: list[str] | None = None,
 ) -> ProviderRegistry:
-    return ProviderRegistry(
-        (
-            ProviderRegistration(
-                name="baostock",
-                upstream_group="baostock",
-                daily_bar_factory=lambda: FakeDailyProvider(
-                    BAOSTOCK_DAILY_BAR_DESCRIPTOR
-                ),
+    registrations = [
+        ProviderRegistration(
+            name="baostock",
+            upstream_group="baostock",
+            daily_bar_factory=lambda: FakeDailyProvider(
+                BAOSTOCK_DAILY_BAR_DESCRIPTOR,
+                unavailable=baostock_unavailable,
+                call_log=call_log,
             ),
-            ProviderRegistration(
-                name="akshare_tencent",
-                upstream_group="tencent",
-                daily_bar_factory=lambda: FakeDailyProvider(
-                    AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR,
-                    close_offset=comparison_close_offset,
-                ),
+        ),
+        ProviderRegistration(
+            name="akshare_tencent",
+            upstream_group="tencent",
+            daily_bar_factory=lambda: FakeDailyProvider(
+                AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR,
+                close_offset=comparison_close_offset,
+                call_log=call_log,
             ),
+        ),
+    ]
+    if include_eastmoney:
+        registrations.append(
+            ProviderRegistration(
+                name="akshare",
+                upstream_group="eastmoney",
+                daily_bar_factory=lambda: FakeDailyProvider(
+                    AKSHARE_DAILY_BAR_DESCRIPTOR,
+                    close_offset=eastmoney_close_offset,
+                    call_log=call_log,
+                ),
+            )
         )
-    )
+    return ProviderRegistry(tuple(registrations))
 
 
 def _payload() -> dict:
@@ -150,8 +180,18 @@ def _service(
     monkeypatch: pytest.MonkeyPatch,
     *,
     comparison_close_offset: Decimal = Decimal("0"),
+    baostock_unavailable: bool = False,
+    include_eastmoney: bool = False,
+    eastmoney_close_offset: Decimal = Decimal("0"),
+    call_log: list[str] | None = None,
 ) -> VerifiedDailyMarketDataService:
-    registry = _registry(comparison_close_offset=comparison_close_offset)
+    registry = _registry(
+        comparison_close_offset=comparison_close_offset,
+        baostock_unavailable=baostock_unavailable,
+        include_eastmoney=include_eastmoney,
+        eastmoney_close_offset=eastmoney_close_offset,
+        call_log=call_log,
+    )
     monkeypatch.setattr(
         "server.services.verified_daily_market_data.provider_registry_for_config",
         lambda config, include_tdx=False: registry,
@@ -237,6 +277,48 @@ def test_matched_market_publication_is_idempotent(
     assert second == first
     entries = DatasetCatalog(tmp_path / "research").list_daily_bar_datasets()
     assert tuple(item.ref for item in entries) == (first.dataset_ref,)
+
+
+def test_unavailable_preferred_source_fails_over_to_next_independent_pair(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_log: list[str] = []
+    service = _service(
+        tmp_path,
+        monkeypatch,
+        baostock_unavailable=True,
+        include_eastmoney=True,
+        call_log=call_log,
+    )
+
+    publication = service.run(_payload(), checked_at=CHECKED)
+
+    assert publication.primary_provider == "akshare_tencent"
+    assert publication.comparison_provider == "akshare"
+    assert call_log == ["baostock", "akshare_tencent", "akshare"]
+
+
+def test_valid_cross_source_conflict_never_fails_over_to_hide_disagreement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_log: list[str] = []
+    service = _service(
+        tmp_path,
+        monkeypatch,
+        comparison_close_offset=Decimal("0.01"),
+        include_eastmoney=True,
+        call_log=call_log,
+    )
+
+    with pytest.raises(
+        VerifiedDailyMarketDataNotPublishable,
+        match="verified_daily_market_cross_source_conflict",
+    ):
+        service.run(_payload(), checked_at=CHECKED)
+
+    assert call_log == ["baostock", "akshare_tencent"]
 
 
 def test_conflict_preserves_objects_but_does_not_publish_projections(

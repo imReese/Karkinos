@@ -20,6 +20,7 @@ from data.dataset.resolver import (
 from data.market.contracts import DailyBarRequest
 from data.market.cross_source import (
     CrossSourceDailyBarResult,
+    CrossSourceDailyBarUnavailableError,
     ingest_cross_source_daily_bars,
 )
 from data.market.quality import RESEARCH_STRICT_DAILY
@@ -27,7 +28,7 @@ from data.market.serving import MarketServingStore
 from data.source_policy import resolve_market_source_policy
 from data.source_routing import (
     provider_registry_for_config,
-    resolve_daily_bar_verification_pair,
+    resolve_daily_bar_verification_pairs,
 )
 from data.storage.objects import ContentAddressedObjectStore
 
@@ -46,6 +47,10 @@ class VerifiedDailyMarketDataRequestError(VerifiedDailyMarketDataError):
 
 class VerifiedDailyMarketDataNotPublishable(VerifiedDailyMarketDataError):
     """Evidence was captured but does not authorize a verified dataset."""
+
+
+class VerifiedDailyMarketDataUnavailable(VerifiedDailyMarketDataError):
+    """Every eligible independent source pair was unavailable for this attempt."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,26 +215,52 @@ class VerifiedDailyMarketDataService:
         )
         policy = resolve_market_source_policy(request.source_policy_id)
         registry = provider_registry_for_config(self._config, include_tdx=False)
-        pair = resolve_daily_bar_verification_pair(
+        pairs = resolve_daily_bar_verification_pairs(
             policy,
             registry,
             daily_request,
         )
 
         store = ContentAddressedObjectStore(self.root / "objects")
-        evidence = ingest_cross_source_daily_bars(
-            pair.primary,
-            pair.comparison,
-            store,
-            request=daily_request,
-            quality_policy=RESEARCH_STRICT_DAILY,
-            normalizer_version=_NORMALIZER_VERSION,
-            reconciliation_policy=pair.reconciliation_policy,
-            checked_at=checked_at,
-        )
-        if not evidence.eligible_for_verified_dataset:
-            raise VerifiedDailyMarketDataNotPublishable(_not_publishable_code(evidence))
+        evidence: CrossSourceDailyBarResult | None = None
+        selected_pair = None
+        unavailable_providers: set[str] = set()
+        for pair in pairs:
+            if {
+                pair.primary_name,
+                pair.comparison_name,
+            } & unavailable_providers:
+                continue
+            try:
+                candidate_evidence = ingest_cross_source_daily_bars(
+                    pair.primary,
+                    pair.comparison,
+                    store,
+                    request=daily_request,
+                    quality_policy=RESEARCH_STRICT_DAILY,
+                    normalizer_version=_NORMALIZER_VERSION,
+                    reconciliation_policy=pair.reconciliation_policy,
+                    checked_at=checked_at,
+                )
+            except CrossSourceDailyBarUnavailableError as exc:
+                unavailable_providers.add(exc.provider)
+                continue
+
+            if not candidate_evidence.eligible_for_verified_dataset:
+                raise VerifiedDailyMarketDataNotPublishable(
+                    _not_publishable_code(candidate_evidence)
+                )
+            evidence = candidate_evidence
+            selected_pair = pair
+            break
+
+        if evidence is None or selected_pair is None:
+            unavailable = ",".join(sorted(unavailable_providers)) or "unknown"
+            raise VerifiedDailyMarketDataUnavailable(
+                f"verified_daily_market_sources_unavailable:{unavailable}"
+            )
         assert evidence.verification is not None
+        pair = selected_pair
 
         candidates = evidence.resolution_candidates()
         resolver_policy = DailyBarDatasetResolverPolicy(
@@ -332,6 +363,7 @@ __all__ = [
     "VerifiedDailyMarketDataError",
     "VerifiedDailyMarketDataNotPublishable",
     "VerifiedDailyMarketDataRequestError",
+    "VerifiedDailyMarketDataUnavailable",
     "VerifiedDailyMarketDataService",
     "VerifiedDailyMarketJobRequest",
     "VerifiedDailyMarketPublication",

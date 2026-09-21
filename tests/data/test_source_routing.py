@@ -19,6 +19,7 @@ from data.source_routing import (
     daily_bar_verification_pair_for_config,
     preferred_legacy_provider,
     resolve_daily_bar_verification_pair,
+    resolve_daily_bar_verification_pairs,
 )
 
 
@@ -91,6 +92,20 @@ def test_free_policy_resolves_baostock_and_tencent_without_credentials() -> None
     assert pair.reconciliation_policy.price_tolerance == 0
     assert pair.reconciliation_policy.volume_tolerance == 99
     assert pair.reconciliation_policy.amount_tolerance == Decimal("99.99")
+
+
+def test_free_policy_exposes_all_independent_pairs_in_preference_order() -> None:
+    pairs = resolve_daily_bar_verification_pairs(
+        FREE_CN_RESEARCH_V1,
+        build_provider_registry(tushare_token="", include_tdx=False),
+        _daily_request(),
+    )
+
+    assert [(pair.primary_name, pair.comparison_name) for pair in pairs] == [
+        ("baostock", "akshare_tencent"),
+        ("baostock", "akshare"),
+        ("akshare_tencent", "akshare"),
+    ]
 
 
 def test_free_policy_pair_supports_etf_unadjusted_daily_bars() -> None:

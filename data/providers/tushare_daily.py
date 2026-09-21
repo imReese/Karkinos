@@ -17,6 +17,7 @@ import pandas as pd
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import (
     DailyBarCapability,
+    DailyBarProviderUnavailableError,
     DailyBarRequest,
     MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
@@ -51,6 +52,13 @@ _THOUSAND_YUAN_TO_YUAN = Decimal("1000")
 
 class TushareDailyBarError(RuntimeError):
     """Base failure for the immutable TuShare daily-bar adapter."""
+
+
+class TushareDailyBarUnavailableError(
+    TushareDailyBarError,
+    DailyBarProviderUnavailableError,
+):
+    """TuShare external SDK/API I/O is temporarily unavailable."""
 
 
 class TushareDailyBarRequestError(TushareDailyBarError):
@@ -110,7 +118,7 @@ class TushareDailyBarProvider:
                     end_date=request.end_date.strftime("%Y%m%d"),
                 )
             except Exception as exc:
-                raise TushareDailyBarError(
+                raise TushareDailyBarUnavailableError(
                     f"tushare_{endpoint}_failed:{ts_code}"
                 ) from exc
             if not isinstance(frame, pd.DataFrame):
@@ -170,11 +178,13 @@ class TushareDailyBarProvider:
         try:
             module = importlib.import_module("tushare")
         except (ImportError, OSError) as exc:
-            raise TushareDailyBarError("tushare_sdk_load_failed") from exc
+            raise TushareDailyBarUnavailableError("tushare_sdk_load_failed") from exc
         try:
             return module.pro_api(self._token) if self._token else module.pro_api()
         except Exception as exc:
-            raise TushareDailyBarError("tushare_client_initialization_failed") from exc
+            raise TushareDailyBarUnavailableError(
+                "tushare_client_initialization_failed"
+            ) from exc
 
 
 def normalize_tushare_daily_units(frame: pd.DataFrame) -> pd.DataFrame:

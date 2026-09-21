@@ -6,8 +6,16 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from data.dataset.resolver import DailyBarResolutionCandidate
-from data.market.contracts import DailyBarProvider, DailyBarRequest
-from data.market.ingestion import DailyBarIngestionResult, ingest_daily_bars
+from data.market.contracts import (
+    DailyBarProvider,
+    DailyBarProviderUnavailableError,
+    DailyBarRequest,
+)
+from data.market.ingestion import (
+    DailyBarIngestionNoData,
+    DailyBarIngestionResult,
+    ingest_daily_bars,
+)
 from data.market.quality import (
     DailyBarQualityPolicy,
     MarketQualityStatus,
@@ -39,6 +47,17 @@ class CrossSourceDailyBarConfigurationError(CrossSourceDailyBarError):
 
 class CrossSourceDailyBarIntegrityError(CrossSourceDailyBarError):
     """A provider violated its declared canonical adapter identity."""
+
+
+class CrossSourceDailyBarUnavailableError(CrossSourceDailyBarError):
+    """One source could not produce a usable observation in this attempt."""
+
+    def __init__(self, provider: str, reason: str) -> None:
+        self.provider = str(provider).strip()
+        self.reason = str(reason).strip()
+        super().__init__(
+            f"cross_source_daily_bar_unavailable:{self.provider}:{self.reason}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +135,7 @@ def ingest_cross_source_daily_bars(
 
     checked_at = _checked_at(checked_at)
 
-    primary = ingest_daily_bars(
+    primary = _ingest_provider(
         primary_provider,
         store,
         request=request,
@@ -126,7 +145,7 @@ def ingest_cross_source_daily_bars(
     )
     _validate_ingestion_identity(primary, primary_descriptor)
 
-    comparison = ingest_daily_bars(
+    comparison = _ingest_provider(
         comparison_provider,
         store,
         request=request,
@@ -176,6 +195,36 @@ def ingest_cross_source_daily_bars(
         comparison_quality=comparison_quality,
         verification=verification,
     )
+
+
+def _ingest_provider(
+    provider: DailyBarProvider,
+    store: ContentAddressedObjectStore,
+    *,
+    request: DailyBarRequest,
+    quality_policy: DailyBarQualityPolicy,
+    normalizer_version: str,
+    checked_at: datetime,
+) -> DailyBarIngestionResult:
+    try:
+        return ingest_daily_bars(
+            provider,
+            store,
+            request=request,
+            quality_policy=quality_policy,
+            normalizer_version=normalizer_version,
+            checked_at=checked_at,
+        )
+    except DailyBarIngestionNoData as exc:
+        raise CrossSourceDailyBarUnavailableError(
+            provider.descriptor.provider,
+            "no_data",
+        ) from exc
+    except DailyBarProviderUnavailableError as exc:
+        raise CrossSourceDailyBarUnavailableError(
+            provider.descriptor.provider,
+            "provider_unavailable",
+        ) from exc
 
 
 def _validate_provider_roles(
