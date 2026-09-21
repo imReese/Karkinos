@@ -13,8 +13,12 @@ import pytest
 
 from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
 from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
-from analytics.normalized_research_gate import baseline_research_evidence_blockers
+from analytics.normalized_research_gate import (
+    baseline_research_evidence_blockers,
+    candidate_research_evidence_blockers,
+)
 from analytics.oos_validation import build_rolling_out_of_sample_validation
+from analytics.strategy_advancement_evidence import rolling_oos_comparison
 from analytics.strategy_advancement_gate import (
     STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
     StrategyAdvancementGate,
@@ -26,13 +30,18 @@ from core.types import BarFrequency, CommissionType, InstrumentType, Symbol
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
-from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE
+from server.ai_runtime.formula_dsl import (
+    CANONICAL_COST_MODEL_REFERENCE,
+    FORMULA_AST_CONTRACT,
+    FormulaBinding,
+)
 from server.ai_runtime.provider_call_window import (
     DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
     ProviderCallDeferred,
 )
 from server.ai_runtime.store import AiAuditStore
 from server.ai_runtime.strategy_research import (
+    RestrictedFormulaBacktestAdapter,
     StrategyResearchAuditStore,
     StrategyResearchSelection,
 )
@@ -4564,8 +4573,8 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
                     "end_date": bars["timestamp"].iloc[-1].date().isoformat(),
                     "initial_cash": 100_000,
                     "strategy": "dual_ma",
-                    "short_period": 5,
-                    "long_period": 20,
+                    "short_period": 7,
+                    "long_period": 23,
                     "assets": [{"symbol": str(symbol), "asset_class": "stock"}],
                 }
             ),
@@ -4672,6 +4681,118 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             strategy_advancement_backtest_view(normalized.result)
         )
         == []
+    )
+    assert normalized.request.params == {"short_period": 7, "long_period": 23}
+    robustness = normalized.result["metrics_json"]["parameter_robustness"]
+    assert robustness["selected_params"] == normalized.request.params
+    assert robustness["tested_count"] == 5
+    selected_row = next(
+        row
+        for row in robustness["tested_results"]
+        if row["params"] == normalized.request.params
+    )
+    assert selected_row["score"] == normalized.result["total_return"]
+    assert robustness == build_sweep_robustness_evidence(
+        results=robustness["tested_results"],
+        rank_by="after_cost_total_return",
+        rank_direction="desc",
+        selected_params=normalized.request.params,
+    )
+
+    # Persist the rebuilt baseline and compare a real Formula adapter run on its
+    # exact frozen inputs. Strategy roles differ; fold boundaries must still align.
+    store = ShadowResearchStore(db.path)
+    store.init()
+    baseline_id = store.save_baseline(
+        baseline_fingerprint=normalized.fingerprint,
+        request=normalized.request,
+        result=normalized.result,
+        now="2026-06-01T08:00:00+00:00",
+    )
+    assert baseline_id != seed_result_id
+    persisted = asyncio.run(db.get_backtest_result(baseline_id))
+    assert (
+        baseline_research_evidence_blockers(
+            strategy_advancement_backtest_view(persisted)
+        )
+        == []
+    )
+    assert (
+        json.loads(asyncio.run(db.get_backtest_result(seed_result_id))["metrics_json"])
+        == {}
+    )
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=baseline_id,
+        universe=tuple(asset["symbol"] for asset in normalized.request.assets),
+        asset_classes=tuple(
+            asset["asset_class"] for asset in normalized.request.assets
+        ),
+        dataset_snapshot_id=normalized.snapshot["snapshot_id"],
+        start_date=normalized.request.start_date,
+        end_date=normalized.request.end_date,
+        frequency="1d",
+        initial_cash=normalized.request.initial_cash,
+    )
+    average = {
+        "op": "rolling_mean",
+        "input": {"op": "field", "name": "close"},
+        "window": 3,
+    }
+    formula = {
+        "schema_version": FORMULA_AST_CONTRACT,
+        "entry": {
+            "op": "cross",
+            "left": {"op": "field", "name": "close"},
+            "right": average,
+        },
+        "exit": {
+            "op": "lt",
+            "left": {"op": "field", "name": "close"},
+            "right": average,
+        },
+        "position_size": {"op": "equal_weight"},
+    }
+    assumptions = ("Only completed daily bars are used.",)
+    binding = FormulaBinding(
+        formula_ast=formula,
+        universe=selection.universe,
+        dataset_snapshot_id=selection.dataset_snapshot_id,
+        start_date=selection.start_date,
+        end_date=selection.end_date,
+        frequency=selection.frequency,
+        cost_model_reference=selection.cost_model_reference,
+        anti_lookahead_assumptions=assumptions,
+        parameter_values={"window": 3},
+        parameter_ranges={"window": [2, 3, 5]},
+        initial_cash=selection.initial_cash,
+    )
+    candidate, _ = RestrictedFormulaBacktestAdapter(data_store=market).run(
+        selection=selection,
+        draft={
+            "draft_id": "rebuilt-baseline-formula-fixture",
+            "formula_ast": formula,
+            "formula_fingerprint": binding.fingerprint,
+            "selected_universe": list(selection.universe),
+            "dataset_snapshot_id": selection.dataset_snapshot_id,
+            "test_window": {
+                "start_date": selection.start_date,
+                "end_date": selection.end_date,
+            },
+            "frequency": selection.frequency,
+            "cost_model_reference": selection.cost_model_reference,
+            "anti_lookahead_assumptions": list(assumptions),
+            "parameter_values": {"window": 3},
+            "parameter_ranges": {"window": [2, 3, 5]},
+        },
+        expected_dataset_snapshot=normalized.snapshot,
+    )
+    candidate_view = strategy_advancement_backtest_view(candidate)
+    assert candidate_research_evidence_blockers(candidate_view) == []
+    assert (
+        rolling_oos_comparison(
+            strategy_advancement_backtest_view(persisted), candidate_view
+        )["evidence_complete"]
+        is True
     )
 
     etf_seed_result_id = asyncio.run(
