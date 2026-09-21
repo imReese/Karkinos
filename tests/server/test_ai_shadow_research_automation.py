@@ -3533,7 +3533,7 @@ def _seed_four_round_timeout_resume_state(
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
-async def test_five_round_policy_runs_sequential_generation_backtest_and_critique(
+async def test_five_round_policy_uses_local_gate_before_optional_critique(
     tmp_path, monkeypatch
 ) -> None:
     db = AppDatabase(tmp_path / "app.db")
@@ -3601,9 +3601,9 @@ async def test_five_round_policy_runs_sequential_generation_backtest_and_critiqu
     assert persisted_run["ledger_cutoff_id"] == 0
     assert fixture.hypothesis_calls == 5
     assert fixture.backtest_calls == 5
-    assert fixture.critique_calls == 5
+    assert fixture.critique_calls == 0
     assert len(result["candidates"]) == 5
-    assert result["usage"]["provider_calls"] == 10
+    assert result["usage"]["provider_calls"] == 5
     assert [
         request.iteration_context["iteration_number"]
         for request in fixture.hypothesis_requests
@@ -3614,24 +3614,25 @@ async def test_five_round_policy_runs_sequential_generation_backtest_and_critiqu
         assert parent["iteration_number"] == ordinal - 1
         assert parent["draft_id"] == f"draft-auto-{ordinal - 1}"
         assert parent["formula_fingerprint"] == f"sha256:{ordinal - 1:064x}"
-        assert parent["critique"]
+        assert parent["critique"]["evidence_gaps"]
+        assert parent["critique_id"].startswith("provider-free-research-gate:")
     assert result["daily_selections"][0]["observed_candidate_count"] == 5
     assert result["daily_selections"][0]["status"] == "no_selection"
     assert result["daily_backups"][0]["verification_status"] == "verified"
     assert result["daily_new_candidate_winner_id"] is None
     assert result["daily_winner_candidate_id"] is None
-    research_winner_candidate_id = result["daily_selections"][0][
-        "research_recommendation"
-    ]["research_winner_candidate_id"]
-    assert research_winner_candidate_id
-    assert result["daily_research_winner_candidate_id"] == (
-        research_winner_candidate_id
-    )
+    recommendation = result["daily_selections"][0]["research_recommendation"]
+    assert recommendation["status"] == "no_recommendation"
+    assert recommendation["research_winner_candidate_id"] is None
+    assert recommendation["blockers"] == [
+        "no_normalized_candidate_passed_provider_free_gate"
+    ]
+    assert result["daily_research_winner_candidate_id"] is None
     assert result["research_outcome"] == {
-        "status": "best_available_formula_for_further_research",
+        "status": "no_new_candidate_current_strategy_unchanged",
         "new_candidate_winner_id": None,
-        "research_winner_candidate_id": research_winner_candidate_id,
-        "account_qualification_status": "not_evaluated",
+        "research_winner_candidate_id": None,
+        "account_qualification_status": "not_applicable",
         "qualification_run_id": None,
         "winner_qualification_candidate_id": None,
         "incumbent_strategy_policy": (
@@ -4047,32 +4048,28 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     assert fixture.hypothesis_requests[0].selection.ledger_cutoff_id is None
     assert fixture.hypothesis_requests[0].selection.has_account_binding is False
     assert fixture.backtest_calls == 5
-    assert fixture.critique_calls == 5
+    assert fixture.critique_calls == 0
+    assert first["usage"]["provider_calls"] == 5
+    assert all(item["status"] == "research_blocked" for item in first["candidates"])
     candidate = first["candidates"][0]
-    assert candidate["recommendation"] == "formula_research_candidate"
-    assert candidate["status"] == "evaluated_research_only"
-    assert candidate["promotion_status"] == "account_qualification_required"
-    promotion_gate = candidate["comparison"]["promotion_gate"]
-    assert promotion_gate == {
-        "status": "not_evaluated",
-        "blockers": ["account_qualification_required"],
-    }
-    assert candidate["comparison"]["research_gate"]["status"] == "blocked"
-    research_blockers = set(candidate["comparison"]["research_gate"]["blockers"])
+    assert candidate["recommendation"] == "keep_researching"
+    assert candidate["promotion_status"] == "blocked_by_evidence"
+    assert candidate["critique_id"] is None
+    research_gate = candidate["comparison"]["research_gate"]
+    assert research_gate["status"] == "blocked"
+    research_blockers = set(research_gate["blockers"])
     assert {
         "candidate_after_cost_oos_excess_not_positive",
         "candidate_market_regime_robustness_not_passing",
     }.issubset(research_blockers)
-    assert research_blockers.isdisjoint(
-        {
-            "candidate_real_account_capital_constraint_not_passing",
-            "candidate_capacity_or_liquidity_not_passing",
-            "baseline_fee_or_tax_evidence_incomplete",
-            "candidate_fee_or_tax_evidence_incomplete",
-        }
-    )
     assert candidate["automatic_strategy_replacement_enabled"] is False
     assert candidate["broker_submission_enabled"] is False
+    selection = first["daily_selections"][0]
+    assert selection["status"] == "no_selection"
+    assert selection["research_recommendation"]["status"] == "no_recommendation"
+    assert selection["research_recommendation"]["blockers"] == [
+        "no_normalized_candidate_passed_provider_free_gate"
+    ]
 
 
 @pytest.mark.unit

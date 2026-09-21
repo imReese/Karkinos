@@ -131,6 +131,69 @@ def test_selects_best_available_formula_without_promotion_authority() -> None:
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+def test_provider_free_blocked_iteration_does_not_poison_later_viable_candidate() -> (
+    None
+):
+    first = _candidate(1, total_return=0.01)
+    first["status"] = "research_blocked"
+    first["recommendation"] = "keep_researching"
+    first["critique_id"] = None
+    first["comparison"]["research_gate"] = {
+        "schema_version": "karkinos.normalized_research_provider_preflight.v1",
+        "status": "blocked",
+        "blockers": ["candidate_after_cost_oos_excess_not_positive"],
+        "provider_call_performed": False,
+    }
+    second = _candidate(2, total_return=0.08)
+
+    result = build_normalized_research_recommendation(
+        run_id="run-normalized",
+        market_date="2026-08-28",
+        candidates=[first, second],
+        expected_candidate_count=2,
+    )
+
+    assert result["status"] == "best_available_for_further_research"
+    assert result["research_winner_candidate_id"] == "candidate-2"
+    assert result["evaluated_candidate_count"] == 1
+    assert result["blockers"] == []
+    assert is_valid_normalized_research_recommendation(result)
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_all_provider_free_blocked_iterations_publish_no_recommendation() -> None:
+    candidates = [
+        _candidate(1, total_return=0.01),
+        _candidate(2, total_return=0.02),
+    ]
+    for candidate in candidates:
+        candidate["status"] = "research_blocked"
+        candidate["recommendation"] = "keep_researching"
+        candidate["critique_id"] = None
+        candidate["comparison"]["research_gate"] = {
+            "schema_version": "karkinos.normalized_research_provider_preflight.v1",
+            "status": "blocked",
+            "blockers": ["candidate_after_cost_oos_excess_not_positive"],
+            "provider_call_performed": False,
+        }
+
+    result = build_normalized_research_recommendation(
+        run_id="run-normalized",
+        market_date="2026-08-28",
+        candidates=candidates,
+        expected_candidate_count=2,
+    )
+
+    assert result["status"] == "no_recommendation"
+    assert result["research_winner_candidate_id"] is None
+    assert result["evaluated_candidate_count"] == 0
+    assert result["blockers"] == ["no_normalized_candidate_passed_provider_free_gate"]
+    assert is_valid_normalized_research_recommendation(result)
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_incomplete_candidate_set_has_no_research_recommendation() -> None:
     candidate = _candidate(1, total_return=0.05)
     candidate["comparison"]["iteration_lineage"]["total_iterations"] = 1

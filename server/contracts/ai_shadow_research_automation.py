@@ -438,6 +438,24 @@ def build_shadow_research_iteration_context(
         gate = gate if isinstance(gate, Mapping) else {}
         critique = comparison.get("deepseek_critique")
         critique = critique if isinstance(critique, Mapping) else {}
+        critique_id = str(candidate.get("critique_id") or "")
+        if (
+            not critique_id
+            and gate.get("status") == "blocked"
+            and gate.get("provider_call_performed") is False
+            and gate.get("evidence_fingerprint")
+        ):
+            critique_id = (
+                "provider-free-research-gate:"
+                + str(gate["evidence_fingerprint"]).removeprefix("sha256:")[:24]
+            )
+            critique = {
+                "evidence_gaps": list(gate.get("blockers") or []),
+                "uncertainty": (
+                    "External critique skipped because deterministic research "
+                    "preflight already blocked advancement."
+                ),
+            }
         parent_core = {
             "iteration_number": iteration_number - 1,
             "candidate_id": str(candidate.get("candidate_id") or ""),
@@ -445,7 +463,7 @@ def build_shadow_research_iteration_context(
             "draft_id": str(draft.get("draft_id") or ""),
             "formula_fingerprint": str(draft.get("formula_fingerprint") or ""),
             "backtest_run_id": str(candidate.get("backtest_run_id") or ""),
-            "critique_id": str(candidate.get("critique_id") or ""),
+            "critique_id": critique_id,
             "strategy": {
                 "economic_hypothesis": draft.get("economic_hypothesis"),
                 "formula_ast": draft.get("formula_ast"),
