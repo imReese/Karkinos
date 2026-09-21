@@ -120,7 +120,14 @@ class TdxProviderUnavailableError(
     TdxProviderError,
     DailyBarProviderUnavailableError,
 ):
-    """TDX SDK or external data service is currently unavailable."""
+    """TDX SDK or native runtime is currently unavailable."""
+
+
+class TdxProviderTransportError(
+    TdxProviderError,
+    DailyBarProviderUnavailableError,
+):
+    """TDX data-service request I/O failed after the SDK was available."""
 
 
 class TdxProviderRequestError(TdxProviderError):
@@ -217,7 +224,7 @@ class TdxDailyBarProvider:
                 fill_data=False,
             )
         except Exception as exc:
-            raise TdxProviderUnavailableError("tdx_get_market_data_failed") from exc
+            raise TdxProviderTransportError("tdx_get_market_data_failed") from exc
 
         completed_at = _require_aware_utc(
             self._clock(),
