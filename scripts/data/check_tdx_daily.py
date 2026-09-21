@@ -172,7 +172,10 @@ def _exception_diagnostics(exc: BaseException) -> list[dict[str, str]]:
     while current is not None and id(current) not in seen and len(chain) < 4:
         seen.add(id(current))
         name = type(current).__name__
-        item = {"type": name if name in _EXCEPTION_TYPES else "Exception"}
+        public_name = (
+            "TdxProviderError" if name == "TdxProviderTransportError" else name
+        )
+        item = {"type": public_name if public_name in _EXCEPTION_TYPES else "Exception"}
         message = current.args[0] if current.args else None
         if type(message) is str:
             if message in _DIAGNOSTIC_CODES:
