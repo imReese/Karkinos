@@ -361,7 +361,7 @@ def test_status_requires_exact_verified_current_pair_for_qualification_run(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_background_loop_enqueues_without_constructing_provider_service(
+async def test_background_loop_checks_provider_free_qualification_before_enqueue(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -372,7 +372,12 @@ async def test_background_loop_enqueues_without_constructing_provider_service(
     class QualificationService:
         async def run_once(self) -> dict[str, Any]:
             events.append("qualification:run")
-            return {"status": "blocked", "provider_call_performed": False}
+            return {
+                "status": "blocked",
+                "failure_code": "qualification_account_truth_unavailable",
+                "blockers": ["qualification_account_truth_unavailable"],
+                "provider_call_performed": False,
+            }
 
     class JobScheduler:
         def enqueue_if_authorized(self) -> dict[str, Any]:
@@ -403,13 +408,57 @@ async def test_background_loop_enqueues_without_constructing_provider_service(
         )
 
     assert events == [
-        "scheduler:build",
-        "scheduler:enqueue",
         "qualification:build",
         "qualification:run",
         "sleep:300",
     ]
     assert "Shadow research account qualification returned blocked" in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_background_loop_enqueues_when_new_research_can_fix_qualification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.services import ai_shadow_research_automation as runtime
+
+    events: list[str] = []
+
+    class QualificationService:
+        async def run_once(self) -> dict[str, Any]:
+            events.append("qualification:run")
+            return {
+                "status": "blocked",
+                "failure_code": "qualification_compatible_source_backlog_empty",
+                "blockers": ["qualification_compatible_source_backlog_empty"],
+                "provider_call_performed": False,
+            }
+
+    class JobScheduler:
+        def enqueue_if_authorized(self) -> dict[str, Any]:
+            events.append("scheduler:enqueue")
+            return {"status": "enqueued", "provider_call_performed": False}
+
+    async def stop_after_cycle(seconds: float) -> None:
+        events.append(f"sleep:{seconds:g}")
+        await _stop_loop(seconds)
+
+    monkeypatch.setattr(runtime, "wait_for_release_activation", _activation_ready)
+    monkeypatch.setattr(runtime.asyncio, "sleep", stop_after_cycle)
+
+    with pytest.raises(_StopLoop):
+        await runtime.run_ai_shadow_research_automation_loop(
+            state=AppState(),
+            qualification_service_builder=lambda: QualificationService(),
+            job_scheduler_builder=lambda: JobScheduler(),
+            interval_seconds=300,
+        )
+
+    assert events == [
+        "qualification:run",
+        "scheduler:enqueue",
+        "sleep:300",
+    ]
 
 
 @pytest.mark.unit
