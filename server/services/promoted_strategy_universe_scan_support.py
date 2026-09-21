@@ -188,24 +188,30 @@ def decision_window_blockers(
         < DECISION_WINDOW_END
     ):
         blockers.append("strategy_scan_outside_reviewed_decision_window")
-    dates = verified_trading_dates(
-        db,
-        start_date=decision_date,
-        end_date=decision_date,
-    )
+    try:
+        dates = verified_trading_dates(
+            db,
+            start_date=decision_date,
+            end_date=decision_date,
+        )
+    except ValueError:
+        dates = []
     if dates != [decision_date]:
         blockers.append("strategy_scan_decision_date_not_verified_trading_day")
     return blockers
 
 
 def prior_verified_trading_date(db: Any, decision_date: str) -> str | None:
-    parsed = date.fromisoformat(decision_date)
-    start = (parsed - timedelta(days=45)).isoformat()
-    dates = verified_trading_dates(
-        db,
-        start_date=start,
-        end_date=(parsed - timedelta(days=1)).isoformat(),
-    )
+    try:
+        parsed = date.fromisoformat(decision_date)
+        start = (parsed - timedelta(days=45)).isoformat()
+        dates = verified_trading_dates(
+            db,
+            start_date=start,
+            end_date=(parsed - timedelta(days=1)).isoformat(),
+        )
+    except ValueError:
+        return None
     return dates[-1] if dates else None
 
 
@@ -234,7 +240,7 @@ def history_start(config: Any, market_date: str) -> str:
     configured = str(getattr(config, "start_date", "") or "").strip()
     if configured:
         try:
-            start = min(start, date.fromisoformat(configured))
+            start = date.fromisoformat(configured)
         except ValueError:
             pass
     return start.isoformat()

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from core.types import InstrumentType
 from data.store import DataStore
@@ -301,6 +302,65 @@ def test_promoted_strategy_scans_full_stock_pool_and_persists_ranked_tasks(
     )
     assert reopened["verified"] is True
     assert len(reopened["action_task_ids"]) == 5
+
+
+@pytest.mark.parametrize(
+    ("calendar_failure", "expected_blocker"),
+    [
+        ("missing_history", "verified_market_history_window_incomplete"),
+        ("missing_decision", "strategy_scan_decision_date_not_verified_trading_day"),
+        ("stale_verification", "strategy_scan_decision_date_not_verified_trading_day"),
+    ],
+)
+def test_scan_calendar_failure_blocks_new_and_prepared_recommendations(
+    tmp_path, monkeypatch, calendar_failure, expected_blocker
+) -> None:
+    db, service, _ = _service(tmp_path, produces_signals=True)
+    portfolio = {
+        "total_equity": 100_000,
+        "valuation_status": "complete",
+        "symbols": [],
+        "instrument_types": {},
+        "valuation_snapshot_id": "valuation-fixture",
+    }
+    prepared = service.run_once(
+        decision_date="2026-08-24",
+        portfolio_summary=portfolio,
+        persist_actions=False,
+    )
+    assert prepared["status"] == "prepared"
+    assert (
+        service.current_input_blockers(scan=prepared, portfolio_summary=portfolio) == []
+    )
+
+    if calendar_failure == "missing_history":
+        service._config.start_date = "2025-01-02"
+    else:
+        read_calendar = db.get_market_calendar_snapshot_sync
+
+        def unavailable_calendar(**kwargs):
+            if calendar_failure == "missing_decision":
+                return None
+            return {
+                **read_calendar(**kwargs),
+                "verification_source_fingerprint": "a" * 64,
+            }
+
+        monkeypatch.setattr(
+            db, "get_market_calendar_snapshot_sync", unavailable_calendar
+        )
+
+    result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+
+    assert result["status"] == "blocked"
+    assert expected_blocker in result["blockers"]
+    assert result["normal_no_signal"] is False
+    assert result["selected_signal_count"] == 0
+    assert "promoted_strategy_scan_current_market_replay_failed" in (
+        service.current_input_blockers(scan=prepared, portfolio_summary=portfolio)
+    )
+    assert db.get_action_tasks_sync(statuses=["pending"], limit=20) == []
+    assert db.list_signal_journal_sync(limit=20) == []
 
 
 def test_multi_strategy_exit_for_same_account_holding_fails_closed(

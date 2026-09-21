@@ -86,58 +86,12 @@ class AiShadowResearchBaselineMixin:
         An explicit research_start_date creates a new normalized experiment;
         it never edits the seed or changes a frozen qualification replay.
         """
-        rows = asyncio.run(self._db.get_backtest_results())
-        seed = None
-        if policy.baseline_backtest_result_id is not None:
-            seed = asyncio.run(
-                self._db.get_backtest_result(policy.baseline_backtest_result_id)
-            )
-        else:
-            for summary in rows:
-                candidate = asyncio.run(
-                    self._db.get_backtest_result(int(summary["id"]))
-                )
-                config = shadow_research_json_object(
-                    candidate.get("config_json") if candidate else None
-                )
-                if candidate and config.get("strategy") not in {
-                    None,
-                    "",
-                    "ai_formula_research",
-                }:
-                    seed = candidate
-                    break
-        if not isinstance(seed, dict):
-            raise ShadowResearchRejected("eligible_baseline_backtest_missing")
-        config = shadow_research_json_object(seed.get("config_json"))
-        assets = config.get("assets")
-        if not isinstance(assets, list) or not assets:
-            raise ShadowResearchRejected("baseline_assets_missing")
-        for asset in assets:
-            if not isinstance(asset, dict) or not asset.get("symbol"):
-                raise ShadowResearchRejected("baseline_asset_invalid")
-            if str(asset.get("asset_class") or "stock").strip().lower() != "stock":
-                raise ShadowResearchRejected(
-                    "daily_candidate_strategy_asset_class_not_supported"
-                )
-        start_date = str(config.get("start_date") or "")
-        if research_start_date is not None:
-            if (
-                expected_dataset_snapshot_id is not None
-                or policy.research_capital_mode
-                != SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
-            ):
-                raise ShadowResearchRejected(
-                    "baseline_research_window_override_invalid"
-                )
-            try:
-                start_date = date.fromisoformat(research_start_date).isoformat()
-            except ValueError as exc:
-                raise ShadowResearchRejected(
-                    "baseline_research_window_override_invalid"
-                ) from exc
-        if not start_date:
-            raise ShadowResearchRejected("baseline_start_date_missing")
+        seed, config, start_date = _load_baseline_seed(
+            self._db,
+            policy,
+            research_start_date=research_start_date,
+            expected_dataset_snapshot_id=expected_dataset_snapshot_id,
+        )
         seed_initial_cash = float(
             config.get("initial_cash") or seed.get("initial_cash") or 0
         )
@@ -457,6 +411,63 @@ class AiShadowResearchBaselineMixin:
             cost_model_reference=cost_model_reference,
             fee_schedule_evidence=fee_schedule_evidence,
         )
+
+
+def _load_baseline_seed(
+    db: Any,
+    policy: ShadowResearchPolicy,
+    *,
+    research_start_date: str | None,
+    expected_dataset_snapshot_id: str | None,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    """Load a persisted seed and validate the explicitly selected research window."""
+    rows = asyncio.run(db.get_backtest_results())
+    seed = None
+    if policy.baseline_backtest_result_id is not None:
+        seed = asyncio.run(db.get_backtest_result(policy.baseline_backtest_result_id))
+    else:
+        for summary in rows:
+            candidate = asyncio.run(db.get_backtest_result(int(summary["id"])))
+            config = shadow_research_json_object(
+                candidate.get("config_json") if candidate else None
+            )
+            if candidate and config.get("strategy") not in {
+                None,
+                "",
+                "ai_formula_research",
+            }:
+                seed = candidate
+                break
+    if not isinstance(seed, dict):
+        raise ShadowResearchRejected("eligible_baseline_backtest_missing")
+    config = shadow_research_json_object(seed.get("config_json"))
+    assets = config.get("assets")
+    if not isinstance(assets, list) or not assets:
+        raise ShadowResearchRejected("baseline_assets_missing")
+    for asset in assets:
+        if not isinstance(asset, dict) or not asset.get("symbol"):
+            raise ShadowResearchRejected("baseline_asset_invalid")
+        if str(asset.get("asset_class") or "stock").strip().lower() != "stock":
+            raise ShadowResearchRejected(
+                "daily_candidate_strategy_asset_class_not_supported"
+            )
+    start_date = str(config.get("start_date") or "")
+    if research_start_date is not None:
+        if (
+            expected_dataset_snapshot_id is not None
+            or policy.research_capital_mode
+            != SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+        ):
+            raise ShadowResearchRejected("baseline_research_window_override_invalid")
+        try:
+            start_date = date.fromisoformat(research_start_date).isoformat()
+        except ValueError as exc:
+            raise ShadowResearchRejected(
+                "baseline_research_window_override_invalid"
+            ) from exc
+    if not start_date:
+        raise ShadowResearchRejected("baseline_start_date_missing")
+    return seed, config, start_date
 
 
 def _dual_ma_parameter_robustness(
