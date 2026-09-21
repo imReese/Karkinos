@@ -11,6 +11,10 @@ from server.persistence.jobs import SQLiteJobStore
 from server.persistence.market_calendar_publication_uow import (
     MarketCalendarPublicationUnitOfWork,
 )
+from server.services.verified_daily_market_data import (
+    VerifiedDailyMarketDataNotPublishable,
+    VerifiedDailySourceResolution,
+)
 from server.workers.data_worker import (
     VERIFIED_DAILY_MARKET_JOB,
     WorkerExecutionAborted,
@@ -246,6 +250,155 @@ async def test_verified_market_worker_finishes_with_dataset_result_ref(tmp_path)
     assert observed == ["published"]
     assert result.status == "succeeded"
     assert result.result_ref == "dataset:sha256:" + "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_verified_market_worker_records_source_resolution_event(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = {"fixture": "telemetry"}
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+
+    resolution = VerifiedDailySourceResolution(
+        source_policy_id="karkinos.market.source.free_cn_research.v1",
+        outcome="matched",
+        attempted_pairs=(
+            ("baostock", "akshare_tencent"),
+            ("akshare_tencent", "akshare"),
+        ),
+        unavailable_providers=("baostock",),
+        selected_pair=("akshare_tencent", "akshare"),
+    )
+    service = Mock()
+    service.run.return_value = type(
+        "Publication",
+        (),
+        {
+            "result_ref": "dataset:sha256:" + "c" * 64,
+            "source_resolution": resolution,
+        },
+    )()
+
+    def record(event):
+        db.append_event_sync(
+            event_type="market.daily.source_resolution",
+            timestamp=now.isoformat(),
+            entity_type="market_daily_job",
+            entity_id=job.job_id,
+            source="data_worker",
+            source_ref=job.job_id,
+            payload=event,
+        )
+
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        service,
+        heartbeat_interval=60,
+        source_resolution_recorder=record,
+    )
+
+    events = db.list_events_sync(
+        event_type="market.daily.source_resolution",
+        entity_id=job.job_id,
+    )
+    assert len(events) == 1
+    import json
+
+    saved = json.loads(events[0]["payload_json"])
+    assert saved["outcome"] == "matched"
+    assert saved["unavailable_providers"] == ["baostock"]
+    assert saved["selected_pair"] == {
+        "primary": "akshare_tencent",
+        "comparison": "akshare",
+    }
+    assert saved["result_ref"] == "dataset:sha256:" + "c" * 64
+    assert saved["error_type"] is None
+
+
+@pytest.mark.asyncio
+async def test_verified_market_worker_records_fail_closed_source_resolution(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = {"fixture": "conflict-telemetry"}
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+
+    resolution = VerifiedDailySourceResolution(
+        source_policy_id="karkinos.market.source.free_cn_research.v1",
+        outcome="conflict",
+        attempted_pairs=(("baostock", "akshare_tencent"),),
+        selected_pair=("baostock", "akshare_tencent"),
+    )
+    service = Mock()
+    service.run.side_effect = VerifiedDailyMarketDataNotPublishable(
+        "verified_daily_market_cross_source_conflict",
+        source_resolution=resolution,
+    )
+
+    recorded: list[dict[str, object]] = []
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        service,
+        heartbeat_interval=60,
+        source_resolution_recorder=recorded.append,
+    )
+
+    assert len(recorded) == 1
+    assert recorded[0]["outcome"] == "conflict"
+    assert recorded[0]["result_ref"] is None
+    assert recorded[0]["error_type"] == "VerifiedDailyMarketDataNotPublishable"
+
+    replay = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    assert replay.status == "queued"
+
+
+@pytest.mark.asyncio
+async def test_source_resolution_telemetry_failure_never_changes_job_success(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = {"fixture": "telemetry-failure"}
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+
+    resolution = VerifiedDailySourceResolution(
+        source_policy_id="fixture",
+        outcome="matched",
+        attempted_pairs=(("baostock", "akshare_tencent"),),
+        selected_pair=("baostock", "akshare_tencent"),
+    )
+    service = Mock()
+    service.run.return_value = type(
+        "Publication",
+        (),
+        {
+            "result_ref": "dataset:sha256:" + "d" * 64,
+            "source_resolution": resolution,
+        },
+    )()
+
+    def broken_recorder(_payload):
+        raise RuntimeError("telemetry unavailable")
+
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        service,
+        heartbeat_interval=60,
+        source_resolution_recorder=broken_recorder,
+    )
+
+    replay = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    assert replay.status == "succeeded"
+    assert replay.result_ref == "dataset:sha256:" + "d" * 64
 
 
 @pytest.mark.asyncio

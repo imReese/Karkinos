@@ -45,12 +45,61 @@ class VerifiedDailyMarketDataRequestError(VerifiedDailyMarketDataError):
     """A durable job payload is not a valid market-data request."""
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedDailySourceResolution:
+    """Operational trace of source selection; never part of Dataset identity."""
+
+    source_policy_id: str
+    outcome: str
+    attempted_pairs: tuple[tuple[str, str], ...]
+    unavailable_providers: tuple[str, ...] = ()
+    selected_pair: tuple[str, str] | None = None
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "schema_version": "karkinos.market_daily_source_resolution.v1",
+            "source_policy_id": self.source_policy_id,
+            "outcome": self.outcome,
+            "attempted_pairs": [
+                {"primary": primary, "comparison": comparison}
+                for primary, comparison in self.attempted_pairs
+            ],
+            "unavailable_providers": list(self.unavailable_providers),
+            "selected_pair": (
+                None
+                if self.selected_pair is None
+                else {
+                    "primary": self.selected_pair[0],
+                    "comparison": self.selected_pair[1],
+                }
+            ),
+        }
+
+
 class VerifiedDailyMarketDataNotPublishable(VerifiedDailyMarketDataError):
     """Evidence was captured but does not authorize a verified dataset."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        source_resolution: VerifiedDailySourceResolution | None = None,
+    ) -> None:
+        self.source_resolution = source_resolution
+        super().__init__(code)
 
 
 class VerifiedDailyMarketDataUnavailable(VerifiedDailyMarketDataError):
     """Every eligible independent source pair was unavailable for this attempt."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        source_resolution: VerifiedDailySourceResolution | None = None,
+    ) -> None:
+        self.source_resolution = source_resolution
+        super().__init__(code)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +110,7 @@ class VerifiedDailyMarketPublication:
     source_policy_id: str
     primary_provider: str
     comparison_provider: str
+    source_resolution: VerifiedDailySourceResolution
 
     @property
     def dataset_id(self) -> str:
@@ -225,12 +275,14 @@ class VerifiedDailyMarketDataService:
         evidence: CrossSourceDailyBarResult | None = None
         selected_pair = None
         unavailable_providers: set[str] = set()
+        attempted_pairs: list[tuple[str, str]] = []
         for pair in pairs:
             if {
                 pair.primary_name,
                 pair.comparison_name,
             } & unavailable_providers:
                 continue
+            attempted_pairs.append((pair.primary_name, pair.comparison_name))
             try:
                 candidate_evidence = ingest_cross_source_daily_bars(
                     pair.primary,
@@ -247,8 +299,20 @@ class VerifiedDailyMarketDataService:
                 continue
 
             if not candidate_evidence.eligible_for_verified_dataset:
+                outcome = (
+                    "quality_blocked"
+                    if candidate_evidence.verification is None
+                    else "conflict"
+                )
                 raise VerifiedDailyMarketDataNotPublishable(
-                    _not_publishable_code(candidate_evidence)
+                    _not_publishable_code(candidate_evidence),
+                    source_resolution=VerifiedDailySourceResolution(
+                        source_policy_id=policy.policy_id,
+                        outcome=outcome,
+                        attempted_pairs=tuple(attempted_pairs),
+                        unavailable_providers=tuple(sorted(unavailable_providers)),
+                        selected_pair=(pair.primary_name, pair.comparison_name),
+                    ),
                 )
             evidence = candidate_evidence
             selected_pair = pair
@@ -257,7 +321,13 @@ class VerifiedDailyMarketDataService:
         if evidence is None or selected_pair is None:
             unavailable = ",".join(sorted(unavailable_providers)) or "unknown"
             raise VerifiedDailyMarketDataUnavailable(
-                f"verified_daily_market_sources_unavailable:{unavailable}"
+                f"verified_daily_market_sources_unavailable:{unavailable}",
+                source_resolution=VerifiedDailySourceResolution(
+                    source_policy_id=policy.policy_id,
+                    outcome="unavailable",
+                    attempted_pairs=tuple(attempted_pairs),
+                    unavailable_providers=tuple(sorted(unavailable_providers)),
+                ),
             )
         assert evidence.verification is not None
         pair = selected_pair
@@ -318,6 +388,13 @@ class VerifiedDailyMarketDataService:
             source_policy_id=policy.policy_id,
             primary_provider=pair.primary_name,
             comparison_provider=pair.comparison_name,
+            source_resolution=VerifiedDailySourceResolution(
+                source_policy_id=policy.policy_id,
+                outcome="matched",
+                attempted_pairs=tuple(attempted_pairs),
+                unavailable_providers=tuple(sorted(unavailable_providers)),
+                selected_pair=(pair.primary_name, pair.comparison_name),
+            ),
         )
 
 
@@ -367,5 +444,6 @@ __all__ = [
     "VerifiedDailyMarketDataService",
     "VerifiedDailyMarketJobRequest",
     "VerifiedDailyMarketPublication",
+    "VerifiedDailySourceResolution",
     "is_verified_daily_resolver_policy",
 ]

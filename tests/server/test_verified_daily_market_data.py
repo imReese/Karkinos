@@ -296,6 +296,16 @@ def test_unavailable_preferred_source_fails_over_to_next_independent_pair(
 
     assert publication.primary_provider == "akshare_tencent"
     assert publication.comparison_provider == "akshare"
+    assert publication.source_resolution.outcome == "matched"
+    assert publication.source_resolution.attempted_pairs == (
+        ("baostock", "akshare_tencent"),
+        ("akshare_tencent", "akshare"),
+    )
+    assert publication.source_resolution.unavailable_providers == ("baostock",)
+    assert publication.source_resolution.selected_pair == (
+        "akshare_tencent",
+        "akshare",
+    )
     assert call_log == ["baostock", "akshare_tencent", "akshare"]
 
 
@@ -315,9 +325,15 @@ def test_valid_cross_source_conflict_never_fails_over_to_hide_disagreement(
     with pytest.raises(
         VerifiedDailyMarketDataNotPublishable,
         match="verified_daily_market_cross_source_conflict",
-    ):
+    ) as caught:
         service.run(_payload(), checked_at=CHECKED)
 
+    resolution = caught.value.source_resolution
+    assert resolution is not None
+    assert resolution.outcome == "conflict"
+    assert resolution.attempted_pairs == (("baostock", "akshare_tencent"),)
+    assert resolution.unavailable_providers == ()
+    assert resolution.selected_pair == ("baostock", "akshare_tencent")
     assert call_log == ["baostock", "akshare_tencent"]
 
 

@@ -8,6 +8,7 @@ import logging
 import os
 import threading
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from server.contracts.jobs import JobRun, JobStore
@@ -19,7 +20,10 @@ from server.release_activation import (
     wait_for_release_activation,
 )
 from server.services.market_calendar_automation import MarketCalendarAutomationService
-from server.services.verified_daily_market_data import VerifiedDailyMarketDataService
+from server.services.verified_daily_market_data import (
+    VerifiedDailyMarketDataService,
+    VerifiedDailySourceResolution,
+)
 from server.services.verified_daily_market_jobs import (
     VERIFIED_DAILY_MARKET_JOB,
     enqueue_latest_verified_daily_market_jobs,
@@ -28,6 +32,7 @@ from server.workers.presence import run_with_presence
 
 logger = logging.getLogger(__name__)
 CALENDAR_JOB = "market_calendar_sync"
+VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT = "market.daily.source_resolution"
 
 
 class WorkerExecutionAborted(RuntimeError):
@@ -119,6 +124,7 @@ async def execute_verified_daily_market_job(
     *,
     timeout: float = 180,
     heartbeat_interval: float = 15,
+    source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
 ) -> None:
     """Run one durable verified-market job behind lease fencing."""
 
@@ -186,6 +192,12 @@ async def execute_verified_daily_market_job(
         result_ref = str(getattr(publication, "result_ref", "") or "").strip()
         if not result_ref.startswith("dataset:sha256:"):
             raise RuntimeError("verified_market_result_ref_invalid")
+        _record_source_resolution(
+            source_resolution_recorder,
+            job,
+            getattr(publication, "source_resolution", None),
+            result_ref=result_ref,
+        )
         store.finish(
             job.lease,
             now=datetime.now(timezone.utc),
@@ -194,6 +206,12 @@ async def execute_verified_daily_market_job(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
+        _record_source_resolution(
+            source_resolution_recorder,
+            job,
+            getattr(exc, "source_resolution", None),
+            error_type=type(exc).__name__,
+        )
         try:
             store.fail(
                 job.lease,
@@ -211,6 +229,30 @@ async def execute_verified_daily_market_job(
         heartbeat.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await heartbeat
+
+
+def _record_source_resolution(
+    recorder: Callable[[dict[str, object]], None] | None,
+    job: JobRun,
+    resolution: object,
+    *,
+    result_ref: str | None = None,
+    error_type: str | None = None,
+) -> None:
+    """Best-effort operational telemetry; it never grants or revokes publication."""
+    if recorder is None or not isinstance(resolution, VerifiedDailySourceResolution):
+        return
+    payload = {
+        **resolution.to_payload(),
+        "job_id": job.job_id,
+        "attempt": job.attempt,
+        "result_ref": result_ref,
+        "error_type": error_type,
+    }
+    try:
+        recorder(payload)
+    except Exception:
+        logger.exception("Failed to record verified daily source resolution")
 
 
 async def run_data_worker(config) -> None:
@@ -268,6 +310,15 @@ async def run_data_worker(config) -> None:
                         store,
                         market_job,
                         service,
+                        source_resolution_recorder=lambda payload: db.append_event_sync(
+                            event_type=VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                            entity_type="market_daily_job",
+                            entity_id=market_job.job_id,
+                            source="data_worker",
+                            source_ref=market_job.job_id,
+                            payload=payload,
+                        ),
                     )
                 except WorkerExecutionAborted:
                     raise
