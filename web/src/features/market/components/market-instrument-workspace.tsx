@@ -409,6 +409,7 @@ export function MarketInstrumentWorkspace({
                   rangeLabels={labels.klineRanges}
                   axisLabels={labels.klineAxes}
                   rangeAriaLabel={labels.showKlineRange}
+                  chartTypeLabels={labels.chartViews}
                 />
               )}
             </div>

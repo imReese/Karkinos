@@ -179,6 +179,10 @@ export const marketCopy = {
       oneYear: '1Y',
       all: 'All',
     },
+    chartViews: {
+      line: 'Line',
+      candlestick: 'Candles',
+    },
     klineAxes: {
       price: 'Price axis',
       date: 'Date axis',
@@ -272,6 +276,10 @@ export const marketCopy = {
       sixMonths: '6月',
       oneYear: '1年',
       all: '全部',
+    },
+    chartViews: {
+      line: '走势',
+      candlestick: 'K线',
     },
     klineAxes: {
       price: '价格轴',

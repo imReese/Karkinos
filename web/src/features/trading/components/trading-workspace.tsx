@@ -32,6 +32,7 @@ export function TradingWorkspace() {
     <section
       className="app-workbench-route space-y-4 sm:space-y-5"
       data-workbench-route="trading"
+      data-workbench-width="wide"
     >
       <WorkspaceHeader
         eyebrow={labels.kicker}

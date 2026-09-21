@@ -3,7 +3,56 @@ import {
   type KlineRangeKey,
   type KlineRangeLabels,
   type PriceStructureChartModel,
+  type PriceStructureChartType,
+  type PriceStructureChartTypeLabels,
 } from './price-structure-chart-model';
+
+export function PriceStructureChartTypeControls({
+  chartType,
+  labels,
+  onChartTypeChange,
+  chartTypeAriaLabel,
+}: {
+  chartType: PriceStructureChartType;
+  labels: PriceStructureChartTypeLabels;
+  onChartTypeChange: (type: PriceStructureChartType) => void;
+  chartTypeAriaLabel?: (label: string) => string;
+}) {
+  const types: PriceStructureChartType[] = ['line', 'candlestick'];
+  return (
+    <div
+      className="inline-flex rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-overlay)_60%,transparent)] p-0.5"
+      role="group"
+      aria-label="Chart view type"
+    >
+      {types.map((type) => {
+        const selected = chartType === type;
+        const label = labels[type];
+        return (
+          <button
+            key={type}
+            type="button"
+            data-testid={`chart-type-toggle-${type}`}
+            className={`app-type-micro rounded-[calc(var(--app-radius-control)-2px)] px-2.5 py-1 font-semibold transition-colors ${
+              selected
+                ? 'border border-[color-mix(in_srgb,var(--app-accent)_50%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_20%,transparent)] text-[var(--app-text)] shadow-xs'
+                : 'border border-transparent text-[var(--app-muted)] hover:text-[var(--app-soft)]'
+            }`}
+            aria-pressed={selected}
+            aria-label={
+              chartTypeAriaLabel
+                ? chartTypeAriaLabel(label)
+                : `Show ${label} view`
+            }
+            onClick={() => onChartTypeChange(type)}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function PriceStructureRangeControls({
   labels,

@@ -44,6 +44,7 @@ export function HoldingDetailView({
     <section
       className="app-workbench-route space-y-4 sm:space-y-5"
       data-workbench-route="holding-detail"
+      data-workbench-width="wide"
     >
       <div data-testid="holding-detail-header">
         <WorkbenchWorkspaceHeader

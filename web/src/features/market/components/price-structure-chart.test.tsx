@@ -120,6 +120,66 @@ test('renders OHLC price range as a K-line chart', () => {
   expect(screen.queryByText('2025-04-19')).toBeNull();
 });
 
+test('toggles between K-line and continuous price line view (Apple Stocks style)', () => {
+  const { container } = render(
+    <PriceStructureChart
+      titleLabel="Price range / K-line"
+      priceLabel="Price"
+      emptyLabel="No chart"
+      chartTypeLabels={{ line: '走势', candlestick: 'K线' }}
+      bars={[
+        {
+          timestamp: '2025-04-19',
+          open: 1510,
+          high: 1620,
+          low: 1500,
+          close: 1600,
+          volume: 120000,
+        },
+        {
+          timestamp: '2026-04-20',
+          open: 1600,
+          high: 1660,
+          low: 1580,
+          close: 1640,
+          volume: 130000,
+        },
+      ]}
+    />,
+  );
+
+  expect(
+    container.querySelectorAll('[data-testid="kline-candle"]').length,
+  ).toBe(2);
+  expect(
+    container.querySelector('[data-testid="close-price-trend"]'),
+  ).toBeNull();
+
+  const lineToggle = screen.getByTestId('chart-type-toggle-line');
+  fireEvent.click(lineToggle);
+  expect(lineToggle.getAttribute('aria-pressed')).toBe('true');
+
+  expect(
+    container.querySelector('[data-testid="close-price-trend"]'),
+  ).not.toBeNull();
+  expect(
+    container.querySelector('[data-testid="price-line-series"]'),
+  ).not.toBeNull();
+  expect(
+    container.querySelectorAll('[data-testid="kline-candle"]').length,
+  ).toBe(0);
+
+  const candleToggle = screen.getByTestId('chart-type-toggle-candlestick');
+  fireEvent.click(candleToggle);
+  expect(candleToggle.getAttribute('aria-pressed')).toBe('true');
+  expect(
+    container.querySelectorAll('[data-testid="kline-candle"]').length,
+  ).toBe(2);
+  expect(
+    container.querySelector('[data-testid="close-price-trend"]'),
+  ).toBeNull();
+});
+
 test('renders an empty state when no bars are available', () => {
   const { container } = render(
     <PriceStructureChart

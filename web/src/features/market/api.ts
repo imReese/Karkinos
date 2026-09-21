@@ -396,12 +396,23 @@ export function useMarketBarsBackfillMutation() {
   });
 }
 
-export function useKlineQuery(symbol: string) {
+export function useKlineQuery(
+  symbol: string,
+  options?: { start?: string; end?: string; interval?: string },
+) {
   return useQuery({
-    queryKey: ['market-kline', symbol],
+    queryKey: ['market-kline', symbol, options],
     enabled: symbol.length > 0,
-    queryFn: () =>
-      apiClient<KlineBar[]>(`/api/market/kline/${encodeURIComponent(symbol)}`),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (options?.start) params.set('start', options.start);
+      if (options?.end) params.set('end', options.end);
+      if (options?.interval) params.set('interval', options.interval);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return apiClient<KlineBar[]>(
+        `/api/market/kline/${encodeURIComponent(symbol)}${query}`,
+      );
+    },
   });
 }
 

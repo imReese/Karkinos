@@ -58,6 +58,7 @@ export function HoldingPositionPanel({
               rangeAriaLabel={copy.market.showKlineRange}
               markers={tradeMarkers}
               referenceLines={costReferenceLines}
+              chartTypeLabels={copy.market.chartViews}
             />
           </div>
           <div data-testid="holding-position-size-metrics" className="mt-4">

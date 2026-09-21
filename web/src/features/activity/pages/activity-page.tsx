@@ -393,6 +393,7 @@ export function ActivityPage() {
       <section
         className="app-workbench-route min-w-0 space-y-4 sm:space-y-5"
         data-workbench-route="activity"
+        data-workbench-width="wide"
       >
         <WorkspaceHeader
           eyebrow={copy.activity.kicker}
