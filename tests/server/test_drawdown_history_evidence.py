@@ -206,13 +206,9 @@ def test_drawdown_consumers_preserve_history_blockers(monkeypatch, endpoint, his
     )
     result = asyncio.run(handler())
 
-    expected_blockers = (
-        ["historical_correction_performance_unverified"]
-        if history.startswith("correction")
-        else ["drawdown_history_unavailable"]
-    )
-    if history == "correction_gap":
-        expected_blockers.insert(0, "drawdown_history_unavailable")
+    # Invalid correction rows fail canonical historical restatement, so history
+    # is unavailable just as it is for unreadable ledger or valuation evidence.
+    expected_blockers = ["drawdown_history_unavailable"]
     if history == "complete":
         drawdown = (
             result.current_drawdown

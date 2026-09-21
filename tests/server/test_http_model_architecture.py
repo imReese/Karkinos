@@ -61,8 +61,12 @@ def test_http_model_facade_is_only_a_stable_import_surface() -> None:
     source = FACADE_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(FACADE_PATH))
 
-    assert len(source.splitlines()) <= 250
-    assert not [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    # Exporting additional owned models must not require implementation here.
+    assert not [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
     assert {
         node.module
         for node in tree.body

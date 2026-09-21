@@ -99,6 +99,9 @@ class PersistedLedgerDb(PublishedValuationFakeDbMixin):
     def get_ledger_entries_sync(self, limit=500, offset=0):
         return deepcopy(self.rows[offset : offset + limit])
 
+    def get_all_ledger_entries_sync(self):
+        return deepcopy(self.rows)
+
     def get_cash_flows_sync(self, limit=1000, offset=0):
         return []
 
