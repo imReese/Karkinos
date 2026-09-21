@@ -5,16 +5,28 @@ export const settingsCopy = {
     kicker: 'Configuration',
     title: 'Configuration register',
     subtitle:
-      'Review effective values, runtime boundaries, and saved defaults before opening a controlled editor.',
+      'System settings and runtime parameters. Manage quote sources, trading fee models, tracked assets, and runtime environment. Sensitive credentials stay in local .env; strategy engine has zero live trading authority.',
+    configGuideTitle: 'Configuration Architecture & Quick Guide',
+    configGuideWebTitle: '1. Web UI Settings',
+    configGuideWebDetail:
+      'Data source (AKShare/TuShare), poll interval, and commission rate. Click save to apply immediately.',
+    configGuideJsonTitle: '2. Local config.json',
+    configGuideJsonDetail:
+      'Tracked asset symbols, initial cash, and server bind settings. Merged from JSON snippets below.',
+    configGuideEnvTitle: '3. Environment .env',
+    configGuideEnvDetail:
+      'API tokens for TuShare, AI models, and notification webhooks. Stored locally, never sent over browser.',
+    quickEditCosts: '✏️ Edit Costs & Sources',
+    quickMetadata: '📋 Complete Asset Metadata',
     dataStatus: 'Data status',
     dataStatusDetail:
       'Portfolio valuations follow the recorded quote state and refresh policy.',
     operationalControls: 'Operational controls',
     operationalControlsDetail:
-      'Open data-source maintenance and runtime-service controls only when operational review is needed.',
+      'Quote source capabilities, provider permissions, manual daily tasks, and live service scheduler state.',
     localPreferencesBoundaries: 'Local preferences & boundaries',
     localPreferencesBoundariesDetail:
-      'Notification readiness, immutable safety boundaries, theme, and language stay secondary to effective configuration.',
+      'Theme and language preferences, notification channel tests, and immutable safety rules.',
     refreshActionDetail:
       'Starts a controlled quote refresh and records the result. It does not write ledger entries or submit orders.',
     refreshActionEvidence: 'Controlled refresh · recorded quote cache',
@@ -199,15 +211,28 @@ export const settingsCopy = {
   zh: {
     kicker: '配置',
     title: '配置登记',
-    subtitle: '先查看生效值、运行边界和已保存默认项，再按需打开受控编辑入口。',
+    subtitle:
+      '系统设置与运行参数中心。管理行情数据源、交易费率成本模型、自选标的与本地运行环境。敏感凭据由本地 .env 安全托管，策略引擎默认零实盘下单权限。',
+    configGuideTitle: 'Karkinos 配置体系与操作指引',
+    configGuideWebTitle: '1. 网页即时设置 (Web UI)',
+    configGuideWebDetail:
+      '行情源选择 (AKShare/TuShare)、轮询刷新秒数、交易佣金率。点击下方【编辑行情源与交易成本】修改并保存，即刻生效。',
+    configGuideJsonTitle: '2. 本地业务配置 (config.json)',
+    configGuideJsonDetail:
+      '持仓与跟踪标的列表 (assets)、初始资金、服务器端口等。可参考下方【标的元数据与自选池】复制建议 JSON 片段合并生效。',
+    configGuideEnvTitle: '3. 本地敏感凭据 (.env)',
+    configGuideEnvDetail:
+      'TuShare Token、AI 投研大模型 API Key、通知机器人密钥等。存放于根目录 .env 文件，基于量化安全不进入页面展示与数据库。',
+    quickEditCosts: '✏️ 修改行情源与费率',
+    quickMetadata: '📋 补全标的元数据',
     dataStatus: '数据状态',
     dataStatusDetail: '组合估值以已记录的行情状态和刷新策略为准。',
-    operationalControls: '运行维护',
+    operationalControls: '服务运行与接口状态',
     operationalControlsDetail:
-      '仅在需要运行复核时展开数据源维护与服务状态控制。',
-    localPreferencesBoundaries: '本地偏好与边界',
+      '查看实时行情调度器运行状态、各数据源接口能力矩阵、TuShare 接口权限复核与每日手工任务。',
+    localPreferencesBoundaries: '界面偏好与安全守则',
     localPreferencesBoundariesDetail:
-      '通知就绪、不可变安全边界、主题和语言保持为生效配置之后的次级信息。',
+      '切换深浅色主题、中英文语言、测试消息通知通道（Telegram/微信），以及查看量化平台安全隔离与实盘风控守则。',
     refreshActionDetail:
       '主动刷新行情并记录结果；不会写入账本，也不会提交订单。',
     refreshActionEvidence: '受控刷新 · 已记录行情缓存',
@@ -250,18 +275,20 @@ export const settingsCopy = {
     providerTushare: 'Tushare',
     selectDataSource: '选择数据源',
     providerTimeoutNotice: '当前行情源请求超时。',
-    operationsRegister: '运营登记',
+    operationsRegister: '当前生效参数一览',
     registerProvider: '行情源',
     registerPollInterval: '轮询间隔',
     registerTrackedAssets: '跟踪资产',
     registerStrategy: '策略',
     providerConfiguration: '行情源配置',
     providerConfigurationDetail:
-      '只有保存后才会应用数据源变更；不会改变交易执行行为。',
-    configurationEditor: '编辑账户与数据设置',
-    configurationEditorDetail: '仅在修改账户成本默认值或已保存行情源时展开。',
-    metadataReadiness: '元数据就绪',
-    metadataReadinessDetail: '展示前必须能追溯资产名称与行情代码的来源。',
+      '支持在线热切换；修改轮询秒数或切换为 AKShare / TuShare 后点击【保存数据设置】即可立即生效。',
+    configurationEditor: '编辑行情源与交易成本',
+    configurationEditorDetail:
+      '点击展开在线编辑：切换行情源 (AKShare 免密即用 / TuShare 专业源)、设置行情刷新秒数，以及调整 A 股股票与基金佣金费率与最低费用。',
+    metadataReadiness: '标的元数据与自选池',
+    metadataReadinessDetail:
+      '持仓与自选标的名称配置：检查每只标的是否已有中文名称与资产分类，支持一键复制建议的 JSON 片段补全 config.json。',
     dataSourceOperations: '数据源运营',
     dataSourceOperationsDetail:
       '按需查看数据源能力、权限缺口、备用行情路径和 TuShare 手工任务。',
@@ -295,7 +322,7 @@ export const settingsCopy = {
     assetMetadataMissingSymbols: '缺少元数据的资产',
     assetMetadataSnippet: '建议配置片段',
     assetMetadataSnippetDetail:
-      '可将此内容作为元数据补齐或手工修复参考。不要提交私有运行配置。',
+      '操作指南：复制下方 JSON 内容，打开项目根目录的 config.json，将其合并至 assets 列表中保存并重启服务，即可完成标的中文名称补全。',
     assetMetadataComplete: '资产元数据已配置',
     assetMetadataCompleteDetail: '当前持仓的资产名称与行情代码均可追溯。',
     requiresRestart: '需要重启',
@@ -306,14 +333,14 @@ export const settingsCopy = {
     pollInterval: '轮询间隔',
     pollIntervalUnit: '秒',
     token: 'TuShare 凭证',
-    credentialConfigured: '已通过运行环境配置',
-    credentialMissing: '尚未配置；切换前请先配置运行环境凭证',
+    credentialConfigured: '已通过本地运行环境配置',
+    credentialMissing: '尚未配置；请在根目录 .env 文件中添加凭据后重启服务',
     credentialNotRequired: '当前行情源不需要凭证',
     credentialEnvironmentDetail:
-      '本页不接收或展示凭证；请配置运行环境后重启 Karkinos。',
-    accountCostProfile: '账户成本配置',
+      '基于金融安全规范，API 凭据不在网页输入或存储。请在项目根目录 .env 中添加对应配置（格式可参考根目录 .env.example），保存并重启服务即可生效。',
+    accountCostProfile: '股票与基金交易费率模型',
     accountCostProfileDetail:
-      '仅用于手工录入股票/ETF 交易时预填费用，不改变回测假设，也不会提交订单。',
+      '设置默认交易佣金费率与单笔最低佣金。此费率用于手动录入交易记录时自动预填，并参与投资组合交易摩擦成本测算。',
     stockCommissionRate: '股票佣金率',
     minimumCommission: '最低佣金',
     accountCostPreview: (rate: number, minimum: number) =>
@@ -350,7 +377,7 @@ export const settingsCopy = {
     safetyManualConfirmation: '任何接近实盘执行的工作流默认都必须人工确认。',
     backendSettings: '已保存配置',
     persistedSettingsDetail:
-      '账户与数据的非敏感默认值保存在这里；凭证仍由本地运行环境管理。',
+      '存储于 config.json 的核心参数概览。行情源切换、轮询频率与交易费率均可直接在下方编辑并保存生效；API 凭据由本地 .env 独立托管。',
     assetsTracked: (count: number) => `${count} 个跟踪资产`,
     initialCash: '初始现金',
     strategy: '策略',
