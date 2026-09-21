@@ -8,6 +8,7 @@ from typing import Any
 
 from analytics.normalized_research_gate import (
     build_normalized_research_advancement_gate,
+    candidate_research_advancement_preflight_blockers,
     candidate_research_evidence_blockers,
 )
 from analytics.strategy_advancement_gate import (
@@ -217,6 +218,42 @@ class AiShadowResearchCandidateWorkflowMixin:
                 )
                 if local_evidence_blockers:
                     raise ShadowResearchRejected(local_evidence_blockers[0])
+                baseline_row = await self._db.get_backtest_result(baseline_result_id)
+                if not isinstance(baseline_row, dict):
+                    raise ShadowResearchRejected(
+                        "baseline_research_backtest_result_missing"
+                    )
+                baseline_view = strategy_advancement_backtest_view(baseline_row)
+                candidate_view = strategy_advancement_backtest_view(candidate_row)
+                advancement_blockers = (
+                    candidate_research_advancement_preflight_blockers(
+                        baseline=baseline_view,
+                        candidate=candidate_view,
+                    )
+                )
+                if advancement_blockers:
+                    comparison = self._provider_free_research_blocked_comparison(
+                        baseline=baseline_row,
+                        candidate=candidate_row,
+                        baseline_view=baseline_view,
+                        candidate_view=candidate_view,
+                        draft=draft,
+                        iteration_context=iteration_context,
+                        blockers=advancement_blockers,
+                    )
+                    return self._store.save_candidate(
+                        run_id=str(run["run_id"]),
+                        session_id=str(hypotheses["session_id"]),
+                        draft_id=draft_id,
+                        backtest_run_id=backtest_run_id,
+                        critique_id=None,
+                        baseline_result_id=baseline_result_id,
+                        candidate_result_id=candidate_result_id,
+                        status="research_blocked",
+                        recommendation="keep_researching",
+                        comparison=comparison,
+                        now=self._utc_now(),
+                    )
             self._require_runtime_authorization(policy)
             call_id = f"{run['run_id']}:critique:{draft_id}"
             if critique_resume_extension_id:
@@ -356,6 +393,84 @@ class AiShadowResearchCandidateWorkflowMixin:
                 },
                 now=self._utc_now(),
             )
+
+    def _provider_free_research_blocked_comparison(
+        self,
+        *,
+        baseline: Mapping[str, Any],
+        candidate: Mapping[str, Any],
+        baseline_view: Mapping[str, Any],
+        candidate_view: Mapping[str, Any],
+        draft: Mapping[str, Any],
+        iteration_context: Mapping[str, Any],
+        blockers: list[str],
+    ) -> dict[str, Any]:
+        gate_core = {
+            "schema_version": "karkinos.normalized_research_provider_preflight.v1",
+            "status": "blocked",
+            "blockers": list(dict.fromkeys(blockers)),
+            "provider_call_performed": False,
+            "critique_skipped": True,
+            "critique_required_if_preflight_passes": True,
+            "does_not_register_strategy": True,
+            "does_not_create_order": True,
+            "does_not_authorize_execution": True,
+            "does_not_change_capital_authority": True,
+        }
+        gate = {
+            **gate_core,
+            "evidence_fingerprint": content_fingerprint(gate_core),
+        }
+        return {
+            "schema_version": "karkinos.ai.shadow_research_comparison.v1",
+            "baseline_source_fingerprint": shadow_research_backtest_source_fingerprint(
+                baseline
+            ),
+            "candidate_source_fingerprint": shadow_research_backtest_source_fingerprint(
+                candidate
+            ),
+            "economic_hypothesis": draft.get("economic_hypothesis"),
+            "risk_impact": draft.get("risk_impact"),
+            "failure_conditions": list(draft.get("failure_conditions") or []),
+            "limitations": list(draft.get("limitations") or []),
+            "baseline": dict(baseline_view),
+            "candidate": dict(candidate_view),
+            "deltas": {
+                "total_return": float(candidate_view["total_return"])
+                - float(baseline_view["total_return"]),
+                "sharpe": float(candidate_view["sharpe"])
+                - float(baseline_view["sharpe"]),
+                "max_drawdown": float(candidate_view["max_drawdown"])
+                - float(baseline_view["max_drawdown"]),
+                "total_cost": float(candidate_view["total_cost"])
+                - float(baseline_view["total_cost"]),
+            },
+            "improvements": {
+                "total_return": candidate_view["total_return"]
+                >= baseline_view["total_return"],
+                "sharpe": candidate_view["sharpe"] >= baseline_view["sharpe"],
+                "max_drawdown": abs(candidate_view["max_drawdown"])
+                <= abs(baseline_view["max_drawdown"]),
+            },
+            "deepseek_critique": {},
+            "research_capital_mode": SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+            "account_qualification_status": "not_evaluated",
+            "iteration_lineage": build_shadow_research_iteration_lineage(
+                iteration_context,
+                current_formula_fingerprint=draft.get("formula_fingerprint"),
+            ),
+            "recommendation": "keep_researching",
+            "research_gate": gate,
+            "promotion_gate": {
+                "status": "blocked",
+                "blockers": list(dict.fromkeys(blockers)),
+                "provider_call_performed": False,
+            },
+            "automatic_strategy_replacement_enabled": False,
+            "production_strategy_mutation_enabled": False,
+            "broker_submission_enabled": False,
+            "authority_effect": "research_only",
+        }
 
     async def _build_comparison(
         self,

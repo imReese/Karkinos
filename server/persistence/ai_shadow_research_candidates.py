@@ -306,6 +306,7 @@ def _require_candidate_contract_matches_run_context(
             or candidate_contract
             not in {
                 ("evaluated_research_only", "formula_research_candidate"),
+                ("research_blocked", "keep_researching"),
                 ("failed_closed", "reject"),
             }
         ):

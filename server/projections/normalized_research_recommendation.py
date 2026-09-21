@@ -82,22 +82,26 @@ def build_normalized_research_recommendation(
 
     blockers: list[str] = []
     ranked_inputs: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    complete_inputs: list[dict[str, Any]] = []
     if len(candidates) != expected_candidate_count:
         blockers.append("configured_normalized_candidate_set_incomplete")
     for candidate in candidates:
-        outcome = _research_outcome(candidate, run_id=run_id)
-        if outcome is None:
+        completion = _research_candidate_completion(candidate, run_id=run_id)
+        if completion is None:
             blockers.append("normalized_candidate_research_evidence_incomplete")
             continue
-        ranked_inputs.append((outcome.pop("ranking_key"), outcome))
-    candidate_ids = [outcome["candidate_id"] for _, outcome in ranked_inputs]
+        complete_inputs.append(completion)
+        outcome = _research_outcome(candidate, run_id=run_id)
+        if outcome is not None:
+            ranked_inputs.append((outcome.pop("ranking_key"), outcome))
+    candidate_ids = [outcome["candidate_id"] for outcome in complete_inputs]
     if len(candidate_ids) != len(set(candidate_ids)):
         blockers.append("normalized_candidate_identity_conflict")
-    lineage = {outcome.get("iteration_number"): outcome for _, outcome in ranked_inputs}
+    lineage = {outcome.get("iteration_number"): outcome for outcome in complete_inputs}
     expected_iterations = set(range(1, expected_candidate_count + 1))
     if set(lineage) != expected_iterations or any(
         outcome.get("total_iterations") != expected_candidate_count
-        for _, outcome in ranked_inputs
+        for outcome in complete_inputs
     ):
         blockers.append("normalized_candidate_iteration_lineage_invalid")
     else:
@@ -114,8 +118,10 @@ def build_normalized_research_recommendation(
             ):
                 blockers.append("normalized_candidate_iteration_lineage_invalid")
                 break
-    if len(ranked_inputs) != expected_candidate_count:
+    if len(complete_inputs) != expected_candidate_count:
         blockers.append("normalized_candidate_research_evidence_incomplete")
+    if not blockers and not ranked_inputs:
+        blockers.append("no_normalized_candidate_passed_provider_free_gate")
     if not blockers:
         ranked_inputs.sort(key=lambda item: item[0])
     winner_operation_preview = (
@@ -276,6 +282,52 @@ def is_valid_normalized_research_recommendation(value: Any) -> bool:
         and isinstance(evidence_fingerprint, str)
         and evidence_fingerprint == content_fingerprint(payload)
     )
+
+
+def _research_candidate_completion(
+    candidate: Mapping[str, Any], *, run_id: str
+) -> dict[str, Any] | None:
+    comparison = _mapping(candidate.get("comparison"))
+    lineage = _mapping(comparison.get("iteration_lineage"))
+    candidate_id = str(candidate.get("candidate_id") or "")
+    status = str(candidate.get("status") or "")
+    recommendation = str(candidate.get("recommendation") or "")
+    research_gate = _mapping(comparison.get("research_gate"))
+    evaluated = (
+        status == "evaluated_research_only"
+        and recommendation == "formula_research_candidate"
+        and bool(str(candidate.get("critique_id") or ""))
+    )
+    provider_free_blocked = (
+        status == "research_blocked"
+        and recommendation == "keep_researching"
+        and not str(candidate.get("critique_id") or "")
+        and research_gate.get("status") == "blocked"
+        and research_gate.get("provider_call_performed") is False
+        and bool(research_gate.get("blockers"))
+    )
+    if (
+        not candidate_id
+        or str(candidate.get("run_id") or "") != run_id
+        or not (evaluated or provider_free_blocked)
+        or comparison.get("research_capital_mode") != "normalized_notional"
+        or comparison.get("account_qualification_status") != "not_evaluated"
+        or not _valid_fingerprint(comparison.get("baseline_source_fingerprint"))
+        or not _valid_fingerprint(comparison.get("candidate_source_fingerprint"))
+        or lineage.get("sequential_feedback_bound") is not True
+        or not str(lineage.get("formula_fingerprint") or "").startswith("sha256:")
+    ):
+        return None
+    return {
+        "candidate_id": candidate_id,
+        "draft_id": str(candidate.get("draft_id") or ""),
+        "iteration_number": lineage.get("iteration_number"),
+        "total_iterations": lineage.get("total_iterations"),
+        "formula_fingerprint": lineage.get("formula_fingerprint"),
+        "parent_candidate_id": lineage.get("parent_candidate_id"),
+        "parent_draft_id": lineage.get("parent_draft_id"),
+        "parent_formula_fingerprint": lineage.get("parent_formula_fingerprint"),
+    }
 
 
 def _research_outcome(
