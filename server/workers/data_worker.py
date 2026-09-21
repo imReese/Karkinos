@@ -19,10 +19,12 @@ from server.release_activation import (
     wait_for_release_activation,
 )
 from server.services.market_calendar_automation import MarketCalendarAutomationService
+from server.services.verified_daily_market_data import VerifiedDailyMarketDataService
 from server.workers.presence import run_with_presence
 
 logger = logging.getLogger(__name__)
 CALENDAR_JOB = "market_calendar_sync"
+VERIFIED_DAILY_MARKET_JOB = "market_daily_verified"
 
 
 class WorkerExecutionAborted(RuntimeError):
@@ -107,6 +109,107 @@ async def execute_calendar_job(
             await heartbeat
 
 
+async def execute_verified_daily_market_job(
+    store: JobStore,
+    job: JobRun,
+    service,
+    *,
+    timeout: float = 180,
+    heartbeat_interval: float = 15,
+) -> None:
+    """Run one durable verified-market job behind lease fencing."""
+
+    async def renew():
+        while True:
+            await asyncio.sleep(heartbeat_interval)
+            if is_release_activation_guarded():
+                raise WorkerExecutionAborted("release_activation_started")
+            try:
+                store.heartbeat(job.lease, now=datetime.now(timezone.utc))
+            except Exception as exc:
+                raise WorkerExecutionAborted("verified_market_job_lease_lost") from exc
+
+    loop = asyncio.get_running_loop()
+    work = loop.create_future()
+
+    def deliver(result, error):
+        if not work.done():
+            if error is None:
+                work.set_result(result)
+            else:
+                work.set_exception(error)
+
+    def before_publish() -> None:
+        if is_release_activation_guarded():
+            raise WorkerExecutionAborted("release_activation_started")
+        try:
+            store.heartbeat(job.lease, now=datetime.now(timezone.utc))
+        except Exception as exc:
+            raise WorkerExecutionAborted("verified_market_job_lease_lost") from exc
+
+    def run():
+        try:
+            result, error = (
+                service.run(
+                    job.payload,
+                    before_publish=before_publish,
+                ),
+                None,
+            )
+        except Exception as exc:
+            result, error = None, exc
+        try:
+            loop.call_soon_threadsafe(deliver, result, error)
+        except RuntimeError:
+            pass
+
+    threading.Thread(
+        target=run,
+        name="verified-daily-market-job",
+        daemon=True,
+    ).start()
+    heartbeat = asyncio.create_task(renew())
+    try:
+        done, _ = await asyncio.wait(
+            {work, heartbeat},
+            timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if heartbeat in done or not done:
+            raise WorkerExecutionAborted(
+                "verified_market_execution_deadline_or_lease_lost"
+            )
+        publication = work.result()
+        result_ref = str(getattr(publication, "result_ref", "") or "").strip()
+        if not result_ref.startswith("dataset:sha256:"):
+            raise RuntimeError("verified_market_result_ref_invalid")
+        store.finish(
+            job.lease,
+            now=datetime.now(timezone.utc),
+            result_ref=result_ref,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        try:
+            store.fail(
+                job.lease,
+                now=datetime.now(timezone.utc),
+                error=type(exc).__name__,
+                retry_seconds=min(60 * 2 ** (job.attempt - 1), 3600),
+            )
+        except Exception:
+            if not isinstance(exc, WorkerExecutionAborted):
+                raise
+        if isinstance(exc, WorkerExecutionAborted):
+            raise
+    finally:
+        work.cancel()
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await heartbeat
+
+
 async def run_data_worker(config) -> None:
     db = AppDatabase()
     await db.init()
@@ -134,6 +237,25 @@ async def run_data_worker(config) -> None:
                         raise
                     except Exception:
                         logger.exception("Calendar job lease or completion failed")
+
+            market_job = store.claim(VERIFIED_DAILY_MARKET_JOB, owner, now=now)
+            if market_job:
+                service = VerifiedDailyMarketDataService(
+                    db.path.resolve().parent / "research",
+                    config,
+                )
+                try:
+                    await execute_verified_daily_market_job(
+                        store,
+                        market_job,
+                        service,
+                    )
+                except WorkerExecutionAborted:
+                    raise
+                except Exception:
+                    logger.exception(
+                        "Verified daily market job lease or completion failed"
+                    )
             await asyncio.sleep(5)
 
     await run_with_presence(controls, "data_worker_heartbeat", owner, consume())

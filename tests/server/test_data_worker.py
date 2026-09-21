@@ -10,7 +10,12 @@ from server.persistence.jobs import SQLiteJobStore
 from server.persistence.market_calendar_publication_uow import (
     MarketCalendarPublicationUnitOfWork,
 )
-from server.workers.data_worker import WorkerExecutionAborted, execute_calendar_job
+from server.workers.data_worker import (
+    VERIFIED_DAILY_MARKET_JOB,
+    WorkerExecutionAborted,
+    execute_calendar_job,
+    execute_verified_daily_market_job,
+)
 from server.workers.presence import run_with_presence
 from server.workers.supervisor import supervised_worker
 
@@ -202,3 +207,148 @@ with supervised_worker(worker="data", enabled=True):
                 os.kill(child_pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+
+@pytest.mark.asyncio
+async def test_verified_market_worker_finishes_with_dataset_result_ref(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = {"fixture": "matched"}
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+
+    observed: list[str] = []
+    service = Mock()
+
+    def run(request, *, before_publish):
+        assert request == payload
+        before_publish()
+        observed.append("published")
+        return type(
+            "Publication",
+            (),
+            {"result_ref": "dataset:sha256:" + "a" * 64},
+        )()
+
+    service.run.side_effect = run
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        service,
+        heartbeat_interval=60,
+    )
+
+    result = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    assert observed == ["published"]
+    assert result.status == "succeeded"
+    assert result.result_ref == "dataset:sha256:" + "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_verified_market_worker_retries_failed_publication(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = {"fixture": "conflict"}
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+
+    service = Mock()
+    service.run.side_effect = RuntimeError("verification_conflict")
+
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        service,
+        heartbeat_interval=60,
+    )
+
+    result = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    assert result.status == "queued"
+    assert result.result_ref is None
+    assert result.error == "RuntimeError"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["heartbeat", "timeout", "activation"])
+async def test_verified_market_worker_fences_publication_on_lost_authority(
+    tmp_path,
+    monkeypatch,
+    failure,
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = {"fixture": failure}
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+
+    monkeypatch.setattr(
+        "server.workers.data_worker.is_release_activation_guarded",
+        lambda: failure == "activation",
+    )
+    if failure == "heartbeat":
+        monkeypatch.setattr(
+            store,
+            "heartbeat",
+            Mock(side_effect=ValueError("job_lease_lost")),
+        )
+
+    blocked = Event()
+    service = Mock()
+
+    def run(request, *, before_publish):
+        if failure == "timeout":
+            blocked.wait(5)
+            return type(
+                "Publication",
+                (),
+                {"result_ref": "dataset:sha256:" + "b" * 64},
+            )()
+        before_publish()
+        pytest.fail("publication guard should have fenced this job")
+
+    service.run.side_effect = run
+    try:
+        with pytest.raises(WorkerExecutionAborted):
+            await execute_verified_daily_market_job(
+                store,
+                job,
+                service,
+                timeout=0.1,
+                heartbeat_interval=0.01,
+            )
+    finally:
+        blocked.set()
+
+
+@pytest.mark.asyncio
+async def test_verified_market_worker_rejects_non_dataset_result_ref(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = {"fixture": "bad-result"}
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+
+    service = Mock()
+    service.run.return_value = type(
+        "Publication",
+        (),
+        {"result_ref": "not-a-dataset"},
+    )()
+
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        service,
+        heartbeat_interval=60,
+    )
+    result = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    assert result.status == "queued"
+    assert result.error == "RuntimeError"
