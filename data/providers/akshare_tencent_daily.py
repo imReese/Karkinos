@@ -18,6 +18,7 @@ import pandas as pd
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import (
     DailyBarCapability,
+    DailyBarProviderUnavailableError,
     DailyBarRequest,
     MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
@@ -56,6 +57,13 @@ _REQUIRED_COLUMNS = (
 
 class AkshareTencentDailyBarError(RuntimeError):
     """Base failure for the immutable Tencent daily-bar adapter."""
+
+
+class AkshareTencentDailyBarUnavailableError(
+    AkshareTencentDailyBarError,
+    DailyBarProviderUnavailableError,
+):
+    """Tencent/AKShare external I/O is temporarily unavailable."""
 
 
 class AkshareTencentDailyBarRequestError(AkshareTencentDailyBarError):
@@ -129,7 +137,7 @@ class AkshareTencentDailyBarProvider:
                     with contextlib.redirect_stderr(io.StringIO()):
                         frame = client.stock_zh_a_hist_tx(**kwargs)
             except Exception as exc:
-                raise AkshareTencentDailyBarError(
+                raise AkshareTencentDailyBarUnavailableError(
                     f"akshare_tencent_history_failed:{symbol}"
                 ) from exc
 
@@ -195,7 +203,7 @@ class AkshareTencentDailyBarProvider:
         try:
             module = importlib.import_module("akshare")
         except (ImportError, OSError) as exc:
-            raise AkshareTencentDailyBarError(
+            raise AkshareTencentDailyBarUnavailableError(
                 "akshare_tencent_sdk_load_failed"
             ) from exc
         self._client = module

@@ -17,6 +17,7 @@ import pandas as pd
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import (
     DailyBarCapability,
+    DailyBarProviderUnavailableError,
     DailyBarRequest,
     MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
@@ -50,6 +51,13 @@ _LOT_TO_SHARES = Decimal("100")
 
 class AkshareDailyBarError(RuntimeError):
     """Base failure for the immutable AKShare daily-bar adapter."""
+
+
+class AkshareDailyBarUnavailableError(
+    AkshareDailyBarError,
+    DailyBarProviderUnavailableError,
+):
+    """AKShare/Eastmoney external I/O is temporarily unavailable."""
 
 
 class AkshareDailyBarRequestError(AkshareDailyBarError):
@@ -110,7 +118,7 @@ class AkshareDailyBarProvider:
             try:
                 frame = method(**kwargs)
             except Exception as exc:
-                raise AkshareDailyBarError(
+                raise AkshareDailyBarUnavailableError(
                     f"akshare_{endpoint}_failed:{instrument.symbol}"
                 ) from exc
             if not isinstance(frame, pd.DataFrame):
@@ -171,7 +179,7 @@ class AkshareDailyBarProvider:
         try:
             return importlib.import_module("akshare")
         except (ImportError, OSError) as exc:
-            raise AkshareDailyBarError("akshare_sdk_load_failed") from exc
+            raise AkshareDailyBarUnavailableError("akshare_sdk_load_failed") from exc
 
 
 def _endpoint_for(instrument: InstrumentKey) -> str:

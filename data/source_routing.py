@@ -113,12 +113,12 @@ def legacy_sources_for_use_case(
     return resolved
 
 
-def resolve_daily_bar_verification_pair(
+def resolve_daily_bar_verification_pairs(
     policy: MarketSourcePolicy,
     registry: ProviderRegistry,
     request: DailyBarRequest,
-) -> DailyBarVerificationPair:
-    """Resolve the first deterministic independent pair for one daily request."""
+) -> tuple[DailyBarVerificationPair, ...]:
+    """Resolve every deterministic independent pair in policy preference order."""
     if not isinstance(policy, MarketSourcePolicy):
         raise TypeError("market_source_policy_invalid")
     if not isinstance(registry, ProviderRegistry):
@@ -144,6 +144,7 @@ def resolve_daily_bar_verification_pair(
         ):
             eligible.append((name, provider))
 
+    pairs: list[DailyBarVerificationPair] = []
     for index, (primary_name, primary) in enumerate(eligible):
         for comparison_name, comparison in eligible[index + 1 :]:
             if (
@@ -152,20 +153,33 @@ def resolve_daily_bar_verification_pair(
                 == comparison.descriptor.upstream_group
             ):
                 continue
-            return DailyBarVerificationPair(
-                policy_id=policy.policy_id,
-                route=route,
-                primary_name=primary_name,
-                comparison_name=comparison_name,
-                primary=primary,
-                comparison=comparison,
-                reconciliation_policy=_daily_bar_reconciliation_policy(
-                    primary,
-                    comparison,
-                ),
+            pairs.append(
+                DailyBarVerificationPair(
+                    policy_id=policy.policy_id,
+                    route=route,
+                    primary_name=primary_name,
+                    comparison_name=comparison_name,
+                    primary=primary,
+                    comparison=comparison,
+                    reconciliation_policy=_daily_bar_reconciliation_policy(
+                        primary,
+                        comparison,
+                    ),
+                )
             )
 
-    raise MarketSourceRoutingError("market_source_verified_daily_pair_unavailable")
+    if not pairs:
+        raise MarketSourceRoutingError("market_source_verified_daily_pair_unavailable")
+    return tuple(pairs)
+
+
+def resolve_daily_bar_verification_pair(
+    policy: MarketSourcePolicy,
+    registry: ProviderRegistry,
+    request: DailyBarRequest,
+) -> DailyBarVerificationPair:
+    """Resolve the preferred deterministic independent pair for compatibility."""
+    return resolve_daily_bar_verification_pairs(policy, registry, request)[0]
 
 
 def daily_bar_verification_pair_for_config(

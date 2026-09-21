@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import (
     DailyBarCapability,
+    DailyBarProviderUnavailableError,
     DailyBarRequest,
     MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
@@ -59,6 +60,13 @@ _SESSION_LOCK = threading.Lock()
 
 class BaoStockDailyBarError(RuntimeError):
     """Base failure for the immutable BaoStock daily-bar adapter."""
+
+
+class BaoStockDailyBarUnavailableError(
+    BaoStockDailyBarError,
+    DailyBarProviderUnavailableError,
+):
+    """BaoStock could not complete external SDK/session I/O."""
 
 
 class BaoStockDailyBarRequestError(BaoStockDailyBarError):
@@ -208,7 +216,7 @@ class BaoStockDailyBarProvider:
         try:
             module = importlib.import_module("baostock")
         except (ImportError, OSError) as exc:
-            raise BaoStockDailyBarError("baostock_sdk_load_failed") from exc
+            raise BaoStockDailyBarUnavailableError("baostock_sdk_load_failed") from exc
         self._client = module
         return module
 
@@ -218,9 +226,9 @@ def _login(client: _BaoStockClient) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
             result = client.login()
     except Exception as exc:
-        raise BaoStockDailyBarError("baostock_login_failed") from exc
+        raise BaoStockDailyBarUnavailableError("baostock_login_failed") from exc
     if str(getattr(result, "error_code", "")) != "0":
-        raise BaoStockDailyBarError("baostock_login_rejected")
+        raise BaoStockDailyBarUnavailableError("baostock_login_rejected")
 
 
 def _logout(client: _BaoStockClient) -> None:
@@ -228,9 +236,9 @@ def _logout(client: _BaoStockClient) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
             result = client.logout()
     except Exception as exc:
-        raise BaoStockDailyBarError("baostock_logout_failed") from exc
+        raise BaoStockDailyBarUnavailableError("baostock_logout_failed") from exc
     if result is not None and str(getattr(result, "error_code", "")) not in {"", "0"}:
-        raise BaoStockDailyBarError("baostock_logout_rejected")
+        raise BaoStockDailyBarUnavailableError("baostock_logout_rejected")
 
 
 def _query(
@@ -249,9 +257,13 @@ def _query(
             adjustflag="3",
         )
     except Exception as exc:
-        raise BaoStockDailyBarError(f"baostock_history_query_failed:{code}") from exc
+        raise BaoStockDailyBarUnavailableError(
+            f"baostock_history_query_failed:{code}"
+        ) from exc
     if str(getattr(result, "error_code", "")) != "0":
-        raise BaoStockDailyBarError(f"baostock_history_query_rejected:{code}")
+        raise BaoStockDailyBarUnavailableError(
+            f"baostock_history_query_rejected:{code}"
+        )
     fields = getattr(result, "fields", None)
     if not isinstance(fields, list) or tuple(fields) != _FIELDS:
         raise BaoStockDailyBarResponseError("baostock_response_fields_invalid")

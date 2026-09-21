@@ -28,6 +28,10 @@ from core.types import InstrumentKey, InstrumentType
 ProviderNumber = Decimal | int | float | str
 
 
+class DailyBarProviderUnavailableError(RuntimeError):
+    """The provider could not produce an observation because external I/O is unavailable."""
+
+
 @dataclass(frozen=True, slots=True)
 class DailyBarCapability:
     """One explicitly supported daily-bar provider endpoint."""

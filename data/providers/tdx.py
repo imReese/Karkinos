@@ -48,6 +48,7 @@ import pandas as pd
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import (
     DailyBarCapability,
+    DailyBarProviderUnavailableError,
     DailyBarRequest,
     MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
@@ -115,8 +116,11 @@ class TdxProviderError(RuntimeError):
     """TDX Provider 基础异常。"""
 
 
-class TdxProviderUnavailableError(TdxProviderError):
-    """TDX SDK 当前不可用。"""
+class TdxProviderUnavailableError(
+    TdxProviderError,
+    DailyBarProviderUnavailableError,
+):
+    """TDX SDK or external data service is currently unavailable."""
 
 
 class TdxProviderRequestError(TdxProviderError):
@@ -213,7 +217,7 @@ class TdxDailyBarProvider:
                 fill_data=False,
             )
         except Exception as exc:
-            raise TdxProviderError("tdx_get_market_data_failed") from exc
+            raise TdxProviderUnavailableError("tdx_get_market_data_failed") from exc
 
         completed_at = _require_aware_utc(
             self._clock(),
