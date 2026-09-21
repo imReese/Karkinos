@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
-from data.market_daily_store import _market_daily_records_fingerprint
+from data.market_daily_store import verify_market_daily_receipt_on_connection
 from data.meta_store_connection import connect_meta_sqlite
 
 _CANONICAL_INSTRUMENT_TYPES = tuple(
@@ -84,6 +84,7 @@ def migrate_legacy_market_bars_to_v2(
     *,
     identity_evidence: Mapping[str, object] | None = None,
     dry_run: bool = True,
+    expected_plan_fingerprint: str | None = None,
     _failure_hook: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Plan or apply an evidence-bound migration into the typed v2 tables.
@@ -109,6 +110,7 @@ def migrate_legacy_market_bars_to_v2(
                 identity_evidence=identity_evidence or {},
                 apply=False,
                 failure_hook=None,
+                expected_plan_fingerprint=expected_plan_fingerprint,
             )
 
         connection.execute("BEGIN IMMEDIATE")
@@ -118,6 +120,7 @@ def migrate_legacy_market_bars_to_v2(
                 identity_evidence=identity_evidence or {},
                 apply=True,
                 failure_hook=_failure_hook,
+                expected_plan_fingerprint=expected_plan_fingerprint,
             )
             quick_check = connection.execute("PRAGMA quick_check").fetchone()
             if quick_check is None or str(quick_check[0]).lower() != "ok":
@@ -137,6 +140,7 @@ def _migration_report(
     identity_evidence: Mapping[str, object],
     apply: bool,
     failure_hook: Callable[[str], None] | None,
+    expected_plan_fingerprint: str | None,
 ) -> dict[str, Any]:
     _require_legacy_schema(conn)
     source_fingerprint_before = _legacy_source_fingerprint(conn)
@@ -147,6 +151,11 @@ def _migration_report(
         explicit=explicit,
         receipt_evidence=receipt_evidence,
     )
+    if (
+        expected_plan_fingerprint is not None
+        and plan_fingerprint != expected_plan_fingerprint
+    ):
+        raise RuntimeError("market_bar_migration_plan_changed")
 
     migrated_bar_rows = 0
     migrated_meta_rows = 0
@@ -246,7 +255,12 @@ def _verified_receipt_evidence(
             receipt = json.loads(str(row["receipt_json"]))
         except (json.JSONDecodeError, TypeError):
             receipt = None
-        if not isinstance(receipt, dict) or not _receipt_is_valid(conn, receipt):
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("trade_date") != trade_date
+            or receipt.get("provider_name") != provider_name
+            or not verify_market_daily_receipt_on_connection(conn, receipt)
+        ):
             invalid.append(
                 {
                     "reason": "invalid_market_daily_ingestion_receipt",
@@ -254,6 +268,13 @@ def _verified_receipt_evidence(
                     "provider_name": provider_name,
                 }
             )
+            continue
+        # Typed receipts bind the target, and are valid alongside old receipts.
+        # They cannot prove the identity or values of an untyped source row.
+        if (
+            receipt.get("schema_version")
+            != "karkinos.market_daily_ingestion_receipt.v1"
+        ):
             continue
         symbols = receipt.get("symbols")
         assert isinstance(symbols, list)
@@ -276,50 +297,6 @@ def _verified_receipt_evidence(
                 continue
             evidence[key] = candidate
     return evidence, invalid
-
-
-def _receipt_is_valid(conn: sqlite3.Connection, receipt: Mapping[str, object]) -> bool:
-    schema_version = str(receipt.get("schema_version") or "")
-    if schema_version != "karkinos.market_daily_ingestion_receipt.v1":
-        return False
-    symbols = receipt.get("symbols")
-    if not isinstance(symbols, list) or not symbols:
-        return False
-    trade_date = str(receipt.get("trade_date") or "")
-    rows = conn.execute(
-        """
-        SELECT symbol, timestamp, open, high, low, close, volume, amount
-        FROM market_bars
-        WHERE frequency = '1d' AND substr(timestamp, 1, 10) = ?
-        ORDER BY symbol
-        """,
-        (trade_date,),
-    ).fetchall()
-    wanted = {str(symbol) for symbol in symbols}
-    records = [tuple(row) for row in rows if str(row[0]) in wanted]
-    if len(records) != len(wanted):
-        return False
-    expected_dataset = _market_daily_records_fingerprint(
-        trade_date=trade_date,
-        provider_name=str(receipt.get("provider_name") or ""),
-        records=records,
-    )
-    if receipt.get("dataset_fingerprint") != expected_dataset:
-        return False
-    core = dict(receipt)
-    stored_fingerprint = core.pop("receipt_fingerprint", None)
-    expected_fingerprint = (
-        "sha256:"
-        + hashlib.sha256(
-            json.dumps(
-                core,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-    )
-    return stored_fingerprint == expected_fingerprint
 
 
 def _plan_bar_rows(
@@ -427,10 +404,11 @@ def _write_bar_meta_rows(
     decisions: Sequence[tuple[Any, ...]],
 ) -> int:
     identities: dict[tuple[str, str], set[tuple[str, str]]] = {}
+    planned_counts: dict[tuple[str, str], int] = {}
     for decision in decisions:
-        identities.setdefault((str(decision[0]), str(decision[2])), set()).add(
-            (str(decision[1]), str(decision[10]))
-        )
+        key = (str(decision[0]), str(decision[2]))
+        planned_counts[key] = planned_counts.get(key, 0) + 1
+        identities.setdefault(key, set()).add((str(decision[1]), str(decision[10])))
     inserted = 0
     for row in conn.execute("SELECT * FROM bar_meta ORDER BY symbol, frequency"):
         candidates = identities.get((str(row["symbol"]), str(row["frequency"])), set())
@@ -468,13 +446,25 @@ def _write_bar_meta_rows(
             provenance,
         )
         if existing is not None:
-            comparable = tuple(existing)[0:16]
-            expected = values[0:16]
-            if comparable != expected:
-                raise RuntimeError(
-                    "typed bar-meta target conflicts with legacy evidence: "
-                    f"{row['symbol']}/{instrument_type}/{row['frequency']}"
-                )
+            # Keep the target's provider acquisition metadata. Its later window
+            # need not match the old acquisition; OHLCV conflicts are checked
+            # independently before any row can be copied into the target.
+            continue
+        legacy_count = conn.execute(
+            "SELECT COUNT(*) FROM market_bars WHERE symbol=? AND frequency=?",
+            (row["symbol"], row["frequency"]),
+        ).fetchone()[0]
+        typed_count = conn.execute(
+            """SELECT COUNT(*) FROM market_bars_v2
+               WHERE symbol=? AND instrument_type=? AND frequency=?""",
+            (row["symbol"], instrument_type, row["frequency"]),
+        ).fetchone()[0]
+        if (
+            legacy_count != typed_count
+            or planned_counts[(row["symbol"], row["frequency"])] != legacy_count
+        ):
+            # A partially resolved or extended series is not the legacy
+            # acquisition represented by this metadata and dataset identity.
             continue
         conn.execute(
             """

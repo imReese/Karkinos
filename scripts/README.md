@@ -96,6 +96,26 @@ npm ci --prefix web
 
 Specialized tooling is grouped under `broker/`, `ci/`, `data/`, `release/`, and `service/`.
 
+## 恢复旧版股票历史到 typed 存储
+
+[`data/migrate_market_bars.py`](data/migrate_market_bars.py) 只使用已验证的旧版全市场
+日线回执，将对应股票历史补入 `market_bars_v2`，不联网。先预检：
+
+```bash
+uv run --locked python scripts/data/migrate_market_bars.py --root ~/.karkinos/development/data
+```
+
+核对 `planned_bar_rows` 和 `blockers` 后，使用报告里的 `plan_fingerprint` 应用：
+
+```bash
+uv run --locked python scripts/data/migrate_market_bars.py \
+  --root ~/.karkinos/development/data --apply --expected-plan 'sha256:<plan_fingerprint>'
+```
+
+应用前自动在该数据目录的 `backups/` 下保存包含已提交 WAL 页的 SQLite 快照。
+源表和原回执保留；已有 typed 行价格冲突则事务回滚，已有来源元数据不覆盖。
+缺少类型证据的行会留在旧表并报告为 blocker，因此迁移成功不表示全部历史或最新行情已齐全。
+
 ## TDX 日线手动检查
 
 [`data/check_tdx_daily.py`](data/check_tdx_daily.py) 检查一只股票、一个已经收盘的交易日。

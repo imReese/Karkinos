@@ -31,6 +31,52 @@ def is_supported_stock_receipt_identity(receipt: Mapping[str, object]) -> bool:
     )
 
 
+def require_frozen_stock_bars_unchanged(
+    conn: sqlite3.Connection,
+    records: Sequence[tuple[object, ...]],
+) -> None:
+    """Reject writes that would revise a receipt-bound stock observation.
+
+    The caller holds the write transaction. Legacy receipts protect their exact
+    stock observations too, including copies restored into typed storage.
+    """
+    if not records:
+        return
+    dates = {str(record[1])[:10] for record in records}
+    authorities: dict[str, list[tuple[str, set[str]]]] = {}
+    for row in conn.execute(
+        """SELECT trade_date, receipt_json FROM market_daily_ingestion_receipts
+           WHERE trade_date >= ? AND trade_date <= ?""",
+        (min(dates), max(dates)),
+    ):
+        receipt = json.loads(str(row[1]))
+        if not is_supported_stock_receipt_identity(receipt):
+            continue
+        table = (
+            "market_bars"
+            if receipt["schema_version"] == "karkinos.market_daily_ingestion_receipt.v1"
+            else "market_bars_v2"
+        )
+        authorities.setdefault(str(row[0]), []).append(
+            (table, {str(symbol) for symbol in receipt.get("symbols") or []})
+        )
+    for record in records:
+        symbol, timestamp = str(record[0]), str(record[1])
+        for table, symbols in authorities.get(timestamp[:10], []):
+            if symbol not in symbols:
+                continue
+            identity = (
+                "instrument_type='stock' AND" if table == "market_bars_v2" else ""
+            )
+            existing = conn.execute(
+                f"""SELECT open, high, low, close, volume, amount FROM {table}
+                    WHERE {identity} symbol=? AND frequency='1d' AND timestamp=?""",
+                (symbol, timestamp),
+            ).fetchone()
+            if existing is None or tuple(existing) != tuple(record[2:8]):
+                raise ValueError(f"frozen_market_bar_conflict:{symbol}:{timestamp}")
+
+
 class MarketDailyIngestionMixin:
     """Own immutable daily-batch receipts on the DataStore SQLite connection."""
 
@@ -121,6 +167,7 @@ class MarketDailyIngestionMixin:
 
         with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 """
                 SELECT receipt_json FROM market_daily_ingestion_receipts
@@ -136,6 +183,7 @@ class MarketDailyIngestionMixin:
                     raise ValueError("market_daily_ingestion_receipt_conflict")
                 return stored
 
+            require_frozen_stock_bars_unchanged(conn, records)
             conn.executemany(
                 """
                 INSERT INTO market_bars_v2 (
