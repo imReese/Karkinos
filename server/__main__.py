@@ -214,14 +214,21 @@ def _run_runtime(
         from server.workers.ai_shadow_research_worker import (
             run_ai_shadow_research_worker,
         )
+        from server.workers.supervisor import watch_supervisor_lifetime
 
+        watch_supervisor_lifetime()
         asyncio.run(run_ai_shadow_research_worker(config))
         return
 
     import uvicorn
 
-    from server.workers.supervisor import supervised_data_worker
+    from server.workers.supervisor import supervised_worker
 
+    # Installed runtimes have a dedicated research LaunchAgent. Development
+    # has no external worker owner, so its launcher must supervise this child.
+    supervise_research = (
+        config.ai.enabled and os.environ.get("KARKINOS_WORKSPACE_ROLE") == "development"
+    )
     if args.reload:
         forwarded = {}
         if args.host is not None:
@@ -231,9 +238,17 @@ def _run_runtime(
         previous = {name: os.environ.get(name) for name in forwarded}
         os.environ.update(forwarded)
         try:
-            with supervised_data_worker(
-                enabled=config.market_calendar_auto_sync,
-                env_file=args.env_file,
+            with (
+                supervised_worker(
+                    worker="data",
+                    enabled=config.market_calendar_auto_sync,
+                    env_file=args.env_file,
+                ),
+                supervised_worker(
+                    worker="research",
+                    enabled=supervise_research,
+                    env_file=args.env_file,
+                ),
             ):
                 uvicorn.run(
                     "server.__main__:create_runtime_app",
@@ -251,9 +266,17 @@ def _run_runtime(
                     os.environ[name] = value
         return
 
-    with supervised_data_worker(
-        enabled=config.market_calendar_auto_sync,
-        env_file=args.env_file,
+    with (
+        supervised_worker(
+            worker="data",
+            enabled=config.market_calendar_auto_sync,
+            env_file=args.env_file,
+        ),
+        supervised_worker(
+            worker="research",
+            enabled=supervise_research,
+            env_file=args.env_file,
+        ),
     ):
         uvicorn.run(
             create_runtime_app(config_overrides=overrides, runtime_config=config),

@@ -1,4 +1,4 @@
-"""Keep the data worker in a separate process for source and packaged launchers."""
+"""Keep provider workers in separate processes owned by the server launcher."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 from contextlib import contextmanager
+from typing import Literal
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +33,18 @@ def watch_supervisor_lifetime() -> None:
 
 
 @contextmanager
-def supervised_data_worker(*, enabled: bool, env_file: str | None = None):
+def supervised_worker(
+    *,
+    worker: Literal["data", "research"],
+    enabled: bool,
+    env_file: str | None = None,
+):
+    if worker not in {"data", "research"}:
+        raise ValueError("unsupported worker")
     if not enabled:
         yield
         return
-    command = [sys.executable, "-m", "server", "--data-worker"]
+    command = [sys.executable, "-m", "server", f"--{worker}-worker"]
     if env_file is not None:
         command += ["--env-file", env_file]
     stop = threading.Event()
@@ -53,7 +61,7 @@ def supervised_data_worker(*, enabled: bool, env_file: str | None = None):
     try:
         process = start()
     except OSError:
-        logger.exception("Data worker unavailable; API will serve degraded reads")
+        logger.exception("%s worker unavailable; API remains available", worker)
 
     def supervise():
         nonlocal process
@@ -62,11 +70,11 @@ def supervised_data_worker(*, enabled: bool, env_file: str | None = None):
                 try:
                     process = start()
                 except OSError:
-                    logger.exception("Failed to restart data worker")
+                    logger.exception("Failed to restart %s worker", worker)
                     stop.wait(5)
 
     monitor = threading.Thread(
-        target=supervise, name="data-worker-supervisor", daemon=True
+        target=supervise, name=f"{worker}-worker-supervisor", daemon=True
     )
     monitor.start()
     try:

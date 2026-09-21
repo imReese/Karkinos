@@ -526,11 +526,16 @@ def test_server_main_research_worker_dispatches_without_starting_http(
 
     monkeypatch.setattr(worker_runtime, "run_ai_shadow_research_worker", fake_worker)
     monkeypatch.setattr(asyncio, "run", fake_asyncio_run)
+    monkeypatch.setattr(
+        "server.workers.supervisor.watch_supervisor_lifetime",
+        lambda: captured.update(supervisor_watched=True),
+    )
 
     server_main.main()
 
     assert isinstance(captured["config"], ServerConfig)
     assert captured["awaitable"] is sentinel
+    assert captured["supervisor_watched"] is True
 
 
 def test_runtime_environment_overrides_file_and_explicit_values_win(
@@ -1418,11 +1423,23 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         assert f"{env_name}=" in compose
 
 
-def test_server_main_reload_does_not_forward_removed_live_override(monkeypatch):
+def test_server_main_reload_does_not_forward_removed_live_override(
+    tmp_path, monkeypatch
+):
     from contextlib import nullcontext
 
     from server import __main__ as server_main
 
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    for name in (
+        "KARKINOS_CONFIG_PATH",
+        "KARKINOS_ENV_FILE",
+        "KARKINOS_DATA_DIR",
+        "KARKINOS_HOME",
+        "KARKINOS_WORKSPACE",
+    ):
+        monkeypatch.delenv(name, raising=False)
     captured = {}
 
     def fake_run(*args, **kwargs):
@@ -1451,7 +1468,7 @@ def test_server_main_reload_does_not_forward_removed_live_override(monkeypatch):
     monkeypatch.delenv("KARKINOS_LIVE_AUTO_START", raising=False)
     monkeypatch.setattr("uvicorn.run", fake_run)
     monkeypatch.setattr(
-        "server.workers.supervisor.supervised_data_worker",
+        "server.workers.supervisor.supervised_worker",
         lambda **kwargs: nullcontext(),
     )
 
@@ -1461,6 +1478,65 @@ def test_server_main_reload_does_not_forward_removed_live_override(monkeypatch):
     assert captured["kwargs"]["reload"] is True
     assert captured["kwargs"]["reload_excludes"] == ["tests/**", "web/**"]
     assert captured["legacy_live_auto_start"] is None
+
+
+@pytest.mark.parametrize("reload", [False, True])
+@pytest.mark.parametrize("ai_enabled", [False, True])
+@pytest.mark.parametrize("workspace_role", ["development", "stable"])
+def test_http_runtime_supervises_research_when_enabled_without_calendar_sync(
+    monkeypatch, reload, ai_enabled, workspace_role
+):
+    from contextlib import contextmanager
+
+    from server import __main__ as server_main
+
+    monkeypatch.setenv("KARKINOS_WORKSPACE_ROLE", workspace_role)
+    expected_research = ai_enabled and workspace_role == "development"
+    config = ServerConfig(
+        ai=AIProviderConfig(
+            enabled=ai_enabled,
+            provider="deepseek",
+            model="deepseek-flash",
+            base_url="https://api.deepseek.com",
+        ),
+        market_calendar_auto_sync=False,
+    )
+    active = []
+    calls = []
+
+    @contextmanager
+    def supervise(*, worker, enabled, env_file):
+        assert env_file == "fixture.env"
+        calls.append((worker, enabled))
+        if enabled:
+            active.append(worker)
+        try:
+            yield
+        finally:
+            if enabled:
+                active.remove(worker)
+
+    def serve(*args, **kwargs):
+        assert active == (["research"] if expected_research else [])
+
+    monkeypatch.setattr("server.workers.supervisor.supervised_worker", supervise)
+    monkeypatch.setattr("uvicorn.run", serve)
+    monkeypatch.setattr(server_main, "create_runtime_app", lambda **kwargs: object())
+    server_main._run_runtime(
+        SimpleNamespace(
+            data_worker=False,
+            research_worker=False,
+            reload=reload,
+            env_file="fixture.env",
+            host=None,
+            port=None,
+            reload_exclude=None,
+        ),
+        config,
+        {},
+    )
+    assert calls == [("data", False), ("research", expected_research)]
+    assert active == []
 
 
 def test_server_main_rejects_removed_no_live_flag(monkeypatch):

@@ -12,7 +12,7 @@ from server.persistence.market_calendar_publication_uow import (
 )
 from server.workers.data_worker import WorkerExecutionAborted, execute_calendar_job
 from server.workers.presence import run_with_presence
-from server.workers.supervisor import supervised_data_worker
+from server.workers.supervisor import supervised_worker
 
 
 def test_expired_worker_cannot_publish_even_before_replacement_claims(tmp_path):
@@ -69,14 +69,17 @@ async def test_presence_stops_when_worker_exits_and_does_not_claim_job_success()
     assert statuses == ["ready", "stopped"]
 
 
-def test_supervisor_restarts_exited_child_and_reaps_child_on_shutdown(monkeypatch):
+@pytest.mark.parametrize("worker", ["data", "research"])
+def test_supervisor_restarts_exited_child_and_reaps_child_on_shutdown(
+    monkeypatch, worker
+):
     first, replacement = Mock(), Mock()
     first.poll.return_value = 1
     replacement.poll.return_value = None
     started = Event()
 
     def start(command, **kwargs):
-        assert command[-1] == "--data-worker"
+        assert command[-1] == f"--{worker}-worker"
         if not started.is_set():
             started.set()
             return first
@@ -85,7 +88,7 @@ def test_supervisor_restarts_exited_child_and_reaps_child_on_shutdown(monkeypatc
 
     replaced = Event()
     monkeypatch.setattr("server.workers.supervisor.subprocess.Popen", start)
-    with supervised_data_worker(enabled=True):
+    with supervised_worker(worker=worker, enabled=True):
         assert replaced.wait(timeout=3)
     replacement.terminate.assert_called_once()
     replacement.wait.assert_called_once_with(timeout=10)
@@ -105,7 +108,7 @@ def test_initial_worker_spawn_failure_does_not_prevent_api_and_is_retried(monkey
         return replacement
 
     monkeypatch.setattr("server.workers.supervisor.subprocess.Popen", start)
-    with supervised_data_worker(enabled=True):
+    with supervised_worker(worker="data", enabled=True):
         assert started.wait(3)
     replacement.terminate.assert_called_once()
 
@@ -160,14 +163,14 @@ def test_worker_lifetime_ends_after_parent_sigkill(tmp_path):
     parent_code = f"""
 import subprocess, sys, time
 from pathlib import Path
-from server.workers.supervisor import supervised_data_worker
+from server.workers.supervisor import supervised_worker
 original = subprocess.Popen
 def spawn(command, **kwargs):
     child = original([sys.executable, '-c', {child_code!r}], **kwargs)
     Path({str(pid_file)!r}).write_text(str(child.pid))
     return child
 subprocess.Popen = spawn
-with supervised_data_worker(enabled=True):
+with supervised_worker(worker="data", enabled=True):
     time.sleep(30)
 """
     parent = subprocess.Popen([sys.executable, "-c", parent_code])

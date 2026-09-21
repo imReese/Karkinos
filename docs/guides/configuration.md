@@ -105,6 +105,8 @@ KARKINOS_AI_API_KEY
 
 AI 配置不授予金融事实、Portfolio、Risk、Accounting 或资本权限。
 
+开发 workspace 启用 `ai.enabled` 后，启动器会同时管理独立的 research worker。研究任务仍按已授权的 policy 和模型调用时段执行；停止开发服务时会一并停止该 worker。已安装的 macOS runtime 继续由独立的 LaunchAgent 管理研究进程。
+
 ## `broker_fee`
 
 用于预期和模拟交易成本：
