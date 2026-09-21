@@ -15,6 +15,7 @@ export function DecisionCockpitLoading() {
     <section
       className="app-workbench-route min-w-0 space-y-4 sm:space-y-5"
       data-workbench-route="decision"
+      data-workbench-width="wide"
     >
       <WorkspaceHeader
         eyebrow={labels.kicker}
@@ -132,6 +133,7 @@ export function DecisionCockpitError({ error }: { error: unknown }) {
     <section
       className="app-workbench-route space-y-5"
       data-workbench-route="decision"
+      data-workbench-width="wide"
     >
       <PageHeader title={labels.title} subtitle={labels.subtitle} />
       <EvidenceState

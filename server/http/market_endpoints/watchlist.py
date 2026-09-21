@@ -204,7 +204,7 @@ def create_router(
     @r.get("/kline/{symbol}", response_model=list[KlineBar])
     async def get_kline(
         symbol: str,
-        start: str = "2025-01-02",
+        start: str | None = None,
         end: str = _DEFAULT_END_DATE,
         interval: str = "1d",
         instrument_type: str | None = None,
@@ -227,7 +227,10 @@ def create_router(
                 "5m": BarFrequency.MIN_5,
                 "1d": BarFrequency.DAILY,
             }.get(interval, BarFrequency.DAILY)
-            start_at = dependencies.datetime_provider().strptime(start, "%Y-%m-%d")
+            effective_start = start or "1990-01-01"
+            start_at = dependencies.datetime_provider().strptime(
+                effective_start, "%Y-%m-%d"
+            )
             end_exclusive = dependencies.datetime_provider().strptime(
                 end, "%Y-%m-%d"
             ) + dependencies.timedelta_provider()(days=1)

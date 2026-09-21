@@ -8,8 +8,11 @@ import {
   type KlineRangeKey,
   type KlineRangeLabels,
   type PriceStructureChartModel,
+  type PriceStructureChartType,
+  type PriceStructureChartTypeLabels,
 } from './price-structure-chart-model';
 import {
+  PriceStructureChartTypeControls,
   PriceStructureLegend,
   PriceStructureRangeControls,
 } from './price-structure-chart-sections';
@@ -36,7 +39,11 @@ export function PriceStructureEmptyView({
 export function PriceStructureChartView({
   axisLabels,
   chartScrollRef,
+  chartType,
+  chartTypeAriaLabel,
+  chartTypeLabels,
   model,
+  onChartTypeChange,
   onRangeChange,
   priceLabel,
   rangeAriaLabel,
@@ -46,7 +53,11 @@ export function PriceStructureChartView({
 }: {
   axisLabels: KlineAxisLabels;
   chartScrollRef: RefObject<HTMLDivElement | null>;
+  chartType: PriceStructureChartType;
+  chartTypeAriaLabel?: (label: string) => string;
+  chartTypeLabels: PriceStructureChartTypeLabels;
   model: PriceStructureChartModel;
+  onChartTypeChange: (type: PriceStructureChartType) => void;
   onRangeChange: (range: KlineRangeKey) => void;
   priceLabel: string;
   rangeAriaLabel: (label: string) => string;
@@ -61,13 +72,21 @@ export function PriceStructureChartView({
     >
       <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="app-kicker app-type-overline">{titleLabel}</div>
-        <PriceStructureRangeControls
-          labels={rangeLabels}
-          onRangeChange={onRangeChange}
-          rangeAriaLabel={rangeAriaLabel}
-          selectedRange={selectedRange}
-          titleLabel={titleLabel}
-        />
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+          <PriceStructureChartTypeControls
+            chartType={chartType}
+            labels={chartTypeLabels}
+            onChartTypeChange={onChartTypeChange}
+            chartTypeAriaLabel={chartTypeAriaLabel}
+          />
+          <PriceStructureRangeControls
+            labels={rangeLabels}
+            onRangeChange={onRangeChange}
+            rangeAriaLabel={rangeAriaLabel}
+            selectedRange={selectedRange}
+            titleLabel={titleLabel}
+          />
+        </div>
       </div>
       <div
         ref={chartScrollRef}
@@ -76,7 +95,7 @@ export function PriceStructureChartView({
       >
         <div
           data-testid="price-structure-chart-canvas"
-          className="min-w-[720px]"
+          className="min-w-[720px] w-full"
         >
           <PriceStructureChartSvg
             axisLabels={axisLabels}

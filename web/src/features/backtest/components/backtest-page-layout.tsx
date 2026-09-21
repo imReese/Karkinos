@@ -8,6 +8,7 @@ export function BacktestPageLayout() {
     <section
       className="app-workbench-route space-y-4 sm:space-y-5"
       data-workbench-route="backtest"
+      data-workbench-width="wide"
     >
       <BacktestPageHeader />
       <div

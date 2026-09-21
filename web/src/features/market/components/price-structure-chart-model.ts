@@ -31,6 +31,18 @@ export type PriceStructureReferenceLine = {
   tone?: 'local' | 'broker';
 };
 
+export type PriceStructureChartType = 'candlestick' | 'line';
+
+export type PriceStructureChartTypeLabels = {
+  candlestick: string;
+  line: string;
+};
+
+export const DEFAULT_CHART_TYPE_LABELS: PriceStructureChartTypeLabels = {
+  candlestick: 'K线',
+  line: '走势',
+};
+
 export type PriceStructureChartProps = {
   bars: PriceStructureBar[];
   emptyLabel: string;
@@ -41,6 +53,9 @@ export type PriceStructureChartProps = {
   rangeAriaLabel?: (label: string) => string;
   markers?: PriceStructureMarker[];
   referenceLines?: PriceStructureReferenceLine[];
+  initialChartType?: PriceStructureChartType;
+  chartTypeLabels?: PriceStructureChartTypeLabels;
+  chartTypeAriaLabel?: (label: string) => string;
 };
 
 export const DEFAULT_RANGE_LABELS: KlineRangeLabels = {
@@ -162,11 +177,17 @@ export function buildPriceStructureChartModel({
   markers,
   referenceLines,
   selectedRange,
+  width = 720,
+  height = 280,
+  chartType = 'candlestick',
 }: {
   bars: PriceStructureBar[];
   markers: PriceStructureMarker[];
   referenceLines: PriceStructureReferenceLine[];
   selectedRange: KlineRangeKey;
+  width?: number;
+  height?: number;
+  chartType?: PriceStructureChartType;
 }) {
   const validBars = bars
     .filter((bar) => Number.isFinite(bar.close))
@@ -208,34 +229,102 @@ export function buildPriceStructureChartModel({
     ...finiteMarkerValues,
   );
   const range = max - min || 1;
+
+  const chartWidth = Math.max(width, 720);
+  const chartHeight = Math.max(height, 240);
   const plot = {
-    left: 64,
-    right: 620,
-    top: 10,
-    bottom: hasVolume ? 174 : 218,
+    left: 56,
+    right: chartWidth - 16,
+    top: 12,
+    bottom: hasVolume ? chartHeight - 74 : chartHeight - 26,
   };
-  const volumePlot = { top: 190, bottom: 218 };
+  const volumePlot = {
+    top: chartHeight - 58,
+    bottom: chartHeight - 26,
+  };
   const xAxisY = hasVolume ? volumePlot.bottom : plot.bottom;
-  const plotWidth = plot.right - plot.left;
-  const plotHeight = plot.bottom - plot.top;
+  const plotWidth = Math.max(plot.right - plot.left, 10);
+  const plotHeight = Math.max(plot.bottom - plot.top, 10);
   const plotY = (value: number) =>
     plot.bottom - ((value - min) / range) * plotHeight;
   const step = plotWidth / Math.max(plottedBars.length, 1);
-  const candleWidth = Math.max(Math.min(step * 0.48, 14), 4);
+
+  // Professional financial candlestick sizing:
+  // Strictly prevent overlapping between adjacent candles
+  let candleWidth = 1;
+  if (step >= 6) {
+    candleWidth = Math.max(1, Math.min(Math.floor(step * 0.72), 16));
+  } else if (step >= 3) {
+    candleWidth = Math.max(1, Math.floor(step - 1));
+  } else {
+    candleWidth = 1;
+  }
+
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
     const value = min + range * ratio;
     return { value, y: plotY(value) };
   });
-  const xTickIndexes = Array.from(
-    new Set([
-      0,
-      Math.max(0, Math.floor((plottedBars.length - 1) / 2)),
-      Math.max(0, plottedBars.length - 1),
-    ]),
+
+  const tickCount = Math.min(
+    Math.max(2, Math.floor(plotWidth / 150)),
+    plottedBars.length,
   );
+  const xTickIndexes = Array.from(
+    new Set(
+      Array.from({ length: tickCount }, (_, i) =>
+        i === tickCount - 1
+          ? plottedBars.length - 1
+          : Math.floor((i / (tickCount - 1)) * (plottedBars.length - 1)),
+      ),
+    ),
+  );
+
+  const latestBar = plottedBars[plottedBars.length - 1] ?? null;
+
+  // Continuous line and area paths (Apple Stocks style)
+  const linePoints = plottedBars.map((bar, index) => ({
+    x: Math.round(plot.left + step * index + step / 2),
+    y: Math.round(plotY(bar.close)),
+    close: bar.close,
+    timestamp: bar.timestamp,
+  }));
+
+  const linePath =
+    linePoints.length > 0
+      ? linePoints
+          .map(
+            (point, index) =>
+              `${index === 0 ? 'M' : 'L'} ${point.x},${point.y}`,
+          )
+          .join(' ')
+      : '';
+
+  const areaBaseline = plot.bottom;
+  const areaPath =
+    linePoints.length > 0
+      ? `${linePath} L ${linePoints[linePoints.length - 1]?.x},${areaBaseline} L ${linePoints[0]?.x},${areaBaseline} Z`
+      : '';
+
+  const firstBar = plottedBars[0];
+  const isBullishTrend =
+    latestBar && firstBar ? latestBar.close >= firstBar.close : true;
+  const trendTone = isBullishTrend
+    ? 'var(--app-pnl-positive)'
+    : 'var(--app-pnl-negative)';
+  const latestPoint = linePoints[linePoints.length - 1] ?? null;
+
   return {
+    areaPath,
     candleWidth,
+    chartHeight,
+    chartType,
+    chartWidth,
     hasVolume,
+    isBullishTrend,
+    latestBar,
+    latestPoint,
+    linePath,
+    linePoints,
     max,
     maxVolume,
     min,
@@ -245,6 +334,7 @@ export function buildPriceStructureChartModel({
     plottedReferenceLines,
     plotY,
     step,
+    trendTone,
     validBars,
     volumes,
     volumePlot,

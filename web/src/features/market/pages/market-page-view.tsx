@@ -34,6 +34,7 @@ export function MarketPageView({
       <section
         className="app-workbench-route space-y-4 sm:space-y-5"
         data-workbench-route="market"
+        data-workbench-width="wide"
       >
         <WorkspaceHeader
           eyebrow={copy.market.kicker}

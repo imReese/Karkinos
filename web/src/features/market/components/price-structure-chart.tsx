@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   buildPriceStructureChartModel,
+  DEFAULT_CHART_TYPE_LABELS,
   DEFAULT_RANGE_LABELS,
   type KlineRangeKey,
   type PriceStructureChartProps,
+  type PriceStructureChartType,
 } from './price-structure-chart-model';
 import {
   PriceStructureChartView,
@@ -16,6 +18,8 @@ export type {
   KlineAxisLabels,
   KlineRangeLabels,
   PriceStructureBar,
+  PriceStructureChartType,
+  PriceStructureChartTypeLabels,
   PriceStructureMarker,
   PriceStructureReferenceLine,
 } from './price-structure-chart-model';
@@ -34,19 +38,65 @@ export function PriceStructureChart({
   rangeAriaLabel = defaultRangeAriaLabel,
   markers = [],
   referenceLines = [],
+  initialChartType = 'candlestick',
+  chartTypeLabels = DEFAULT_CHART_TYPE_LABELS,
+  chartTypeAriaLabel,
 }: PriceStructureChartProps) {
   const [selectedRange, setSelectedRange] = useState<KlineRangeKey>('all');
+  const [chartType, setChartType] =
+    useState<PriceStructureChartType>(initialChartType);
+  const chartScrollRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(0);
+
+  useEffect(() => {
+    if (initialChartType) {
+      setChartType(initialChartType);
+    }
+  }, [initialChartType]);
+
+  useEffect(() => {
+    const el = chartScrollRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      const w = el.clientWidth;
+      if (w > 0) {
+        setContainerWidth(w);
+      }
+    };
+    updateSize();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(updateSize);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  const chartWidth = Math.max(containerWidth || 720, 720);
+  const chartHeight = 280;
+
   const model = useMemo(
     () =>
       buildPriceStructureChartModel({
         bars,
+        chartType,
         markers,
         referenceLines,
         selectedRange,
+        width: chartWidth,
+        height: chartHeight,
       }),
-    [bars, markers, referenceLines, selectedRange],
+    [
+      bars,
+      chartHeight,
+      chartType,
+      chartWidth,
+      markers,
+      referenceLines,
+      selectedRange,
+    ],
   );
-  const chartScrollRef = useRef<HTMLDivElement>(null);
   const plottedBarCount = model?.plottedBars.length ?? 0;
 
   useEffect(() => {
@@ -80,7 +130,11 @@ export function PriceStructureChart({
     <PriceStructureChartView
       axisLabels={axisLabels}
       chartScrollRef={chartScrollRef}
+      chartType={chartType}
+      chartTypeAriaLabel={chartTypeAriaLabel}
+      chartTypeLabels={chartTypeLabels}
       model={model}
+      onChartTypeChange={setChartType}
       onRangeChange={setSelectedRange}
       priceLabel={priceLabel}
       rangeAriaLabel={rangeAriaLabel}

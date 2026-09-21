@@ -20,8 +20,24 @@ export const publicHomeCopy = {
       title: 'Every decision should leave evidence.',
       body: 'Karkinos connects account truth, research, risk, and human review into one auditable path. Evidence moves first; authority stays explicit.',
       explore: 'Explore the workflow',
+      pillars: [
+        {
+          title: '100% Local Execution',
+          detail: 'Zero cloud dependencies · Local assets',
+        },
+        {
+          title: 'Strict PIT Alignment',
+          detail: 'Time-locked data · No look-ahead',
+        },
+        {
+          title: 'Default-Off Authority',
+          detail: 'Read-only by default · Explicit review',
+        },
+      ],
     },
     evidence: {
+      consoleTitle: 'KARKINOS WORKBENCH // DETERMINISTIC KERNEL',
+      consoleStatus: 'LOCAL CORE: READY',
       eyebrow: 'Product trace · No account data',
       title: 'Evidence advances. Authority stays explicit.',
       routeLabel: 'Public-to-private route',
@@ -208,8 +224,24 @@ export const publicHomeCopy = {
       title: '让每一个投资决定，都有证据可回放。',
       body: 'Karkinos 把账户事实、研究、风控与人工复核连成一条可审计路径；证据先行，权限始终显式。',
       explore: '了解能力流程',
+      pillars: [
+        {
+          title: '100% 本地物理驻留',
+          detail: '资产策略本地执行 · 零云端依赖',
+        },
+        {
+          title: '严格 PIT 时态对齐',
+          detail: '发布捕获时钟锁定 · 杜绝未来函数',
+        },
+        {
+          title: '默认只读权限防线',
+          detail: '实盘权限默认关闭 · 显式人工复核',
+        },
+      ],
     },
     evidence: {
+      consoleTitle: 'KARKINOS WORKBENCH // 确定性计算核心',
+      consoleStatus: '本地核心：就绪',
       eyebrow: '产品路径 · 不含账户数据',
       title: '证据向前，权限保持显式。',
       routeLabel: '公开页到私有工作台路径',

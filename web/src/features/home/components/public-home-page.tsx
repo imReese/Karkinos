@@ -94,10 +94,13 @@ export function PublicHomePage() {
             <h1 className="app-public-hero-title">
               {locale === 'zh' ? (
                 <>
-                  让每一个
-                  <span className="app-public-title-phrase">投资决定</span>，
-                  <span className="app-public-title-phrase">都有</span>
-                  证据可回放。
+                  <span className="app-public-title-phrase">
+                    让每一个投资决定，
+                  </span>
+                  <br className="app-public-title-break" />
+                  <span className="app-public-title-phrase">
+                    都有证据可回放。
+                  </span>
                 </>
               ) : (
                 copy.hero.title
@@ -121,6 +124,8 @@ export function PublicHomePage() {
                 <ArrowRight aria-hidden="true" />
               </a>
             </div>
+
+            <PublicHomeHeroPillars pillars={copy.hero.pillars} />
           </div>
 
           <PublicHomeSectionIndex
@@ -133,6 +138,11 @@ export function PublicHomePage() {
             className="app-public-evidence-frame"
             data-testid="public-evidence-trace"
           >
+            <PublicHomeConsoleHeader
+              title={copy.evidence.consoleTitle}
+              status={copy.evidence.consoleStatus}
+            />
+
             <div
               className="app-public-route-identity"
               aria-label={copy.evidence.routeLabel}
@@ -356,6 +366,49 @@ export function PublicHomePage() {
       </main>
 
       <PublicHomeFooter copy={copy} setActivePanel={setActivePanel} />
+    </div>
+  );
+}
+
+function PublicHomeHeroPillars({
+  pillars,
+}: {
+  pillars: PublicHomeCopy['hero']['pillars'];
+}) {
+  return (
+    <div className="app-public-hero-pillars" aria-label="System pillars">
+      {pillars.map((pillar) => (
+        <div key={pillar.title} className="app-public-pillar-card">
+          <div className="app-public-pillar-header">
+            <span className="app-public-pillar-dot" aria-hidden="true" />
+            <strong>{pillar.title}</strong>
+          </div>
+          <p>{pillar.detail}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PublicHomeConsoleHeader({
+  title,
+  status,
+}: {
+  title: string;
+  status: string;
+}) {
+  return (
+    <div className="app-public-console-header" aria-hidden="true">
+      <div className="app-public-console-dots">
+        <span className="app-public-dot-red" />
+        <span className="app-public-dot-yellow" />
+        <span className="app-public-dot-green" />
+      </div>
+      <span className="app-public-console-title">{title}</span>
+      <span className="app-public-console-status">
+        <span className="app-public-status-beacon" />
+        {status}
+      </span>
     </div>
   );
 }
