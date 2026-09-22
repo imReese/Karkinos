@@ -428,3 +428,44 @@ def test_guarded_empty_watchlist_counts_idle_readiness_only_after_release() -> N
     assert state.completed_iterations == 1
     assert len(feeds) == 2
     assert all(feed.closed for feed in feeds)
+
+
+def test_warmup_strategy_passes_instrument_type_for_fund() -> None:
+    from core.types import InstrumentType
+    from domain.instrument import make_open_end_fund
+    from server.scheduler import TradingScheduler
+
+    scheduler = TradingScheduler(
+        config=SimpleNamespace(data_source="akshare"),
+        bridge=None,
+        db=None,
+    )
+    fund_sym = Symbol("018125")
+    fund_inst = make_open_end_fund("018125", "测试基金")
+    scheduler.replace_runtime_assets(
+        watchlist=[(fund_sym, AssetClass.FUND)],
+        instruments={fund_sym: fund_inst},
+    )
+
+    captured_args = {}
+
+    class FakeHandler:
+        total_bars = 5
+
+        def __iter__(self):
+            return iter([])
+
+    class FakeDataManager:
+        def get_bars(self, symbol, **kwargs):
+            captured_args["symbol"] = symbol
+            captured_args.update(kwargs)
+            return FakeHandler()
+
+    scheduler._is_market_open = lambda: True
+    scheduler._warmup_strategy(
+        FakeDataManager(), SimpleNamespace(on_data=lambda event: None)
+    )
+
+    assert captured_args["symbol"] == fund_sym
+    assert captured_args["asset_class"] == AssetClass.FUND
+    assert captured_args["instrument_type"] == InstrumentType.OPEN_END_FUND

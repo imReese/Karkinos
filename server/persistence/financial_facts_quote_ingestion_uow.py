@@ -463,6 +463,11 @@ def _materialize_quote(
     ).fetchone()
     if latest is None:
         raise RuntimeError("latest quote materialization failed")
+    if command.asset_type == "open_end_fund":
+        conn.execute(
+            "DELETE FROM latest_quotes WHERE symbol = ? AND asset_type = 'fund'",
+            (command.symbol,),
+        )
     insert_event_sync(
         conn,
         event_type="market.quote.refreshed",
@@ -587,7 +592,7 @@ def _daily_close_batch_binding(conn, staged, *, run_id, scope) -> dict[str, Any]
 
 
 def _quote_identity_aliases(instrument_type: str) -> tuple[str, ...]:
-    if instrument_type == "open_end_fund":
+    if instrument_type in {"open_end_fund", "fund"}:
         return ("open_end_fund", "fund")
     return (instrument_type,)
 

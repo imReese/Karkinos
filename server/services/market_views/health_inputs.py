@@ -240,6 +240,19 @@ def aggregate_market_data_health_status(
     statuses = {item.quote_status for item in health_quotes}
     if statuses == {"live"}:
         return "live"
+    if statuses.issubset({"live", "confirmed", "fresh", "healthy"}):
+        return "live"
+    if all(
+        item.quote_status in {"live", "confirmed", "fresh", "healthy"}
+        or (
+            item.quote_status == "estimated"
+            and item.price is not None
+            and item.stale_reason in {None, "confirmed_fund_nav_missing_estimate_only"}
+            and (item.quote_age_seconds is None or item.quote_age_seconds <= 600)
+        )
+        for item in health_quotes
+    ):
+        return "live"
     for status in (
         "missing",
         "confirmed_nav_missing",
@@ -257,7 +270,16 @@ def has_live_fund_quotes(health_quotes: list[MarketHealthQuote]) -> bool:
         item for item in health_quotes if item.asset_class in {"fund", "etf"}
     ]
     return bool(fund_quotes) and all(
-        item.quote_status == "live" and item.price is not None for item in fund_quotes
+        (
+            item.quote_status in {"live", "confirmed", "fresh", "healthy"}
+            or (
+                item.quote_status == "estimated"
+                and item.stale_reason
+                in {None, "confirmed_fund_nav_missing_estimate_only"}
+            )
+        )
+        and item.price is not None
+        for item in fund_quotes
     )
 
 
@@ -283,7 +305,7 @@ def extract_runtime_portfolio(state):
             quote = adapt_latest_quote_for_health(row)
             key = instrument_key_from_mapping(quote)
             if key is not None:
-                latest_quotes_by_key[key] = quote
+                latest_quotes_by_key.setdefault(key, quote)
     if db is not None and hasattr(db, "get_latest_quotes_sync"):
         for row in db.get_latest_quotes_sync():
             quote = adapt_latest_quote_for_health(row)
