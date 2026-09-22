@@ -52,6 +52,7 @@ type ToolbarStatusModelInput = {
   copy: AppCopy;
   locale: Locale;
   marketHealth: QueryStatus<MarketHealthStatusSource>;
+  now?: Date;
 };
 
 export function deriveToolbarStatusModel({
@@ -59,11 +60,13 @@ export function deriveToolbarStatusModel({
   copy,
   locale,
   marketHealth,
+  now,
 }: ToolbarStatusModelInput): ToolbarStatusModel {
   const overview = accountOverview.data;
   const valuationTimestamp = formatToolbarTimestamp(
     overview?.valuation_timestamp,
     locale,
+    now,
   );
   const isQuoteStale = overview?.quote_status === 'stale';
   const quoteStatus = overview?.quote_status
@@ -135,6 +138,7 @@ export function deriveToolbarStatusModel({
     marketHealth.data?.latest_quote_timestamp ??
       marketHealth.data?.last_refresh_attempt,
     locale,
+    now,
   );
 
   return {
@@ -158,25 +162,93 @@ function status(
   return { value, tone, indicator };
 }
 
-function formatToolbarTimestamp(
+export function formatToolbarTimestamp(
   value: Date | string | null | undefined,
-  locale: Locale,
-) {
+  _locale: Locale,
+  referenceNow: Date = new Date(),
+): string | null {
   if (!value) {
     return null;
   }
-  if (typeof value === 'string') {
-    const localClockTime = value.match(/T(\d{2}:\d{2})(?::\d{2})?/);
-    if (localClockTime?.[1]) {
-      return localClockTime[1];
-    }
-  }
-  const timestamp = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(timestamp.getTime())) {
+
+  const parts = parseShanghaiDate(value);
+  if (!parts) {
     return null;
   }
-  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+
+  const today = getShanghaiDateParts(referenceNow);
+  const isToday =
+    parts.year === today.year &&
+    parts.month === today.month &&
+    parts.day === today.day;
+  if (isToday) {
+    return parts.time;
+  }
+  if (parts.year === today.year) {
+    return `${parts.month}-${parts.day} ${parts.time}`;
+  }
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.time}`;
+}
+
+function parseShanghaiDate(value: Date | string): {
+  year: string;
+  month: string;
+  day: string;
+  time: string;
+} | null {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return null;
+    }
+    return getShanghaiDateParts(value);
+  }
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const hasTimezone = /[zZ]|[-+]\d{2}:?\d{2}$/.test(value);
+  if (hasTimezone) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return getShanghaiDateParts(parsed);
+  }
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if (match) {
+    return {
+      year: match[1],
+      month: match[2],
+      day: match[3],
+      time: match[4] && match[5] ? `${match[4]}:${match[5]}` : '00:00',
+    };
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return getShanghaiDateParts(parsed);
+}
+
+function getShanghaiDateParts(date: Date): {
+  year: string;
+  month: string;
+  day: string;
+  time: string;
+} {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(timestamp);
+    hour12: false,
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return {
+    year: byType.year ?? '0000',
+    month: byType.month ?? '00',
+    day: byType.day ?? '00',
+    time: `${byType.hour ?? '00'}:${byType.minute ?? '00'}`,
+  };
 }
