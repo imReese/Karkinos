@@ -137,8 +137,8 @@ def build_market_data_health_response(
                 if key is None:
                     continue
                 if _is_real_persistent_quote(quote):
-                    persistent_quotes[key] = quote
-                latest_quotes[key] = quote
+                    persistent_quotes.setdefault(key, quote)
+                latest_quotes.setdefault(key, quote)
         if hasattr(state.db, "get_latest_quotes_sync"):
             for row in state.db.get_latest_quotes_sync():
                 quote = adapt_latest_quote_for_health(row)
@@ -201,7 +201,18 @@ def build_market_data_health_response(
     ]
     status_health_quotes = account_health_quotes or health_quotes
     stale_symbols = [
-        item.symbol for item in status_health_quotes if item.quote_status != "live"
+        item.symbol
+        for item in status_health_quotes
+        if not (
+            item.quote_status in {"live", "confirmed", "fresh", "healthy"}
+            or (
+                item.quote_status == "estimated"
+                and item.price is not None
+                and item.stale_reason
+                in {None, "confirmed_fund_nav_missing_estimate_only"}
+                and (item.quote_age_seconds is None or item.quote_age_seconds <= 600)
+            )
+        )
     ]
     latest_attempts = [
         _parse_quote_timestamp(item.last_refresh_attempt)

@@ -439,6 +439,45 @@ def test_missing_promoted_strategy_is_configuration_readiness_not_action_authori
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+def test_missing_promoted_daily_candidate_strategy_populates_configuration_blockers() -> (
+    None
+):
+    recommendation = build_account_action_recommendation(
+        decision_payload={"decision_date": "2026-09-01", "candidates": []},
+        trading_plan={
+            "manual_ready_count": 0,
+            "paper_shadow_ready_count": 0,
+            "blocked_count": 0,
+            "blockers": [],
+            "order_intents": [],
+        },
+        promoted_scan={
+            "verified": True,
+            "status": "blocked",
+            "blockers": ["promoted_daily_candidate_strategy_missing"],
+            "selected_signal_count": 0,
+            "signals": [],
+            "strategy_bindings": [],
+        },
+        current_evidence_blockers=[],
+        current_evidence_fingerprint="e" * 64,
+    )
+
+    assert recommendation["status"] == "blocked"
+    assert recommendation["presentation"]["level"] == "blocked"
+    assert (
+        "promoted_strategy_not_configured"
+        in recommendation["presentation"]["configuration_blockers"]
+    )
+    assert (
+        "promoted_daily_candidate_strategy_missing"
+        in recommendation["presentation"]["configuration_blockers"]
+    )
+    assert recommendation["presentation"]["authorizes_execution"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_unverified_scan_cannot_borrow_manual_ready_plan_authority() -> None:
     recommendation = build_account_action_recommendation(
         decision_payload={

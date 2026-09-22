@@ -13,6 +13,7 @@ from typing import Any
 
 from core.types import AssetClass, InstrumentType, Symbol
 from data.manager import build_sources
+from data.market_data import is_fund_estimate_quote_source
 from data.source_policy import MarketDataUseCase, source_policy_for_config
 from data.source_routing import preferred_legacy_provider
 from server.services.market_hours import get_shanghai_now
@@ -300,25 +301,76 @@ def _normalize_snapshot(
             if parsed_timestamp is not None
             else None
         )
+    is_confirmed = quote_source.strip().lower() in _CONFIRMED_FUND_NAV_SOURCES
+    is_estimate = is_fund_estimate_quote_source(quote_source)
+    quote_status = (
+        "confirmed" if is_confirmed else str(snapshot.get("quote_status") or "live")
+    )
+    stale_reason = (
+        None
+        if is_confirmed
+        else (
+            str(snapshot.get("stale_reason")) if snapshot.get("stale_reason") else None
+        )
+    )
+    previous_close = (
+        float(snapshot["previous_close"])
+        if snapshot.get("previous_close") not in {None, ""}
+        else None
+    )
+    change = (
+        float(snapshot["change"])
+        if snapshot.get("change") not in {None, ""}
+        else (
+            float(snapshot["day_change_value"])
+            if snapshot.get("day_change_value") not in {None, ""}
+            else None
+        )
+    )
+    change_percent = (
+        float(snapshot["change_percent"])
+        if snapshot.get("change_percent") not in {None, ""}
+        else (
+            float(snapshot["day_change_pct"])
+            if snapshot.get("day_change_pct") not in {None, ""}
+            else None
+        )
+    )
+    turnover = (
+        float(snapshot["turnover"])
+        if snapshot.get("turnover") not in {None, ""}
+        else (
+            float(snapshot["amount"])
+            if snapshot.get("amount") not in {None, ""}
+            else None
+        )
+    )
+    volume = (
+        0.0
+        if (is_estimate and snapshot.get("volume") in {None, ""})
+        else (
+            float(snapshot["volume"])
+            if snapshot.get("volume") not in {None, ""}
+            else None
+        )
+    )
     return {
         "symbol": symbol,
         "asset_class": AssetClass.FUND.value,
         "instrument_type": InstrumentType.OPEN_END_FUND.value,
         "price": float(price),
-        "volume": (
-            None
-            if snapshot.get("volume") in {None, ""}
-            else float(snapshot.get("volume"))
-        ),
+        "previous_close": previous_close,
+        "previous_close_date": snapshot.get("previous_close_date"),
+        "change": change,
+        "change_percent": change_percent,
+        "turnover": turnover,
+        "volume": volume,
         "timestamp": timestamp,
         "quote_source": quote_source,
         "provider_name": provider_name,
         "provider_status": "live",
-        "quote_status": (
-            "confirmed"
-            if quote_source.strip().lower() in _CONFIRMED_FUND_NAV_SOURCES
-            else "live"
-        ),
+        "quote_status": quote_status,
+        "stale_reason": stale_reason,
         "captured_reason": "fund_nav_sync",
         "nav_date": nav_date,
         "display_name": snapshot.get("display_name")

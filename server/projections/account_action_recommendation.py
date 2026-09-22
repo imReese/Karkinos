@@ -273,8 +273,19 @@ def build_account_action_recommendation(
         presentation_level = "unavailable"
 
     configuration_blockers = [
-        item for item in scan_blockers if item == "promoted_strategy_not_configured"
+        item
+        for item in scan_blockers
+        if item
+        in {
+            "promoted_strategy_not_configured",
+            "promoted_daily_candidate_strategy_missing",
+        }
     ]
+    if (
+        "promoted_daily_candidate_strategy_missing" in scan_blockers
+        and "promoted_strategy_not_configured" not in configuration_blockers
+    ):
+        configuration_blockers.append("promoted_strategy_not_configured")
     source_action_task_ids = list(
         dict.fromkeys(
             [

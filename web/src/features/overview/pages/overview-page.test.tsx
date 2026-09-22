@@ -462,6 +462,45 @@ test('labels missing strategy promotion as configuration readiness rather than a
   expect(recommendation).not.toHaveTextContent('策略建议暂不可用');
 });
 
+test('labels scan with promoted_daily_candidate_strategy_missing as configuration readiness without green indicator', async () => {
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.status = 'blocked';
+  plan.account_action_recommendation!.reason_codes = [
+    'promoted_daily_candidate_strategy_missing',
+  ];
+  plan.account_action_recommendation!.presentation = {
+    level: 'blocked',
+    actions: [],
+    signal_status: 'unavailable',
+    portfolio_preview_status: 'blocked',
+    manual_review_status: 'blocked',
+    configuration_blockers: [
+      'promoted_daily_candidate_strategy_missing',
+      'promoted_strategy_not_configured',
+    ],
+    signal_blockers: ['promoted_daily_candidate_strategy_missing'],
+    portfolio_preview_blockers: [],
+    manual_review_blockers: ['promoted_daily_candidate_strategy_missing'],
+    read_only: true,
+    authorizes_execution: false,
+  };
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+
+  await waitFor(() =>
+    expect(recommendation).toHaveTextContent(
+      '尚未配置可用于账户建议的晋级策略',
+    ),
+  );
+  expect(recommendation).not.toHaveTextContent('策略建议暂不可用');
+  expect(
+    recommendation.querySelector('.bg-\\[var\\(--app-success-indicator\\)\\]'),
+  ).toBeNull();
+});
+
 test('shows a manual-review strategy action without implying automatic execution', async () => {
   const plan = tradingPlanFixture();
   plan.manual_ready_count = 1;

@@ -215,13 +215,22 @@ class TradingScheduler(
             end_date = datetime.now()
             start_date = end_date - timedelta(days=60)  # 取近 60 天日线
 
-            for sym, ac in self._watchlist:
+            with self._lock:
+                watchlist = list(self._watchlist)
+                instruments = dict(self._instruments)
+
+            for sym, ac in watchlist:
                 try:
+                    instrument = instruments.get(sym)
+                    instrument_type = (
+                        instrument.instrument_type if instrument is not None else None
+                    )
                     handler = data_manager.get_bars(
                         sym,
                         start=start_date,
                         end=end_date,
                         asset_class=ac,
+                        instrument_type=instrument_type,
                         allow_remote_refresh=False,
                         degrade_to_cache=True,
                     )
@@ -275,6 +284,7 @@ class TradingScheduler(
 
         with self._lock:
             targets = list(self._watchlist)
+            instruments = dict(self._instruments)
         if not targets:
             return
         allow_remote_refresh = self._historical_backfill_remote_refresh_policy(
@@ -287,6 +297,10 @@ class TradingScheduler(
         updated = 0
         failed = 0
         for symbol, asset_class in targets:
+            instrument = instruments.get(symbol)
+            instrument_type = (
+                instrument.instrument_type if instrument is not None else None
+            )
             try:
                 handler = data_manager.get_bars(
                     symbol,
@@ -294,6 +308,7 @@ class TradingScheduler(
                     end=end_date,
                     frequency=BarFrequency.DAILY,
                     asset_class=asset_class,
+                    instrument_type=instrument_type,
                     allow_remote_refresh=allow_remote_refresh,
                     refresh_ttl_seconds=0,
                     degrade_to_cache=True,
@@ -418,8 +433,14 @@ class TradingScheduler(
                 or snapshot.get("name")
                 or asset["display_name"]
             ).strip()
+            previous_close_value = optional_float(
+                snapshot.get("previous_close")
+                or snapshot.get("pre_close")
+                or snapshot.get("prev_close")
+            )
             cached_quote = {
                 "price": price_value,
+                "previous_close": previous_close_value,
                 "volume": optional_float(snapshot.get("volume")) or 0,
                 "timestamp": timestamp,
                 "asset_class": AssetClass.INDEX.value,
@@ -447,6 +468,7 @@ class TradingScheduler(
                 snapshot={
                     **snapshot,
                     "price": price_value,
+                    "previous_close": previous_close_value,
                     "volume": cached_quote["volume"],
                     "timestamp": timestamp,
                     "change": cached_quote["daily_change"],

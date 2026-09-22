@@ -60,6 +60,60 @@ function fallbackPresentationLevel(
   }
 }
 
+function isMissingPromotedStrategy(
+  recommendation:
+    DailyTradingPlanResponse['account_action_recommendation'] | undefined,
+): boolean {
+  if (!recommendation) return false;
+  return Boolean(
+    recommendation.presentation?.configuration_blockers.includes(
+      'promoted_strategy_not_configured',
+    ) ||
+    recommendation.presentation?.configuration_blockers.includes(
+      'promoted_daily_candidate_strategy_missing',
+    ) ||
+    recommendation.reason_codes.includes(
+      'promoted_daily_candidate_strategy_missing',
+    ),
+  );
+}
+
+function indicatorTone(
+  plan: DailyTradingPlanResponse,
+): 'success' | 'warning' | 'info' | 'neutral' {
+  const recommendation = plan.account_action_recommendation;
+  if (!recommendation) return 'neutral';
+  if (isMissingPromotedStrategy(recommendation)) {
+    return 'neutral';
+  }
+  switch (recommendation.status) {
+    case 'no_action':
+      return 'success';
+    case 'paper_shadow_required':
+      return 'info';
+    case 'manual_review_required':
+      return 'warning';
+    case 'blocked':
+    case 'unavailable':
+    default:
+      return 'neutral';
+  }
+}
+
+function indicatorDotClass(tone: 'success' | 'warning' | 'info' | 'neutral') {
+  switch (tone) {
+    case 'success':
+      return 'bg-[var(--app-success-indicator)]';
+    case 'warning':
+      return 'bg-[var(--app-warning-indicator)]';
+    case 'info':
+      return 'bg-[var(--app-info-indicator)]';
+    case 'neutral':
+    default:
+      return 'bg-[var(--app-text-tertiary)]';
+  }
+}
+
 function recommendationHeading(
   plan: DailyTradingPlanResponse,
   copy: ReturnType<typeof useCopy>,
@@ -67,11 +121,7 @@ function recommendationHeading(
   const recommendation = plan.account_action_recommendation;
   const dashboard = copy.overview.dashboard;
   if (!recommendation) return dashboard.accountRecommendationUnavailable;
-  if (
-    recommendation.presentation?.configuration_blockers.includes(
-      'promoted_strategy_not_configured',
-    )
-  ) {
+  if (isMissingPromotedStrategy(recommendation)) {
     return dashboard.strategyRecommendationConfigurationRequired;
   }
   switch (recommendation.status) {
@@ -319,7 +369,12 @@ export function OverviewStrategyRecommendation({
         ) : (
           <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
-              <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-[var(--app-success-indicator)]" />
+              <span
+                className={(
+                  'inline-flex h-2 w-2 shrink-0 rounded-full ' +
+                  indicatorDotClass(indicatorTone(plan))
+                ).trim()}
+              />
               <p className="app-type-body font-semibold text-[var(--app-text)]">
                 {recommendationHeading(plan, copy)}
               </p>
