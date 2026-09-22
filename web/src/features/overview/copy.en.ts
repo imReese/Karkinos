@@ -53,6 +53,8 @@ export const overviewCopyEn = {
   },
   dashboard: {
     equityPanel: 'Portfolio value',
+    equityCurve: 'Equity Curve',
+    returnCalendar: 'Return Calendar',
     dataTrust: 'Data trust / system status',
     valuationCoverage: 'Valuation coverage',
     valuationCoverageDetail:
