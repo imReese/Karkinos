@@ -48,6 +48,8 @@ export const overviewCopyZh = {
   },
   dashboard: {
     equityPanel: '资产走势',
+    equityCurve: '净值走势',
+    returnCalendar: '收益日历',
     dataTrust: '数据可信度 / 系统状态',
     valuationCoverage: '估值覆盖',
     valuationCoverageDetail:

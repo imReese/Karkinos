@@ -2,14 +2,17 @@
 export {
   useAccountStateQuery,
   useEquityCurveSeriesQuery,
+  useExplainabilityQuery,
 } from '../account/api';
 export type {
   AccountOverview,
   AccountStateResponse,
   EquityCurveRange,
+  ExplainabilityResponse,
 } from '../account/api';
 export { EquityCurveSkeleton } from '../account/components/equity-curve-card';
 export { OverviewEquityCurve } from '../account/components/overview-equity-curve';
+export { ReturnCalendarCard } from '../account/components/return-calendar-card';
 export type { PortfolioSnapshot } from '../portfolio/api';
 export { PositionsTable } from '../portfolio/components/positions-table';
 export {

@@ -200,6 +200,19 @@ function installFetch(
     if (url.includes('/api/decision/today')) return Response.json(decision);
     if (url.includes('/api/decision/trading-plan'))
       return Response.json(tradingPlan);
+    if (url.includes('/api/portfolio/explainability'))
+      return Response.json({
+        timeline: [
+          {
+            date: '2026-09-11',
+            equity: 18585.11,
+            delta: -314.51,
+            external_flow: 0,
+            market_pnl: -314.51,
+          },
+        ],
+        positions: [],
+      });
     throw new Error(`Unexpected request: ${url}`);
   });
   vi.stubGlobal('fetch', mock);
@@ -865,4 +878,39 @@ test('shows previous-session performance contributors from canonical account sta
   const drivers = await screen.findByTestId('overview-performance-drivers');
   expect(drivers).toHaveTextContent('合成基金');
   expect(drivers).toHaveTextContent('-¥314.51');
+});
+
+test('toggles between equity curve and return calendar views', async () => {
+  const fetchMock = installFetch();
+  const user = userEvent.setup();
+  renderPage('zh');
+
+  expect(
+    await screen.findByTestId('equity-range-controls'),
+  ).toBeInTheDocument();
+  expect(screen.queryByTestId('return-calendar-card')).not.toBeInTheDocument();
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/portfolio/explainability'),
+    ),
+  ).toBe(false);
+
+  const calendarTab = screen.getByRole('tab', { name: '收益日历' });
+  await user.click(calendarTab);
+
+  expect(await screen.findByTestId('return-calendar-card')).toBeInTheDocument();
+  expect(screen.queryByTestId('equity-range-controls')).not.toBeInTheDocument();
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/portfolio/explainability'),
+    ),
+  ).toBe(true);
+
+  const curveTab = screen.getByRole('tab', { name: '净值走势' });
+  await user.click(curveTab);
+
+  expect(
+    await screen.findByTestId('equity-range-controls'),
+  ).toBeInTheDocument();
+  expect(screen.queryByTestId('return-calendar-card')).not.toBeInTheDocument();
 });
