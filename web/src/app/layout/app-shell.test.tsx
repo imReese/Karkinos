@@ -799,7 +799,7 @@ test('shows cached quote status and valuation time from account overview', async
   const user = userEvent.setup();
 
   expect((await screen.findAllByText('缓存行情')).length).toBeGreaterThan(0);
-  expect(await screen.findByText('22:40')).toBeTruthy();
+  expect(await screen.findByText('05-16 22:40')).toBeTruthy();
   const valuationStatus = await screen.findByTestId('status-pill-valuation');
   await user.click(valuationStatus);
   expect(valuationStatus.className).toContain(
@@ -814,7 +814,7 @@ test('shows cached quote status and valuation time from account overview', async
       ?.getAttribute('class'),
   ).toContain('rotate-180');
   const valuationDialog = await screen.findByRole('dialog', { name: '净值' });
-  expect(within(valuationDialog).getByText('估值 22:40')).toBeTruthy();
+  expect(within(valuationDialog).getByText('估值 05-16 22:40')).toBeTruthy();
   const valuationPopover = valuationDialog.closest(
     '.app-status-popover-root',
   ) as HTMLElement | null;
@@ -887,7 +887,7 @@ test('keeps compact header status read-only and provider-free', async () => {
   ).toBe(false);
   const marketDialog = await screen.findByRole('dialog', { name: 'Market' });
   expect(within(marketDialog).getByText('Last status check')).toBeTruthy();
-  expect(within(marketDialog).getByText('22:40')).toBeTruthy();
+  expect(within(marketDialog).getByText('05-16 22:40')).toBeTruthy();
 });
 
 test('shows cache-only market state from data health', async () => {
