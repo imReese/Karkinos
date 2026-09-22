@@ -413,7 +413,7 @@ def verify_backtest_dataset_snapshot_replay(
     identities = [
         (
             str(row.get("symbol") or ""),
-            str(row.get("instrument_type") or ""),
+            str(row.get("instrument_type") or row.get("asset_class") or ""),
             str(row.get("frequency") or ""),
         )
         for row in universe
@@ -504,7 +504,9 @@ def _verify_symbol_replay(
     include_amount: bool = False,
 ) -> str | None:
     symbol = str(manifest.get("symbol") or "")
-    instrument_type = str(manifest.get("instrument_type") or "")
+    instrument_type = str(
+        manifest.get("instrument_type") or manifest.get("asset_class") or ""
+    )
     frequency = str(manifest.get("frequency") or "")
     if start is None or end is None:
         return "dataset_snapshot_date_range_invalid"

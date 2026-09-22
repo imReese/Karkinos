@@ -3707,7 +3707,7 @@ async def test_five_round_policy_critiques_blocked_candidates_and_feeds_measured
                     _df=pd.DataFrame(
                         {
                             "timestamp": [row["timestamp"] for row in curve],
-                            "close": [100, 90, 95, 93, 96, 94, 98, 99],
+                            "close": [100, 98, 100, 99, 100, 99, 100, 101],
                         }
                     )
                 )

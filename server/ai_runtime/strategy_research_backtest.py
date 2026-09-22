@@ -20,7 +20,10 @@ from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
 from analytics.backtest_market_regime_evidence import (
     build_backtest_market_regime_evidence,
 )
-from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+from analytics.dataset_snapshot import (
+    build_backtest_dataset_snapshot,
+    verify_backtest_dataset_snapshot_replay,
+)
 from analytics.oos_validation import build_rolling_out_of_sample_validation
 from analytics.research_account_capital_evidence import (
     build_research_account_capital_evidence,
@@ -814,7 +817,22 @@ def _load_bound_inputs(
         market_data_binding=market_binding,
     )
     if verify_snapshot and snapshot.get("snapshot_id") != selection.dataset_snapshot_id:
-        raise StrategyResearchRejected("dataset_snapshot_drift")
+        store_root = getattr(data_store, "root", getattr(data_store, "_root", ""))
+        replay = (
+            verify_backtest_dataset_snapshot_replay(
+                expected_dataset_snapshot,
+                store_root=store_root,
+            )
+            if expected_dataset_snapshot is not None
+            and expected_dataset_snapshot.get("snapshot_id")
+            == selection.dataset_snapshot_id
+            and effective_end == selection.end_date
+            else None
+        )
+        if replay is not None and replay.get("status") == "pass":
+            snapshot = dict(expected_dataset_snapshot)
+        else:
+            raise StrategyResearchRejected("dataset_snapshot_drift")
     if snapshot.get("data_quality", {}).get("status") != "ok":
         raise StrategyResearchRejected("dataset_quality_not_complete")
     return handlers, instruments, snapshot

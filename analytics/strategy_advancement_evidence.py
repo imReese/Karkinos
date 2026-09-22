@@ -26,6 +26,7 @@ from analytics.oos_validation import (
     is_valid_rolling_out_of_sample_validation_evidence,
 )
 from analytics.sweep_robustness import (
+    _is_grid_neighbor,
     is_valid_passed_sweep_robustness_evidence,
 )
 
@@ -101,18 +102,37 @@ def parameter_robustness_check(candidate: Mapping[str, Any]) -> dict[str, Any]:
     warnings = warnings_value if isinstance(warnings_value, list) else []
     selected_params = _mapping(parameter.get("selected_params"))
     formula_values = _mapping(candidate.get("formula_parameter_values"))
+    best_params = _mapping(parameter.get("best_params"))
+    oos_mode = str(candidate.get("oos_validation_mode") or "")
+    oos_folds = candidate.get("oos_fold_count")
+    has_oos_validation = (
+        oos_mode in {"rolling", "purged_kfold"} and int(oos_folds or 0) >= 2
+    )
     passed = (
         is_valid_passed_sweep_robustness_evidence(
             parameter,
             expected_selected_params=formula_values,
+            allow_oos_mitigated=has_oos_validation,
         )
         and parameter.get("schema_version") == "karkinos.sweep_robustness.v1"
         and _valid_evidence_fingerprint(parameter)
         and isinstance(warnings_value, list)
-        and not warnings
+        and (
+            not warnings
+            or (
+                has_oos_validation
+                and all(
+                    isinstance(w, Mapping) and w.get("code") == "local_peak_risk"
+                    for w in warnings
+                )
+            )
+        )
         and bool(formula_values)
         and selected_params == formula_values
-        and _mapping(parameter.get("best_params")) == formula_values
+        and (
+            best_params == formula_values
+            or (has_oos_validation and _is_grid_neighbor(formula_values, best_params))
+        )
     )
     return {
         "passed": passed,
