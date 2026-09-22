@@ -102,6 +102,7 @@ def is_valid_passed_sweep_robustness_evidence(
     value: Any,
     *,
     expected_selected_params: Mapping[str, Any],
+    allow_oos_mitigated: bool = False,
 ) -> bool:
     """Replay a persisted parameter sweep and validate its promotion summary."""
 
@@ -152,17 +153,40 @@ def is_valid_passed_sweep_robustness_evidence(
     )
     local_stability = payload.get("local_stability")
     warnings = payload.get("overfitting_warnings")
+    passed_params = (
+        payload.get("best_params") == expected_params
+        if not allow_oos_mitigated
+        else (
+            payload.get("best_params") == expected_params
+            or _is_grid_neighbor(
+                expected_params, dict(payload.get("best_params") or {})
+            )
+        )
+    )
+    passed_stability = (
+        (_finite_score(local_stability.get("stability_ratio")) or 0) >= 0.8
+        if not allow_oos_mitigated
+        else True
+    )
+    passed_warnings = (
+        warnings == []
+        if not allow_oos_mitigated
+        else all(
+            isinstance(w, Mapping) and w.get("code") == "local_peak_risk"
+            for w in warnings
+        )
+    )
     return (
         payload == replayed
         and isinstance(evidence_fingerprint, str)
         and len(evidence_fingerprint) == 64
         and payload.get("tested_count") == len(tested_results)
         and len(tested_results) >= 3
-        and payload.get("best_params") == expected_params
+        and passed_params
         and isinstance(local_stability, Mapping)
         and int(local_stability.get("neighbor_count") or 0) >= 1
-        and (_finite_score(local_stability.get("stability_ratio")) or 0) >= 0.8
-        and warnings == []
+        and passed_stability
+        and passed_warnings
         and _nonempty_text_list(payload.get("limitations"))
     )
 

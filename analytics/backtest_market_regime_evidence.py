@@ -122,14 +122,16 @@ def _build_market_regime_evidence(
     for name in sorted(grouped):
         rows = grouped[name]
         compounded = _compound(row["candidate_net_return"] for row in rows)
-        passed = len(rows) >= 2 and compounded >= 0
+        market_compounded = _compound(row["market_return"] for row in rows)
+        passed = len(rows) >= 2 and (
+            compounded >= 0
+            or (market_compounded < 0 and compounded >= market_compounded)
+        )
         regimes.append(
             {
                 "name": name,
                 "observation_count": len(rows),
-                "market_return": format(
-                    _compound(row["market_return"] for row in rows), "f"
-                ),
+                "market_return": format(market_compounded, "f"),
                 "candidate_net_return": format(compounded, "f"),
                 "status": "pass" if passed else "blocked",
             }

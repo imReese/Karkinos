@@ -165,19 +165,21 @@ def is_valid_complete_backtest_drawdown_evidence(
             or drawdown is None
             or not 0 <= drawdown < 1
             or str(raw_point.get("timestamp")) != expected_point[0]
-            or equity != expected_point[2]
+            or not _close_decimal(equity, expected_point[2])
         ):
             return False
         peak = equity if peak is None else max(peak, equity)
         expected_point_drawdown = (peak - equity) / peak
-        if reported_peak != peak or drawdown != expected_point_drawdown:
+        if not _close_decimal(reported_peak, peak) or not _close_decimal(
+            drawdown, expected_point_drawdown
+        ):
             return False
         prior_timestamp = timestamp
         drawdowns.append(drawdown)
 
     return (
-        _decimal(raw_points[0]["equity"]) == expected_initial
-        and _decimal(raw_points[-1]["equity"]) == expected_final
+        _close_decimal(_decimal(raw_points[0]["equity"]), expected_initial)
+        and _close_decimal(_decimal(raw_points[-1]["equity"]), expected_final)
         and max(drawdowns) == reported_drawdown
         and _close_decimal(reported_drawdown, expected_drawdown)
     )

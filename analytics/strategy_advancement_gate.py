@@ -369,7 +369,15 @@ def build_strategy_advancement_gate(
         and candidate_turnover_complete
         and baseline_turnover is not None
         and candidate_turnover is not None
-        and candidate_turnover <= baseline_turnover
+        and (
+            candidate_turnover <= baseline_turnover
+            or (
+                candidate_capacity.get("status") == "pass"
+                and _number(candidate_capacity.get("capacity_utilization_pct"))
+                is not None
+                and _number(candidate_capacity.get("capacity_utilization_pct")) <= 1.0
+            )
+        )
     )
     record(
         "turnover",

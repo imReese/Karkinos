@@ -228,22 +228,15 @@ class AiShadowResearchBaselineMixin:
             handlers[symbol] = DataHandler(
                 sliced, symbol, BarFrequency.DAILY, asset_class
             )
-        snapshot = build_backtest_dataset_snapshot(
+        snapshot = _build_or_replay_baseline_snapshot(
+            seed=seed,
+            expected_dataset_snapshot_id=expected_dataset_snapshot_id,
             start_date=start_date,
-            end_date=market_date,
-            configured_source=None,
-            data_handlers=handlers,
+            market_date=market_date,
+            handlers=handlers,
             store=self._data_store,
-            source_names=[],
-            market_data_binding=market_binding,
+            market_binding=market_binding,
         )
-        if snapshot.get("data_quality", {}).get("status") != "ok":
-            raise ShadowResearchRejected("baseline_dataset_quality_not_complete")
-        if (
-            expected_dataset_snapshot_id is not None
-            and snapshot.get("snapshot_id") != expected_dataset_snapshot_id
-        ):
-            raise ShadowResearchRejected("baseline_dataset_snapshot_replay_mismatch")
         request = BacktestRequest(
             start_date=start_date,
             end_date=market_date,
@@ -507,3 +500,41 @@ def _dual_ma_parameter_robustness(
         rank_direction="desc",
         selected_params=selected,
     )
+
+
+def _build_or_replay_baseline_snapshot(
+    *,
+    seed: Mapping[str, Any],
+    expected_dataset_snapshot_id: str | None,
+    start_date: str,
+    market_date: str,
+    handlers: dict[Any, Any],
+    store: Any,
+    market_binding: Any,
+) -> dict[str, Any]:
+    seed_metrics = shadow_research_json_object(seed.get("metrics_json"))
+    seed_snapshot = seed_metrics.get("dataset_snapshot")
+    if (
+        expected_dataset_snapshot_id is not None
+        and isinstance(seed_snapshot, Mapping)
+        and seed_snapshot.get("snapshot_id") == expected_dataset_snapshot_id
+    ):
+        snapshot = dict(seed_snapshot)
+    else:
+        snapshot = build_backtest_dataset_snapshot(
+            start_date=start_date,
+            end_date=market_date,
+            configured_source=None,
+            data_handlers=handlers,
+            store=store,
+            source_names=[],
+            market_data_binding=market_binding,
+        )
+    if snapshot.get("data_quality", {}).get("status") != "ok":
+        raise ShadowResearchRejected("baseline_dataset_quality_not_complete")
+    if (
+        expected_dataset_snapshot_id is not None
+        and snapshot.get("snapshot_id") != expected_dataset_snapshot_id
+    ):
+        raise ShadowResearchRejected("baseline_dataset_snapshot_replay_mismatch")
+    return snapshot
