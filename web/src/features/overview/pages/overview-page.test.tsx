@@ -554,6 +554,169 @@ test('shows a manual-review strategy action without implying automatic execution
   ).toHaveAttribute('href', '/decision');
 });
 
+test('displays detailed buy recommendation with buy price, amounts, fees, and position effect', async () => {
+  const plan = tradingPlanFixture();
+  plan.manual_ready_count = 1;
+  plan.order_intent_count = 1;
+  plan.order_intents = [
+    {
+      action_id: 101,
+      symbol: '600519',
+      asset_class: 'stock',
+      side: 'buy',
+      target_weight: 0.15,
+      estimated_price: 1688.0,
+      estimated_quantity: 100,
+      quantity_basis: 'board_lot_preview',
+      estimated_gross_amount: 168800.0,
+      estimated_total_fee: 84.4,
+      estimated_net_cash_impact: -168884.4,
+      available_cash_before: 200000.0,
+      available_cash_after: 31115.6,
+      cash_status: 'sufficient',
+      cash_shortfall: 0,
+      constraint_checks: [
+        { id: 'cash_buffer', status: 'passed', target: 'cash_buffer' },
+        { id: 'single_symbol_weight', status: 'passed', target: 'portfolio' },
+      ],
+      position_effect: {
+        current_quantity: 0,
+        current_avg_cost: null,
+        current_market_value: 0,
+        estimated_quantity_after: 100,
+        estimated_avg_cost_after: 1688.0,
+        cost_basis_method: 'weighted_average_preview',
+      },
+      fee_breakdown: {},
+      risk_gate_status: 'passed',
+      manual_confirmation_status: 'manual_confirmation_required',
+      submission_status: 'manual_confirmation_required',
+      does_not_submit_broker_order: true,
+      evidence_refs: [],
+    },
+  ];
+  plan.account_action_recommendation!.status = 'manual_review_required';
+  plan.account_action_recommendation!.actions = [
+    {
+      action_id: 101,
+      symbol: '600519',
+      display_name: '贵州茅台',
+      asset_class: 'stock',
+      side: 'buy',
+      target_weight: 0.15,
+      estimated_quantity: 100,
+      estimated_price: 1688.0,
+      estimated_gross_amount: 168800.0,
+      estimated_net_cash_impact: -168884.4,
+      estimated_total_fee: 84.4,
+      submission_status: 'manual_confirmation_required',
+    },
+  ];
+
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  await waitFor(() => expect(recommendation).toHaveTextContent('待人工复核'));
+  expect(recommendation).toHaveTextContent('买入');
+  expect(recommendation).toHaveTextContent('贵州茅台');
+  expect(recommendation).toHaveTextContent('600519');
+  expect(recommendation).toHaveTextContent('建议买入价');
+  expect(recommendation).toHaveTextContent('¥1,688.00');
+  expect(recommendation).toHaveTextContent('预计数量');
+  expect(recommendation).toHaveTextContent('100 股');
+  expect(recommendation).toHaveTextContent('预估金额');
+  expect(recommendation).toHaveTextContent('¥168,800.00');
+  expect(recommendation).toHaveTextContent('资金变动');
+  expect(recommendation).toHaveTextContent('-¥168,884.40');
+  expect(recommendation).toHaveTextContent('预估费用');
+  expect(recommendation).toHaveTextContent('¥84.40');
+  expect(recommendation).toHaveTextContent('预估持仓');
+  expect(recommendation).toHaveTextContent('0 → 100 股');
+  expect(recommendation).toHaveTextContent('预估成本');
+  expect(recommendation).toHaveTextContent('新建立仓');
+  expect(recommendation).toHaveTextContent('风控通过');
+  expect(recommendation).toHaveTextContent('现金充足');
+});
+
+test('displays detailed sell recommendation with sell price and net cash inflow', async () => {
+  const plan = tradingPlanFixture();
+  plan.manual_ready_count = 1;
+  plan.order_intent_count = 1;
+  plan.order_intents = [
+    {
+      action_id: 102,
+      symbol: 'fixture-fund',
+      asset_class: 'fund',
+      side: 'sell',
+      target_weight: 0.0,
+      estimated_price: 2.5,
+      estimated_quantity: 1000,
+      quantity_basis: 'full_exit',
+      estimated_gross_amount: 2500.0,
+      estimated_total_fee: 2.5,
+      estimated_net_cash_impact: 2497.5,
+      available_cash_before: 5000.0,
+      available_cash_after: 7497.5,
+      cash_status: 'sufficient',
+      cash_shortfall: 0,
+      constraint_checks: [],
+      position_effect: {
+        current_quantity: 1000,
+        current_avg_cost: 2.0,
+        current_market_value: 2500.0,
+        estimated_quantity_after: 0,
+        estimated_avg_cost_after: null,
+        cost_basis_method: 'sell_reduces_position_preview',
+      },
+      fee_breakdown: {},
+      risk_gate_status: 'passed',
+      manual_confirmation_status: 'manual_confirmation_required',
+      submission_status: 'manual_confirmation_required',
+      does_not_submit_broker_order: true,
+      evidence_refs: [],
+    },
+  ];
+  plan.account_action_recommendation!.status = 'manual_review_required';
+  plan.account_action_recommendation!.actions = [
+    {
+      action_id: 102,
+      symbol: 'fixture-fund',
+      display_name: '合成基金',
+      asset_class: 'fund',
+      side: 'sell',
+      target_weight: 0.0,
+      estimated_quantity: 1000,
+      estimated_price: 2.5,
+      submission_status: 'manual_confirmation_required',
+    },
+  ];
+
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  await waitFor(() => expect(recommendation).toHaveTextContent('待人工复核'));
+  expect(recommendation).toHaveTextContent('卖出');
+  expect(recommendation).toHaveTextContent('合成基金');
+  expect(recommendation).toHaveTextContent('建议卖出价');
+  expect(recommendation).toHaveTextContent('¥2.50');
+  expect(recommendation).toHaveTextContent('预计数量');
+  expect(recommendation).toHaveTextContent('1,000 份');
+  expect(recommendation).toHaveTextContent('预估金额');
+  expect(recommendation).toHaveTextContent('¥2,500.00');
+  expect(recommendation).toHaveTextContent('资金变动');
+  expect(recommendation).toHaveTextContent('+¥2,497.50');
+  expect(recommendation).toHaveTextContent('预估费用');
+  expect(recommendation).toHaveTextContent('¥2.50');
+  expect(recommendation).toHaveTextContent('预估持仓');
+  expect(recommendation).toHaveTextContent('1,000 → 0 份');
+});
+
 test('never surfaces blocked recommendation actions as buy or sell operations', async () => {
   const plan = tradingPlanFixture();
   plan.account_action_recommendation!.status = 'blocked';
@@ -913,4 +1076,101 @@ test('toggles between equity curve and return calendar views', async () => {
     await screen.findByTestId('equity-range-controls'),
   ).toBeInTheDocument();
   expect(screen.queryByTestId('return-calendar-card')).not.toBeInTheDocument();
+});
+
+test('renders detailed strategy recommendation with buy and sell prices', async () => {
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation = {
+    schema_version: 'karkinos.decision.account_action_recommendation.v1',
+    decision_date: '2026-09-14',
+    status: 'manual_review_required',
+    reason_codes: ['strategy_action_ready'],
+    source_action_task_ids: [],
+    actions: [
+      {
+        action_id: 'act-1',
+        symbol: '600519',
+        symbol_name: '贵州茅台',
+        asset_class: 'stock',
+        side: 'buy',
+        target_allocation: 0.15,
+        target_quantity: 100,
+        target_amount: 180050,
+        target_price: 1800.5,
+        estimated_execution_price: 1800.5,
+        limit_price: 1805.0,
+        current_quantity: 0,
+        post_trade_quantity: 100,
+        estimated_net_amount: -180050,
+        estimated_commission: 27.01,
+        estimated_stamp_duty: 0,
+        estimated_total_cost: 27.01,
+        reason: 'trend_continuation',
+      },
+    ],
+    promoted_scan: {
+      run_id: 'scan-1',
+      status: 'completed_with_signals',
+      input_fingerprint: 'a'.repeat(64),
+      output_fingerprint: 'b'.repeat(64),
+      selected_signal_count: 1,
+    },
+    account_evidence: {
+      valuation_snapshot_id: 'synthetic-snapshot',
+      ledger_cutoff_id: 42,
+      quote_set_fingerprint: 'synthetic-quotes',
+      valuation_status: 'complete',
+      account_truth_status: 'passed',
+      account_qualification_status: 'passed',
+      account_positions_evaluated: true,
+    },
+    presentation: {
+      level: 'manual_review',
+      actions: [
+        {
+          action_id: 'act-1',
+          symbol: '600519',
+          symbol_name: '贵州茅台',
+          side: 'buy',
+          target_allocation: 0.15,
+          target_quantity: 100,
+          target_amount: 180050,
+          target_price: 1800.5,
+          estimated_execution_price: 1800.5,
+          limit_price: 1805.0,
+          current_quantity: 0,
+          post_trade_quantity: 100,
+          estimated_net_amount: -180050,
+          estimated_commission: 27.01,
+          estimated_stamp_duty: 0,
+          estimated_total_cost: 27.01,
+          reason: 'trend_continuation',
+        },
+      ],
+      blockers: [],
+      warnings: [],
+    },
+    read_only: true,
+    manual_confirmation_required: true,
+    creates_oms_order: false,
+    submits_broker_order: false,
+    authorizes_execution: false,
+    execution_blocked: false,
+    blockers: [],
+    limitations: [],
+  };
+  installFetch(accountFixture(), false, plan);
+  renderPage('zh');
+
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  await waitFor(() => expect(recommendation).toHaveTextContent('待人工复核'));
+
+  expect(recommendation).toHaveTextContent('贵州茅台');
+  expect(recommendation).toHaveTextContent('建议买入价');
+  expect(recommendation).toHaveTextContent('¥1,800.50');
+  expect(recommendation).toHaveTextContent('建议买入');
+  expect(recommendation).toHaveTextContent('100 股');
+  expect(recommendation).toHaveTextContent('¥180,050.00');
 });

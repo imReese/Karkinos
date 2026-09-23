@@ -34,10 +34,10 @@ def test_realtime_route_skips_unconfigured_tushare() -> None:
     config = _config(token="")
     assert configured_legacy_provider_names(
         config, MarketDataUseCase.REALTIME_QUOTES
-    ) == ("akshare",)
+    ) == ("tencent", "akshare")
     assert (
         preferred_legacy_provider(config, MarketDataUseCase.REALTIME_QUOTES)
-        == "akshare"
+        == "tencent"
     )
 
 
@@ -45,7 +45,7 @@ def test_realtime_route_prefers_tushare_when_token_is_configured() -> None:
     config = _config(token="fixture")
     assert configured_legacy_provider_names(
         config, MarketDataUseCase.REALTIME_QUOTES
-    ) == ("tushare", "akshare")
+    ) == ("tushare", "tencent", "akshare")
 
 
 def test_daily_legacy_route_filters_tdx_but_keeps_policy_order() -> None:

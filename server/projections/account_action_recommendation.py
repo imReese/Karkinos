@@ -423,7 +423,7 @@ def _portfolio_preview_blockers(
 
 
 def _signal_projection(signal: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    projected = {
         "action_id": None,
         "symbol": signal.get("symbol"),
         "display_name": signal.get("display_name") or signal.get("name"),
@@ -434,10 +434,14 @@ def _signal_projection(signal: Mapping[str, Any]) -> dict[str, Any]:
         "estimated_quantity": None,
         "submission_status": "read_only_signal",
     }
+    price = signal.get("frozen_close") or signal.get("price")
+    if price is not None:
+        projected["estimated_price"] = price
+    return projected
 
 
 def _action_projection(intent: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    projected = {
         "action_id": intent.get("action_id"),
         "symbol": intent.get("symbol"),
         "display_name": intent.get("display_name") or intent.get("name"),
@@ -448,6 +452,16 @@ def _action_projection(intent: Mapping[str, Any]) -> dict[str, Any]:
         "estimated_quantity": intent.get("estimated_quantity"),
         "submission_status": intent.get("submission_status"),
     }
+    price = intent.get("estimated_price") or intent.get("market_quote_price")
+    if price is not None:
+        projected["estimated_price"] = price
+    if intent.get("estimated_gross_amount") is not None:
+        projected["estimated_gross_amount"] = intent.get("estimated_gross_amount")
+    if intent.get("estimated_net_cash_impact") is not None:
+        projected["estimated_net_cash_impact"] = intent.get("estimated_net_cash_impact")
+    if intent.get("estimated_total_fee") is not None:
+        projected["estimated_total_fee"] = intent.get("estimated_total_fee")
+    return projected
 
 
 def _scan_semantic_blockers(payload: Mapping[str, Any]) -> list[str]:

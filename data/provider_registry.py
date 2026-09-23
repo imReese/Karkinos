@@ -122,20 +122,28 @@ def build_provider_registry(
     from data.providers.akshare_tencent_daily import AkshareTencentDailyBarProvider
     from data.providers.baostock_daily import BaoStockDailyBarProvider
     from data.providers.tdx import TdxDailyBarProvider
+    from data.providers.tencent import TencentDailyBarProvider, TencentSource
     from data.providers.tushare_daily import TushareDailyBarProvider
     from data.providers.tushare_source import TushareSource
 
     registrations: list[ProviderRegistration] = [
         ProviderRegistration(
-            name="akshare",
-            upstream_group="eastmoney",
-            legacy_factory=AKShareSource,
-            daily_bar_factory=AkshareDailyBarProvider,
+            name="tencent",
+            upstream_group="tencent",
+            legacy_factory=TencentSource,
+            daily_bar_factory=TencentDailyBarProvider,
         ),
         ProviderRegistration(
             name="akshare_tencent",
             upstream_group="tencent",
+            legacy_factory=TencentSource,
             daily_bar_factory=AkshareTencentDailyBarProvider,
+        ),
+        ProviderRegistration(
+            name="akshare",
+            upstream_group="eastmoney",
+            legacy_factory=AKShareSource,
+            daily_bar_factory=AkshareDailyBarProvider,
         ),
         ProviderRegistration(
             name="baostock",

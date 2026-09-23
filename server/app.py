@@ -282,11 +282,30 @@ async def lifespan(app: FastAPI):
         collector_stability_delay = float(collector_config.stability_delay_seconds)
     except (TypeError, ValueError) as exc:
         raise ValueError("broker_statement_collector_timing_invalid") from exc
+    collector_path = collector_config.path
+    if collector_path:
+        p = Path(collector_path).expanduser()
+        if not p.is_absolute():
+            from server.runtime_paths import resolve_workspace
+
+            workspace = resolve_workspace()
+            candidate_workspace = workspace / p
+            repo_root = Path(__file__).resolve().parents[1]
+            candidate_repo = repo_root / p
+            if candidate_workspace.exists():
+                collector_path = str(candidate_workspace)
+            elif candidate_repo.exists():
+                collector_path = str(candidate_repo)
+            else:
+                collector_path = str(candidate_workspace)
+        else:
+            collector_path = str(p)
+
     broker_statement_collector = LocalBrokerStatementCollector(
         repository=(
             BrokerEvidenceRepository(db.path) if collector_config.enabled else None
         ),
-        path=collector_config.path,
+        path=collector_path,
         enabled=collector_config.enabled,
         poll_interval_seconds=collector_poll_interval,
         stability_delay_seconds=collector_stability_delay,

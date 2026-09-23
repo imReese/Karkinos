@@ -21,13 +21,20 @@ from data.market_bar_identity import migrate_legacy_market_bars_to_v2
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", default=os.getenv("KARKINOS_DATA_DIR", "data/store"))
+    parser.add_argument(
+        "--root",
+        default=None,
+        help="DataStore root path. Defaults to resolve_data_dir().",
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--expected-plan", help="Fingerprint from the dry-run report.")
     args = parser.parse_args(argv)
     if args.apply and not args.expected_plan:
         parser.error("--apply requires --expected-plan from a reviewed dry run")
-    database = Path(args.root).expanduser().resolve() / "meta.db"
+    from server.runtime_paths import resolve_data_dir
+
+    root = args.root or resolve_data_dir()
+    database = Path(root).expanduser().resolve() / "meta.db"
     backup: Path | None = None
     if args.apply:
         # SQLite's backup API includes committed WAL pages. Keep a standalone

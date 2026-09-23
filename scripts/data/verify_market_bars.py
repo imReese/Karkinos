@@ -48,8 +48,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--root",
-        default=os.getenv("KARKINOS_DATA_DIR", "data/store"),
-        help="DataStore root path. Defaults to KARKINOS_DATA_DIR or ./data/store.",
+        default=None,
+        help="DataStore root path. Defaults to resolve_data_dir().",
     )
     parser.add_argument(
         "--tushare-token-env",
@@ -63,6 +63,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    from server.runtime_paths import resolve_data_dir
+
+    root = args.root or resolve_data_dir()
     sources = build_sources(
         data_source=args.provider,
         tushare_token=os.getenv(args.tushare_token_env, ""),
@@ -75,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     report = reconcile_store_with_provider(
-        DataStore(args.root),
+        DataStore(root),
         source,
         Symbol(args.symbol),
         datetime.fromisoformat(args.start),

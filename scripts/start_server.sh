@@ -191,7 +191,11 @@ ensure_development_workspace() {
         "${home}/data" \
         "${home}/logs"
 
-    if [[ ! -f "${home}/config/config.json" ]]; then
+    if [[ -f "${REPO_ROOT}/config.json" ]]; then
+        if [[ ! -f "${home}/config/config.json" || "${REPO_ROOT}/config.json" -nt "${home}/config/config.json" ]]; then
+            cp -p "${REPO_ROOT}/config.json" "${home}/config/config.json"
+        fi
+    elif [[ ! -f "${home}/config/config.json" ]]; then
         cat >"${home}/config/config.json" <<'EOF'
 {
   "server": {
@@ -204,10 +208,18 @@ ensure_development_workspace() {
 EOF
     fi
 
-    if [[ ! -f "${home}/config/.env" ]]; then
+    if [[ -f "${REPO_ROOT}/.env" ]]; then
+        if [[ ! -s "${home}/config/.env" || "${REPO_ROOT}/.env" -nt "${home}/config/.env" ]]; then
+            cp -p "${REPO_ROOT}/.env" "${home}/config/.env"
+            chmod 600 "${home}/config/.env"
+        fi
+    elif [[ ! -f "${home}/config/.env" ]]; then
         touch "${home}/config/.env"
         chmod 600 "${home}/config/.env"
     fi
+
+    mkdir -p "${REPO_ROOT}/logs"
+    ln -sf "${REPO_ROOT}/logs/dev-server.log" "${home}/logs/dev-server.log"
 
     export KARKINOS_WORKSPACE="${home}"
     export KARKINOS_HOME="${home}"
@@ -264,6 +276,8 @@ start_dev() {
 
     command -v uv >/dev/null 2>&1 ||
         die "'uv' was not found in PATH"
+
+    ensure_development_workspace
 
     echo "Synchronizing development dependencies..."
     (

@@ -201,24 +201,26 @@ class AKShareSource(OpenEndFundMixin, DataSource):
         func,
         *,
         retry_delay_seconds: float | None = None,
+        max_retries: int | None = None,
         **kwargs,
     ):
         """带重试的 AKShare API 调用。"""
         import time
 
+        retries = self._MAX_RETRIES if max_retries is None else max(int(max_retries), 1)
         retry_delay = (
             self._RETRY_DELAY
             if retry_delay_seconds is None
             else max(float(retry_delay_seconds), 0.0)
         )
         last_error = None
-        for attempt in range(self._MAX_RETRIES):
+        for attempt in range(retries):
             try:
                 with _provider_network_env():
                     return func(**kwargs)
             except Exception as e:
                 last_error = e
-                if attempt < self._MAX_RETRIES - 1:
+                if attempt < retries - 1:
                     logger.warning(
                         "AKShare 调用失败 (第%d次), %.3fs 后重试: %s",
                         attempt + 1,
@@ -510,8 +512,6 @@ class AKShareSource(OpenEndFundMixin, DataSource):
                     frame,
                     observed_at=observed_at,
                 )
-                if payload is None:
-                    return None
                 return self._normalize_latest_quote(symbol, asset_class, payload)
 
             elif asset_class == AssetClass.FUND:
@@ -608,8 +608,10 @@ class AKShareSource(OpenEndFundMixin, DataSource):
                     payload["display_name"] = str(row["名称"]).strip()
                 return self._normalize_latest_quote(symbol, asset_class, payload)
 
-        except Exception:
-            logger.exception("fetch_latest failed for %s (%s)", symbol, asset_class)
+        except Exception as exc:
+            logger.warning(
+                "fetch_latest failed for %s (%s): %s", symbol, asset_class, exc
+            )
             return None
 
         return None

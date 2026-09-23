@@ -36,8 +36,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--root",
-        default=os.getenv("KARKINOS_DATA_DIR", "data/store"),
-        help="DataStore root path. Defaults to KARKINOS_DATA_DIR or ./data/store.",
+        default=None,
+        help="DataStore root path. Defaults to resolve_data_dir().",
     )
     parser.add_argument(
         "--frequency",
@@ -49,8 +49,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    from server.runtime_paths import resolve_data_dir
+
+    root = args.root or resolve_data_dir()
     frequency = BarFrequency(args.frequency) if args.frequency else None
-    summary = DataStore(args.root).sync_parquet_bars_to_database(
+    summary = DataStore(root).sync_parquet_bars_to_database(
         frequency,
         instrument_type=InstrumentType(args.instrument_type),
     )

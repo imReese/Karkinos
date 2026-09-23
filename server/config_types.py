@@ -216,7 +216,7 @@ class CiticHistoryXlsDirectoryConfig:
         normalized_path = self.path.strip()
         if self.enabled and not normalized_path:
             raise ValueError(f"enabled {prefix} requires a non-empty path")
-        if normalized_path and not Path(normalized_path).is_absolute():
+        if normalized_path and not Path(normalized_path).expanduser().is_absolute():
             raise ValueError(f"{prefix}.path must be absolute when provided")
         for field_name, value, minimum, maximum in (
             ("max_files", self.max_files, 1, 600),

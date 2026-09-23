@@ -37,8 +37,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--file", required=True, help="Legacy local UTF-8 JSON path.")
     parser.add_argument(
         "--db",
-        default=os.getenv("KARKINOS_DB_PATH", "data/store/karkinos.db"),
-        help="Karkinos SQLite path used only when --record is supplied.",
+        default=None,
+        help="Karkinos SQLite path used only when --record is supplied. Defaults to KARKINOS_DB_PATH or <data_dir>/app.db.",
     )
     parser.add_argument(
         "--max-snapshot-age-seconds",
@@ -101,8 +101,15 @@ def main(argv: list[str] | None = None) -> int:
         output = {**preview, "legacy_migration": legacy_migration}
         print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
         return 0 if preview["ready_to_record"] else 2
+    from server.runtime_paths import resolve_data_dir
+
+    db_path = (
+        args.db
+        or os.getenv("KARKINOS_DB_PATH")
+        or str(Path(resolve_data_dir()) / "app.db")
+    )
     try:
-        recorded = BrokerOrderLifecycleEvidenceRepository(args.db).record(
+        recorded = BrokerOrderLifecycleEvidenceRepository(db_path).record(
             preview,
             acknowledgement=args.acknowledgement,
         )

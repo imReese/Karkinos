@@ -705,3 +705,58 @@ def test_current_account_gate_ignores_read_time_window_but_not_fact_drift() -> N
     assert "account_truth_reconciliation_not_pass" in blockers
     assert "valuation_snapshot_not_complete" in blockers
     assert "market_data_not_trusted" in blockers
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_manual_review_projection_preserves_price_and_cost_estimates() -> None:
+    recommendation = build_account_action_recommendation(
+        decision_payload={
+            "decision_date": "2026-09-01",
+            "candidates": [{"action_id": 1, "symbol": "600519"}],
+            "summary": {
+                "portfolio": {"valuation_status": "complete"},
+                "account_truth": {"gate_status": "pass"},
+            },
+        },
+        trading_plan={
+            "manual_ready_count": 1,
+            "paper_shadow_ready_count": 0,
+            "blocked_count": 0,
+            "blockers": [],
+            "order_intents": [
+                {
+                    "action_id": 1,
+                    "symbol": "600519",
+                    "display_name": "贵州茅台",
+                    "asset_class": "stock",
+                    "side": "buy",
+                    "target_weight": 0.15,
+                    "estimated_quantity": 200,
+                    "estimated_price": 1800.5,
+                    "estimated_gross_amount": 360100.0,
+                    "estimated_net_cash_impact": -360180.0,
+                    "estimated_total_fee": 80.0,
+                    "submission_status": "manual_confirmation_required",
+                }
+            ],
+        },
+        promoted_scan={
+            "verified": True,
+            "status": "completed",
+            "blockers": [],
+            "strategy_bindings": [],
+            "selected_signal_count": 1,
+        },
+        current_evidence_blockers=[],
+        current_evidence_fingerprint="e" * 64,
+    )
+
+    assert recommendation["status"] == "manual_review_required"
+    assert len(recommendation["actions"]) == 1
+    action = recommendation["actions"][0]
+    assert action["symbol"] == "600519"
+    assert action["estimated_price"] == 1800.5
+    assert action["estimated_gross_amount"] == 360100.0
+    assert action["estimated_net_cash_impact"] == -360180.0
+    assert action["estimated_total_fee"] == 80.0

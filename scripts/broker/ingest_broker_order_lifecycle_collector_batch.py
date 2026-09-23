@@ -33,8 +33,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--file", required=True, help="Local UTF-8 JSON batch path.")
     parser.add_argument(
         "--db",
-        default=os.getenv("KARKINOS_DB_PATH", "data/store/karkinos.db"),
-        help="Karkinos SQLite path used only when --record is supplied.",
+        default=None,
+        help="Karkinos SQLite path used only when --record is supplied. Defaults to KARKINOS_DB_PATH or <data_dir>/app.db.",
     )
     parser.add_argument(
         "--source-name",
@@ -94,8 +94,15 @@ def main(argv: list[str] | None = None) -> int:
     if not args.record:
         print(json.dumps(preview, ensure_ascii=False, indent=2, sort_keys=True))
         return 0 if preview["ready_to_advance_cursor"] else 2
+    from server.runtime_paths import resolve_data_dir
+
+    db_path = (
+        args.db
+        or os.getenv("KARKINOS_DB_PATH")
+        or str(Path(resolve_data_dir()) / "app.db")
+    )
     try:
-        recorded = BrokerOrderLifecycleCollectorRepository(args.db).ingest(
+        recorded = BrokerOrderLifecycleCollectorRepository(db_path).ingest(
             preview,
             acknowledgement=args.acknowledgement,
         )

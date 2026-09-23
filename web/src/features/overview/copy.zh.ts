@@ -169,6 +169,18 @@ export const overviewCopyZh = {
     strategyRecommendationViewAll: '查看全部',
     strategyRecommendationReadOnly:
       '只读建议 · 需要人工确认 · 不创建或提交券商订单',
+    strategyRecommendationBuyPrice: '建议买入价',
+    strategyRecommendationSellPrice: '建议卖出价',
+    strategyRecommendationReferencePrice: '参考价格',
+    strategyRecommendationAmount: '预估金额',
+    strategyRecommendationFee: '预估费用',
+    strategyRecommendationNetCash: '资金变动',
+    strategyRecommendationPositionAfter: '预估持仓',
+    strategyRecommendationAvgCostAfter: '预估成本',
+    strategyRecommendationCashBufferSufficient: '现金充足',
+    strategyRecommendationCashBufferBreached: '现金不足',
+    strategyRecommendationRiskPassed: '风控通过',
+    strategyRecommendationPositionNew: '新建立仓',
     accountRecommendationUnavailableDetail:
       '当前证据尚不足以形成可复核的账户建议；先完成待处理事项后再判断。',
     decisionBlockers: '需要补齐',
