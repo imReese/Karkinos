@@ -5,6 +5,7 @@ import {
   formatCurrency,
   formatDate,
   formatPercent,
+  formatQuantity,
 } from '../../../shared/format';
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
@@ -24,15 +25,103 @@ type PortfolioCopy = ReturnType<typeof useCopy>;
 function PositionNumericCell({
   value,
   tone = 'text-[var(--app-text)]',
+  className = '',
 }: {
   value: string;
   tone?: string;
+  className?: string;
 }) {
   return (
-    <span className={`block text-right font-medium tabular-nums ${tone}`}>
+    <span
+      className={`block text-right font-medium tabular-nums ${tone} ${className}`.trim()}
+    >
       {value}
     </span>
   );
+}
+
+function formatSignedPercent(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) {
+    return '--';
+  }
+  return formatPercent(value, {
+    signDisplay: 'exceptZero',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatPriceCompact(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) {
+    return '--';
+  }
+  const hasSubCent = Math.round(value * 100) !== value * 100;
+  return formatCurrency(value, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: hasSubCent ? 4 : 2,
+  });
+}
+
+function resolvePositionMarketValueSubtext(
+  position: Position,
+  locale: Locale,
+): string | null {
+  const hasLatestPrice =
+    position.latest_price != null && position.latest_price > 0;
+  const hasAvgCost = position.avg_cost != null && position.avg_cost > 0;
+
+  if (hasLatestPrice && hasAvgCost) {
+    const costPrefix = locale === 'zh' ? '成本' : 'Cost';
+    return `${formatPriceCompact(position.latest_price)} · ${costPrefix} ${formatPriceCompact(position.avg_cost)}`;
+  }
+  if (hasLatestPrice) {
+    return formatPriceCompact(position.latest_price);
+  }
+  if (hasAvgCost) {
+    const costPrefix = locale === 'zh' ? '成本' : 'Cost';
+    return `${costPrefix} ${formatPriceCompact(position.avg_cost)}`;
+  }
+  return null;
+}
+
+function resolvePositionTodayChangePct(position: Position): number | null {
+  if (
+    position.today_change_pct != null &&
+    Number.isFinite(position.today_change_pct)
+  ) {
+    return position.today_change_pct;
+  }
+  if (
+    position.today_change != null &&
+    Number.isFinite(position.today_change) &&
+    position.market_value != null &&
+    Number.isFinite(position.market_value)
+  ) {
+    const priorValue = position.market_value - position.today_change;
+    if (priorValue > 0) {
+      return position.today_change / priorValue;
+    }
+  }
+  return null;
+}
+
+function resolvePositionUnrealizedPct(position: Position): number | null {
+  if (
+    position.unrealized_pnl == null ||
+    !Number.isFinite(position.unrealized_pnl)
+  ) {
+    return null;
+  }
+  const costBasis =
+    position.quantity > 0 && position.avg_cost > 0
+      ? position.quantity * position.avg_cost
+      : position.market_value != null && Number.isFinite(position.market_value)
+        ? position.market_value - position.unrealized_pnl
+        : null;
+  if (costBasis != null && costBasis > 0) {
+    return position.unrealized_pnl / costBasis;
+  }
+  return null;
 }
 
 export function buildPositionColumns({
@@ -100,39 +189,75 @@ export function buildPositionColumns({
     header: () => (
       <span className="block text-right">{labels.marketValue}</span>
     ),
-    cell: ({ row }) => (
-      <span data-testid={`position-market-value-${row.original.symbol}`}>
-        <PositionNumericCell
-          value={formatCurrency(row.original.market_value)}
-        />
-      </span>
-    ),
+    cell: ({ row }) => {
+      const position = row.original;
+      const subtext = resolvePositionMarketValueSubtext(position, locale);
+      return (
+        <span data-testid={`position-market-value-${position.symbol}`}>
+          <PositionNumericCell value={formatCurrency(position.market_value)} />
+          {subtext ? (
+            <span
+              className="app-type-micro mt-0.5 block text-right font-medium tabular-nums text-[var(--app-text-tertiary)]"
+              title={`${locale === 'zh' ? '持仓数量' : 'Quantity'}: ${formatQuantity(position.quantity)}`}
+            >
+              {subtext}
+            </span>
+          ) : null}
+        </span>
+      );
+    },
   };
   const todayColumn: ColumnDef<Position, unknown> = {
     id: 'today-change',
     header: () => (
       <span className="block text-right">{labels.todayChange}</span>
     ),
-    cell: ({ row }) => (
-      <span data-testid={`position-today-change-${row.original.symbol}`}>
-        <PositionNumericCell
-          value={formatCurrency(row.original.today_change)}
-          tone={resolvePositionTone(row.original.today_change)}
-        />
-      </span>
-    ),
+    cell: ({ row }) => {
+      const position = row.original;
+      const changePct = resolvePositionTodayChangePct(position);
+      const tone = resolvePositionTone(position.today_change);
+      const pctTone = resolvePositionTone(changePct ?? position.today_change);
+      return (
+        <span data-testid={`position-today-change-${position.symbol}`}>
+          <PositionNumericCell
+            value={formatCurrency(position.today_change)}
+            tone={tone}
+          />
+          {changePct != null ? (
+            <span
+              className={`app-type-micro mt-0.5 block text-right font-medium tabular-nums ${pctTone}`}
+            >
+              {formatSignedPercent(changePct)}
+            </span>
+          ) : null}
+        </span>
+      );
+    },
   };
   const unrealizedColumn: ColumnDef<Position, unknown> = {
     id: 'unrealized',
     header: () => <span className="block text-right">{labels.unrealized}</span>,
-    cell: ({ row }) => (
-      <span data-testid={`position-unrealized-${row.original.symbol}`}>
-        <PositionNumericCell
-          value={formatCurrency(row.original.unrealized_pnl)}
-          tone={resolvePositionTone(row.original.unrealized_pnl)}
-        />
-      </span>
-    ),
+    cell: ({ row }) => {
+      const position = row.original;
+      const pnlPct = resolvePositionUnrealizedPct(position);
+      const tone = resolvePositionTone(position.unrealized_pnl);
+      const pctTone = resolvePositionTone(pnlPct ?? position.unrealized_pnl);
+      return (
+        <span data-testid={`position-unrealized-${position.symbol}`}>
+          <PositionNumericCell
+            value={formatCurrency(position.unrealized_pnl)}
+            tone={tone}
+          />
+          {pnlPct != null ? (
+            <span
+              className={`app-type-micro mt-0.5 block text-right font-medium tabular-nums ${pctTone}`}
+            >
+              {formatSignedPercent(pnlPct)}
+            </span>
+          ) : null}
+        </span>
+      );
+    },
   };
   const realizedColumn: ColumnDef<Position, unknown> = {
     id: 'realized',
@@ -204,22 +329,26 @@ export function buildPositionColumns({
               const weight = model.weightBySymbol[row.original.symbol];
               const fillWidth = Math.max(0, Math.min(100, (weight ?? 0) * 100));
               return (
-                <span data-testid={`position-weight-${row.original.symbol}`}>
-                  <span className="inline-flex items-center justify-end gap-2.5">
-                    <PositionNumericCell value={formatPercent(weight)} />
-                    {model.variant === 'dashboard' ? (
+                <div
+                  data-testid={`position-weight-${row.original.symbol}`}
+                  className="flex flex-col items-end justify-center w-full"
+                >
+                  <PositionNumericCell
+                    value={formatPercent(weight)}
+                    className="shrink-0"
+                  />
+                  {model.variant === 'dashboard' ? (
+                    <span
+                      aria-hidden="true"
+                      className="hidden sm:inline-block w-16 h-1.5 rounded-full bg-[var(--app-divider)] overflow-hidden shrink-0 mt-1"
+                    >
                       <span
-                        aria-hidden="true"
-                        className="hidden sm:inline-block w-16 h-1.5 rounded-full bg-[var(--app-divider)] overflow-hidden"
-                      >
-                        <span
-                          className="block h-full rounded-full bg-[var(--app-accent)]"
-                          style={{ width: `${fillWidth}%` }}
-                        />
-                      </span>
-                    ) : null}
-                  </span>
-                </span>
+                        className="block h-full rounded-full bg-[var(--app-accent)]"
+                        style={{ width: `${fillWidth}%` }}
+                      />
+                    </span>
+                  ) : null}
+                </div>
               );
             },
           } satisfies ColumnDef<Position, unknown>,
