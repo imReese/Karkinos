@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from core.types import InstrumentType, Symbol
@@ -41,6 +42,7 @@ from server.services.asset_metadata import resolve_asset_metadata
 from server.services.market_calendar_dates import project_market_session
 from server.services.position_presence import classify_position_presence
 from server.services.valuation_snapshot import valuation_identity_fields
+from server.valuation.service import value_position
 
 Operation = Callable[..., Any]
 
@@ -58,6 +60,30 @@ class PortfolioSnapshotProjectionPorts:
 class PortfolioSnapshotBuildResult:
     snapshot: PortfolioSnapshot
     needs_total_deposits: bool = False
+
+
+def _overdue_published_fund_price(
+    quote: dict | None, instrument_type: str
+) -> Decimal | None:
+    if (
+        instrument_type != InstrumentType.OPEN_END_FUND.value
+        or quote is None
+        or quote.get("quote_status") != "stale"
+        or quote.get("stale_reason") != "quote_older_than_expected_session"
+        or not quote.get("nav_date")
+    ):
+        return None
+    semantics = quote_pricing_semantics(quote, instrument_type=instrument_type)
+    if (
+        semantics["pricing_kind"] != "published_nav"
+        or semantics["pricing_authority"] != "authoritative"
+    ):
+        return None
+    try:
+        price = Decimal(str(quote.get("price")))
+    except InvalidOperation:
+        return None
+    return price if price.is_finite() and price > 0 else None
 
 
 def build_portfolio_snapshot_sync(
@@ -114,6 +140,9 @@ def build_portfolio_snapshot_sync(
     position_review_items: list[PositionEvidenceReviewResponse] = []
     realized_pnl_total = 0.0
     missing_price_symbols: list[str] = []
+    indicative_total = Decimal(str(portfolio.cash))
+    indicative_nav_dates: list[str] = []
+    indicative_available = True
     daily_ledger_entries = ports.read_daily_ledger_entries(state)
     ledger_asset_classes: dict[str, str] = {}
     for entry in daily_ledger_entries:
@@ -249,6 +278,17 @@ def build_portfolio_snapshot_sync(
         realized_pnl_total += response_position.realized_pnl
         if presence == "current":
             positions.append(response_position)
+            if valuation_available:
+                indicative_total += Decimal(str(pos.market_value))
+            elif (
+                fund_price := _overdue_published_fund_price(quote, instrument_type)
+            ) is not None:
+                indicative_total += value_position(
+                    Decimal(str(pos.quantity)), Decimal(str(pos.avg_cost)), fund_price
+                ).market_value
+                indicative_nav_dates.append(str(quote["nav_date"]))
+            else:
+                indicative_available = False
         elif presence == "closed":
             closed_positions.append(
                 ClosedPositionResponse(
@@ -257,6 +297,8 @@ def build_portfolio_snapshot_sync(
                 )
             )
         else:
+            if quantity != 0:
+                indicative_available = False
             position_review_items.append(
                 PositionEvidenceReviewResponse(
                     reason_codes=reason_codes,
@@ -272,6 +314,14 @@ def build_portfolio_snapshot_sync(
         total_equity = float(portfolio.cash) + sum(
             float(pos.market_value or 0.0) for pos in positions
         )
+    indicative_total_equity = (
+        float(indicative_total)
+        if total_equity is None
+        and indicative_available
+        and indicative_nav_dates
+        and valuation_snapshot.get("status") == "degraded"
+        else None
+    )
 
     allocation: list[AllocationItem] = []
     if total_equity is not None and total_equity > 0:
@@ -341,6 +391,12 @@ def build_portfolio_snapshot_sync(
         snapshot=PortfolioSnapshot(
             cash=float(portfolio.cash),
             total_equity=total_equity,
+            indicative_total_equity=indicative_total_equity,
+            indicative_fund_nav_date=(
+                min(indicative_nav_dates)
+                if indicative_total_equity is not None
+                else None
+            ),
             total_deposits=total_deposits,
             positions=positions,
             allocation=allocation,

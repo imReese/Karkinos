@@ -177,6 +177,8 @@ class AllocationGroup(BaseModel):
 class PortfolioSnapshot(BaseModel):
     cash: float
     total_equity: float | None
+    indicative_total_equity: float | None = None
+    indicative_fund_nav_date: str | None = None
     total_deposits: float = 0.0
     positions: list[PositionResponse]
     allocation: list[AllocationItem]
@@ -295,6 +297,8 @@ class DailyOperationsSummary(BaseModel):
 
 class AccountOverview(BaseModel):
     total_equity: float | None
+    indicative_total_equity: float | None = None
+    indicative_fund_nav_date: str | None = None
     available_cash: float
     total_deposits: float = 0.0
     positions_count: int

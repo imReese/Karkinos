@@ -12,6 +12,8 @@ export type { DailyOperationsSummary } from '../../shared/contracts/daily-operat
 
 export type AccountOverview = {
   total_equity: number | null;
+  indicative_total_equity?: number | null;
+  indicative_fund_nav_date?: string | null;
   available_cash: number;
   total_deposits: number;
   positions_count: number;

@@ -962,6 +962,28 @@ test.each(['missing', 'conflicting', 'unknown'] as const)(
   },
 );
 
+test('shows a dated reference amount for overdue published fund NAV', async () => {
+  const state = accountFixture();
+  state.summary.total_equity = null;
+  state.summary.indicative_total_equity = 18585.11;
+  state.summary.indicative_fund_nav_date = '2026-09-21';
+  state.summary.cumulative_pnl = null;
+  state.snapshot.valuation_status = 'degraded';
+  state.overview.valuation_usability = 'degraded';
+  installFetch(state);
+  renderPage('zh');
+
+  expect(await screen.findByTestId('overview-total-value')).toHaveTextContent(
+    '18,585.11',
+  );
+  expect(screen.getByTestId('overview-total-value-note')).toHaveTextContent(
+    '参考估值 · 基金净值截至 2026-09-21',
+  );
+  expect(screen.getByTestId('overview-cumulative-pnl')).toHaveTextContent(
+    '待估值',
+  );
+});
+
 test('stock closing-price metadata stays out of the overview headline', async () => {
   const state = accountFixture();
   state.snapshot.positions[0] = {

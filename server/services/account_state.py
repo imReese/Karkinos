@@ -49,6 +49,8 @@ def build_account_state_projection(
         realized_pnl = sum(position.realized_pnl for position in all_position_facts)
     summary = AccountOverview(
         total_equity=total_equity,
+        indicative_total_equity=snapshot.indicative_total_equity,
+        indicative_fund_nav_date=snapshot.indicative_fund_nav_date,
         available_cash=snapshot.cash,
         total_deposits=snapshot.total_deposits,
         positions_count=len(snapshot.positions),
