@@ -86,6 +86,8 @@ export type ValuationLane = {
 export type PortfolioSnapshot = {
   cash: number;
   total_equity: number | null;
+  indicative_total_equity?: number | null;
+  indicative_fund_nav_date?: string | null;
   total_deposits: number;
   positions: Position[];
   allocation: AllocationItem[];

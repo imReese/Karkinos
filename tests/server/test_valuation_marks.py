@@ -249,6 +249,76 @@ def test_estimate_only_and_overdue_nav_are_distinct_unusable_evidence(tmp_path):
     assert overdue["quotes"][0]["latest_observation"]["price"] == 1.8115
 
 
+@pytest.mark.asyncio
+async def test_overdue_published_nav_has_display_value_without_restoring_valuation(
+    tmp_path,
+):
+    db = _book(tmp_path)
+    _save(db, _nav(nav_date="2026-09-21", quote_timestamp="2026-09-21T18:00:00+08:00"))
+    _save(
+        db,
+        _nav(
+            price=1.9,
+            nav_date=None,
+            quote_timestamp="2026-09-22T14:55:00+08:00",
+            quote_source="sina_fund_estimate",
+            quote_status="live",
+        ),
+    )
+    now = datetime(2026, 9, 23, 19, 30, tzinfo=SHANGHAI)
+    db.publish_current_valuation_snapshot_sync(now=now)
+    state = AppState()
+    state.db, state.config = db, ServerConfig()
+
+    account = await build_account_state_response(state, now=now)
+
+    assert account.summary.total_equity is None
+    assert account.summary.indicative_total_equity == pytest.approx(1030.0)
+    assert account.summary.indicative_fund_nav_date == "2026-09-21"
+    assert account.summary.cumulative_pnl is None
+    assert account.snapshot.positions[0].market_value is None
+    assert account.overview.valuation_usability == "degraded"
+    assert account.overview.decision_readiness == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_estimated_nav_never_produces_indicative_total(tmp_path):
+    db = _book(tmp_path)
+    _save(db, _estimate())
+    db.publish_current_valuation_snapshot_sync(now=MONDAY)
+    state = AppState()
+    state.db, state.config = db, ServerConfig()
+
+    account = await build_account_state_response(state, now=MONDAY)
+
+    assert account.summary.total_equity is None
+    assert account.summary.indicative_total_equity is None
+
+
+@pytest.mark.asyncio
+async def test_missing_stock_price_blocks_fund_reference_total(tmp_path):
+    db = _book(tmp_path)
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-09-22T10:00:00+08:00",
+        symbol="600001",
+        direction="buy",
+        quantity=1.0,
+        price=10.0,
+        asset_class="stock",
+    )
+    _save(db, _nav(nav_date="2026-09-21", quote_timestamp="2026-09-21T18:00:00+08:00"))
+    now = datetime(2026, 9, 23, 19, 30, tzinfo=SHANGHAI)
+    db.publish_current_valuation_snapshot_sync(now=now)
+    state = AppState()
+    state.db, state.config = db, ServerConfig()
+
+    account = await build_account_state_response(state, now=now)
+
+    assert account.summary.total_equity is None
+    assert account.summary.indicative_total_equity is None
+
+
 def test_conflicting_same_instant_published_mark_stays_fail_closed():
     with pytest.raises(ValueError, match="quote authority facts conflict"):
         select_authoritative_valuation_marks(
