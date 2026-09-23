@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from copy import deepcopy
 from typing import Any, Callable
 
 from server.services.asset_metadata import resolve_asset_metadata
@@ -49,6 +50,8 @@ def decision_candidate(
     allow_direct_quote_fallback: bool,
     data_freshness_resolver: Callable[..., dict[str, Any]],
     strategy_order_gate_resolver: Callable[..., tuple[dict[str, Any], list[str]]],
+    strategy_order_gate_cache: dict[tuple[str, str | None], dict[str, Any]]
+    | None = None,
     paper_shadow_resolver: Callable[..., dict[str, Any]],
     paper_shadow_ticket_gate: Callable[[dict[str, Any]], bool],
 ) -> dict[str, Any]:
@@ -98,11 +101,17 @@ def decision_candidate(
         and manual_confirmation_status == READY_MANUAL_CONFIRMATION_STATUS
     ):
         manual_confirmation_status = "strategy_attribution_review_required"
-    strategy_order_generation, _ = strategy_order_gate_resolver(
-        db,
-        str(action.get("strategy_id") or ""),
-        as_of_date=action_trade_date(action),
-    )
+    strategy_id = str(action.get("strategy_id") or "").strip()
+    as_of_date = action_trade_date(action)
+    gate_key = (strategy_id, as_of_date)
+    if strategy_order_gate_cache is not None and gate_key in strategy_order_gate_cache:
+        strategy_order_generation = deepcopy(strategy_order_gate_cache[gate_key])
+    else:
+        strategy_order_generation, _ = strategy_order_gate_resolver(
+            db, strategy_id, as_of_date=as_of_date
+        )
+        if strategy_order_gate_cache is not None:
+            strategy_order_gate_cache[gate_key] = deepcopy(strategy_order_generation)
     if (
         strategy_order_generation.get("status") != "pass"
         and manual_confirmation_status == READY_MANUAL_CONFIRMATION_STATUS

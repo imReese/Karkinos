@@ -1510,6 +1510,31 @@ select:is(.app-field, .app-input):not([multiple]) {
   padding-block: 7px;
 }
 
+.overview-loading-block {
+  display: block;
+  flex-shrink: 0;
+  border-radius: var(--app-radius-control);
+  background: linear-gradient(
+    100deg,
+    var(--app-surface-raised) 20%,
+    color-mix(in srgb, var(--app-surface-raised) 75%, var(--app-text-secondary))
+      50%,
+    var(--app-surface-raised) 80%
+  );
+  background-size: 200% 100%;
+  animation: app-overview-loading-sheen var(--app-motion-loading) linear
+    infinite;
+}
+
+@keyframes app-overview-loading-sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
 @media (min-width: 640px) {
   .app-type-primary-metric {
     font-size: var(--app-font-size-primary-metric);

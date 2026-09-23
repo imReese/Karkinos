@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime, time, timezone
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from server.contracts.content_identity import content_fingerprint
@@ -154,6 +154,7 @@ def build_account_action_recommendation(
     promoted_scan: Mapping[str, Any],
     current_evidence_blockers: Sequence[str],
     current_evidence_fingerprint: str,
+    display_name_resolver: Callable[[str, str | None], str] | None = None,
 ) -> dict[str, Any]:
     """Project strict action authority plus lower-risk read-only presentation tiers."""
 
@@ -236,9 +237,11 @@ def build_account_action_recommendation(
         for item in promoted_scan.get("strategy_bindings") or []
         if isinstance(item, Mapping)
     ]
-    actions = [_action_projection(item) for item in order_intents]
+    actions = [
+        _action_projection(item, display_name_resolver) for item in order_intents
+    ]
     signal_actions = [
-        _signal_projection(item)
+        _signal_projection(item, display_name_resolver)
         for item in promoted_scan.get("signals") or []
         if isinstance(item, Mapping)
     ]
@@ -422,12 +425,29 @@ def _portfolio_preview_blockers(
     return list(dict.fromkeys(blockers))
 
 
-def _signal_projection(signal: Mapping[str, Any]) -> dict[str, Any]:
+def _action_display_name(
+    item: Mapping[str, Any],
+    resolver: Callable[[str, str | None], str] | None,
+) -> str | None:
+    symbol = str(item.get("symbol") or "")
+    name = item.get("display_name") or item.get("name")
+    if name and name != symbol:
+        return str(name)
+    if resolver is not None and symbol:
+        return resolver(symbol, item.get("asset_class"))
+    return str(name) if name else None
+
+
+def _signal_projection(
+    signal: Mapping[str, Any],
+    display_name_resolver: Callable[[str, str | None], str] | None,
+) -> dict[str, Any]:
+    display_name = _action_display_name(signal, display_name_resolver)
     projected = {
         "action_id": None,
         "symbol": signal.get("symbol"),
-        "display_name": signal.get("display_name") or signal.get("name"),
-        "name": signal.get("name") or signal.get("display_name"),
+        "display_name": display_name,
+        "name": display_name,
         "asset_class": signal.get("asset_class") or "stock",
         "side": signal.get("direction"),
         "target_weight": signal.get("target_weight"),
@@ -440,12 +460,16 @@ def _signal_projection(signal: Mapping[str, Any]) -> dict[str, Any]:
     return projected
 
 
-def _action_projection(intent: Mapping[str, Any]) -> dict[str, Any]:
+def _action_projection(
+    intent: Mapping[str, Any],
+    display_name_resolver: Callable[[str, str | None], str] | None,
+) -> dict[str, Any]:
+    display_name = _action_display_name(intent, display_name_resolver)
     projected = {
         "action_id": intent.get("action_id"),
         "symbol": intent.get("symbol"),
-        "display_name": intent.get("display_name") or intent.get("name"),
-        "name": intent.get("name") or intent.get("display_name"),
+        "display_name": display_name,
+        "name": display_name,
         "asset_class": intent.get("asset_class"),
         "side": intent.get("side"),
         "target_weight": intent.get("target_weight"),

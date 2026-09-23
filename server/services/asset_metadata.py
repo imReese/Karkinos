@@ -435,15 +435,21 @@ def resolve_asset_metadata(
 ) -> AssetMetadata:
     """Resolve a stable display identity without hardcoding UI names."""
     normalized_asset_class = _normalize_asset_class(asset_class)
-    for candidate in (
-        _metadata_from_db(state, symbol, normalized_asset_class),
-        _metadata_from_watchlist(state, symbol, normalized_asset_class),
-        _metadata_from_quote(symbol, normalized_asset_class, quote),
-        _metadata_from_config(state, symbol, normalized_asset_class),
-        _metadata_from_instrument(state, symbol, normalized_asset_class),
-    ):
-        if candidate is not None:
-            return candidate
+    candidate = _metadata_from_db(state, symbol, normalized_asset_class)
+    if candidate is not None:
+        return candidate
+    candidate = _metadata_from_watchlist(state, symbol, normalized_asset_class)
+    if candidate is not None:
+        return candidate
+    candidate = _metadata_from_quote(symbol, normalized_asset_class, quote)
+    if candidate is not None:
+        return candidate
+    candidate = _metadata_from_config(state, symbol, normalized_asset_class)
+    if candidate is not None:
+        return candidate
+    candidate = _metadata_from_instrument(state, symbol, normalized_asset_class)
+    if candidate is not None:
+        return candidate
     return AssetMetadata(
         symbol=symbol,
         display_name=fallback_name or symbol,
