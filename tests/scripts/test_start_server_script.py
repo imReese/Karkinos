@@ -83,8 +83,11 @@ FAKE_PYTHON = """#!PYTHON
 # launcher passed, and blocks until terminated.
 import json
 import os
+import signal
+import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -98,6 +101,9 @@ def _port_from_env(*names):
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if os.environ.get("FAKE_RUNTIME_UNHEALTHY"):
+            self.send_error(503)
+            return
         if self.path == "/api/health":
             body = b'{"service": "karkinos", "status": "alive"}'
         else:
@@ -112,6 +118,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    if sys.argv[1:2] == ["-c"]:
+        # Execute the launcher's real session-detaching wrapper, then exec this
+        # runtime double just as the actual interpreter execs the server.
+        sys.argv = sys.argv[2:]
+        exec(sys.argv[0])
+        return
     if sys.argv[1:] == ["-m", "server", "--help"]:
         print("--prepare-database")
         return
@@ -122,6 +134,46 @@ def main():
     ):
         print("fake database ready")
         return
+
+    shutdown_marker = os.environ.get("FAKE_RUNTIME_SHUTDOWN_MARKER")
+    if shutdown_marker:
+        def slow_shutdown(_signum, _frame):
+            time.sleep(2)
+            with open(shutdown_marker, "w", encoding="utf-8") as output:
+                output.write(str(os.getpid()))
+            raise SystemExit(0)
+        signal.signal(signal.SIGTERM, slow_shutdown)
+
+    child_signals = os.environ.get("FAKE_RUNTIME_CHILD_SIGNALS")
+    if child_signals:
+        child_program = '''
+import signal, sys, time
+from pathlib import Path
+marker = Path(sys.argv[1])
+def stop(_signum, _frame):
+    with marker.open("a") as output:
+        output.write("TERM" + chr(10))
+    time.sleep(1)
+    raise SystemExit(0)
+signal.signal(signal.SIGTERM, stop)
+Path(str(marker) + ".ready").touch()
+while True:
+    time.sleep(1)
+'''
+        child = subprocess.Popen(
+            [sys.executable, "-c", child_program, child_signals],
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + 5
+        while not os.path.exists(child_signals + ".ready"):
+            if child.poll() is not None or time.monotonic() >= deadline:
+                raise RuntimeError("child did not become ready")
+            time.sleep(0.01)
+        def supervised_shutdown(_signum, _frame):
+            os.killpg(child.pid, signal.SIGTERM)
+            child.wait(timeout=5)
+            raise SystemExit(0)
+        signal.signal(signal.SIGTERM, supervised_shutdown)
 
     started = os.environ.get("FAKE_RUNTIME_STARTED")
     if started:
@@ -269,6 +321,7 @@ def launcher(tmp_path: Path) -> Iterator[SimpleNamespace]:
         "FAKE_PYTHON_STUB": str(python_stub),
         "KARKINOS_BACKEND_PORT": str(_free_port()),
         "KARKINOS_FRONTEND_PORT": str(_free_port()),
+        "KARKINOS_DEV_HOME": str(tmp_path / "development"),
         "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS": "30",
     }
 
@@ -393,6 +446,7 @@ def test_dev_start_runs_current_working_tree(
     assert Path(meta["source_root"]).resolve() == launcher.repo.resolve()
 
     pid = int((launcher.repo / ".run" / "server.pid").read_text(encoding="utf-8"))
+
     command = subprocess.run(
         ["ps", "-ww", "-p", str(pid), "-o", "command="], capture_output=True, text=True
     ).stdout
@@ -495,6 +549,8 @@ def test_repeated_start_is_rejected(launcher: SimpleNamespace, branch: str) -> N
     first = launcher.run("start_server.sh", branch, env_extra=env)
     assert first.returncode == 0, first.stderr
     pid = int((launcher.repo / ".run" / "server.pid").read_text(encoding="utf-8"))
+    assert os.getsid(pid) == pid
+    assert os.getpgid(pid) == pid
 
     sync_calls = launcher.uv_log.read_text(encoding="utf-8")
     second = launcher.run("start_server.sh", branch, env_extra=env)
@@ -525,10 +581,36 @@ def test_stop_rejects_branch_arguments(launcher: SimpleNamespace) -> None:
     assert "stop_server.sh" in help_result.stdout
 
 
-def test_stop_reports_not_running(launcher: SimpleNamespace) -> None:
+def test_stop_reports_missing_manager_without_claiming_ports_are_free(
+    launcher: SimpleNamespace,
+) -> None:
     result = launcher.run("stop_server.sh")
     assert result.returncode == 0
-    assert "not running" in result.stdout
+    assert "No managed Karkinos PID record" in result.stdout
+    assert "untracked processes may still be running" in result.stdout
+
+
+@pytest.mark.parametrize("branch", ["main", "dev"])
+def test_failed_start_waits_for_runtime_cleanup(
+    launcher: SimpleNamespace, branch: str
+) -> None:
+    marker = launcher.repo / "shutdown-complete"
+    result = launcher.run(
+        "start_server.sh",
+        branch,
+        env_extra={
+            "FAKE_GIT_HEAD_BRANCH": branch,
+            "FAKE_RUNTIME_UNHEALTHY": "1",
+            "FAKE_RUNTIME_SHUTDOWN_MARKER": str(marker),
+            "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS": "2",
+        },
+    )
+    assert result.returncode == 1
+    assert "Startup failed" in result.stderr
+    assert marker.is_file(), "runtime was killed before its two-second cleanup finished"
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(marker.read_text()), 0)
+    assert not (launcher.repo / ".run/server.pid").exists()
 
 
 def test_stop_stops_only_the_managed_runtime(
@@ -557,6 +639,24 @@ def test_stop_stops_only_the_managed_runtime(
     finally:
         unrelated.terminate()
         unrelated.wait(timeout=10)
+
+
+def test_dev_stop_lets_supervisor_signal_its_child_once(
+    launcher: SimpleNamespace,
+) -> None:
+    marker = launcher.repo / "child-signals"
+    started = launcher.run(
+        "start_server.sh",
+        "dev",
+        env_extra={
+            "FAKE_GIT_HEAD_BRANCH": "dev",
+            "FAKE_RUNTIME_CHILD_SIGNALS": str(marker),
+        },
+    )
+    assert started.returncode == 0, started.stderr
+    stopped = launcher.run("stop_server.sh")
+    assert stopped.returncode == 0, stopped.stderr
+    assert marker.read_text().splitlines() == ["TERM"]
 
 
 def test_stop_refuses_unrelated_process_owner(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import fcntl
 import json
 import os
@@ -16,6 +17,7 @@ import tempfile
 import time
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -128,6 +130,15 @@ def _startup_failed(environment: dict[str, str]) -> bool:
     )
 
 
+def _runtime_log(message: str) -> None:
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    try:
+        print(f"{timestamp} dev supervisor pid={os.getpid()}: {message}", flush=True)
+    except OSError:
+        # A revoked terminal or full log filesystem must not interrupt cleanup.
+        pass
+
+
 def supervise(
     commands: list[list[str]],
     environment: dict[str, str],
@@ -149,18 +160,21 @@ def supervise(
     http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def spawn(command):
-        children.append(
-            subprocess.Popen(
-                command,
-                cwd=ROOT,
-                env=environment,
-                start_new_session=True,
-            ),
+        child = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            env=environment,
+            start_new_session=True,
         )
+        children.append(child)
+        _runtime_log(f"started child pid={child.pid} pgid={child.pid}")
 
     deferred = commands[1:] if health_url is not None else []
     initial = commands[:1] if health_url is not None else commands
     try:
+        _runtime_log(
+            f"started ppid={os.getppid()} pgid={os.getpgrp()} sid={os.getsid(0)}"
+        )
         for command in initial:
             if interrupted:
                 return 128 + interrupted
@@ -169,6 +183,7 @@ def supervise(
             for child in children:
                 result = child.poll()
                 if result is not None:
+                    _runtime_log(f"child pid={child.pid} exited returncode={result}")
                     return result if result > 0 else 1
             if _startup_failed(environment):
                 print(
@@ -201,6 +216,9 @@ def supervise(
             time.sleep(0.1)
         return 128 + interrupted
     finally:
+        if interrupted:
+            _runtime_log(f"received {signal.Signals(interrupted).name}")
+        _runtime_log("stopping child process groups")
         for child in children:
             try:
                 os.killpg(child.pid, signal.SIGTERM)
@@ -217,7 +235,11 @@ def supervise(
                 os.killpg(child.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            child.wait()
+            else:
+                _runtime_log(f"sent SIGKILL to remaining child group pgid={child.pid}")
+            result = child.wait()
+            _runtime_log(f"reaped child pid={child.pid} returncode={result}")
+        _runtime_log("child cleanup complete")
         for sig, handler in previous.items():
             signal.signal(sig, handler)
 
@@ -271,9 +293,19 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("backend and frontend ports must be different")
         if not 0 < args.startup_timeout <= 300:
             raise ValueError("startup timeout must be between 0 and 300 seconds")
-        for number in (args.port, args.web_port):
+        for label, number in (("API", args.port), ("Web", args.web_port)):
             with socket.socket() as probe:
-                probe.bind(("127.0.0.1", number))
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    probe.bind(("127.0.0.1", number))
+                except OSError as exc:
+                    if exc.errno != errno.EADDRINUSE:
+                        raise
+                    raise ValueError(
+                        f"{label} port 127.0.0.1:{number} is already in use; "
+                        f"inspect its owner with: lsof -nP -iTCP:{number} -sTCP:LISTEN. "
+                        "No process was stopped."
+                    ) from exc
         environment = development_environment(args.home)
         lock_path = Path(environment["KARKINOS_HOME"]) / ".development.lock"
         lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)

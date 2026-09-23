@@ -64,7 +64,7 @@ signal_tree() {
 }
 
 if [[ ! -f "${PID_FILE}" ]]; then
-    echo "Karkinos is not running."
+    echo "No managed Karkinos PID record; untracked processes may still be running."
     clear_runtime_state
     exit 0
 fi
@@ -78,7 +78,7 @@ if [[ ! "${pid}" =~ ^[0-9]+$ ]]; then
 fi
 
 if ! kill -0 "${pid}" >/dev/null 2>&1; then
-    echo "Karkinos is already stopped."
+    echo "Recorded Karkinos PID ${pid} has exited; untracked child processes may still be running."
     clear_runtime_state
     exit 0
 fi
@@ -124,7 +124,13 @@ esac
 
 echo "Stopping Karkinos (PID ${pid})..."
 
-signal_tree "${pid}" TERM
+if [[ "${owner}" == dev:* ]]; then
+    # The dev supervisor owns its child process groups and their grace period.
+    # Signaling descendants first races its cleanup and sends duplicate TERM.
+    kill -TERM "${pid}" >/dev/null 2>&1 || true
+else
+    signal_tree "${pid}" TERM
+fi
 
 for _ in {1..32}; do
     if ! kill -0 "${pid}" >/dev/null 2>&1; then

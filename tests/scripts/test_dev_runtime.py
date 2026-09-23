@@ -103,7 +103,7 @@ def test_existing_data_without_configuration_is_not_reinitialized(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "trigger", ["signal", "peer_exit", "spawn_failure", "startup_timeout"]
+    "trigger", ["signal", "peer_exit", "spawn_failure", "startup_timeout", "closed_log"]
 )
 def test_foreground_exit_stops_only_created_children(tmp_path, trigger):
     pid_file = tmp_path / "child.pid"
@@ -112,7 +112,7 @@ def test_foreground_exit_stops_only_created_children(tmp_path, trigger):
         f"Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(60)"
     )
     commands = [[sys.executable, "-c", child]]
-    if trigger == "peer_exit":
+    if trigger in ("peer_exit", "closed_log"):
         commands.append([sys.executable, "-c", "import time; time.sleep(1)"])
     elif trigger == "spawn_failure":
         commands.append([str(tmp_path / "missing-executable")])
@@ -121,10 +121,17 @@ def test_foreground_exit_stops_only_created_children(tmp_path, trigger):
     )
     program = (
         "import os; from scripts.service.run_dev import supervise; "
-        f"raise SystemExit(supervise({commands!r}, dict(os.environ), health_url={health_url!r}, startup_timeout=1))"
+        + ("os.close(1); " if trigger == "closed_log" else "")
+        + f"raise SystemExit(supervise({commands!r}, dict(os.environ), health_url={health_url!r}, startup_timeout=1))"
     )
     unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-    parent = subprocess.Popen([sys.executable, "-c", program], cwd=run_dev.ROOT)
+    parent = subprocess.Popen(
+        [sys.executable, "-c", program],
+        cwd=run_dev.ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
     try:
         if trigger == "signal":
             deadline = time.monotonic() + 10
@@ -134,6 +141,14 @@ def test_foreground_exit_stops_only_created_children(tmp_path, trigger):
             assert pid_file.exists()
             parent.send_signal(signal.SIGTERM)
         assert parent.wait(timeout=15) != 0
+        output = parent.stdout.read()
+        if trigger != "closed_log":
+            assert f"dev supervisor pid={parent.pid}: started ppid=" in output
+            assert "child cleanup complete" in output
+        if trigger == "signal":
+            assert "received SIGTERM" in output
+        if trigger == "peer_exit":
+            assert "exited returncode=0" in output
         assert unrelated.poll() is None
         if trigger == "startup_timeout":
             assert parent.returncode == 1
@@ -149,7 +164,11 @@ def test_foreground_exit_stops_only_created_children(tmp_path, trigger):
         unrelated.wait(timeout=10)
 
 
-def test_occupied_port_fails_without_starting_or_creating_state(tmp_path, monkeypatch):
+@pytest.mark.parametrize("role", ["API", "Web"])
+@pytest.mark.parametrize("prepare_only", [False, True])
+def test_occupied_port_fails_without_starting_or_creating_state(
+    tmp_path, monkeypatch, capsys, role, prepare_only
+):
     import socket
 
     monkeypatch.setattr(run_dev.shutil, "which", lambda _: sys.executable)
@@ -158,12 +177,72 @@ def test_occupied_port_fails_without_starting_or_creating_state(tmp_path, monkey
     (root / "web/node_modules/.bin/vite").touch()
     monkeypatch.setattr(run_dev, "ROOT", root)
     with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind(("127.0.0.1", 0))
         listener.listen()
         occupied = listener.getsockname()[1]
-        assert (
-            run_dev.main(["--home", str(tmp_path / "home"), "--port", str(occupied)])
-            == 1
-        )
+        with socket.socket() as unused:
+            unused.bind(("127.0.0.1", 0))
+            free = unused.getsockname()[1]
+        args = [
+            "--home",
+            str(tmp_path / "home"),
+            "--port",
+            str(occupied if role == "API" else free),
+            "--web-port",
+            str(occupied if role == "Web" else free),
+        ]
+        if prepare_only:
+            args.append("--prepare-only")
+        assert run_dev.main(args) == 1
+        error = capsys.readouterr().err
+        assert f"{role} port 127.0.0.1:{occupied} is already in use" in error
+        assert f"lsof -nP -iTCP:{occupied} -sTCP:LISTEN" in error
         assert listener.getsockname()[1] == occupied
     assert not (tmp_path / "home").exists()
+
+
+def test_preparation_allows_restarting_a_port_in_time_wait(tmp_path, monkeypatch):
+    import socket
+
+    root = tmp_path / "source"
+    (root / "web/node_modules/.bin").mkdir(parents=True)
+    (root / "web/node_modules/.bin/vite").touch()
+    monkeypatch.setattr(run_dev, "ROOT", root)
+    monkeypatch.setattr(run_dev.shutil, "which", lambda _: sys.executable)
+    monkeypatch.setattr(
+        run_dev.subprocess,
+        "run",
+        lambda args, **_: subprocess.CompletedProcess(args, 0),
+    )
+    with socket.socket() as listener, socket.socket() as client:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        api_port = listener.getsockname()[1]
+        client.connect(listener.getsockname())
+        connection, _ = listener.accept()
+        # The server closes first, leaving its local port in TIME_WAIT.
+        connection.close()
+        assert client.recv(1) == b""
+    with socket.socket() as probe:
+        with pytest.raises(OSError) as raised:
+            probe.bind(("127.0.0.1", api_port))
+        assert raised.value.errno == run_dev.errno.EADDRINUSE
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        web_port = probe.getsockname()[1]
+    assert (
+        run_dev.main(
+            [
+                "--home",
+                str(tmp_path / "home"),
+                "--port",
+                str(api_port),
+                "--web-port",
+                str(web_port),
+                "--prepare-only",
+            ]
+        )
+        == 0
+    )
