@@ -1602,7 +1602,7 @@ select:is(.app-field, .app-input):not([multiple]) {
 }
 
 .overview-terminal-route .app-positions-table-dashboard .app-data-table td {
-  padding-block: 6px;
+  padding-block: 5px;
 }
 
 .overview-terminal-route
@@ -1610,7 +1610,7 @@ select:is(.app-field, .app-input):not([multiple]) {
   .app-data-table
   tbody
   tr {
-  height: 38px;
+  height: 42px;
 }
 
 .app-workbench-route.overview-terminal-route {

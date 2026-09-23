@@ -70,9 +70,23 @@ test('renders the compact canonical holdings table with direct detail drill-down
     'Realized PnL',
     'Quote State',
   ]);
-  expect(screen.getByTestId('position-weight-600519').textContent).toBe(
-    '42.0%',
-  );
+  const weightCell = screen.getByTestId('position-weight-600519');
+  expect(weightCell.textContent).toBe('42.0%');
+  expect(weightCell.className).toContain('items-end');
+  expect(weightCell.className).toContain('w-full');
+
+  const marketValueCell = screen.getByTestId('position-market-value-600519');
+  expect(marketValueCell.textContent).toContain('¥96,000.00');
+  expect(marketValueCell.textContent).toContain('¥1,600.00 · Cost ¥1,500.00');
+
+  const todayChangeCell = screen.getByTestId('position-today-change-600519');
+  expect(todayChangeCell.textContent).toContain('¥30.00');
+  expect(todayChangeCell.textContent).toContain('+0.03%');
+
+  const unrealizedCell = screen.getByTestId('position-unrealized-600519');
+  expect(unrealizedCell.textContent).toContain('¥6,000.00');
+  expect(unrealizedCell.textContent).toContain('+6.67%');
+
   expect(screen.getByTestId('position-realized-600519').textContent).toBe(
     '¥120.00',
   );
@@ -92,7 +106,11 @@ test('renders the compact canonical holdings table with direct detail drill-down
 
 test('keeps the overview dashboard table compact', () => {
   renderTable(
-    <PositionsTable positions={[basePosition]} variant="dashboard" />,
+    <PositionsTable
+      positions={[basePosition]}
+      weightBySymbol={{ '600519': 0.42 }}
+      variant="dashboard"
+    />,
   );
 
   const table = screen.getByTestId('positions-table-desktop');
@@ -109,6 +127,10 @@ test('keeps the overview dashboard table compact', () => {
     'Today PnL',
     'Unrealized',
   ]);
+  const dashboardWeightCell = screen.getByTestId('position-weight-600519');
+  expect(dashboardWeightCell.textContent).toBe('42.0%');
+  expect(dashboardWeightCell.className).toContain('items-end');
+  expect(dashboardWeightCell.className).toContain('w-full');
   expect(within(table).queryByRole('button')).toBeNull();
 });
 
