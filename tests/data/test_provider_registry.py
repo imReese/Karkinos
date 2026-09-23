@@ -4,6 +4,7 @@ from data.provider_registry import build_provider_registry
 from data.providers.akshare_daily import AKSHARE_DAILY_BAR_DESCRIPTOR
 from data.providers.akshare_tencent_daily import AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR
 from data.providers.baostock_daily import BAOSTOCK_DAILY_BAR_DESCRIPTOR
+from data.providers.tencent import TENCENT_DAILY_BAR_DESCRIPTOR
 from data.providers.tushare_daily import TUSHARE_DAILY_BAR_DESCRIPTOR
 
 
@@ -11,18 +12,19 @@ def test_registry_without_paid_or_private_credentials_keeps_free_daily_sources()
     None
 ):
     registry = build_provider_registry(tushare_token="", include_tdx=False)
-    assert registry.names == ("akshare", "akshare_tencent", "baostock")
-    assert tuple(registry.legacy_sources()) == ("akshare",)
+    assert registry.names == ("akshare", "akshare_tencent", "baostock", "tencent")
+    assert set(registry.legacy_sources()) == {"akshare", "akshare_tencent", "tencent"}
     providers = dict(
         registry.daily_bar_providers(
-            ("baostock", "akshare_tencent", "akshare", "tushare", "tdx")
+            ("baostock", "akshare_tencent", "tencent", "akshare", "tushare", "tdx")
         )
     )
-    assert tuple(providers) == ("baostock", "akshare_tencent", "akshare")
+    assert tuple(providers) == ("baostock", "akshare_tencent", "tencent", "akshare")
     assert providers["baostock"].descriptor == BAOSTOCK_DAILY_BAR_DESCRIPTOR
     assert (
         providers["akshare_tencent"].descriptor == AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR
     )
+    assert providers["tencent"].descriptor == TENCENT_DAILY_BAR_DESCRIPTOR
     assert providers["akshare"].descriptor == AKSHARE_DAILY_BAR_DESCRIPTOR
 
 
@@ -33,6 +35,7 @@ def test_registry_adds_tushare_only_when_credentials_are_available() -> None:
         "akshare_tencent",
         "baostock",
         "tdx",
+        "tencent",
         "tushare",
     )
     assert tuple(registry.legacy_sources(("tushare", "akshare", "tdx"))) == (
@@ -45,10 +48,12 @@ def test_registry_builds_immutable_adapters_from_same_provider_identity() -> Non
     registry = build_provider_registry(tushare_token="fixture", include_tdx=True)
     akshare = registry.build_daily_bar("akshare")
     tencent = registry.build_daily_bar("akshare_tencent")
+    tencent_direct = registry.build_daily_bar("tencent")
     baostock = registry.build_daily_bar("baostock")
     tushare = registry.build_daily_bar("tushare")
     assert akshare.descriptor == AKSHARE_DAILY_BAR_DESCRIPTOR
     assert tencent.descriptor == AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR
+    assert tencent_direct.descriptor == TENCENT_DAILY_BAR_DESCRIPTOR
     assert baostock.descriptor == BAOSTOCK_DAILY_BAR_DESCRIPTOR
     assert tushare.descriptor == TUSHARE_DAILY_BAR_DESCRIPTOR
 

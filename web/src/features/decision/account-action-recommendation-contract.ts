@@ -1,13 +1,31 @@
 export type AccountRecommendationAction = {
   action_id: string | number | null;
   symbol: string | null;
+  symbol_name?: string | null;
   display_name?: string | null;
   name?: string | null;
-  asset_class: string | null;
+  asset_class?: string | null;
   side: string | null;
-  target_weight: number | null;
-  estimated_quantity: number | null;
-  submission_status: string | null;
+  target_weight?: number | null;
+  target_allocation?: number | null;
+  target_quantity?: number | null;
+  target_amount?: number | null;
+  target_price?: number | null;
+  estimated_quantity?: number | null;
+  estimated_price?: number | null;
+  estimated_execution_price?: number | null;
+  limit_price?: number | null;
+  current_quantity?: number | null;
+  post_trade_quantity?: number | null;
+  estimated_net_amount?: number | null;
+  estimated_commission?: number | null;
+  estimated_stamp_duty?: number | null;
+  estimated_total_cost?: number | null;
+  estimated_gross_amount?: number | null;
+  estimated_net_cash_impact?: number | null;
+  estimated_total_fee?: number | null;
+  submission_status?: string | null;
+  reason?: string | null;
 };
 
 export type AccountActionRecommendation = {
@@ -31,15 +49,17 @@ export type AccountActionRecommendation = {
       | 'blocked'
       | 'unavailable';
     actions: AccountRecommendationAction[];
-    signal_status: 'ready' | 'no_signal' | 'unavailable';
-    portfolio_preview_status: 'ready' | 'blocked';
-    manual_review_status: 'ready' | 'blocked';
-    configuration_blockers: string[];
-    signal_blockers: string[];
-    portfolio_preview_blockers: string[];
-    manual_review_blockers: string[];
-    read_only: true;
-    authorizes_execution: false;
+    signal_status?: 'ready' | 'no_signal' | 'unavailable';
+    portfolio_preview_status?: 'ready' | 'blocked';
+    manual_review_status?: 'ready' | 'blocked';
+    configuration_blockers?: string[];
+    signal_blockers?: string[];
+    portfolio_preview_blockers?: string[];
+    manual_review_blockers?: string[];
+    blockers?: string[];
+    warnings?: string[];
+    read_only?: true;
+    authorizes_execution?: false;
   };
   promoted_scan: {
     run_id: string | null;
@@ -57,12 +77,15 @@ export type AccountActionRecommendation = {
     account_qualification_status: 'passed' | 'blocked';
     account_positions_evaluated: boolean;
   };
-  read_only: true;
-  manual_confirmation_required: true;
-  creates_oms_order: false;
-  submits_broker_order: false;
-  authorizes_execution: false;
-  changes_capital_authority: false;
-  authority_effect: 'none';
-  evidence_fingerprint: string;
+  read_only?: true;
+  manual_confirmation_required?: true;
+  creates_oms_order?: false;
+  submits_broker_order?: false;
+  authorizes_execution?: false;
+  changes_capital_authority?: false;
+  authority_effect?: 'none';
+  evidence_fingerprint?: string;
+  execution_blocked?: boolean;
+  blockers?: string[];
+  limitations?: string[];
 };

@@ -15,6 +15,7 @@ from server.services.market_views.health_inputs import (
     find_asset_config,
     ledger_position_assets,
     merged_watchlist_assets,
+    position_for_symbol,
 )
 
 pytestmark = pytest.mark.unit
@@ -335,6 +336,52 @@ def test_merged_watchlist_does_not_take_runtime_identity_from_quote() -> None:
     )
 
     assert merged_watchlist_assets(state) == []
+
+
+def test_merged_watchlist_and_position_skip_economically_zero_positions() -> None:
+    class FakeDb:
+        @staticmethod
+        def list_watchlist_assets_sync():
+            return []
+
+        @staticmethod
+        def get_ledger_entries_sync(limit=500, offset=0):
+            return []
+
+    active_pos = SimpleNamespace(quantity=100.0, avg_cost=10.0)
+    zero_pos = SimpleNamespace(quantity=0.0, avg_cost=15.0)
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                positions={
+                    Symbol("603659"): active_pos,
+                    Symbol("600172"): zero_pos,
+                }
+            ),
+            instruments={
+                Symbol("603659"): SimpleNamespace(
+                    asset_class="stock", instrument_type="stock"
+                ),
+                Symbol("600172"): SimpleNamespace(
+                    asset_class="stock", instrument_type="stock"
+                ),
+            },
+            latest_quotes={},
+            watchlist=[],
+        ),
+        db=FakeDb(),
+    )
+
+    assets = merged_watchlist_assets(state)
+    assert len(assets) == 1
+    assert assets[0]["symbol"] == "603659"
+
+    assert (
+        position_for_symbol(state.scheduler.portfolio.positions, "603659") is active_pos
+    )
+    assert position_for_symbol(state.scheduler.portfolio.positions, "600172") is None
 
 
 def test_runtime_quote_projection_fails_closed_on_same_symbol_namespaces() -> None:

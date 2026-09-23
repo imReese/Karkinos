@@ -308,7 +308,7 @@ def scan_citic_history_xls_directory(
             previews=(),
         )
 
-    directory = Path(path)
+    directory = Path(path).expanduser()
     try:
         if not directory.is_dir():
             return _blocked_scan("citic_history_xls_directory_unavailable")

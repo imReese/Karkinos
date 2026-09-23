@@ -21,6 +21,7 @@ from server.services.market_indices import (
 )
 from server.services.market_refresh import optional_float as _optional_float
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.position_presence import is_economically_zero_quantity
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -343,7 +344,15 @@ def extract_runtime_portfolio(state):
 
 
 def position_for_symbol(positions, symbol: str):
-    return positions.get(Symbol(symbol)) or positions.get(symbol)
+    if not isinstance(positions, dict):
+        return None
+    pos = positions.get(Symbol(symbol)) or positions.get(symbol)
+    if pos is None:
+        return None
+    quantity = getattr(pos, "quantity", getattr(pos, "shares", None))
+    if quantity is not None and is_economically_zero_quantity(quantity):
+        return None
+    return pos
 
 
 def ledger_position_assets(state) -> list[dict[str, str]]:
@@ -511,7 +520,12 @@ def merged_watchlist_assets(state) -> list[dict[str, str]]:
         )
         seen.add(key)
 
-    for raw_symbol in positions:
+    for raw_symbol, position in (
+        positions.items() if isinstance(positions, dict) else []
+    ):
+        quantity = getattr(position, "quantity", getattr(position, "shares", None))
+        if is_economically_zero_quantity(quantity):
+            continue
         symbol = str(raw_symbol)
         instrument = instruments.get(Symbol(symbol))
         raw_identity = getattr(instrument, "instrument_type", None) or getattr(

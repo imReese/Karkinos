@@ -108,7 +108,7 @@ FREE_CN_RESEARCH_V1 = MarketSourcePolicy(
         ),
         (
             MarketDataUseCase.REALTIME_QUOTES,
-            SourceRoute(candidates=("akshare", "tushare")),
+            SourceRoute(candidates=("tencent", "akshare", "tushare")),
         ),
         (
             MarketDataUseCase.FUND_NAV,
@@ -152,7 +152,7 @@ CN_RESEARCH_V1 = MarketSourcePolicy(
         ),
         (
             MarketDataUseCase.REALTIME_QUOTES,
-            SourceRoute(candidates=("tushare", "akshare")),
+            SourceRoute(candidates=("tushare", "tencent", "akshare")),
         ),
         (
             MarketDataUseCase.FUND_NAV,

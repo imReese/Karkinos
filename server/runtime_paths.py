@@ -52,11 +52,21 @@ def resolve_data_dir() -> str:
 
     workspace = os.environ.get("KARKINOS_WORKSPACE")
     if workspace:
-        return str(_resolved_path(workspace) / "data" / "store")
+        resolved_workspace = _resolved_path(workspace)
+        if os.environ.get("KARKINOS_WORKSPACE_ROLE") == "development" or (
+            (resolved_workspace / "data").is_dir()
+            and not (resolved_workspace / "data" / "store").is_dir()
+        ):
+            return str(resolved_workspace / "data")
+        return str(resolved_workspace / "data" / "store")
 
     legacy_home = os.environ.get("KARKINOS_HOME")
     if legacy_home:
         return str(_resolved_path(legacy_home) / "data")
+
+    dev_home = os.environ.get("KARKINOS_DEV_HOME")
+    if dev_home:
+        return str(_resolved_path(dev_home) / "data")
 
     return "data/store"
 

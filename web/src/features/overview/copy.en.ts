@@ -191,6 +191,18 @@ export const overviewCopyEn = {
     strategyRecommendationViewAll: 'View all',
     strategyRecommendationReadOnly:
       'Read-only recommendation · manual confirmation required · no broker order is created or submitted',
+    strategyRecommendationBuyPrice: 'Buy price',
+    strategyRecommendationSellPrice: 'Sell price',
+    strategyRecommendationReferencePrice: 'Ref. price',
+    strategyRecommendationAmount: 'Est. amount',
+    strategyRecommendationFee: 'Est. fee',
+    strategyRecommendationNetCash: 'Net cash',
+    strategyRecommendationPositionAfter: 'Est. holdings',
+    strategyRecommendationAvgCostAfter: 'Est. avg cost',
+    strategyRecommendationCashBufferSufficient: 'Cash buffer OK',
+    strategyRecommendationCashBufferBreached: 'Cash shortfall',
+    strategyRecommendationRiskPassed: 'Risk passed',
+    strategyRecommendationPositionNew: 'New position',
     accountRecommendationUnavailableDetail:
       'Current evidence is not sufficient for a reviewable account recommendation. Complete the pending items before reassessing.',
     decisionBlockers: 'Needs attention',

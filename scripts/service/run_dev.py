@@ -53,20 +53,47 @@ def development_environment(home: Path) -> dict[str, str]:
         )
     for directory in (home, home / "config", data, home / "logs"):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    root_config = ROOT / "config.json"
     if not config.exists():
-        with config.open("x", encoding="utf-8") as output:
-            json.dump(
-                {
-                    "server": {"market_calendar_auto_sync": False},
-                    "ai": {"enabled": False},
-                },
-                output,
-                indent=2,
-            )
-            output.write("\n")
+        if root_config.is_file():
+            shutil.copy2(root_config, config)
+        else:
+            with config.open("x", encoding="utf-8") as output:
+                json.dump(
+                    {
+                        "server": {"market_calendar_auto_sync": False},
+                        "ai": {"enabled": False},
+                    },
+                    output,
+                    indent=2,
+                )
+                output.write("\n")
+    elif root_config.is_file() and root_config.stat().st_mtime > config.stat().st_mtime:
+        shutil.copy2(root_config, config)
+
     env_file = home / "config/.env"
-    if not env_file.exists():
+    root_env = ROOT / ".env"
+    if root_env.is_file():
+        if (
+            not env_file.exists()
+            or env_file.stat().st_size == 0
+            or root_env.stat().st_mtime > env_file.stat().st_mtime
+        ):
+            shutil.copy2(root_env, env_file)
+            env_file.chmod(0o600)
+    elif not env_file.exists():
         env_file.touch(mode=0o600)
+
+    dev_log_link = home / "logs/dev-server.log"
+    root_log = ROOT / "logs/dev-server.log"
+    try:
+        (ROOT / "logs").mkdir(parents=True, exist_ok=True)
+        if not dev_log_link.is_symlink() or os.readlink(dev_log_link) != str(root_log):
+            if dev_log_link.is_symlink() or dev_log_link.exists():
+                dev_log_link.unlink()
+            dev_log_link.symlink_to(root_log)
+    except OSError:
+        pass
     environment = {
         name: value
         for name, value in os.environ.items()
