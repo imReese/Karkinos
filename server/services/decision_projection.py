@@ -82,6 +82,7 @@ def _decision_evidence(
         if portfolio_context.get("authority") == "persisted_valuation_snapshot"
         else portfolio_context.get("quotes") or {}
     )
+    strategy_order_gate_cache: dict[tuple[str, str | None], dict[str, Any]] = {}
     candidates = [
         ports.decision_candidate(
             action,
@@ -95,6 +96,7 @@ def _decision_evidence(
             allow_direct_quote_fallback=(
                 portfolio_context.get("authority") != "persisted_valuation_snapshot"
             ),
+            strategy_order_gate_cache=strategy_order_gate_cache,
         )
         for action in candidate_actions
     ]

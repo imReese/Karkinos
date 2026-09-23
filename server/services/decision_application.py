@@ -190,6 +190,8 @@ def _decision_candidate(
     state: Any,
     quotes: dict[str, dict[str, Any]],
     allow_direct_quote_fallback: bool,
+    strategy_order_gate_cache: dict[tuple[str, str | None], dict[str, Any]]
+    | None = None,
 ) -> dict[str, Any]:
     return candidate_projection.decision_candidate(
         action,
@@ -203,6 +205,7 @@ def _decision_candidate(
         allow_direct_quote_fallback=allow_direct_quote_fallback,
         data_freshness_resolver=_data_freshness_evidence,
         strategy_order_gate_resolver=resolve_strategy_order_generation_gate,
+        strategy_order_gate_cache=strategy_order_gate_cache,
         paper_shadow_resolver=_paper_shadow_evidence,
         paper_shadow_ticket_gate=_paper_shadow_allows_manual_ticket,
     )

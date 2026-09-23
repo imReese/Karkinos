@@ -166,6 +166,85 @@ def test_decision_rejects_unparseable_quote_timestamp() -> None:
     )
 
 
+def test_decision_reuses_strategy_gate_only_within_one_response(
+    tmp_path, monkeypatch
+) -> None:
+    valuation_now = datetime(2026, 7, 10, 15, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: now or valuation_now,
+    )
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-07-10T09:00:00+08:00",
+        amount=10000.0,
+    )
+    _add_action(
+        db,
+        source_signal_id=1,
+        symbol="600001",
+        timestamp="2026-07-10T09:30:00+08:00",
+        price=10.0,
+    )
+    _add_action(
+        db,
+        source_signal_id=2,
+        symbol="600002",
+        timestamp="2026-07-10T09:35:00+08:00",
+        price=11.0,
+    )
+    db.publish_current_valuation_snapshot_sync(now=valuation_now)
+    state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(initial_cash=0.0, assets=[]),
+        scheduler=None,
+    )
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
+
+    calls = []
+
+    def strategy_gate(_db, strategy_id, *, as_of_date):
+        calls.append((strategy_id, as_of_date))
+        return {"status": "blocked", "blockers": ["missing_evidence"]}, [
+            "missing_evidence"
+        ]
+
+    monkeypatch.setattr(
+        "server.services.decision_application.resolve_strategy_order_generation_gate",
+        strategy_gate,
+    )
+
+    first = asyncio.run(_endpoint("/api/decision/today")())
+    second = asyncio.run(_endpoint("/api/decision/today")())
+
+    assert len(first["candidates"]) == len(second["candidates"]) == 2
+    assert calls == [("dual_ma", "2026-07-10")] * 2
+    assert all(
+        candidate["evidence"]["strategy"]["order_generation_gate"]["status"]
+        == "blocked"
+        for candidate in first["candidates"]
+    )
+    first["candidates"][0]["evidence"]["strategy"]["order_generation_gate"][
+        "blockers"
+    ].append("local_change")
+    assert first["candidates"][1]["evidence"]["strategy"]["order_generation_gate"][
+        "blockers"
+    ] == ["missing_evidence"]
+
+    monkeypatch.setattr(
+        "server.services.decision_candidate_projection.action_trade_date",
+        lambda action: "2026-07-11" if action["symbol"] == "600002" else "2026-07-10",
+    )
+    third = asyncio.run(_endpoint("/api/decision/today")())
+    assert len(third["candidates"]) == 2
+    assert set(calls[-2:]) == {
+        ("dual_ma", "2026-07-10"),
+        ("dual_ma", "2026-07-11"),
+    }
+
+
 def test_decision_blocks_unconfirmed_fund_estimate_as_persisted_evidence(
     tmp_path,
     monkeypatch,

@@ -354,6 +354,9 @@ def test_stale_execution_evidence_keeps_verified_signal_as_portfolio_preview() -
         },
         current_evidence_blockers=current_blockers,
         current_evidence_fingerprint="e" * 64,
+        display_name_resolver=lambda symbol, asset_class: (
+            "贵州茅台" if (symbol, asset_class) == ("600519", None) else symbol
+        ),
     )
 
     assert recommendation["status"] == "blocked"
@@ -361,6 +364,7 @@ def test_stale_execution_evidence_keeps_verified_signal_as_portfolio_preview() -
     assert recommendation["presentation"]["portfolio_preview_status"] == "ready"
     assert recommendation["presentation"]["manual_review_status"] == "blocked"
     assert recommendation["presentation"]["actions"][0]["symbol"] == "600519"
+    assert recommendation["presentation"]["actions"][0]["display_name"] == ("贵州茅台")
     assert recommendation["presentation"]["actions"][0]["target_weight"] == 0.12
     assert recommendation["presentation"]["actions"][0]["estimated_quantity"] is None
     assert recommendation["presentation"]["authorizes_execution"] is False

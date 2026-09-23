@@ -179,6 +179,7 @@ def _build_daily_trading_plan_for_state(
         build_account_action_recommendation,
         resolve_latest_verified_promoted_strategy_scan,
     )
+    from server.services.asset_metadata import resolve_asset_metadata
 
     promoted_scan = resolve_latest_verified_promoted_strategy_scan(
         getattr(state, "db", None),
@@ -196,6 +197,9 @@ def _build_daily_trading_plan_for_state(
         promoted_scan=promoted_scan,
         current_evidence_blockers=current_blockers,
         current_evidence_fingerprint=current_fingerprint,
+        display_name_resolver=lambda symbol, asset_class: (
+            resolve_asset_metadata(state, symbol, asset_class=asset_class).display_name
+        ),
     )
     plan["research_operation_instruments"] = build_research_operation_instruments(
         getattr(state, "db", None),
