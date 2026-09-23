@@ -252,15 +252,10 @@ EOF
 }
 
 cleanup_failed_start() {
-    local pid="$1"
-
-    if kill -0 "${pid}" >/dev/null 2>&1; then
-        kill -TERM "${pid}" >/dev/null 2>&1 || true
-        sleep 1
-        kill -KILL "${pid}" >/dev/null 2>&1 || true
-    fi
-
-    clear_stale_runtime_state
+    # Use the same identity checks and grace period as an explicit stop. The
+    # dev supervisor needs up to five seconds to reap its child process groups.
+    "${SCRIPT_DIR}/stop_server.sh" ||
+        echo "Error: failed startup cleanup was incomplete; runtime records retained." >&2
 }
 
 start_dev() {
@@ -293,17 +288,19 @@ start_dev() {
     [[ -x "${REPO_ROOT}/web/node_modules/.bin/vite" ]] ||
         die "frontend dependencies missing; run: npm ci --prefix web"
 
-    echo "Checking and preparing development database..."
+    echo "Checking development ports and preparing database..."
     (
         cd "${REPO_ROOT}"
         "${python}" scripts/service/run_dev.py --prepare-only
-    ) || die "database preparation failed; development server was not started"
+    ) || die "development preflight failed; development server was not started"
 
     log="${REPO_ROOT}/logs/dev-server.log"
 
     (
         cd "${REPO_ROOT}"
         exec nohup \
+            "${python}" \
+            -c 'import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
             "${python}" \
             "scripts/service/run_dev.py"
     ) >>"${log}" 2>&1 </dev/null &
@@ -323,7 +320,7 @@ start_dev() {
         "Karkinos API" \
         "${pid}"; then
 
-        cleanup_failed_start "${pid}"
+        cleanup_failed_start
         echo "Startup failed. Log: ${log}" >&2
         tail -n 40 "${log}" >&2 || true
         exit 1
@@ -334,7 +331,7 @@ start_dev() {
         "Karkinos Web" \
         "${pid}"; then
 
-        cleanup_failed_start "${pid}"
+        cleanup_failed_start
         echo "Startup failed. Log: ${log}" >&2
         tail -n 40 "${log}" >&2 || true
         exit 1
@@ -430,6 +427,8 @@ start_worktree_branch() {
             KARKINOS_STATIC_DIR="${KARKINOS_STATIC_DIR}" \
             KARKINOS_RELEASE_ROOT="${KARKINOS_RELEASE_ROOT}" \
             "${python}" \
+            -c 'import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
+            "${python}" \
             -m server \
             --host 127.0.0.1 \
             --port "${BACKEND_PORT}"
@@ -450,7 +449,7 @@ start_worktree_branch() {
         "Karkinos Server" \
         "${pid}"; then
 
-        cleanup_failed_start "${pid}"
+        cleanup_failed_start
         echo "Startup failed. Log: ${log}" >&2
         tail -n 40 "${log}" >&2 || true
         exit 1

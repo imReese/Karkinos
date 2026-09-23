@@ -36,6 +36,8 @@ Behavior:
 * The launcher never switches the current checkout.
 * The launcher never runs `git fetch`.
 * Only one Karkinos source runtime may run at a time.
+* Background runtimes start in an independent session so closing the launcher
+  session does not terminate the runtime manager.
 
 Refresh a remote branch explicitly when needed:
 
@@ -79,6 +81,12 @@ regardless of which branch started it.
 The stop script only stops processes owned by the launcher and does not
 terminate unrelated processes based on port usage. It verifies the recorded
 process identity before signaling the runtime PID.
+
+A missing or exited manager PID does not prove its children have stopped. If
+startup reports an occupied port, inspect its owner with the printed `lsof`
+command. Development supervisor lifecycle records (PIDs, signals, and child exit
+codes) are written to `logs/dev-server.log`; an uncatchable `SIGKILL` cannot write
+its own final log entry.
 
 ## Dependencies
 
