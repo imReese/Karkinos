@@ -56,6 +56,10 @@ def _allow_paper_shadow_evaluation(monkeypatch) -> None:
 def _freeze_valuation_clock(monkeypatch) -> None:
     fixture_now = datetime(2026, 7, 1, 1, 46, tzinfo=timezone.utc)
     monkeypatch.setattr(
+        "server.services.decision_portfolio_projection.get_shanghai_now",
+        lambda: fixture_now,
+    )
+    monkeypatch.setattr(
         "server.projections.valuation_snapshot.get_shanghai_now",
         lambda now=None: fixture_now,
     )
@@ -150,10 +154,14 @@ class FakeOperationsDb:
     def list_fills_sync(self, order_id=None, symbol=None, limit=100, offset=0):
         return []
 
-    def list_automation_runs_sync(self, run_type=None, limit=20, offset=0):
+    def list_automation_runs_sync(
+        self, *, run_type=None, run_date=None, limit=20, offset=0
+    ):
         rows = self.automation_runs
         if run_type is not None:
             rows = [row for row in rows if row.get("run_type") == run_type]
+        if run_date is not None:
+            rows = [row for row in rows if row.get("run_date") == run_date]
         return rows[offset : offset + limit]
 
     def list_execution_reconciliation_open_items_sync(self, limit=20, offset=0):

@@ -62,6 +62,10 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
         "server.projections.valuation_snapshot.get_shanghai_now",
         lambda now=None: now or valuation_now,
     )
+    monkeypatch.setattr(
+        "server.services.decision_portfolio_projection.get_shanghai_now",
+        lambda: valuation_now,
+    )
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     db.insert_ledger_entry_sync(
@@ -174,6 +178,10 @@ def test_decision_reuses_strategy_gate_only_within_one_response(
         "server.projections.valuation_snapshot.get_shanghai_now",
         lambda now=None: now or valuation_now,
     )
+    monkeypatch.setattr(
+        "server.services.decision_portfolio_projection.get_shanghai_now",
+        lambda: valuation_now,
+    )
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     db.insert_ledger_entry_sync(
@@ -249,6 +257,10 @@ def test_decision_blocks_unconfirmed_fund_estimate_as_persisted_evidence(
     tmp_path,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        "server.services.decision_portfolio_projection.get_shanghai_now",
+        lambda: datetime(2026, 7, 10, 14, 57, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     signal_id = db.save_signal_sync(

@@ -29,6 +29,10 @@ def _freeze_valuation_clock(monkeypatch, now: datetime) -> None:
         "server.projections.quote_status.get_shanghai_now",
         lambda value=None: now,
     )
+    monkeypatch.setattr(
+        "server.services.decision_portfolio_projection.get_shanghai_now",
+        lambda: now,
+    )
 
 
 def _add_action(db: AppDatabase) -> None:

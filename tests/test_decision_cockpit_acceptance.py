@@ -233,6 +233,10 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         "server.projections.quote_status.get_shanghai_now",
         lambda now=None: now or valuation_now,
     )
+    monkeypatch.setattr(
+        "server.services.decision_portfolio_projection.get_shanghai_now",
+        lambda: valuation_now,
+    )
 
     oos_validation = build_out_of_sample_validation(
         strategy_id=signal.strategy_id,
