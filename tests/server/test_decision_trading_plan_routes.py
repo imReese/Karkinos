@@ -9,6 +9,11 @@ from fastapi.routing import APIRoute
 
 from server.routes import decision as decision_routes
 from server.services import decision_application
+from server.services.decision_action_application import read_action_tasks
+from server.services.decision_portfolio_projection import (
+    action_filter_date,
+    response_decision_date,
+)
 
 
 def _endpoint(path: str, method: str = "GET"):
@@ -123,6 +128,23 @@ class FakeDecisionDb:
         raise AssertionError("trading plan must not write ledger entries")
 
 
+def test_current_decision_excludes_prior_day_action_with_stale_valuation(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "server.services.decision_portfolio_projection.get_shanghai_now",
+        lambda: datetime(2026, 7, 2, 9, 40, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    context = {
+        "authority": "persisted_valuation_snapshot",
+        "valuation_snapshot": {"trade_date": "2026-07-01", "status": "degraded"},
+    }
+
+    assert action_filter_date(context) == "2026-07-02"
+    assert response_decision_date(context, []) == "2026-07-02"
+    assert read_action_tasks(FakeDecisionDb(), decision_date="2026-07-02") == []
+
+
 def test_decision_account_truth_gate_uses_current_promotion_evidence(
     monkeypatch,
 ) -> None:
@@ -201,6 +223,10 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
         lambda now=None: (
             now or datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai"))
         ),
+    )
+    monkeypatch.setattr(
+        "server.services.decision_portfolio_projection.get_shanghai_now",
+        lambda: datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(

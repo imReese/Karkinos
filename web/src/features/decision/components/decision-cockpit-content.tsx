@@ -70,6 +70,9 @@ export function DecisionCockpitContent({
       paperShadowRunError={runPaperShadow.isError}
     />
   );
+  const currentSignalActions = (signalActions.data ?? []).filter(
+    (action) => action.timestamp.slice(0, 10) === today.data?.decision_date,
+  );
   return (
     <section
       className="app-workbench-route min-w-0 space-y-4 sm:space-y-5"
@@ -108,7 +111,7 @@ export function DecisionCockpitContent({
       ) : null}
 
       <SignalQueuePanel
-        actions={signalActions.data ?? []}
+        actions={currentSignalActions}
         journal={signalJournal.data ?? []}
         loading={signalActions.isLoading || signalJournal.isLoading}
         error={signalActions.isError || signalJournal.isError}

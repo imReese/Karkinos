@@ -2069,6 +2069,22 @@ test('collapses dense signal action queues until the user asks for details', asy
   expect(await screen.findByTestId('signal-action-card-1')).toBeTruthy();
 });
 
+test('keeps prior-day signals in the journal but out of the current action queue', async () => {
+  renderDecisionCockpit({
+    signalActionsResponse: [
+      {
+        id: 99,
+        symbol: '600869',
+        timestamp: '2026-06-11T09:35:00+08:00',
+      },
+    ],
+  });
+
+  const queue = await screen.findByTestId('decision-signal-queue-register');
+  expect(await within(queue).findByTestId('signal-journal-panel')).toBeTruthy();
+  expect(within(queue).queryByTestId('signal-action-card-99')).toBeNull();
+});
+
 test('localizes signal journal audit events without exposing dotted event keys', async () => {
   renderDecisionCockpit();
 

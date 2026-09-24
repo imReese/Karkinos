@@ -12,6 +12,7 @@ from server.services.decision_contracts import (
     float_or_zero,
     parse_action_timestamp,
 )
+from server.services.market_hours import get_shanghai_now
 from server.services.position_presence import is_economically_zero_quantity
 
 
@@ -84,9 +85,9 @@ def decision_portfolio_context(state: Any) -> dict[str, Any]:
 
 
 def decision_date_from_context(context: dict[str, Any]) -> str:
-    snapshot = context.get("valuation_snapshot")
-    if isinstance(snapshot, dict) and snapshot.get("trade_date"):
-        return str(snapshot["trade_date"])
+    """Date the current decision independently of its older valuation evidence."""
+    if context.get("authority") == "persisted_valuation_snapshot":
+        return get_shanghai_now().date().isoformat()
     timestamps = [
         parse_action_timestamp(quote.get("quote_timestamp") or quote.get("timestamp"))
         for quote in (context.get("quotes") or {}).values()
@@ -99,9 +100,6 @@ def decision_date_from_context(context: dict[str, Any]) -> str:
 def action_filter_date(context: dict[str, Any]) -> str | None:
     if context.get("authority") != "persisted_valuation_snapshot":
         return None
-    snapshot = context.get("valuation_snapshot")
-    if isinstance(snapshot, dict) and snapshot.get("status") == "missing":
-        return None
     return decision_date_from_context(context)
 
 
@@ -109,12 +107,7 @@ def response_decision_date(
     context: dict[str, Any],
     actions: list[dict[str, Any]],
 ) -> str:
-    snapshot = context.get("valuation_snapshot")
-    if (
-        context.get("authority") == "persisted_valuation_snapshot"
-        and isinstance(snapshot, dict)
-        and snapshot.get("status") != "missing"
-    ):
+    if context.get("authority") == "persisted_valuation_snapshot":
         return decision_date_from_context(context)
     action_dates = [
         trade_date
