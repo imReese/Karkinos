@@ -532,7 +532,7 @@ def test_today_suppresses_orphan_scan_tasks_but_retains_other_manual_actions(
         for item in suppress_unverified_daily_scan_candidates(payload)["candidates"]
     ] == [8]
 
-    async def raw_today(_state):
+    async def raw_today(_state, *, portfolio_context=None):
         return payload
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: object())
@@ -540,6 +540,21 @@ def test_today_suppresses_orphan_scan_tasks_but_retains_other_manual_actions(
     route_result = asyncio.run(_endpoint("/api/decision/today")())
     assert [item["action_id"] for item in route_result["candidates"]] == [8]
     assert route_result["summary"]["candidate_count"] == 1
+
+    monkeypatch.setattr(
+        decision_routes, "_decision_portfolio_context", lambda _state: {}
+    )
+    monkeypatch.setattr(
+        decision_routes,
+        "_build_daily_trading_plan_for_state",
+        lambda _state, decision, _context: {
+            "candidate_action_ids": [
+                item["action_id"] for item in decision["candidates"]
+            ]
+        },
+    )
+    plan = asyncio.run(_endpoint("/api/decision/trading-plan")())
+    assert plan["candidate_action_ids"] == [8]
 
     payload["generation"] = None
     missing_status = suppress_unverified_daily_scan_candidates(payload)
