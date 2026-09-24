@@ -2,6 +2,7 @@ import { ChevronDown } from 'lucide-react';
 import { StatusBadge, WorkspaceHeader } from '../../../shared/ui/workbench';
 import { formatCurrency } from '../../../shared/format';
 import { formatPublicStatus } from '../../../shared/public-labels';
+import { formatPublicCode } from '../../../shared/public-labels';
 import { DecisionQualityPanel } from './decision-quality-panel';
 import { tradingPlanConclusionLabel } from './decision-trading-plan-model';
 import { AutomationCockpitPanel } from './automation-cockpit-panel';
@@ -21,6 +22,34 @@ import {
 } from './decision-lane-panels';
 import type { DecisionCockpitWorkspaceModel } from './use-decision-cockpit-workspace';
 import { DecisionGateMatrixSection } from './decision-gate-matrix-section';
+import { DailyDecisionReportPanel } from './daily-decision-report-panel';
+
+const generationLabels = {
+  zh: {
+    not_generated: '今日候选尚未生成',
+    missed_window: '今日生成窗口已错过',
+    running: '今日候选生成中',
+    claim_unresolved: '今日生成状态未确认',
+    unlinked_daily_evidence: '今日有未绑定的最终报告',
+    failed_closed: '今日候选生成失败',
+    completed_no_signal: '今日扫描完成 · 无策略信号',
+    completed_with_candidates: '今日正式候选已生成',
+    blocked: '今日候选被证据或账户条件阻断',
+    unavailable: '今日生成证据不可用',
+  },
+  en: {
+    not_generated: 'Today’s candidates have not been generated',
+    missed_window: 'Today’s generation window was missed',
+    running: 'Today’s candidates are generating',
+    claim_unresolved: 'Today’s generation state is unresolved',
+    unlinked_daily_evidence: 'Today has unlinked final evidence',
+    failed_closed: 'Today’s candidate generation failed',
+    completed_no_signal: 'Today’s scan completed with no strategy signal',
+    completed_with_candidates: 'Today’s formal candidates are ready',
+    blocked: 'Today’s candidates are blocked by evidence or account limits',
+    unavailable: 'Today’s generation evidence is unavailable',
+  },
+} as const;
 
 export function DecisionCockpitContent({
   model,
@@ -93,6 +122,31 @@ export function DecisionCockpitContent({
         }
       />
 
+      {today.data?.generation ? (
+        <div
+          data-testid="decision-daily-generation-status"
+          className="flex min-w-0 flex-wrap items-center gap-2 border-y border-[var(--app-divider)] px-3 py-2 text-xs"
+        >
+          <StatusBadge
+            tone={
+              today.data.generation.status === 'completed_with_candidates'
+                ? 'success'
+                : today.data.generation.status === 'completed_no_signal'
+                  ? 'neutral'
+                  : 'warning'
+            }
+          >
+            {generationLabels[locale][today.data.generation.status]}
+          </StatusBadge>
+          <span className="text-[var(--app-text-secondary)]">
+            {today.data.generation.run_date}
+            {today.data.generation.failure_code
+              ? ` · ${formatPublicCode(today.data.generation.failure_code, locale)}`
+              : ''}
+          </span>
+        </div>
+      ) : null}
+
       {intraday.isLoading || intraday.isError ? (
         <div
           role="status"
@@ -113,9 +167,25 @@ export function DecisionCockpitContent({
       <SignalQueuePanel
         actions={currentSignalActions}
         journal={signalJournal.data ?? []}
+        dailyGeneration={today.data?.generation}
+        decisionDate={today.data?.decision_date}
         loading={signalActions.isLoading || signalJournal.isLoading}
         error={signalActions.isError || signalJournal.isError}
       />
+
+      <details
+        className="min-w-0 border-y border-[var(--app-divider)]"
+        data-testid="decision-daily-reports-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)]">
+          {locale === 'zh'
+            ? '每日决策记录与复盘'
+            : 'Daily decision history and review'}
+        </summary>
+        <div className="py-4">
+          <DailyDecisionReportPanel locale={locale} />
+        </div>
+      </details>
 
       <DecisionGateMatrixSection
         gateItems={gateItems}
