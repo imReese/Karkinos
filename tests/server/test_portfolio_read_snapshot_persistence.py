@@ -536,20 +536,45 @@ def test_daily_market_ingestion_receipt_invalidates_same_valuation_snapshot(
     assert database.calls == Counter({"ledger": 2, "matrix": 2})
 
 
-def test_market_revision_change_during_matrix_read_is_rejected(
+def test_market_revision_change_during_matrix_read_rebuilds_current_identity(
     tmp_path: Path,
 ) -> None:
     state, database = _state(tmp_path)
     meta_path = tmp_path / "meta.db"
     _write_bar_revision(meta_path, dataset_id="dataset-a")
-    database.before_matrix_return = lambda: _write_bar_revision(
-        meta_path,
-        dataset_id="dataset-b",
-    )
+
+    def change_once() -> None:
+        database.before_matrix_return = None
+        database.matrix_price = 12.0
+        _write_bar_revision(meta_path, dataset_id="dataset-b")
+
+    database.before_matrix_return = change_once
+    snapshot = get_or_build_portfolio_read_snapshot(state)
+
+    assert snapshot.price_matrix_rows[0]["price"] == 12.0
+    assert database.calls == Counter({"ledger": 2, "matrix": 2})
+    assert state.portfolio_read_snapshot_service.metrics().cache_entries == 1
+    assert state.portfolio_read_snapshot_service.metrics().build_failures == 1
+
+
+def test_repeated_market_revision_change_during_matrix_read_is_rejected(
+    tmp_path: Path,
+) -> None:
+    state, database = _state(tmp_path)
+    meta_path = tmp_path / "meta.db"
+    _write_bar_revision(meta_path, dataset_id="dataset-a")
+
+    def keep_changing() -> None:
+        _write_bar_revision(
+            meta_path,
+            dataset_id=f"dataset-{database.calls['matrix']}",
+        )
+
+    database.before_matrix_return = keep_changing
 
     with pytest.raises(PortfolioReadSnapshotRejected, match="market facts changed"):
         get_or_build_portfolio_read_snapshot(state)
 
-    assert database.calls == Counter({"ledger": 1, "matrix": 1})
+    assert database.calls == Counter({"ledger": 2, "matrix": 2})
     assert state.portfolio_read_snapshot_service.metrics().cache_entries == 0
-    assert state.portfolio_read_snapshot_service.metrics().build_failures == 1
+    assert state.portfolio_read_snapshot_service.metrics().build_failures == 2

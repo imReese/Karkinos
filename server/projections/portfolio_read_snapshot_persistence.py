@@ -107,6 +107,22 @@ def portfolio_read_snapshot_date_window(
 def _get_or_build_portfolio_read_snapshot(state: AppState) -> PortfolioReadSnapshot:
     """Resolve the current identity and build outside request-local pinning."""
 
+    try:
+        return _build_portfolio_read_snapshot(state)
+    except PortfolioReadSnapshotRejected as exc:
+        if (
+            str(exc)
+            != "persisted market facts changed while building the read snapshot"
+        ):
+            raise
+        # A concurrent quote publication can invalidate one read identity.
+        # Re-resolve the identity once; a second change still fails closed.
+        return _build_portfolio_read_snapshot(state)
+
+
+def _build_portfolio_read_snapshot(state: AppState) -> PortfolioReadSnapshot:
+    """Build from one resolved persisted identity."""
+
     database = state.require_database()
     database_path = require_database_path(
         database,
