@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -24,12 +25,15 @@ from server.services.promoted_strategy_universe_scan_persistence import (
 )
 from server.services.promoted_strategy_universe_scan_support import (
     SIGNAL_SELECTION_POLICY,
+    account_eligible_signals,
     aggregate_ranked_signals,
     automation_safety_blockers,
+    cash_buffer_ratio,
     decision_window_blockers,
     evaluate_promoted_strategy_market,
     history_start,
     json_object,
+    portfolio_scan_binding,
     positive_float,
     prior_verified_trading_date,
     promoted_scan_evaluation_policy_fingerprint,
@@ -207,6 +211,9 @@ class PromotedStrategyUniverseScanService:
             blockers.append("valuation_snapshot_identity_missing")
         return {
             "total_equity": total_equity,
+            "cash": _nonnegative_cash(portfolio_summary.get("cash")),
+            "fact_authority": portfolio_summary.get("fact_authority"),
+            "board_buy_permissions": portfolio_summary.get("board_buy_permissions"),
             "valuation_status": valuation_status,
             "valuation_snapshot_id": valuation_snapshot_id,
             "symbols": sorted(
@@ -330,8 +337,17 @@ class PromotedStrategyUniverseScanService:
         expected_signal_selection_fingerprint: str | None,
     ) -> dict[str, Any]:
         blockers = list(dict.fromkeys(blockers))
-        selected_signals, signal_conflict_blockers = aggregate_ranked_signals(
+        reserve_ratio = cash_buffer_ratio(self._config)
+        account_signals, account_blocked_buys = account_eligible_signals(
             raw_signals,
+            config=self._config,
+            decision_date=decision_date,
+            portfolio=portfolio,
+            policy=self._policy,
+            cash_buffer_ratio=reserve_ratio,
+        )
+        selected_signals, signal_conflict_blockers = aggregate_ranked_signals(
+            account_signals,
             allocation_slots=self._policy.allocation_slots,
         )
         blockers.extend(signal_conflict_blockers)
@@ -339,6 +355,8 @@ class PromotedStrategyUniverseScanService:
             {
                 "decision_date": decision_date,
                 "market_date": market_date,
+                "raw_signals": raw_signals,
+                "account_blocked_buys": account_blocked_buys,
                 "signals": selected_signals,
             }
         )
@@ -372,21 +390,11 @@ class PromotedStrategyUniverseScanService:
                 }
                 for item in promoted
             ],
-            "portfolio_binding": {
-                "valuation_snapshot_id": portfolio["valuation_snapshot_id"] or None,
-                "valuation_status": portfolio["valuation_status"],
-                "held_symbol_fingerprint": "sha256:"
-                + content_fingerprint(market["held_symbols"]),
-                "held_stock_count": len(market["held_symbols"]),
-                "capital_constraint_fingerprint": "sha256:"
-                + content_fingerprint(
-                    {
-                        "valuation_snapshot_id": portfolio["valuation_snapshot_id"],
-                        "valuation_status": portfolio["valuation_status"],
-                        "total_equity": portfolio["total_equity"],
-                    }
-                ),
-            },
+            "portfolio_binding": portfolio_scan_binding(
+                portfolio,
+                held_symbols=market["held_symbols"],
+                reserve_ratio=reserve_ratio,
+            ),
             "evaluation_policy_fingerprint": (
                 promoted_scan_evaluation_policy_fingerprint(self._policy)
             ),
@@ -433,6 +441,8 @@ class PromotedStrategyUniverseScanService:
             "input_fingerprint": input_fingerprint,
             "blockers": blockers,
             "raw_signal_count": len(raw_signals),
+            "raw_signals": raw_signals,
+            "account_blocked_buys": account_blocked_buys,
             "selected_signal_count": len(selected_signals),
             "selected_signals": selected_signals,
             "action_tasks": action_tasks,
@@ -440,7 +450,7 @@ class PromotedStrategyUniverseScanService:
                 truth_projection(strategy_id, truth)
                 for strategy_id, truth in sorted(truth_by_strategy.items())
             ],
-            "normal_no_signal": status == "completed_no_signal",
+            "normal_no_signal": status == "completed_no_signal" and not raw_signals,
             "preview_only": not persist_actions,
             "manual_confirmation_required": True,
             "creates_oms_order": False,
@@ -590,3 +600,13 @@ class PromotedStrategyUniverseScanService:
                 )
             except DailyStrategyArtifactRejected:
                 raise winner_error
+
+
+def _nonnegative_cash(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        cash = float(value)
+    except (TypeError, ValueError):
+        return None
+    return cash if isfinite(cash) and cash >= 0 else None

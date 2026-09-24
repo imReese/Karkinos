@@ -19,6 +19,7 @@ from server.config_contract import (
 from server.config_fee_schedule import parse_broker_fee_schedule_config
 from server.config_safety import contains_sensitive_config_key
 from server.config_types import (
+    AccountBoardPermissionsConfig,
     AIProviderConfig,
     BrokerConnectorConfig,
     BrokerFeeScheduleConfig,
@@ -292,6 +293,10 @@ def load_config(config_type: type[Any], path: str | Path) -> Any:
         data["broker_connectors"] = _parse_broker_connector_configs(
             data["broker_connectors"]
         )
+    if "account_board_permissions" in data:
+        data["account_board_permissions"] = _parse_account_board_permissions_config(
+            data["account_board_permissions"]
+        )
     if "data_source_provider_config" in data:
         data["data_source_provider_config"] = _parse_data_source_provider_config(
             data["data_source_provider_config"]
@@ -357,6 +362,37 @@ def _validate_runtime_config_fields(data: dict, *, config_type: type[Any]) -> No
         raise ValueError(
             "config.json contains unsupported top-level fields: " + ", ".join(unknown)
         )
+
+
+def _parse_account_board_permissions_config(
+    value: object,
+) -> AccountBoardPermissionsConfig:
+    if not isinstance(value, dict):
+        raise ValueError("account_board_permissions must be an object")
+    unknown = sorted(set(value) - {"reviewed_at", "reviewed_by", "source", "boards"})
+    if unknown:
+        raise ValueError(
+            "account_board_permissions contains unsupported fields: "
+            + ", ".join(unknown)
+        )
+    boards = value.get("boards", {})
+    if not isinstance(boards, dict) or sorted(
+        set(boards) - {"chinext", "star", "beijing"}
+    ):
+        raise ValueError("account_board_permissions.boards contains unsupported board")
+    if any(
+        status not in {"enabled", "disabled", "unknown"} for status in boards.values()
+    ):
+        raise ValueError("account_board_permissions.boards contains unsupported status")
+    for key in ("reviewed_at", "reviewed_by", "source"):
+        if not isinstance(value.get(key, ""), str):
+            raise ValueError(f"account_board_permissions.{key} must be text")
+    return AccountBoardPermissionsConfig(
+        reviewed_at=value.get("reviewed_at", ""),
+        reviewed_by=value.get("reviewed_by", ""),
+        source=value.get("source", ""),
+        boards=dict(boards),
+    )
 
 
 def _parse_ai_provider_config(value: object) -> AIProviderConfig:

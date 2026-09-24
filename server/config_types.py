@@ -72,6 +72,16 @@ class BrokerFeeScheduleConfig:
 
 
 @dataclass(frozen=True)
+class AccountBoardPermissionsConfig:
+    """Local user review of broker board access, without execution authority."""
+
+    reviewed_at: str = ""
+    reviewed_by: str = ""
+    source: str = ""
+    boards: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class AIProviderConfig:
     """Provider-neutral external-model settings without runtime authority."""
 

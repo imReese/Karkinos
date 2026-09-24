@@ -165,6 +165,32 @@ function installFetchMock({
           ? input.url
           : input.toString();
 
+    if (url.includes('/api/settings/board-buy-permissions')) {
+      if (init?.method === 'PUT') {
+        const payload = JSON.parse(String(init.body)) as {
+          boards: Record<string, string>;
+        };
+        return jsonResponse({
+          status: 'current',
+          resolved_for_date: '2026-09-24',
+          evidence_fingerprint: 'sha256:review',
+          boards: payload.boards,
+          source: 'self_reported_broker_account',
+          reviewed_at: '2026-09-24T09:00:00+08:00',
+          expires_on: '2026-10-24',
+        });
+      }
+      return jsonResponse({
+        status: 'unavailable',
+        resolved_for_date: '2026-09-24',
+        evidence_fingerprint: null,
+        boards: { chinext: 'unknown', star: 'unknown', beijing: 'unknown' },
+        source: null,
+        reviewed_at: null,
+        expires_on: null,
+      });
+    }
+
     if (url.includes('/api/settings/data-source')) {
       if (init?.method === 'PUT') {
         return jsonResponse({
@@ -578,6 +604,44 @@ test('saves account commission settings through the settings endpoint', async ()
     );
   });
   expect(await screen.findByText('Account costs saved')).toBeTruthy();
+});
+
+test('requires broker-account review before saving board buy access', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderSettingsPage();
+  const operations = await screen.findByTestId(
+    'settings-operational-controls-disclosure',
+  );
+  await user.click(operations.querySelector(':scope > summary')!);
+  const disclosure = screen.getByTestId(
+    'settings-board-permissions-disclosure',
+  );
+  await user.click(disclosure.querySelector(':scope > summary')!);
+
+  const save = screen.getByRole('button', { name: 'Save access review' });
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  await user.selectOptions(screen.getByLabelText('ChiNext'), 'disabled');
+  await user.click(
+    screen.getByRole('checkbox', {
+      name: /I checked these permissions in my broker account/,
+    }),
+  );
+  await user.click(save);
+
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/settings/board-buy-permissions',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          reviewed_by: 'local_user',
+          boards: { chinext: 'disabled', star: 'unknown', beijing: 'unknown' },
+          confirmation:
+            'I_checked_these_board_permissions_in_my_broker_account',
+        }),
+      }),
+    ),
+  );
 });
 
 test('shows provider timeout guidance without alternate local provider action', async () => {

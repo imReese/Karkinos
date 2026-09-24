@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -27,6 +28,9 @@ from server.services.market_universe_truth import (
 )
 from server.services.promoted_strategy_universe_scan import (
     PromotedStrategyUniverseScanService,
+)
+from server.services.promoted_strategy_universe_scan_support import (
+    account_eligible_signals,
 )
 
 
@@ -79,8 +83,15 @@ def _calendar(db: AppDatabase) -> list[str]:
     return dates[:-1]
 
 
-def _freeze_market(store: DataStore, market_dates: list[str]) -> list[str]:
+def _freeze_market(
+    store: DataStore,
+    market_dates: list[str],
+    *,
+    special_symbol: str | None = None,
+) -> list[str]:
     symbols = [f"{600000 + index:06d}" for index in range(1, 51)]
+    if special_symbol is not None:
+        symbols[-1] = special_symbol
     members = normalize_a_share_members(symbols)
     store.save_market_universe_snapshot(
         trade_date="2026-08-21",
@@ -137,12 +148,13 @@ def _service(
     produces_signals: bool,
     kill_switch_enabled: bool = False,
     active_strategy_count: int = 1,
+    special_symbol: str | None = None,
 ):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     market_dates = _calendar(db)
     store = DataStore(tmp_path / "market")
-    symbols = _freeze_market(store, market_dates)
+    symbols = _freeze_market(store, market_dates, special_symbol=special_symbol)
     strategy_ids = [
         (
             "ai_formula_shadow:fixture-winner"
@@ -226,6 +238,15 @@ def _service(
     return db, service, symbols
 
 
+def _board_permissions(board: str, status: str) -> dict:
+    return {
+        "status": "current",
+        "resolved_for_date": "2026-08-24",
+        "evidence_fingerprint": "sha256:" + "a" * 64,
+        "boards": {board: status},
+    }
+
+
 def test_decision_portfolio_summary_carries_exact_instrument_types() -> None:
     summary = portfolio_state_summary(
         SimpleNamespace(),
@@ -259,6 +280,8 @@ def test_promoted_strategy_scans_full_stock_pool_and_persists_ranked_tasks(
     db, service, symbols = _service(tmp_path, produces_signals=True)
     portfolio = {
         "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
         "valuation_status": "complete",
         "symbols": [symbols[0], "019999"],
         "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
@@ -304,6 +327,184 @@ def test_promoted_strategy_scans_full_stock_pool_and_persists_ranked_tasks(
     assert len(reopened["action_task_ids"]) == 5
 
 
+def test_chinext_research_signal_needs_current_account_permission_before_ranking(
+    tmp_path,
+) -> None:
+    db, service, symbols = _service(
+        tmp_path, produces_signals=True, special_symbol="301251"
+    )
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [],
+        "instrument_types": {},
+        "valuation_snapshot_id": "valuation-fixture",
+    }
+
+    unknown = service.run_once(
+        decision_date="2026-08-24",
+        portfolio_summary=portfolio,
+        persist_actions=False,
+    )
+    assert unknown["status"] == "prepared"
+    assert any(item["symbol"] == "301251" for item in unknown["raw_signals"])
+    assert unknown["account_blocked_buys"] == [
+        {
+            "strategy_id": "ai_formula_shadow:fixture-winner",
+            "symbol": "301251",
+            "board": "chinext",
+            "reason": "board_permission_unknown",
+        }
+    ]
+    assert [item["symbol"] for item in unknown["selected_signals"]] == list(
+        reversed(symbols[-5:-1])
+    )
+    assert (
+        service.current_input_blockers(scan=unknown, portfolio_summary=portfolio) == []
+    )
+
+    permitted_portfolio = {
+        **portfolio,
+        "board_buy_permissions": _board_permissions("chinext", "enabled"),
+    }
+    assert "promoted_strategy_scan_current_portfolio_changed" in (
+        service.current_input_blockers(
+            scan=unknown, portfolio_summary=permitted_portfolio
+        )
+    )
+    permitted = service.run_once(
+        decision_date="2026-08-24",
+        portfolio_summary=permitted_portfolio,
+    )
+    assert permitted["status"] == "completed"
+    assert permitted["selected_signals"][0]["symbol"] == "301251"
+    assert permitted["account_blocked_buys"] == []
+    assert (
+        resolve_latest_verified_promoted_strategy_scan(db, decision_date="2026-08-24")[
+            "verified"
+        ]
+        is True
+    )
+
+
+def test_cash_capacity_blocks_buys_without_erasing_held_stock_exit(tmp_path) -> None:
+    db, service, symbols = _service(tmp_path, produces_signals=True)
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": 4_000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [symbols[0]],
+        "instrument_types": {symbols[0]: "stock"},
+        "valuation_snapshot_id": "valuation-fixture",
+    }
+
+    result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+
+    assert result["status"] == "completed"
+    assert result["selected_signal_count"] == 1
+    assert result["selected_signals"][0]["direction"] == "sell"
+    assert result["raw_signal_count"] > 1
+    assert {item["reason"] for item in result["account_blocked_buys"]} == {
+        "insufficient_cash_for_one_lot"
+    }
+    assert len(db.get_action_tasks_sync(statuses=["pending"], limit=20)) == 1
+
+
+def test_minimum_commission_is_included_in_one_lot_cash_gate() -> None:
+    signal = {
+        "strategy_id": "ai_formula_shadow:fixture-winner",
+        "symbol": "600001",
+        "direction": "buy",
+        "ranking_liquidity": 1_000_000,
+        "frozen_close": 1.0,
+    }
+    portfolio = {
+        "cash": 132,
+        "total_equity": 1_000,
+        "fact_authority": "persisted_valuation_snapshot",
+    }
+    inputs = {
+        "config": SimpleNamespace(),
+        "decision_date": "2026-08-24",
+        "policy": MarketUniversePolicy(minimum_master_member_count=40),
+        "cash_buffer_ratio": Decimal("0.03"),
+    }
+
+    selected, blocked = account_eligible_signals(
+        [signal], portfolio=portfolio, **inputs
+    )
+    assert selected == []
+    assert blocked[0]["reason"] == "insufficient_cash_for_one_lot"
+
+    affordable, unblocked = account_eligible_signals(
+        [signal], portfolio={**portfolio, "cash": 136}, **inputs
+    )
+    assert affordable == [signal]
+    assert unblocked == []
+
+
+@pytest.mark.parametrize(
+    ("cash", "fact_authority"),
+    [(None, "persisted_valuation_snapshot"), (100_000, "legacy_fallback")],
+)
+def test_untrusted_cash_is_account_blocked_not_a_normal_no_signal_day(
+    tmp_path, cash, fact_authority
+) -> None:
+    db, service, _ = _service(tmp_path, produces_signals=True)
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": cash,
+        "fact_authority": fact_authority,
+        "valuation_status": "complete",
+        "symbols": [],
+        "instrument_types": {},
+        "valuation_snapshot_id": "valuation-fixture",
+    }
+
+    result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+
+    assert result["status"] == "completed_no_signal"
+    assert result["normal_no_signal"] is False
+    assert result["raw_signal_count"] > 0
+    assert result["selected_signal_count"] == 0
+    assert {item["reason"] for item in result["account_blocked_buys"]} == {
+        "cash_evidence_missing"
+    }
+    assert db.get_action_tasks_sync(statuses=["pending"], limit=20) == []
+
+
+def test_star_buy_stays_blocked_until_downstream_trade_unit_support(tmp_path) -> None:
+    _, service, _ = _service(tmp_path, produces_signals=True, special_symbol="688001")
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [],
+        "instrument_types": {},
+        "valuation_snapshot_id": "valuation-fixture",
+        "board_buy_permissions": _board_permissions("star", "enabled"),
+    }
+
+    result = service.run_once(
+        decision_date="2026-08-24",
+        portfolio_summary=portfolio,
+        persist_actions=False,
+    )
+
+    assert any(item["symbol"] == "688001" for item in result["raw_signals"])
+    assert result["account_blocked_buys"][0] == {
+        "strategy_id": "ai_formula_shadow:fixture-winner",
+        "symbol": "688001",
+        "board": "star",
+        "reason": "unsupported_trade_unit",
+    }
+    assert all(item["symbol"] != "688001" for item in result["selected_signals"])
+
+
 @pytest.mark.parametrize(
     ("calendar_failure", "expected_blocker"),
     [
@@ -318,6 +519,8 @@ def test_scan_calendar_failure_blocks_new_and_prepared_recommendations(
     db, service, _ = _service(tmp_path, produces_signals=True)
     portfolio = {
         "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
         "valuation_status": "complete",
         "symbols": [],
         "instrument_types": {},
@@ -617,6 +820,8 @@ def test_prepared_scan_writes_nothing_until_exact_selection_is_committed(
     db, service, _ = _service(tmp_path, produces_signals=True)
     portfolio = {
         "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
         "valuation_status": "complete",
         "symbols": [],
         "instrument_types": {},

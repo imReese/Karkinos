@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import is_dataclass, replace
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 
 from notification.notifier import notification_configuration_status
 from server.bootstrap import resolve_config_path
+from server.config_types import AccountBoardPermissionsConfig
+from server.contracts.http.settings_models import BoardBuyPermissionsUpdate
 from server.models import (
     AssetMetadataStatusResponse,
     DataSourceSettingsUpdate,
@@ -18,11 +21,16 @@ from server.models import (
     LiveStatusResponse,
     SettingsResponse,
 )
+from server.services.account_board_permissions import (
+    BOARD_PERMISSION_SOURCE,
+    resolve_board_buy_permissions,
+)
 from server.services.asset_metadata import (
     build_asset_metadata_status,
     iter_configured_asset_metadata,
     metadata_configured_count,
 )
+from server.services.market_hours import get_shanghai_now
 from server.services.market_views.health_inputs import (
     provider_supports_funds as _provider_supports_funds,
 )
@@ -287,6 +295,48 @@ def _build_data_source_status(state) -> DataSourceStatusResponse:
 
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/settings", tags=["settings"])
+
+    @r.get("/board-buy-permissions")
+    async def get_board_buy_permissions() -> dict:
+        """Show the local review used to filter restricted-board candidates."""
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        return resolve_board_buy_permissions(
+            state.config, get_shanghai_now().date().isoformat()
+        )
+
+    @r.put("/board-buy-permissions")
+    async def update_board_buy_permissions(
+        payload: BoardBuyPermissionsUpdate,
+    ) -> dict:
+        """Save an explicit broker-account self-review; grant no order authority."""
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        review = AccountBoardPermissionsConfig(
+            reviewed_at=datetime.now(timezone.utc).isoformat(),
+            reviewed_by=payload.reviewed_by.strip(),
+            source=BOARD_PERMISSION_SOURCE,
+            boards={
+                board: payload.boards.get(board, "unknown")
+                for board in ("chinext", "star", "beijing")
+            },
+        )
+        _persist_runtime_config(
+            {
+                "account_board_permissions": {
+                    "reviewed_at": review.reviewed_at,
+                    "reviewed_by": review.reviewed_by,
+                    "source": review.source,
+                    "boards": review.boards,
+                }
+            }
+        )
+        state.config.account_board_permissions = review
+        return resolve_board_buy_permissions(
+            state.config, get_shanghai_now().date().isoformat()
+        )
 
     @r.get("", response_model=SettingsResponse)
     async def get_settings() -> SettingsResponse:

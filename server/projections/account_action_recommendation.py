@@ -37,17 +37,25 @@ def resolve_latest_verified_promoted_strategy_scan(
     db: Any,
     *,
     decision_date: str,
+    expected_run_id: str | None = None,
 ) -> dict[str, Any]:
-    """Reopen and rehash the latest same-day persisted promoted-strategy scan."""
+    """Reopen and rehash a bound scan, or the latest same-day scan for legacy reads."""
 
     reader = getattr(db, "list_automation_runs_sync", None)
     if not callable(reader) or not decision_date:
         return _unavailable_scan("promoted_strategy_scan_reader_unavailable")
-    rows = reader(
-        run_type=PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE,
-        run_date=decision_date,
-        limit=1,
-    )
+    if expected_run_id is not None:
+        exact_reader = getattr(db, "get_automation_run_sync", None)
+        row = exact_reader(expected_run_id) if callable(exact_reader) else None
+        rows = [row] if isinstance(row, Mapping) else []
+        if not rows:
+            return _unavailable_scan("promoted_strategy_scan_bound_run_missing")
+    else:
+        rows = reader(
+            run_type=PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE,
+            run_date=decision_date,
+            limit=1,
+        )
     if not rows:
         promotion_reader = getattr(db, "list_strategy_promotion_states_sync", None)
         if callable(promotion_reader):
@@ -125,6 +133,17 @@ def resolve_latest_verified_promoted_strategy_scan(
             if isinstance(item, Mapping)
         ],
         "normal_no_signal": payload.get("normal_no_signal") is True,
+        "raw_signal_count": int(payload.get("raw_signal_count") or 0),
+        "raw_signals": [
+            dict(item)
+            for item in payload.get("raw_signals") or []
+            if isinstance(item, Mapping)
+        ],
+        "account_blocked_buys": [
+            dict(item)
+            for item in payload.get("account_blocked_buys") or []
+            if isinstance(item, Mapping)
+        ],
         "blockers": _strings(payload.get("blockers")),
         "strategy_bindings": [
             dict(item)
@@ -171,6 +190,11 @@ def build_account_action_recommendation(
     ]
     scan_status = str(promoted_scan.get("status") or "unavailable")
     scan_blockers = _strings(promoted_scan.get("blockers"))
+    account_blocked_buys = [
+        dict(item)
+        for item in promoted_scan.get("account_blocked_buys") or []
+        if isinstance(item, Mapping)
+    ]
     current_blockers = _strings(current_evidence_blockers)
     if not _is_sha256(current_evidence_fingerprint):
         current_blockers.append("current_account_evidence_fingerprint_invalid")
@@ -216,6 +240,15 @@ def build_account_action_recommendation(
     ):
         status = "no_action"
         reasons = ["promoted_strategy_scan_completed_without_signal"]
+    elif scan_status == "completed_no_signal" and account_blocked_buys:
+        status = "blocked"
+        reasons = list(
+            dict.fromkeys(
+                f"account_buy_blocked:{item.get('reason')}"
+                for item in account_blocked_buys
+                if item.get("reason")
+            )
+        ) or ["account_buy_candidates_ineligible"]
     elif candidates or order_intents:
         status = "blocked"
         reasons = ["decision_candidates_not_ready_for_manual_review"]
@@ -262,6 +295,11 @@ def build_account_action_recommendation(
         and int(promoted_scan.get("selected_signal_count") or 0) == 0
         and not scan_blockers
     )
+    verified_account_blocked = (
+        promoted_scan.get("verified") is True
+        and scan_status == "completed_no_signal"
+        and bool(account_blocked_buys)
+    )
     if status == "manual_review_required":
         presentation_level = "manual_review"
     elif verified_no_signal:
@@ -270,7 +308,7 @@ def build_account_action_recommendation(
         presentation_level = "portfolio_preview"
     elif signal_ready:
         presentation_level = "signal"
-    elif scan_status == "blocked":
+    elif scan_status == "blocked" or verified_account_blocked:
         presentation_level = "blocked"
     else:
         presentation_level = "unavailable"
@@ -318,6 +356,8 @@ def build_account_action_recommendation(
                 if signal_ready
                 else "no_signal"
                 if verified_no_signal
+                else "account_blocked"
+                if verified_account_blocked
                 else "unavailable"
             ),
             "portfolio_preview_status": (
@@ -347,6 +387,8 @@ def build_account_action_recommendation(
             "selected_signal_count": int(
                 promoted_scan.get("selected_signal_count") or 0
             ),
+            "raw_signal_count": int(promoted_scan.get("raw_signal_count") or 0),
+            "account_blocked_buys": account_blocked_buys,
         },
         "current_evidence_fingerprint": current_evidence_fingerprint or None,
         "strategy_bindings": strategy_bindings,
@@ -492,6 +534,12 @@ def _scan_semantic_blockers(payload: Mapping[str, Any]) -> list[str]:
     status = str(payload.get("status") or "")
     blockers = _strings(payload.get("blockers"))
     selected_count = _nonnegative_int(payload.get("selected_signal_count"))
+    raw_count = _nonnegative_int(payload.get("raw_signal_count"))
+    blocked_buys = [
+        item
+        for item in payload.get("account_blocked_buys") or []
+        if isinstance(item, Mapping)
+    ]
     action_tasks = [
         item for item in payload.get("action_tasks") or [] if isinstance(item, Mapping)
     ]
@@ -517,12 +565,32 @@ def _scan_semantic_blockers(payload: Mapping[str, Any]) -> list[str]:
         blockers
         or selected_count != 0
         or action_tasks
-        or payload.get("normal_no_signal") is not True
+        or (payload.get("normal_no_signal") is True) != (raw_count == 0)
+        or (raw_count is not None and raw_count > 0 and not blocked_buys)
         or not strategy_bindings
     ):
         violations.append("promoted_strategy_scan_no_action_shape_invalid")
     if status != "completed_no_signal" and payload.get("normal_no_signal") is True:
         violations.append("promoted_strategy_scan_no_action_flag_invalid")
+    if raw_count is None:
+        violations.append("promoted_strategy_scan_raw_signal_count_invalid")
+    raw_signals = payload.get("raw_signals")
+    if isinstance(raw_signals, list) and len(raw_signals) != raw_count:
+        violations.append("promoted_strategy_scan_raw_signal_count_mismatch")
+    if any(
+        not str(item.get("symbol") or "")
+        or str(item.get("reason") or "")
+        not in {
+            "board_permission_unknown",
+            "board_permission_disabled",
+            "unsupported_trade_unit",
+            "cash_evidence_missing",
+            "insufficient_cash_for_one_lot",
+            "frozen_price_invalid",
+        }
+        for item in blocked_buys
+    ):
+        violations.append("promoted_strategy_scan_account_blocked_buy_invalid")
     if status in {"completed", "completed_no_signal"}:
         receipt_fingerprints = _strings(payload.get("receipt_fingerprints"))
         if (
@@ -603,6 +671,9 @@ def _unavailable_scan(
         "selected_signal_count": 0,
         "signals": [],
         "normal_no_signal": False,
+        "raw_signal_count": 0,
+        "raw_signals": [],
+        "account_blocked_buys": [],
         "blockers": list(dict.fromkeys(blockers or [reason])),
         "strategy_bindings": [],
         "portfolio_binding": {},

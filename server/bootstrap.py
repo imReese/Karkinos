@@ -35,6 +35,7 @@ _INSTRUMENT_ASSET_CLASS_MAP = {
 }
 
 _NON_STRATEGY_FIELDS = {
+    "account_board_permissions",
     "initial_cash",
     "start_date",
     "end_date",

@@ -54,6 +54,18 @@ export type DataSourceSettingsPayload = {
 
 export type SettingsUpdatePayload = SettingsResponse;
 
+export type BoardPermissionStatus = 'enabled' | 'disabled' | 'unknown';
+
+export type BoardBuyPermissions = {
+  status: 'current' | 'unavailable';
+  resolved_for_date: string;
+  evidence_fingerprint: string | null;
+  boards: Record<'chinext' | 'star' | 'beijing', BoardPermissionStatus>;
+  source: string | null;
+  reviewed_at: string | null;
+  expires_on: string | null;
+};
+
 export type DataSourceStatusResponse = {
   data_source: string;
   provider_name: string;
@@ -96,6 +108,36 @@ export function useSettingsQuery() {
     queryFn: () => apiClient<SettingsResponse>('/api/settings'),
     staleTime: 30_000,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useBoardBuyPermissionsQuery() {
+  return useQuery({
+    queryKey: ['settings-board-buy-permissions'],
+    queryFn: () =>
+      apiClient<BoardBuyPermissions>('/api/settings/board-buy-permissions'),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useUpdateBoardBuyPermissionsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (boards: BoardBuyPermissions['boards']) =>
+      putJson<BoardBuyPermissions>('/api/settings/board-buy-permissions', {
+        reviewed_by: 'local_user',
+        boards,
+        confirmation: 'I_checked_these_board_permissions_in_my_broker_account',
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['settings-board-buy-permissions'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['decision'] }),
+      ]);
+    },
   });
 }
 

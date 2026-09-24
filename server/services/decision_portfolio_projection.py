@@ -6,6 +6,7 @@ from datetime import date
 from types import SimpleNamespace
 from typing import Any
 
+from server.services.account_board_permissions import resolve_board_buy_permissions
 from server.services.decision_contracts import (
     TRUSTED_DATA_STATUSES,
     action_trade_date,
@@ -139,6 +140,9 @@ def portfolio_state_summary(
     portfolio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = portfolio_context or decision_portfolio_context(state)
+    board_permissions = resolve_board_buy_permissions(
+        getattr(state, "config", None), decision_date_from_context(context)
+    )
     portfolio = context.get("portfolio")
     if portfolio is None:
         return {
@@ -149,6 +153,7 @@ def portfolio_state_summary(
             "instrument_types": {},
             "total_market_value": 0.0,
             "total_equity": 0.0,
+            "board_buy_permissions": board_permissions,
         }
     positions = getattr(portfolio, "positions", {}) or {}
     position_items = positions.items() if isinstance(positions, dict) else []
@@ -193,6 +198,7 @@ def portfolio_state_summary(
         "instrument_types": instrument_types,
         "total_market_value": total_market_value,
         "total_equity": total_equity,
+        "board_buy_permissions": board_permissions,
     }
     if isinstance(snapshot, dict):
         from server.services.valuation_snapshot import valuation_identity_fields

@@ -10,6 +10,7 @@ from pathlib import Path
 from server.config_contract import DEFAULT_MARKET_SOURCE_POLICY
 from server.config_loading import load_config
 from server.config_types import (
+    AccountBoardPermissionsConfig,
     AIProviderConfig,
     BrokerConnectorConfig,
     BrokerFeeScheduleConfig,
@@ -54,6 +55,9 @@ class BacktestConfig:
     broker_fee_schedule: BrokerFeeScheduleConfig = field(
         default_factory=BrokerFeeScheduleConfig
     )
+    account_board_permissions: AccountBoardPermissionsConfig = field(
+        default_factory=AccountBoardPermissionsConfig
+    )
     ai: AIProviderConfig = field(default_factory=AIProviderConfig)
 
     @classmethod
@@ -91,6 +95,7 @@ class ServerConfig(BacktestConfig):
 
 
 __all__ = [
+    "AccountBoardPermissionsConfig",
     "AIProviderConfig",
     "BacktestConfig",
     "BrokerConnectorConfig",
