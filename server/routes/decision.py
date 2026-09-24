@@ -38,8 +38,13 @@ def create_router() -> APIRouter:
     @router.get("/today")
     async def get_today_decision() -> dict[str, Any]:
         from server.dependencies import get_app_state
+        from server.services.decision_projection import (
+            suppress_unverified_daily_scan_candidates,
+        )
 
-        return await _today_decision_payload(get_app_state())
+        return suppress_unverified_daily_scan_candidates(
+            await _today_decision_payload(get_app_state())
+        )
 
     @router.get("/quality")
     async def get_decision_quality() -> dict[str, Any]:

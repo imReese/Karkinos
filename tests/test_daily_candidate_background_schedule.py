@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from server.db import AppDatabase
 from server.services import daily_decision_evidence_automation as automation_module
@@ -13,8 +14,17 @@ from server.services.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
     DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+    DailyDecisionEvidenceAutomationService,
     project_daily_candidate_background_schedule,
     run_daily_decision_evidence_automation_loop,
+)
+from server.services.daily_decision_evidence_composition import (
+    build_daily_decision_evidence_automation_service,
+)
+from server.services.daily_decision_evidence_orchestration import (
+    DailyCandidateRetryWindowClosed,
+    InitialDailyCandidateReadConflict,
+    run_claimed_background_attempt,
 )
 
 RUN_DATE = "2026-07-01"
@@ -599,6 +609,29 @@ def test_background_schedule_is_due_only_inside_verified_trading_window(
     assert missed["next_reviewed_window"]["authorizes_execution"] is False
 
 
+def test_background_schedule_exposes_unresolved_claim_after_window(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    db.claim_daily_candidate_background_attempt_sync(
+        run_date=RUN_DATE,
+        claimed_at=DECISION_TIME.isoformat(),
+        payload={"schema_version": "karkinos.daily_candidate_background_attempt.v1"},
+    )
+
+    in_window = project_daily_candidate_background_schedule(db=db, now=DECISION_TIME)
+    after_window = project_daily_candidate_background_schedule(
+        db=db,
+        now=datetime(2026, 7, 1, 1, 45, tzinfo=timezone.utc),
+    )
+
+    assert in_window["status"] == "claim_in_progress"
+    assert in_window["due"] is False
+    assert after_window["status"] == "claim_unresolved_after_window"
+    assert after_window["due"] is False
+    assert after_window["blockers"] == ["daily_candidate_claim_unresolved"]
+
+
 def test_background_schedule_skips_non_trading_and_already_recorded_days(
     tmp_path,
 ) -> None:
@@ -893,6 +926,270 @@ def test_background_attempt_claim_is_atomic_and_fail_closed(tmp_path) -> None:
         )
         == 1
     )
+
+
+def test_initial_read_conflict_retries_within_one_claim(tmp_path, monkeypatch) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    monkeypatch.setattr(
+        "server.services.daily_decision_evidence_orchestration."
+        "_INITIAL_READ_RETRY_DELAY_SECONDS",
+        0,
+    )
+
+    class Service:
+        calls = 0
+
+        async def run_once(self, *, expected_plan_date):
+            assert expected_plan_date == RUN_DATE
+            self.calls += 1
+            if self.calls == 1:
+                raise InitialDailyCandidateReadConflict() from RuntimeError(
+                    "persisted market facts changed while building the read snapshot"
+                )
+            return {
+                "run_id": "daily-candidate:after-read-retry",
+                "plan_date": RUN_DATE,
+                "status": "no_candidates",
+                "decision_outcome": "no_action",
+            }
+
+    service = Service()
+    schedule = project_daily_candidate_background_schedule(db=db, now=DECISION_TIME)
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: DECISION_TIME,
+        )
+    )
+
+    assert service.calls == 2
+    runs = db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
+        run_date=RUN_DATE,
+    )
+    assert len(runs) == 1
+    assert runs[0]["status"] == "completed"
+    payload = json.loads(runs[0]["payload_json"])
+    assert payload["attempt_count"] == 2
+    assert len(payload["retry_events"]) == 1
+    assert payload["retry_events"][0]["failure_code"] == (
+        "market_revision_changed_during_initial_read"
+    )
+
+
+def test_exhausted_initial_read_conflict_preserves_original_error_type(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    monkeypatch.setattr(
+        "server.services.daily_decision_evidence_orchestration."
+        "_INITIAL_READ_RETRY_DELAY_SECONDS",
+        0,
+    )
+
+    class Service:
+        calls = 0
+
+        async def run_once(self, *, expected_plan_date):
+            assert expected_plan_date == RUN_DATE
+            self.calls += 1
+            raise InitialDailyCandidateReadConflict() from HTTPException(
+                status_code=503,
+                detail=(
+                    "persisted market facts changed while building the read snapshot"
+                ),
+            )
+
+    service = Service()
+    schedule = project_daily_candidate_background_schedule(db=db, now=DECISION_TIME)
+    with pytest.raises(InitialDailyCandidateReadConflict):
+        asyncio.run(
+            run_claimed_background_attempt(
+                db=db,
+                service=service,
+                schedule=schedule,
+                clock=lambda: DECISION_TIME,
+            )
+        )
+    assert service.calls == 2
+    run = db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
+        run_date=RUN_DATE,
+    )[0]
+    payload = json.loads(run["payload_json"])
+    assert run["status"] == "failed_closed"
+    assert payload["attempt_count"] == 2
+    assert len(payload["retry_events"]) == 2
+    assert payload["failure_stage"] == "initial_plan_read"
+    assert payload["error_type"] == "HTTPException"
+
+
+def test_only_first_raw_plan_read_marks_market_revision_conflict(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    state = SimpleNamespace(db=db, config=None, trading_controls=None, notifier=None)
+    calls = 0
+
+    async def read_plan(_state):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {"decision_date": RUN_DATE}, {"plan_date": "2026-06-30"}
+        raise HTTPException(
+            status_code=503,
+            detail="persisted market facts changed while building the read snapshot",
+        )
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_plan,
+        risk_runner=lambda _: None,
+        quote_refresher=lambda *_args, **_kwargs: None,
+        service_type=lambda **kwargs: SimpleNamespace(reader=kwargs["plan_reader"]),
+    )
+    assert asyncio.run(service.reader()) == (
+        {"decision_date": RUN_DATE},
+        {"plan_date": "2026-06-30"},
+    )
+    with pytest.raises(HTTPException):
+        asyncio.run(service.reader())
+
+
+def test_first_raw_plan_read_tags_only_exact_market_revision_conflict(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    state = SimpleNamespace(db=db, config=None, trading_controls=None, notifier=None)
+
+    async def read_plan(_state):
+        raise HTTPException(
+            status_code=503,
+            detail="persisted market facts changed while building the read snapshot",
+        )
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_plan,
+        risk_runner=lambda _: None,
+        quote_refresher=lambda *_args, **_kwargs: None,
+        service_type=lambda **kwargs: SimpleNamespace(reader=kwargs["plan_reader"]),
+    )
+    with pytest.raises(InitialDailyCandidateReadConflict) as tagged:
+        asyncio.run(service.reader())
+    assert isinstance(tagged.value.__cause__, HTTPException)
+
+
+def test_manual_daily_candidate_keeps_original_snapshot_http_503(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    original = HTTPException(
+        status_code=503,
+        detail="persisted market facts changed while building the read snapshot",
+    )
+
+    async def read_plan():
+        raise InitialDailyCandidateReadConflict() from original
+
+    async def run_risk():
+        raise AssertionError("risk should remain closed")
+
+    service = DailyDecisionEvidenceAutomationService(
+        db=db,
+        trading_controls=None,
+        notifier=None,
+        plan_reader=read_plan,
+        risk_runner=run_risk,
+    )
+    with pytest.raises(HTTPException) as raised:
+        asyncio.run(service.run_once())
+    assert raised.value is original
+
+
+def test_initial_read_conflict_stops_at_window_cutoff(tmp_path, monkeypatch) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    monkeypatch.setattr(
+        "server.services.daily_decision_evidence_orchestration."
+        "_INITIAL_READ_RETRY_DELAY_SECONDS",
+        0,
+    )
+
+    class Service:
+        calls = 0
+
+        async def run_once(self, *, expected_plan_date):
+            assert expected_plan_date == RUN_DATE
+            self.calls += 1
+            raise InitialDailyCandidateReadConflict()
+
+    service = Service()
+    times = iter(
+        [
+            DECISION_TIME,
+            DECISION_TIME,
+            datetime(2026, 7, 1, 1, 45, tzinfo=timezone.utc),
+        ]
+    )
+    schedule = project_daily_candidate_background_schedule(db=db, now=DECISION_TIME)
+    with pytest.raises(DailyCandidateRetryWindowClosed):
+        asyncio.run(
+            run_claimed_background_attempt(
+                db=db,
+                service=service,
+                schedule=schedule,
+                clock=lambda: next(times),
+            )
+        )
+
+    assert service.calls == 1
+    run = db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
+        run_date=RUN_DATE,
+    )[0]
+    payload = json.loads(run["payload_json"])
+    assert run["status"] == "failed_closed"
+    assert payload["failure_stage"] == "initial_plan_read"
+    assert payload["failure_code"] == "reviewed_window_closed_before_retry"
+    assert payload["attempt_count"] == 1
+
+
+def test_delayed_first_background_read_fails_at_window_cutoff(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+
+    class Service:
+        async def run_once(self, *, expected_plan_date):
+            raise AssertionError(
+                f"late generation must not start: {expected_plan_date}"
+            )
+
+    schedule = project_daily_candidate_background_schedule(db=db, now=DECISION_TIME)
+    cutoff = datetime(2026, 7, 1, 1, 45, tzinfo=timezone.utc)
+    with pytest.raises(DailyCandidateRetryWindowClosed):
+        asyncio.run(
+            run_claimed_background_attempt(
+                db=db,
+                service=Service(),
+                schedule=schedule,
+                clock=lambda: cutoff,
+            )
+        )
+    run = db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
+        run_date=RUN_DATE,
+    )[0]
+    payload = json.loads(run["payload_json"])
+    assert run["status"] == "failed_closed"
+    assert payload["attempt_count"] == 0
+    assert payload["failure_stage"] == "scheduling"
+    assert payload["failure_code"] == "reviewed_window_closed_before_initial_read"
 
 
 def test_background_unhandled_failure_finishes_attempt_and_opens_alert(

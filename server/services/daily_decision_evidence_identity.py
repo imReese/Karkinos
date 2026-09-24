@@ -109,6 +109,11 @@ def daily_candidate_input_fingerprint(payload: dict[str, Any]) -> str:
             "evidence_fingerprint": execution_closure.get("evidence_fingerprint"),
         },
     }
+    scan_run_id = str(input_snapshot.get("promoted_strategy_scan_run_id") or "")
+    if scan_run_id:
+        # The scan is part of the new run identity. Legacy records without this
+        # binding retain their original fingerprint for read-only replay.
+        identity["promoted_strategy_scan_run_id"] = scan_run_id
     return fingerprint_json(identity)
 
 
