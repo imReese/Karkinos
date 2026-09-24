@@ -14,6 +14,7 @@ const REFACTORED_PRODUCTION_FAMILIES = {
   decisionApi: [
     'features/decision/api.ts',
     'features/decision/api-contracts.ts',
+    'features/decision/decision-quality-contracts.ts',
     'features/decision/api-hooks.ts',
   ],
   accountEquityCurve: [
