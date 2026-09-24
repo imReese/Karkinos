@@ -6,6 +6,7 @@ import json
 import math
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -17,23 +18,27 @@ from server.ai_runtime.formula_dsl import (
     evaluate_formula,
     validate_formula_ast,
 )
+from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 from server.services.market_universe_automation import verified_trading_dates
 from server.services.market_universe_truth import (
     FULL_MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION,
     MarketUniversePolicy,
     build_full_market_universe_truth,
+    normalize_a_share_members,
 )
 
 SHANGHAI_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 DECISION_WINDOW_START = time(9, 35)
 DECISION_WINDOW_END = time(9, 45)
 PROMOTED_STRATEGY_SCAN_EVALUATION_POLICY_VERSION = (
-    "karkinos.promoted_strategy_universe_scan_evaluation_policy.v2"
+    "karkinos.promoted_strategy_universe_scan_evaluation_policy.v4"
 )
 SIGNAL_SELECTION_POLICY = (
     "exits_first_fail_closed_on_multi_strategy_sell_symbol_conflict_"
-    "then_20d_median_amount_desc_then_symbol_asc"
+    "then_account_eligible_20d_median_amount_desc_then_symbol_asc"
 )
+_RESTRICTED_BOARDS = frozenset({"chinext", "star", "beijing"})
+_DEFAULT_CASH_BUFFER_RATIO = Decimal("0.03")
 
 
 def promoted_scan_evaluation_policy_fingerprint(
@@ -164,6 +169,180 @@ def aggregate_ranked_signals(
     return (
         select_ranked_signals(signals, allocation_slots=allocation_slots),
         blockers,
+    )
+
+
+def board_buy_blocker(
+    symbol: str,
+    permission_evidence: Any,
+    decision_date: str,
+) -> str | None:
+    """Resolve a stock's current buy permission independently of UI projection."""
+    identity = normalize_a_share_members([symbol])
+    board = identity[0]["board"] if identity else "unknown"
+    if board == "unknown":
+        return "board_permission_unknown"
+    if board not in _RESTRICTED_BOARDS:
+        return None
+    evidence = permission_evidence if isinstance(permission_evidence, Mapping) else {}
+    current = (
+        evidence.get("status") == "current"
+        and evidence.get("resolved_for_date") == decision_date
+        and _prefixed_sha256(evidence.get("evidence_fingerprint"))
+        and isinstance(evidence.get("boards"), Mapping)
+    )
+    permission = evidence["boards"].get(board) if current else None
+    if permission != "enabled":
+        return (
+            "board_permission_disabled"
+            if permission == "disabled"
+            else "board_permission_unknown"
+        )
+    if board == "star":
+        # The downstream account allocator still rounds STAR orders to
+        # 100 shares; STAR's minimum buy order is 200 shares.
+        return "unsupported_trade_unit"
+    return None
+
+
+def account_eligible_signals(
+    signals: list[dict[str, Any]],
+    *,
+    config: Any,
+    decision_date: str,
+    portfolio: Mapping[str, Any],
+    policy: MarketUniversePolicy,
+    cash_buffer_ratio: Decimal,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Keep research signals intact while choosing only affordable account buys."""
+    exits = [signal for signal in signals if signal.get("direction") == "sell"]
+    buys = sorted(
+        (signal for signal in signals if signal.get("direction") == "buy"),
+        key=lambda item: (
+            -float(item["ranking_liquidity"]),
+            str(item["symbol"]),
+            str(item["strategy_id"]),
+        ),
+    )
+    permission_evidence = portfolio.get("board_buy_permissions")
+    cash = (
+        _nonnegative_decimal(portfolio.get("cash"))
+        if portfolio.get("fact_authority") == "persisted_valuation_snapshot"
+        else None
+    )
+    equity = _nonnegative_decimal(portfolio.get("total_equity"))
+    remaining = (
+        max(cash - equity * cash_buffer_ratio, Decimal("0"))
+        if cash is not None and equity is not None
+        else None
+    )
+    selected_buys: list[dict[str, Any]] = []
+    blocked: list[dict[str, str]] = []
+    seen_symbols: set[str] = set()
+    for signal in buys:
+        symbol = str(signal["symbol"])
+        identity = normalize_a_share_members([symbol])
+        board = identity[0]["board"] if identity else "unknown"
+        reason = board_buy_blocker(symbol, permission_evidence, decision_date)
+        price = _nonnegative_decimal(signal.get("frozen_close"))
+        if reason is None and (price is None or price == 0):
+            reason = "frozen_price_invalid"
+        if reason is None and remaining is None:
+            reason = "cash_evidence_missing"
+        if reason is None and remaining is not None and price is not None:
+            gross = price * policy.lot_size
+            fee = resolve_manual_trade_fee_breakdown(
+                config,
+                asset_class="stock",
+                direction="buy",
+                quantity=float(policy.lot_size),
+                price=float(price),
+                symbol=symbol,
+            )
+            configured_fee = (
+                _nonnegative_decimal(fee.total_fee) if fee is not None else None
+            )
+            minimum_cost = gross + max(
+                gross * policy.fee_buffer_rate,
+                configured_fee or Decimal("0"),
+            )
+            if minimum_cost > remaining:
+                reason = "insufficient_cash_for_one_lot"
+        if reason is not None:
+            blocked.append(
+                {
+                    "strategy_id": str(signal["strategy_id"]),
+                    "symbol": symbol,
+                    "board": board,
+                    "reason": reason,
+                }
+            )
+            continue
+        if symbol in seen_symbols or len(selected_buys) >= policy.allocation_slots:
+            continue
+        seen_symbols.add(symbol)
+        selected_buys.append(signal)
+        if remaining is not None and price is not None:
+            remaining -= (
+                price * policy.lot_size * (Decimal("1") + policy.fee_buffer_rate)
+            )
+    return [*exits, *selected_buys], blocked
+
+
+def cash_buffer_ratio(config: Any) -> Decimal:
+    configured = getattr(config, "trading_plan_min_cash_buffer_ratio", None)
+    if configured is None:
+        configured = getattr(config, "min_cash_buffer_ratio", None)
+    ratio = _nonnegative_decimal(configured)
+    return ratio if ratio is not None and ratio <= 1 else _DEFAULT_CASH_BUFFER_RATIO
+
+
+def portfolio_scan_binding(
+    portfolio: Mapping[str, Any],
+    *,
+    held_symbols: Sequence[str],
+    reserve_ratio: Decimal,
+) -> dict[str, Any]:
+    permissions = portfolio.get("board_buy_permissions")
+    permissions = dict(permissions) if isinstance(permissions, Mapping) else {}
+    capital = {
+        "valuation_snapshot_id": portfolio["valuation_snapshot_id"],
+        "valuation_status": portfolio["valuation_status"],
+        "total_equity": portfolio["total_equity"],
+        "cash": portfolio.get("cash"),
+        "fact_authority": portfolio.get("fact_authority"),
+        "cash_buffer_ratio": str(reserve_ratio),
+        "board_buy_permissions": permissions,
+    }
+    return {
+        "valuation_snapshot_id": portfolio["valuation_snapshot_id"] or None,
+        "valuation_status": portfolio["valuation_status"],
+        "held_symbol_fingerprint": "sha256:" + content_fingerprint(held_symbols),
+        "held_stock_count": len(held_symbols),
+        "available_cash": portfolio.get("cash"),
+        "fact_authority": portfolio.get("fact_authority"),
+        "cash_buffer_ratio": str(reserve_ratio),
+        "board_buy_permissions_fingerprint": permissions.get("evidence_fingerprint"),
+        "capital_constraint_fingerprint": "sha256:" + content_fingerprint(capital),
+    }
+
+
+def _nonnegative_decimal(value: Any) -> Decimal | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number.is_finite() and number >= 0 else None
+
+
+def _prefixed_sha256(value: Any) -> bool:
+    text = str(value or "")
+    return (
+        len(text) == 71
+        and text.startswith("sha256:")
+        and all(character in "0123456789abcdef" for character in text[7:])
     )
 
 

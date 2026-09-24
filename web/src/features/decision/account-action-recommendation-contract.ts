@@ -49,7 +49,7 @@ export type AccountActionRecommendation = {
       | 'blocked'
       | 'unavailable';
     actions: AccountRecommendationAction[];
-    signal_status?: 'ready' | 'no_signal' | 'unavailable';
+    signal_status?: 'ready' | 'no_signal' | 'account_blocked' | 'unavailable';
     portfolio_preview_status?: 'ready' | 'blocked';
     manual_review_status?: 'ready' | 'blocked';
     configuration_blockers?: string[];
@@ -67,6 +67,13 @@ export type AccountActionRecommendation = {
     input_fingerprint: string | null;
     output_fingerprint: string | null;
     selected_signal_count: number;
+    raw_signal_count?: number;
+    account_blocked_buys?: Array<{
+      strategy_id: string;
+      symbol: string;
+      board: string;
+      reason: string;
+    }>;
   };
   account_evidence: {
     valuation_snapshot_id: string | null;

@@ -12,10 +12,13 @@ from server.services.market_universe_truth import (
     require_complete_market_universe_snapshot,
 )
 from server.services.promoted_strategy_universe_scan_support import (
+    account_eligible_signals,
     aggregate_ranked_signals,
     automation_safety_blockers,
+    cash_buffer_ratio,
     evaluate_promoted_strategy_market,
     history_start,
+    portfolio_scan_binding,
     prior_verified_trading_date,
     promoted_scan_evaluation_policy_fingerprint,
 )
@@ -163,20 +166,12 @@ def current_scan_input_blockers(
         blockers.append("promoted_strategy_scan_market_receipts_changed")
 
     held_symbols = list(portfolio["stock_symbols"])
-    current_portfolio_binding = {
-        "valuation_snapshot_id": portfolio["valuation_snapshot_id"] or None,
-        "valuation_status": portfolio["valuation_status"],
-        "held_symbol_fingerprint": "sha256:" + content_fingerprint(held_symbols),
-        "held_stock_count": len(held_symbols),
-        "capital_constraint_fingerprint": "sha256:"
-        + content_fingerprint(
-            {
-                "valuation_snapshot_id": portfolio["valuation_snapshot_id"],
-                "valuation_status": portfolio["valuation_status"],
-                "total_equity": portfolio["total_equity"],
-            }
-        ),
-    }
+    reserve_ratio = cash_buffer_ratio(config)
+    current_portfolio_binding = portfolio_scan_binding(
+        portfolio,
+        held_symbols=held_symbols,
+        reserve_ratio=reserve_ratio,
+    )
     if dict(scan.get("portfolio_binding") or {}) != current_portfolio_binding:
         blockers.append("promoted_strategy_scan_current_portfolio_changed")
 
@@ -203,8 +198,16 @@ def current_scan_input_blockers(
                 for strategy_id in current_by_id
             ):
                 blockers.append("promoted_strategy_scan_current_universe_truth_changed")
-            selected_signals, signal_conflict_blockers = aggregate_ranked_signals(
+            account_signals, account_blocked_buys = account_eligible_signals(
                 raw_signals,
+                config=config,
+                decision_date=decision_date,
+                portfolio=portfolio,
+                policy=policy,
+                cash_buffer_ratio=reserve_ratio,
+            )
+            selected_signals, signal_conflict_blockers = aggregate_ranked_signals(
+                account_signals,
                 allocation_slots=policy.allocation_slots,
             )
             blockers.extend(signal_conflict_blockers)
@@ -212,6 +215,8 @@ def current_scan_input_blockers(
                 {
                     "decision_date": decision_date,
                     "market_date": market_date,
+                    "raw_signals": raw_signals,
+                    "account_blocked_buys": account_blocked_buys,
                     "signals": selected_signals,
                 }
             )

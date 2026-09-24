@@ -107,6 +107,9 @@ class _Db:
     def list_automation_runs_sync(self, **_: object) -> list[dict]:
         return self.rows
 
+    def get_automation_run_sync(self, run_id: str) -> dict | None:
+        return next((row for row in self.rows if row["run_id"] == run_id), None)
+
     def list_strategy_promotion_states_sync(self) -> list[dict]:
         return list(self.promotion_states or [])
 
@@ -181,6 +184,25 @@ def test_missing_scan_distinguishes_no_promoted_strategy_from_automation_gap() -
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+def test_bound_scan_is_verified_by_exact_run_id_even_if_newer_scan_exists() -> None:
+    bound = _persisted_no_signal_scan()
+    unrelated = {**bound, "run_id": "later-unbound-scan"}
+    db = _Db([unrelated, bound])
+
+    latest = resolve_latest_verified_promoted_strategy_scan(
+        db, decision_date="2026-09-01"
+    )
+    exact = resolve_latest_verified_promoted_strategy_scan(
+        db, decision_date="2026-09-01", expected_run_id=bound["run_id"]
+    )
+
+    assert latest["verified"] is False
+    assert exact["verified"] is True
+    assert exact["run_id"] == bound["run_id"]
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_verified_completed_no_signal_is_first_class_account_no_action() -> None:
     scan = resolve_latest_verified_promoted_strategy_scan(
         _Db([_persisted_no_signal_scan()]),
@@ -223,6 +245,64 @@ def test_verified_completed_no_signal_is_first_class_account_no_action() -> None
     assert recommendation["creates_oms_order"] is False
     assert recommendation["submits_broker_order"] is False
     assert recommendation["authorizes_execution"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_verified_account_ineligible_buy_is_blocked_not_no_action() -> None:
+    row = _persisted_no_signal_scan()
+    payload = json.loads(row["payload_json"])
+    payload.update(
+        {
+            "raw_signal_count": 1,
+            "raw_signals": [
+                {
+                    "strategy_id": "ai_formula_shadow:candidate-1",
+                    "symbol": "301251",
+                    "direction": "buy",
+                }
+            ],
+            "account_blocked_buys": [
+                {
+                    "strategy_id": "ai_formula_shadow:candidate-1",
+                    "symbol": "301251",
+                    "board": "chinext",
+                    "reason": "board_permission_unknown",
+                }
+            ],
+            "normal_no_signal": False,
+        }
+    )
+    payload.pop("output_fingerprint")
+    payload["output_fingerprint"] = "sha256:" + content_fingerprint(payload)
+    row["payload_json"] = json.dumps(payload)
+
+    scan = resolve_latest_verified_promoted_strategy_scan(
+        _Db([row]), decision_date="2026-09-01"
+    )
+    recommendation = build_account_action_recommendation(
+        decision_payload={"decision_date": "2026-09-01", "candidates": []},
+        trading_plan={
+            "manual_ready_count": 0,
+            "paper_shadow_ready_count": 0,
+            "blocked_count": 0,
+            "blockers": [],
+            "order_intents": [],
+        },
+        promoted_scan=scan,
+        current_evidence_blockers=[],
+        current_evidence_fingerprint="e" * 64,
+    )
+
+    assert scan["verified"] is True
+    assert recommendation["status"] == "blocked"
+    assert recommendation["presentation"]["signal_status"] == "account_blocked"
+    assert recommendation["reason_codes"] == [
+        "account_buy_blocked:board_permission_unknown"
+    ]
+    assert (
+        recommendation["promoted_scan"]["account_blocked_buys"][0]["symbol"] == "301251"
+    )
 
 
 @pytest.mark.unit

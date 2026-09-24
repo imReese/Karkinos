@@ -19,6 +19,7 @@ MODULES = {
     "server.config_types": PROJECT_ROOT / "server/config_types.py",
 }
 LEAF_TYPE_NAMES = {
+    "AccountBoardPermissionsConfig",
     "AIProviderConfig",
     "BrokerConnectorConfig",
     "BrokerFeeScheduleConfig",

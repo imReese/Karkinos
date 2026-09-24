@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -77,6 +77,19 @@ class DataSourceSettingsUpdate(BaseModel):
         if value not in SUPPORTED_DATA_SOURCES:
             raise ValueError("unsupported data source")
         return value
+
+
+class BoardBuyPermissionsUpdate(BaseModel):
+    """User-reviewed broker access for candidate filtering only."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reviewed_by: str = Field(min_length=1, max_length=128)
+    boards: dict[
+        Literal["chinext", "star", "beijing"],
+        Literal["enabled", "disabled", "unknown"],
+    ]
+    confirmation: Literal["I_checked_these_board_permissions_in_my_broker_account"]
 
 
 class DataSourceStatusResponse(BaseModel):
