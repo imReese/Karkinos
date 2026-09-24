@@ -60,6 +60,13 @@ def record_cycle(
     paper_shadow_summary = build_paper_shadow_summary(paper_shadow_run)
     execution_closure = build_daily_candidate_execution_closure(db)
     summary = object_dict(decision_payload.get("summary"))
+    promoted_scan = object_dict(summary.get("promoted_strategy_universe_scan"))
+    promoted_scan_run_id = (
+        str(promoted_scan.get("run_id") or "") or None
+        if promoted_scan.get("status") in {"completed", "completed_no_signal"}
+        and not promoted_scan.get("blockers")
+        else None
+    )
     portfolio = object_dict(summary.get("portfolio"))
     account_truth = object_dict(summary.get("account_truth"))
     try:
@@ -85,6 +92,7 @@ def record_cycle(
     production["input_snapshot"]["decision_plan_fingerprint"] = (
         decision_plan_fingerprint
     )
+    production["input_snapshot"]["promoted_strategy_scan_run_id"] = promoted_scan_run_id
     fingerprint = daily_candidate_input_fingerprint(
         {
             **production,
@@ -100,6 +108,7 @@ def record_cycle(
         ),
         "input_fingerprint": fingerprint,
         "input_snapshot": production["input_snapshot"],
+        "promoted_strategy_scan_run_id": promoted_scan_run_id,
         "candidate_count": candidate_count,
         "risk": risk_summary,
         "paper_shadow": paper_shadow_summary,
@@ -144,6 +153,7 @@ def record_cycle(
         "plan_date": plan_date,
         "input_fingerprint": fingerprint,
         "input_snapshot": production["input_snapshot"],
+        "promoted_strategy_scan_run_id": promoted_scan_run_id,
         "candidate_count": candidate_count,
         "risk": risk_summary,
         "paper_shadow": paper_shadow_summary,

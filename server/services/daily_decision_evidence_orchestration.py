@@ -12,9 +12,23 @@ from server.services.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
     DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION,
 )
-from server.services.daily_decision_evidence_values import count, object_dict
+from server.services.daily_decision_evidence_values import (
+    count,
+    in_daily_candidate_decision_window,
+    object_dict,
+)
 
 logger = logging.getLogger(__name__)
+_MAX_INITIAL_READ_ATTEMPTS = 2
+_INITIAL_READ_RETRY_DELAY_SECONDS = 0.2
+
+
+class InitialDailyCandidateReadConflict(RuntimeError):
+    """An exact market-revision conflict before the first scan or write."""
+
+
+class DailyCandidateRetryWindowClosed(RuntimeError):
+    """The reviewed window closed before a safe initial-read retry."""
 
 
 async def run_claimed_daily_candidate_preparation_check(
@@ -276,12 +290,16 @@ async def run_claimed_background_attempt(
     db: Any,
     service: Any,
     schedule: dict[str, Any],
+    clock: Callable[[], datetime] | None = None,
 ) -> None:
     run_date = str(schedule.get("run_date") or "")
     claimed_at = str(schedule.get("evaluated_at") or "")
     claim_writer = getattr(db, "claim_daily_candidate_background_attempt_sync", None)
     if not run_date or not claimed_at or not callable(claim_writer):
         raise RuntimeError("daily candidate background attempt claim unavailable")
+    current_time = clock or (lambda: datetime.now(timezone.utc))
+    attempt_count = 0
+    retry_events: list[dict[str, Any]] = []
     claim_payload = {
         "schema_version": "karkinos.daily_candidate_background_attempt.v1",
         "schedule": schedule,
@@ -291,8 +309,16 @@ async def run_claimed_background_attempt(
         "result_status": None,
         "decision_outcome": None,
         "input_fingerprint": None,
+        "promoted_strategy_scan_run_id": None,
         "notification": None,
         "operator_alert": None,
+        "stage": "claimed",
+        "attempt_count": 0,
+        "retry_events": [],
+        "failure_stage": None,
+        "failure_code": None,
+        "error_type": None,
+        "evidence_refs": None,
         "manual_confirmation_required": True,
         "broker_submission_enabled": False,
         "authorizes_execution": False,
@@ -307,7 +333,40 @@ async def run_claimed_background_attempt(
         return
     attempt_row = dict(claim.get("run") or {})
     try:
-        result = await service.run_once(expected_plan_date=run_date)
+        while True:
+            if not in_daily_candidate_decision_window(
+                current_time(), plan_date=run_date
+            ):
+                raise DailyCandidateRetryWindowClosed()
+            attempt_count += 1
+            try:
+                result = await service.run_once(expected_plan_date=run_date)
+                break
+            except InitialDailyCandidateReadConflict as exc:
+                retry_events.append(
+                    {
+                        "at": current_time().isoformat(),
+                        "stage": "initial_plan_read",
+                        "failure_code": "market_revision_changed_during_initial_read",
+                        "error_type": type(exc.__cause__).__name__,
+                    }
+                )
+                if attempt_count >= _MAX_INITIAL_READ_ATTEMPTS:
+                    raise
+                db.upsert_automation_run_sync(
+                    {
+                        **attempt_row,
+                        "status": "claimed",
+                        "finished_at": None,
+                        "payload": {
+                            **claim_payload,
+                            "stage": "initial_read_retrying",
+                            "attempt_count": attempt_count,
+                            "retry_events": retry_events,
+                        },
+                    }
+                )
+                await asyncio.sleep(_INITIAL_READ_RETRY_DELAY_SECONDS)
     except asyncio.CancelledError:
         operator_alert = record_daily_candidate_background_alert(
             db=db,
@@ -322,6 +381,13 @@ async def run_claimed_background_attempt(
             payload={
                 **claim_payload,
                 "status": "interrupted_fail_closed",
+                "stage": "interrupted",
+                "attempt_count": attempt_count,
+                "retry_events": retry_events,
+                "failure_stage": "generation",
+                "failure_code": "attempt_interrupted",
+                "error_type": "CancelledError",
+                "evidence_refs": background_attempt_evidence_refs(db, run_date),
                 "operator_alert": operator_alert,
             },
             status="interrupted_fail_closed",
@@ -329,12 +395,41 @@ async def run_claimed_background_attempt(
         )
         raise
     except Exception as exc:
+        original_exc = (
+            exc.__cause__
+            if isinstance(exc, InitialDailyCandidateReadConflict)
+            and isinstance(exc.__cause__, Exception)
+            else exc
+        )
+        failure_stage = (
+            "scheduling"
+            if isinstance(exc, DailyCandidateRetryWindowClosed) and not attempt_count
+            else "initial_plan_read"
+            if isinstance(
+                exc,
+                (InitialDailyCandidateReadConflict, DailyCandidateRetryWindowClosed),
+            )
+            else "generation"
+        )
+        failure_code = (
+            "market_revision_changed_during_initial_read"
+            if isinstance(exc, InitialDailyCandidateReadConflict)
+            else (
+                (
+                    "reviewed_window_closed_before_retry"
+                    if attempt_count
+                    else "reviewed_window_closed_before_initial_read"
+                )
+                if isinstance(exc, DailyCandidateRetryWindowClosed)
+                else "generation_failed_closed"
+            )
+        )
         operator_alert = record_daily_candidate_background_alert(
             db=db,
             run_date=run_date,
             outcome="failed_closed",
             result=None,
-            error_type=type(exc).__name__,
+            error_type=type(original_exc).__name__,
         )
         finish_background_attempt(
             db=db,
@@ -342,7 +437,13 @@ async def run_claimed_background_attempt(
             payload={
                 **claim_payload,
                 "status": "failed_closed",
-                "error_type": type(exc).__name__,
+                "stage": "failed",
+                "attempt_count": attempt_count,
+                "retry_events": retry_events,
+                "failure_stage": failure_stage,
+                "failure_code": failure_code,
+                "error_type": type(original_exc).__name__,
+                "evidence_refs": background_attempt_evidence_refs(db, run_date),
                 "operator_alert": operator_alert,
             },
             status="failed_closed",
@@ -365,9 +466,15 @@ async def run_claimed_background_attempt(
             payload={
                 **claim_payload,
                 "status": "failed_closed",
+                "stage": "failed",
+                "attempt_count": attempt_count,
+                "retry_events": retry_events,
+                "failure_stage": "result_validation",
+                "failure_code": "result_plan_date_mismatch",
                 "result_plan_date": result_plan_date or None,
                 "result_status": result.get("status"),
                 "error_type": error_type,
+                "evidence_refs": background_attempt_evidence_refs(db, run_date),
                 "operator_alert": operator_alert,
             },
             status="failed_closed",
@@ -401,11 +508,17 @@ async def run_claimed_background_attempt(
         payload={
             **claim_payload,
             "status": "completed",
+            "stage": "completed",
+            "attempt_count": attempt_count,
+            "retry_events": retry_events,
             "result_run_id": result.get("run_id"),
             "result_plan_date": result.get("plan_date"),
             "result_status": result.get("status"),
             "decision_outcome": decision_outcome,
             "input_fingerprint": result.get("input_fingerprint"),
+            "promoted_strategy_scan_run_id": result.get(
+                "promoted_strategy_scan_run_id"
+            ),
             "no_action_reasons": list(result.get("no_action_reasons") or [])[:100],
             "no_action_reason_count": len(result.get("no_action_reasons") or []),
             "manual_ticket_candidate_count": count(
@@ -413,6 +526,7 @@ async def run_claimed_background_attempt(
             ),
             "notification": notification,
             "operator_alert": operator_alert,
+            "evidence_refs": background_attempt_evidence_refs(db, run_date),
         },
         status="completed",
         source_ref=str(result.get("run_id") or "") or None,
@@ -528,3 +642,26 @@ def finish_background_attempt(
             "payload": payload,
         }
     )
+
+
+def background_attempt_evidence_refs(db: Any, run_date: str) -> dict[str, list[str]]:
+    """Expose same-day downstream run IDs without private financial values."""
+
+    reader = getattr(db, "list_automation_runs_sync", None)
+    if not callable(reader):
+        return {"scan_run_ids": [], "daily_evidence_run_ids": []}
+    result: dict[str, list[str]] = {}
+    for run_type, key in (
+        ("promoted_strategy_universe_scan", "scan_run_ids"),
+        ("daily_decision_evidence", "daily_evidence_run_ids"),
+    ):
+        try:
+            rows = reader(run_type=run_type, run_date=run_date, limit=20, offset=0)
+        except Exception:
+            rows = []
+        result[key] = [
+            str(row["run_id"])
+            for row in rows
+            if isinstance(row, dict) and str(row.get("run_id") or "")
+        ]
+    return result

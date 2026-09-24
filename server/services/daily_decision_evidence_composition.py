@@ -6,14 +6,34 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
+from fastapi import HTTPException
+
 from server.contracts.content_identity import content_fingerprint
+from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotRejected
 from server.services.automation_control import AutomationControlService
 from server.services.daily_decision_evidence_contracts import (
     QuoteRefresher,
     StatePlanReader,
     StateRiskRunner,
 )
+from server.services.daily_decision_evidence_orchestration import (
+    InitialDailyCandidateReadConflict,
+)
 from server.services.daily_decision_evidence_values import object_dict, object_list
+
+_MARKET_REVISION_CONFLICT = (
+    "persisted market facts changed while building the read snapshot"
+)
+
+
+def _is_initial_market_revision_conflict(exc: Exception) -> bool:
+    if isinstance(exc, PortfolioReadSnapshotRejected):
+        return str(exc) == _MARKET_REVISION_CONFLICT
+    return (
+        isinstance(exc, HTTPException)
+        and exc.status_code == 503
+        and exc.detail == _MARKET_REVISION_CONFLICT
+    )
 
 
 def build_daily_decision_evidence_automation_service(
@@ -48,9 +68,19 @@ def build_daily_decision_evidence_automation_service(
         quote_refresher=quote_refresher,
     )
     scan_cache: dict[tuple[object, ...], dict[str, Any]] = {}
+    initial_read_pending = True
 
     async def read_plan() -> tuple[dict[str, Any], dict[str, Any]]:
-        decision, trading_plan = await plan_reader(state)
+        nonlocal initial_read_pending
+        try:
+            decision, trading_plan = await plan_reader(state)
+        except Exception as exc:
+            if initial_read_pending and _is_initial_market_revision_conflict(exc):
+                raise InitialDailyCandidateReadConflict() from exc
+            raise
+        # All later reads may follow scan, quote, action, or risk writes. Only
+        # failure of this first raw read can safely restart the whole cycle.
+        initial_read_pending = False
         decision_date = str(decision.get("decision_date") or "")
         plan_date = str(trading_plan.get("plan_date") or "")
         if decision_date and decision_date == plan_date:

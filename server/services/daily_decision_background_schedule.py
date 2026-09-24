@@ -110,6 +110,12 @@ def project_daily_candidate_background_schedule(
         else []
     )
     if attempts:
+        minute_of_day = shanghai_now.hour * 60 + shanghai_now.minute
+        unresolved_claim = str(attempts[0].get("status") or "") == "claimed"
+        claim_outside_window = (
+            unresolved_claim
+            and minute_of_day >= DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE
+        )
         next_reviewed_window = build_next_verified_trading_window(
             calendar_reader=calendar_reader,
             shanghai_now=shanghai_now,
@@ -117,11 +123,19 @@ def project_daily_candidate_background_schedule(
             include_current_date=False,
         )
         return build_background_schedule_result(
-            status="already_attempted",
+            status=(
+                "claim_unresolved_after_window"
+                if claim_outside_window
+                else "claim_in_progress"
+                if unresolved_claim
+                else "already_attempted"
+            ),
             evaluated_at=evaluated_at_text,
             run_date=run_date,
             due=False,
-            blockers=[],
+            blockers=(
+                ["daily_candidate_claim_unresolved"] if claim_outside_window else []
+            ),
             existing_run_id=str(attempts[0].get("run_id") or "") or None,
             next_reviewed_window=next_reviewed_window,
         )

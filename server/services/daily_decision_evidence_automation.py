@@ -77,6 +77,7 @@ from server.services.daily_decision_evidence_identity import (
     manual_ticket_candidate_fingerprint,
 )
 from server.services.daily_decision_evidence_orchestration import (
+    InitialDailyCandidateReadConflict,
     finish_background_attempt,
     record_daily_candidate_background_alert,
     record_daily_candidate_preparation_alert,
@@ -215,16 +216,21 @@ class DailyDecisionEvidenceAutomationService:
     ) -> dict[str, Any]:
         """Advance one fail-closed, idempotent evidence cycle."""
 
-        return await collect_daily_decision_evidence(
-            db=self._db,
-            automation=self._automation,
-            plan_reader=self._plan_reader,
-            risk_runner=self._risk_runner,
-            record_cycle=self._record_cycle,
-            send_notification=self._send_notification,
-            run_paper_shadow=run_paper_shadow_from_trading_plan,
-            expected_plan_date=expected_plan_date,
-        )
+        try:
+            return await collect_daily_decision_evidence(
+                db=self._db,
+                automation=self._automation,
+                plan_reader=self._plan_reader,
+                risk_runner=self._risk_runner,
+                record_cycle=self._record_cycle,
+                send_notification=self._send_notification,
+                run_paper_shadow=run_paper_shadow_from_trading_plan,
+                expected_plan_date=expected_plan_date,
+            )
+        except InitialDailyCandidateReadConflict as exc:
+            if expected_plan_date is None and isinstance(exc.__cause__, Exception):
+                raise exc.__cause__ from exc
+            raise
 
     def _record_cycle(
         self,
@@ -386,6 +392,7 @@ async def run_daily_decision_evidence_automation_loop(
                     db=state.db,
                     service=service,
                     schedule=schedule,
+                    clock=current_time,
                 )
         except asyncio.CancelledError:
             raise
