@@ -6,6 +6,7 @@ import {
   useEquityCurveSeriesQuery,
   useExplainabilityQuery,
   useDailyTradingPlanQuery,
+  useTodayDecisionQuery,
   type EquityCurveRange,
 } from '../overview-feature-boundary';
 
@@ -25,12 +26,14 @@ export function useOverviewPageController() {
     accountReady && analysisView === 'calendar',
   );
   const tradingPlan = useDailyTradingPlanQuery(accountReady);
+  const todayDecision = useTodayDecisionQuery(accountReady);
   return {
     copy,
     account,
     equityCurve,
     explainability,
     tradingPlan,
+    todayDecision,
     analysisView,
     setAnalysisView,
     equityCurveRange,
