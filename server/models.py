@@ -103,6 +103,7 @@ from server.contracts.http.portfolio_models import (
 )
 from server.contracts.http.settings_models import (
     AssetMetadataStatusResponse,
+    BoardBuyPermissionsUpdate,
     DataSourceSettingsUpdate,
     DataSourceStatusResponse,
     LiveStatusResponse,
@@ -246,6 +247,7 @@ __all__ = [
     "HoldingStrategyAttributionReport",
     "NotificationSettingsStatus",
     "SettingsResponse",
+    "BoardBuyPermissionsUpdate",
     "DataSourceSettingsUpdate",
     "DataSourceStatusResponse",
     "AssetMetadataStatusResponse",
