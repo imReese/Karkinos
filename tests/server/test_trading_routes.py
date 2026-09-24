@@ -506,6 +506,7 @@ def test_create_manual_order_blocks_risk_passed_action_without_promotion_evidenc
     assert "strategy_promotion_evidence_missing" in exc.value.detail
     assert db.list_manual_orders_sync() == []
     assert db.list_orders_sync() == []
+
     assert broadcasts == []
 
 
@@ -749,6 +750,14 @@ def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
             [],
         ),
     )
+    generation = {
+        "recommendation_authoritative": True,
+        "formal_candidate_action_ids": [7],
+    }
+    monkeypatch.setattr(
+        "server.services.decision_projection.daily_candidate_generation_status",
+        lambda db, decision_date: generation,
+    )
 
     gate = trading_routes._current_action_manual_ticket_gate(
         state,
@@ -763,6 +772,24 @@ def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
 
     assert gate["status"] == "pass"
     assert gate["does_not_authorize_execution"] is True
+
+    generation["recommendation_authoritative"] = False
+    with pytest.raises(ValueError) as exc:
+        trading_routes._current_action_manual_ticket_gate(state, action)
+    assert "current_daily_candidate_chain_not_authoritative" in str(exc.value)
+    generation["recommendation_authoritative"] = True
+
+    with pytest.raises(ValueError) as exc:
+        trading_routes._current_action_manual_ticket_gate(
+            state,
+            {
+                **action,
+                "direction": "buy",
+                "asset_class": "stock",
+                "symbol": "301251",
+            },
+        )
+    assert "current_board_buy:board_permission_unknown" in str(exc.value)
 
     with pytest.raises(ValueError) as exc:
         trading_routes._current_action_manual_ticket_gate(
@@ -1019,6 +1046,14 @@ def test_daily_shadow_route_delegates_to_canonical_decision_plan_and_service(
     )
     assert db.list_manual_orders_sync() == []
     assert db.list_orders_sync() == []
+
+    filtered_payload = {**decision_payload, "decision": "no_action"}
+    monkeypatch.setattr(
+        "server.services.decision_projection.suppress_unverified_daily_scan_candidates",
+        lambda payload: filtered_payload,
+    )
+    asyncio.run(endpoint(trading_routes.ShadowRunRequest(run_date="2026-04-19")))
+    assert calls["plan_inputs"][0] is filtered_payload
 
 
 def test_daily_shadow_route_rejects_caller_supplied_equity(

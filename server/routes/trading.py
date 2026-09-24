@@ -282,6 +282,11 @@ def create_router() -> APIRouter:
             state,
             portfolio_context=portfolio_context,
         )
+        from server.services.decision_projection import (
+            suppress_unverified_daily_scan_candidates,
+        )
+
+        decision_payload = suppress_unverified_daily_scan_candidates(decision_payload)
         trading_plan = build_daily_trading_plan(
             decision_payload=decision_payload,
             config=getattr(state, "config", None),
@@ -470,12 +475,17 @@ def _current_action_manual_ticket_gate(
 ) -> dict[str, Any]:
     """Re-resolve current persisted gates immediately before ticket writes."""
 
+    from server.services.account_board_permissions import resolve_board_buy_permissions
     from server.services.decision_application import (
         account_truth_gate_evidence,
         action_trade_date,
         data_freshness_evidence,
         paper_shadow_allows_manual_ticket,
         paper_shadow_evidence,
+    )
+    from server.services.decision_projection import daily_candidate_generation_status
+    from server.services.promoted_strategy_universe_scan_support import (
+        board_buy_blocker,
     )
     from server.services.strategy_promotion_pipeline import (
         resolve_strategy_order_generation_gate,
@@ -500,6 +510,32 @@ def _current_action_manual_ticket_gate(
         db=db,
     )
     blockers: list[str] = []
+    if (
+        action.get("direction") == "buy"
+        and str(action.get("asset_class") or "stock").lower() == "stock"
+    ):
+        decision_date = action_trade_date(action)
+        permission = resolve_board_buy_permissions(
+            getattr(state, "config", None), decision_date
+        )
+        board_blocker = board_buy_blocker(
+            str(action.get("symbol") or ""), permission, decision_date
+        )
+        if board_blocker:
+            blockers.append(f"current_board_buy:{board_blocker}")
+    if str(action.get("strategy_id") or "").startswith("ai_formula_shadow:"):
+        try:
+            generation = daily_candidate_generation_status(
+                db, action_trade_date(action)
+            )
+        except Exception:
+            generation = {}
+        formal_action_ids = generation.get("formal_candidate_action_ids") or []
+        if (
+            generation.get("recommendation_authoritative") is not True
+            or action.get("id") not in formal_action_ids
+        ):
+            blockers.append("current_daily_candidate_chain_not_authoritative")
     trading_controls = getattr(state, "trading_controls", None)
     control_snapshot = (
         trading_controls.snapshot()
