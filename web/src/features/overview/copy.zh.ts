@@ -162,6 +162,21 @@ export const overviewCopyZh = {
     strategyRecommendationSignal: '策略信号',
     strategyRecommendationConfigurationRequired:
       '尚未配置可用于账户建议的晋级策略',
+    strategyDailyGeneration: {
+      not_generated: '当日生成记录：尚未生成',
+      missed_window: '当日生成记录：未生成，已错过生成时段',
+      running: '当日生成记录：生成中',
+      claim_unresolved: '当日生成记录：状态待确认',
+      unlinked_daily_evidence: '当日生成记录：证据未关联，暂不可核验',
+      failed_closed: '当日生成记录：生成失败，未形成可核验日报',
+      completed_no_signal: '当日生成记录：已完成，无策略信号',
+      completed_with_candidates: '当日生成记录：已完成，有正式候选',
+      blocked: '当日生成记录：证据或账户条件阻断',
+      unavailable: '当日生成记录：证据暂不可核验',
+    },
+    strategyDailyGenerationUnavailable: '当日生成记录：状态暂不可核验',
+    strategyReviewQuoteTooOld:
+      '当前人工复核：报价距本次决策超过 5 分钟，不能据此准备手工订单。',
     strategyRecommendationRefreshForReview:
       '刷新账户事实与行情后可进入人工复核',
     strategyRecommendationSignalOnly:

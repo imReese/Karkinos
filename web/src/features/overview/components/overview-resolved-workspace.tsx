@@ -163,6 +163,7 @@ export function OverviewResolvedWorkspace({
         <div className="mt-3 min-w-0">
           <OverviewStrategyRecommendation
             planQuery={controller.tradingPlan}
+            todayQuery={controller.todayDecision}
             positions={state.snapshot.positions}
             currentWeightBySymbol={weightBySymbol}
           />

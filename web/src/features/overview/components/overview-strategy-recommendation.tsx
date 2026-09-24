@@ -14,6 +14,7 @@ import {
 import type {
   AccountStateResponse,
   DailyTradingPlanResponse,
+  DecisionResponse,
 } from '../overview-feature-boundary';
 
 type QueryState<T> = {
@@ -503,11 +504,13 @@ function RecommendationActionItem({
 
 export function OverviewStrategyRecommendation({
   planQuery,
+  todayQuery,
   positions,
   currentWeightBySymbol,
   className,
 }: {
   planQuery: QueryState<DailyTradingPlanResponse>;
+  todayQuery: QueryState<DecisionResponse>;
   positions: AccountStateResponse['snapshot']['positions'];
   currentWeightBySymbol: Record<string, number>;
   className?: string;
@@ -518,6 +521,16 @@ export function OverviewStrategyRecommendation({
 
   const plan = planQuery.data;
   const recommendation = plan?.account_action_recommendation;
+  const generation = todayQuery.data?.generation;
+  const currentGeneration =
+    plan &&
+    todayQuery.data?.decision_date === plan.plan_date &&
+    generation?.run_date === plan.plan_date
+      ? generation
+      : null;
+  const quoteTooOldForReview = recommendation?.reason_codes.includes(
+    'market_quote_too_old_for_decision',
+  );
   const presentationLevel: PresentationLevel =
     recommendation?.presentation?.level ??
     fallbackPresentationLevel(recommendation);
@@ -654,6 +667,25 @@ export function OverviewStrategyRecommendation({
             </a>
           </div>
         )
+      ) : null}
+
+      {plan &&
+      (currentGeneration || !todayQuery.isLoading || quoteTooOldForReview) ? (
+        <div
+          data-testid="overview-recommendation-evidence"
+          className="mt-2 space-y-1 app-type-compact text-[var(--app-text-secondary)]"
+        >
+          {currentGeneration || !todayQuery.isLoading ? (
+            <p>
+              {currentGeneration
+                ? dashboard.strategyDailyGeneration[currentGeneration.status]
+                : dashboard.strategyDailyGenerationUnavailable}
+            </p>
+          ) : null}
+          {quoteTooOldForReview ? (
+            <p>{dashboard.strategyReviewQuoteTooOld}</p>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );

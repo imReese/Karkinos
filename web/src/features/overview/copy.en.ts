@@ -184,6 +184,24 @@ export const overviewCopyEn = {
     strategyRecommendationSignal: 'Strategy signal',
     strategyRecommendationConfigurationRequired:
       'No promoted strategy is configured for account recommendations',
+    strategyDailyGeneration: {
+      not_generated: 'Daily generation: not yet generated',
+      missed_window: 'Daily generation: window missed, no report generated',
+      running: 'Daily generation: running',
+      claim_unresolved: 'Daily generation: state unresolved',
+      unlinked_daily_evidence:
+        'Daily generation: evidence unlinked and unverified',
+      failed_closed: 'Daily generation: failed, no verified report',
+      completed_no_signal: 'Daily generation: complete, no strategy signal',
+      completed_with_candidates:
+        'Daily generation: complete, formal candidates ready',
+      blocked: 'Daily generation: blocked by evidence or account conditions',
+      unavailable: 'Daily generation: evidence unavailable for verification',
+    },
+    strategyDailyGenerationUnavailable:
+      'Daily generation: state unavailable for verification',
+    strategyReviewQuoteTooOld:
+      'Current manual review: the quote is over five minutes old for this decision and cannot be used to prepare an order.',
     strategyRecommendationRefreshForReview:
       'Refresh account truth and market data before manual review',
     strategyRecommendationSignalOnly:

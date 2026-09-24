@@ -263,11 +263,12 @@ test('reads one coherent account projection and a separate canonical history', a
   const fetch = installFetch();
   renderPage();
   await screen.findByTestId('overview-summary');
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
   expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual(
     [
       '/api/portfolio/state',
       '/api/portfolio/equity-curve/series?range=ytd',
+      '/api/decision/today',
       '/api/decision/trading-plan',
     ].sort(),
   );
@@ -304,6 +305,72 @@ test('shows the canonical daily strategy recommendation separately from operatio
   expect(
     within(recommendation).getByRole('link', { name: '查看全部' }),
   ).toHaveAttribute('href', '/decision');
+});
+
+test('separates failed daily generation from a stale quote for current manual review', async () => {
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.status = 'unavailable';
+  plan.account_action_recommendation!.reason_codes = [
+    'promoted_strategy_scan_missing',
+    'market_quote_too_old_for_decision',
+  ];
+  const decision = decisionFixture();
+  decision.generation = {
+    run_date: '2026-09-14',
+    status: 'failed_closed',
+    attempt_run_id: 'attempt-1',
+    daily_evidence_run_id: null,
+    scan_run_id: null,
+    failure_stage: 'plan_reader',
+    failure_code: 'market_revision_conflict',
+  };
+
+  installFetch(accountFixture(), false, plan, decision);
+  renderPage('zh');
+
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  await waitFor(() =>
+    expect(recommendation).toHaveTextContent(
+      '当日生成记录：生成失败，未形成可核验日报',
+    ),
+  );
+  expect(recommendation).toHaveTextContent(
+    '当前人工复核：报价距本次决策超过 5 分钟，不能据此准备手工订单。',
+  );
+  expect(recommendation).toHaveTextContent('策略建议暂不可用');
+});
+
+test('does not show a prior day generation result as the current report', async () => {
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.reason_codes = [
+    'market_quote_too_old_for_decision',
+  ];
+  const decision = decisionFixture();
+  decision.generation = {
+    run_date: '2026-09-13',
+    status: 'failed_closed',
+    attempt_run_id: 'prior-attempt',
+    daily_evidence_run_id: null,
+    scan_run_id: null,
+    failure_stage: 'plan_reader',
+    failure_code: 'market_revision_conflict',
+  };
+
+  installFetch(accountFixture(), false, plan, decision);
+  renderPage('zh');
+
+  const recommendation = await screen.findByTestId(
+    'overview-strategy-recommendation',
+  );
+  await waitFor(() =>
+    expect(recommendation).toHaveTextContent('当日生成记录：状态暂不可核验'),
+  );
+  expect(recommendation).not.toHaveTextContent('当日生成记录：生成失败');
+  expect(recommendation).toHaveTextContent(
+    '当前人工复核：报价距本次决策超过 5 分钟',
+  );
 });
 
 test('explains why today has no actionable recommendation when evidence gates block it', async () => {
