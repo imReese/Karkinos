@@ -130,12 +130,18 @@ def create_router() -> APIRouter:
     async def get_daily_report(report_date: str) -> dict[str, Any]:
         """Read the exact frozen sources for one verified trading day."""
         from server.dependencies import get_app_state
+        from server.services.daily_candidate_outcomes import (
+            evaluate_daily_candidate_outcomes,
+        )
         from server.services.daily_decision_report import get_daily_decision_report
 
         try:
             db = get_app_state().db
             report = await asyncio.to_thread(get_daily_decision_report, db, report_date)
-            return report
+            outcomes = await asyncio.to_thread(
+                evaluate_daily_candidate_outcomes, db, report
+            )
+            return {**report, "candidate_outcomes": outcomes}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except LookupError as exc:
