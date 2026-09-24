@@ -150,15 +150,20 @@ def create_router() -> APIRouter:
     @router.get("/trading-plan")
     async def get_daily_trading_plan() -> dict[str, Any]:
         from server.dependencies import get_app_state
+        from server.services.decision_projection import (
+            suppress_unverified_daily_scan_candidates,
+        )
 
         state = get_app_state()
         portfolio_context = await asyncio.to_thread(
             _decision_portfolio_context,
             state,
         )
-        decision_payload = await _today_decision_payload(
-            state,
-            portfolio_context=portfolio_context,
+        decision_payload = suppress_unverified_daily_scan_candidates(
+            await _today_decision_payload(
+                state,
+                portfolio_context=portfolio_context,
+            )
         )
         return await asyncio.to_thread(
             _build_daily_trading_plan_for_state,
