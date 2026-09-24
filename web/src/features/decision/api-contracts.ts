@@ -209,6 +209,35 @@ export type DecisionResponse = {
   requires_manual_confirmation: boolean;
   summary: DecisionSummary;
   candidates: DecisionCandidate[];
+  generation?: {
+    run_date: string;
+    status:
+      | 'not_generated'
+      | 'missed_window'
+      | 'running'
+      | 'claim_unresolved'
+      | 'unlinked_daily_evidence'
+      | 'failed_closed'
+      | 'completed_no_signal'
+      | 'completed_with_candidates'
+      | 'blocked'
+      | 'unavailable';
+    attempt_run_id: string | null;
+    daily_evidence_run_id: string | null;
+    scan_run_id: string | null;
+    failure_stage: string | null;
+    failure_code: string | null;
+    bound_scan_action_ids?: number[];
+    formal_candidate_action_ids?: number[];
+    recommendation_authoritative?: boolean;
+  } | null;
+  suppressed_unverified_candidates?: Array<{
+    action_id: number;
+    source_signal_id: number;
+    symbol: string | null;
+    strategy_id: string;
+    reason: string;
+  }>;
   excluded_daily_symbols?: string[];
   no_action_reasons: string[];
   limitations: string[];

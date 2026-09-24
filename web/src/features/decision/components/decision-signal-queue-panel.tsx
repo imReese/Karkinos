@@ -16,6 +16,7 @@ import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display
 import {
   useCreateManualOrderFromActionMutation,
   type ActionCard,
+  type DecisionResponse,
   type SignalJournalEntry,
 } from '../api';
 import { DecisionOutcomeReviewPanel } from './decision-outcome-review-panel';
@@ -56,11 +57,15 @@ export function PageHeader({
 export function SignalQueuePanel({
   actions,
   journal,
+  dailyGeneration,
+  decisionDate,
   loading,
   error,
 }: {
   actions: ActionCard[];
   journal: SignalJournalEntry[];
+  dailyGeneration?: DecisionResponse['generation'];
+  decisionDate?: string;
   loading: boolean;
   error: boolean;
 }) {
@@ -145,6 +150,14 @@ export function SignalQueuePanel({
                 actions.slice(0, 4).map((action) => {
                   const instrumentLabel = formatInstrumentDisplayLabel(action);
                   const actionId = action.id;
+                  const unverifiedDailyScanAction =
+                    action.strategy_id.startsWith('ai_formula_shadow:') &&
+                    action.timestamp.slice(0, 10) === decisionDate &&
+                    (dailyGeneration?.recommendation_authoritative !== true ||
+                      actionId === null ||
+                      !(
+                        dailyGeneration.formal_candidate_action_ids ?? []
+                      ).includes(actionId));
                   return (
                     <article
                       key={action.id ?? action.symbol}
@@ -171,6 +184,13 @@ export function SignalQueuePanel({
                           <div className="app-muted mt-2 break-words text-xs leading-5">
                             {formatPublicNote(action.detail, locale)}
                           </div>
+                          {unverifiedDailyScanAction ? (
+                            <div className="mt-2 text-xs text-[var(--app-warning-text)]">
+                              {locale === 'zh'
+                                ? '此信号未绑定今日最终报告，不能据此准备手工订单。'
+                                : 'This signal is not bound to today’s final report and cannot prepare a manual order.'}
+                            </div>
+                          ) : null}
                         </div>
                         <div className="grid shrink-0 gap-2 sm:grid-cols-2 lg:min-w-[280px]">
                           <a
@@ -188,6 +208,7 @@ export function SignalQueuePanel({
                             {labels.openAttributionReview}
                           </a>
                           {actionId !== null &&
+                          !unverifiedDailyScanAction &&
                           action.manual_confirmation_status ===
                             'ready_for_manual_confirmation' ? (
                             <ControlledActionZone

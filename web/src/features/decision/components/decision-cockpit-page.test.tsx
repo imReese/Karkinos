@@ -1158,6 +1158,15 @@ function installDecisionFetchMock({
       if (url.includes('/api/decision/quality')) {
         return jsonResponse(currentDecisionQuality);
       }
+      if (url.includes('/api/decision/daily-reports')) {
+        return jsonResponse({
+          schema_version: 'karkinos.decision.daily_report_index.v1',
+          status: 'complete',
+          reports: [],
+          has_more: false,
+          blockers: [],
+        });
+      }
       if (url.includes('/api/decision/today')) {
         return jsonResponse(todayResponse);
       }
@@ -1486,6 +1495,85 @@ async function expandDecisionCandidates(locale: 'en' | 'zh' = 'en') {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+test('shows a failed daily generation separately from the action queue', async () => {
+  renderDecisionCockpit({
+    locale: 'zh',
+    todayResponse: {
+      ...dailyDecision,
+      decision: 'no_action',
+      candidates: [],
+      generation: {
+        run_date: '2026-06-12',
+        status: 'failed_closed',
+        attempt_run_id: 'attempt-1',
+        daily_evidence_run_id: null,
+        scan_run_id: null,
+        failure_stage: 'initial_plan_read',
+        failure_code: 'portfolio_snapshot_revision_changed',
+        recommendation_authoritative: false,
+      },
+    },
+  });
+
+  const status = await screen.findByTestId('decision-daily-generation-status');
+  expect(status.textContent).toContain('今日候选生成失败');
+  expect(status.textContent).toContain('2026-06-12');
+  expect(
+    await screen.findByTestId('decision-daily-reports-disclosure'),
+  ).toBeTruthy();
+});
+
+test('does not offer a manual ticket for an unbound daily scan signal', async () => {
+  renderDecisionCockpit({
+    locale: 'zh',
+    todayResponse: {
+      ...dailyDecision,
+      decision: 'no_action',
+      candidates: [],
+      generation: {
+        run_date: '2026-06-12',
+        status: 'failed_closed',
+        attempt_run_id: 'attempt-1',
+        daily_evidence_run_id: null,
+        scan_run_id: null,
+        failure_stage: 'after_scan',
+        failure_code: 'final_evidence_missing',
+        bound_scan_action_ids: [91],
+        formal_candidate_action_ids: [91],
+        recommendation_authoritative: false,
+      },
+    },
+    signalActionsResponse: [
+      {
+        id: 91,
+        source_signal_id: 11,
+        symbol: '600869',
+        title: 'Unbound scan signal',
+        detail: 'Pending',
+        direction: 'buy',
+        urgency: 'medium',
+        target_weight: 0.25,
+        price: 22.03,
+        strategy_id: 'ai_formula_shadow:candidate-1',
+        timestamp: '2026-06-12T09:35:00+08:00',
+        asset_class: 'stock',
+        status: 'pending',
+        risk_decision_id: 'RISK-91',
+        risk_gate_passed: true,
+        risk_gate_status: 'passed',
+        risk_gate_severity: 'info',
+        risk_gate_reasons: [],
+        manual_confirmation_required: true,
+        manual_confirmation_status: 'ready_for_manual_confirmation',
+        manual_confirmation_reason: 'Risk passed',
+      },
+    ],
+  });
+
+  expect(await screen.findByText(/此信号未绑定今日最终报告/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '准备手工订单' })).toBeNull();
 });
 
 test('renders a structured workspace while primary decision evidence loads', () => {

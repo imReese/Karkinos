@@ -108,6 +108,39 @@ def create_router() -> APIRouter:
         except Exception as exc:
             _raise_decision_quality_http_error(exc)
 
+    @router.get("/daily-reports")
+    async def list_daily_reports(limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        """Read persisted results for verified trading days, including missing days."""
+        from server.dependencies import get_app_state
+        from server.services.daily_decision_report import list_daily_decision_reports
+
+        try:
+            return await asyncio.to_thread(
+                list_daily_decision_reports,
+                get_app_state().db,
+                limit=limit,
+                offset=offset,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @router.get("/daily-reports/{report_date}")
+    async def get_daily_report(report_date: str) -> dict[str, Any]:
+        """Read the exact frozen sources for one verified trading day."""
+        from server.dependencies import get_app_state
+        from server.services.daily_decision_report import get_daily_decision_report
+
+        try:
+            db = get_app_state().db
+            report = await asyncio.to_thread(get_daily_decision_report, db, report_date)
+            return report
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     @router.get("/trading-plan")
     async def get_daily_trading_plan() -> dict[str, Any]:
         from server.dependencies import get_app_state
