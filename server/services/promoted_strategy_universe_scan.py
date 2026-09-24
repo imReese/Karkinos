@@ -10,7 +10,6 @@ from typing import Any
 
 import pandas as pd
 
-from core.types import InstrumentType
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.bootstrap import resolve_data_dir
@@ -41,6 +40,7 @@ from server.services.promoted_strategy_universe_scan_support import (
 )
 from server.services.promoted_strategy_universe_scan_validation import (
     current_scan_input_blockers,
+    portfolio_stock_symbols,
 )
 from server.services.strategy_promotion_pipeline import (
     AI_SHADOW_STRATEGY_PREFIX,
@@ -54,36 +54,6 @@ PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE = "promoted_strategy_universe_scan"
 StrategyGateResolver = Callable[..., tuple[dict[str, Any], list[str]]]
 StrategyLoader = Callable[..., dict[str, Any]]
 SafetyGateReader = Callable[[], Mapping[str, Any]]
-
-
-def _portfolio_stock_symbols(
-    portfolio_summary: Mapping[str, Any],
-    blockers: list[str],
-) -> list[str]:
-    symbols = sorted(
-        {
-            str(symbol)
-            for symbol in portfolio_summary.get("symbols") or []
-            if str(symbol)
-        }
-    )
-    instrument_types = portfolio_summary.get("instrument_types")
-    if not isinstance(instrument_types, Mapping):
-        if symbols:
-            blockers.append("portfolio_instrument_type_evidence_missing")
-        return []
-    stocks: list[str] = []
-    for symbol in symbols:
-        try:
-            instrument_type = InstrumentType.from_persisted(
-                instrument_types.get(symbol)
-            )
-        except ValueError:
-            blockers.append(f"portfolio_instrument_type_unresolved:{symbol}")
-            continue
-        if instrument_type is InstrumentType.STOCK:
-            stocks.append(symbol)
-    return stocks
 
 
 class PromotedStrategyUniverseScanService:
@@ -223,7 +193,7 @@ class PromotedStrategyUniverseScanService:
                     if str(symbol)
                 }
             ),
-            "stock_symbols": _portfolio_stock_symbols(portfolio_summary, blockers),
+            "stock_symbols": portfolio_stock_symbols(portfolio_summary, blockers),
         }, blockers
 
     def _load_market_evidence(
