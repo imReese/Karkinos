@@ -213,7 +213,7 @@ function CandidateOutcomeView({
           : `${zh ? '不可评估' : 'Unavailable'} · ${outcomeReason(outcome.reason_code, locale)}`}
       </div>
       {outcome.anchor?.receipt_fingerprint ? (
-        <div className="break-all font-mono text-[10px]">
+        <div className="break-all font-mono text-xs">
           {zh ? '锚点收据' : 'Anchor receipt'}:{' '}
           {outcome.anchor.receipt_fingerprint}
         </div>
