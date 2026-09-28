@@ -24,6 +24,7 @@ from analytics.strategy_advancement_evidence import (
     research_execution_policy_matches,
     rolling_oos_comparison,
     turnover_ratio,
+    valid_fingerprint,
     valid_snapshot_id,
 )
 
@@ -207,6 +208,7 @@ def build_normalized_research_advancement_gate(
             baseline_turnover is not None
             and candidate_turnover is not None
             and candidate_turnover <= baseline_turnover
+            and candidate_turnover > 0
         ),
         blocker=(
             "baseline_turnover_evidence_missing"
@@ -214,6 +216,8 @@ def build_normalized_research_advancement_gate(
             else (
                 "candidate_turnover_evidence_missing"
                 if candidate_turnover is None
+                else "candidate_turnover_zero_no_trades"
+                if candidate_turnover <= 0
                 else "candidate_turnover_exceeds_reviewed_baseline"
             )
         ),
@@ -402,11 +406,51 @@ def _difference(left: Any, right: Any) -> float | None:
     return left_value - right_value
 
 
+def is_valid_passed_normalized_research_advancement_gate(value: Any) -> bool:
+    """Validate one persisted pass artifact before human paper/shadow approval."""
+    if not isinstance(value, Mapping):
+        return False
+    payload = dict(value)
+    evidence_fingerprint = payload.pop("evidence_fingerprint", None)
+    checks = payload.get("checks")
+    blockers = payload.get("blockers")
+    if not isinstance(checks, list) or not isinstance(blockers, list):
+        return False
+    normalized_checks = [dict(check) for check in checks if isinstance(check, Mapping)]
+    check_names = tuple(check.get("name") for check in normalized_checks)
+    if check_names != NORMALIZED_RESEARCH_REQUIRED_CHECK_NAMES:
+        return False
+    return (
+        len(normalized_checks) == len(checks)
+        and all(
+            check.get("status") == "pass"
+            and check.get("blocker") is None
+            and isinstance(check.get("evidence"), Mapping)
+            for check in normalized_checks
+        )
+        and payload.get("schema_version") == NORMALIZED_RESEARCH_GATE_SCHEMA_VERSION
+        and payload.get("status") == "pass"
+        and blockers == []
+        and payload.get("deterministic") is True
+        and payload.get("normalized_notional_only") is True
+        and payload.get("account_qualification_required") is True
+        and payload.get("human_confirmation_required") is True
+        and payload.get("does_not_register_strategy") is True
+        and payload.get("does_not_create_order") is True
+        and payload.get("does_not_authorize_execution") is True
+        and payload.get("does_not_change_capital_authority") is True
+        and valid_fingerprint(evidence_fingerprint)
+        and str(evidence_fingerprint).lower() == payload_fingerprint(payload)
+    )
+
+
 __all__ = [
     "NORMALIZED_RESEARCH_GATE_SCHEMA_VERSION",
+    "NORMALIZED_RESEARCH_REQUIRED_CHECK_NAMES",
     "NormalizedResearchAdvancementGate",
     "baseline_research_evidence_blockers",
     "build_normalized_research_advancement_gate",
     "candidate_research_evidence_blockers",
+    "is_valid_passed_normalized_research_advancement_gate",
     "research_backtest_infrastructure_blockers",
 ]
