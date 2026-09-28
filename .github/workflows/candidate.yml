@@ -101,6 +101,7 @@ jobs:
           - architecture: x86_64
             runner: macos-15-intel
     permissions:
+      actions: write
       attestations: write
       contents: read
       id-token: write
