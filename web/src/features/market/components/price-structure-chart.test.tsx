@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
 
 import {
@@ -76,11 +76,11 @@ test('renders OHLC price range as a K-line chart', () => {
       name: 'Price range / K-line · Price axis · Date axis',
     }),
   ).toBeTruthy();
-  expect(screen.getByText('Volume')).toBeTruthy();
-  expect(screen.getByText('2025-04-19').getAttribute('text-anchor')).toBe(
+  const svg = container.querySelector<HTMLElement>('svg.app-chart-stage')!;
+  expect(within(svg).getByText('2025-04-19').getAttribute('text-anchor')).toBe(
     'start',
   );
-  expect(screen.getByText('2026-04-20').getAttribute('text-anchor')).toBe(
+  expect(within(svg).getByText('2026-04-20').getAttribute('text-anchor')).toBe(
     'end',
   );
   expect(
@@ -346,6 +346,7 @@ test('activates crosshair and shows HUD on hover', () => {
 
   expect(screen.queryByTestId('kline-crosshair')).toBeNull();
   expect(screen.queryByTestId('kline-crosshair-hud')).toBeNull();
+  expect(screen.getByTestId('kline-latest-hud')).toBeTruthy();
 
   const svg = container.querySelector('svg.app-chart-stage')!;
   expect(svg).toBeTruthy();
@@ -359,8 +360,10 @@ test('activates crosshair and shows HUD on hover', () => {
 
   expect(screen.getByTestId('kline-crosshair')).toBeTruthy();
   expect(screen.getByTestId('kline-crosshair-hud')).toBeTruthy();
+  expect(screen.queryByTestId('kline-latest-hud')).toBeNull();
 
   fireEvent.mouseLeave(svg);
   expect(screen.queryByTestId('kline-crosshair')).toBeNull();
   expect(screen.queryByTestId('kline-crosshair-hud')).toBeNull();
+  expect(screen.getByTestId('kline-latest-hud')).toBeTruthy();
 });

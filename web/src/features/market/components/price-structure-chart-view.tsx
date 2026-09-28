@@ -72,11 +72,16 @@ export function PriceStructureChartView({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [showMovingAverages, setShowMovingAverages] = useState(true);
 
-  const hoveredBar =
+  const activeIndex =
     hoverIndex !== null &&
     hoverIndex >= 0 &&
     hoverIndex < model.plottedBars.length
-      ? model.plottedBars[hoverIndex]
+      ? hoverIndex
+      : model.plottedBars.length - 1;
+
+  const activeBar =
+    activeIndex >= 0 && activeIndex < model.plottedBars.length
+      ? model.plottedBars[activeIndex]
       : null;
 
   return (
@@ -111,51 +116,53 @@ export function PriceStructureChartView({
           data-testid="price-structure-chart-canvas"
           className="min-w-[720px] w-full"
         >
-          {hoveredBar ? (
+          {activeBar ? (
             <div
-              data-testid="kline-crosshair-hud"
+              data-testid={
+                hoverIndex !== null ? 'kline-crosshair-hud' : 'kline-latest-hud'
+              }
               className="app-type-micro mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_70%,transparent)] px-2.5 py-1 font-mono text-[var(--app-text-secondary)]"
             >
               <span className="font-semibold text-[var(--app-text)]">
-                {formatDateTick(hoveredBar.timestamp, hoverIndex!)}
+                {formatDateTick(activeBar.timestamp, activeIndex)}
               </span>
               <span>
                 <span className="text-[var(--app-muted)]">O</span>{' '}
-                {formatAmount(hoveredBar.open ?? hoveredBar.close)}
+                {formatAmount(activeBar.open ?? activeBar.close)}
               </span>
               <span>
                 <span className="text-[var(--app-muted)]">H</span>{' '}
                 {formatAmount(
-                  hoveredBar.high ??
+                  activeBar.high ??
                     Math.max(
-                      hoveredBar.open ?? hoveredBar.close,
-                      hoveredBar.close,
+                      activeBar.open ?? activeBar.close,
+                      activeBar.close,
                     ),
                 )}
               </span>
               <span>
                 <span className="text-[var(--app-muted)]">L</span>{' '}
                 {formatAmount(
-                  hoveredBar.low ??
+                  activeBar.low ??
                     Math.min(
-                      hoveredBar.open ?? hoveredBar.close,
-                      hoveredBar.close,
+                      activeBar.open ?? activeBar.close,
+                      activeBar.close,
                     ),
                 )}
               </span>
               <span>
                 <span className="text-[var(--app-muted)]">C</span>{' '}
-                {formatAmount(hoveredBar.close)}
+                {formatAmount(activeBar.close)}
               </span>
-              {hoveredBar.volume ? (
+              {activeBar.volume ? (
                 <span>
                   <span className="text-[var(--app-muted)]">V</span>{' '}
-                  {formatCompactNumber(hoveredBar.volume)}
+                  {formatCompactNumber(activeBar.volume)}
                 </span>
               ) : null}
               {showMovingAverages &&
                 model.maSeries.map((s) => {
-                  const val = s.values[hoverIndex!];
+                  const val = s.values[activeIndex];
                   return val !== null ? (
                     <span key={s.period} style={{ color: s.color }}>
                       {s.label} {formatAmount(val)}
