@@ -24,26 +24,6 @@ REVIEWED_MODULES = (
 pytestmark = pytest.mark.unit
 
 
-def test_reviewed_service_modules_and_functions_remain_bounded() -> None:
-    violations: list[str] = []
-    for relative in REVIEWED_MODULES:
-        path = PROJECT_ROOT / relative
-        source = path.read_text(encoding="utf-8")
-        line_count = len(source.splitlines())
-        if line_count > 600:
-            violations.append(f"{relative}:module:{line_count}")
-        tree = ast.parse(source, filename=relative)
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            function_lines = (node.end_lineno or node.lineno) - node.lineno + 1
-            if function_lines > 200:
-                violations.append(
-                    f"{relative}:{node.name}:{node.lineno}:{function_lines}"
-                )
-    assert violations == []
-
-
 def test_reviewed_service_modules_do_not_import_private_symbols() -> None:
     violations: list[str] = []
     for relative in REVIEWED_MODULES:

@@ -218,13 +218,19 @@ def run_single_backtest(
             )
             data_handlers[sym] = handler
 
+    if dataset_binding is not None:
+        source_names = dataset_binding["source_names"]
+        configured_source = source_names[0] if len(source_names) == 1 else None
+    else:
+        source_names = list(sources.keys())
+
     dataset_snapshot_json = build_backtest_dataset_snapshot(
         start_date=request.start_date,
         end_date=request.end_date,
-        configured_source=("tdx" if dataset_binding else configured_source),
+        configured_source=configured_source,
         data_handlers=data_handlers,
         store=store,
-        source_names=["tdx"] if dataset_binding else list(sources.keys()),
+        source_names=source_names,
     )
     if dataset_binding is not None:
         dataset_snapshot_json["immutable_dataset_id"] = dataset_binding["dataset_id"]

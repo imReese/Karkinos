@@ -65,6 +65,8 @@ def load_dataset_backtest_inputs(root: Path, request):
             raise ResearchDatasetError("dataset_request_instrument_invalid") from None
         if requested != snapshot.instruments:
             raise ResearchDatasetError("dataset_request_universe_mismatch")
+    source_names = sorted({partition.provider for partition in snapshot.partitions})
+    single_source = source_names[0] if len(source_names) == 1 else None
     instruments, handlers = {}, {}
     for key in snapshot.instruments:
         symbol = Symbol(key.symbol)
@@ -92,8 +94,8 @@ def load_dataset_backtest_inputs(root: Path, request):
         if frame.empty:
             raise ResearchDatasetError("dataset_instrument_has_no_rows")
         frame.attrs.update(
-            provider_name="tdx",
-            data_source="tdx",
+            provider_name=single_source,
+            data_source=single_source,
             adjustment_mode="none",
             dataset_id=ref.dataset_id,
         )
@@ -107,6 +109,8 @@ def load_dataset_backtest_inputs(root: Path, request):
         "dataset_id": ref.dataset_id,
         "cutoff": snapshot.cutoff.isoformat(),
         "price_basis": "unadjusted",
+        "source_names": source_names,
+        "cross_source_verified": snapshot.verification_bound,
         "offline_replay": True,
         "point_in_time_verified": False,
         "limitations": [

@@ -73,6 +73,7 @@ Rules:
 - Dataset identity must be reproducible; a full physical copy is not required.
 - Research views bind exact daily receipts and a versioned units conversion. Original receipts and prior experiments retain their original values; unknown historical units block normalization.
 - Replaying captured historical prices does not establish historical availability or point-in-time universe membership. Those limitations remain explicit in the dataset.
+- Automatic capture, per-source quality, cross-source agreement, historical availability, and return basis are separate claims. Research consumers admit inputs according to their use; a verified source pair does not imply historical PIT or total return.
 - Trading calendars, historical universe membership, corporate actions, suspensions, price limits, and lot rules are shared market semantics.
 
 ## 4. Research and forecasts

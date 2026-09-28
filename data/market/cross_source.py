@@ -144,6 +144,7 @@ def ingest_cross_source_daily_bars(
         checked_at=checked_at,
     )
     _validate_ingestion_identity(primary, primary_descriptor)
+    primary_quality = publish_market_quality_evidence(store, primary.quality)
 
     comparison = _ingest_provider(
         comparison_provider,
@@ -154,8 +155,6 @@ def ingest_cross_source_daily_bars(
         checked_at=checked_at,
     )
     _validate_ingestion_identity(comparison, comparison_descriptor)
-
-    primary_quality = publish_market_quality_evidence(store, primary.quality)
     comparison_quality = publish_market_quality_evidence(store, comparison.quality)
 
     if (

@@ -16,9 +16,11 @@ from server.services.verified_daily_market_data import (
     VerifiedDailySourceResolution,
 )
 from server.workers.data_worker import (
+    DAILY_MARKET_COLLECTION_JOB,
     VERIFIED_DAILY_MARKET_JOB,
     WorkerExecutionAborted,
     execute_calendar_job,
+    execute_daily_market_collection_job,
     execute_verified_daily_market_job,
     run_data_worker,
 )
@@ -320,6 +322,27 @@ async def test_verified_market_worker_records_source_resolution_event(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_collection_worker_records_quality_result_without_dataset(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = {"fixture": "collected"}
+    store.enqueue(DAILY_MARKET_COLLECTION_JOB, payload, now=now)
+    job = store.claim(DAILY_MARKET_COLLECTION_JOB, "worker", now=now)
+    service = Mock()
+    service.run.return_value = "quality:sha256:" + "a" * 64
+
+    await execute_daily_market_collection_job(
+        store, job, service, heartbeat_interval=60
+    )
+
+    result = store.enqueue(DAILY_MARKET_COLLECTION_JOB, payload, now=now)
+    assert result.status == "succeeded"
+    assert result.result_ref == "quality:sha256:" + "a" * 64
+
+
+@pytest.mark.asyncio
 async def test_verified_market_worker_records_fail_closed_source_resolution(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -510,7 +533,9 @@ async def test_verified_market_worker_rejects_non_dataset_result_ref(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_data_worker_plans_verified_market_jobs_before_claim(monkeypatch):
+async def test_data_worker_plans_collection_and_still_claims_existing_verified_jobs(
+    monkeypatch,
+):
     calls: list[tuple[str, object]] = []
 
     class FakeDb:
@@ -560,7 +585,7 @@ async def test_data_worker_plans_verified_market_jobs_before_claim(monkeypatch):
         fake_wait_for_release_activation,
     )
     monkeypatch.setattr(
-        "server.workers.data_worker.enqueue_latest_verified_daily_market_jobs",
+        "server.workers.data_worker.enqueue_latest_daily_market_collection_jobs",
         fake_plan,
     )
     monkeypatch.setattr(
@@ -574,4 +599,5 @@ async def test_data_worker_plans_verified_market_jobs_before_claim(monkeypatch):
 
     names = [name for name, _ in calls]
     assert names.index("plan") < names.index("claim")
+    assert ("claim", DAILY_MARKET_COLLECTION_JOB) in calls
     assert ("claim", VERIFIED_DAILY_MARKET_JOB) in calls
