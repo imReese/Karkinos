@@ -94,7 +94,18 @@ def resolve_latest_verified_promoted_strategy_scan(
         blockers.append("promoted_strategy_scan_schema_mismatch")
     if row.get("status") != payload.get("status"):
         blockers.append("promoted_strategy_scan_status_mismatch")
-    blockers.extend(_scan_started_at_blockers(row.get("started_at"), decision_date))
+    scan_status = str(row.get("status") or "")
+    started_at_blockers = _scan_started_at_blockers(
+        row.get("started_at"), decision_date
+    )
+    if scan_status in {"completed", "completed_no_signal"}:
+        blockers.extend(started_at_blockers)
+    else:
+        blockers.extend(
+            item
+            for item in started_at_blockers
+            if item != "promoted_strategy_scan_started_at_outside_reviewed_window"
+        )
     if str(row.get("run_id") or "") != expected_run_id:
         blockers.append("promoted_strategy_scan_run_identity_mismatch")
     if input_fingerprint != expected_input_fingerprint:
@@ -282,11 +293,32 @@ def build_account_action_recommendation(
         summary=summary,
         current_blockers=current_blockers,
     )
+    fatal_signal_blockers = [
+        item
+        for item in scan_blockers
+        if item
+        in {
+            "promoted_strategy_not_configured",
+            "promoted_daily_candidate_strategy_missing",
+            "full_market_universe_snapshot_missing",
+            "verified_market_history_window_incomplete",
+            "full_market_daily_receipt_replay_failed",
+            "prior_verified_market_date_unavailable",
+            "strategy_scan_decision_date_invalid",
+            "strategy_scan_decision_date_not_verified_trading_day",
+            "portfolio_instrument_type_evidence_missing",
+        }
+        or item.startswith("promoted_strategy_exit_signal_conflict:")
+        or item.startswith("strategy_full_market_truth:")
+        or item.startswith("strategy_gate_rejected:")
+        or item.startswith("portfolio_instrument_type_unresolved:")
+    ]
     signal_ready = (
         promoted_scan.get("verified") is True
-        and scan_status == "completed"
+        and scan_status in {"completed", "blocked", "prepared"}
         and int(promoted_scan.get("selected_signal_count") or 0) > 0
         and bool(signal_actions)
+        and not fatal_signal_blockers
     )
     verified_no_signal = (
         promoted_scan.get("verified") is True
@@ -297,8 +329,10 @@ def build_account_action_recommendation(
     )
     verified_account_blocked = (
         promoted_scan.get("verified") is True
-        and scan_status == "completed_no_signal"
+        and scan_status in {"completed_no_signal", "blocked"}
+        and int(promoted_scan.get("selected_signal_count") or 0) == 0
         and bool(account_blocked_buys)
+        and not fatal_signal_blockers
     )
     if status == "manual_review_required":
         presentation_level = "manual_review"

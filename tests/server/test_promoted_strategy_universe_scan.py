@@ -937,3 +937,38 @@ def test_strategy_loader_accepts_only_verified_normalized_source_fallback(
         )
         == expected
     )
+
+
+def test_scan_outside_decision_window_evaluates_signals_without_persisting_action_tasks(
+    tmp_path,
+) -> None:
+    db, service, symbols = _service(tmp_path, produces_signals=True)
+    service._clock = lambda: datetime(
+        2026,
+        8,
+        24,
+        11,
+        30,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [symbols[0], "019999"],
+        "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
+        "valuation_snapshot_id": "valuation-fixture",
+    }
+
+    result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+
+    assert result["status"] == "blocked"
+    assert "strategy_scan_outside_reviewed_decision_window" in result["blockers"]
+    assert result["selected_signal_count"] == 5
+    assert len(result["selected_signals"]) == 5
+    assert result["selected_signals"][0]["symbol"] == symbols[0]
+    assert result["selected_signals"][0]["direction"] == "sell"
+    assert result["action_tasks"] == []
+    assert db.get_action_tasks_sync(statuses=["pending"], limit=20) == []
+    assert db.list_signal_journal_sync(limit=20) == []

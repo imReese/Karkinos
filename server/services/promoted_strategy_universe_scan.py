@@ -114,14 +114,38 @@ class PromotedStrategyUniverseScanService:
             portfolio_stock_symbols=portfolio["stock_symbols"],
         )
         blockers.extend(market_blockers)
-        if blockers:
+        fatal_evaluation_blockers = [
+            item
+            for item in blockers
+            if item
+            in {
+                "strategy_scan_decision_date_invalid",
+                "strategy_scan_decision_date_not_verified_trading_day",
+                "prior_verified_market_date_unavailable",
+                "full_market_universe_snapshot_missing",
+                "verified_market_history_window_incomplete",
+                "full_market_daily_receipt_replay_failed",
+                "promoted_strategy_not_configured",
+                "promoted_daily_candidate_strategy_missing",
+                "portfolio_instrument_type_evidence_missing",
+            }
+            or item.startswith("strategy_gate_rejected:")
+            or item.startswith("portfolio_instrument_type_unresolved:")
+        ]
+        if not promoted or market_date is None or fatal_evaluation_blockers:
             truths, raw_signals, truth_blockers = {}, [], []
         else:
+            total_equity = portfolio["total_equity"]
+            evaluation_equity = (
+                total_equity
+                if isinstance(total_equity, (int, float)) and total_equity > 0
+                else 100_000.0
+            )
             truths, raw_signals, truth_blockers = self._evaluate_promoted_strategies(
                 promoted=promoted,
                 market_date=market_date,
                 market=market,
-                total_equity=portfolio["total_equity"],
+                total_equity=evaluation_equity,
             )
         blockers.extend(truth_blockers)
         return self._complete_run(
