@@ -15,7 +15,11 @@ from data.market.contracts import (
     DailyBarProviderUnavailableError,
     DailyBarRequest,
 )
-from data.market.ingestion import DailyBarIngestionNoData, ingest_daily_bars
+from data.market.ingestion import (
+    DailyBarIngestionCapturedFailure,
+    DailyBarIngestionNoData,
+    ingest_daily_bars,
+)
 from data.market.quality import RESEARCH_STRICT_DAILY, MarketDataQualityReport
 from data.market.quality_evidence import (
     MarketQualityEvidenceError,
@@ -36,6 +40,14 @@ from server.persistence.jobs import SQLiteJobStore
 DAILY_MARKET_COLLECTION_JOB = "market_daily_collection"
 DAILY_MARKET_COLLECTION_JOB_SCHEMA_VERSION = "karkinos.market_daily_collection_job.v1"
 _NORMALIZER_VERSION = "karkinos.market.normalize.v1"
+
+
+class DailyMarketCollectionFailure(RuntimeError):
+    """A collection attempt failed after optionally persisting Capture evidence."""
+
+    def __init__(self, code: str, *, capture_id: str | None = None) -> None:
+        self.failure_evidence_ref = f"capture:{capture_id}" if capture_id else None
+        super().__init__(code)
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +150,7 @@ class DailyMarketCollectionService:
             (request.instrument,), request.trade_date, request.trade_date
         )
         store = ContentAddressedObjectStore(self.root / "objects")
+        last_capture_id: str | None = None
         for name, provider in providers:
             descriptor = provider.descriptor
             if not descriptor.supports_daily_bars(
@@ -153,18 +166,37 @@ class DailyMarketCollectionService:
                     normalizer_version=_NORMALIZER_VERSION,
                     checked_at=checked_at,
                 )
-            except (DailyBarProviderUnavailableError, DailyBarIngestionNoData):
+            except DailyBarProviderUnavailableError:
                 continue
+            except DailyBarIngestionNoData as exc:
+                last_capture_id = exc.capture.capture_id
+                continue
+            except DailyBarIngestionCapturedFailure as exc:
+                raise DailyMarketCollectionFailure(
+                    "daily_market_collection_ingestion_failed_after_capture",
+                    capture_id=exc.capture.capture_id,
+                ) from exc
             if (
                 result.capture.provider != name
                 or result.capture.adapter_version != descriptor.adapter_version
             ):
-                raise ValueError("daily_market_collection_provider_identity_mismatch")
+                raise DailyMarketCollectionFailure(
+                    "daily_market_collection_provider_identity_mismatch",
+                    capture_id=result.capture.capture_id,
+                )
+            if result.revision.partition_date != request.trade_date:
+                raise DailyMarketCollectionFailure(
+                    "daily_market_collection_partition_date_mismatch",
+                    capture_id=result.capture.capture_id,
+                )
             if before_publish is not None:
                 before_publish()
             quality = publish_market_quality_evidence(store, result.quality)
             return f"quality:{quality.quality_id}"
-        raise RuntimeError("daily_market_collection_sources_unavailable")
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_sources_unavailable",
+            capture_id=last_capture_id,
+        )
 
 
 def list_daily_market_collection_quality(
@@ -206,6 +238,7 @@ def _collection_quality_row(
         "updated_at": row["updated_at"],
         "error": row["error"],
         "result_ref": row["result_ref"],
+        "failure_evidence_ref": row["failure_evidence_ref"],
         "quality_read_status": "not_recorded",
         "quality_attribution_status": "not_checked",
         "quality": None,

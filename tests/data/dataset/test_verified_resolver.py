@@ -133,7 +133,7 @@ def _resolve(
         candidates=(candidate,),
         start_date=DAY,
         end_date=DAY,
-        cutoff=CAPTURED,
+        cutoff=CHECKED,
         instruments=(INSTRUMENT,),
         expected_partition_dates=(DAY,),
         policy=POLICY,

@@ -381,6 +381,7 @@ export type BacktestAttributionPreviewResponse = {
 };
 
 export type BacktestSweepRequest = {
+  dataset_id?: string;
   start_date: string;
   end_date: string;
   initial_cash: number;
@@ -415,6 +416,7 @@ export type BacktestCompareRunRequest = {
 };
 
 export type BacktestCompareRequest = {
+  dataset_id?: string;
   start_date: string;
   end_date: string;
   initial_cash: number;

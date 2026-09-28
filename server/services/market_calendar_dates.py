@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from server.services.market_calendar_evidence import (
@@ -177,6 +177,41 @@ def resolve_verified_closed_trading_dates(
     return tuple(resolved)
 
 
+def resolve_verified_closed_trading_dates_in_range(
+    db: Any,
+    now: datetime,
+    *,
+    start_date: date,
+    end_date: date,
+) -> tuple[VerifiedClosedTradingDate, ...]:
+    """Select a bounded requested interval from complete, verified SSE calendars."""
+    if start_date > end_date or (end_date - start_date).days >= 366:
+        raise ValueError("verified_trading_date_range_invalid")
+    current = get_shanghai_now(now)
+    cutoff_date = current.date()
+    if current.time() < POST_CLOSE_INGESTION_TIME:
+        cutoff_date -= timedelta(days=1)
+    if end_date > cutoff_date:
+        raise ValueError("verified_trading_date_not_closed")
+
+    resolved: list[VerifiedClosedTradingDate] = []
+    for year in range(start_date.year, end_date.year + 1):
+        row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
+        validation = validate_verified_market_calendar(row)
+        if not validation.verified or validation.evidence_ref is None:
+            return ()
+        for value in _trading_dates_on_or_before(row, end_date.isoformat()):
+            if value >= start_date.isoformat():
+                resolved.append(
+                    VerifiedClosedTradingDate(
+                        trade_date=value,
+                        calendar_evidence_refs=(validation.evidence_ref,),
+                    )
+                )
+    resolved.sort(key=lambda item: item.trade_date)
+    return tuple(resolved)
+
+
 def latest_verified_closed_trading_date(
     db: Any,
     now: datetime,
@@ -228,4 +263,5 @@ __all__ = [
     "project_market_session",
     "resolve_latest_verified_closed_trading_date",
     "resolve_verified_closed_trading_dates",
+    "resolve_verified_closed_trading_dates_in_range",
 ]

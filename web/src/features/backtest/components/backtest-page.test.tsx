@@ -930,6 +930,7 @@ function installBacktestFetchMock({
   runFails = false,
   sweepFails = false,
   compareFails = false,
+  datasets = [],
   results = [savedSummary],
   strategies = strategyCatalog,
   accountStrategy = {
@@ -1023,6 +1024,7 @@ function installBacktestFetchMock({
   runFails?: boolean;
   sweepFails?: boolean;
   compareFails?: boolean;
+  datasets?: unknown[];
   results?: unknown[];
   strategies?: unknown[];
   accountStrategy?: unknown;
@@ -1049,6 +1051,14 @@ function installBacktestFetchMock({
 
       if (url.includes('/api/backtest/strategies')) {
         return jsonResponse(strategies);
+      }
+      if (url.includes('/api/backtest/datasets')) {
+        return jsonResponse({
+          tdx_configured: true,
+          storage_path: '/workspace/data/research',
+          busy: false,
+          datasets,
+        });
       }
       if (url.includes('/api/backtest/strategy-validation')) {
         return jsonResponse(strategyValidation);
@@ -2956,6 +2966,7 @@ test('runs a parameter sweep and renders ranked research warnings', async () => 
     long_period: [9],
   });
   expect(payload.assets).toEqual([{ symbol: '600002', asset_class: 'stock' }]);
+  expect(payload).not.toHaveProperty('dataset_id');
   expect(await screen.findByText('Sweep rankings')).toBeTruthy();
   expect(await screen.findByText('2 tested')).toBeTruthy();
   expect(await screen.findByText('Result #12')).toBeTruthy();
@@ -3002,6 +3013,7 @@ test('runs a same-dataset parameter comparison and renders saved result ids', as
   );
   const payload = JSON.parse(String(compareCall?.[1]?.body));
   expect(payload.assets).toEqual([{ symbol: '600002', asset_class: 'stock' }]);
+  expect(payload).not.toHaveProperty('dataset_id');
   expect(payload.runs).toEqual([
     {
       strategy: 'dual_ma',
@@ -3027,6 +3039,80 @@ test('runs a same-dataset parameter comparison and renders saved result ids', as
       'Comparison is valid only when every run uses the same frozen dataset snapshot.',
     ),
   ).toBeTruthy();
+});
+
+test('keeps sweep and comparison available with one selected Dataset', async () => {
+  const datasetId = `sha256:${'c'.repeat(64)}`;
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    datasets: [
+      {
+        dataset_id: datasetId,
+        start_date: '2025-01-02',
+        end_date: '2026-09-18',
+        cutoff: '2026-09-19T08:00:00Z',
+        instruments: [{ symbol: '600002', instrument_type: 'stock' }],
+        partition_count: 2,
+        price_basis: 'unadjusted',
+        point_in_time_verified: false,
+      },
+    ],
+  });
+
+  await screen.findByText('Strategy replay');
+  const datasetDisclosure = screen
+    .getByText('Research datasets · persistent snapshots')
+    .closest('details') as HTMLDetailsElement;
+  datasetDisclosure.open = true;
+  fireEvent(datasetDisclosure, new Event('toggle'));
+  await screen.findByRole('option', { name: /600002.*2025-01-02/ });
+  fireEvent.change(screen.getByLabelText('Data for this backtest'), {
+    target: { value: datasetId },
+  });
+  expect(
+    (await screen.findByTestId('selected-dataset-id')).textContent,
+  ).toContain(datasetId);
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
+
+  const sweepButton = screen.getByRole('button', {
+    name: 'Run parameter sweep',
+  });
+  fireEvent.submit(sweepButton.closest('form') as HTMLFormElement);
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/sweep',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  fireEvent.change(await screen.findByLabelText('Comparison parameter sets'), {
+    target: {
+      value: 'short_period=3, long_period=9\nshort_period=5, long_period=9',
+    },
+  });
+  const compareButton = screen.getByRole('button', {
+    name: 'Run comparison',
+  });
+  fireEvent.submit(compareButton.closest('form') as HTMLFormElement);
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/compare',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  for (const path of ['/api/backtest/sweep', '/api/backtest/compare']) {
+    const call = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes(path),
+    );
+    const payload = JSON.parse(String(call?.[1]?.body));
+    expect(payload.dataset_id).toBe(datasetId);
+    expect(payload.assets).toEqual([
+      { symbol: '600002', asset_class: 'stock' },
+    ]);
+    expect(payload.start_date).toBe('2025-01-02');
+    expect(payload.end_date).toBe('2026-09-18');
+  }
 });
 
 test('accepts localized comparison parameter names while submitting API keys', async () => {

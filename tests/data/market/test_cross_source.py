@@ -148,6 +148,68 @@ def test_cross_source_match_produces_verified_dataset_candidates(
     assert snapshot.partitions[0].verification_id == result.verification.verification_id
 
 
+def test_default_verification_time_is_recorded_after_both_captures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import data.market.cross_source as cross_source
+
+    events: list[str] = []
+    primary = FakeProvider(TDX_PROVIDER_DESCRIPTOR)
+    comparison = FakeProvider(TUSHARE_DAILY_BAR_DESCRIPTOR)
+    primary_fetch = primary.fetch_daily_bars
+    comparison_fetch = comparison.fetch_daily_bars
+
+    def fetch_primary(request: DailyBarRequest) -> ProviderDailyBarBatch:
+        events.append("primary")
+        return primary_fetch(request)
+
+    def fetch_comparison(request: DailyBarRequest) -> ProviderDailyBarBatch:
+        events.append("comparison")
+        return comparison_fetch(request)
+
+    def checked_at(value: datetime | None) -> datetime:
+        events.append("checked")
+        assert value is None
+        return CHECKED
+
+    monkeypatch.setattr(primary, "fetch_daily_bars", fetch_primary)
+    monkeypatch.setattr(comparison, "fetch_daily_bars", fetch_comparison)
+    monkeypatch.setattr(cross_source, "_checked_at", checked_at)
+    result = ingest_cross_source_daily_bars(
+        primary,
+        comparison,
+        ContentAddressedObjectStore(tmp_path / "objects"),
+        request=REQUEST,
+        quality_policy=RESEARCH_STRICT_DAILY,
+        normalizer_version="karkinos.market.normalize.v1",
+    )
+
+    assert events == ["primary", "comparison", "checked"]
+    assert result.verification is not None
+    assert result.verification.checked_at == CHECKED
+    assert result.verification.checked_at >= result.primary.capture.completed_at
+    assert result.verification.checked_at >= result.comparison.capture.completed_at
+    assert result.primary.quality.checked_at >= result.primary.capture.completed_at
+    assert (
+        result.comparison.quality.checked_at >= result.comparison.capture.completed_at
+    )
+
+
+def test_explicit_verification_time_before_capture_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(
+        ValueError, match="cross_source_daily_bar_checked_at_before_capture"
+    ):
+        ingest_cross_source_daily_bars(
+            FakeProvider(TDX_PROVIDER_DESCRIPTOR),
+            FakeProvider(TUSHARE_DAILY_BAR_DESCRIPTOR),
+            ContentAddressedObjectStore(tmp_path / "objects"),
+            request=REQUEST,
+            quality_policy=RESEARCH_STRICT_DAILY,
+            normalizer_version="karkinos.market.normalize.v1",
+            checked_at=COMPLETED - timedelta(seconds=1),
+        )
+
+
 def test_cross_source_conflict_is_durable_but_not_dataset_eligible(
     tmp_path: Path,
 ) -> None:

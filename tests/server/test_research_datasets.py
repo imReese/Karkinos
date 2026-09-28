@@ -349,6 +349,106 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
     )
 
 
+def test_compare_and_sweep_replay_one_dataset_without_remote_fallback(
+    tmp_path, monkeypatch
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    provider = _Provider()
+    ref = _publish(tmp_path / "research", provider)
+
+    def deny_remote(*args, **kwargs):
+        raise AssertionError("A bound backtest must never fetch legacy data")
+
+    monkeypatch.setattr("data.manager.build_sources", deny_remote)
+    monkeypatch.setattr("data.manager.DataManager.get_bars", deny_remote)
+    monkeypatch.setenv("KARKINOS_BACKTEST_REPORT_DIR", str(tmp_path / "reports"))
+    state = AppState()
+    state.db, state.config = db, ServerConfig()
+    app = FastAPI()
+    app.add_middleware(AppStateContextMiddleware, app_state=state)
+    app.include_router(create_router())
+    dataset_input = {
+        "dataset_id": ref.dataset_id,
+        "start_date": _DAYS[0].isoformat(),
+        "end_date": _DAYS[-1].isoformat(),
+        "assets": [{"symbol": "600000", "asset_class": "stock"}],
+    }
+    compare_request = {
+        **dataset_input,
+        "runs": [
+            {
+                "strategy": "dual_ma",
+                "params": {"short_period": 2, "long_period": 3},
+            },
+            {
+                "strategy": "dual_ma",
+                "params": {"short_period": 2, "long_period": 4},
+            },
+        ],
+    }
+    sweep_request = {
+        **dataset_input,
+        "strategy": "dual_ma",
+        "param_grid": {"short_period": [2, 3], "long_period": [4]},
+        "max_combinations": 2,
+    }
+
+    with TestClient(app) as client:
+        compared = client.post("/api/backtest/compare", json=compare_request)
+        assert compared.status_code == 200, compared.text
+        comparison = compared.json()
+        assert comparison["compared_count"] == 2
+        assert comparison["dataset_snapshot"]["immutable_dataset_id"] == ref.dataset_id
+        assert all(
+            item["dataset_snapshot_id"] == comparison["dataset_snapshot_id"]
+            and item["research_evidence_bundle"]["promotion_gate"]["status"]
+            == "blocked"
+            for item in comparison["results"]
+        )
+
+        swept = client.post("/api/backtest/sweep", json=sweep_request)
+        assert swept.status_code == 200, swept.text
+        sweep = swept.json()
+        assert sweep["tested_count"] == 2
+        assert all(
+            item["research_evidence_bundle"]["promotion_gate"]["status"] == "blocked"
+            for item in sweep["results"]
+        )
+        result_ids = [item["result_id"] for item in comparison["results"]] + [
+            item["result_id"] for item in sweep["results"]
+        ]
+        for result_id in result_ids:
+            saved = client.get(f"/api/backtest/results/{result_id}")
+            assert saved.status_code == 200, saved.text
+            result = saved.json()
+            assert result["config"]["dataset_id"] == ref.dataset_id
+            assert (
+                result["metrics_json"]["dataset_snapshot"]["snapshot_id"]
+                == (comparison["dataset_snapshot_id"])
+            )
+        assert provider.calls == list(_DAYS)
+
+        manifest_path = (
+            tmp_path
+            / "research"
+            / "objects"
+            / "sha256"
+            / ref.manifest_ref.digest[:2]
+            / ref.manifest_ref.digest[2:]
+        )
+        manifest_path.chmod(0o600)
+        manifest_path.write_bytes(b"broken")
+        for path, body in (
+            ("/api/backtest/compare", compare_request),
+            ("/api/backtest/sweep", sweep_request),
+        ):
+            failed = client.post(path, json=body)
+            assert failed.status_code == 409, failed.text
+            assert failed.json()["detail"] == "dataset_unreadable_no_remote_fallback"
+        assert provider.calls == list(_DAYS)
+
+
 @pytest.mark.parametrize(
     "outcome,expected",
     [

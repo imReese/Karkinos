@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -17,6 +18,7 @@ from analytics.dataset_snapshot import (
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.reader import read_daily_bar_dataset
+from data.market.capture import read_provider_capture
 from data.market.contracts import (
     DailyBarProviderUnavailableError,
     DailyBarRequest,
@@ -27,6 +29,7 @@ from data.market.contracts import (
 from data.market.quality import MarketQualityStatus
 from data.market.quality_evidence import read_market_quality_evidence
 from data.market.serving import MarketServingStore
+from data.market.verification_evidence import read_market_verification_evidence
 from data.provider_registry import ProviderRegistration, ProviderRegistry
 from data.providers.akshare_daily import AKSHARE_DAILY_BAR_DESCRIPTOR
 from data.providers.akshare_tencent_daily import (
@@ -52,6 +55,7 @@ from server.services.verified_daily_market_data import (
     VerifiedDailyMarketDataService,
     VerifiedDailyMarketJobRequest,
 )
+from server.workers.data_worker import execute_daily_market_collection_job
 
 DAY = date(2026, 9, 17)
 CAPTURED = datetime(2026, 9, 17, 8, 0, tzinfo=timezone.utc)
@@ -305,6 +309,7 @@ def test_collection_quality_http_separates_job_success_from_report_status(
     assert row["updated_at"]
     assert row["error"] is None
     assert row["result_ref"] == result_ref
+    assert row["failure_evidence_ref"] is None
     assert row["quality_read_status"] == "available"
     assert row["quality_attribution_status"] == "verified"
     quality = row["quality"]
@@ -548,6 +553,151 @@ def test_automatic_collection_persists_single_source_quality_without_dataset(
     assert not MarketServingStore(root).path.exists()
 
 
+@pytest.mark.asyncio
+async def test_automatic_collection_rejects_provider_trade_date_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    original_row = FakeDailyProvider._row
+
+    def wrong_date_row(self, instrument):
+        row = original_row(self, instrument)
+        return replace(
+            row,
+            session_date=DAY - timedelta(days=1),
+            event_time=row.event_time - timedelta(days=1),
+        )
+
+    monkeypatch.setattr(FakeDailyProvider, "_row", wrong_date_row)
+    service = _collection_service(tmp_path, monkeypatch, _registry(call_log=calls))
+    client, store = _collection_api(tmp_path)
+    now = datetime.now(timezone.utc)
+    queued = store.enqueue(DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=now)
+    claimed = store.claim(DAILY_MARKET_COLLECTION_JOB, "fixture", now=now)
+    assert claimed is not None
+
+    await execute_daily_market_collection_job(
+        store, claimed, service, heartbeat_interval=60
+    )
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality")
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["job_id"] == queued.job_id
+    assert row["job_status"] == "queued"
+    assert row["result_ref"] is None
+    assert row["error"] == "daily_market_collection_partition_date_mismatch"
+    assert row["failure_evidence_ref"].startswith("capture:sha256:")
+    assert row["quality_read_status"] == "not_recorded"
+    assert row["quality"] is None
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    capture = read_provider_capture(
+        objects,
+        objects.resolve_ref(row["failure_evidence_ref"].removeprefix("capture:")),
+    )
+    assert capture.provider == "baostock"
+    assert capture.record_count == 1
+    assert calls == ["baostock"]
+    assert not DatasetCatalog(tmp_path / "research").path.exists()
+
+
+@pytest.mark.asyncio
+async def test_collection_processing_failure_links_capture_without_exposing_provider_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_row = FakeDailyProvider._row
+
+    def invalid_row(self, instrument):
+        return replace(
+            original_row(self, instrument), session_date=DAY - timedelta(days=1)
+        )
+
+    monkeypatch.setattr(FakeDailyProvider, "_row", invalid_row)
+    service = _collection_service(tmp_path, monkeypatch, _registry())
+    client, store = _collection_api(tmp_path)
+    now = datetime.now(timezone.utc)
+    store.enqueue(DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=now)
+    claimed = store.claim(DAILY_MARKET_COLLECTION_JOB, "fixture", now=now)
+    assert claimed is not None
+
+    await execute_daily_market_collection_job(
+        store, claimed, service, heartbeat_interval=60
+    )
+    with client:
+        response = client.get("/api/market/daily-collection-quality")
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["job_status"] == "queued"
+    assert row["error"] == "daily_market_collection_ingestion_failed_after_capture"
+    assert row["result_ref"] is None
+    assert row["quality"] is None
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    capture = read_provider_capture(
+        objects,
+        objects.resolve_ref(row["failure_evidence_ref"].removeprefix("capture:")),
+    )
+    assert capture.provider == "baostock"
+    assert capture.record_count == 1
+    assert not DatasetCatalog(tmp_path / "research").path.exists()
+
+
+@pytest.mark.asyncio
+async def test_empty_collection_failure_links_last_persisted_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    original_fetch = FakeDailyProvider.fetch_daily_bars
+
+    def empty_response(self, request):
+        batch = original_fetch(self, request)
+        return replace(batch, raw_payload=b"empty fixture response", rows=())
+
+    monkeypatch.setattr(FakeDailyProvider, "fetch_daily_bars", empty_response)
+    service = _collection_service(tmp_path, monkeypatch, _registry(call_log=calls))
+    client, store = _collection_api(tmp_path)
+    now = datetime.now(timezone.utc)
+    queued = store.enqueue(DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=now)
+    claimed = store.claim(DAILY_MARKET_COLLECTION_JOB, "fixture", now=now)
+    assert claimed is not None
+
+    await execute_daily_market_collection_job(
+        store, claimed, service, heartbeat_interval=60
+    )
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality")
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["job_id"] == queued.job_id
+    assert row["job_status"] == "queued"
+    assert row["result_ref"] is None
+    assert row["error"] == "daily_market_collection_sources_unavailable"
+    assert row["failure_evidence_ref"].startswith("capture:sha256:")
+    assert row["quality_read_status"] == "not_recorded"
+    assert row["quality"] is None
+    assert calls == ["baostock", "akshare_tencent"]
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    capture = read_provider_capture(
+        objects,
+        objects.resolve_ref(row["failure_evidence_ref"].removeprefix("capture:")),
+    )
+    assert capture.provider == "akshare_tencent"
+    assert capture.operation == "daily_bars"
+    assert capture.record_count == 0
+    assert (
+        json.loads(capture.request_json)
+        == DailyBarRequest((STOCK,), DAY, DAY).to_capture_request()
+    )
+    assert not DatasetCatalog(tmp_path / "research").path.exists()
+
+
 def test_automatic_collection_defaults_quality_time_after_provider_capture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -731,6 +881,26 @@ def test_matched_market_job_publishes_v2_catalog_and_serving(
     assert summary["cross_source_verified"] is True
     assert summary["point_in_time_verified"] is False
     assert [bar.instrument for bar in serving] == [ETF, STOCK]
+
+
+def test_verified_service_does_not_date_check_before_provider_captures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = _service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "server.services.verified_daily_market_data._utc_now",
+        lambda value: CAPTURED - timedelta(seconds=1),
+    )
+
+    publication = service.run(_payload())
+    store = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    replayed = read_daily_bar_dataset(store, publication.dataset_ref)
+    verification = read_market_verification_evidence(
+        store, store.resolve_ref(publication.verification_id)
+    )
+
+    assert replayed.snapshot.verification_bound
+    assert verification.checked_at >= CAPTURED
 
 
 def test_matched_market_publication_is_idempotent(

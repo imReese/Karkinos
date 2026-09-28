@@ -257,7 +257,7 @@ class VerifiedDailyMarketDataService:
         before_publish: Callable[[], None] | None = None,
     ) -> VerifiedDailyMarketPublication:
         request = VerifiedDailyMarketJobRequest.from_payload(payload)
-        checked_at = _utc_now(checked_at)
+        checked_at = _utc_now(checked_at) if checked_at is not None else None
 
         daily_request = DailyBarRequest(
             request.instruments,
@@ -332,17 +332,18 @@ class VerifiedDailyMarketDataService:
             )
         assert evidence.verification is not None
         pair = selected_pair
+        verified_at = evidence.verification.checked_at
 
         candidates = evidence.resolution_candidates()
         resolver_policy = DailyBarDatasetResolverPolicy(
-            policy_id=_resolver_policy_id(policy.policy_id),
+            policy_id=verified_daily_resolver_policy_id(policy.policy_id),
             provider_priority=(pair.primary_name, pair.comparison_name),
             required_quality_policy_id=RESEARCH_STRICT_DAILY.policy_id,
         )
         cutoff = max(
             evidence.primary.capture.completed_at,
             evidence.comparison.capture.completed_at,
-            evidence.verification.checked_at,
+            verified_at,
         )
         snapshot = resolve_daily_bar_dataset(
             store,
@@ -373,7 +374,7 @@ class VerifiedDailyMarketDataService:
         DatasetCatalog(self.root).register(
             store,
             dataset_ref,
-            registered_at=checked_at,
+            registered_at=verified_at,
         )
         selected = _selected_candidate(evidence, snapshot.partitions[0].provider)
         MarketServingStore(self.root).apply_daily_bar_revision(
@@ -412,7 +413,7 @@ def _selected_candidate(
     )
 
 
-def _resolver_policy_id(source_policy_id: str) -> str:
+def verified_daily_resolver_policy_id(source_policy_id: str) -> str:
     return _RESOLVER_POLICY_PREFIX + source_policy_id
 
 
@@ -448,4 +449,5 @@ __all__ = [
     "VerifiedDailyMarketPublication",
     "VerifiedDailySourceResolution",
     "is_verified_daily_resolver_policy",
+    "verified_daily_resolver_policy_id",
 ]

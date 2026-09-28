@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -33,6 +34,7 @@ class JobRun:
     heartbeat_at: str | None
     result_ref: str | None
     error: str | None
+    failure_evidence_ref: str | None
 
     @property
     def lease(self) -> JobLease:
@@ -45,6 +47,9 @@ class JobStore(Protocol):
     def enqueue(
         self, kind: str, payload: dict[str, Any], *, now: datetime
     ) -> JobRun: ...
+    def enqueue_many(
+        self, kind: str, payloads: Iterable[dict[str, Any]], *, now: datetime
+    ) -> tuple[JobRun, ...]: ...
     def claim(
         self, kind: str, owner: str, *, now: datetime, lease_seconds: int = 60
     ) -> JobRun | None: ...
@@ -53,5 +58,11 @@ class JobStore(Protocol):
     ) -> None: ...
     def finish(self, lease: JobLease, *, now: datetime, result_ref: str) -> None: ...
     def fail(
-        self, lease: JobLease, *, now: datetime, error: str, retry_seconds: int = 60
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        error: str,
+        retry_seconds: int = 60,
+        failure_evidence_ref: str | None = None,
     ) -> None: ...

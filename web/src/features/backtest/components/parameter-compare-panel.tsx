@@ -146,6 +146,7 @@ export function ParameterComparePanel({
   strategy,
   parameterSchema,
   assets,
+  datasetId,
 }: {
   startDate: string;
   endDate: string;
@@ -153,6 +154,7 @@ export function ParameterComparePanel({
   strategy: string;
   parameterSchema: StrategyParameterSchema[];
   assets?: BacktestRunRequest['assets'];
+  datasetId?: string;
 }) {
   const copy = useCopy();
   const labels = copy.backtest.compare;
@@ -223,6 +225,7 @@ export function ParameterComparePanel({
     setError('');
     try {
       const result = await compare.mutateAsync({
+        ...(datasetId ? { dataset_id: datasetId } : {}),
         start_date: startDate,
         end_date: endDate,
         initial_cash: Number(initialCash),

@@ -472,4 +472,9 @@ MIGRATIONS = (
     _invariant_migrations.build_financial_invariant_migration(SchemaMigration),
     _canonical_migrations.build_financial_canonical_migration(SchemaMigration),
     _structured_migrations.build_structured_fact_migration(SchemaMigration),
+    SchemaMigration(
+        version=20,
+        name="record_background_job_failure_evidence",
+        statements=("ALTER TABLE job_runs ADD COLUMN failure_evidence_ref TEXT",),
+    ),
 )

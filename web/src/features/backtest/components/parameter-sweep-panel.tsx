@@ -90,6 +90,7 @@ export function ParameterSweepPanel({
   parameterSchema,
   parameterValues,
   assets,
+  datasetId,
 }: {
   startDate: string;
   endDate: string;
@@ -98,6 +99,7 @@ export function ParameterSweepPanel({
   parameterSchema: StrategyParameterSchema[];
   parameterValues: Record<string, string>;
   assets?: BacktestRunRequest['assets'];
+  datasetId?: string;
 }) {
   const copy = useCopy();
   const labels = copy.backtest.sweep;
@@ -151,6 +153,7 @@ export function ParameterSweepPanel({
     setError('');
     try {
       const result = await sweep.mutateAsync({
+        ...(datasetId ? { dataset_id: datasetId } : {}),
         start_date: startDate,
         end_date: endDate,
         initial_cash: Number(initialCash),

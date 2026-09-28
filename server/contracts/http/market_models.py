@@ -167,6 +167,7 @@ class DailyCollectionQualityRunResponse(BaseModel):
     updated_at: str
     error: str | None = None
     result_ref: str | None = None
+    failure_evidence_ref: str | None = None
     quality_read_status: Literal["not_recorded", "available", "unreadable"]
     quality_attribution_status: Literal[
         "not_checked", "verified", "unreadable", "mismatch"
