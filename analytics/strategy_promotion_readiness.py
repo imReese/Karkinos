@@ -241,18 +241,31 @@ def _account_strategy_attribution_gates(
 def _research_evidence_gate_statuses(
     backtest_results: list[dict[str, Any]],
 ) -> dict[str, str]:
-    statuses: dict[str, str] = {}
+    latest: dict[str, dict[str, Any]] = {}
     for row in backtest_results:
         config = _json_object(row.get("config_json") or row.get("config"))
         strategy_id = config.get("strategy")
         if not strategy_id:
             continue
+        strategy_id = str(strategy_id)
+        existing = latest.get(strategy_id)
+        if existing is None or (_int_or_none(row.get("id")) or -1) > (
+            _int_or_none(existing.get("id")) or -1
+        ):
+            latest[strategy_id] = row
+
+    statuses: dict[str, str] = {}
+    for strategy_id, row in latest.items():
         metrics = _json_object(row.get("metrics_json"))
+        snapshot = _json_object(metrics.get("dataset_snapshot"))
+        if "research_use" in snapshot or snapshot.get("immutable_dataset_id"):
+            statuses[strategy_id] = "blocked"
+            continue
         bundle = _json_object(metrics.get("research_evidence_bundle"))
         gate = _json_object(bundle.get("promotion_gate"))
         status = str(gate.get("status") or bundle.get("gate_status") or "")
         if status:
-            statuses[str(strategy_id)] = status
+            statuses[strategy_id] = status
     return statuses
 
 

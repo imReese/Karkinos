@@ -91,9 +91,28 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
           </div>
           <div>
             {locale === 'zh'
-              ? '未复权 · 未验证历史时点可用性'
-              : 'Unadjusted · historical PIT not verified'}
+              ? '未复权价格 · 历史时点可用性未核实 · 公司行动收益未计入'
+              : 'Unadjusted prices · historical PIT unverified · corporate-action returns excluded'}
           </div>
+          {typeof snapshot.cross_source_verified === 'boolean' ? (
+            <div>
+              {locale === 'zh' ? '跨源核验：' : 'Cross-source verification: '}
+              {snapshot.cross_source_verified
+                ? locale === 'zh'
+                  ? '已通过'
+                  : 'passed'
+                : locale === 'zh'
+                  ? '未完成'
+                  : 'not completed'}
+            </div>
+          ) : null}
+          {snapshot.research_use === 'exploratory_backtest' ? (
+            <div>
+              {locale === 'zh'
+                ? '仅供探索性回测；不能作为策略晋级证据'
+                : 'Exploratory backtest only; not strategy advancement evidence'}
+            </div>
+          ) : null}
         </div>
       ) : null}
       <div className="mt-4 grid grid-cols-2 gap-2">

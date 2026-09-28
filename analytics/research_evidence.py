@@ -213,6 +213,35 @@ def build_research_evidence_bundle(
             ]
         )
     ]
+    dataset_snapshot = _json_object(metrics_json.get("dataset_snapshot"))
+    if "research_use" in dataset_snapshot or dataset_snapshot.get(
+        "immutable_dataset_id"
+    ):
+        research_limitations = _list_of_dicts(
+            dataset_snapshot.get("research_limitations")
+        )
+        analyzer_results.append(
+            AnalyzerResult(
+                name="research_admission",
+                status="blocked",
+                summary="This Dataset has no formal strategy promotion admission.",
+                details={
+                    "research_use": dataset_snapshot.get("research_use"),
+                    "point_in_time_verified": dataset_snapshot.get(
+                        "point_in_time_verified"
+                    ),
+                    "price_basis": dataset_snapshot.get("price_basis"),
+                    "cross_source_verified": dataset_snapshot.get(
+                        "cross_source_verified"
+                    ),
+                },
+                limitations=[
+                    str(item.get("message") or item.get("code"))
+                    for item in research_limitations
+                ]
+                or ["Dataset research use requires explicit promotion admission."],
+            )
+        )
     statuses = [result.status for result in analyzer_results]
     gate_status = (
         "blocked"
@@ -221,7 +250,6 @@ def build_research_evidence_bundle(
         if "degraded" in statuses
         else "pass"
     )
-    dataset_snapshot = _json_object(metrics_json.get("dataset_snapshot"))
     trade_statistics = _trade_statistics(context)
     limitations = _bundle_limitations(analyzer_results, context)
     bundle = {

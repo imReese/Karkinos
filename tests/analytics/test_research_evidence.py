@@ -114,3 +114,45 @@ def test_research_evidence_bundle_summarizes_rolling_oos_details():
             "total_oos_cost": 8.5,
         },
     }
+
+
+def test_immutable_dataset_keeps_bar_quality_distinct_from_research_admission():
+    bundle = build_research_evidence_bundle(
+        metrics_json={
+            "dataset_snapshot": {
+                "snapshot_id": "sha256:exploratory",
+                "immutable_dataset_id": "sha256:dataset",
+                "row_count": 5,
+                "symbol_universe": [{"symbol": "600000", "row_count": 5}],
+                "data_quality": {"status": "ok", "issues": []},
+                "research_use": "exploratory_backtest",
+                "point_in_time_verified": False,
+                "price_basis": "unadjusted",
+                "cross_source_verified": False,
+                "research_limitations": [
+                    {
+                        "code": "historical_availability_unverified",
+                        "message": "Historical availability has not been verified.",
+                    },
+                    {
+                        "code": "unadjusted_corporate_actions_unmodeled",
+                        "message": "Corporate actions are not modeled in returns.",
+                    },
+                ],
+            },
+            "evidence_bundle": {"total_cost": 1, "fill_count": 1},
+        },
+        cost_summary_json={"total_commission": 1},
+        evidence_json={},
+        strategy_metadata={"strategy_id": "fixture_strategy"},
+    )
+
+    analyzers = {item["name"]: item for item in bundle["analyzers"]}
+    assert analyzers["data_quality"]["status"] == "pass"
+    assert analyzers["research_admission"]["status"] == "blocked"
+    assert analyzers["research_admission"]["details"]["research_use"] == (
+        "exploratory_backtest"
+    )
+    assert bundle["promotion_gate"]["status"] == "blocked"
+    assert "Historical availability has not been verified." in bundle["limitations"]
+    assert "Corporate actions are not modeled in returns." in bundle["limitations"]

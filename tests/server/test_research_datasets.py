@@ -16,6 +16,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from analytics.dataset_snapshot import verify_backtest_dataset_snapshot_replay
+from analytics.strategy_advancement_gate import strategy_advancement_backtest_view
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.reader import read_daily_bar_dataset
@@ -288,15 +290,63 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
             result["metrics_json"]["dataset_snapshot"]["immutable_dataset_id"]
             == dataset_id
         )
+        research_evidence = result["metrics_json"]["research_evidence_bundle"]
+        assert research_evidence["promotion_gate"]["status"] == "blocked"
+        analyzer_statuses = {
+            item["name"]: item["status"] for item in research_evidence["analyzers"]
+        }
+        assert analyzer_statuses["data_quality"] == "pass"
+        assert analyzer_statuses["research_admission"] == "blocked"
         saved = client.get(f"/api/backtest/results/{result['id']}").json()
         assert saved["config"]["dataset_id"] == dataset_id
+        frozen = saved["metrics_json"]["dataset_snapshot"]
+        replay = verify_backtest_dataset_snapshot_replay(frozen, store_root=tmp_path)
+        assert frozen["research_use"] == "exploratory_backtest"
+        assert frozen["cross_source_verified"] is False
+        assert frozen["point_in_time_verified"] is False
+        assert frozen["price_basis"] == "unadjusted"
+        assert frozen["data_quality"]["status"] == "ok"
+        assert {item["code"] for item in frozen["research_limitations"]} == {
+            "historical_availability_unverified",
+            "unadjusted_corporate_actions_unmodeled",
+        }
+        assert replay["verified_symbol_count"] == 1
+        assert replay["status"] == "pass"
+        assert replay["blockers"] == []
+        assert replay["persisted_market_bars_only"] is False
+        relocated = verify_backtest_dataset_snapshot_replay(
+            frozen,
+            store_root=tmp_path / "different-market-root",
+            research_root=tmp_path / "research",
+        )
+        assert relocated["status"] == "pass"
         repeated = client.post("/api/backtest/run", json=body)
         assert repeated.status_code == 200, repeated.text
         assert repeated.json()["equity_curve"] == result["equity_curve"]
         assert repeated.json()["metrics"] == result["metrics"]
         assert provider.calls == list(_DAYS)
+        manifest = ContentAddressedObjectStore(
+            tmp_path / "research" / "objects"
+        ).resolve_ref(dataset_id)
+        object_path = (
+            tmp_path
+            / "research"
+            / "objects"
+            / "sha256"
+            / manifest.digest[:2]
+            / manifest.digest[2:]
+        )
+        object_path.chmod(0o600)
+        object_path.write_bytes(b"broken")
+        missing = verify_backtest_dataset_snapshot_replay(frozen, store_root=tmp_path)
+        assert missing["verified_symbol_count"] == 0
+        assert missing["blockers"] == ["dataset_replay_immutable_dataset_unreadable"]
+        assert missing["provider_contacted"] is False
     stored = asyncio.run(db.get_backtest_result(result["id"]))
     assert json.loads(stored["config_json"])["dataset_id"] == dataset_id
+    assert strategy_advancement_backtest_view(stored)["dataset_research_use"] == (
+        "exploratory_backtest"
+    )
 
 
 @pytest.mark.parametrize(

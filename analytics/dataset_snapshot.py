@@ -223,8 +223,15 @@ def build_backtest_dataset_snapshot(
     store: Any,
     source_names: list[str],
     market_data_binding: Mapping[str, Any] | None = None,
+    research_dataset_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build an audit identity for the exact bars given to the backtest engine."""
+    if research_dataset_binding is not None and (
+        market_data_binding is not None
+        or research_dataset_binding.get("price_basis") != "unadjusted"
+        or research_dataset_binding.get("point_in_time_verified") is not False
+    ):
+        raise ValueError("research_dataset_binding_unsupported")
     rows: list[dict[str, Any]] = []
     top_level_issues: list[dict[str, Any]] = []
     adjustment_modes: set[str] = set()
@@ -343,6 +350,25 @@ def build_backtest_dataset_snapshot(
     }
     if market_data_binding is not None:
         snapshot["market_data_binding"] = dict(market_data_binding)
+    if research_dataset_binding is not None:
+        snapshot.update(
+            immutable_dataset_id=research_dataset_binding["dataset_id"],
+            available_as_of=research_dataset_binding["cutoff"],
+            price_basis=research_dataset_binding["price_basis"],
+            cross_source_verified=research_dataset_binding["cross_source_verified"],
+            point_in_time_verified=research_dataset_binding["point_in_time_verified"],
+            research_use="exploratory_backtest",
+        )
+        snapshot["research_limitations"] = [
+            {
+                "code": "historical_availability_unverified",
+                "message": research_dataset_binding["limitations"][0],
+            },
+            {
+                "code": "unadjusted_corporate_actions_unmodeled",
+                "message": research_dataset_binding["limitations"][1],
+            },
+        ]
     snapshot["snapshot_id"] = _dataset_snapshot_id(snapshot)
     return snapshot
 
@@ -351,12 +377,13 @@ def verify_backtest_dataset_snapshot_replay(
     snapshot: Mapping[str, Any] | None,
     *,
     store_root: str | Path,
+    research_root: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Replay one frozen snapshot from persisted SQLite bars without writes.
+    """Replay one frozen snapshot from its persisted source without writes.
 
-    Future bars outside the frozen date range do not invalidate the snapshot.
-    Missing or corrected rows inside the window do.  The verifier never falls
-    back to a provider or the mutable Parquet cache.
+    Legacy snapshots use the exact SQLite market-bar window; bound research
+    snapshots use their immutable DatasetRef. The verifier never contacts a
+    provider or silently falls back to a mutable cache.
     """
 
     value = dict(snapshot) if isinstance(snapshot, Mapping) else {}
@@ -425,8 +452,27 @@ def verify_backtest_dataset_snapshot_replay(
         blockers.append("dataset_snapshot_universe_identity_invalid")
 
     verified_symbols = 0
+    bound_dataset_id = value.get("immutable_dataset_id")
+    if bound_dataset_id is not None and not blockers:
+        verified_symbols, replay_blockers = _verify_immutable_dataset_replay(
+            value,
+            universe=universe,
+            start_date=start_date,
+            end_date=end_date,
+            research_root=(
+                Path(research_root)
+                if research_root is not None
+                else Path(store_root) / "research"
+            ),
+        )
+        blockers.extend(replay_blockers)
+
     replay_frames = None
-    if value.get("market_data_binding") is not None and not blockers:
+    if (
+        bound_dataset_id is None
+        and value.get("market_data_binding") is not None
+        and not blockers
+    ):
         from data.research_market_data import load_research_market_frames
 
         try:
@@ -439,7 +485,7 @@ def verify_backtest_dataset_snapshot_replay(
             )
         except (ValueError, sqlite3.Error, OSError):
             blockers.append("dataset_replay_market_binding_invalid")
-    if not blockers:
+    if bound_dataset_id is None and not blockers:
         meta_path = Path(store_root).expanduser() / "meta.db"
         if not meta_path.is_file():
             blockers.append("dataset_replay_store_missing")
@@ -484,7 +530,7 @@ def verify_backtest_dataset_snapshot_replay(
         "manifest_symbol_count": len(universe),
         "verified_symbol_count": verified_symbols,
         "blockers": blockers,
-        "persisted_market_bars_only": True,
+        "persisted_market_bars_only": bound_dataset_id is None,
         "parquet_fallback_used": False,
         "provider_contacted": False,
         "does_not_create_order": True,
@@ -492,6 +538,126 @@ def verify_backtest_dataset_snapshot_replay(
         "does_not_change_capital_authority": True,
     }
     return {**core, "evidence_fingerprint": _replay_fingerprint(core)}
+
+
+def _verify_immutable_dataset_replay(
+    snapshot: Mapping[str, Any],
+    *,
+    universe: list[dict[str, Any]],
+    start_date: str,
+    end_date: str,
+    research_root: Path,
+) -> tuple[int, list[str]]:
+    """Compare consumed backtest rows with the exact offline DatasetRef."""
+    from data.dataset.model import DatasetRef
+    from data.dataset.reader import DatasetReaderError, read_daily_bar_dataset
+    from data.storage.objects import ContentAddressedObjectStore, ObjectStoreError
+
+    dataset_id = snapshot.get("immutable_dataset_id")
+    store = ContentAddressedObjectStore(research_root / "objects")
+    try:
+        ref = DatasetRef(store.resolve_ref(dataset_id))
+        restored = read_daily_bar_dataset(store, ref)
+    except (OSError, TypeError, ValueError, ObjectStoreError, DatasetReaderError):
+        return 0, ["dataset_replay_immutable_dataset_unreadable"]
+
+    source_names = sorted({part.provider for part in restored.snapshot.partitions})
+    single_source = source_names[0] if len(source_names) == 1 else None
+    provider = snapshot.get("provider")
+    expected_sources = (
+        provider.get("available_sources") if isinstance(provider, Mapping) else None
+    )
+    configured_source = (
+        provider.get("configured_source") if isinstance(provider, Mapping) else None
+    )
+    content_identity = snapshot.get("content_identity")
+    expected_instruments = {
+        (str(item.get("symbol") or ""), str(item.get("instrument_type") or ""))
+        for item in universe
+    }
+    actual_instruments = {
+        (item.symbol, item.instrument_type.value)
+        for item in restored.snapshot.instruments
+    }
+    issues = snapshot.get("research_limitations")
+    issue_codes = (
+        {
+            item["code"]
+            for item in issues
+            if isinstance(item, Mapping) and isinstance(item.get("code"), str)
+        }
+        if isinstance(issues, list)
+        else set()
+    )
+    if (
+        restored.snapshot.start_date.isoformat() != start_date
+        or restored.snapshot.end_date.isoformat() != end_date
+        or restored.snapshot.cutoff.isoformat() != snapshot.get("available_as_of")
+        or snapshot.get("price_basis") != "unadjusted"
+        or snapshot.get("point_in_time_verified") is not False
+        or snapshot.get("research_use") != "exploratory_backtest"
+        or snapshot.get("cross_source_verified")
+        is not restored.snapshot.verification_bound
+        or expected_sources != source_names
+        or configured_source != single_source
+        or expected_instruments != actual_instruments
+        or len(universe) != len(actual_instruments)
+        or any(item.get("source_dataset_id") != dataset_id for item in universe)
+        or any(
+            item.get("provider_name") != single_source
+            or item.get("data_source") != single_source
+            for item in universe
+        )
+        or not isinstance(content_identity, Mapping)
+        or content_identity.get("row_contract") != "timestamp_ohlcv.v1"
+        or snapshot.get("adjustment_mode") != "none"
+        or snapshot.get("row_count") != restored.row_count
+        or not {
+            "historical_availability_unverified",
+            "unadjusted_corporate_actions_unmodeled",
+        }.issubset(issue_codes)
+    ):
+        return 0, ["dataset_replay_immutable_dataset_binding_mismatch"]
+
+    verified = 0
+    blockers: list[str] = []
+    for item in universe:
+        symbol = str(item["symbol"])
+        instrument_type = str(item["instrument_type"])
+        frequency = str(item.get("frequency") or "")
+        if frequency != "1d":
+            blockers.append(f"dataset_replay_frequency_invalid:{symbol}:{frequency}")
+            continue
+        bars = [
+            bar
+            for bar in restored.bars
+            if bar.instrument.symbol == symbol
+            and bar.instrument.instrument_type.value == instrument_type
+        ]
+        frame = pd.DataFrame(
+            [
+                {
+                    "timestamp": bar.event_time,
+                    "open": bar.open,
+                    "high": bar.high,
+                    "low": bar.low,
+                    "close": bar.close,
+                    "volume": bar.volume,
+                }
+                for bar in bars
+            ]
+        )
+        if (
+            not bars
+            or _frame_content_digest(frame) != item.get("content_digest")
+            or len(bars) != _safe_int(item.get("row_count"))
+            or _iso_timestamp(frame["timestamp"].min()) != item.get("first_timestamp")
+            or _iso_timestamp(frame["timestamp"].max()) != item.get("last_timestamp")
+        ):
+            blockers.append(f"dataset_replay_content_drift:{symbol}:{frequency}")
+        else:
+            verified += 1
+    return verified, blockers
 
 
 def _verify_symbol_replay(

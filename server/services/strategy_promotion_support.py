@@ -553,6 +553,11 @@ def _dataset_replay_evidence_from_binding(
     replay = verify_backtest_dataset_snapshot_replay(
         candidate_snapshot,
         store_root=root,
+        research_root=(
+            Path(db.path).resolve().parent / "research"
+            if getattr(db, "path", None) is not None
+            else None
+        ),
     )
     replay_core = dict(replay)
     replay_core.pop("evidence_fingerprint", None)

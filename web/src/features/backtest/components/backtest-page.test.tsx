@@ -2658,6 +2658,44 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   expect(await screen.findByText('qfq')).toBeTruthy();
 });
 
+test('separates bound Dataset quality from research admission', async () => {
+  renderBacktestPage({
+    savedBacktestReport: {
+      ...savedReport,
+      metrics_json: {
+        ...savedReport.metrics_json,
+        dataset_snapshot: {
+          ...savedReport.metrics_json.dataset_snapshot,
+          immutable_dataset_id: 'sha256:bound-dataset',
+          available_as_of: '2026-09-17T08:05:00+00:00',
+          cross_source_verified: true,
+          price_basis: 'unadjusted',
+          point_in_time_verified: false,
+          research_use: 'exploratory_backtest',
+          research_limitations: [
+            { code: 'historical_availability_unverified' },
+            { code: 'unadjusted_corporate_actions_unmodeled' },
+          ],
+        },
+      },
+    },
+  });
+
+  expect(
+    await screen.findByText('Cross-source verification: passed'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Exploratory backtest only; not strategy advancement evidence',
+    ),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Unadjusted prices · historical PIT unverified · corporate-action returns excluded',
+    ),
+  ).toBeTruthy();
+});
+
 test('binds AI strategy research to the selected saved canonical report', async () => {
   renderBacktestPage();
   await screen.findByText('sha256:fixture-dataset-snapshot');

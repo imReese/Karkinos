@@ -219,6 +219,16 @@ def strategy_advancement_backtest_view(
         },
         "dataset_quality_status": dataset_quality.get("status"),
         "dataset_issue_count": len(dataset_quality.get("issues") or []),
+        **(
+            {"dataset_research_use": dataset["research_use"]}
+            if "research_use" in dataset
+            else {}
+        ),
+        **(
+            {"immutable_dataset_id": dataset["immutable_dataset_id"]}
+            if "immutable_dataset_id" in dataset
+            else {}
+        ),
         "parameter_robustness": _json_object(
             metrics.get("parameter_robustness") or metrics.get("sweep_robustness")
         ),
@@ -268,6 +278,13 @@ def build_strategy_advancement_gate(
 
     baseline_snapshot = str(baseline.get("dataset_snapshot_id") or "")
     candidate_snapshot = str(candidate.get("dataset_snapshot_id") or "")
+    admission_blocker = None
+    if candidate.get("dataset_research_use") == "exploratory_backtest":
+        admission_blocker = "candidate_dataset_exploratory_only"
+    elif "dataset_research_use" in candidate or "immutable_dataset_id" in candidate:
+        admission_blocker = "candidate_dataset_research_use_not_admitted"
+    elif "dataset_research_use" in baseline or "immutable_dataset_id" in baseline:
+        admission_blocker = "baseline_dataset_research_use_not_admitted"
     record(
         "frozen_dataset_identity",
         passed=research_execution_policy_matches(baseline, candidate)
@@ -275,7 +292,8 @@ def build_strategy_advancement_gate(
         and _valid_snapshot_id(candidate_snapshot)
         and candidate_snapshot == baseline_snapshot
         and candidate.get("dataset_quality_status") == "ok"
-        and _integer(candidate.get("dataset_issue_count")) == 0,
+        and _integer(candidate.get("dataset_issue_count")) == 0
+        and admission_blocker is None,
         blocker=(
             "research_execution_policy_mismatch"
             if not research_execution_policy_matches(baseline, candidate)
@@ -284,7 +302,7 @@ def build_strategy_advancement_gate(
             else (
                 "candidate_dataset_snapshot_mismatch"
                 if candidate_snapshot != baseline_snapshot
-                else "candidate_dataset_quality_not_clear"
+                else admission_blocker or "candidate_dataset_quality_not_clear"
             )
         ),
         evidence={
@@ -292,6 +310,16 @@ def build_strategy_advancement_gate(
             "candidate_snapshot_id": candidate_snapshot or None,
             "candidate_quality_status": candidate.get("dataset_quality_status"),
             "candidate_issue_count": candidate.get("dataset_issue_count"),
+            **(
+                {"candidate_research_use": candidate["dataset_research_use"]}
+                if "dataset_research_use" in candidate
+                else {}
+            ),
+            **(
+                {"candidate_immutable_dataset_id": candidate["immutable_dataset_id"]}
+                if "immutable_dataset_id" in candidate
+                else {}
+            ),
         },
     )
 

@@ -157,6 +157,41 @@ def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_degrade
     assert row.missing_requirements == ["research_evidence_gate_pass"]
 
 
+def test_strategy_promotion_readiness_uses_latest_result_research_gate():
+    newest = _with_research_gate(_backtest_row("dual_ma"), status="blocked")
+    newest["id"] = 202
+    older = _with_research_gate(_backtest_row("dual_ma"), status="pass")
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [newest, older],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+    )
+
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+    assert row.backtest_result_id == 202
+    assert row.missing_requirements == ["research_evidence_gate_pass"]
+
+
+def test_strategy_promotion_readiness_blocks_exploratory_dataset_even_with_old_pass_bundle():
+    result = _with_research_gate(_backtest_row("dual_ma"), status="pass")
+    metrics = json.loads(result["metrics_json"])
+    metrics["dataset_snapshot"] = {
+        "immutable_dataset_id": "sha256:dataset",
+        "research_use": "exploratory_backtest",
+    }
+    result["metrics_json"] = json.dumps(metrics)
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [result],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+    )
+
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+    assert row.missing_requirements == ["research_evidence_gate_pass"]
+
+
 def test_strategy_promotion_readiness_blocks_when_account_truth_gate_blocks():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),

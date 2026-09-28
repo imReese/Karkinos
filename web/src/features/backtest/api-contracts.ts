@@ -52,7 +52,11 @@ export type DatasetSnapshotSymbol = {
 export type DatasetSnapshot = {
   immutable_dataset_id?: string;
   available_as_of?: string;
+  cross_source_verified?: boolean;
+  price_basis?: string;
   point_in_time_verified?: boolean;
+  research_use?: string;
+  research_limitations?: DatasetQualityIssue[];
   schema_version?: string;
   snapshot_id: string;
   provider: {
