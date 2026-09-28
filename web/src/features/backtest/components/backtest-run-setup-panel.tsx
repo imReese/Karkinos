@@ -314,34 +314,34 @@ export function BacktestRunSetupPanel() {
                 </button>
               </div>
             </form>
-            {!selectedDataset ? (
-              <BacktestResponsiveDisclosure
-                detail={labels.advancedToolsDetail}
-                id="backtest-advanced-tools"
-                open={advancedToolsOpen}
-                onToggle={() => setAdvancedToolsOpen((current) => !current)}
-                testId="backtest-advanced-tools-disclosure"
-                title={labels.advancedToolsTitle}
-              >
-                <ParameterSweepPanel
-                  startDate={startDate}
-                  endDate={endDate}
-                  initialCash={initialCash}
-                  strategy={strategy}
-                  parameterSchema={parameterSchema}
-                  parameterValues={parameterValues}
-                  assets={buildSingleAsset(symbol, assetClass)}
-                />
-                <ParameterComparePanel
-                  startDate={startDate}
-                  endDate={endDate}
-                  initialCash={initialCash}
-                  strategy={strategy}
-                  parameterSchema={parameterSchema}
-                  assets={buildSingleAsset(symbol, assetClass)}
-                />
-              </BacktestResponsiveDisclosure>
-            ) : null}
+            <BacktestResponsiveDisclosure
+              detail={labels.advancedToolsDetail}
+              id="backtest-advanced-tools"
+              open={advancedToolsOpen}
+              onToggle={() => setAdvancedToolsOpen((current) => !current)}
+              testId="backtest-advanced-tools-disclosure"
+              title={labels.advancedToolsTitle}
+            >
+              <ParameterSweepPanel
+                startDate={startDate}
+                endDate={endDate}
+                initialCash={initialCash}
+                strategy={strategy}
+                parameterSchema={parameterSchema}
+                parameterValues={parameterValues}
+                assets={buildSingleAsset(symbol, assetClass)}
+                datasetId={selectedDataset?.dataset_id}
+              />
+              <ParameterComparePanel
+                startDate={startDate}
+                endDate={endDate}
+                initialCash={initialCash}
+                strategy={strategy}
+                parameterSchema={parameterSchema}
+                assets={buildSingleAsset(symbol, assetClass)}
+                datasetId={selectedDataset?.dataset_id}
+              />
+            </BacktestResponsiveDisclosure>
           </div>
         </section>
       </div>

@@ -11,6 +11,22 @@ export type PublishedDataset = {
   partition_count: number;
   price_basis: string;
   point_in_time_verified: boolean;
+  cross_source_verified?: boolean;
+};
+
+export type VerifiedDatasetJob = {
+  trade_date: string;
+  job_id: string;
+  status: string;
+  result_ref: string | null;
+  error?: string | null;
+};
+
+export type VerifiedDatasetRange = {
+  symbol: string;
+  instrument_type: 'stock' | 'etf';
+  start_date: string;
+  end_date: string;
 };
 
 type DatasetStatus = {
@@ -45,6 +61,37 @@ export function usePrepareDataset() {
   });
 }
 
+export function usePrepareVerifiedDatasetJobs() {
+  return useMutation({
+    mutationFn: (payload: VerifiedDatasetRange) =>
+      postJson<{ jobs: VerifiedDatasetJob[] }>(
+        '/api/backtest/datasets/verified-jobs',
+        payload,
+      ),
+    retry: false,
+  });
+}
+
+export async function getVerifiedDatasetJob(jobId: string) {
+  return apiClient<VerifiedDatasetJob>(
+    `/api/backtest/datasets/verified-jobs/${encodeURIComponent(jobId)}`,
+  );
+}
+
+export function usePublishVerifiedIntervalDataset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: VerifiedDatasetRange & { job_ids: string[] }) =>
+      postJson<PublishedDataset>(
+        '/api/backtest/datasets/verified-interval',
+        payload,
+      ),
+    retry: false,
+    onSuccess: () =>
+      client.invalidateQueries({ queryKey: ['published-research-datasets'] }),
+  });
+}
+
 export function datasetErrorMessage(error: unknown, zh: boolean): string {
   const code = error instanceof Error ? error.message : '';
   if (code.startsWith('dataset_calendar_unavailable:')) {
@@ -54,6 +101,22 @@ export function datasetErrorMessage(error: unknown, zh: boolean): string {
       : `The ${year} exchange calendar is not verified. Sync and verify it on the Market page before preparing this range.`;
   }
   const messages: Record<string, [string, string]> = {
+    verified_daily_market_trading_dates_unavailable: [
+      '所选区间没有已核验且已收盘的交易日，请检查交易日历与日期。',
+      'No verified closed trading sessions are available in this range.',
+    ],
+    verified_interval_job_incomplete: [
+      '双源核验任务尚未全部成功，请刷新状态后再发布。',
+      'Some verification jobs have not succeeded. Refresh their status before publishing.',
+    ],
+    verified_interval_calendar_evidence_mismatch: [
+      '交易日历证据已变化，请重新提交双源核验。',
+      'Calendar evidence has changed. Submit verification again.',
+    ],
+    verified_interval_range_exceeds_366_days: [
+      '双源核验一次最多覆盖 366 个自然日。',
+      'A verified interval can cover at most 366 calendar days.',
+    ],
     dataset_preparation_busy: [
       '已有数据准备任务正在运行，请稍后重试。',
       'Another preparation is running. Please retry later.',

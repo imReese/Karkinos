@@ -43,6 +43,7 @@ from data.dataset.model import (
 from data.market.model import (
     DailyBarObservation,
 )
+from data.market.reconciliation import reconcile_daily_bar_revisions
 from data.market.revision import (
     MARKET_DATA_KIND_DAILY_BARS,
     MarketRevision,
@@ -304,6 +305,10 @@ def _validate_partition_lineage(
             ) from exc
         if verification.status is not MarketVerificationStatus.MATCHED:
             raise DatasetReaderIntegrityError("dataset_reader_verification_not_matched")
+        if verification.checked_at > snapshot.cutoff:
+            raise DatasetReaderIntegrityError(
+                "dataset_reader_verification_after_cutoff"
+            )
         selected = (
             partition.provider,
             partition.revision_id,
@@ -324,6 +329,49 @@ def _validate_partition_lineage(
         if selected not in verified_sides:
             raise DatasetReaderIntegrityError(
                 "dataset_reader_verification_lineage_mismatch"
+            )
+        try:
+            primary_revision = read_market_revision(
+                store,
+                MarketRevisionRef(
+                    store.resolve_ref(verification.report.primary_revision_id)
+                ),
+            )
+            primary_materialization = read_market_revision_materialization(
+                store,
+                store.resolve_ref(verification.primary_materialization_id),
+            )
+            comparison_revision = read_market_revision(
+                store,
+                MarketRevisionRef(
+                    store.resolve_ref(verification.report.comparison_revision_id)
+                ),
+            )
+            comparison_materialization = read_market_revision_materialization(
+                store,
+                store.resolve_ref(verification.comparison_materialization_id),
+            )
+            replayed_report = reconcile_daily_bar_revisions(
+                store,
+                primary_revision=primary_revision,
+                primary_materialization=primary_materialization,
+                comparison_revision=comparison_revision,
+                comparison_materialization=comparison_materialization,
+                policy=verification.policy,
+            )
+        except (
+            ObjectStoreError,
+            MarketRevisionError,
+            ParquetStorageError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise DatasetReaderIntegrityError(
+                "dataset_reader_verification_materialization_unreadable"
+            ) from exc
+        if replayed_report != verification.report:
+            raise DatasetReaderIntegrityError(
+                "dataset_reader_verification_report_mismatch"
             )
 
 

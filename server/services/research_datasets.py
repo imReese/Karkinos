@@ -45,12 +45,18 @@ from data.market.revision import (
     read_market_revision_materialization,
 )
 from data.market.serving import MarketServingStore
+from data.market.verification_evidence import read_market_verification_evidence
 from data.providers.tdx_runtime import TdxRuntimeSettings, prepare_tdx_runtime
 from data.storage.objects import ContentAddressedObjectStore
+from server.persistence.jobs import SQLiteJobStore
 from server.services.market_calendar_evidence import validate_verified_market_calendar
 from server.services.verified_daily_market_data import (
+    VerifiedDailyMarketDataRequestError,
+    VerifiedDailyMarketJobRequest,
     is_verified_daily_resolver_policy,
+    verified_daily_resolver_policy_id,
 )
+from server.services.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
 
 _POLICY = DailyBarDatasetResolverPolicy(
     policy_id="karkinos.dataset.pit.strict.v1",
@@ -334,6 +340,135 @@ class ResearchDatasetService:
                     ContentAddressedObjectStore(self.root / "objects"), ref
                 )
                 return {**dataset_summary(self.root, ref), "reused": False}
+
+
+def publish_verified_interval_dataset(
+    root: Path,
+    request: DailyBarRequest,
+    *,
+    db: Any,
+    job_ids: tuple[str, ...],
+) -> dict[str, Any]:
+    """Freeze exact successful verified-day jobs into one offline Dataset."""
+    if len(request.instruments) != 1 or request.instruments[0].instrument_type not in {
+        InstrumentType.STOCK,
+        InstrumentType.ETF,
+    }:
+        raise ResearchDatasetError("verified_interval_single_stock_or_etf_required")
+    if (request.end_date - request.start_date).days >= 366:
+        raise ResearchDatasetError("verified_interval_range_exceeds_366_days")
+    close = datetime.combine(request.end_date, time(16), ZoneInfo("Asia/Shanghai"))
+    if close > datetime.now(timezone.utc):
+        raise ResearchDatasetError("verified_interval_session_not_closed")
+
+    expected_dates = _verified_dates(db, request.start_date, request.end_date)
+    if (
+        not isinstance(job_ids, tuple)
+        or len(job_ids) != len(expected_dates)
+        or any(not isinstance(job_id, str) for job_id in job_ids)
+        or len(set(job_ids)) != len(job_ids)
+    ):
+        raise ResearchDatasetError("verified_interval_job_coverage_invalid")
+
+    root = root.resolve()
+    store = ContentAddressedObjectStore(root / "objects")
+    jobs = SQLiteJobStore(db.path)
+    calendar_refs: dict[int, str] = {}
+    selected: dict[date, DailyBarDatasetSnapshot] = {}
+    policy_id: str | None = None
+    schema_version: str | None = None
+
+    for job_id in job_ids:
+        try:
+            job = jobs.get(job_id)
+        except (OSError, TypeError, ValueError) as exc:
+            raise ResearchDatasetError("verified_interval_job_unreadable") from exc
+        if job is None or job.kind != VERIFIED_DAILY_MARKET_JOB:
+            raise ResearchDatasetError("verified_interval_job_missing")
+        if job.status != "succeeded":
+            raise ResearchDatasetError("verified_interval_job_incomplete")
+        try:
+            planned = VerifiedDailyMarketJobRequest.from_payload(job.payload)
+        except (TypeError, ValueError, VerifiedDailyMarketDataRequestError) as exc:
+            raise ResearchDatasetError("verified_interval_job_payload_invalid") from exc
+        day = planned.trade_date
+        if day not in expected_dates or day in selected:
+            raise ResearchDatasetError("verified_interval_job_coverage_invalid")
+        if planned.instruments != request.instruments:
+            raise ResearchDatasetError("verified_interval_instrument_mismatch")
+        if day.year not in calendar_refs:
+            validation = validate_verified_market_calendar(
+                db.get_market_calendar_snapshot_sync(exchange="SSE", year=day.year)
+            )
+            if not validation.verified or validation.evidence_ref is None:
+                raise ResearchDatasetError(f"dataset_calendar_unavailable:{day.year}")
+            calendar_refs[day.year] = validation.evidence_ref
+        if calendar_refs[day.year] not in planned.calendar_evidence_refs:
+            raise ResearchDatasetError("verified_interval_calendar_evidence_mismatch")
+
+        result_ref = job.result_ref or ""
+        if not result_ref.startswith("dataset:sha256:"):
+            raise ResearchDatasetError("verified_interval_job_result_invalid")
+        try:
+            daily_ref = DatasetRef(
+                store.resolve_ref(result_ref.removeprefix("dataset:"))
+            )
+            daily = read_daily_bar_dataset(store, daily_ref).snapshot
+            verification_id = daily.partitions[0].verification_id
+            verification = (
+                read_market_verification_evidence(
+                    store, store.resolve_ref(verification_id)
+                )
+                if verification_id is not None
+                else None
+            )
+        except Exception:
+            raise ResearchDatasetError(
+                "verified_interval_daily_dataset_unreadable"
+            ) from None
+        expected_policy = verified_daily_resolver_policy_id(planned.source_policy_id)
+        if (
+            not daily.verification_bound
+            or daily.resolver_policy_id != expected_policy
+            or daily.start_date != day
+            or daily.end_date != day
+            or daily.instruments != request.instruments
+            or len(daily.partitions) != 1
+            or daily.partitions[0].partition_date != day
+            or verification is None
+            or verification.checked_at > daily.cutoff
+        ):
+            raise ResearchDatasetError("verified_interval_daily_dataset_mismatch")
+        if policy_id is not None and policy_id != daily.resolver_policy_id:
+            raise ResearchDatasetError("verified_interval_policy_mismatch")
+        if schema_version is not None and schema_version != daily.market_schema_version:
+            raise ResearchDatasetError("verified_interval_schema_mismatch")
+        policy_id = daily.resolver_policy_id
+        schema_version = daily.market_schema_version
+        selected[day] = daily
+
+    if set(selected) != set(expected_dates):
+        raise ResearchDatasetError("verified_interval_job_coverage_invalid")
+    ordered = tuple(selected[day] for day in expected_dates)
+    assert policy_id is not None and schema_version is not None
+    snapshot = DailyBarDatasetSnapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        cutoff=max(item.cutoff for item in ordered),
+        instruments=request.instruments,
+        resolver_policy_id=policy_id,
+        market_schema_version=schema_version,
+        partitions=tuple(item.partitions[0] for item in ordered),
+    )
+    ref = publish_daily_bar_dataset_manifest(store, snapshot)
+    try:
+        replayed = read_daily_bar_dataset(store, ref)
+    except Exception:
+        raise ResearchDatasetError("verified_interval_replay_failed") from None
+    if replayed.snapshot != snapshot:
+        raise ResearchDatasetError("verified_interval_replay_mismatch")
+    DatasetCatalog(root).register(store, ref)
+    return dataset_summary(root, ref)
 
 
 def _verified_dates(

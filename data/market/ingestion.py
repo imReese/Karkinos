@@ -86,6 +86,14 @@ class DailyBarIngestionNoData(DailyBarIngestionError):
         super().__init__(f"daily_bar_ingestion_no_data:{capture.capture_id}")
 
 
+class DailyBarIngestionCapturedFailure(DailyBarIngestionError):
+    """Processing failed after its immutable Provider Capture was persisted."""
+
+    def __init__(self, capture: ProviderCapture) -> None:
+        self.capture = capture
+        super().__init__("daily_bar_ingestion_failed_after_capture")
+
+
 @dataclass(frozen=True, slots=True)
 class DailyBarIngestionResult:
     """一次完整日线 ingestion 的结果。
@@ -183,7 +191,7 @@ def ingest_daily_bars(
             additional_diagnostics=(additional_diagnostics),
         )
 
-    except Exception:
+    except Exception as exc:
         # 到这里 Capture 已经成功固化，因此任何后续失败都可以通过
         # capture_id 回溯 Provider 原始数据。
         logger.exception(
@@ -192,7 +200,7 @@ def ingest_daily_bars(
             capture.capture_id,
             batch.record_count,
         )
-        raise
+        raise DailyBarIngestionCapturedFailure(capture) from exc
 
     result = DailyBarIngestionResult(
         capture=capture,

@@ -16,6 +16,7 @@ from server.contracts.http.strategy_models import (
     StrategyCompareItem,
 )
 from server.http.backtest_endpoints.dependencies import ResultEndpointDependencies
+from server.services.research_datasets import ResearchDatasetError
 
 
 def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
@@ -178,6 +179,7 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
                 }
             bt_request = _validate_backtest_strategy_params(
                 BacktestRequest(
+                    dataset_id=request.dataset_id,
                     start_date=request.start_date,
                     end_date=request.end_date,
                     initial_cash=request.initial_cash,
@@ -187,9 +189,12 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
                 )
             )
 
-            bt_result = await asyncio.to_thread(
-                _run_single_backtest, bt_request, config, state.db
-            )
+            try:
+                bt_result = await asyncio.to_thread(
+                    _run_single_backtest, bt_request, config, state.db
+                )
+            except ResearchDatasetError as exc:
+                raise HTTPException(409, str(exc)) from None
             metrics_json = _backtest_report_metrics_json(bt_request, bt_result)
             bt_result = {**bt_result, "metrics_json": metrics_json}
             snapshot = _dataset_snapshot_from_result(bt_result)

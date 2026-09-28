@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -13,6 +14,7 @@ from data.market.contracts import (
     ProviderDailyBarRow,
 )
 from data.market.ingestion import (
+    DailyBarIngestionCapturedFailure,
     DailyBarIngestionNoData,
     ingest_daily_bars,
 )
@@ -417,6 +419,32 @@ def test_empty_provider_result_preserves_capture_but_creates_no_revision(
 
     # 空结果只会生成 Raw Object + Capture Manifest，
     # 不会制造一个没有市场事实的 MarketRevision。
+    assert _object_file_count(store) == 2
+
+
+def test_processing_failure_after_capture_preserves_a_typed_evidence_link(
+    tmp_path,
+) -> None:
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    invalid_row = replace(
+        _row("600000"), session_date=_SESSION_DATE - timedelta(days=1)
+    )
+
+    with pytest.raises(DailyBarIngestionCapturedFailure) as caught:
+        ingest_daily_bars(
+            FakeDailyBarProvider(_batch(rows=(invalid_row,))),
+            store,
+            request=_request(),
+            quality_policy=RESEARCH_STRICT_DAILY,
+            normalizer_version="karkinos.market.normalize.daily_bar.v1",
+            checked_at=_COMPLETED_AT,
+        )
+
+    assert str(caught.value) == "daily_bar_ingestion_failed_after_capture"
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert caught.value.capture.record_count == 1
+    assert store.verify(caught.value.capture.capture_ref)
+    assert store.verify(caught.value.capture.raw_object_ref)
     assert _object_file_count(store) == 2
 
 

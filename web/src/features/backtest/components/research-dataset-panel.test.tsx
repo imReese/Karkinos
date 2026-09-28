@@ -129,3 +129,98 @@ test('selecting a stored dataset does not trigger acquisition and errors do not 
     fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST'),
   ).toHaveLength(1);
 });
+
+test('explicit verification publishes only after every job succeeds and selects the interval Dataset', async () => {
+  const firstId = '1'.repeat(64);
+  const secondId = '2'.repeat(64);
+  const jobs = [
+    {
+      trade_date: '2026-09-07',
+      job_id: firstId,
+      status: 'queued',
+      result_ref: null,
+    },
+    {
+      trade_date: '2026-09-08',
+      job_id: secondId,
+      status: 'queued',
+      result_ref: null,
+    },
+  ];
+  const verifiedDataset = { ...dataset, cross_source_verified: true };
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith('/verified-jobs') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ jobs }), { status: 200 });
+      }
+      if (path.includes('/verified-jobs/') && init?.method !== 'POST') {
+        const job = jobs.find((item) => path.endsWith(item.job_id));
+        return new Response(
+          JSON.stringify({
+            ...job,
+            status: 'succeeded',
+            result_ref: 'dataset:sha256:ok',
+          }),
+          { status: 200 },
+        );
+      }
+      if (path.endsWith('/verified-interval') && init?.method === 'POST') {
+        return new Response(JSON.stringify(verifiedDataset), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          tdx_configured: true,
+          busy: false,
+          storage_path: '/workspace/data/research',
+          datasets: [],
+        }),
+        { status: 200 },
+      );
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const { container } = mount();
+  const disclosure = container.querySelector('details')!;
+  disclosure.open = true;
+  fireEvent(disclosure, new Event('toggle'));
+  await screen.findByText(/持久目录：/);
+  fireEvent.click(screen.getByRole('button', { name: '提交双源核验' }));
+  await screen.findByText('任务：0/2 成功');
+  const publish = screen.getByRole('button', { name: '发布核验区间 Dataset' });
+  expect((publish as HTMLButtonElement).disabled).toBe(true);
+  const submission = fetchMock.mock.calls.find(
+    ([input, init]) =>
+      String(input).endsWith('/verified-jobs') && init?.method === 'POST',
+  );
+  expect(JSON.parse(String(submission?.[1]?.body))).toEqual({
+    symbol: '600000',
+    instrument_type: 'stock',
+    start_date: '2026-09-07',
+    end_date: '2026-09-11',
+  });
+  expect(
+    fetchMock.mock.calls.some(
+      ([input, init]) =>
+        String(input) === '/api/backtest/datasets' && init?.method === 'POST',
+    ),
+  ).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '刷新核验状态' }));
+  await screen.findByText('任务：2/2 成功');
+  expect((publish as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(publish);
+  await waitFor(() =>
+    expect(context.selectDataset).toHaveBeenCalledWith(verifiedDataset),
+  );
+  const publication = fetchMock.mock.calls.find(
+    ([input, init]) =>
+      String(input).endsWith('/verified-interval') && init?.method === 'POST',
+  );
+  expect(JSON.parse(String(publication?.[1]?.body))).toEqual({
+    symbol: '600000',
+    instrument_type: 'stock',
+    start_date: '2026-09-07',
+    end_date: '2026-09-11',
+    job_ids: [firstId, secondId],
+  });
+});

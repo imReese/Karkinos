@@ -226,7 +226,11 @@ def _run_pipeline(symbol: str, session_date: date, root: Path) -> dict[str, obje
             resolve_daily_bar_dataset,
         )
         from data.market.contracts import DailyBarRequest
-        from data.market.ingestion import DailyBarIngestionNoData, ingest_daily_bars
+        from data.market.ingestion import (
+            DailyBarIngestionCapturedFailure,
+            DailyBarIngestionNoData,
+            ingest_daily_bars,
+        )
         from data.market.quality import RESEARCH_STRICT_DAILY, MarketQualityStatus
         from data.providers.tdx import TdxDailyBarProvider, TdxProviderUnavailableError
         from data.storage.objects import ContentAddressedObjectStore
@@ -252,6 +256,8 @@ def _run_pipeline(symbol: str, session_date: date, root: Path) -> dict[str, obje
             return _failure(
                 stage, "no_data_check_session_permissions_and_sdk_config", exc
             )
+        except DailyBarIngestionCapturedFailure as exc:
+            return _failure(stage, "check_failed", exc.__cause__ or exc)
         except TdxProviderUnavailableError as exc:
             return _failure(
                 stage, "sdk_unavailable_check_installation_and_native_library", exc

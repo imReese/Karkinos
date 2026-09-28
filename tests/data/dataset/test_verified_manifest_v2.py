@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,12 +18,18 @@ from data.dataset.reader import DatasetReaderIntegrityError, read_daily_bar_data
 from data.market.capture import capture_provider_payload
 from data.market.normalize import normalize_daily_bar
 from data.market.quality import RESEARCH_STRICT_DAILY, evaluate_daily_bar_revision
-from data.market.quality_evidence import publish_market_quality_evidence
+from data.market.quality_evidence import (
+    publish_market_quality_evidence,
+    read_market_quality_evidence,
+)
 from data.market.reconciliation import (
     STRICT_DAILY_RECONCILIATION,
     reconcile_daily_bar_revisions,
 )
-from data.market.revision import publish_daily_bar_revision
+from data.market.revision import (
+    publish_daily_bar_revision,
+    read_market_revision_materialization,
+)
 from data.market.schema import DAILY_BAR_SCHEMA_VERSION
 from data.market.verification_evidence import publish_market_verification_evidence
 from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
@@ -130,7 +137,7 @@ def _verified_snapshot(
     snapshot = DailyBarDatasetSnapshot(
         start_date=DAY,
         end_date=DAY,
-        cutoff=CAPTURED,
+        cutoff=CHECKED,
         instruments=(INSTRUMENT,),
         resolver_policy_id="karkinos.dataset.verified.fixture.v1",
         market_schema_version=DAILY_BAR_SCHEMA_VERSION,
@@ -162,6 +169,20 @@ def test_verified_snapshot_publishes_manifest_v2_and_replays(tmp_path: Path) -> 
     assert replayed.bars[0].close == replayed.bars[0].close.__class__("10.48000000")
 
 
+def test_manifest_v2_rejects_verification_after_snapshot_cutoff(tmp_path: Path) -> None:
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    snapshot, verification = _verified_snapshot(store)
+    ref = publish_daily_bar_dataset_manifest(
+        store, replace(snapshot, cutoff=verification.checked_at - timedelta(seconds=1))
+    )
+
+    with pytest.raises(
+        DatasetReaderIntegrityError,
+        match="dataset_reader_verification_after_cutoff",
+    ):
+        read_daily_bar_dataset(store, ref)
+
+
 def test_manifest_v2_rejects_conflict_verification_on_replay(tmp_path: Path) -> None:
     store = ContentAddressedObjectStore(tmp_path / "objects")
     snapshot, _ = _verified_snapshot(store, comparison_close="10.49")
@@ -185,7 +206,7 @@ def test_manifest_v2_rejects_verification_bound_to_different_lineage(
     forged = DailyBarDatasetSnapshot(
         start_date=DAY,
         end_date=DAY,
-        cutoff=CAPTURED,
+        cutoff=CHECKED,
         instruments=(INSTRUMENT,),
         resolver_policy_id=snapshot.resolver_policy_id,
         market_schema_version=snapshot.market_schema_version,
@@ -204,6 +225,63 @@ def test_manifest_v2_rejects_verification_bound_to_different_lineage(
     with pytest.raises(
         DatasetReaderIntegrityError,
         match="dataset_reader_verification_lineage_mismatch",
+    ):
+        read_daily_bar_dataset(store, ref)
+
+
+def test_verified_replay_rejects_corrupt_comparison_materialization(
+    tmp_path: Path,
+) -> None:
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    snapshot, verification = _verified_snapshot(store)
+    ref = publish_daily_bar_dataset_manifest(store, snapshot)
+    assert read_daily_bar_dataset(store, ref).snapshot == snapshot
+
+    comparison = read_market_revision_materialization(
+        store, store.resolve_ref(verification.comparison_materialization_id)
+    )
+    digest = comparison.artifact.object_ref.digest
+    artifact_path = store.root / "sha256" / digest[:2] / digest[2:]
+    artifact_path.chmod(0o600)
+    artifact_path.write_bytes(b"broken comparison parquet")
+
+    with pytest.raises(
+        DatasetReaderIntegrityError,
+        match="dataset_reader_verification_materialization_unreadable",
+    ):
+        read_daily_bar_dataset(store, ref)
+
+
+def test_verified_replay_recomputes_cross_source_conclusion(tmp_path: Path) -> None:
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    conflicted, verification = _verified_snapshot(store, comparison_close="10.49")
+    assert verification.report.differences
+
+    forged = publish_market_verification_evidence(
+        store,
+        report=replace(verification.report, differences=()),
+        primary_quality=read_market_quality_evidence(
+            store, store.resolve_ref(verification.primary_quality_id)
+        ),
+        comparison_quality=read_market_quality_evidence(
+            store, store.resolve_ref(verification.comparison_quality_id)
+        ),
+        primary_descriptor=TDX_PROVIDER_DESCRIPTOR,
+        comparison_descriptor=TUSHARE_DAILY_BAR_DESCRIPTOR,
+        policy=verification.policy,
+        checked_at=verification.checked_at,
+    )
+    forged_snapshot = replace(
+        conflicted,
+        partitions=(
+            replace(conflicted.partitions[0], verification_id=forged.verification_id),
+        ),
+    )
+    ref = publish_daily_bar_dataset_manifest(store, forged_snapshot)
+
+    with pytest.raises(
+        DatasetReaderIntegrityError,
+        match="dataset_reader_verification_report_mismatch",
     ):
         read_daily_bar_dataset(store, ref)
 

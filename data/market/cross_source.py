@@ -133,7 +133,10 @@ def ingest_cross_source_daily_bars(
         comparison_descriptor=comparison_descriptor,
     )
 
-    checked_at = _checked_at(checked_at)
+    # Without an explicit replay clock, each source is quality-checked after
+    # its own capture. Cross-source verification is dated only after both
+    # provider calls have completed.
+    quality_checked_at = _checked_at(checked_at) if checked_at is not None else None
 
     primary = _ingest_provider(
         primary_provider,
@@ -141,7 +144,7 @@ def ingest_cross_source_daily_bars(
         request=request,
         quality_policy=quality_policy,
         normalizer_version=normalizer_version,
-        checked_at=checked_at,
+        checked_at=quality_checked_at,
     )
     _validate_ingestion_identity(primary, primary_descriptor)
     primary_quality = publish_market_quality_evidence(store, primary.quality)
@@ -152,7 +155,7 @@ def ingest_cross_source_daily_bars(
         request=request,
         quality_policy=quality_policy,
         normalizer_version=normalizer_version,
-        checked_at=checked_at,
+        checked_at=quality_checked_at,
     )
     _validate_ingestion_identity(comparison, comparison_descriptor)
     comparison_quality = publish_market_quality_evidence(store, comparison.quality)
@@ -177,6 +180,11 @@ def ingest_cross_source_daily_bars(
         comparison_materialization=comparison.materialization,
         policy=reconciliation_policy,
     )
+    verification_checked_at = _checked_at(checked_at)
+    if verification_checked_at < max(
+        primary.capture.completed_at, comparison.capture.completed_at
+    ):
+        raise ValueError("cross_source_daily_bar_checked_at_before_capture")
     verification = publish_market_verification_evidence(
         store,
         report=report,
@@ -185,7 +193,7 @@ def ingest_cross_source_daily_bars(
         primary_descriptor=primary_descriptor,
         comparison_descriptor=comparison_descriptor,
         policy=reconciliation_policy,
-        checked_at=checked_at,
+        checked_at=verification_checked_at,
     )
     return CrossSourceDailyBarResult(
         primary=primary,
@@ -203,7 +211,7 @@ def _ingest_provider(
     request: DailyBarRequest,
     quality_policy: DailyBarQualityPolicy,
     normalizer_version: str,
-    checked_at: datetime,
+    checked_at: datetime | None,
 ) -> DailyBarIngestionResult:
     try:
         return ingest_daily_bars(

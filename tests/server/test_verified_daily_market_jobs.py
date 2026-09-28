@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from core.types import InstrumentKey, InstrumentType
+from data.dataset.catalog import DatasetCatalog
 from server.db import AppDatabase
+from server.dependencies import AppState, AppStateContextMiddleware
+from server.http.backtest_endpoints.datasets import create_router
 from server.persistence.jobs import SQLiteJobStore
 from server.services.daily_market_collection import DAILY_MARKET_COLLECTION_JOB
 from server.services.verified_daily_market_jobs import (
@@ -14,6 +21,7 @@ from server.services.verified_daily_market_jobs import (
     VerifiedDailyMarketJobPlanningError,
     enqueue_latest_daily_market_collection_jobs,
     enqueue_latest_verified_daily_market_jobs,
+    enqueue_verified_daily_market_jobs_for_range,
 )
 
 NOW = datetime(2026, 9, 18, 8, 30, tzinfo=timezone.utc)
@@ -78,6 +86,203 @@ def _config():
         data_source="free",
         tushare_token="",
     )
+
+
+def _verified_jobs_api(tmp_path, *, trading_dates: set[date], verified: bool = True):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    calendar = _calendar(trading_dates=trading_dates)
+    stored = db.upsert_market_calendar_snapshot_sync(calendar)
+    if verified:
+        db.update_market_calendar_verification_sync(
+            exchange="SSE",
+            year=2026,
+            source_fingerprint=stored["source_fingerprint"],
+            verification_status="verified",
+            official_source_url="https://example.test/calendar",
+            official_source_fingerprint="b" * 64,
+            verified_by="fixture",
+        )
+    state = AppState()
+    state.db, state.config = db, _config()
+    app = FastAPI()
+    app.add_middleware(AppStateContextMiddleware, app_state=state)
+    app.include_router(create_router())
+    return TestClient(app), SQLiteJobStore(db.path)
+
+
+def test_verified_jobs_http_enqueues_only_verified_closed_sessions_and_is_idempotent(
+    tmp_path,
+):
+    client, store = _verified_jobs_api(
+        tmp_path,
+        trading_dates={date(2026, 9, 16), date(2026, 9, 18)},
+    )
+    request = {
+        "symbol": "510300",
+        "instrument_type": "etf",
+        "start_date": "2026-09-16",
+        "end_date": "2026-09-18",
+    }
+
+    with client:
+        first = client.post("/api/backtest/datasets/verified-jobs", json=request)
+        repeated = client.post("/api/backtest/datasets/verified-jobs", json=request)
+        status = client.get(
+            f"/api/backtest/datasets/verified-jobs/{first.json()['jobs'][0]['job_id']}"
+        )
+
+    assert first.status_code == 200, first.text
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json() == first.json()
+    assert status.status_code == 200, status.text
+    assert status.json()["status"] == "queued"
+    assert status.json()["trade_date"] == "2026-09-16"
+    jobs = first.json()["jobs"]
+    assert [job["trade_date"] for job in jobs] == ["2026-09-16", "2026-09-18"]
+    assert len({job["job_id"] for job in jobs}) == 2
+    assert all(job["status"] == "queued" and job["result_ref"] is None for job in jobs)
+    persisted = store.list_recent(VERIFIED_DAILY_MARKET_JOB)
+    assert {row["job_id"] for row in persisted} == {job["job_id"] for job in jobs}
+    payloads = [json.loads(row["payload_json"]) for row in persisted]
+    assert all(
+        payload["instruments"] == [{"symbol": "510300", "instrument_type": "etf"}]
+        and payload["calendar_evidence_refs"]
+        and payload["source_policy_id"] == "karkinos.market.source.free_cn_research.v1"
+        for payload in payloads
+    )
+    assert store.list_recent(DAILY_MARKET_COLLECTION_JOB) == []
+    assert not DatasetCatalog(tmp_path / "research").path.exists()
+
+
+def test_verified_jobs_http_rejects_unverified_calendar_without_partial_enqueue(
+    tmp_path,
+):
+    client, store = _verified_jobs_api(
+        tmp_path,
+        trading_dates={date(2026, 9, 16)},
+        verified=False,
+    )
+    with client:
+        response = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={
+                "symbol": "600000",
+                "instrument_type": "stock",
+                "start_date": "2026-09-16",
+                "end_date": "2026-09-18",
+            },
+        )
+    assert response.status_code == 409
+    assert (
+        response.json()["detail"] == "verified_daily_market_trading_dates_unavailable"
+    )
+    assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []
+
+
+def test_verified_jobs_http_enqueue_rolls_back_when_later_day_write_fails(tmp_path):
+    client, store = _verified_jobs_api(
+        tmp_path,
+        trading_dates={date(2026, 9, 16), date(2026, 9, 18)},
+    )
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            "CREATE TRIGGER reject_second_verified_job BEFORE INSERT ON job_runs "
+            "WHEN NEW.kind='market_daily_verified' AND "
+            "instr(NEW.payload_json, '2026-09-18') > 0 "
+            "BEGIN SELECT RAISE(ABORT, 'fixture_second_day_write_failed'); END"
+        )
+
+    with client:
+        response = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={
+                "symbol": "600000",
+                "instrument_type": "stock",
+                "start_date": "2026-09-16",
+                "end_date": "2026-09-18",
+            },
+        )
+
+    assert response.status_code == 503
+    assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []
+
+
+def test_verified_job_http_distinguishes_malformed_id_from_corrupt_stored_job(tmp_path):
+    client, store = _verified_jobs_api(
+        tmp_path,
+        trading_dates={date(2026, 9, 18)},
+    )
+    with client:
+        submitted = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={
+                "symbol": "600000",
+                "instrument_type": "stock",
+                "start_date": "2026-09-18",
+                "end_date": "2026-09-18",
+            },
+        )
+        malformed = client.get("/api/backtest/datasets/verified-jobs/bad-id")
+    assert submitted.status_code == 200, submitted.text
+    job_id = submitted.json()["jobs"][0]["job_id"]
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            "UPDATE job_runs SET input_fingerprint=? WHERE job_id=?",
+            ("f" * 64, job_id),
+        )
+    with client:
+        corrupt = client.get(f"/api/backtest/datasets/verified-jobs/{job_id}")
+
+    assert malformed.status_code == 422
+    assert malformed.json()["detail"] == "verified_market_job_id_invalid"
+    assert corrupt.status_code == 409
+    assert corrupt.json()["detail"] == "verified_market_job_identity_conflict"
+
+
+@pytest.mark.parametrize(
+    "start_date,end_date",
+    [
+        ("2026-09-19", "2026-09-18"),
+        ("2025-01-01", "2026-09-18"),
+        ("2099-01-01", "2099-01-02"),
+    ],
+)
+def test_verified_jobs_http_rejects_invalid_or_unclosed_range(
+    tmp_path, start_date, end_date
+):
+    client, store = _verified_jobs_api(
+        tmp_path,
+        trading_dates={date(2026, 9, 18)},
+    )
+    with client:
+        response = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={
+                "symbol": "600000",
+                "instrument_type": "stock",
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+        )
+    assert response.status_code == 422
+    assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []
+
+
+def test_verified_jobs_do_not_enqueue_todays_session_before_post_close(tmp_path):
+    store = _store(tmp_path)
+    db = _planner_db([])
+    with pytest.raises(ValueError, match="verified_trading_date_not_closed"):
+        enqueue_verified_daily_market_jobs_for_range(
+            db,
+            _config(),
+            store,
+            instrument=InstrumentKey("600000", InstrumentType.STOCK),
+            start_date=TRADE_DATE,
+            end_date=TRADE_DATE,
+            now=datetime(2026, 9, 18, 7, 30, tzinfo=timezone.utc),
+        )
+    assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []
 
 
 def test_planner_enqueues_one_durable_job_per_supported_watchlist_asset(tmp_path):

@@ -41,8 +41,20 @@ def test_retry_backoff_and_attempt_budget_survive_restart(tmp_path):
     for attempt in range(1, 4):
         job = store.claim("calendar", "worker", now=now)
         assert job.attempt == attempt
-        store.fail(job.lease, now=now, error="timeout", retry_seconds=60)
+        store.fail(
+            job.lease,
+            now=now,
+            error="timeout",
+            retry_seconds=60,
+            failure_evidence_ref=(
+                "capture:sha256:" + "a" * 64 if attempt == 1 else None
+            ),
+        )
         store = SQLiteJobStore(db.path)
+        assert (
+            store.enqueue("calendar", {"year": 2026}, now=now).failure_evidence_ref
+            == "capture:sha256:" + "a" * 64
+        )
         assert store.claim("calendar", "worker", now=now) is None
         now += timedelta(seconds=60)
     assert store.claim("calendar", "worker", now=now) is None
@@ -83,6 +95,7 @@ def test_list_recent_reads_only_requested_kind_in_update_order(tmp_path):
         "attempt",
         "result_ref",
         "error",
+        "failure_evidence_ref",
         "created_at",
         "updated_at",
     }

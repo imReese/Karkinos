@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -11,7 +12,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
+from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
 from core.types import AssetClass, Symbol
@@ -322,9 +325,9 @@ def test_research_preview_without_source_bound_snapshot_stays_unavailable(
     assert result["items"][0]["reason_code"] == "research_snapshot_source_unbound"
 
 
-def test_source_bound_research_snapshot_can_observe_price_move(
-    tmp_path: Path,
-) -> None:
+def _source_bound_research_report(
+    tmp_path: Path, *, operation_type: str = "buy_candidate"
+) -> tuple[_DB, DataStore, dict[str, Any], dict[str, Any], dict[str, Any]]:
     db, store, anchor = _store(tmp_path)
     prior = store.ingest_market_daily_batch(
         trade_date="2026-09-21",
@@ -364,18 +367,20 @@ def test_source_bound_research_snapshot_can_observe_price_move(
         "market_date": "2026-09-22",
         "signal_date": "2026-09-22",
         "symbol": "600869",
-        "operation": "buy_candidate",
+        "operation": operation_type,
         "source_ref": "selection:one:operation:0",
         "selection_id": "selection:one",
         "run_id": "research:one",
         "dataset_snapshot_id": snapshot["snapshot_id"],
         "formula_fingerprint": "sha256:" + "b" * 64,
+        "research_only": True,
+        "report_authoritative": False,
     }
     source_preview = {
         "operations": [
             {
                 "symbol": "600869",
-                "operation": "buy_candidate",
+                "operation": operation_type,
                 "signal_date": "2026-09-22",
             }
         ]
@@ -420,6 +425,7 @@ def test_source_bound_research_snapshot_can_observe_price_move(
                 "run_id": "research:one",
                 "selection_id": "selection:one",
                 "status": "no_selection",
+                "normalized_research_status": "best_available_for_further_research",
                 "research_winner_candidate_id": "candidate:one",
                 "dataset_snapshot_id": snapshot["snapshot_id"],
                 "formula_fingerprint": operation["formula_fingerprint"],
@@ -427,6 +433,13 @@ def test_source_bound_research_snapshot_can_observe_price_move(
             }
         ],
     }
+    return db, store, report, snapshot, entry
+
+
+def test_source_bound_research_snapshot_can_observe_price_move(
+    tmp_path: Path,
+) -> None:
+    db, _, report, snapshot, entry = _source_bound_research_report(tmp_path)
 
     result = evaluate_daily_candidate_outcomes(db, report, as_of=date(2026, 9, 24))
 
@@ -437,6 +450,164 @@ def test_source_bound_research_snapshot_can_observe_price_move(
         candidate["horizons"]["T+1"]["entry_receipt_fingerprint"]
         == entry["receipt_fingerprint"]
     )
+    assert result["research_preview_buy_candidate_directional_hits"]["T+1"] == {
+        "observed_count": 1,
+        "directional_hit_count": 1,
+        "directional_hit_rate": 1.0,
+    }
+    assert (
+        result["research_preview_buy_candidate_directional_hits"]["T+5"][
+            "observed_count"
+        ]
+        == 0
+    )
+    assert result["formal_authoritative_directional_hits"]["T+1"]["observed_count"] == 0
+
+    without_recommendation = copy.deepcopy(report)
+    without_recommendation["research_previews"][0]["normalized_research_status"] = (
+        "no_recommendation"
+    )
+    no_prediction = evaluate_daily_candidate_outcomes(
+        db, without_recommendation, as_of=date(2026, 9, 24)
+    )
+    assert no_prediction["items"][0]["horizons"]["T+1"]["status"] == "observed"
+    assert (
+        no_prediction["research_preview_buy_candidate_directional_hits"]["T+1"][
+            "observed_count"
+        ]
+        == 0
+    )
+
+
+def test_research_directional_hits_require_mature_verified_horizon_receipts(
+    tmp_path: Path,
+) -> None:
+    db, store, report, _, _ = _source_bound_research_report(tmp_path)
+
+    before_entry = evaluate_daily_candidate_outcomes(
+        db, report, as_of=date(2026, 9, 22)
+    )
+    assert before_entry["items"][0]["horizons"]["T+1"]["status"] == "pending"
+    assert before_entry["research_preview_buy_candidate_directional_hits"]["T+1"] == {
+        "observed_count": 0,
+        "directional_hit_count": 0,
+        "directional_hit_rate": None,
+    }
+
+    missing_fifth = evaluate_daily_candidate_outcomes(
+        db, report, as_of=date(2026, 9, 29)
+    )
+    assert missing_fifth["items"][0]["horizons"]["T+5"] == {
+        "status": "unavailable",
+        "reason_code": "horizon_receipt_missing",
+    }
+    assert (
+        missing_fifth["research_preview_buy_candidate_directional_hits"]["T+5"][
+            "observed_count"
+        ]
+        == 0
+    )
+    assert missing_fifth["items"][0]["horizons"]["T+20"]["status"] == "pending"
+
+    fifth = store.ingest_market_daily_batch(
+        trade_date="2026-09-29",
+        provider_name="tushare",
+        bars=_bar("2026-09-29", open_price=9, close=9),
+    )
+    twentieth = store.ingest_market_daily_batch(
+        trade_date="2026-10-20",
+        provider_name="tushare",
+        bars=_bar("2026-10-20", open_price=12, close=12),
+    )
+    mature = evaluate_daily_candidate_outcomes(db, report, as_of=date(2026, 10, 20))
+    hits = mature["research_preview_buy_candidate_directional_hits"]
+    assert hits == {
+        "T+1": {
+            "observed_count": 1,
+            "directional_hit_count": 1,
+            "directional_hit_rate": 1.0,
+        },
+        "T+5": {
+            "observed_count": 1,
+            "directional_hit_count": 0,
+            "directional_hit_rate": 0.0,
+        },
+        "T+20": {
+            "observed_count": 1,
+            "directional_hit_count": 1,
+            "directional_hit_rate": 1.0,
+        },
+    }
+    assert (
+        mature["items"][0]["horizons"]["T+5"]["horizon_receipt_fingerprint"]
+        == (fifth["receipt_fingerprint"])
+    )
+    assert (
+        mature["items"][0]["horizons"]["T+20"]["horizon_receipt_fingerprint"]
+        == twentieth["receipt_fingerprint"]
+    )
+    assert mature["read_only"] is True
+    assert mature["authorizes_execution"] is False
+
+
+def test_research_exit_preview_does_not_count_as_buy_direction(
+    tmp_path: Path,
+) -> None:
+    db, _, report, _, _ = _source_bound_research_report(
+        tmp_path, operation_type="exit_if_held_candidate"
+    )
+
+    result = evaluate_daily_candidate_outcomes(db, report, as_of=date(2026, 9, 24))
+
+    assert result["items"][0]["horizons"]["T+1"]["status"] == "observed"
+    assert result["research_preview_buy_candidate_directional_hits"]["T+1"] == {
+        "observed_count": 0,
+        "directional_hit_count": 0,
+        "directional_hit_rate": None,
+    }
+
+
+def test_daily_report_http_exposes_research_feedback_without_authority(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db, _, report, snapshot, _ = _source_bound_research_report(tmp_path)
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state", lambda: SimpleNamespace(db=db)
+    )
+    monkeypatch.setattr(
+        daily_decision_report,
+        "get_daily_decision_report",
+        lambda _db, _date: report,
+    )
+    app = FastAPI()
+    app.include_router(decision_routes.create_router())
+
+    with TestClient(app) as client:
+        response = client.get("/api/decision/daily-reports/2026-09-22")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["research_previews"][0]["run_id"] == "research:one"
+    assert payload["research_previews"][0]["research_winner_candidate_id"] == (
+        "candidate:one"
+    )
+    outcomes = payload["candidate_outcomes"]
+    assert outcomes["items"][0]["source_ref"] == "selection:one:operation:0"
+    assert (
+        outcomes["items"][0]["anchor"]["dataset_snapshot_id"]
+        == (snapshot["snapshot_id"])
+    )
+    assert outcomes["research_preview_buy_candidate_directional_hits"]["T+1"] == {
+        "observed_count": 1,
+        "directional_hit_count": 1,
+        "directional_hit_rate": 1.0,
+    }
+    assert (
+        outcomes["formal_authoritative_directional_hits"]["T+1"]["observed_count"] == 0
+    )
+    assert outcomes["items"][0]["price_move_is_execution_pnl"] is False
+    assert outcomes["provider_contacted"] is False
+    assert outcomes["authorizes_execution"] is False
 
 
 def test_daily_report_detail_route_attaches_outcomes(

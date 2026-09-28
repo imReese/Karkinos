@@ -9,8 +9,9 @@ import os
 import threading
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
+from data.source_policy import source_policy_for_config
 from server.contracts.jobs import JobRun, JobStore
 from server.db import AppDatabase
 from server.persistence.jobs import SQLiteJobStore
@@ -21,12 +22,18 @@ from server.release_activation import (
 )
 from server.services.daily_market_collection import (
     DAILY_MARKET_COLLECTION_JOB,
+    DailyMarketCollectionFailure,
     DailyMarketCollectionService,
 )
 from server.services.market_calendar_automation import MarketCalendarAutomationService
+from server.services.market_calendar_dates import (
+    resolve_verified_closed_trading_dates_in_range,
+)
+from server.services.market_calendar_evidence import validate_verified_market_calendar
 from server.services.verified_daily_market_data import (
     VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
     VerifiedDailyMarketDataService,
+    VerifiedDailyMarketJobRequest,
     VerifiedDailySourceResolution,
 )
 from server.services.verified_daily_market_jobs import (
@@ -41,6 +48,73 @@ CALENDAR_JOB = "market_calendar_sync"
 
 class WorkerExecutionAborted(RuntimeError):
     """The process must exit because an outstanding provider thread was fenced."""
+
+
+class VerifiedDailyMarketJobNotCurrent(RuntimeError):
+    """A queued verification no longer has current policy or calendar authority."""
+
+
+def _require_current_verified_daily_market_job(
+    db: AppDatabase,
+    config: object,
+    job: JobRun,
+) -> None:
+    """Recheck a durable request at provider entry and visible publication."""
+    request = VerifiedDailyMarketJobRequest.from_payload(job.payload)
+    if request.source_policy_id != source_policy_for_config(config).policy_id:
+        raise VerifiedDailyMarketJobNotCurrent(
+            "verified_daily_market_source_policy_stale"
+        )
+    try:
+        dates = resolve_verified_closed_trading_dates_in_range(
+            db,
+            datetime.now(timezone.utc),
+            start_date=request.trade_date,
+            end_date=request.trade_date,
+        )
+    except ValueError as exc:
+        raise VerifiedDailyMarketJobNotCurrent(
+            "verified_daily_market_session_not_closed"
+        ) from exc
+    if len(dates) != 1 or dates[0].trade_date != request.trade_date.isoformat():
+        raise VerifiedDailyMarketJobNotCurrent(
+            "verified_daily_market_calendar_evidence_stale"
+        )
+    current_refs = dates[0].calendar_evidence_refs
+    if len(current_refs) != 1:
+        raise VerifiedDailyMarketJobNotCurrent(
+            "verified_daily_market_calendar_evidence_stale"
+        )
+    accepted_refs = {current_refs[0]}
+    # The legacy latest-day planner included the following year's calendar when
+    # it fell back to the previous year's last session at the year boundary.
+    if len(request.calendar_evidence_refs) == 2:
+        try:
+            year_days = resolve_verified_closed_trading_dates_in_range(
+                db,
+                datetime.now(timezone.utc),
+                start_date=date(request.trade_date.year, 1, 1),
+                end_date=date(request.trade_date.year, 12, 31),
+            )
+        except ValueError as exc:
+            raise VerifiedDailyMarketJobNotCurrent(
+                "verified_daily_market_calendar_evidence_stale"
+            ) from exc
+        if not year_days or year_days[-1].trade_date != request.trade_date.isoformat():
+            raise VerifiedDailyMarketJobNotCurrent(
+                "verified_daily_market_calendar_evidence_stale"
+            )
+        following = validate_verified_market_calendar(
+            db.get_market_calendar_snapshot_sync(
+                exchange="SSE", year=request.trade_date.year + 1
+            )
+        )
+        if following.verified and following.evidence_ref is not None:
+            accepted_refs.add(following.evidence_ref)
+    if set(request.calendar_evidence_refs) != accepted_refs:
+        raise VerifiedDailyMarketJobNotCurrent(
+            "verified_daily_market_calendar_evidence_stale"
+        )
 
 
 async def execute_calendar_job(
@@ -129,6 +203,7 @@ async def execute_verified_daily_market_job(
     timeout: float = 180,
     heartbeat_interval: float = 15,
     source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
+    request_validator: Callable[[], None] | None = None,
 ) -> None:
     """Run one durable verified-market job behind lease fencing."""
     await _execute_daily_market_job(
@@ -140,6 +215,7 @@ async def execute_verified_daily_market_job(
         result_prefix="dataset:sha256:",
         label="verified_market",
         source_resolution_recorder=source_resolution_recorder,
+        request_validator=request_validator,
     )
 
 
@@ -173,6 +249,7 @@ async def _execute_daily_market_job(
     result_prefix: str,
     label: str,
     source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
+    request_validator: Callable[[], None] | None = None,
 ) -> None:
 
     async def renew():
@@ -202,9 +279,13 @@ async def _execute_daily_market_job(
             store.heartbeat(job.lease, now=datetime.now(timezone.utc))
         except Exception as exc:
             raise WorkerExecutionAborted(f"{label}_job_lease_lost") from exc
+        if request_validator is not None:
+            request_validator()
 
     def run():
         try:
+            if request_validator is not None:
+                request_validator()
             result, error = (
                 service.run(
                     job.payload,
@@ -262,12 +343,23 @@ async def _execute_daily_market_job(
             error_type=type(exc).__name__,
         )
         try:
-            store.fail(
-                job.lease,
-                now=datetime.now(timezone.utc),
-                error=type(exc).__name__,
-                retry_seconds=min(60 * 2 ** (job.attempt - 1), 3600),
-            )
+            now = datetime.now(timezone.utc)
+            retry_seconds = min(60 * 2 ** (job.attempt - 1), 3600)
+            if isinstance(exc, DailyMarketCollectionFailure):
+                store.fail(
+                    job.lease,
+                    now=now,
+                    error=str(exc),
+                    retry_seconds=retry_seconds,
+                    failure_evidence_ref=exc.failure_evidence_ref,
+                )
+            else:
+                store.fail(
+                    job.lease,
+                    now=now,
+                    error=type(exc).__name__,
+                    retry_seconds=retry_seconds,
+                )
         except Exception:
             if not isinstance(exc, WorkerExecutionAborted):
                 raise
@@ -373,6 +465,11 @@ async def run_data_worker(config) -> None:
                         store,
                         market_job,
                         service,
+                        request_validator=lambda: (
+                            _require_current_verified_daily_market_job(
+                                db, config, market_job
+                            )
+                        ),
                         source_resolution_recorder=lambda payload: db.append_event_sync(
                             event_type=VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
                             timestamp=datetime.now(timezone.utc).isoformat(),

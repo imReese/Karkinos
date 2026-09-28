@@ -140,7 +140,7 @@ python -m server
 
 ### 配置
 
-默认行情策略是 **`free_cn_research_v1`**：研究日线优先使用独立的免费来源（BaoStock + AKShare/Tencent）做交叉验证；单个来源不可用时可切换到其他独立免费观察，真实跨源冲突则 fail closed。TuShare 与 TDX 是可选增强来源，不是默认数据飞轮的前提。AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
+默认行情策略是 **`free_cn_research_v1`**：后台自动采集一个日线来源并保存单源质量证据，不因此发布 Dataset。研究需要固定区间时，通过 `POST /api/backtest/datasets/verified-jobs` 为已核验且已收盘的 SSE 交易日明确提交双源核验；`GET /api/backtest/datasets/verified-jobs/{job_id}` 可查看任务状态。任务成功后，通过 `POST /api/backtest/datasets/verified-interval` 用指定的任务 ID 组成带核验证据的 Dataset。回测、比较和参数扫描明确绑定其 `dataset_id`。跨源一致不证明严格历史 PIT 或总收益，也不授予策略晋级资格。TuShare 与 TDX 是可选增强来源。AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
 
 ## 开发 Karkinos
 

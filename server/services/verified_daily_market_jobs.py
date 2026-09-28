@@ -16,6 +16,7 @@ from server.services.daily_market_collection import (
 from server.services.market_calendar_dates import (
     resolve_latest_verified_closed_trading_date,
     resolve_verified_closed_trading_dates,
+    resolve_verified_closed_trading_dates_in_range,
 )
 from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
 
@@ -94,6 +95,41 @@ def enqueue_latest_verified_daily_market_jobs(
         for instrument in instruments
     ]
     return _job_plan(resolved_dates, instruments, jobs)
+
+
+def enqueue_verified_daily_market_jobs_for_range(
+    db: Any,
+    config: object,
+    store: JobStore,
+    *,
+    instrument: InstrumentKey,
+    start_date: date,
+    end_date: date,
+    now: datetime,
+) -> tuple[JobRun, ...]:
+    """Explicitly enqueue one verified-source job for each closed SSE session."""
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("verified_daily_market_job_plan_now_must_be_timezone_aware")
+    if instrument.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}:
+        raise ValueError("verified_daily_market_instrument_type_unsupported")
+    resolved_dates = resolve_verified_closed_trading_dates_in_range(
+        db, now, start_date=start_date, end_date=end_date
+    )
+    if not resolved_dates:
+        raise VerifiedDailyMarketJobPlanningError(
+            "verified_daily_market_trading_dates_unavailable"
+        )
+    policy = source_policy_for_config(config)
+    payloads = tuple(
+        VerifiedDailyMarketJobRequest(
+            trade_date=date.fromisoformat(resolved.trade_date),
+            instruments=(instrument,),
+            source_policy_id=policy.policy_id,
+            calendar_evidence_refs=resolved.calendar_evidence_refs,
+        ).to_payload()
+        for resolved in resolved_dates
+    )
+    return store.enqueue_many(VERIFIED_DAILY_MARKET_JOB, payloads, now=now)
 
 
 def _planning_facts(db: Any, now: datetime, lookback_days: int):
@@ -191,4 +227,5 @@ __all__ = [
     "VerifiedDailyMarketJobPlan",
     "VerifiedDailyMarketJobPlanningError",
     "enqueue_latest_verified_daily_market_jobs",
+    "enqueue_verified_daily_market_jobs_for_range",
 ]

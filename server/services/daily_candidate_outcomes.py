@@ -113,6 +113,9 @@ def evaluate_daily_candidate_outcomes(
         "items": evaluated,
         "observed_horizon_count": observed,
         "formal_authoritative_directional_hits": _formal_directional_hits(evaluated),
+        "research_preview_buy_candidate_directional_hits": (
+            _research_preview_buy_candidate_directional_hits(items, evaluated, previews)
+        ),
         "calendar_evidence_refs": calendar["refs"],
         "limitations": [
             "hypothetical_unadjusted_price_move_only",
@@ -442,6 +445,48 @@ def _formal_directional_hits(items: list[dict[str, Any]]) -> dict[str, Any]:
             else (item["horizons"][key]["price_move_pct"] < 0)
             for item in observed
         )
+        result[key] = {
+            "observed_count": len(observed),
+            "directional_hit_count": hits,
+            "directional_hit_rate": hits / len(observed) if observed else None,
+        }
+    return result
+
+
+def _research_preview_buy_candidate_directional_hits(
+    source_items: list[Mapping[str, Any]],
+    evaluated: list[dict[str, Any]],
+    previews: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Score only receipt-bound research buys with a frozen recommendation."""
+    eligible = []
+    for source, item in zip(source_items, evaluated, strict=True):
+        if (
+            source.get("kind") != "research_preview"
+            or source.get("operation") != "buy_candidate"
+            or source.get("research_only") is not True
+            or source.get("report_authoritative") is True
+            or item["anchor_status"] != "verified"
+        ):
+            continue
+        preview = previews.get(str(source.get("run_id") or ""))
+        if (
+            preview is None
+            or preview.get("status") not in {"winner_selected", "no_selection"}
+            or preview.get("normalized_research_status")
+            != "best_available_for_further_research"
+            or not preview.get("research_winner_candidate_id")
+        ):
+            continue
+        eligible.append(item)
+
+    result: dict[str, Any] = {}
+    for n in _HORIZONS:
+        key = f"T+{n}"
+        observed = [
+            item for item in eligible if item["horizons"][key]["status"] == "observed"
+        ]
+        hits = sum(item["horizons"][key]["price_move_pct"] > 0 for item in observed)
         result[key] = {
             "observed_count": len(observed),
             "directional_hit_count": hits,
