@@ -177,8 +177,8 @@ def test_normalized_research_candidate_requires_qualification_before_paper_shado
         critique_id=critique_id,
         baseline_result_id=baseline_result_id,
         candidate_result_id=candidate_result_id,
-        status="awaiting_human_approval",
-        recommendation="paper_shadow_review",
+        status="evaluated_research_only",
+        recommendation="formula_research_candidate",
         comparison=candidate_comparison,
         now="2026-08-12T07:00:00+00:00",
     )
@@ -244,7 +244,7 @@ def test_normalized_research_candidate_requires_qualification_before_paper_shado
 
     assert (
         store.get_candidate(candidate["candidate_id"])["promotion_status"]
-        == "awaiting_human_approval"
+        == "account_qualification_required"
     )
     status_after = service.status()
     assert status_after["active_paper_shadow_strategy_id"] is None
@@ -254,3 +254,32 @@ def test_normalized_research_candidate_requires_qualification_before_paper_shado
         )
         is None
     )
+
+    # A normalized source persisted under the former approval contract must
+    # also fail closed when reopened through the repository directly.
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            """UPDATE ai_shadow_research_candidates
+               SET status='awaiting_human_approval',
+                   recommendation='paper_shadow_review',
+                   promotion_status='awaiting_human_approval'
+               WHERE candidate_id=?""",
+            (candidate["candidate_id"],),
+        )
+    with pytest.raises(
+        ShadowResearchRejected, match="candidate_not_eligible_for_paper_shadow"
+    ):
+        store.approve_candidate(
+            candidate["candidate_id"],
+            approved_by="human:quant_lead",
+            notes="Old normalized source is not account qualified.",
+            confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+            now="2026-08-12T07:10:00+00:00",
+        )
+    with sqlite3.connect(db._path) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_promotions"
+            ).fetchone()[0]
+            == 0
+        )

@@ -487,7 +487,7 @@ class AiShadowResearchCandidateWorkflowMixin:
         }
         recommendation = (
             (
-                "paper_shadow_review"
+                "formula_research_candidate"
                 if research_gate is not None and research_gate.passed
                 else "keep_researching"
             )
