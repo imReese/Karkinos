@@ -15,14 +15,31 @@ export function formatStrategyDisplayName(
   }
   const strategyId = strategy.strategy_id?.trim();
   const name = strategy.name?.trim();
-  return (
+  const candidate =
     (name ? localizedNames[name] : undefined) ??
     (strategyId ? localizedNames[strategyId] : undefined) ??
     strategy.display_name?.trim() ??
     name ??
-    strategyId ??
-    '--'
+    strategyId;
+
+  if (!candidate) {
+    return '--';
+  }
+
+  const shadowMatch = candidate.match(
+    /(?:shadow[-_]candidate|ai_formula_shadow)[-_:]([a-f0-9]{6,})/i,
   );
+  if (shadowMatch) {
+    const hash = shadowMatch[1].slice(0, 6);
+    const isEn = Object.values(localizedNames).some(
+      (val) =>
+        val.toLowerCase().includes('average') ||
+        val.toLowerCase().includes('reversion'),
+    );
+    return isEn ? `Shadow Candidate (#${hash})` : `影子策略候选 (#${hash})`;
+  }
+
+  return candidate;
 }
 
 export function formatStrategyAuditLabel(
