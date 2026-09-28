@@ -45,16 +45,19 @@ export function PublicationStatus({
   return (
     <aside
       role="status"
-      className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-warning-indicator)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-warning-indicator)_8%,transparent)] px-3 py-2 text-xs text-[var(--app-text)]"
     >
-      <p>
-        {copy.valuationAsOf}: {formatTimestamp(asOf)}
+      <p className="font-medium">
+        {copy.valuationAsOf}:{' '}
+        <span className="font-mono">{formatTimestamp(asOf)}</span>
       </p>
-      <p>{description}</p>
+      <p className="text-[var(--app-text-secondary)]">{description}</p>
       {sameSnapshot && state?.latest_attempt?.updated_at ? (
-        <p>
+        <p className="text-[var(--app-text-tertiary)]">
           {copy.publicationAttempt}:{' '}
-          {formatTimestamp(state.latest_attempt.updated_at)}
+          <span className="font-mono">
+            {formatTimestamp(state.latest_attempt.updated_at)}
+          </span>
         </p>
       ) : null}
     </aside>
