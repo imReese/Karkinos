@@ -33,7 +33,7 @@ from data.market.revision import (
 from data.market.schema import DAILY_BAR_SCHEMA_VERSION
 from data.market.verification_evidence import publish_market_verification_evidence
 from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
-from data.providers.tushare_daily import TUSHARE_DAILY_BAR_DESCRIPTOR
+from data.providers.tushare import TUSHARE_DAILY_BAR_DESCRIPTOR
 from data.storage.objects import ContentAddressedObjectStore
 
 DAY = date(2026, 9, 15)

@@ -9,7 +9,7 @@ import re
 from collections.abc import Callable
 from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Protocol
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -73,6 +73,49 @@ class _TusharePro(Protocol):
     def daily(self, **kwargs: object) -> pd.DataFrame: ...
 
     def fund_daily(self, **kwargs: object) -> pd.DataFrame: ...
+
+
+def tushare_pro_client(token: str | None) -> Any:
+    """Open a TuShare Pro client without changing global token state."""
+    import tushare as ts
+
+    return ts.pro_api(token) if token else ts.pro_api()
+
+
+def fetch_tushare_pro_daily_range(
+    client: Any,
+    *,
+    ts_code: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    return client.daily(
+        ts_code=ts_code,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+def fetch_tushare_pro_market_daily(client: Any, *, trade_date: str) -> pd.DataFrame:
+    return client.daily(trade_date=trade_date)
+
+
+def fetch_tushare_pro_stock_basic(client: Any) -> pd.DataFrame:
+    return client.stock_basic(exchange="", list_status="L")
+
+
+def fetch_tushare_pro_fund_nav(
+    client: Any,
+    *,
+    ts_code: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    return client.fund_nav(
+        ts_code=ts_code,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 class TushareDailyBarProvider:

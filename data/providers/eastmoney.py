@@ -1,4 +1,4 @@
-"""AKShare immutable daily-bar adapter for the canonical market-data pipeline."""
+"""Eastmoney data through AKShare daily/fund endpoints and TuShare DC quotes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import re
 from collections.abc import Callable
 from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Protocol
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -23,6 +23,7 @@ from data.market.contracts import (
     ProviderDailyBarBatch,
     ProviderDailyBarRow,
 )
+from data.providers.akshare_sdk import provider_network_env
 
 AKSHARE_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare.daily_bar.v1"
 AKSHARE_DAILY_BAR_PAYLOAD_FORMAT = "akshare.eastmoney.daily_bar.dataframe.v1"
@@ -333,3 +334,180 @@ def _aware_utc(value: datetime, *, field: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"akshare_{field}_must_be_timezone_aware")
     return value.astimezone(timezone.utc)
+
+
+def legacy_daily_bars(
+    ak,
+    retry,
+    *,
+    endpoint: str,
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    adjust: str | None = None,
+):
+    """Fetch the legacy Eastmoney stock, ETF, or index history endpoint."""
+    if endpoint not in {"stock_zh_a_hist", "fund_etf_hist_em", "index_zh_a_hist"}:
+        raise ValueError(f"eastmoney_legacy_daily_endpoint_unsupported:{endpoint}")
+    kwargs = {
+        "symbol": symbol,
+        "period": "daily",
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    if adjust is not None:
+        kwargs["adjust"] = adjust
+    return retry(getattr(ak, endpoint), **kwargs)
+
+
+def legacy_minute_bars(ak, retry, *, asset_class: str, symbol: str, period: str):
+    """Fetch legacy Eastmoney stock or ETF minute history."""
+    if asset_class == "stock":
+        endpoint = ak.stock_zh_a_hist_min_em
+    elif asset_class == "fund":
+        endpoint = ak.fund_etf_hist_min_em
+    else:
+        raise ValueError(f"eastmoney_legacy_minute_asset_unsupported:{asset_class}")
+    return retry(endpoint, symbol=symbol, period=period)
+
+
+def legacy_stock_master(ak):
+    with provider_network_env():
+        return ak.stock_zh_a_spot_em()
+
+
+def legacy_stock_bid_ask(ak, retry, *, symbol: str):
+    return retry(ak.stock_bid_ask_em, symbol=symbol, retry_delay_seconds=0)
+
+
+def legacy_etf_spot(ak, retry):
+    return retry(ak.fund_etf_spot_em)
+
+
+def legacy_index_spot(ak, *, symbol: str):
+    with provider_network_env():
+        return ak.stock_zh_index_spot_em(symbol=symbol)
+
+
+def legacy_fund_name_map(ak):
+    with provider_network_env():
+        return ak.fund_name_em()
+
+
+def legacy_open_end_fund_info(ak, retry, *, symbol: str):
+    return retry(ak.fund_open_fund_info_em, symbol=symbol, indicator="单位净值走势")
+
+
+def legacy_open_end_fund_daily(ak, retry):
+    return retry(ak.fund_open_fund_daily_em)
+
+
+def legacy_fund_page(*, fund_code: str) -> str:
+    import requests
+
+    url = f"https://fund.eastmoney.com/pingzhongdata/{fund_code}.js"
+    with provider_network_env():
+        response = requests.get(url, timeout=3)
+    response.raise_for_status()
+    return response.text
+
+
+def fetch_eastmoney_realtime_quote_via_tushare(ts_code: str) -> dict | None:
+    """Fetch the Eastmoney ``dc`` feed, preserving legacy quote payload fields."""
+    import tushare as ts
+
+    df = None
+    try:
+        from tushare.stock import rtq
+
+        df = rtq.get_realtime_quotes_dc(ts_code)
+    except Exception:
+        realtime_quote = getattr(ts, "realtime_quote", None)
+        if not callable(realtime_quote):
+            return None
+        try:
+            df = realtime_quote(ts_code=ts_code, src="dc")
+        except Exception:
+            return None
+    if df is None or df.empty:
+        return None
+
+    row = df.iloc[0].to_dict()
+    price = _row_float(row, "PRICE", "price")
+    if price is None or price <= 0:
+        return None
+
+    previous_close = _row_float(row, "PRE_CLOSE", "pre_close")
+    change = _row_float(row, "CHANGE", "change")
+    if change is None and previous_close not in {None, 0}:
+        change = price - float(previous_close)
+    change_percent = _row_float(row, "PCT_CHG", "pct_chg")
+    if change_percent is None and previous_close not in {None, 0}:
+        change_percent = (price - float(previous_close)) / float(previous_close)
+    elif change_percent is not None:
+        change_percent = change_percent / 100
+
+    trade_date = _format_trade_date(_row_value(row, "DATE", "date"))
+    timestamp = _format_quote_timestamp(trade_date, _row_value(row, "TIME", "time"))
+    # DATE identifies this quote's session, not the session owning PRE_CLOSE.
+    # Keep the legacy provider and quote-source identity for persisted readers.
+    return {
+        "price": price,
+        "volume": _row_float(row, "VOLUME", "volume", "VOL", "vol"),
+        "turnover": _row_float(row, "AMOUNT", "amount"),
+        "timestamp": timestamp or trade_date,
+        "source": "tushare",
+        "quote_source": "tushare_realtime_quote",
+        "metadata": {
+            "upstream_group": "eastmoney",
+            "transport_sdk": "tushare",
+        },
+        "display_name": _row_str(row, "NAME", "name"),
+        "previous_close": previous_close,
+        "change": change,
+        "change_percent": change_percent,
+    }
+
+
+def _row_value(row: dict[str, Any], *names: str) -> Any:
+    for name in names:
+        if name in row and pd.notna(row[name]):
+            return row[name]
+    return None
+
+
+def _row_float(row: dict[str, Any], *names: str) -> float | None:
+    value = _row_value(row, *names)
+    if value in {None, ""}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_str(row: dict[str, Any], *names: str) -> str | None:
+    value = _row_value(row, *names)
+    if value in {None, ""}:
+        return None
+    return str(value)
+
+
+def _format_trade_date(value: Any) -> str | None:
+    if value in {None, ""}:
+        return None
+    raw = str(value)
+    if len(raw) == 8 and raw.isdigit():
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
+    return raw
+
+
+def _format_quote_timestamp(trade_date: str | None, time_value: Any) -> str | None:
+    if not trade_date:
+        return None
+    if time_value in {None, ""}:
+        return trade_date
+    formatted_time = str(time_value).strip()
+    if not formatted_time:
+        return trade_date
+    return f"{trade_date}T{formatted_time}"

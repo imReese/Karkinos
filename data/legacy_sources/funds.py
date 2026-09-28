@@ -11,16 +11,17 @@ from functools import lru_cache
 import pandas as pd
 
 from core.types import AssetClass, Symbol
-from data.providers.akshare_support import CHINA_MARKET_TZ as _CHINA_MARKET_TZ
-from data.providers.akshare_support import OPEN_END_FUND_NOISE as _OPEN_END_FUND_NOISE
-from data.providers.akshare_support import date_from_epoch_ms as _date_from_epoch_ms
-from data.providers.akshare_support import dict_float as _dict_float
-from data.providers.akshare_support import (
+from data.providers import eastmoney as eastmoney_upstream
+from data.providers import sina as sina_upstream
+from data.providers.akshare_sdk import CHINA_MARKET_TZ as _CHINA_MARKET_TZ
+from data.providers.akshare_sdk import OPEN_END_FUND_NOISE as _OPEN_END_FUND_NOISE
+from data.providers.akshare_sdk import date_from_epoch_ms as _date_from_epoch_ms
+from data.providers.akshare_sdk import dict_float as _dict_float
+from data.providers.akshare_sdk import (
     looks_like_open_end_fund_code as _looks_like_open_end_fund_code,
 )
-from data.providers.akshare_support import provider_network_env as _provider_network_env
 
-logger = logging.getLogger("data.providers.akshare_source")
+logger = logging.getLogger("data.legacy_sources.market")
 
 
 class OpenEndFundMixin:
@@ -31,8 +32,7 @@ class OpenEndFundMixin:
     def _open_end_fund_name_map() -> dict[str, str]:
         import akshare as ak
 
-        with _provider_network_env():
-            df = ak.fund_name_em()
+        df = eastmoney_upstream.legacy_fund_name_map(ak)
         mapping: dict[str, str] = {}
         if "基金简称" not in df.columns or "基金代码" not in df.columns:
             return mapping
@@ -105,10 +105,10 @@ class OpenEndFundMixin:
                     "amount",
                 ]
             )
-        df = self._call_with_retry(
-            ak.fund_open_fund_info_em,
+        df = eastmoney_upstream.legacy_open_end_fund_info(
+            ak,
+            self._call_with_retry,
             symbol=fund_code,
-            indicator="单位净值走势",
         )
         if df.empty:
             return pd.DataFrame(
@@ -168,7 +168,9 @@ class OpenEndFundMixin:
         if not _looks_like_open_end_fund_code(str(symbol).strip()):
             canonical_name = self._resolve_open_end_fund_name(symbol)
         try:
-            df = self._call_with_retry(ak.fund_open_fund_daily_em)
+            df = eastmoney_upstream.legacy_open_end_fund_daily(
+                ak, self._call_with_retry
+            )
         except Exception:
             logger.warning(
                 "AKShare open-end fund daily table failed for %s; falling back to single fund page",
@@ -201,6 +203,10 @@ class OpenEndFundMixin:
             "price": float(price),
             "volume": None,
             "timestamp": trade_day,
+            "metadata": {
+                "upstream_group": "eastmoney",
+                "transport_sdk": "akshare",
+            },
         }
         if canonical_name:
             payload["name"] = canonical_name
@@ -222,16 +228,7 @@ class OpenEndFundMixin:
         return payload
 
     def _fetch_open_end_fund_latest_from_estimate(self, fund_code: str) -> dict | None:
-        import requests
-
-        url = (
-            "https://stock.finance.sina.com.cn/fundInfo/api/openapi.php/"
-            "FdFundService.getEstimateNetworthPic"
-        )
-        with _provider_network_env():
-            response = requests.get(url, params={"symbol": fund_code}, timeout=3)
-        response.raise_for_status()
-        payload = response.json()
+        payload = sina_upstream.legacy_fund_estimate(fund_code=fund_code)
         result = payload.get("result") if isinstance(payload, dict) else None
         if not isinstance(result, dict):
             return None
@@ -315,13 +312,7 @@ class OpenEndFundMixin:
         return snapshot
 
     def _fetch_open_end_fund_latest_from_page(self, fund_code: str) -> dict | None:
-        import requests
-
-        url = f"https://fund.eastmoney.com/pingzhongdata/{fund_code}.js"
-        with _provider_network_env():
-            response = requests.get(url, timeout=3)
-        response.raise_for_status()
-        text = response.text
+        text = eastmoney_upstream.legacy_fund_page(fund_code=fund_code)
 
         name_match = re.search(r'fS_name\s*=\s*"([^"]+)"', text)
         trend_match = re.search(

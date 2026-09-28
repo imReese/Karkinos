@@ -29,7 +29,7 @@ from data.market.revision import publish_daily_bar_revision
 from data.market.schema import DAILY_BAR_SCHEMA_VERSION
 from data.market.verification_evidence import publish_market_verification_evidence
 from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
-from data.providers.tushare_daily import TUSHARE_DAILY_BAR_DESCRIPTOR
+from data.providers.tushare import TUSHARE_DAILY_BAR_DESCRIPTOR
 from data.source_policy import FREE_CN_RESEARCH_V1
 from data.storage.objects import ContentAddressedObjectStore
 from server.db import AppDatabase

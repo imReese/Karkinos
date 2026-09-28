@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 
@@ -87,6 +88,37 @@ def _provider_network_env():
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def call_with_retry(
+    func,
+    *,
+    max_retries: int,
+    retry_delay_seconds: float,
+    logger,
+    **kwargs,
+):
+    """Apply the legacy AKShare retry and proxy policy to one upstream call."""
+    retries = max(int(max_retries), 1)
+    retry_delay = max(float(retry_delay_seconds), 0.0)
+    last_error = None
+    for attempt in range(retries):
+        try:
+            with _provider_network_env():
+                return func(**kwargs)
+        except Exception as exc:
+            last_error = exc
+            if attempt < retries - 1:
+                logger.warning(
+                    "AKShare 调用失败 (第%d次), %.3fs 后重试: %s",
+                    attempt + 1,
+                    retry_delay,
+                    exc,
+                )
+                if retry_delay:
+                    time.sleep(retry_delay)
+    assert last_error is not None
+    raise last_error
 
 
 OPEN_END_FUND_NOISE = _OPEN_END_FUND_NOISE

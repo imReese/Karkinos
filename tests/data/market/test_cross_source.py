@@ -30,7 +30,7 @@ from data.market.quality import RESEARCH_STRICT_DAILY
 from data.market.quality_evidence import read_market_quality_evidence
 from data.market.verification_evidence import MarketVerificationStatus
 from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
-from data.providers.tushare_daily import TUSHARE_DAILY_BAR_DESCRIPTOR
+from data.providers.tushare import TUSHARE_DAILY_BAR_DESCRIPTOR
 from data.storage.objects import ContentAddressedObjectStore
 
 DAY = date(2026, 9, 15)

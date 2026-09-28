@@ -9,7 +9,7 @@ import pytest
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import DailyBarProvider, DailyBarRequest
-from data.providers.akshare_daily import (
+from data.providers.eastmoney import (
     AKSHARE_DAILY_BAR_DESCRIPTOR,
     AkshareDailyBarProvider,
     AkshareDailyBarRequestError,

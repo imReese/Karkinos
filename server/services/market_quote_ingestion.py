@@ -66,6 +66,12 @@ def build_quote_ingestion_command(
         "quote_source": quote_source,
         "display_name": display_name or None,
     }
+    source_metadata = snapshot.get("metadata")
+    if isinstance(source_metadata, Mapping):
+        for key in ("upstream_group", "transport_sdk"):
+            value = source_metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                metadata[key] = value.strip()
     if reported_previous_close_date and previous_close_date is None:
         metadata.update(
             {
