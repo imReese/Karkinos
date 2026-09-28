@@ -245,8 +245,8 @@ def build_normalized_research_advancement_gate(
         },
     )
 
-    baseline_fee_ok = _estimated_fee_evidence_valid(baseline)
-    candidate_fee_ok = _estimated_fee_evidence_valid(candidate)
+    baseline_fee_ok = estimated_fee_evidence_valid(baseline)
+    candidate_fee_ok = estimated_fee_evidence_valid(candidate)
     record(
         "baseline_estimated_cost_and_tax_evidence",
         passed=baseline_fee_ok,
@@ -348,7 +348,7 @@ def research_backtest_infrastructure_blockers(
         minimum_fold_count=2,
     ):
         blockers.append(f"{prefix}_rolling_oos_evidence_invalid")
-    if not _estimated_fee_evidence_valid(view):
+    if not estimated_fee_evidence_valid(view):
         blockers.append(f"{prefix}_estimated_fee_evidence_invalid")
     if turnover_ratio(view) is None:
         blockers.append(f"{prefix}_turnover_evidence_invalid")
@@ -375,7 +375,7 @@ def _drawdown_evidence_valid(view: Mapping[str, Any]) -> bool:
     )
 
 
-def _estimated_fee_evidence_valid(view: Mapping[str, Any]) -> bool:
+def estimated_fee_evidence_valid(view: Mapping[str, Any]) -> bool:
     evidence = view.get("fee_component_evidence")
     if not isinstance(evidence, Mapping):
         return False
@@ -469,6 +469,7 @@ __all__ = [
     "baseline_research_evidence_blockers",
     "build_normalized_research_advancement_gate",
     "candidate_research_evidence_blockers",
+    "estimated_fee_evidence_valid",
     "is_valid_passed_normalized_research_advancement_gate",
     "research_backtest_infrastructure_blockers",
 ]
