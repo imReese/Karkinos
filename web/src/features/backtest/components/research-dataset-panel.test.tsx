@@ -133,16 +133,19 @@ test('selecting a stored dataset does not trigger acquisition and errors do not 
 test('explicit verification publishes only after every job succeeds and selects the interval Dataset', async () => {
   const firstId = '1'.repeat(64);
   const secondId = '2'.repeat(64);
+  const verificationPolicy = 'karkinos.market.source.free_cn_research.v1';
   const jobs = [
     {
       trade_date: '2026-09-07',
       job_id: firstId,
+      source_policy_id: verificationPolicy,
       status: 'queued',
       result_ref: null,
     },
     {
       trade_date: '2026-09-08',
       job_id: secondId,
+      source_policy_id: verificationPolicy,
       status: 'queued',
       result_ref: null,
     },
@@ -187,6 +190,10 @@ test('explicit verification publishes only after every job succeeds and selects 
   await screen.findByText(/持久目录：/);
   fireEvent.click(screen.getByRole('button', { name: '提交双源核验' }));
   await screen.findByText('任务：0/2 成功');
+  expect(screen.getByTestId('verified-job-policy').textContent).toContain(
+    verificationPolicy,
+  );
+  expect(screen.getByText(/默认核验策略首选 BaoStock 与腾讯日线/)).toBeTruthy();
   const publish = screen.getByRole('button', { name: '发布核验区间 Dataset' });
   expect((publish as HTMLButtonElement).disabled).toBe(true);
   const submission = fetchMock.mock.calls.find(

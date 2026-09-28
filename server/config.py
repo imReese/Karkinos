@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from data.source_policy import FREE_CN_RESEARCH_V1
 from server.config_contract import DEFAULT_MARKET_SOURCE_POLICY
 from server.config_loading import load_config
 from server.config_types import (
@@ -42,6 +43,7 @@ class BacktestConfig:
     account_commission_rate: Decimal = Decimal("0.0001")
     account_min_commission: Decimal = Decimal("5")
     market_data_source_policy: str = DEFAULT_MARKET_SOURCE_POLICY
+    market_data_verification_source_policy: str = FREE_CN_RESEARCH_V1.policy_id
     # Deprecated compatibility shim for old callers/tests. Production routing
     # uses market_data_source_policy via data.source_policy.
     data_source: str = "akshare"

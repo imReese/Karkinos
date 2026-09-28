@@ -63,30 +63,33 @@ notification
 
 ```text
 source_policy
+verification_source_policy
 live_poll_interval
 provider_config.tushare_token_env
 ```
 
-默认策略：
+两个策略的默认值均为：
 
 ```text
 karkinos.market.source.free_cn_research.v1
 ```
 
-它不是“选择一个永远可信的主 Provider”，而是按用途解析版本化来源策略。默认后台任务按优先级采集一个可用来源的未复权日线，独立保存单源质量结果；质量阻断不会改选来源来掩盖问题，也不会发布 Dataset。
+`source_policy` 管理自动单源采集及现有行情、基金、交易日历等用途；`verification_source_policy` 只用于明确提交的研究日线核验任务。两者独立配置，因此改变核验来源不必重排实时行情或自动采集来源。策略按用途解析版本化来源候选，不表示首选 Provider 永远可信。默认后台任务按优先级采集一个可用来源的未复权日线，独立保存单源质量结果；质量阻断不会改选来源来掩盖问题，也不会发布 Dataset。
 
 显式双源核验任务仍要求两个独立 upstream，只有匹配后才发布 verified Dataset v2：
 
 ```text
-BaoStock
-   + Tencent（通过 AKShare）
+BaoStock（BaoStock 上游）
+   + 腾讯日线（AKShare SDK，Tencent 上游）
    ↓
 Quality + cross-source verification
    ↓
 verified Dataset v2
 ```
 
-如果其中一个来源在本次请求中因网络、SDK/API 不可用或空响应而无法形成市场事实，核验任务可以按 policy 尝试下一组独立来源，例如 Tencent + Eastmoney。已经形成有效市场事实后的 Quality BLOCKED 或跨源冲突不会通过换源“洗绿”，而是 fail closed。单源质量通过、双源一致、历史 PIT 可获得性和收益口径是不同结论；v2 的双源证据本身不授权策略晋级或总收益计算。
+`akshare_tencent` 与 `tencent` 的日线适配器均通过 AKShare SDK 调用腾讯接口，同属 Tencent 上游，不能算独立两票；`akshare` 日线使用 Eastmoney 上游。包名、SDK 和数据上游是不同身份。如果其中一个来源在本次请求中因网络、SDK/API 不可用或空响应而无法形成市场事实，核验任务可以按策略尝试下一组独立上游，例如 Tencent + Eastmoney。已经形成有效市场事实后的 Quality BLOCKED 或跨源冲突不会通过换源“洗绿”，而是 fail closed。
+
+BaoStock + Tencent 日线使用已审阅的版本化对账规则：价格严格一致，成交量绝对差不超过 99 股、成交额绝对差不超过 99.99 元，以反映腾讯接口的数据粒度。其它来源组合仍严格比较；这些容差不允许单位映射错误。单源质量通过、双源一致、历史 PIT 可获得性和收益口径是不同结论；v2 的双源证据本身不授权策略晋级或总收益计算。
 
 免费来源优先级后仍可使用可选增强来源：
 
@@ -102,7 +105,7 @@ KARKINOS_TUSHARE_TOKEN
 
 Token 写入 `.env`，不写入 `config.json`。
 
-新配置应使用 `market_data.source_policy`。历史 `data_source.provider` / `KARKINOS_DATA_SOURCE` 仅保留兼容读取，不作为新数据飞轮的配置方式。
+新配置应分别使用 `market_data.source_policy` 与 `market_data.verification_source_policy`。显式核验任务的响应包含其 `source_policy_id`；已提交任务保留原策略身份。如果排队任务的策略与当前核验策略不同，worker 会在请求 Provider 前拒绝该任务，需按新策略重新提交。旧 Dataset 的 ID 和离线重放语义不变。历史 `data_source.provider` / `KARKINOS_DATA_SOURCE` 仅保留兼容读取，不作为新数据飞轮的配置方式。
 
 ## `ai`
 

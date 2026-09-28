@@ -7,7 +7,10 @@ from datetime import date, datetime
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
-from data.source_policy import source_policy_for_config
+from data.source_policy import (
+    source_policy_for_config,
+    verification_source_policy_for_config,
+)
 from server.contracts.jobs import JobRun, JobStore
 from server.services.daily_market_collection import (
     DAILY_MARKET_COLLECTION_JOB,
@@ -79,7 +82,7 @@ def enqueue_latest_verified_daily_market_jobs(
 ) -> VerifiedDailyMarketJobPlan:
     """Explicitly enqueue idempotent cross-source verification jobs."""
     resolved_dates, instruments = _planning_facts(db, now, lookback_days)
-    policy = source_policy_for_config(config)
+    policy = verification_source_policy_for_config(config)
     jobs = [
         store.enqueue(
             VERIFIED_DAILY_MARKET_JOB,
@@ -119,7 +122,7 @@ def enqueue_verified_daily_market_jobs_for_range(
         raise VerifiedDailyMarketJobPlanningError(
             "verified_daily_market_trading_dates_unavailable"
         )
-    policy = source_policy_for_config(config)
+    policy = verification_source_policy_for_config(config)
     payloads = tuple(
         VerifiedDailyMarketJobRequest(
             trade_date=date.fromisoformat(resolved.trade_date),

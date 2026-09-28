@@ -254,6 +254,16 @@ def source_policy_for_config(config: object) -> MarketSourcePolicy:
     return FREE_CN_RESEARCH_V1
 
 
+def verification_source_policy_for_config(config: object) -> MarketSourcePolicy:
+    """Resolve the explicit daily verification route independently of collection."""
+    policy_id = getattr(
+        config,
+        "market_data_verification_source_policy",
+        FREE_CN_RESEARCH_V1.policy_id,
+    )
+    return resolve_market_source_policy(policy_id)
+
+
 def source_candidates_for_config(
     config: object,
     use_case: MarketDataUseCase,

@@ -82,7 +82,10 @@ def _store(tmp_path):
 
 def _config():
     return SimpleNamespace(
-        market_data_source_policy="karkinos.market.source.free_cn_research.v1",
+        market_data_source_policy="karkinos.market.source.cn_research.v1",
+        market_data_verification_source_policy=(
+            "karkinos.market.source.free_cn_research.v1"
+        ),
         data_source="free",
         tushare_token="",
     )
@@ -138,8 +141,14 @@ def test_verified_jobs_http_enqueues_only_verified_closed_sessions_and_is_idempo
     assert status.status_code == 200, status.text
     assert status.json()["status"] == "queued"
     assert status.json()["trade_date"] == "2026-09-16"
+    assert status.json()["source_policy_id"] == (
+        "karkinos.market.source.free_cn_research.v1"
+    )
     jobs = first.json()["jobs"]
     assert [job["trade_date"] for job in jobs] == ["2026-09-16", "2026-09-18"]
+    assert {job["source_policy_id"] for job in jobs} == {
+        "karkinos.market.source.free_cn_research.v1"
+    }
     assert len({job["job_id"] for job in jobs}) == 2
     assert all(job["status"] == "queued" and job["result_ref"] is None for job in jobs)
     persisted = store.list_recent(VERIFIED_DAILY_MARKET_JOB)
@@ -334,8 +343,33 @@ def test_default_collection_and_explicit_verification_have_distinct_job_identity
         "symbol": "600000",
         "instrument_type": "stock",
     }
+    assert (
+        collected.jobs[0].payload["source_policy_id"]
+        == "karkinos.market.source.cn_research.v1"
+    )
     assert verified.jobs[0].kind == VERIFIED_DAILY_MARKET_JOB
+    assert (
+        verified.jobs[0].payload["source_policy_id"]
+        == "karkinos.market.source.free_cn_research.v1"
+    )
     assert collected.jobs[0].job_id != verified.jobs[0].job_id
+
+
+def test_explicit_verification_policy_changes_new_job_identity(tmp_path):
+    db = _planner_db([{"symbol": "600000", "instrument_type": "stock"}])
+    store = _store(tmp_path)
+    config = _config()
+    free = enqueue_latest_verified_daily_market_jobs(db, config, store, now=NOW)
+    config.market_data_verification_source_policy = (
+        "karkinos.market.source.cn_research.v1"
+    )
+    paid = enqueue_latest_verified_daily_market_jobs(db, config, store, now=NOW)
+
+    assert free.jobs[0].job_id != paid.jobs[0].job_id
+    assert (
+        paid.jobs[0].payload["source_policy_id"]
+        == "karkinos.market.source.cn_research.v1"
+    )
 
 
 def test_planner_is_idempotent_for_same_market_facts(tmp_path):

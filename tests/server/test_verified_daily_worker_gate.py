@@ -47,7 +47,7 @@ def _calendar(year: int = DAY.year, trading_day: date = DAY) -> dict:
     }
 
 
-def _job(tmp_path):
+def _job(tmp_path, *, policy_id: str = FREE_CN_RESEARCH_V1.policy_id):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = SQLiteJobStore(db.path)
@@ -57,7 +57,7 @@ def _job(tmp_path):
     payload = VerifiedDailyMarketJobRequest(
         trade_date=DAY,
         instruments=(InstrumentKey("600000", InstrumentType.STOCK),),
-        source_policy_id=FREE_CN_RESEARCH_V1.policy_id,
+        source_policy_id=policy_id,
         calendar_evidence_refs=(evidence_ref,),
     ).to_payload()
     now = datetime.now(timezone.utc)
@@ -69,13 +69,16 @@ def _job(tmp_path):
             row if exchange == "SSE" and year == DAY.year else None
         )
     )
-    config = SimpleNamespace(market_data_source_policy=FREE_CN_RESEARCH_V1.policy_id)
+    config = SimpleNamespace(
+        market_data_source_policy=CN_RESEARCH_V1.policy_id,
+        market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id,
+    )
     return store, job, calendar_db, config, row
 
 
 def _invalidate(config, row: dict, kind: str) -> None:
     if kind == "policy":
-        config.market_data_source_policy = CN_RESEARCH_V1.policy_id
+        config.market_data_verification_source_policy = CN_RESEARCH_V1.policy_id
     else:
         row["official_source_fingerprint"] = "c" * 64
 
@@ -141,6 +144,37 @@ def test_extra_following_year_ref_is_not_accepted_for_nonfinal_session(
         match="verified_daily_market_calendar_evidence_stale",
     ):
         _require_current_verified_daily_market_job(calendar_db, config, extra_ref_job)
+
+
+def test_collection_policy_change_does_not_stale_explicit_verification(
+    tmp_path,
+) -> None:
+    _store, job, calendar_db, config, _row = _job(tmp_path)
+    config.market_data_source_policy = FREE_CN_RESEARCH_V1.policy_id
+    _require_current_verified_daily_market_job(calendar_db, config, job)
+
+
+@pytest.mark.asyncio
+async def test_queued_cn_verification_is_stale_before_provider_io(tmp_path) -> None:
+    store, job, calendar_db, config, _row = _job(
+        tmp_path, policy_id=CN_RESEARCH_V1.policy_id
+    )
+    service = Mock()
+
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        service,
+        request_validator=lambda: _require_current_verified_daily_market_job(
+            calendar_db, config, job
+        ),
+    )
+
+    service.run.assert_not_called()
+    persisted = store.get(job.job_id)
+    assert persisted is not None
+    assert persisted.error == "VerifiedDailyMarketJobNotCurrent"
+    assert persisted.result_ref is None
 
 
 @pytest.mark.asyncio

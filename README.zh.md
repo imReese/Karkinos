@@ -140,7 +140,7 @@ python -m server
 
 ### 配置
 
-默认行情策略是 **`free_cn_research_v1`**：后台自动采集一个日线来源并保存单源质量证据，不因此发布 Dataset。研究需要固定区间时，通过 `POST /api/backtest/datasets/verified-jobs` 为已核验且已收盘的 SSE 交易日明确提交双源核验；`GET /api/backtest/datasets/verified-jobs/{job_id}` 可查看任务状态。任务成功后，通过 `POST /api/backtest/datasets/verified-interval` 用指定的任务 ID 组成带核验证据的 Dataset。回测、比较和参数扫描明确绑定其 `dataset_id`。跨源一致不证明严格历史 PIT 或总收益，也不授予策略晋级资格。TuShare 与 TDX 是可选增强来源。AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
+默认 `market_data.source_policy` 是 **`free_cn_research_v1`**：后台自动采集一个日线来源并保存单源质量证据，不因此发布 Dataset。独立的 `market_data.verification_source_policy` 默认使用同一版本化策略，只约束显式研究核验。首选组合是 BaoStock 与通过 AKShare SDK 取得的腾讯日线：两者上游不同；`tencent` 和 `akshare_tencent` 同属腾讯上游，不能算两票。研究需要固定区间时，通过 `POST /api/backtest/datasets/verified-jobs` 为已核验且已收盘的 SSE 交易日明确提交双源核验，并取得每个任务的 `source_policy_id`；`GET /api/backtest/datasets/verified-jobs/{job_id}` 可查看状态与策略。任务成功后，通过 `POST /api/backtest/datasets/verified-interval` 用指定的任务 ID 组成带核验证据的 Dataset。回测、比较和参数扫描明确绑定其 `dataset_id`。跨源一致不证明严格历史 PIT 或总收益，也不授予策略晋级资格；原有 Dataset ID 与重放语义不变。TuShare 与 TDX 是可选增强来源。AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
 
 ## 开发 Karkinos
 

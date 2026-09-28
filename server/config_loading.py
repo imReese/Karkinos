@@ -72,7 +72,12 @@ _SERVER_CONFIG_GROUP_FIELDS = frozenset(
 )
 _IGNORED_LEGACY_CONFIG_FIELDS = frozenset({"live_auto_start"})
 _MARKET_DATA_CONFIG_GROUP_FIELDS = frozenset(
-    {"source_policy", "live_poll_interval", "provider_config"}
+    {
+        "source_policy",
+        "verification_source_policy",
+        "live_poll_interval",
+        "provider_config",
+    }
 )
 _LEGACY_DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
     {"provider", "live_poll_interval", "provider_config"}
@@ -159,6 +164,7 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
             )
         field_mapping = {
             "source_policy": "market_data_source_policy",
+            "verification_source_policy": "market_data_verification_source_policy",
             "live_poll_interval": "live_poll_interval",
             "provider_config": "data_source_provider_config",
         }
@@ -520,6 +526,12 @@ def _validate_core_runtime_values(data: dict) -> None:
         from data.source_policy import resolve_market_source_policy
 
         resolve_market_source_policy(str(data["market_data_source_policy"]))
+    if "market_data_verification_source_policy" in data:
+        from data.source_policy import resolve_market_source_policy
+
+        resolve_market_source_policy(
+            str(data["market_data_verification_source_policy"])
+        )
     if (
         "data_source" in data
         and data["data_source"] not in LEGACY_DATA_SOURCE_PROVIDERS
