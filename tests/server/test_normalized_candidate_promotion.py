@@ -4,8 +4,6 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -16,6 +14,7 @@ from analytics.strategy_advancement_gate import strategy_advancement_backtest_vi
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.config import AIProviderConfig, ServerConfig
+from server.contracts.ai_shadow_research_automation import ShadowResearchRejected
 from server.db import AppDatabase
 from server.dependencies import AppState
 from server.services.ai_shadow_research_automation import (
@@ -25,9 +24,6 @@ from server.services.ai_shadow_research_automation import (
 )
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
-)
-from server.services.strategy_promotion_pipeline import (
-    resolve_strategy_order_generation_gate,
 )
 from server.services.trading_controls import TradingControlState
 from tests.ai_shadow_strategy_fixtures import (
@@ -51,13 +47,10 @@ def _state(db: AppDatabase) -> AppState:
     return state
 
 
-def test_normalized_research_candidate_promotes_to_paper_shadow_without_broker_reconciliation(
+def test_normalized_research_candidate_requires_qualification_before_paper_shadow(
     tmp_path: Path,
 ) -> None:
-    """Verify decoupling: normalized research candidate promotes to paper shadow
-
-    without demanding real-money account qualification or broker statement matching.
-    """
+    """A research-only candidate cannot claim paper-shadow approval directly."""
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = ShadowResearchStore(db._path)
@@ -239,28 +232,25 @@ def test_normalized_research_candidate_promotes_to_paper_shadow_without_broker_r
     assert detail["candidate_id"] == candidate["candidate_id"]
     assert detail["comparison"]["research_capital_mode"] == "normalized_notional"
 
-    # Human approves candidate into paper_shadow without requiring broker reconciliation!
-    promoted = service.approve_candidate(
-        candidate["candidate_id"],
-        approved_by="human:quant_lead",
-        notes="Validated trend logic, trade count >10, and positive OOS excess.",
-        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+    with pytest.raises(
+        ShadowResearchRejected, match="candidate_account_qualification_required"
+    ):
+        service.approve_candidate(
+            candidate["candidate_id"],
+            approved_by="human:quant_lead",
+            notes="Validated trend logic, trade count >10, and positive OOS excess.",
+            confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+        )
+
+    assert (
+        store.get_candidate(candidate["candidate_id"])["promotion_status"]
+        == "awaiting_human_approval"
     )
-
-    assert promoted["paper_shadow_stage_recorded"] is True
-    assert promoted["strategy_promotion"]["stage"] == "paper_shadow"
-    assert promoted["strategy_promotion"]["live_like_enabled"] is False
-    assert promoted["strategy_id"] == f"ai_formula_shadow:{candidate['candidate_id']}"
-
-    # Status now exposes the active paper_shadow strategy!
     status_after = service.status()
-    assert status_after["active_paper_shadow_strategy_id"] == promoted["strategy_id"]
-
-    # Order generation gate passes for paper shadow evaluation
-    order_gate, blockers = resolve_strategy_order_generation_gate(
-        db, promoted["strategy_id"]
+    assert status_after["active_paper_shadow_strategy_id"] is None
+    assert (
+        db.get_strategy_promotion_state_sync(
+            f"ai_formula_shadow:{candidate['candidate_id']}"
+        )
+        is None
     )
-    assert not blockers
-    assert order_gate["status"] == "pass"
-    assert order_gate["paper_shadow_evaluation_only"] is True
-    assert order_gate["broker_submission_enabled"] is False
