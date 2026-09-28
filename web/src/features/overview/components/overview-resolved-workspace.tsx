@@ -103,64 +103,67 @@ export function OverviewResolvedWorkspace({
         className="min-w-0 border-b border-[var(--app-divider)] pb-6"
         data-testid="overview-performance-card"
       >
-        <div
-          role="tablist"
-          aria-label={copy.overview.dashboard.equityPanel}
-          className="mb-4 flex max-w-full overflow-x-auto border-b border-[var(--app-divider)]"
-          data-testid="overview-analysis-view-tabs"
-        >
-          <button
-            id="overview-analysis-tab-curve"
-            type="button"
-            role="tab"
-            aria-selected={analysisView === 'curve'}
-            aria-controls="overview-analysis-panel-curve"
-            onClick={() => setAnalysisView('curve')}
-            className={`flex h-9 shrink-0 items-center border-b-2 px-3 text-xs font-semibold transition-colors ${
-              analysisView === 'curve'
-                ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
-                : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
-            }`}
-          >
-            {copy.overview.dashboard.equityCurve}
-          </button>
-          <button
-            id="overview-analysis-tab-calendar"
-            type="button"
-            role="tab"
-            aria-selected={analysisView === 'calendar'}
-            aria-controls="overview-analysis-panel-calendar"
-            onClick={() => setAnalysisView('calendar')}
-            className={`flex h-9 shrink-0 items-center border-b-2 px-3 text-xs font-semibold transition-colors ${
-              analysisView === 'calendar'
-                ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
-                : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
-            }`}
-          >
-            {copy.explainability.returnCalendar}
-          </button>
-        </div>
+        <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+          <div className="min-w-0">
+            <div
+              role="tablist"
+              aria-label={copy.overview.dashboard.equityPanel}
+              className="mb-4 flex max-w-full overflow-x-auto border-b border-[var(--app-divider)]"
+              data-testid="overview-analysis-view-tabs"
+            >
+              <button
+                id="overview-analysis-tab-curve"
+                type="button"
+                role="tab"
+                aria-selected={analysisView === 'curve'}
+                aria-controls="overview-analysis-panel-curve"
+                onClick={() => setAnalysisView('curve')}
+                className={`flex h-9 shrink-0 items-center border-b-2 px-3 text-xs font-semibold transition-colors ${
+                  analysisView === 'curve'
+                    ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
+                    : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                }`}
+              >
+                {copy.overview.dashboard.equityCurve}
+              </button>
+              <button
+                id="overview-analysis-tab-calendar"
+                type="button"
+                role="tab"
+                aria-selected={analysisView === 'calendar'}
+                aria-controls="overview-analysis-panel-calendar"
+                onClick={() => setAnalysisView('calendar')}
+                className={`flex h-9 shrink-0 items-center border-b-2 px-3 text-xs font-semibold transition-colors ${
+                  analysisView === 'calendar'
+                    ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
+                    : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                }`}
+              >
+                {copy.explainability.returnCalendar}
+              </button>
+            </div>
 
-        <div className="min-w-0">
-          {analysisView === 'curve' ? (
-            <div
-              id="overview-analysis-panel-curve"
-              role="tabpanel"
-              aria-labelledby="overview-analysis-tab-curve"
-            >
-              {performance}
+            <div className="min-w-0">
+              {analysisView === 'curve' ? (
+                <div
+                  id="overview-analysis-panel-curve"
+                  role="tabpanel"
+                  aria-labelledby="overview-analysis-tab-curve"
+                >
+                  {performance}
+                </div>
+              ) : (
+                <div
+                  id="overview-analysis-panel-calendar"
+                  role="tabpanel"
+                  aria-labelledby="overview-analysis-tab-calendar"
+                >
+                  {calendar}
+                </div>
+              )}
             </div>
-          ) : (
-            <div
-              id="overview-analysis-panel-calendar"
-              role="tabpanel"
-              aria-labelledby="overview-analysis-tab-calendar"
-            >
-              {calendar}
-            </div>
-          )}
-        </div>
-        <div className="mt-3 min-w-0">
+          </div>
+
           <OverviewStrategyRecommendation
             planQuery={controller.tradingPlan}
             todayQuery={controller.todayDecision}
