@@ -42,6 +42,7 @@ _NON_STRATEGY_FIELDS = {
     "assets",
     "instruments",
     "market_data_source_policy",
+    "market_data_verification_source_policy",
     "data_source",
     "data_source_provider_config",
     "notification",

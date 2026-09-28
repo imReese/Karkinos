@@ -124,6 +124,7 @@ def create_router() -> APIRouter:
                 {
                     "trade_date": job.payload["trade_date"],
                     "job_id": job.job_id,
+                    "source_policy_id": job.payload["source_policy_id"],
                     "status": job.status,
                     "result_ref": job.result_ref,
                 }
@@ -183,6 +184,7 @@ def create_router() -> APIRouter:
         return {
             "trade_date": request.trade_date.isoformat(),
             "job_id": job.job_id,
+            "source_policy_id": request.source_policy_id,
             "status": job.status,
             "attempt": job.attempt,
             "result_ref": job.result_ref,

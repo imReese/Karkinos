@@ -124,9 +124,10 @@ def test_free_policy_pair_supports_etf_unadjusted_daily_bars() -> None:
     )
 
 
-def test_config_helper_uses_free_default_without_tushare_or_tdx() -> None:
+def test_config_helper_uses_verification_policy_without_tushare_or_tdx() -> None:
     config = SimpleNamespace(
-        market_data_source_policy=FREE_CN_RESEARCH_V1.policy_id,
+        market_data_source_policy="karkinos.market.source.cn_research.v1",
+        market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id,
         tushare_token="",
     )
     pair = daily_bar_verification_pair_for_config(
@@ -138,6 +139,7 @@ def test_config_helper_uses_free_default_without_tushare_or_tdx() -> None:
         "baostock",
         "akshare_tencent",
     )
+    assert pair.policy_id == FREE_CN_RESEARCH_V1.policy_id
 
 
 def test_verified_pair_fails_closed_when_only_one_capable_source_exists() -> None:

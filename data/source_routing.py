@@ -17,6 +17,7 @@ from data.source_policy import (
     MarketSourcePolicy,
     SourceRoute,
     source_policy_for_config,
+    verification_source_policy_for_config,
 )
 
 
@@ -190,7 +191,7 @@ def daily_bar_verification_pair_for_config(
 ) -> DailyBarVerificationPair:
     """Resolve a verified daily-bar pair using runtime config and credentials."""
     return resolve_daily_bar_verification_pair(
-        source_policy_for_config(config),
+        verification_source_policy_for_config(config),
         provider_registry_for_config(config, include_tdx=include_tdx),
         request,
     )

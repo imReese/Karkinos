@@ -47,8 +47,13 @@ export function ResearchDatasetPanel() {
     : null;
   const rangeKey = range ? JSON.stringify(range) : '';
   const currentJobs = verification?.key === rangeKey ? verification.jobs : null;
+  const verificationPolicy = currentJobs?.[0]?.source_policy_id;
+  const sameVerificationPolicy =
+    !!verificationPolicy &&
+    currentJobs?.every((job) => job.source_policy_id === verificationPolicy);
   const verificationSucceeded =
     !!currentJobs?.length &&
+    sameVerificationPolicy &&
     currentJobs.every((job) => job.status === 'succeeded');
   const failedJob = currentJobs?.find((job) => job.status === 'failed');
   const retriedJob = currentJobs?.find(
@@ -219,6 +224,24 @@ export function ResearchDatasetPanel() {
               ? '按上方标的和日期为每个已核验交易日提交任务。任务成功后手动发布一个区间 Dataset；核验只证明两份日线相符，不证明历史 PIT 可用或总收益口径。'
               : 'Submit one job per verified trading day for the symbol and dates above. Publish an interval Dataset after every job succeeds. Source agreement does not prove historical PIT availability or total return.'}
           </p>
+          <p className="app-muted mt-1 text-xs leading-5">
+            {zh
+              ? '默认核验策略首选 BaoStock 与腾讯日线（经 AKShare SDK），按不同上游计两源；同一腾讯上游的 tencent 与 akshare_tencent 不算两票。实际任务策略以提交后返回的 ID 为准。'
+              : 'The default verification policy first pairs BaoStock with Tencent daily bars through the AKShare SDK. They have different upstreams; tencent and akshare_tencent share one upstream and do not count as two sources. The returned policy ID identifies this request.'}
+          </p>
+          {currentJobs ? (
+            <p
+              className="app-muted mt-1 break-all text-xs"
+              data-testid="verified-job-policy"
+            >
+              {zh ? '本次核验策略：' : 'Verification policy: '}
+              {sameVerificationPolicy
+                ? verificationPolicy
+                : zh
+                  ? '任务策略不一致'
+                  : 'Job policies differ'}
+            </p>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"

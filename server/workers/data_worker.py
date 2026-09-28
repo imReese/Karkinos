@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Callable
 from datetime import date, datetime, timezone
 
-from data.source_policy import source_policy_for_config
+from data.source_policy import verification_source_policy_for_config
 from server.contracts.jobs import JobRun, JobStore
 from server.db import AppDatabase
 from server.persistence.jobs import SQLiteJobStore
@@ -61,7 +61,10 @@ def _require_current_verified_daily_market_job(
 ) -> None:
     """Recheck a durable request at provider entry and visible publication."""
     request = VerifiedDailyMarketJobRequest.from_payload(job.payload)
-    if request.source_policy_id != source_policy_for_config(config).policy_id:
+    if (
+        request.source_policy_id
+        != verification_source_policy_for_config(config).policy_id
+    ):
         raise VerifiedDailyMarketJobNotCurrent(
             "verified_daily_market_source_policy_stale"
         )

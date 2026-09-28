@@ -17,6 +17,7 @@ export type PublishedDataset = {
 export type VerifiedDatasetJob = {
   trade_date: string;
   job_id: string;
+  source_policy_id: string;
   status: string;
   result_ref: string | null;
   error?: string | null;

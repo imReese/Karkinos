@@ -104,6 +104,59 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
     assert config.ai == AIProviderConfig()
 
 
+def test_verification_source_policy_loads_independently_of_market_policy(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "market_data": {
+                    "source_policy": "karkinos.market.source.cn_research.v1",
+                    "verification_source_policy": (
+                        "karkinos.market.source.free_cn_research.v1"
+                    ),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.market_data_source_policy == "karkinos.market.source.cn_research.v1"
+    assert (
+        config.market_data_verification_source_policy
+        == "karkinos.market.source.free_cn_research.v1"
+    )
+
+
+def test_verification_source_policy_rejects_invalid_or_duplicate_config(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"market_data": {"verification_source_policy": "unknown"}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="market_source_policy_unsupported"):
+        ServerConfig.from_json(config_path)
+
+    config_path.write_text(
+        json.dumps(
+            {
+                "market_data_verification_source_policy": (
+                    "karkinos.market.source.cn_research.v1"
+                ),
+                "market_data": {
+                    "verification_source_policy": (
+                        "karkinos.market.source.free_cn_research.v1"
+                    )
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="both grouped and flat"):
+        ServerConfig.from_json(config_path)
+
+
 def test_server_config_rejects_grouped_and_flat_field_conflicts(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text(
@@ -1342,6 +1395,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     }
     assert example["market_data"] == {
         "source_policy": "karkinos.market.source.free_cn_research.v1",
+        "verification_source_policy": ("karkinos.market.source.free_cn_research.v1"),
         "live_poll_interval": 60,
         "provider_config": {
             "tushare_token_env": "KARKINOS_TUSHARE_TOKEN",

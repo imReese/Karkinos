@@ -9,6 +9,7 @@ from data.source_policy import (
     legacy_preferred_provider_policy,
     resolve_market_source_policy,
     source_policy_for_config,
+    verification_source_policy_for_config,
 )
 
 
@@ -94,6 +95,15 @@ def test_missing_policy_defaults_to_free_cn_research() -> None:
         data_source="",
     )
     assert source_policy_for_config(config) is FREE_CN_RESEARCH_V1
+
+
+def test_verification_policy_is_independent_of_collection_policy() -> None:
+    config = SimpleNamespace(market_data_source_policy=CN_RESEARCH_V1.policy_id)
+    assert source_policy_for_config(config) is CN_RESEARCH_V1
+    assert verification_source_policy_for_config(config) is FREE_CN_RESEARCH_V1
+
+    config.market_data_verification_source_policy = CN_RESEARCH_V1.policy_id
+    assert verification_source_policy_for_config(config) is CN_RESEARCH_V1
 
 
 def test_legacy_compat_policy_id_preserves_explicit_provider_order() -> None:
