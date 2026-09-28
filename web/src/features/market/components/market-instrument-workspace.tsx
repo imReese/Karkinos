@@ -126,7 +126,7 @@ export function MarketInstrumentWorkspaceLoading({
             </span>
             <span className="block h-6 w-20 shrink-0 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
           </div>
-          <div className="mt-3 h-44 border-y border-[var(--app-divider)] bg-[linear-gradient(to_right,var(--app-divider)_1px,transparent_1px),linear-gradient(to_bottom,var(--app-divider)_1px,transparent_1px)] bg-[size:25%_100%,100%_33.333%] opacity-70 motion-safe:animate-pulse sm:h-56" />
+          <div className="mt-3 h-44 border-y border-[var(--app-divider)] bg-[linear-gradient(to_right,var(--app-divider)_1px,transparent_1px),linear-gradient(to_bottom,var(--app-divider)_1px,transparent_1px)] bg-[size:25%_100%,100%_33.333%] opacity-70 motion-safe:animate-pulse sm:h-56 xl:h-[26rem] 2xl:h-[28rem]" />
           <div className="mt-3 grid grid-cols-3 divide-x divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
             {Array.from({ length: 3 }, (_, index) => (
               <span key={index} className="min-w-0 px-3 py-3">
