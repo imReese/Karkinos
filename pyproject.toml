@@ -10,17 +10,17 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-    "akshare>=1.18.94",
+    "akshare>=1.18.97",
     "tushare>=1.4.29",
-    "tdxaidata>=1.0.2,<2",
-    "pandas>=3.0.5",
-    "numpy>=2.5.2",
+    "tdxaidata>=1.1.1,<2",
+    "pandas>=3.0.6",
+    "numpy>=2.5.3",
     "pyarrow>=25.0.1",
     "httpx>=0.28.1",
     "python-dotenv>=1.2.3",
     "cryptography>=50.0.1",
     "xlrd>=2.0.2",
-    "ruff>=0.16.6",
+    "ruff>=0.16.8",
     "baostock>=0.9.3,<1",
 ]
 
