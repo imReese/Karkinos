@@ -32,3 +32,15 @@ test('keeps strategy ids as secondary audit metadata when a display name exists'
   );
   expect(formatStrategyAuditLabel(null, strategyNames)).toBe('--');
 });
+
+test('formats shadow candidate strategy ids with short hash tags', () => {
+  expect(
+    formatStrategyDisplayName(
+      {
+        strategy_id:
+          'el_formula_shadowcal-shadow-candidate-7ccb91326cfc1a4566b49ca5',
+      },
+      strategyNames,
+    ),
+  ).toBe('Shadow Candidate (#7ccb91)');
+});
