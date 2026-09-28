@@ -164,6 +164,7 @@ def compose_ai_shadow_research_qualification_service(
             verify_backtest_dataset_snapshot_replay(
                 snapshot,
                 store_root=data_root,
+                research_root=db_path.parent / "research",
             )
         ),
         reviewed_fee_schedule_resolver=lambda **kwargs: resolve_reviewed_fee_schedule(

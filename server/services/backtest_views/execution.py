@@ -231,25 +231,8 @@ def run_single_backtest(
         data_handlers=data_handlers,
         store=store,
         source_names=source_names,
+        research_dataset_binding=dataset_binding,
     )
-    if dataset_binding is not None:
-        dataset_snapshot_json["immutable_dataset_id"] = dataset_binding["dataset_id"]
-        dataset_snapshot_json["available_as_of"] = dataset_binding["cutoff"]
-        dataset_snapshot_json["point_in_time_verified"] = False
-        # 不把历史回填、未建模公司行动的探索性回测标成可直接升级的证据。
-        dataset_snapshot_json["data_quality"]["status"] = "warning"
-        dataset_snapshot_json["data_quality"]["issues"].extend(
-            [
-                {
-                    "code": "historical_availability_unverified",
-                    "message": dataset_binding["limitations"][0],
-                },
-                {
-                    "code": "unadjusted_corporate_actions_unmodeled",
-                    "message": dataset_binding["limitations"][1],
-                },
-            ]
-        )
 
     event_bus_placeholder = type(
         "EventBus", (), {"subscribe": lambda *a: None, "publish": lambda *a: None}

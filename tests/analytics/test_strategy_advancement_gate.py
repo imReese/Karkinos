@@ -362,6 +362,83 @@ def test_normalized_data_requires_matching_execution_assumptions(build_gate):
     assert "research_execution_policy_mismatch" in gate.blockers
 
 
+@pytest.mark.parametrize(
+    "build_gate",
+    [build_strategy_advancement_gate, build_normalized_research_advancement_gate],
+)
+def test_exploratory_dataset_replays_but_cannot_advance_research(build_gate):
+    baseline, candidate = _view(candidate=False), _view(candidate=True)
+    candidate["dataset_research_use"] = "exploratory_backtest"
+
+    gate = build_gate(baseline=baseline, candidate=candidate, critique_evidence={})
+
+    assert "candidate_dataset_exploratory_only" in gate.blockers
+    assert (
+        next(
+            check for check in gate.checks if check["name"] == "frozen_dataset_identity"
+        )["status"]
+        == "blocked"
+    )
+
+
+@pytest.mark.parametrize(
+    "build_gate",
+    [build_strategy_advancement_gate, build_normalized_research_advancement_gate],
+)
+@pytest.mark.parametrize(
+    "candidate_fields",
+    [
+        {"dataset_research_use": "formal"},
+        {"dataset_research_use": None},
+        {"immutable_dataset_id": "sha256:" + "b" * 64},
+    ],
+)
+def test_unknown_or_missing_bound_dataset_admission_blocks_advancement(
+    build_gate, candidate_fields
+):
+    baseline, candidate = _view(candidate=False), _view(candidate=True)
+    candidate.update(candidate_fields)
+
+    gate = build_gate(baseline=baseline, candidate=candidate, critique_evidence={})
+
+    assert "candidate_dataset_research_use_not_admitted" in gate.blockers
+
+
+@pytest.mark.parametrize(
+    "build_gate",
+    [build_strategy_advancement_gate, build_normalized_research_advancement_gate],
+)
+def test_bound_baseline_cannot_advance_with_legacy_candidate(build_gate):
+    baseline, candidate = _view(candidate=False), _view(candidate=True)
+    baseline["immutable_dataset_id"] = "sha256:" + "b" * 64
+
+    gate = build_gate(baseline=baseline, candidate=candidate, critique_evidence={})
+
+    assert "baseline_dataset_research_use_not_admitted" in gate.blockers
+
+
+def test_backtest_projection_preserves_bound_dataset_admission_identity():
+    legacy = strategy_advancement_backtest_view(
+        {"metrics_json": {"dataset_snapshot": {"snapshot_id": "legacy"}}}
+    )
+    bound = strategy_advancement_backtest_view(
+        {
+            "metrics_json": {
+                "dataset_snapshot": {
+                    "snapshot_id": "bound",
+                    "immutable_dataset_id": "sha256:" + "b" * 64,
+                    "research_use": "exploratory_backtest",
+                }
+            }
+        }
+    )
+
+    assert "immutable_dataset_id" not in legacy
+    assert "dataset_research_use" not in legacy
+    assert bound["immutable_dataset_id"] == "sha256:" + "b" * 64
+    assert bound["dataset_research_use"] == "exploratory_backtest"
+
+
 def test_strategy_advancement_gate_blocks_when_dsr_not_significant():
     candidate = deepcopy(_view(candidate=True))
     candidate["sharpe"] = 0.5

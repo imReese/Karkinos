@@ -105,6 +105,13 @@ def build_normalized_research_advancement_gate(
 
     baseline_snapshot = str(baseline.get("dataset_snapshot_id") or "")
     candidate_snapshot = str(candidate.get("dataset_snapshot_id") or "")
+    admission_blocker = None
+    if candidate.get("dataset_research_use") == "exploratory_backtest":
+        admission_blocker = "candidate_dataset_exploratory_only"
+    elif "dataset_research_use" in candidate or "immutable_dataset_id" in candidate:
+        admission_blocker = "candidate_dataset_research_use_not_admitted"
+    elif "dataset_research_use" in baseline or "immutable_dataset_id" in baseline:
+        admission_blocker = "baseline_dataset_research_use_not_admitted"
     record(
         "frozen_dataset_identity",
         passed=(
@@ -114,6 +121,7 @@ def build_normalized_research_advancement_gate(
             and baseline_snapshot == candidate_snapshot
             and candidate.get("dataset_quality_status") == "ok"
             and int(candidate.get("dataset_issue_count") or 0) == 0
+            and admission_blocker is None
         ),
         blocker=(
             "research_execution_policy_mismatch"
@@ -123,7 +131,7 @@ def build_normalized_research_advancement_gate(
             else (
                 "candidate_dataset_snapshot_mismatch"
                 if baseline_snapshot != candidate_snapshot
-                else "candidate_dataset_quality_not_clear"
+                else admission_blocker or "candidate_dataset_quality_not_clear"
             )
         ),
         evidence={
@@ -131,6 +139,16 @@ def build_normalized_research_advancement_gate(
             "candidate_snapshot_id": candidate_snapshot or None,
             "candidate_quality_status": candidate.get("dataset_quality_status"),
             "candidate_issue_count": candidate.get("dataset_issue_count"),
+            **(
+                {"candidate_research_use": candidate["dataset_research_use"]}
+                if "dataset_research_use" in candidate
+                else {}
+            ),
+            **(
+                {"candidate_immutable_dataset_id": candidate["immutable_dataset_id"]}
+                if "immutable_dataset_id" in candidate
+                else {}
+            ),
         },
     )
 

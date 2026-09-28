@@ -8,6 +8,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from analytics.dataset_snapshot import (
+    build_backtest_dataset_snapshot,
+    verify_backtest_dataset_snapshot_replay,
+)
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.reader import read_daily_bar_dataset
@@ -423,6 +427,36 @@ def test_verified_dataset_backtest_binding_uses_selected_provider_not_tdx(
     assert {handler._df.attrs["provider_name"] for handler in handlers.values()} == {
         "baostock"
     }
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=DAY.isoformat(),
+        end_date=DAY.isoformat(),
+        configured_source="baostock",
+        data_handlers=handlers,
+        store=None,
+        source_names=binding["source_names"],
+        research_dataset_binding=binding,
+    )
+    replay = verify_backtest_dataset_snapshot_replay(snapshot, store_root=tmp_path)
+    assert snapshot["cross_source_verified"] is True
+    assert snapshot["point_in_time_verified"] is False
+    assert replay["verified_symbol_count"] == len(handlers)
+    assert replay["status"] == "pass"
+    assert replay["blockers"] == []
+    false_claim = build_backtest_dataset_snapshot(
+        start_date=DAY.isoformat(),
+        end_date=DAY.isoformat(),
+        configured_source="baostock",
+        data_handlers=handlers,
+        store=None,
+        source_names=binding["source_names"],
+        research_dataset_binding={**binding, "cross_source_verified": False},
+    )
+    false_replay = verify_backtest_dataset_snapshot_replay(
+        false_claim, store_root=tmp_path
+    )
+    assert (
+        "dataset_replay_immutable_dataset_binding_mismatch" in false_replay["blockers"]
+    )
 
 
 def test_unavailable_preferred_source_fails_over_to_next_independent_pair(
