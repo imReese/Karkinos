@@ -100,7 +100,13 @@ def test_normalized_candidate_cannot_use_legacy_approval_path() -> None:
                 },
             }
 
+        def approve_candidate(self, *args, **kwargs):
+            raise AssertionError("normalized source approval must not be written")
+
     class DailyArtifacts:
+        def require_verified_research_candidate(self, **kwargs):
+            raise AssertionError("source artifact lookup must not run")
+
         def require_verified_winner(self, **kwargs):
             raise AssertionError("legacy daily winner lookup must not run")
 

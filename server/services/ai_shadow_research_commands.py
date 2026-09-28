@@ -41,9 +41,6 @@ from server.services.ai_shadow_research_daily_artifacts import (
 from server.services.ai_shadow_research_qualification_support import (
     latest_qualification_attempt as read_latest_qualification_attempt,
 )
-from server.services.strategy_promotion_qualification_source import (
-    build_normalized_source_daily_strategy_artifact_binding,
-)
 from server.services.strategy_promotion_support import (
     AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
     STRATEGY_PROMOTION_SCHEMA_VERSION,
@@ -501,42 +498,19 @@ class AiShadowResearchCommandsMixin:
         candidate = self._store.get_candidate(candidate_id)
         comparison = candidate.get("comparison")
         comparison = comparison if isinstance(comparison, Mapping) else {}
-        is_normalized = (
+        if (
             comparison.get("research_capital_mode")
             == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            or comparison.get("account_qualification_status") == "not_evaluated"
+        ):
+            raise ShadowResearchRejected("candidate_account_qualification_required")
+        daily_artifacts = self._daily_artifacts.require_verified_winner(
+            candidate_id=candidate_id,
+            run_id=str(candidate.get("run_id") or ""),
         )
-        if is_normalized:
-            try:
-                verified_candidate = (
-                    self._daily_artifacts.require_verified_research_candidate(
-                        candidate_id=candidate_id,
-                        run_id=str(candidate.get("run_id") or ""),
-                    )
-                )
-                daily_strategy_artifact_binding = (
-                    build_normalized_source_daily_strategy_artifact_binding(
-                        verified_candidate
-                    )
-                )
-                daily_artifacts = {"selection": {}, "backup": verified_candidate}
-            except Exception:
-                daily_artifacts = self._daily_artifacts.require_verified_winner(
-                    candidate_id=candidate_id,
-                    run_id=str(candidate.get("run_id") or ""),
-                )
-                daily_strategy_artifact_binding = (
-                    build_daily_strategy_promotion_binding(daily_artifacts)
-                )
-        else:
-            if comparison.get("account_qualification_status") == "not_evaluated":
-                raise ShadowResearchRejected("candidate_account_qualification_required")
-            daily_artifacts = self._daily_artifacts.require_verified_winner(
-                candidate_id=candidate_id,
-                run_id=str(candidate.get("run_id") or ""),
-            )
-            daily_strategy_artifact_binding = build_daily_strategy_promotion_binding(
-                daily_artifacts
-            )
+        daily_strategy_artifact_binding = build_daily_strategy_promotion_binding(
+            daily_artifacts
+        )
         approval = self._store.approve_candidate(
             candidate_id,
             approved_by=approved_by,
