@@ -99,15 +99,52 @@ export function PriceStructureRangeControls({
 
 export function PriceStructureLegend({
   model,
+  showMovingAverages = true,
+  onToggleMovingAverages,
 }: {
   model: PriceStructureChartModel;
+  showMovingAverages?: boolean;
+  onToggleMovingAverages?: () => void;
 }) {
-  const { plottedMarkers, plottedReferenceLines } = model;
-  if (plottedMarkers.length === 0 && plottedReferenceLines.length === 0) {
+  const { chartType, maSeries, plottedMarkers, plottedReferenceLines } = model;
+  const hasCandlestick = chartType === 'candlestick';
+  const hasMarkersOrLines =
+    plottedMarkers.length > 0 || plottedReferenceLines.length > 0;
+  if (!hasMarkersOrLines && !hasCandlestick) {
     return null;
   }
   return (
-    <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-muted)]">
+    <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-muted)]">
+      {hasCandlestick && onToggleMovingAverages ? (
+        <button
+          type="button"
+          data-testid="chart-ma-toggle"
+          aria-pressed={showMovingAverages}
+          onClick={onToggleMovingAverages}
+          className={`app-type-micro rounded-[var(--app-radius-control)] border px-2 py-0.5 font-semibold transition-colors ${
+            showMovingAverages
+              ? 'border-[color-mix(in_srgb,var(--app-accent)_50%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] text-[var(--app-text)]'
+              : 'border-[var(--app-border)] text-[var(--app-muted)] opacity-60'
+          }`}
+        >
+          MA
+        </button>
+      ) : null}
+      {hasCandlestick && showMovingAverages
+        ? maSeries.map((s) => (
+            <span
+              key={s.label}
+              style={{ color: s.color }}
+              className="flex items-center gap-1 font-mono"
+            >
+              <span
+                className="inline-block h-1 w-2.5 rounded-full"
+                style={{ backgroundColor: s.color }}
+              />
+              {s.label}
+            </span>
+          ))
+        : null}
       {plottedMarkers.some((marker) => marker.kind === 'buy') ? (
         <span className="rounded-full border border-[color-mix(in_srgb,var(--app-chart-buy)_42%,transparent)] px-2 py-0.5 text-[var(--app-chart-buy)]">
           B · {plottedMarkers.find((marker) => marker.kind === 'buy')?.label}

@@ -1,6 +1,10 @@
-import type { RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 
-import { formatCurrency } from '../../../shared/format';
+import {
+  formatAmount,
+  formatCompactNumber,
+  formatCurrency,
+} from '../../../shared/format';
 import { EvidenceState } from '../../../shared/ui/workbench';
 import {
   formatDateTick,
@@ -65,6 +69,16 @@ export function PriceStructureChartView({
   selectedRange: KlineRangeKey;
   titleLabel: string;
 }) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [showMovingAverages, setShowMovingAverages] = useState(true);
+
+  const hoveredBar =
+    hoverIndex !== null &&
+    hoverIndex >= 0 &&
+    hoverIndex < model.plottedBars.length
+      ? model.plottedBars[hoverIndex]
+      : null;
+
   return (
     <div
       className="min-w-0 border-y border-[var(--app-divider)] py-3"
@@ -97,12 +111,68 @@ export function PriceStructureChartView({
           data-testid="price-structure-chart-canvas"
           className="min-w-[720px] w-full"
         >
+          {hoveredBar ? (
+            <div
+              data-testid="kline-crosshair-hud"
+              className="app-type-micro mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_70%,transparent)] px-2.5 py-1 font-mono text-[var(--app-text-secondary)]"
+            >
+              <span className="font-semibold text-[var(--app-text)]">
+                {formatDateTick(hoveredBar.timestamp, hoverIndex!)}
+              </span>
+              <span>
+                <span className="text-[var(--app-muted)]">O</span>{' '}
+                {formatAmount(hoveredBar.open ?? hoveredBar.close)}
+              </span>
+              <span>
+                <span className="text-[var(--app-muted)]">H</span>{' '}
+                {formatAmount(
+                  hoveredBar.high ??
+                    Math.max(
+                      hoveredBar.open ?? hoveredBar.close,
+                      hoveredBar.close,
+                    ),
+                )}
+              </span>
+              <span>
+                <span className="text-[var(--app-muted)]">L</span>{' '}
+                {formatAmount(
+                  hoveredBar.low ??
+                    Math.min(
+                      hoveredBar.open ?? hoveredBar.close,
+                      hoveredBar.close,
+                    ),
+                )}
+              </span>
+              <span>
+                <span className="text-[var(--app-muted)]">C</span>{' '}
+                {formatAmount(hoveredBar.close)}
+              </span>
+              {hoveredBar.volume ? (
+                <span>
+                  <span className="text-[var(--app-muted)]">V</span>{' '}
+                  {formatCompactNumber(hoveredBar.volume)}
+                </span>
+              ) : null}
+              {showMovingAverages &&
+                model.maSeries.map((s) => {
+                  const val = s.values[hoverIndex!];
+                  return val !== null ? (
+                    <span key={s.period} style={{ color: s.color }}>
+                      {s.label} {formatAmount(val)}
+                    </span>
+                  ) : null;
+                })}
+            </div>
+          ) : null}
           <PriceStructureChartSvg
             axisLabels={axisLabels}
             model={model}
             priceLabel={priceLabel}
             selectedRange={selectedRange}
             titleLabel={titleLabel}
+            hoverIndex={hoverIndex}
+            onHoverIndexChange={setHoverIndex}
+            showMovingAverages={showMovingAverages}
           />
           <div className="app-type-micro mt-2 flex flex-col gap-1 tabular-nums text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
             <span>
@@ -116,7 +186,13 @@ export function PriceStructureChartView({
               {formatCurrency(model.min)} - {formatCurrency(model.max)}
             </span>
           </div>
-          <PriceStructureLegend model={model} />
+          <PriceStructureLegend
+            model={model}
+            showMovingAverages={showMovingAverages}
+            onToggleMovingAverages={() =>
+              setShowMovingAverages((prev) => !prev)
+            }
+          />
         </div>
       </div>
     </div>

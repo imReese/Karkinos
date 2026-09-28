@@ -13,12 +13,18 @@ export function PriceStructureChartSvg({
   priceLabel,
   selectedRange,
   titleLabel,
+  hoverIndex = null,
+  onHoverIndexChange,
+  showMovingAverages = true,
 }: {
   axisLabels: KlineAxisLabels;
   model: PriceStructureChartModel;
   priceLabel: string;
   selectedRange: KlineRangeKey;
   titleLabel: string;
+  hoverIndex?: number | null;
+  onHoverIndexChange?: (index: number | null) => void;
+  showMovingAverages?: boolean;
 }) {
   const {
     areaPath,
@@ -30,6 +36,7 @@ export function PriceStructureChartSvg({
     latestBar,
     latestPoint,
     linePath,
+    maSeries,
     maxVolume,
     plot,
     plottedBars,
@@ -52,6 +59,35 @@ export function PriceStructureChartSvg({
       className="app-chart-stage h-64 w-full overflow-visible text-[var(--app-soft)] sm:h-80 xl:h-[26rem] 2xl:h-[28rem]"
       role="img"
       aria-label={`${titleLabel} · ${axisLabels.price} · ${axisLabels.date}`}
+      onMouseMove={(event) => {
+        if (!onHoverIndexChange) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (!rect.width) return;
+        const svgX = ((event.clientX - rect.left) / rect.width) * chartWidth;
+        if (svgX >= plot.left && svgX <= plot.right && step > 0) {
+          const index = Math.floor((svgX - plot.left) / step);
+          const clamped = Math.max(0, Math.min(index, plottedBars.length - 1));
+          onHoverIndexChange(clamped);
+        } else {
+          onHoverIndexChange(null);
+        }
+      }}
+      onMouseLeave={() => onHoverIndexChange?.(null)}
+      onTouchMove={(event) => {
+        if (!onHoverIndexChange || event.touches.length === 0) return;
+        const touch = event.touches[0];
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (!rect.width) return;
+        const svgX = ((touch.clientX - rect.left) / rect.width) * chartWidth;
+        if (svgX >= plot.left && svgX <= plot.right && step > 0) {
+          const index = Math.floor((svgX - plot.left) / step);
+          const clamped = Math.max(0, Math.min(index, plottedBars.length - 1));
+          onHoverIndexChange(clamped);
+        } else {
+          onHoverIndexChange(null);
+        }
+      }}
+      onTouchEnd={() => onHoverIndexChange?.(null)}
     >
       <defs>
         <linearGradient
@@ -178,6 +214,11 @@ export function PriceStructureChartSvg({
           />
         </g>
       ) : null}
+      <PriceStructureMovingAverages
+        chartType={chartType}
+        maSeries={maSeries}
+        showMovingAverages={showMovingAverages}
+      />
       {chartType === 'line' ? (
         <g data-testid="price-line-series">
           {areaPath ? (
@@ -219,108 +260,33 @@ export function PriceStructureChartSvg({
           ) : null}
         </g>
       ) : (
-        plottedBars.map((bar, index) => {
-          const open = toFiniteNumber(bar.open) ?? bar.close;
-          const high = toFiniteNumber(bar.high) ?? Math.max(open, bar.close);
-          const low = toFiniteNumber(bar.low) ?? Math.min(open, bar.close);
-          const x = plot.left + step * index + step / 2;
-          const openY = plotY(open);
-          const closeY = plotY(bar.close);
-          const topY = Math.min(openY, closeY);
-          const rawHeight = Math.abs(openY - closeY);
-          const isDoji = rawHeight < 1;
-          const height = Math.max(rawHeight, 1);
-          const isBullish = bar.close >= open;
-          const tone = isBullish
-            ? 'var(--app-pnl-positive)'
-            : 'var(--app-pnl-negative)';
-          return (
-            <g
-              key={`${bar.timestamp ?? index}-${bar.close}`}
-              data-testid="kline-candle"
-            >
-              <line
-                x1={Math.round(x)}
-                x2={Math.round(x)}
-                y1={Math.round(plotY(high))}
-                y2={Math.round(plotY(low))}
-                stroke={tone}
-                strokeOpacity="0.95"
-                strokeWidth="1"
-              />
-              {isDoji ? (
-                <line
-                  x1={Math.round(x - candleWidth / 2)}
-                  x2={Math.round(x + candleWidth / 2)}
-                  y1={Math.round(openY)}
-                  y2={Math.round(openY)}
-                  stroke={tone}
-                  strokeWidth="1.5"
-                />
-              ) : (
-                <rect
-                  x={Math.round(x - candleWidth / 2)}
-                  y={Math.round(topY)}
-                  width={candleWidth}
-                  height={Math.max(Math.round(height), 1)}
-                  fill={tone}
-                  fillOpacity={isBullish ? '0.88' : '0.92'}
-                  stroke={tone}
-                  strokeWidth="1"
-                />
-              )}
-            </g>
-          );
-        })
+        <PriceStructureCandles
+          candleWidth={candleWidth}
+          plot={plot}
+          plottedBars={plottedBars}
+          plotY={plotY}
+          step={step}
+        />
       )}
-      {hasVolume ? (
-        <g data-testid="kline-volume-series">
-          <line
-            x1={plot.left}
-            x2={plot.right}
-            y1={volumePlot.top - 6}
-            y2={volumePlot.top - 6}
-            stroke="currentColor"
-            strokeOpacity="0.12"
-          />
-          <text
-            x={plot.right}
-            y={volumePlot.top - 6}
-            textAnchor="end"
-            className="fill-current text-[length:var(--app-font-size-micro)]"
-          >
-            {axisLabels.volume ?? 'Volume'}
-          </text>
-          {volumes.map((volume, index) => {
-            if (volume <= 0) {
-              return null;
-            }
-            const bar = plottedBars[index];
-            const isBullish =
-              (bar?.close ?? 0) >= (bar?.open ?? bar?.close ?? 0);
-            const volumeTone = isBullish
-              ? 'var(--app-pnl-positive)'
-              : 'var(--app-pnl-negative)';
-            const x = plot.left + step * index + step / 2;
-            const height = Math.max(
-              1,
-              (volume / maxVolume) * (volumePlot.bottom - volumePlot.top),
-            );
-            return (
-              <rect
-                key={`${bar?.timestamp ?? index}-volume`}
-                data-testid="kline-volume-bar"
-                x={Math.round(x - candleWidth / 2)}
-                y={Math.round(volumePlot.bottom - height)}
-                width={candleWidth}
-                height={Math.max(Math.round(height), 1)}
-                fill={volumeTone}
-                fillOpacity="0.55"
-              />
-            );
-          })}
-        </g>
-      ) : null}
+      <PriceStructureVolumeSeries
+        axisVolumeLabel={axisLabels.volume ?? 'Volume'}
+        candleWidth={candleWidth}
+        hasVolume={hasVolume}
+        maxVolume={maxVolume}
+        plot={plot}
+        plottedBars={plottedBars}
+        step={step}
+        volumes={volumes}
+        volumePlot={volumePlot}
+      />
+      <PriceStructureCrosshair
+        hoverIndex={hoverIndex}
+        plot={plot}
+        plottedBars={plottedBars}
+        plotY={plotY}
+        step={step}
+        xAxisY={xAxisY}
+      />
       {plottedMarkers.map((marker, index) => {
         const x = plot.left + step * marker.barIndex + step / 2;
         const y = plotY(marker.price);
@@ -353,5 +319,233 @@ export function PriceStructureChartSvg({
         );
       })}
     </svg>
+  );
+}
+
+function PriceStructureCandles({
+  candleWidth,
+  plot,
+  plottedBars,
+  plotY,
+  step,
+}: {
+  candleWidth: number;
+  plot: PriceStructureChartModel['plot'];
+  plottedBars: PriceStructureChartModel['plottedBars'];
+  plotY: (val: number) => number;
+  step: number;
+}) {
+  return (
+    <>
+      {plottedBars.map((bar, index) => {
+        const open = toFiniteNumber(bar.open) ?? bar.close;
+        const high = toFiniteNumber(bar.high) ?? Math.max(open, bar.close);
+        const low = toFiniteNumber(bar.low) ?? Math.min(open, bar.close);
+        const x = plot.left + step * index + step / 2;
+        const openY = plotY(open);
+        const closeY = plotY(bar.close);
+        const topY = Math.min(openY, closeY);
+        const rawHeight = Math.abs(openY - closeY);
+        const isDoji = rawHeight < 1;
+        const height = Math.max(rawHeight, 1);
+        const isBullish = bar.close >= open;
+        const tone = isBullish
+          ? 'var(--app-pnl-positive)'
+          : 'var(--app-pnl-negative)';
+        return (
+          <g
+            key={`${bar.timestamp ?? index}-${bar.close}`}
+            data-testid="kline-candle"
+          >
+            <line
+              x1={Math.round(x)}
+              x2={Math.round(x)}
+              y1={Math.round(plotY(high))}
+              y2={Math.round(plotY(low))}
+              stroke={tone}
+              strokeOpacity="0.95"
+              strokeWidth="1"
+            />
+            {isDoji ? (
+              <line
+                x1={Math.round(x - candleWidth / 2)}
+                x2={Math.round(x + candleWidth / 2)}
+                y1={Math.round(openY)}
+                y2={Math.round(openY)}
+                stroke={tone}
+                strokeWidth="1.5"
+              />
+            ) : (
+              <rect
+                x={Math.round(x - candleWidth / 2)}
+                y={Math.round(topY)}
+                width={candleWidth}
+                height={Math.max(Math.round(height), 1)}
+                fill={tone}
+                fillOpacity={isBullish ? '0.88' : '0.92'}
+                stroke={tone}
+                strokeWidth="1"
+              />
+            )}
+          </g>
+        );
+      })}
+    </>
+  );
+}
+
+function PriceStructureMovingAverages({
+  chartType,
+  maSeries,
+  showMovingAverages,
+}: {
+  chartType: string;
+  maSeries: PriceStructureChartModel['maSeries'];
+  showMovingAverages: boolean;
+}) {
+  if (chartType !== 'candlestick' || !showMovingAverages) {
+    return null;
+  }
+  return (
+    <g data-testid="kline-ma-series">
+      {maSeries.map((s) =>
+        s.path ? (
+          <path
+            key={s.label}
+            data-testid={`kline-${s.label.toLowerCase()}`}
+            d={s.path}
+            fill="none"
+            stroke={s.color}
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity="0.85"
+          />
+        ) : null,
+      )}
+    </g>
+  );
+}
+
+function PriceStructureCrosshair({
+  hoverIndex,
+  plot,
+  plottedBars,
+  plotY,
+  step,
+  xAxisY,
+}: {
+  hoverIndex: number | null;
+  plot: PriceStructureChartModel['plot'];
+  plottedBars: PriceStructureChartModel['plottedBars'];
+  plotY: (val: number) => number;
+  step: number;
+  xAxisY: number;
+}) {
+  if (hoverIndex === null) return null;
+  const bar = plottedBars[hoverIndex];
+  if (!bar) return null;
+  const x = Math.round(plot.left + step * hoverIndex + step / 2);
+  const y = Math.round(plotY(bar.close));
+  return (
+    <g data-testid="kline-crosshair" className="pointer-events-none">
+      <line
+        x1={x}
+        x2={x}
+        y1={plot.top}
+        y2={xAxisY}
+        stroke="var(--app-chart-grid)"
+        strokeDasharray="3 3"
+        strokeWidth="1"
+      />
+      <line
+        x1={plot.left}
+        x2={plot.right}
+        y1={y}
+        y2={y}
+        stroke="var(--app-chart-grid)"
+        strokeDasharray="3 3"
+        strokeWidth="1"
+      />
+      <circle
+        cx={x}
+        cy={y}
+        r="3.5"
+        fill="var(--app-text)"
+        stroke="var(--app-surface-raised)"
+        strokeWidth="1.5"
+      />
+    </g>
+  );
+}
+
+function PriceStructureVolumeSeries({
+  axisVolumeLabel,
+  candleWidth,
+  hasVolume,
+  maxVolume,
+  plot,
+  plottedBars,
+  step,
+  volumes,
+  volumePlot,
+}: {
+  axisVolumeLabel: string;
+  candleWidth: number;
+  hasVolume: boolean;
+  maxVolume: number;
+  plot: PriceStructureChartModel['plot'];
+  plottedBars: PriceStructureChartModel['plottedBars'];
+  step: number;
+  volumes: number[];
+  volumePlot: PriceStructureChartModel['volumePlot'];
+}) {
+  if (!hasVolume) return null;
+  return (
+    <g data-testid="kline-volume-series">
+      <line
+        x1={plot.left}
+        x2={plot.right}
+        y1={volumePlot.top - 6}
+        y2={volumePlot.top - 6}
+        stroke="currentColor"
+        strokeOpacity="0.12"
+      />
+      <text
+        x={plot.right}
+        y={volumePlot.top - 6}
+        textAnchor="end"
+        className="fill-current text-[length:var(--app-font-size-micro)]"
+      >
+        {axisVolumeLabel}
+      </text>
+      {volumes.map((volume, index) => {
+        if (volume <= 0) {
+          return null;
+        }
+        const bar = plottedBars[index];
+        const isBullish = (bar?.close ?? 0) >= (bar?.open ?? bar?.close ?? 0);
+        const volumeTone = isBullish
+          ? 'var(--app-pnl-positive)'
+          : 'var(--app-pnl-negative)';
+        const x = plot.left + step * index + step / 2;
+        const height = Math.max(
+          1,
+          (volume / maxVolume) * (volumePlot.bottom - volumePlot.top),
+        );
+        return (
+          <rect
+            key={`${bar?.timestamp ?? index}-volume`}
+            data-testid="kline-volume-bar"
+            x={Math.round(x - candleWidth / 2)}
+            y={Math.round(volumePlot.bottom - height)}
+            width={candleWidth}
+            height={Math.max(Math.round(height), 1)}
+            fill={volumeTone}
+            fillOpacity="0.55"
+          />
+        );
+      })}
+    </g>
   );
 }

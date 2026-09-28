@@ -278,3 +278,89 @@ test('excludes out-of-range trade markers from the selected range axis', () => {
   expect(screen.queryByTestId('kline-trade-marker-buy')).toBeNull();
   expect(screen.getByText('¥9.00 - ¥11.00')).toBeTruthy();
 });
+
+test('renders moving average lines and allows toggling them', () => {
+  const bars = Array.from({ length: 25 }, (_, i) => ({
+    timestamp: `2026-01-${String(i + 1).padStart(2, '0')}`,
+    open: 100 + i,
+    high: 105 + i,
+    low: 95 + i,
+    close: 102 + i,
+    volume: 50000,
+  }));
+
+  render(
+    <PriceStructureChart
+      titleLabel="Price range / K-line"
+      priceLabel="Price"
+      emptyLabel="No chart"
+      bars={bars}
+    />,
+  );
+
+  expect(screen.getByTestId('kline-ma-series')).toBeTruthy();
+  expect(screen.getByTestId('kline-ma5')).toBeTruthy();
+  expect(screen.getByTestId('kline-ma10')).toBeTruthy();
+  expect(screen.getByTestId('kline-ma20')).toBeTruthy();
+
+  const maToggle = screen.getByTestId('chart-ma-toggle');
+  expect(maToggle.getAttribute('aria-pressed')).toBe('true');
+
+  fireEvent.click(maToggle);
+  expect(maToggle.getAttribute('aria-pressed')).toBe('false');
+  expect(screen.queryByTestId('kline-ma-series')).toBeNull();
+
+  fireEvent.click(maToggle);
+  expect(maToggle.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByTestId('kline-ma-series')).toBeTruthy();
+});
+
+test('activates crosshair and shows HUD on hover', () => {
+  const bars = [
+    {
+      timestamp: '2026-04-19',
+      open: 100,
+      high: 110,
+      low: 90,
+      close: 105,
+      volume: 10000,
+    },
+    {
+      timestamp: '2026-04-20',
+      open: 105,
+      high: 115,
+      low: 100,
+      close: 112,
+      volume: 20000,
+    },
+  ];
+
+  const { container } = render(
+    <PriceStructureChart
+      titleLabel="Price range / K-line"
+      priceLabel="Price"
+      emptyLabel="No chart"
+      bars={bars}
+    />,
+  );
+
+  expect(screen.queryByTestId('kline-crosshair')).toBeNull();
+  expect(screen.queryByTestId('kline-crosshair-hud')).toBeNull();
+
+  const svg = container.querySelector('svg.app-chart-stage')!;
+  expect(svg).toBeTruthy();
+
+  Object.defineProperty(svg, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left: 0, top: 0, width: 720, height: 320 }),
+  });
+
+  fireEvent.mouseMove(svg, { clientX: 100, clientY: 100 });
+
+  expect(screen.getByTestId('kline-crosshair')).toBeTruthy();
+  expect(screen.getByTestId('kline-crosshair-hud')).toBeTruthy();
+
+  fireEvent.mouseLeave(svg);
+  expect(screen.queryByTestId('kline-crosshair')).toBeNull();
+  expect(screen.queryByTestId('kline-crosshair-hud')).toBeNull();
+});
