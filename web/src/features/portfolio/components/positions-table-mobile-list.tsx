@@ -89,7 +89,7 @@ export function PositionsTableMobileList({
                 </div>
                 <div className="shrink-0 text-right">
                   <div
-                    className={`text-sm font-semibold tabular-nums ${
+                    className={`text-sm font-semibold font-mono tabular-nums ${
                       model.showHistoryColumns
                         ? resolvePositionTone(position.realized_pnl)
                         : 'text-[var(--app-text)]'
@@ -116,7 +116,7 @@ export function PositionsTableMobileList({
                   {model.variant === 'dashboard' ? (
                     <>
                       <div
-                        className={`mt-0.5 text-[length:var(--app-font-size-micro)] tabular-nums ${resolvePositionTone(
+                        className={`mt-0.5 text-[length:var(--app-font-size-micro)] font-mono tabular-nums ${resolvePositionTone(
                           position.today_change,
                         )}`}
                       >
@@ -124,7 +124,7 @@ export function PositionsTableMobileList({
                         {formatCurrency(position.today_change)}
                       </div>
                       <div
-                        className={`mt-0.5 text-[length:var(--app-font-size-micro)] tabular-nums ${resolvePositionTone(
+                        className={`mt-0.5 text-[length:var(--app-font-size-micro)] font-mono tabular-nums ${resolvePositionTone(
                           position.unrealized_pnl,
                         )}`}
                       >
@@ -152,7 +152,7 @@ export function PositionsTableMobileList({
                         <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                           {detailLabels.commissionPaid}
                         </dt>
-                        <dd className="mt-0.5 truncate text-xs tabular-nums text-[var(--app-text-secondary)]">
+                        <dd className="mt-0.5 truncate text-xs font-mono tabular-nums text-[var(--app-text-secondary)]">
                           {formatCurrency(position.commission_paid)}
                         </dd>
                       </div>
@@ -164,7 +164,7 @@ export function PositionsTableMobileList({
                           <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                             {labels.weight}
                           </dt>
-                          <dd className="mt-0.5 truncate text-xs font-medium tabular-nums">
+                          <dd className="mt-0.5 truncate text-xs font-medium font-mono tabular-nums">
                             {formatPercent(
                               model.weightBySymbol[position.symbol],
                             )}
@@ -176,7 +176,7 @@ export function PositionsTableMobileList({
                           {labels.todayChange}
                         </dt>
                         <dd
-                          className={`mt-0.5 truncate text-xs font-medium tabular-nums ${resolvePositionTone(
+                          className={`mt-0.5 truncate text-xs font-medium font-mono tabular-nums ${resolvePositionTone(
                             position.today_change,
                           )}`}
                         >
@@ -188,7 +188,7 @@ export function PositionsTableMobileList({
                           {labels.unrealized}
                         </dt>
                         <dd
-                          className={`mt-0.5 truncate text-xs font-medium tabular-nums ${resolvePositionTone(
+                          className={`mt-0.5 truncate text-xs font-medium font-mono tabular-nums ${resolvePositionTone(
                             position.unrealized_pnl,
                           )}`}
                         >
@@ -201,7 +201,7 @@ export function PositionsTableMobileList({
                             {labels.realized}
                           </dt>
                           <dd
-                            className={`mt-0.5 truncate text-xs font-medium tabular-nums ${resolvePositionTone(
+                            className={`mt-0.5 truncate text-xs font-medium font-mono tabular-nums ${resolvePositionTone(
                               position.realized_pnl,
                             )}`}
                           >
@@ -217,7 +217,7 @@ export function PositionsTableMobileList({
               {!model.showHistoryColumns && model.variant !== 'dashboard' ? (
                 <div className="mt-3 flex min-w-0 items-center gap-2 border-t border-[var(--app-divider)] pt-2">
                   <PositionPricing position={position} locale={locale} />
-                  <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-[var(--app-text-secondary)]">
+                  <span className="ml-auto whitespace-nowrap text-xs font-mono tabular-nums text-[var(--app-text-secondary)]">
                     {formatPrice(position.latest_price)}
                   </span>
                 </div>

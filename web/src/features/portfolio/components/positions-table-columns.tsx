@@ -33,7 +33,7 @@ function PositionNumericCell({
 }) {
   return (
     <span
-      className={`block text-right font-medium tabular-nums ${tone} ${className}`.trim()}
+      className={`block text-right font-medium font-mono tabular-nums ${tone} ${className}`.trim()}
     >
       {value}
     </span>
@@ -197,7 +197,7 @@ export function buildPositionColumns({
           <PositionNumericCell value={formatCurrency(position.market_value)} />
           {subtext ? (
             <span
-              className="app-type-micro mt-0.5 block text-right font-medium tabular-nums text-[var(--app-text-tertiary)]"
+              className="app-type-micro mt-0.5 block text-right font-medium font-mono tabular-nums text-[var(--app-text-tertiary)]"
               title={`${locale === 'zh' ? '持仓数量' : 'Quantity'}: ${formatQuantity(position.quantity)}`}
             >
               {subtext}
@@ -225,7 +225,7 @@ export function buildPositionColumns({
           />
           {changePct != null ? (
             <span
-              className={`app-type-micro mt-0.5 block text-right font-medium tabular-nums ${pctTone}`}
+              className={`app-type-micro mt-0.5 block text-right font-medium font-mono tabular-nums ${pctTone}`}
             >
               {formatSignedPercent(changePct)}
             </span>
@@ -250,7 +250,7 @@ export function buildPositionColumns({
           />
           {pnlPct != null ? (
             <span
-              className={`app-type-micro mt-0.5 block text-right font-medium tabular-nums ${pctTone}`}
+              className={`app-type-micro mt-0.5 block text-right font-medium font-mono tabular-nums ${pctTone}`}
             >
               {formatSignedPercent(pnlPct)}
             </span>
@@ -337,7 +337,7 @@ export function buildPositionColumns({
                     value={formatPercent(weight)}
                     className="shrink-0"
                   />
-                  {model.variant === 'dashboard' ? (
+                  {weight != null ? (
                     <span
                       aria-hidden="true"
                       className="hidden sm:inline-block w-16 h-1.5 rounded-full bg-[var(--app-divider)] overflow-hidden shrink-0 mt-1"
