@@ -49,7 +49,7 @@ export function PriceStructureChartSvg({
       key={selectedRange}
       viewBox={`0 0 ${chartWidth} ${chartHeight}`}
       preserveAspectRatio="none"
-      className="app-chart-stage h-64 w-full overflow-visible text-[var(--app-soft)] sm:h-80 xl:h-[21rem]"
+      className="app-chart-stage h-64 w-full overflow-visible text-[var(--app-soft)] sm:h-80 xl:h-[26rem] 2xl:h-[28rem]"
       role="img"
       aria-label={`${titleLabel} · ${axisLabels.price} · ${axisLabels.date}`}
     >

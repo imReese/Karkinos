@@ -74,7 +74,7 @@ export function PriceStructureChart({
   }, []);
 
   const chartWidth = Math.max(containerWidth || 720, 720);
-  const chartHeight = 280;
+  const chartHeight = 320;
 
   const model = useMemo(
     () =>

@@ -38,7 +38,9 @@ export function PriceStructureLoadingState({
         <div
           className={cn(
             'mt-3 border-y border-[var(--app-divider)] bg-[linear-gradient(to_right,var(--app-divider)_1px,transparent_1px),linear-gradient(to_bottom,var(--app-divider)_1px,transparent_1px)] bg-[size:25%_100%,100%_25%] opacity-70',
-            compact ? 'h-28 sm:h-36' : 'h-44 sm:h-56 xl:h-64',
+            compact
+              ? 'h-28 sm:h-36'
+              : 'h-44 sm:h-56 xl:h-[26rem] 2xl:h-[28rem]',
           )}
         />
       </div>
