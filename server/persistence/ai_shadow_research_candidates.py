@@ -6,6 +6,9 @@ import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
+from analytics.normalized_research_gate import (
+    is_valid_passed_normalized_research_advancement_gate,
+)
 from analytics.strategy_advancement_gate import (
     is_valid_passed_strategy_advancement_gate,
 )
@@ -141,17 +144,29 @@ class ShadowResearchCandidateRepositoryMixin:
             raise ShadowResearchRejected("approver_and_notes_required")
         candidate = self.get_candidate(candidate_id)
         comparison = candidate["comparison"]
-        if (
-            comparison.get("research_capital_mode") == "normalized_notional"
-            or comparison.get("account_qualification_status") == "not_evaluated"
-        ):
-            raise ShadowResearchRejected("candidate_account_qualification_required")
         promotion_gate = comparison.get("promotion_gate")
-        if (
-            candidate["status"] != "awaiting_human_approval"
-            or candidate["recommendation"] != "paper_shadow_review"
-            or not is_valid_passed_strategy_advancement_gate(promotion_gate)
-        ):
+        is_account_bound = (
+            comparison.get("research_capital_mode")
+            == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+            and comparison.get("account_qualification_status") == "passed"
+            and is_valid_passed_strategy_advancement_gate(promotion_gate)
+        )
+        is_normalized = (
+            comparison.get("research_capital_mode")
+            == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            and is_valid_passed_normalized_research_advancement_gate(promotion_gate)
+        )
+        if not (is_account_bound or is_normalized):
+            raise ShadowResearchRejected("candidate_not_eligible_for_paper_shadow")
+        if candidate["status"] not in {
+            "awaiting_human_approval",
+            "evaluated_research_only",
+        }:
+            raise ShadowResearchRejected("candidate_not_eligible_for_paper_shadow")
+        if candidate["recommendation"] not in {
+            "paper_shadow_review",
+            "formula_research_candidate",
+        }:
             raise ShadowResearchRejected("candidate_not_eligible_for_paper_shadow")
         candidate_fingerprint = content_fingerprint(
             {
@@ -185,7 +200,7 @@ class ShadowResearchCandidateRepositoryMixin:
                 valuation_snapshot_id=run_row["valuation_snapshot_id"],
                 ledger_cutoff_id=run_row["ledger_cutoff_id"],
             )
-            if (
+            if not is_normalized and (
                 run_context["research_capital_mode"]
                 != SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
             ):
@@ -306,6 +321,7 @@ def _require_candidate_contract_matches_run_context(
             or candidate_contract
             not in {
                 ("evaluated_research_only", "formula_research_candidate"),
+                ("awaiting_human_approval", "paper_shadow_review"),
                 ("research_blocked", "keep_researching"),
                 ("failed_closed", "reject"),
             }

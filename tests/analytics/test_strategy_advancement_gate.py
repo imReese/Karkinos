@@ -16,6 +16,7 @@ from analytics.backtest_market_regime_evidence import (
 )
 from analytics.normalized_research_gate import (
     build_normalized_research_advancement_gate,
+    is_valid_passed_normalized_research_advancement_gate,
 )
 from analytics.oos_validation import build_rolling_out_of_sample_validation
 from analytics.research_account_capital_evidence import (
@@ -771,3 +772,43 @@ def test_strategy_advancement_gate_rejects_after_cost_reconciliation_conflict():
     assert gate.status == "blocked"
     assert "candidate_fee_or_tax_evidence_incomplete" in gate.blockers
     assert "candidate_after_tax_excess_return_not_positive" in gate.blockers
+
+
+def test_valid_passed_normalized_research_advancement_gate():
+    baseline, candidate = _view(candidate=False), _view(candidate=True)
+    for view in (baseline, candidate):
+        view["fee_component_evidence"] = _fingerprinted(
+            {
+                **{
+                    key: value
+                    for key, value in view["fee_component_evidence"].items()
+                    if key != "evidence_fingerprint"
+                },
+                "account_specific": False,
+                "fee_schedule_source": "canonical_default_estimate",
+                "fee_schedule_fingerprint": "",
+                "broker_statement_reconciled": False,
+            }
+        )
+    gate = build_normalized_research_advancement_gate(
+        baseline=baseline,
+        candidate=candidate,
+        critique_evidence={
+            "status": "completed",
+            "critique_id": "critique-reviewed",
+            "artifact_fingerprint": "e" * 64,
+        },
+    )
+    assert gate.status == "pass"
+    gate_dict = gate.to_json_dict()
+    assert is_valid_passed_normalized_research_advancement_gate(gate_dict) is True
+
+    # Tampered gate fails
+    tampered = deepcopy(gate_dict)
+    tampered["status"] = "blocked"
+    assert is_valid_passed_normalized_research_advancement_gate(tampered) is False
+
+    # Tampered fingerprint fails
+    tampered_fp = deepcopy(gate_dict)
+    tampered_fp["evidence_fingerprint"] = "0" * 64
+    assert is_valid_passed_normalized_research_advancement_gate(tampered_fp) is False

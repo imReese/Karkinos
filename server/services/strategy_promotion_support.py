@@ -82,7 +82,16 @@ def _resolve_ai_shadow_daily_strategy_artifact_binding(
         )
         return build_daily_strategy_promotion_binding(verified)
     except (DailyStrategyArtifactRejected, OSError, ValueError):
-        return None
+        try:
+            verified_candidate = artifacts.require_verified_research_candidate(
+                candidate_id=candidate_id,
+                run_id=run_id,
+            )
+            return _build_normalized_source_daily_strategy_artifact_binding(
+                verified_candidate
+            )
+        except (DailyStrategyArtifactRejected, OSError, ValueError):
+            return None
 
 
 def _resolve_ai_shadow_qualification_promotion_evidence(

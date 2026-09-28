@@ -12,6 +12,7 @@ from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_API_SCHEMA,
     SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_MAX_CANDIDATES,
     SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
@@ -39,6 +40,9 @@ from server.services.ai_shadow_research_daily_artifacts import (
 )
 from server.services.ai_shadow_research_qualification_support import (
     latest_qualification_attempt as read_latest_qualification_attempt,
+)
+from server.services.strategy_promotion_qualification_source import (
+    build_normalized_source_daily_strategy_artifact_binding,
 )
 from server.services.strategy_promotion_support import (
     AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
@@ -291,6 +295,22 @@ class AiShadowResearchCommandsMixin:
                 "authority_effect": "none",
             }
         )
+        active_paper_shadow = None
+        state_lister = getattr(self._db, "list_strategy_promotion_states_sync", None)
+        if callable(state_lister):
+            try:
+                states = state_lister(limit=20)
+                active_paper_shadow = next(
+                    (
+                        state["strategy_id"]
+                        for state in states
+                        if state.get("stage") == "paper_shadow"
+                        and state.get("gate_status") == "paper_shadow_enabled"
+                    ),
+                    None,
+                )
+            except Exception:
+                active_paper_shadow = None
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
             "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
@@ -298,6 +318,7 @@ class AiShadowResearchCommandsMixin:
             "kill_switch": kill_switch,
             "usage": self._store.usage_for_market_date(latest_market_date),
             "today_provider_activity": today_provider_activity,
+            "active_paper_shadow_strategy_id": active_paper_shadow,
             "runs": runs,
             "candidates": candidates,
             "daily_selections": daily_selections,
@@ -480,18 +501,42 @@ class AiShadowResearchCommandsMixin:
         candidate = self._store.get_candidate(candidate_id)
         comparison = candidate.get("comparison")
         comparison = comparison if isinstance(comparison, Mapping) else {}
-        if (
-            comparison.get("research_capital_mode") == "normalized_notional"
-            or comparison.get("account_qualification_status") == "not_evaluated"
-        ):
-            raise ShadowResearchRejected("candidate_account_qualification_required")
-        daily_artifacts = self._daily_artifacts.require_verified_winner(
-            candidate_id=candidate_id,
-            run_id=str(candidate.get("run_id") or ""),
+        is_normalized = (
+            comparison.get("research_capital_mode")
+            == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
         )
-        daily_strategy_artifact_binding = build_daily_strategy_promotion_binding(
-            daily_artifacts
-        )
+        if is_normalized:
+            try:
+                verified_candidate = (
+                    self._daily_artifacts.require_verified_research_candidate(
+                        candidate_id=candidate_id,
+                        run_id=str(candidate.get("run_id") or ""),
+                    )
+                )
+                daily_strategy_artifact_binding = (
+                    build_normalized_source_daily_strategy_artifact_binding(
+                        verified_candidate
+                    )
+                )
+                daily_artifacts = {"selection": {}, "backup": verified_candidate}
+            except Exception:
+                daily_artifacts = self._daily_artifacts.require_verified_winner(
+                    candidate_id=candidate_id,
+                    run_id=str(candidate.get("run_id") or ""),
+                )
+                daily_strategy_artifact_binding = (
+                    build_daily_strategy_promotion_binding(daily_artifacts)
+                )
+        else:
+            if comparison.get("account_qualification_status") == "not_evaluated":
+                raise ShadowResearchRejected("candidate_account_qualification_required")
+            daily_artifacts = self._daily_artifacts.require_verified_winner(
+                candidate_id=candidate_id,
+                run_id=str(candidate.get("run_id") or ""),
+            )
+            daily_strategy_artifact_binding = build_daily_strategy_promotion_binding(
+                daily_artifacts
+            )
         approval = self._store.approve_candidate(
             candidate_id,
             approved_by=approved_by,
@@ -714,3 +759,9 @@ class AiShadowResearchCommandsMixin:
             "broker_submission_enabled": False,
             "capital_authority_granted": False,
         }
+
+    def list_candidates_detail(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return self._store.list_candidates(limit=limit)
+
+    def get_candidate_detail(self, candidate_id: str) -> dict[str, Any]:
+        return self._store.get_candidate(candidate_id)

@@ -7,11 +7,15 @@ from collections.abc import Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from analytics.normalized_research_gate import (
+    is_valid_passed_normalized_research_advancement_gate,
+)
 from analytics.strategy_advancement_gate import (
     is_valid_passed_strategy_advancement_gate,
 )
 from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.daily_strategy_artifacts import (
@@ -253,14 +257,27 @@ def candidate_outcome(candidate: Mapping[str, Any]) -> dict[str, Any]:
     lineage = comparison.get("iteration_lineage")
     lineage = lineage if isinstance(lineage, Mapping) else {}
     metrics = ranking_metrics(gate)
+    is_normalized = (
+        comparison.get("research_capital_mode")
+        == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+    )
     eligible = (
         bool(candidate_id)
         and candidate.get("status") == "awaiting_human_approval"
         and candidate.get("recommendation") == "paper_shadow_review"
-        and comparison.get("research_capital_mode")
-        == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
-        and comparison.get("account_qualification_status") == "passed"
-        and is_valid_passed_strategy_advancement_gate(gate)
+        and (
+            (
+                is_normalized
+                and is_valid_passed_normalized_research_advancement_gate(gate)
+            )
+            or (
+                not is_normalized
+                and comparison.get("research_capital_mode")
+                == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+                and comparison.get("account_qualification_status") == "passed"
+                and is_valid_passed_strategy_advancement_gate(gate)
+            )
+        )
         and metrics is not None
     )
     ranking_key = None
@@ -314,13 +331,17 @@ def ranking_metrics(gate: Mapping[str, Any]) -> dict[str, Decimal] | None:
         if isinstance(check, Mapping)
     }
     after_tax = check_evidence(checks, "after_tax_excess_return")
+    estimated_excess = check_evidence(checks, "estimated_after_cost_excess_return")
+    after_tax_value = decimal_value(after_tax.get("after_tax_excess_return"))
+    if after_tax_value is None:
+        after_tax_value = decimal_value(
+            estimated_excess.get("after_cost_excess_return")
+        )
     oos = check_evidence(checks, "after_cost_oos_excess")
     drawdown = check_evidence(checks, "drawdown")
     turnover = check_evidence(checks, "turnover")
     values = {
-        "after_tax_excess_return": decimal_value(
-            after_tax.get("after_tax_excess_return")
-        ),
+        "after_tax_excess_return": after_tax_value,
         "mean_oos_excess_return": decimal_value(oos.get("mean_oos_excess_return")),
         "worst_oos_excess_return": decimal_value(oos.get("worst_oos_excess_return")),
         "candidate_max_drawdown": decimal_value(drawdown.get("candidate_max_drawdown")),

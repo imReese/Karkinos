@@ -353,12 +353,7 @@ class AiShadowResearchCandidateWorkflowMixin:
                 policy.research_capital_mode
                 == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
             )
-            recommendation = (
-                "formula_research_candidate"
-                if normalized_research
-                and comparison["research_gate"]["status"] == "pass"
-                else str(comparison["recommendation"])
-            )
+            recommendation = str(comparison["recommendation"])
             self._require_execution_current()
             return self._store.save_candidate(
                 run_id=str(run["run_id"]),
@@ -369,11 +364,11 @@ class AiShadowResearchCandidateWorkflowMixin:
                 baseline_result_id=baseline_result_id,
                 candidate_result_id=candidate_result_id,
                 status=(
-                    "evaluated_research_only"
-                    if recommendation == "formula_research_candidate"
+                    "awaiting_human_approval"
+                    if recommendation == "paper_shadow_review"
                     else (
-                        "awaiting_human_approval"
-                        if recommendation == "paper_shadow_review"
+                        "evaluated_research_only"
+                        if recommendation == "formula_research_candidate"
                         else "research_blocked"
                     )
                 ),
@@ -491,7 +486,11 @@ class AiShadowResearchCandidateWorkflowMixin:
             <= abs(baseline_view["max_drawdown"]),
         }
         recommendation = (
-            "keep_researching"
+            (
+                "paper_shadow_review"
+                if research_gate is not None and research_gate.passed
+                else "keep_researching"
+            )
             if normalized_research
             else (
                 "paper_shadow_review"
@@ -500,11 +499,15 @@ class AiShadowResearchCandidateWorkflowMixin:
             )
         )
         promotion_gate = (
-            _account_qualification_required_gate()
+            (
+                research_gate.to_json_dict()
+                if research_gate is not None
+                else _account_qualification_required_gate()
+            )
             if normalized_research
-            else advancement_gate.to_json_dict()
-            if advancement_gate is not None
-            else {}
+            else (
+                advancement_gate.to_json_dict() if advancement_gate is not None else {}
+            )
         )
         research_feedback: dict[str, Any] = {
             "comparison_reference": "baseline",

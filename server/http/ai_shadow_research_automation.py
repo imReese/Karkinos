@@ -256,6 +256,34 @@ def create_router(
         ShadowResearchTimeoutResumeCallExtensionPayload,
     )
 
+    @router.get("/shadow-candidates")
+    async def list_shadow_research_candidates(
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        if state.db is None:
+            raise HTTPException(status_code=503, detail="Database is not initialized")
+        try:
+            return build_read_service(state).list_candidates_detail(limit=limit)
+        except Exception as exc:
+            raise_http(exc)
+
+    @router.get("/shadow-candidates/{candidate_id}")
+    async def get_shadow_research_candidate_detail(
+        candidate_id: str,
+    ) -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        if state.db is None:
+            raise HTTPException(status_code=503, detail="Database is not initialized")
+        try:
+            return build_read_service(state).get_candidate_detail(candidate_id)
+        except Exception as exc:
+            raise_http(exc)
+
     @router.post("/shadow-candidates/{candidate_id}/paper-shadow-approvals")
     async def approve_shadow_research_candidate(
         candidate_id: str,

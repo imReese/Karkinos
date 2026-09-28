@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from analytics.normalized_research_gate import (
+    _estimated_fee_evidence_valid,
+    build_normalized_research_advancement_gate,
+    is_valid_passed_normalized_research_advancement_gate,
+)
 from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
@@ -15,6 +20,7 @@ from analytics.strategy_advancement_gate import (
 from server.ai_runtime.contracts import content_fingerprint
 from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
 )
 from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
 from server.services.strategy_promotion_support import (
@@ -408,6 +414,13 @@ def resolve_ai_shadow_strategy_promotion_binding(
         if isinstance(daily_strategy_artifact_binding, dict)
         else {}
     )
+    reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
+    raw_binding = reader(candidate_id) if callable(reader) and candidate_id else None
+    normalized_research = (
+        isinstance(raw_binding, dict)
+        and raw_binding.get("research_run_capital_mode")
+        == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+    )
     return {
         "status": "pass" if not blockers else "blocked",
         "strategy_id": normalized_strategy_id,
@@ -429,6 +442,7 @@ def resolve_ai_shadow_strategy_promotion_binding(
         "fee_schedule_binding": fee_schedule_binding,
         "dataset_replay": dataset_replay,
         "live_like_enabled": bool(state.get("live_like_enabled")),
+        "normalized_research": normalized_research,
     }, blockers
 
 
@@ -510,14 +524,15 @@ def resolve_strategy_order_generation_gate(
         fee_schedule_binding = (
             fee_schedule_binding if isinstance(fee_schedule_binding, dict) else {}
         )
-        blockers.extend(
-            f"strategy_{blocker}"
-            for blocker in active_review_matches_fee_evidence(
-                db,
-                fee_schedule_binding,
-                as_of_date=as_of_date,
+        if not promotion.get("normalized_research"):
+            blockers.extend(
+                f"strategy_{blocker}"
+                for blocker in active_review_matches_fee_evidence(
+                    db,
+                    fee_schedule_binding,
+                    as_of_date=as_of_date,
+                )
             )
-        )
 
     blockers = list(dict.fromkeys(blockers))
     return {
@@ -608,8 +623,16 @@ def _ai_shadow_readiness_binding_blockers(
     if binding.get("target_stage") != "paper_shadow":
         blockers.append("ai_shadow_approval_target_invalid")
     comparison_gate = comparison.get("promotion_gate")
-    if not is_valid_passed_strategy_advancement_gate(comparison_gate):
-        blockers.append("ai_shadow_strategy_advancement_gate_invalid")
+    normalized_research = (
+        binding.get("research_run_capital_mode")
+        == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+    )
+    if normalized_research:
+        if not is_valid_passed_normalized_research_advancement_gate(comparison_gate):
+            blockers.append("ai_shadow_strategy_advancement_gate_invalid")
+    else:
+        if not is_valid_passed_strategy_advancement_gate(comparison_gate):
+            blockers.append("ai_shadow_strategy_advancement_gate_invalid")
     baseline_source = _binding_backtest_source(binding, "baseline")
     candidate_source = _binding_backtest_source(binding, "candidate")
     if comparison.get("baseline_source_fingerprint") != content_fingerprint(
@@ -627,16 +650,22 @@ def _ai_shadow_readiness_binding_blockers(
     candidate_fee_evidence = _json_object(
         candidate_metrics.get("fee_component_evidence")
     )
-    blockers.extend(
-        f"ai_shadow_{blocker}"
-        for blocker in active_review_matches_fee_evidence(
-            db,
-            {
-                **candidate_fee_evidence,
-                **_json_object(candidate_fee_evidence.get("fee_schedule_binding")),
-            },
+    if not normalized_research:
+        blockers.extend(
+            f"ai_shadow_{blocker}"
+            for blocker in active_review_matches_fee_evidence(
+                db,
+                {
+                    **candidate_fee_evidence,
+                    **_json_object(candidate_fee_evidence.get("fee_schedule_binding")),
+                },
+            )
         )
-    )
+    else:
+        if not _estimated_fee_evidence_valid(
+            strategy_advancement_backtest_view(candidate_source)
+        ):
+            blockers.append("ai_shadow_candidate_estimated_fee_evidence_invalid")
     if (
         binding.get("research_run_status") != "completed"
         or int(binding.get("research_run_baseline_result_id") or 0)
@@ -644,30 +673,31 @@ def _ai_shadow_readiness_binding_blockers(
         or binding.get("research_run_session_id") != binding.get("session_id")
     ):
         blockers.append("ai_shadow_research_run_binding_drift")
-    research_context_id = str(binding.get("research_run_context_id") or "").strip()
-    research_valuation_id = str(
-        binding.get("research_run_valuation_snapshot_id") or ""
-    ).strip()
-    if (
-        binding.get("research_run_capital_mode")
-        != SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
-        or not research_context_id
-        or research_context_id != research_valuation_id
-        or int(binding.get("research_run_ledger_cutoff_id") or 0) <= 0
-    ):
-        blockers.append("ai_shadow_research_context_not_account_bound")
-    candidate_capital_evidence = _json_object(
-        candidate_metrics.get("account_capital_constraint")
-    )
-    if not is_valid_passed_research_account_capital_evidence(
-        candidate_capital_evidence,
-        expected_initial_cash=binding.get("candidate_initial_cash"),
-        expected_valuation_snapshot_id=binding.get(
-            "research_run_valuation_snapshot_id"
-        ),
-        expected_ledger_cutoff_id=binding.get("research_run_ledger_cutoff_id"),
-    ):
-        blockers.append("ai_shadow_research_account_capital_binding_drift")
+    if not normalized_research:
+        research_context_id = str(binding.get("research_run_context_id") or "").strip()
+        research_valuation_id = str(
+            binding.get("research_run_valuation_snapshot_id") or ""
+        ).strip()
+        if (
+            binding.get("research_run_capital_mode")
+            != SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+            or not research_context_id
+            or research_context_id != research_valuation_id
+            or int(binding.get("research_run_ledger_cutoff_id") or 0) <= 0
+        ):
+            blockers.append("ai_shadow_research_context_not_account_bound")
+        candidate_capital_evidence = _json_object(
+            candidate_metrics.get("account_capital_constraint")
+        )
+        if not is_valid_passed_research_account_capital_evidence(
+            candidate_capital_evidence,
+            expected_initial_cash=binding.get("candidate_initial_cash"),
+            expected_valuation_snapshot_id=binding.get(
+                "research_run_valuation_snapshot_id"
+            ),
+            expected_ledger_cutoff_id=binding.get("research_run_ledger_cutoff_id"),
+        ):
+            blockers.append("ai_shadow_research_account_capital_binding_drift")
     candidate_dataset = _json_object(candidate_metrics.get("dataset_snapshot"))
     if (
         binding.get("formula_backtest_status") != "completed"
@@ -679,8 +709,11 @@ def _ai_shadow_readiness_binding_blockers(
         != candidate_metrics.get("formula_fingerprint")
         or binding.get("formula_backtest_dataset_snapshot_id")
         != candidate_dataset.get("snapshot_id")
-        or binding.get("formula_backtest_cost_model_reference")
-        != candidate_fee_evidence.get("cost_model_reference")
+        or (
+            not normalized_research
+            and binding.get("formula_backtest_cost_model_reference")
+            != candidate_fee_evidence.get("cost_model_reference")
+        )
         or binding.get("backtest_evidence_fingerprint")
         != content_fingerprint(candidate_metrics.get("research_evidence_bundle"))
     ):
@@ -697,26 +730,43 @@ def _ai_shadow_readiness_binding_blockers(
         != content_fingerprint(critique_artifact)
     ):
         blockers.append("ai_shadow_critique_source_drift")
-    try:
-        current_gate = build_strategy_advancement_gate(
-            baseline=strategy_advancement_backtest_view(baseline_source),
-            candidate=strategy_advancement_backtest_view(candidate_source),
-            critique_evidence={
-                "status": binding.get("critique_status"),
-                "critique_id": binding.get("critique_id"),
-                "artifact_fingerprint": (
-                    content_fingerprint(critique_artifact)
-                    if critique_artifact
-                    else None
-                ),
-            },
-        ).to_json_dict()
-    except (TypeError, ValueError, OverflowError):
-        current_gate = None
-    if not is_valid_passed_strategy_advancement_gate(
-        current_gate
-    ) or content_fingerprint(current_gate) != content_fingerprint(comparison_gate):
-        blockers.append("ai_shadow_strategy_advancement_gate_current_source_mismatch")
+    critique_evidence = {
+        "status": binding.get("critique_status"),
+        "critique_id": binding.get("critique_id"),
+        "artifact_fingerprint": (
+            content_fingerprint(critique_artifact) if critique_artifact else None
+        ),
+    }
+    if normalized_research:
+        try:
+            current_gate = build_normalized_research_advancement_gate(
+                baseline=strategy_advancement_backtest_view(baseline_source),
+                candidate=strategy_advancement_backtest_view(candidate_source),
+                critique_evidence=critique_evidence,
+            ).to_json_dict()
+        except (TypeError, ValueError, OverflowError):
+            current_gate = None
+        if not is_valid_passed_normalized_research_advancement_gate(
+            current_gate
+        ) or content_fingerprint(current_gate) != content_fingerprint(comparison_gate):
+            blockers.append(
+                "ai_shadow_strategy_advancement_gate_current_source_mismatch"
+            )
+    else:
+        try:
+            current_gate = build_strategy_advancement_gate(
+                baseline=strategy_advancement_backtest_view(baseline_source),
+                candidate=strategy_advancement_backtest_view(candidate_source),
+                critique_evidence=critique_evidence,
+            ).to_json_dict()
+        except (TypeError, ValueError, OverflowError):
+            current_gate = None
+        if not is_valid_passed_strategy_advancement_gate(
+            current_gate
+        ) or content_fingerprint(current_gate) != content_fingerprint(comparison_gate):
+            blockers.append(
+                "ai_shadow_strategy_advancement_gate_current_source_mismatch"
+            )
     if binding.get("candidate_fingerprint") != expected_candidate_fingerprint:
         blockers.append("ai_shadow_candidate_approval_fingerprint_mismatch")
     if readiness.get("schema_version") != (
@@ -736,10 +786,20 @@ def _ai_shadow_readiness_binding_blockers(
     if readiness.get("human_approval_id") != binding.get("promotion_id"):
         blockers.append("ai_shadow_readiness_human_approval_mismatch")
     readiness_gate = readiness.get("strategy_advancement_gate")
-    if not is_valid_passed_strategy_advancement_gate(
-        readiness_gate
-    ) or content_fingerprint(readiness_gate) != content_fingerprint(comparison_gate):
-        blockers.append("ai_shadow_readiness_strategy_advancement_gate_mismatch")
+    if normalized_research:
+        if not is_valid_passed_normalized_research_advancement_gate(
+            readiness_gate
+        ) or content_fingerprint(readiness_gate) != content_fingerprint(
+            comparison_gate
+        ):
+            blockers.append("ai_shadow_readiness_strategy_advancement_gate_mismatch")
+    else:
+        if not is_valid_passed_strategy_advancement_gate(
+            readiness_gate
+        ) or content_fingerprint(readiness_gate) != content_fingerprint(
+            comparison_gate
+        ):
+            blockers.append("ai_shadow_readiness_strategy_advancement_gate_mismatch")
     if (
         readiness.get("promotion_status") != "promotable_for_paper_review"
         or readiness.get("is_promotable") is not True
