@@ -8,7 +8,7 @@ COPY web/src/ ./src/
 RUN npm run build
 
 # ---- Stage 2: Python runtime ----
-FROM python:3.12.13-slim-trixie@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
+FROM python:3.14.6-slim-trixie@sha256:7bec7ddcddeff7975d6ba9b4be7dd6f6b2f55e7491539145e2978f7f97ce9144
 
 ARG UV_VERSION=0.11.28
 ARG VERSION=dev
