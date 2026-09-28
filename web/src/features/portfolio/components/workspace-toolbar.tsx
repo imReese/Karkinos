@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import { FilterBar } from '../../../shared/ui/workbench';
@@ -13,6 +14,125 @@ export type PositionSort =
   | 'today_change'
   | 'unrealized_pnl'
   | 'realized_pnl';
+
+function ToolbarSelect<T extends string>({
+  'aria-label': ariaLabel,
+  value,
+  onChange,
+  options,
+  className,
+}: {
+  'aria-label': string;
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: string }[];
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption =
+    options.find((opt) => opt.value === value) ?? options[0];
+  const displayLabel = selectedOption?.label ?? value;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
+  return (
+    <div ref={containerRef} className="relative inline-block">
+      <select
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+        className="sr-only"
+        tabIndex={-1}
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        className={`app-field inline-flex h-10 items-center justify-between gap-1.5 rounded-[var(--app-radius-control)] pl-2.5 pr-2 text-xs sm:h-8 cursor-pointer bg-[var(--app-surface-raised)] text-[var(--app-text)] hover:border-[var(--app-border)] focus:border-[var(--app-focus-ring)] focus:outline-none ${className ?? ''}`}
+      >
+        <span className="truncate">{displayLabel}</span>
+        <ChevronDown
+          size={13}
+          className={`shrink-0 text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] ${
+            isOpen ? 'rotate-180' : ''
+          }`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {isOpen ? (
+        <div
+          role="listbox"
+          aria-label={ariaLabel}
+          className="absolute left-0 top-full z-50 mt-1 min-w-full w-max max-w-xs rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-1 shadow-lg"
+        >
+          {options.map((opt) => {
+            const isSelected = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                className={`flex w-full items-center justify-between gap-3 rounded-[calc(var(--app-radius-control)-2px)] px-2.5 py-1.5 text-xs text-left transition-colors cursor-pointer ${
+                  isSelected
+                    ? 'bg-[var(--app-accent-bg)] font-semibold text-[var(--app-accent)]'
+                    : 'text-[var(--app-text)] hover:bg-[var(--app-surface)]'
+                }`}
+              >
+                <span className="truncate">{opt.label}</span>
+                {isSelected ? (
+                  <Check
+                    size={13}
+                    className="shrink-0 text-[var(--app-accent)]"
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function WorkspaceToolbar({
   search,
@@ -59,8 +179,8 @@ export function WorkspaceToolbar({
   const moreFiltersAccessibleLabel = activeSecondaryFilterCount
     ? `${moreFiltersLabel} · ${labels.activeFilters(activeSecondaryFilterCount)}`
     : moreFiltersLabel;
-  const fieldClassName =
-    'app-field h-10 rounded-[var(--app-radius-control)] px-2 text-xs sm:h-8';
+  const inputClassName =
+    'app-field h-10 rounded-[var(--app-radius-control)] px-3 text-xs sm:h-8';
 
   return (
     <FilterBar label={labels.helper}>
@@ -71,7 +191,7 @@ export function WorkspaceToolbar({
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={labels.searchPlaceholder}
-            className={`${fieldClassName} w-full`}
+            className={`${inputClassName} w-full`}
           />
         </label>
 
@@ -82,38 +202,29 @@ export function WorkspaceToolbar({
         ) : null}
 
         <div className="flex min-w-0 flex-wrap items-center gap-2 md:col-span-2">
-          <label>
-            <span className="sr-only">{labels.assetClass}</span>
-            <select
-              aria-label={labels.assetClass}
-              value={assetClassFilter}
-              onChange={(event) => onAssetClassFilterChange(event.target.value)}
-              className={fieldClassName}
-            >
-              <option value="all">{labels.allAssetClasses}</option>
-              {assetClasses.map((assetClass) => (
-                <option key={assetClass} value={assetClass}>
-                  {formatAssetClassLabel(assetClass, copy.common)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <ToolbarSelect
+            aria-label={labels.assetClass}
+            value={assetClassFilter}
+            onChange={onAssetClassFilterChange}
+            options={[
+              { value: 'all', label: labels.allAssetClasses },
+              ...assetClasses.map((assetClass) => ({
+                value: assetClass,
+                label: formatAssetClassLabel(assetClass, copy.common),
+              })),
+            ]}
+          />
 
-          <label>
-            <span className="sr-only">{labels.pnlFocus}</span>
-            <select
-              aria-label={labels.pnlFocus}
-              value={pnlFilter}
-              onChange={(event) =>
-                onPnlFilterChange(event.target.value as PnlFilter)
-              }
-              className={fieldClassName}
-            >
-              <option value="all">{labels.allHoldings}</option>
-              <option value="winners">{labels.winnersOnly}</option>
-              <option value="losers">{labels.losersOnly}</option>
-            </select>
-          </label>
+          <ToolbarSelect
+            aria-label={labels.pnlFocus}
+            value={pnlFilter}
+            onChange={onPnlFilterChange}
+            options={[
+              { value: 'all', label: labels.allHoldings },
+              { value: 'winners', label: labels.winnersOnly },
+              { value: 'losers', label: labels.losersOnly },
+            ]}
+          />
 
           <button
             type="button"
@@ -136,57 +247,45 @@ export function WorkspaceToolbar({
             data-testid="portfolio-secondary-filters"
             className={showMoreFilters ? 'contents' : 'hidden md:contents'}
           >
-            <label>
-              <span className="sr-only">{labels.quoteFilter}</span>
-              <select
-                aria-label={labels.quoteFilter}
-                value={quoteFilter}
-                onChange={(event) =>
-                  onQuoteFilterChange?.(event.target.value as QuoteFilter)
-                }
-                className={fieldClassName}
-              >
-                <option value="all">{labels.allQuoteStates}</option>
-                <option value="healthy">{labels.healthyQuotes}</option>
-                <option value="review">{labels.reviewQuotes}</option>
-              </select>
-            </label>
+            <ToolbarSelect
+              aria-label={labels.quoteFilter}
+              value={quoteFilter}
+              onChange={(value) => onQuoteFilterChange?.(value as QuoteFilter)}
+              options={[
+                { value: 'all', label: labels.allQuoteStates },
+                { value: 'healthy', label: labels.healthyQuotes },
+                { value: 'review', label: labels.reviewQuotes },
+              ]}
+            />
 
-            <label>
-              <span className="sr-only">{labels.evidenceFilter}</span>
-              <select
-                aria-label={labels.evidenceFilter}
-                value={evidenceFilter}
-                onChange={(event) =>
-                  onEvidenceFilterChange?.(event.target.value as EvidenceFilter)
-                }
-                className={fieldClassName}
-              >
-                <option value="all">{labels.allEvidenceStates}</option>
-                <option value="review">{labels.evidenceReviewOnly}</option>
-                <option value="clear">{labels.evidenceClearOnly}</option>
-              </select>
-            </label>
+            <ToolbarSelect
+              aria-label={labels.evidenceFilter}
+              value={evidenceFilter}
+              onChange={(value) =>
+                onEvidenceFilterChange?.(value as EvidenceFilter)
+              }
+              options={[
+                { value: 'all', label: labels.allEvidenceStates },
+                { value: 'review', label: labels.evidenceReviewOnly },
+                { value: 'clear', label: labels.evidenceClearOnly },
+              ]}
+            />
 
-            <label>
-              <span className="sr-only">{labels.sortBy}</span>
-              <select
-                aria-label={labels.sortBy}
-                value={sortBy}
-                onChange={(event) =>
-                  onSortByChange?.(event.target.value as PositionSort)
-                }
-                className={fieldClassName}
-              >
-                <option value="market_value">{labels.sortMarketValue}</option>
-                <option value="weight">{labels.sortWeight}</option>
-                <option value="today_change">{labels.sortTodayPnl}</option>
-                <option value="unrealized_pnl">
-                  {labels.sortUnrealizedPnl}
-                </option>
-                <option value="realized_pnl">{labels.sortRealizedPnl}</option>
-              </select>
-            </label>
+            <ToolbarSelect
+              aria-label={labels.sortBy}
+              value={sortBy}
+              onChange={(value) => onSortByChange?.(value as PositionSort)}
+              options={[
+                { value: 'market_value', label: labels.sortMarketValue },
+                { value: 'weight', label: labels.sortWeight },
+                { value: 'today_change', label: labels.sortTodayPnl },
+                {
+                  value: 'unrealized_pnl',
+                  label: labels.sortUnrealizedPnl,
+                },
+                { value: 'realized_pnl', label: labels.sortRealizedPnl },
+              ]}
+            />
           </div>
         </div>
       </div>
