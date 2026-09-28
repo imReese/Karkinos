@@ -349,9 +349,9 @@ def main(argv: list[str] | None = None) -> int:
                     "--port",
                     str(args.port),
                     "--reload-exclude",
-                    "tests/**",
+                    "tests",
                     "--reload-exclude",
-                    "web/**",
+                    "web",
                 ],
                 [
                     npm,
