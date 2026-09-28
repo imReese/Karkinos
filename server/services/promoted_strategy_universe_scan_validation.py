@@ -208,6 +208,12 @@ def current_scan_input_blockers(
         blockers.append("promoted_strategy_scan_current_portfolio_changed")
 
     if market_replay_ready and not strategy_blockers and promoted:
+        total_equity = portfolio["total_equity"]
+        evaluation_equity = (
+            total_equity
+            if isinstance(total_equity, (int, float)) and total_equity > 0
+            else 100_000.0
+        )
         truths, raw_signals, truth_blockers = evaluate_promoted_strategy_market(
             promoted=promoted,
             market_date=market_date,
@@ -216,7 +222,7 @@ def current_scan_input_blockers(
             receipts=receipts,
             trading_dates=trading_dates,
             start_date=start_date,
-            total_equity=portfolio["total_equity"],
+            total_equity=evaluation_equity,
             held_stock_symbols=held_symbols,
             policy=policy,
         )

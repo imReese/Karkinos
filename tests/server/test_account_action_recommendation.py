@@ -844,3 +844,61 @@ def test_manual_review_projection_preserves_price_and_cost_estimates() -> None:
     assert action["estimated_gross_amount"] == 360100.0
     assert action["estimated_net_cash_impact"] == -360180.0
     assert action["estimated_total_fee"] == 80.0
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_blocked_decision_window_still_presents_read_only_signals_when_verified() -> (
+    None
+):
+    recommendation = build_account_action_recommendation(
+        decision_payload={
+            "decision_date": "2026-09-01",
+            "candidates": [],
+            "summary": {
+                "portfolio": {"valuation_status": "complete"},
+                "account_truth": {"gate_status": "pass"},
+            },
+        },
+        trading_plan={
+            "manual_ready_count": 0,
+            "paper_shadow_ready_count": 0,
+            "blocked_count": 0,
+            "blockers": [],
+            "order_intents": [],
+        },
+        promoted_scan={
+            "verified": True,
+            "status": "blocked",
+            "blockers": ["strategy_scan_outside_reviewed_decision_window"],
+            "strategy_bindings": [],
+            "selected_signal_count": 1,
+            "signals": [
+                {
+                    "strategy_id": "ai_formula_shadow:candidate-1",
+                    "symbol": "603659",
+                    "direction": "sell",
+                    "target_weight": 0.0,
+                    "frozen_close": 18.5,
+                }
+            ],
+        },
+        current_evidence_blockers=[],
+        current_evidence_fingerprint="e" * 64,
+    )
+
+    assert recommendation["status"] == "blocked"
+    assert recommendation["authorizes_execution"] is False
+    assert recommendation["presentation"]["level"] == "signal"
+    assert recommendation["presentation"]["signal_status"] == "ready"
+    assert recommendation["presentation"]["manual_review_status"] == "blocked"
+    assert (
+        "strategy_scan_outside_reviewed_decision_window"
+        in (recommendation["presentation"]["manual_review_blockers"])
+    )
+    assert len(recommendation["presentation"]["actions"]) == 1
+    action = recommendation["presentation"]["actions"][0]
+    assert action["symbol"] == "603659"
+    assert action["side"] == "sell"
+    assert action["target_weight"] == 0.0
+    assert action["estimated_price"] == 18.5
