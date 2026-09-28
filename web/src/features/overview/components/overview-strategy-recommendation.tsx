@@ -341,7 +341,7 @@ function RecommendationActionItem({
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3 grid-cols-2 sm:grid-cols-4">
+      <div className="mt-3 grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-2">
         <div className="min-w-0">
           <div className="app-type-label text-[var(--app-text-tertiary)]">
             {actionPriceLabel(action.side, dashboard)}
@@ -412,7 +412,7 @@ function RecommendationActionItem({
       positionEffect != null ||
       constraintChecks.length > 0 ? (
         <div className="mt-3 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/40 p-2.5">
-          <div className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2">
             {netCash != null ? (
               <div>
                 <span className="text-[var(--app-text-tertiary)]">
@@ -557,24 +557,26 @@ export function OverviewStrategyRecommendation({
       className={('min-w-0 ' + (className ?? '')).trim()}
       aria-label={dashboard.strategyRecommendationTitle}
     >
-      <SectionHeader
-        title={dashboard.strategyRecommendationTitle}
-        meta={recommendationDate === '--' ? undefined : recommendationDate}
-        className="overview-spotlight-heading"
-        actions={
-          <div className="flex items-center gap-3">
-            <a
-              href="/decision"
-              className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
-            >
-              {dashboard.strategyRecommendationViewAll}
-            </a>
-          </div>
-        }
-      />
+      <div className="mb-4 flex h-9 items-center border-b border-[var(--app-divider)]">
+        <SectionHeader
+          title={dashboard.strategyRecommendationTitle}
+          meta={recommendationDate === '--' ? undefined : recommendationDate}
+          className="overview-spotlight-heading w-full flex-row items-center justify-between sm:items-center"
+          actions={
+            <div className="flex items-center gap-3">
+              <a
+                href="/decision"
+                className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+              >
+                {dashboard.strategyRecommendationViewAll}
+              </a>
+            </div>
+          }
+        />
+      </div>
 
       {planQuery.isLoading && !plan ? (
-        <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5 text-[var(--app-text-secondary)]">
+        <div className="flex items-center gap-2.5 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5 text-[var(--app-text-secondary)]">
           <span className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)] opacity-70" />
           <span className="app-type-compact font-medium">
             {locale === 'zh'
@@ -586,11 +588,10 @@ export function OverviewStrategyRecommendation({
         <ExceptionBoundary
           tone="warning"
           title={dashboard.accountRecommendationUnavailable}
-          className="mt-2"
         />
       ) : plan ? (
         showDetailedActions ? (
-          <div className="mt-2 min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
+          <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <StatusBadge tone={statusTone(presentationLevel)}>
                 {statusLabel(presentationLevel, dashboard)}
@@ -602,7 +603,7 @@ export function OverviewStrategyRecommendation({
               </div>
             </div>
 
-            <ul className="mt-3 divide-y divide-[var(--app-divider)]">
+            <ul className="mt-3 divide-y divide-[var(--app-divider)] max-h-[32rem] overflow-y-auto overscroll-y-contain pr-1">
               {presentationActions.map((action, index) => (
                 <RecommendationActionItem
                   key={
@@ -647,7 +648,7 @@ export function OverviewStrategyRecommendation({
             </div>
           </div>
         ) : (
-          <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
               <span
                 className={(

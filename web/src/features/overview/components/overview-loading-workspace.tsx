@@ -32,16 +32,33 @@ export function OverviewLoadingWorkspace({ copy }: { copy: AppCopy }) {
         </section>
 
         <section className="min-w-0 border-b border-[var(--app-divider)] pb-6">
-          <div className="flex gap-4 border-b border-[var(--app-divider)] pb-3">
-            <span className="overview-loading-block h-4 w-20" />
-            <span className="overview-loading-block h-4 w-20" />
-          </div>
-          <div className="flex h-56 min-w-0 flex-col justify-between py-5 sm:h-72">
-            <span className="overview-loading-block h-3 w-28" />
-            <span className="overview-loading-block h-2 w-full opacity-60" />
-            <span className="overview-loading-block h-2 w-full opacity-60" />
-            <span className="overview-loading-block h-2 w-full opacity-60" />
-            <span className="overview-loading-block h-2 w-2/3 opacity-60" />
+          <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+            <div className="min-w-0">
+              <div className="flex gap-4 border-b border-[var(--app-divider)] pb-3">
+                <span className="overview-loading-block h-4 w-20" />
+                <span className="overview-loading-block h-4 w-20" />
+              </div>
+              <div className="flex h-56 min-w-0 flex-col justify-between py-5 sm:h-72">
+                <span className="overview-loading-block h-3 w-28" />
+                <span className="overview-loading-block h-2 w-full opacity-60" />
+                <span className="overview-loading-block h-2 w-full opacity-60" />
+                <span className="overview-loading-block h-2 w-full opacity-60" />
+                <span className="overview-loading-block h-2 w-2/3 opacity-60" />
+              </div>
+            </div>
+            <div className="hidden min-w-0 xl:block">
+              <div className="flex justify-between border-b border-[var(--app-divider)] pb-3">
+                <span className="overview-loading-block h-4 w-24" />
+                <span className="overview-loading-block h-4 w-16" />
+              </div>
+              <div className="mt-4 space-y-4 rounded-xl border border-[var(--app-divider)] p-4">
+                <span className="overview-loading-block h-5 w-20 rounded" />
+                <div className="space-y-3">
+                  <span className="overview-loading-block h-4 w-40" />
+                  <span className="overview-loading-block h-4 w-28" />
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
