@@ -563,6 +563,49 @@ test('opens a keyboard-accessible route command menu', async () => {
   );
 });
 
+test('supports slash shortcut and keyboard arrow navigation in command menu', async () => {
+  renderShell();
+  const user = userEvent.setup();
+
+  // Test slash shortcut when not in input
+  await user.keyboard('/');
+  const dialog = await screen.findByRole('dialog', {
+    name: 'Go to workspace',
+  });
+  const search = within(dialog).getByRole('textbox', {
+    name: 'Search routes',
+  });
+  expect(document.activeElement).toBe(search);
+
+  // Initial active item is the first one (Overview)
+  const results = within(dialog).getAllByRole('link');
+  expect(results[0].getAttribute('aria-selected')).toBe('true');
+
+  // Press ArrowDown to cycle to next item (Portfolio)
+  await user.keyboard('{ArrowDown}');
+  expect(results[1].getAttribute('aria-selected')).toBe('true');
+  expect(results[0].getAttribute('aria-selected')).toBeNull();
+
+  // Press ArrowUp to cycle back to first item (Overview)
+  await user.keyboard('{ArrowUp}');
+  expect(results[0].getAttribute('aria-selected')).toBe('true');
+
+  // Type a ticker query (e.g. 600519) and verify direct quote jump
+  await user.type(search, '600519');
+  const directLink = within(dialog).getByRole('link', {
+    name: /View 600519 in Market/i,
+  });
+  expect(directLink).toBeTruthy();
+  expect(directLink.getAttribute('aria-selected')).toBe('true');
+
+  await user.keyboard('{Escape}');
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Go to workspace' }),
+    ).toBeNull(),
+  );
+});
+
 test('surfaces compact persisted status in the desktop toolbar', async () => {
   renderShell({ initialPath: '/portfolio' });
 

@@ -72,7 +72,26 @@ export function useAppShellController() {
 
   useEffect(() => {
     const handleCommandKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.getAttribute('role') === 'textbox');
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen(true);
+        return;
+      }
+      if (
+        event.key === '/' &&
+        !isInput &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
         event.preventDefault();
         setCommandOpen(true);
         return;

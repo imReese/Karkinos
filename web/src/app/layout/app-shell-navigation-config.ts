@@ -13,6 +13,7 @@ import {
 } from './app-shell-icons';
 
 export const OVERVIEW_ROUTE = '/overview';
+export const MARKET_ROUTE = '/market';
 
 export const NAVIGATION_GROUPS = [
   {
@@ -21,7 +22,7 @@ export const NAVIGATION_GROUPS = [
     items: [
       { to: OVERVIEW_ROUTE, key: 'overview', icon: OverviewNavIcon },
       { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
-      { to: '/market', key: 'market', icon: MarketNavIcon },
+      { to: MARKET_ROUTE, key: 'market', icon: MarketNavIcon },
     ],
   },
   {
