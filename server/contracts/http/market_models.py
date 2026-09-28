@@ -143,6 +143,37 @@ class VerifiedSourceHealthResponse(BaseModel):
     latest: VerifiedSourceLatestResolution | None = None
 
 
+class DailyCollectionQualityReportResponse(BaseModel):
+    quality_id: str
+    status: Literal["pass", "degraded", "blocked"]
+    policy_id: str
+    checked_at: str
+    provider: str | None = None
+    revision_id: str
+    materialization_id: str
+    observed_instrument_count: int
+    expected_instrument_count: int | None = None
+    diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DailyCollectionQualityRunResponse(BaseModel):
+    job_id: str
+    trade_date: str | None = None
+    instrument: dict[str, str] | None = None
+    source_policy_id: str | None = None
+    job_status: Literal["queued", "running", "succeeded", "failed"]
+    attempt: int
+    created_at: str
+    updated_at: str
+    error: str | None = None
+    result_ref: str | None = None
+    quality_read_status: Literal["not_recorded", "available", "unreadable"]
+    quality_attribution_status: Literal[
+        "not_checked", "verified", "unreadable", "mismatch"
+    ]
+    quality: DailyCollectionQualityReportResponse | None = None
+
+
 class QuoteFetchRunResponse(BaseModel):
     run_id: str
     trigger: str

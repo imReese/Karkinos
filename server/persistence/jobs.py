@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from server.contracts.jobs import JobLease, JobRun, job_time
 from server.persistence.connection import connect_sqlite
@@ -42,6 +43,25 @@ class SQLiteJobStore:
             raise
         finally:
             conn.close()
+
+    def list_recent(self, kind: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        if not isinstance(kind, str) or not kind.strip():
+            raise ValueError("job_kind_invalid")
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 100
+        ):
+            raise ValueError("job_limit_invalid")
+        with closing(connect_sqlite(self.path, readonly=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT job_id, kind, payload_json, status, attempt, result_ref, "
+                "error, created_at, updated_at FROM job_runs WHERE kind=? "
+                "ORDER BY updated_at DESC, job_id DESC LIMIT ?",
+                (kind, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def enqueue(self, kind, payload, *, now):
         if not kind.strip() or not isinstance(payload, dict):
