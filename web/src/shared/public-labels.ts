@@ -84,11 +84,24 @@ export function formatPublicCode(
   locale: Locale,
 ) {
   const key = normalized(value);
-  return (
-    CODE_LABELS[locale][key] ??
-    STATUS_LABELS[locale][key] ??
-    fallbackLabel(key, locale, 'code')
-  );
+  if (key === '--') {
+    return key;
+  }
+  const directMatch = CODE_LABELS[locale][key] ?? STATUS_LABELS[locale][key];
+  if (directMatch) {
+    return directMatch;
+  }
+  if (key.includes(':')) {
+    const colonIndex = key.indexOf(':');
+    const prefix = key.slice(0, colonIndex);
+    const param = key.slice(colonIndex + 1);
+    const prefixMatch =
+      CODE_LABELS[locale][prefix] ?? STATUS_LABELS[locale][prefix];
+    if (prefixMatch) {
+      return `${prefixMatch}: ${param}`;
+    }
+  }
+  return fallbackLabel(key, locale, 'code');
 }
 
 export function formatPublicNote(
@@ -96,12 +109,29 @@ export function formatPublicNote(
   locale: Locale,
 ) {
   const key = normalized(value);
-  return (
+  if (key === '--') {
+    return key;
+  }
+  const directMatch =
     NOTE_LABELS[locale][key] ??
     CODE_LABELS[locale][key] ??
-    STATUS_LABELS[locale][key] ??
-    fallbackLabel(key, locale, 'note')
-  );
+    STATUS_LABELS[locale][key];
+  if (directMatch) {
+    return directMatch;
+  }
+  if (key.includes(':')) {
+    const colonIndex = key.indexOf(':');
+    const prefix = key.slice(0, colonIndex);
+    const param = key.slice(colonIndex + 1);
+    const prefixMatch =
+      NOTE_LABELS[locale][prefix] ??
+      CODE_LABELS[locale][prefix] ??
+      STATUS_LABELS[locale][prefix];
+    if (prefixMatch) {
+      return `${prefixMatch}: ${param}`;
+    }
+  }
+  return fallbackLabel(key, locale, 'note');
 }
 
 export function formatPublicOperationalNote(

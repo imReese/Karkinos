@@ -1,5 +1,6 @@
 import {
   formatCurrency as formatCurrencyValue,
+  formatPercent,
   formatTimestamp,
 } from '../../../shared/format';
 import { PublicationStatus } from '../../../shared/portfolio-evidence/publication-status';
@@ -11,6 +12,7 @@ import {
   MetricStrip,
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
+import { PortfolioAllocationBar } from '../components/allocation-card';
 import { PortfolioEvidenceReviewPanel } from './portfolio-evidence-review-panel';
 import { PortfolioPageLoadingView } from './portfolio-page-loading-view';
 import type {
@@ -95,25 +97,91 @@ export function PortfolioPageView({
               {
                 id: 'total-equity',
                 label: copy.portfolio.summary.totalEquity,
-                value: formatCurrencyValue(snapshot.data.total_equity),
+                value: (
+                  <span className="font-mono">
+                    {formatCurrencyValue(snapshot.data.total_equity)}
+                  </span>
+                ),
                 detail: copy.portfolio.summary.totalEquityDetail,
+              },
+              {
+                id: 'market-value',
+                label: copy.portfolio.summary.marketValue,
+                value: (
+                  <span className="font-mono">
+                    {formatCurrencyValue(model.totalMarketValue)}
+                  </span>
+                ),
+                detail: copy.portfolio.summary.marketValueDetail,
               },
               {
                 id: 'cash',
                 label: copy.portfolio.summary.cash,
-                value: formatCurrencyValue(snapshot.data.cash),
+                value: (
+                  <span className="font-mono">
+                    {formatCurrencyValue(snapshot.data.cash)}
+                  </span>
+                ),
                 detail: copy.portfolio.summary.cashDetail,
               },
               {
-                id: 'open-holdings',
-                label: copy.portfolio.summary.openHoldings,
-                value: snapshot.data.positions.length,
-                detail: copy.portfolio.summary.openHoldingsDetail,
+                id: 'today-pnl',
+                label: copy.portfolio.summary.todayPnl,
+                value: (
+                  <span className="font-mono">
+                    {formatCurrencyValue(model.totalTodayChange)}
+                    {model.totalTodayChangePct != null ? (
+                      <span className="ml-1 text-xs opacity-80">
+                        (
+                        {formatPercent(model.totalTodayChangePct, {
+                          signDisplay: 'always',
+                        })}
+                        )
+                      </span>
+                    ) : null}
+                  </span>
+                ),
+                detail: copy.portfolio.summary.todayPnlDetail,
+                tone:
+                  model.totalTodayChange !== 0
+                    ? model.totalTodayChange > 0
+                      ? 'pnl-positive'
+                      : 'pnl-negative'
+                    : undefined,
+              },
+              {
+                id: 'unrealized-pnl',
+                label: copy.portfolio.summary.unrealizedPnl,
+                value: (
+                  <span className="font-mono">
+                    {formatCurrencyValue(model.totalUnrealizedPnl)}
+                    {model.totalUnrealizedPnlPct != null ? (
+                      <span className="ml-1 text-xs opacity-80">
+                        (
+                        {formatPercent(model.totalUnrealizedPnlPct, {
+                          signDisplay: 'always',
+                        })}
+                        )
+                      </span>
+                    ) : null}
+                  </span>
+                ),
+                detail: copy.portfolio.summary.unrealizedPnlDetail,
+                tone:
+                  model.totalUnrealizedPnl !== 0
+                    ? model.totalUnrealizedPnl > 0
+                      ? 'pnl-positive'
+                      : 'pnl-negative'
+                    : undefined,
               },
               {
                 id: 'realized-pnl',
                 label: copy.portfolio.summary.realizedPnl,
-                value: formatCurrencyValue(snapshot.data.realized_pnl_total),
+                value: (
+                  <span className="font-mono">
+                    {formatCurrencyValue(snapshot.data.realized_pnl_total)}
+                  </span>
+                ),
                 detail: copy.portfolio.summary.realizedPnlDetail,
                 tone:
                   typeof snapshot.data.realized_pnl_total === 'number' &&
@@ -165,6 +233,25 @@ export function PortfolioPageView({
           />
         )}
       </div>
+
+      {snapshot.data?.allocation && snapshot.data.allocation.length > 0 ? (
+        <section
+          aria-label={copy.portfolio.allocation.title}
+          className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3"
+          data-testid="portfolio-exposed-allocation"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <span className="app-type-label font-medium text-[var(--app-text-secondary)]">
+              {copy.portfolio.allocation.title}
+            </span>
+          </div>
+          <PortfolioAllocationBar
+            items={snapshot.data.allocation}
+            testId="portfolio-top-allocation-bar"
+            className="space-y-2"
+          />
+        </section>
+      ) : null}
 
       <PortfolioCurrentHoldingsSection actions={actions} model={model} />
       {state.evidenceFilter !== 'clear' ? (

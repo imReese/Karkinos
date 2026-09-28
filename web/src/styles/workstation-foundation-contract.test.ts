@@ -67,7 +67,7 @@ describe('Karkinos workstation foundation contract', () => {
     expect(PORTFOLIO).toContain('<SectionHeader');
     expect(PORTFOLIO).toContain('<Button');
     expect(PORTFOLIO).toContain(
-      'xl:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.3fr)]',
+      'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]',
     );
     expect(PORTFOLIO).not.toContain(
       'xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]',

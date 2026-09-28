@@ -376,3 +376,24 @@ test('formats account-truth evidence limitations without backend wording', () =>
     formatPublicNote('Unresolved reconciliation items require review.', 'en'),
   ).toBe('Unresolved reconciliation differences need manual review.');
 });
+
+test('formats strategy contribution blocker codes and parameterized items', () => {
+  expect(
+    formatPublicNote('strategy_contribution_valuation_snapshot_missing', 'zh'),
+  ).toBe('缺少估值快照');
+  expect(
+    formatPublicNote(
+      'strategy_contribution_valuation_not_confirmed:600519',
+      'zh',
+    ),
+  ).toBe('标的估值尚未确认: 600519');
+  expect(
+    formatPublicNote(
+      'strategy_contribution_valuation_not_confirmed:600519',
+      'en',
+    ),
+  ).toBe('Instrument valuation is not confirmed: 600519');
+  expect(formatPublicNote('strategy_contribution_fill_not_posted', 'zh')).toBe(
+    '存在未记账成交凭证',
+  );
+});
