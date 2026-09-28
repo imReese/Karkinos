@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from analytics.normalized_research_gate import (
-    _estimated_fee_evidence_valid,
     build_normalized_research_advancement_gate,
+    estimated_fee_evidence_valid,
     is_valid_passed_normalized_research_advancement_gate,
 )
 from analytics.research_account_capital_evidence import (
@@ -662,7 +662,7 @@ def _ai_shadow_readiness_binding_blockers(
             )
         )
     else:
-        if not _estimated_fee_evidence_valid(
+        if not estimated_fee_evidence_valid(
             strategy_advancement_backtest_view(candidate_source)
         ):
             blockers.append("ai_shadow_candidate_estimated_fee_evidence_invalid")
