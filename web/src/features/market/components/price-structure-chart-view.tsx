@@ -121,7 +121,7 @@ export function PriceStructureChartView({
               data-testid={
                 hoverIndex !== null ? 'kline-crosshair-hud' : 'kline-latest-hud'
               }
-              className="app-type-micro mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_70%,transparent)] px-2.5 py-1 font-mono text-[var(--app-text-secondary)]"
+              className="app-type-micro mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_70%,transparent)] px-2.5 py-1 font-mono tabular-nums text-[var(--app-text-secondary)]"
             >
               <span className="font-semibold text-[var(--app-text)]">
                 {formatDateTick(activeBar.timestamp, activeIndex)}
@@ -181,7 +181,7 @@ export function PriceStructureChartView({
             onHoverIndexChange={setHoverIndex}
             showMovingAverages={showMovingAverages}
           />
-          <div className="app-type-micro mt-2 flex flex-col gap-1 tabular-nums text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
+          <div className="app-type-micro mt-2 flex flex-col gap-1 font-mono tabular-nums text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
             <span>
               {formatDateTick(model.plottedBars[0]?.timestamp, 0)} -{' '}
               {formatDateTick(

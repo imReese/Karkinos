@@ -56,7 +56,7 @@ export function PriceStructureChartSvg({
       key={selectedRange}
       viewBox={`0 0 ${chartWidth} ${chartHeight}`}
       preserveAspectRatio="none"
-      className="app-chart-stage h-64 w-full overflow-visible text-[var(--app-soft)] sm:h-80 xl:h-[26rem] 2xl:h-[28rem]"
+      className="app-chart-stage h-64 w-full overflow-visible font-mono text-[var(--app-soft)] sm:h-80 xl:h-[26rem] 2xl:h-[28rem]"
       role="img"
       aria-label={`${titleLabel} · ${axisLabels.price} · ${axisLabels.date}`}
       onMouseMove={(event) => {
@@ -137,7 +137,7 @@ export function PriceStructureChartSvg({
             x={plot.left - 8}
             y={tick.y + 4}
             textAnchor="end"
-            className="fill-current text-[length:var(--app-font-size-micro)] tabular-nums"
+            className="fill-current text-[length:var(--app-font-size-micro)] font-mono tabular-nums"
           >
             {formatCurrency(tick.value)}
           </text>
@@ -189,7 +189,7 @@ export function PriceStructureChartSvg({
               x={x}
               y={xAxisY + 18}
               textAnchor={textAnchor}
-              className="fill-current text-[length:var(--app-font-size-micro)] tabular-nums"
+              className="fill-current text-[length:var(--app-font-size-micro)] font-mono tabular-nums"
             >
               {formatDateTick(bar.timestamp, index)}
             </text>
@@ -515,7 +515,7 @@ function PriceStructureVolumeSeries({
         x={plot.right}
         y={volumePlot.top - 6}
         textAnchor="end"
-        className="fill-current text-[length:var(--app-font-size-micro)]"
+        className="fill-current text-[length:var(--app-font-size-micro)] font-mono"
       >
         {axisVolumeLabel}
       </text>
