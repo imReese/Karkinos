@@ -220,6 +220,36 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
     strategy_attribution_evidence: 'Strategy attribution evidence',
     strategy_attribution_not_ready:
       'Strategy attribution evidence is not ready',
+    strategy_contribution_valuation_snapshot_missing:
+      'Valuation snapshot is missing',
+    strategy_contribution_valuation_snapshot_identity_mismatch:
+      'Valuation snapshot identity mismatch',
+    strategy_contribution_valuation_snapshot_invalid:
+      'Valuation snapshot status is invalid',
+    strategy_contribution_current_valuation_replay_failed:
+      'Current valuation replay check failed',
+    strategy_contribution_fill_not_posted: 'Unposted fills detected',
+    strategy_contribution_ledger_entry_ambiguous:
+      'Linked ledger entry is ambiguous',
+    strategy_contribution_ledger_entry_after_snapshot_cutoff:
+      'Fill posted after valuation cutoff',
+    strategy_contribution_inventory_origin_incomplete:
+      'Inventory origin is incomplete',
+    strategy_contribution_fill_direction_drift:
+      'Fill direction drifts from strategy order',
+    strategy_contribution_trade_direction_invalid: 'Invalid trade direction',
+    strategy_contribution_valuation_not_confirmed:
+      'Instrument valuation is not confirmed',
+    strategy_contribution_valuation_publication_missing:
+      'Official valuation publication is missing',
+    strategy_contribution_gross_realized_pnl_mismatch:
+      'Gross realized PnL mismatch',
+    strategy_contribution_gross_unrealized_pnl_mismatch:
+      'Gross unrealized PnL mismatch',
+    strategy_contribution_commission_mismatch:
+      'Commission calculation mismatch',
+    strategy_contribution_slippage_mismatch: 'Slippage calculation mismatch',
+    strategy_contribution_tax_mismatch: 'Tax calculation mismatch',
     upstream_workflow_blockers: 'Upstream workflow blockers remain unresolved',
     tax: 'Tax',
     trade_gross_amount: 'Trade gross amount',
@@ -501,6 +531,26 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
     strategy_evidence: '策略证据',
     strategy_attribution_evidence: '策略归因证据',
     strategy_attribution_not_ready: '策略归因证据尚未就绪',
+    strategy_contribution_valuation_snapshot_missing: '缺少估值快照',
+    strategy_contribution_valuation_snapshot_identity_mismatch:
+      '估值快照账本指纹不一致',
+    strategy_contribution_valuation_snapshot_invalid: '估值快照状态无效',
+    strategy_contribution_current_valuation_replay_failed: '估值回放校验未通过',
+    strategy_contribution_fill_not_posted: '存在未记账成交凭证',
+    strategy_contribution_ledger_entry_ambiguous: '关联账本条目存在歧义',
+    strategy_contribution_ledger_entry_after_snapshot_cutoff:
+      '成交记账晚于估值截止点',
+    strategy_contribution_inventory_origin_incomplete: '仓位初始来源账本不完整',
+    strategy_contribution_fill_direction_drift: '成交方向与策略指令偏离',
+    strategy_contribution_trade_direction_invalid: '成交方向无效',
+    strategy_contribution_valuation_not_confirmed: '标的估值尚未确认',
+    strategy_contribution_valuation_publication_missing: '官方估值发布凭证缺失',
+    strategy_contribution_gross_realized_pnl_mismatch: '已实现盈亏与账本不一致',
+    strategy_contribution_gross_unrealized_pnl_mismatch:
+      '未实现盈亏与账本不一致',
+    strategy_contribution_commission_mismatch: '佣金计算与账本不一致',
+    strategy_contribution_slippage_mismatch: '滑点计算与账本不一致',
+    strategy_contribution_tax_mismatch: '税费计算与账本不一致',
     tax: '税费',
     trade_gross_amount: '成交总额',
     transfer_fee: '过户费',

@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { formatCurrency } from '../../../shared/format';
 import {
   Button,
@@ -111,10 +113,13 @@ export function PortfolioAnalysisSection({
   actions: PortfolioPageActions;
   model: PortfolioPageModel;
 }) {
+  const [isOpen, setIsOpen] = useState(true);
   const { cockpit, copy, liveHoldings, snapshot, state, strategyContribution } =
     model.source;
   return (
     <details
+      open={isOpen}
+      onToggle={(e) => setIsOpen(e.currentTarget.open)}
       className="group min-w-0 border-t border-[var(--app-divider)]"
       data-testid="portfolio-analysis"
     >
@@ -127,12 +132,23 @@ export function PortfolioAnalysisSection({
             {copy.portfolio.analysis.detail}
           </span>
         </span>
-        <span
-          aria-hidden="true"
-          className="shrink-0 text-xs font-semibold text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-        >
-          ↓
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="hidden text-xs text-[var(--app-text-tertiary)] sm:inline">
+            {isOpen
+              ? model.source.locale === 'zh'
+                ? '收起'
+                : 'Collapse'
+              : model.source.locale === 'zh'
+                ? '展开'
+                : 'Expand'}
+          </span>
+          <span
+            aria-hidden="true"
+            className="shrink-0 text-xs font-semibold text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+          >
+            ↓
+          </span>
+        </div>
       </summary>
 
       <div className="border-t border-[var(--app-divider)] pt-3">
@@ -162,7 +178,7 @@ export function PortfolioAnalysisSection({
         </div>
 
         <div
-          className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.3fr)]"
+          className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]"
           data-portfolio-analysis-layout="primary-first"
         >
           {!model.primaryPortfolioQueriesSettled ? (
@@ -206,7 +222,7 @@ export function PortfolioAnalysisSection({
           )}
 
           <aside
-            className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0"
+            className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:border-t-0 xl:pt-0"
             data-portfolio-analysis-secondary
           >
             {state.mode === 'strategy' ? (
@@ -269,9 +285,13 @@ export function PortfolioHistorySection({
   actions: PortfolioPageActions;
   model: PortfolioPageModel;
 }) {
-  const { copy, snapshot } = model.source;
+  const [isOpen, setIsOpen] = useState(true);
+  const { copy, locale, snapshot } = model.source;
+  const realizedTotal = snapshot.data?.realized_pnl_total;
   return (
     <details
+      open={isOpen}
+      onToggle={(e) => setIsOpen(e.currentTarget.open)}
       className="group min-w-0 border-t border-[var(--app-divider)]"
       data-testid="portfolio-history"
     >
@@ -282,15 +302,41 @@ export function PortfolioHistorySection({
           </span>
           <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
             {copy.portfolio.detail.realizedPnl}:{' '}
-            {formatCurrency(snapshot.data?.realized_pnl_total)}
+            <span
+              className={`font-mono font-medium tabular-nums ${
+                realizedTotal != null && realizedTotal > 0
+                  ? 'text-[var(--app-pnl-positive)]'
+                  : realizedTotal != null && realizedTotal < 0
+                    ? 'text-[var(--app-pnl-negative)]'
+                    : 'text-[var(--app-text)]'
+              }`}
+            >
+              {formatCurrency(realizedTotal)}
+            </span>
           </span>
         </span>
-        <span
-          aria-hidden="true"
-          className="shrink-0 text-xs font-semibold text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-        >
-          ↓
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {model.closedPositions.length > 0 ? (
+            <span className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-1.5 py-0.5 text-xs font-mono text-[var(--app-text-secondary)]">
+              {model.closedPositions.length}
+            </span>
+          ) : null}
+          <span className="hidden text-xs text-[var(--app-text-tertiary)] sm:inline">
+            {isOpen
+              ? locale === 'zh'
+                ? '收起'
+                : 'Collapse'
+              : locale === 'zh'
+                ? '展开'
+                : 'Expand'}
+          </span>
+          <span
+            aria-hidden="true"
+            className="shrink-0 text-xs font-semibold text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+          >
+            ↓
+          </span>
+        </div>
       </summary>
       <div className="border-t border-[var(--app-divider)] pt-3">
         <div className="mb-3 flex justify-end">

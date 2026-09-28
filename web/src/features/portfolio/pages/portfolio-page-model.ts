@@ -68,6 +68,44 @@ export function buildPortfolioPageModel(source: PortfolioPageModelSource) {
   const weightBySymbol = Object.fromEntries(
     allocation.map((item) => [item.symbol, item.weight]),
   );
+
+  const totalMarketValue = portfolioPositions.reduce(
+    (sum, p) =>
+      sum +
+      (p.market_value != null && Number.isFinite(p.market_value)
+        ? p.market_value
+        : 0),
+    0,
+  );
+  const totalTodayChange = portfolioPositions.reduce(
+    (sum, p) =>
+      sum +
+      (p.today_change != null && Number.isFinite(p.today_change)
+        ? p.today_change
+        : 0),
+    0,
+  );
+  const priorTotalValue = totalMarketValue - totalTodayChange;
+  const totalTodayChangePct =
+    priorTotalValue > 0 ? totalTodayChange / priorTotalValue : null;
+  const totalUnrealizedPnl = portfolioPositions.reduce(
+    (sum, p) =>
+      sum +
+      (p.unrealized_pnl != null && Number.isFinite(p.unrealized_pnl)
+        ? p.unrealized_pnl
+        : 0),
+    0,
+  );
+  const totalCostBasis = portfolioPositions.reduce((sum, p) => {
+    if (p.quantity > 0 && p.avg_cost > 0) return sum + p.quantity * p.avg_cost;
+    if (p.market_value != null && p.unrealized_pnl != null) {
+      return sum + (p.market_value - p.unrealized_pnl);
+    }
+    return sum;
+  }, 0);
+  const totalUnrealizedPnlPct =
+    totalCostBasis > 0 ? totalUnrealizedPnl / totalCostBasis : null;
+
   return {
     source,
     portfolioPositions,
@@ -77,6 +115,11 @@ export function buildPortfolioPageModel(source: PortfolioPageModelSource) {
     filteredPositions,
     assetClassBySymbol,
     weightBySymbol,
+    totalMarketValue,
+    totalTodayChange,
+    totalTodayChangePct,
+    totalUnrealizedPnl,
+    totalUnrealizedPnlPct,
     hasQuotesNeedingReview: portfolioPositions.some((position) =>
       quoteNeedsReview(position.quote_status),
     ),

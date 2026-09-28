@@ -147,29 +147,39 @@ export function PortfolioConstructionRecommendationsCard({
   }
 
   return (
-    <section className="min-w-0">
-      <div className="mb-3 space-y-1">
-        <h3 className="app-type-subsection-title text-[var(--app-text)]">
-          {labels.title}
-        </h3>
-        <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
-          {labels.subtitle}
-        </p>
+    <section
+      className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-4 sm:p-5 space-y-3.5 shadow-xs"
+      data-testid="portfolio-construction-recommendations"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-0.5">
+          <h3 className="app-type-subsection-title font-semibold text-[var(--app-text)]">
+            {labels.title}
+          </h3>
+          <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
+            {labels.subtitle}
+          </p>
+        </div>
+        <span className="inline-flex shrink-0 items-center rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] px-2 py-0.5 text-[length:var(--app-font-size-micro)] font-medium text-[var(--app-text-secondary)] border border-[var(--app-divider)]">
+          {recommendations.length} {locale === 'zh' ? '项建议' : 'items'}
+        </span>
       </div>
-      <div className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
+
+      <div className="space-y-3">
         {recommendations.map((recommendation) => (
           <article
             key={`${recommendation.symbol}-${recommendation.source_action_task_id ?? 'none'}`}
             data-testid={`construction-recommendation-${recommendation.symbol}`}
-            className={`border-l-2 px-3 py-3 ${toneClass(recommendation)}`}
+            className={`rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-3.5 space-y-3 border-l-4 ${toneClass(recommendation)}`}
           >
-            <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="font-semibold text-[var(--app-text)]">
+                <div className="font-semibold text-sm text-[var(--app-text)]">
                   {recommendation.name}
                 </div>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs app-muted">
-                  <span>{recommendation.symbol}</span>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[var(--app-text-tertiary)]">
+                  <span className="font-mono">{recommendation.symbol}</span>
+                  <span className="opacity-50">·</span>
                   <span>
                     {formatAssetClassLabel(
                       recommendation.asset_class,
@@ -203,83 +213,99 @@ export function PortfolioConstructionRecommendationsCard({
 
             <MetricStrip
               ariaLabel={`${recommendation.name} ${labels.title}`}
-              className="mt-3"
+              className="app-recommendation-metric-strip grid grid-cols-3 gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-1"
               items={[
                 {
                   id: 'actual',
                   label: labels.actual,
-                  value: percent(recommendation.actual_weight),
+                  value: (
+                    <span className="font-mono">
+                      {percent(recommendation.actual_weight)}
+                    </span>
+                  ),
                 },
                 {
                   id: 'target',
                   label: labels.target,
-                  value: percent(recommendation.target_weight),
+                  value: (
+                    <span className="font-mono">
+                      {percent(recommendation.target_weight)}
+                    </span>
+                  ),
                 },
                 {
                   id: 'drift',
                   label: labels.drift,
-                  value: percent(recommendation.drift),
+                  value: (
+                    <span className="font-mono">
+                      {percent(recommendation.drift)}
+                    </span>
+                  ),
+                  tone:
+                    recommendation.drift === null || recommendation.drift === 0
+                      ? ('neutral' as const)
+                      : recommendation.drift > 0
+                        ? ('pnl-positive' as const)
+                        : ('pnl-negative' as const),
                 },
               ]}
             />
 
-            <dl className="mt-3 grid gap-2 border-t border-[var(--app-divider)] pt-2 text-xs sm:grid-cols-2">
-              <div className="flex min-w-0 items-center justify-between gap-2">
-                <dt className="text-[var(--app-text-secondary)]">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--app-divider)] pt-2.5 text-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[var(--app-text-tertiary)] text-[length:var(--app-font-size-micro)] font-medium">
                   {labels.accountTruth}
-                </dt>
-                <dd>
-                  <StatusBadge
-                    tone={
-                      recommendation.account_truth_gate_status === 'passed'
-                        ? 'success'
-                        : recommendation.account_truth_gate_status ===
-                            'degraded'
-                          ? 'warning'
-                          : 'danger'
-                    }
-                  >
-                    {displayGateStatus(
-                      recommendation.account_truth_gate_status,
-                      locale,
-                    )}
-                  </StatusBadge>
-                </dd>
+                </span>
+                <StatusBadge
+                  tone={
+                    recommendation.account_truth_gate_status === 'passed'
+                      ? 'success'
+                      : recommendation.account_truth_gate_status === 'degraded'
+                        ? 'warning'
+                        : 'danger'
+                  }
+                >
+                  {displayGateStatus(
+                    recommendation.account_truth_gate_status,
+                    locale,
+                  )}
+                </StatusBadge>
               </div>
-              <div className="flex min-w-0 items-center justify-between gap-2">
-                <dt className="text-[var(--app-text-secondary)]">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[var(--app-text-tertiary)] text-[length:var(--app-font-size-micro)] font-medium">
                   {labels.risk}
-                </dt>
-                <dd>
-                  <StatusBadge
-                    tone={
-                      recommendation.risk_gate_status === 'passed'
-                        ? 'success'
-                        : recommendation.risk_gate_status === 'degraded'
-                          ? 'warning'
-                          : 'danger'
-                    }
-                  >
-                    {displayGateStatus(recommendation.risk_gate_status, locale)}
-                  </StatusBadge>
-                </dd>
+                </span>
+                <StatusBadge
+                  tone={
+                    recommendation.risk_gate_status === 'passed'
+                      ? 'success'
+                      : recommendation.risk_gate_status === 'degraded'
+                        ? 'warning'
+                        : 'danger'
+                  }
+                >
+                  {displayGateStatus(recommendation.risk_gate_status, locale)}
+                </StatusBadge>
               </div>
-            </dl>
+            </div>
 
-            <p className="mt-3 text-xs leading-relaxed text-[var(--app-text)]">
+            <p className="border-t border-[var(--app-divider)] pt-2 text-xs leading-relaxed text-[var(--app-text-secondary)]">
               {recommendation.rationale}
             </p>
 
             {recommendation.required_actions.length > 0 ? (
-              <div className="mt-3 border-t border-[var(--app-divider)] pt-2">
-                <div className="app-muted app-type-overline">
+              <div className="border-t border-[var(--app-divider)] pt-2">
+                <div className="app-muted app-type-overline text-[var(--app-text-tertiary)]">
                   {labels.nextActions}
                 </div>
                 <ul className="mt-1.5 grid gap-1 text-xs leading-5 text-[var(--app-text-secondary)]">
                   {recommendation.required_actions.map((action) => (
-                    <li key={action} className="flex gap-2">
-                      <span aria-hidden="true">·</span>
-                      {formatPublicCode(action, locale)}
+                    <li key={action} className="flex items-start gap-1.5">
+                      <span
+                        className="mt-1.5 h-1 w-1 shrink-0 rounded-[var(--app-radius-control)] bg-[var(--app-text-tertiary)]"
+                        aria-hidden="true"
+                      />
+                      <span>{formatPublicCode(action, locale)}</span>
                     </li>
                   ))}
                 </ul>

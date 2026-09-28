@@ -26,8 +26,10 @@ export function PortfolioPageLoadingView({
       >
         {[
           copy.portfolio.summary.totalEquity,
+          copy.portfolio.summary.marketValue,
           copy.portfolio.summary.cash,
-          copy.portfolio.summary.openHoldings,
+          copy.portfolio.summary.todayPnl,
+          copy.portfolio.summary.unrealizedPnl,
           copy.portfolio.summary.realizedPnl,
         ].map((label) => (
           <div

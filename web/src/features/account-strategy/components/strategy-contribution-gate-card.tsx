@@ -99,13 +99,13 @@ export function StrategyContributionGateCard({
 
   return (
     <section
-      className="min-w-0"
+      className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-4 sm:p-5 shadow-xs space-y-4"
       data-testid="strategy-contribution-gate-card"
       data-variant={variant}
     >
       <div
         className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between ${
-          isCompact ? 'mb-3' : 'mb-4'
+          isCompact ? 'mb-1' : 'mb-2'
         }`}
       >
         <div className="min-w-0">
@@ -207,10 +207,10 @@ export function StrategyContributionGateCard({
           }
         />
       ) : isSupported && report ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <MetricStrip
             ariaLabel={labels.accountStrategyContributionPublicTitle}
-            className="sm:grid-flow-row sm:grid-cols-2"
+            className="app-strategy-gate-metric-strip grid grid-cols-2 gap-2 border-0 bg-transparent sm:grid-cols-3 sm:auto-cols-auto sm:grid-flow-row"
             items={[
               {
                 id: 'strategy',
@@ -284,15 +284,16 @@ export function StrategyContributionGateCard({
           />
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <EvidenceState
             kind={isNotApplicable ? 'empty' : 'partial'}
             title={labels.accountStrategyContributionHiddenUntilEvidence}
             description={`${labels.accountStrategyNextManualAction}: ${nextAction}`}
+            className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-4 py-3"
           />
           <MetricStrip
             ariaLabel={labels.accountStrategyContributionPublicTitle}
-            className="sm:grid-flow-row sm:grid-cols-2"
+            className="app-strategy-gate-metric-strip grid grid-cols-2 gap-2 border-0 bg-transparent sm:grid-cols-3 sm:auto-cols-auto sm:grid-flow-row"
             items={[
               {
                 id: 'strategy',
@@ -327,7 +328,7 @@ export function StrategyContributionGateCard({
             ]}
           />
           {report?.missing_valuation_symbols.length ? (
-            <p className="border-l-2 border-l-[var(--app-warning-indicator)] px-3 py-2 text-xs font-semibold text-[var(--app-warning-text)]">
+            <p className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] border-l-2 border-l-[var(--app-warning-indicator)] bg-[var(--app-surface-raised)] px-3 py-2 text-xs font-semibold text-[var(--app-warning-text)]">
               {labels.accountStrategyMissingValuation(
                 formatInstrumentDisplayLabelsBySymbol(
                   report.missing_valuation_symbols,
@@ -337,14 +338,29 @@ export function StrategyContributionGateCard({
             </p>
           ) : null}
           {report?.blockers?.length ? (
-            <div className="border-y border-[var(--app-divider)]">
-              <div className="px-3 py-2 text-xs font-semibold text-[var(--app-text-secondary)]">
-                {labels.accountStrategyBlockers}
+            <div className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-[var(--app-text)]">
+                  {labels.accountStrategyBlockers}
+                </div>
+                <span className="inline-flex items-center rounded-full bg-[var(--app-surface)] px-2 py-0.5 text-[length:var(--app-font-size-micro)] font-medium text-[var(--app-warning-text)] border border-[var(--app-divider)]">
+                  {report.blockers.length}{' '}
+                  {locale === 'zh' ? '项待复核' : 'items'}
+                </span>
               </div>
-              <ul className="divide-y divide-[var(--app-divider)] text-xs text-[var(--app-text-secondary)]">
-                {report.blockers.map((blocker) => (
-                  <li className="break-words px-3 py-2" key={blocker}>
-                    {formatPublicNote(blocker, locale)}
+              <ul className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                {report.blockers.map((blocker, index) => (
+                  <li
+                    className="flex items-start gap-2.5 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-[var(--app-text-secondary)] shadow-2xs"
+                    key={`${blocker}-${index}`}
+                  >
+                    <span
+                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--app-warning-indicator)]"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 break-words leading-relaxed font-medium text-[var(--app-text)]">
+                      {formatPublicNote(blocker, locale)}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -372,15 +388,23 @@ function ContributionLimitations({
   }
 
   return (
-    <ul className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
-      {limitations.map((limitation) => (
-        <li
-          className="px-3 py-2 text-xs leading-5 text-[var(--app-text-secondary)]"
-          key={limitation}
-        >
-          {formatPublicNote(limitation, locale)}
-        </li>
-      ))}
-    </ul>
+    <div className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-3">
+      <ul className="divide-y divide-[var(--app-divider)] text-xs text-[var(--app-text-secondary)]">
+        {limitations.map((limitation, index) => (
+          <li
+            className="flex items-start gap-2 py-1.5 first:pt-0 last:pb-0 leading-5"
+            key={`${limitation}-${index}`}
+          >
+            <span
+              className="text-[var(--app-text-tertiary)]"
+              aria-hidden="true"
+            >
+              ℹ
+            </span>
+            <span>{formatPublicNote(limitation, locale)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

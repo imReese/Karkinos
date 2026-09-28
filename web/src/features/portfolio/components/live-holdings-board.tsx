@@ -50,20 +50,23 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
   return (
     <div
       data-testid="live-holdings-board"
-      className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain border-y border-[var(--app-divider)] bg-transparent"
+      className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-4 sm:p-5 space-y-3 shadow-xs"
     >
-      <div className="border-b border-[var(--app-divider)] px-3 py-2">
+      <div className="flex items-center justify-between pb-1">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {labels.title}
         </div>
+        <span className="text-xs text-[var(--app-text-tertiary)]">
+          {labels.summaryOnly}
+        </span>
       </div>
 
-      <div className="divide-y divide-[var(--app-divider)]">
+      <div className="space-y-2">
         {groups.map((group) => (
           <div
             key={group.asset_class}
             data-testid={`live-holdings-group-summary-${group.asset_class}`}
-            className="grid min-w-0 grid-cols-2 gap-2 px-3 py-2.5 sm:grid-cols-[minmax(112px,1.25fr)_repeat(3,minmax(84px,1fr))] sm:items-center"
+            className="grid min-w-0 grid-cols-2 gap-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3.5 py-3 sm:grid-cols-[minmax(112px,1.25fr)_repeat(3,minmax(84px,1fr))] sm:items-center"
           >
             <div className="col-span-2 min-w-0 sm:col-span-1">
               <div className="truncate text-sm font-semibold text-[var(--app-text)]">
@@ -77,26 +80,22 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
               testId={`live-holdings-group-summary-${group.asset_class}-market-value`}
               label={copy.portfolio.table.marketValue}
               value={formatCurrency(group.total_market_value)}
-              valueClassName="text-[var(--app-text)]"
+              valueClassName="text-[var(--app-text)] font-mono font-medium"
             />
             <SummaryMetric
               testId={`live-holdings-group-summary-${group.asset_class}-today-move`}
               label={labels.todayMove}
               value={formatCurrency(group.total_today_change)}
-              valueClassName={toneClass(group.total_today_change)}
+              valueClassName={`${toneClass(group.total_today_change)} font-mono font-medium`}
             />
             <SummaryMetric
               testId={`live-holdings-group-summary-${group.asset_class}-since-buy`}
               label={labels.sinceBuyReturn}
               value={formatCurrency(group.total_since_buy_pnl)}
-              valueClassName={toneClass(group.total_since_buy_pnl)}
+              valueClassName={`${toneClass(group.total_since_buy_pnl)} font-mono font-medium`}
             />
           </div>
         ))}
-      </div>
-
-      <div className="border-t border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-text-tertiary)]">
-        {labels.summaryOnly}
       </div>
     </div>
   );
