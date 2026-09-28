@@ -162,7 +162,7 @@ export function PortfolioAnalysisSection({
         </div>
 
         <div
-          className="grid min-w-0 gap-4 min-[1600px]:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.3fr)]"
+          className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.3fr)]"
           data-portfolio-analysis-layout="primary-first"
         >
           {!model.primaryPortfolioQueriesSettled ? (
@@ -206,7 +206,7 @@ export function PortfolioAnalysisSection({
           )}
 
           <aside
-            className="min-w-0 border-t border-[var(--app-divider)] pt-4 min-[1600px]:border-l min-[1600px]:border-t-0 min-[1600px]:pl-4 min-[1600px]:pt-0"
+            className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0"
             data-portfolio-analysis-secondary
           >
             {state.mode === 'strategy' ? (

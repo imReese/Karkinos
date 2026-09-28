@@ -62,12 +62,12 @@ describe('Karkinos workstation foundation contract', () => {
     expect(OVERVIEW).not.toMatch(/\btext-(?:xl|2xl|3xl)\b/);
     expect(OVERVIEW).not.toContain('xl:grid-cols-[minmax(0,1fr)_18rem]');
   });
-  it('keeps Portfolio on the wide canvas with secondary analysis delayed on laptops', () => {
+  it('keeps Portfolio on the wide canvas with primary-first analysis layout', () => {
     expect(PORTFOLIO).toContain('data-workbench-width="wide"');
     expect(PORTFOLIO).toContain('<SectionHeader');
     expect(PORTFOLIO).toContain('<Button');
     expect(PORTFOLIO).toContain(
-      'min-[1600px]:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.3fr)]',
+      'xl:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.3fr)]',
     );
     expect(PORTFOLIO).not.toContain(
       'xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]',
