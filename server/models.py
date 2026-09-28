@@ -33,6 +33,8 @@ from server.contracts.http.ledger_models import (
     TradeResponse,
 )
 from server.contracts.http.market_models import (
+    DailyCollectionQualityReportResponse,
+    DailyCollectionQualityRunResponse,
     KlineBar,
     MarketCalendarDayResponse,
     MarketCalendarSnapshotResponse,
@@ -142,6 +144,8 @@ __all__ = [
     "KlineBar",
     "MarketHealthQuote",
     "MarketDataHealthResponse",
+    "DailyCollectionQualityReportResponse",
+    "DailyCollectionQualityRunResponse",
     "QuoteFetchRunResponse",
     "VerifiedSourceHealthResponse",
     "VerifiedSourceLatestResolution",

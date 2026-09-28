@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.market import (
@@ -89,7 +87,7 @@ def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:
             )
         try:
             rows = list_daily_market_collection_quality(db.path, limit=limit)
-        except (OSError, sqlite3.Error) as exc:
+        except OSError as exc:
             raise HTTPException(
                 status_code=503, detail="daily_collection_quality_unavailable"
             ) from exc
