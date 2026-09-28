@@ -138,7 +138,7 @@ export function SignalQueuePanel({
           </div>
         ) : (
           <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
-            <div className="grid min-w-0 gap-2">
+            <div className="grid min-w-0 max-h-[36rem] gap-2 overflow-y-auto pr-1">
               {actions.length === 0 ? (
                 <EvidenceState
                   kind="empty"
@@ -258,7 +258,7 @@ export function SignalQueuePanel({
               className="min-w-0 border-t border-[var(--app-divider)] pt-3 xl:border-t-0 xl:border-l xl:pl-4"
             >
               <div className="app-product-mark">{labels.signalJournal}</div>
-              <div className="mt-2 grid divide-y divide-[var(--app-divider)]">
+              <div className="mt-2 grid max-h-[36rem] divide-y divide-[var(--app-divider)] overflow-y-auto pr-1">
                 {latestJournal.length === 0 ? (
                   <div className="app-muted text-sm">
                     {labels.noSignalJournal}

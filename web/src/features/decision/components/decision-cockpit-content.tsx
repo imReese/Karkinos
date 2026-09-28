@@ -23,6 +23,7 @@ import {
 import type { DecisionCockpitWorkspaceModel } from './use-decision-cockpit-workspace';
 import { DecisionGateMatrixSection } from './decision-gate-matrix-section';
 import { DailyDecisionReportPanel } from './daily-decision-report-panel';
+import { decisionNextActionGuide } from './decision-workflow-model';
 
 const generationLabels = {
   zh: {
@@ -64,14 +65,6 @@ export function DecisionCockpitContent({
     intraday,
     tradingPlan,
     operationsToday,
-    automationCockpit,
-    brokerGatewayStatus,
-    brokerConnectorHealth,
-    brokerAccountFacts,
-    brokerFills,
-    executionReconciliationRuns,
-    executionReconciliationRunDetail,
-    brokerOrderQuery,
     runPaperShadow,
     signalActions,
     signalJournal,
@@ -174,28 +167,42 @@ export function DecisionCockpitContent({
       />
 
       <details
-        className="min-w-0 border-y border-[var(--app-divider)]"
+        className="group min-w-0 border-y border-[var(--app-divider)]"
         data-testid="decision-daily-reports-disclosure"
       >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)]">
-          {locale === 'zh'
-            ? '每日决策记录与复盘'
-            : 'Daily decision history and review'}
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+          <span>
+            {locale === 'zh'
+              ? '每日决策记录与复盘'
+              : 'Daily decision history and review'}
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+          />
         </summary>
         <div className="py-4">
           <DailyDecisionReportPanel locale={locale} />
         </div>
       </details>
 
-      <DecisionGateMatrixSection
-        gateItems={gateItems}
-        allDecisionGatesPass={allDecisionGatesPass}
-        decisionGateAttentionCount={decisionGateAttentionCount}
-        healthyGateMatrixExpanded={healthyGateMatrixExpanded}
-        onToggle={() => setHealthyGateMatrixExpanded((current) => !current)}
-      />
+      <div
+        className={
+          Boolean(decisionNextActionGuide(lanes, labels, locale))
+            ? 'grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] xl:items-start'
+            : 'min-w-0'
+        }
+      >
+        <DecisionGateMatrixSection
+          gateItems={gateItems}
+          allDecisionGatesPass={allDecisionGatesPass}
+          decisionGateAttentionCount={decisionGateAttentionCount}
+          healthyGateMatrixExpanded={healthyGateMatrixExpanded}
+          onToggle={() => setHealthyGateMatrixExpanded((current) => !current)}
+        />
 
-      <DecisionNextActionGuidePanel lanes={lanes} />
+        <DecisionNextActionGuidePanel lanes={lanes} />
+      </div>
 
       <details
         className="min-w-0 border-y border-[var(--app-divider)]"
@@ -258,54 +265,7 @@ export function DecisionCockpitContent({
         tradingPlanPanel
       )}
 
-      <details
-        className="min-w-0 border-y border-[var(--app-divider)]"
-        data-testid="decision-automation-disclosure"
-      >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
-          <span>
-            {locale === 'zh'
-              ? '自动化与受控执行证据'
-              : 'Automation and controlled execution evidence'}
-          </span>
-          <span className="text-xs font-normal text-[var(--app-text-secondary)]">
-            {locale === 'zh' ? '按需展开' : 'Expand on demand'}
-          </span>
-        </summary>
-        <div className="py-4">
-          <AutomationCockpitPanel
-            cockpit={automationCockpit.data}
-            brokerGatewayStatus={brokerGatewayStatus.data}
-            brokerConnectorHealth={brokerConnectorHealth.data}
-            brokerConnectorHealthLoading={brokerConnectorHealth.isLoading}
-            brokerConnectorHealthError={brokerConnectorHealth.isError}
-            brokerAccountFacts={brokerAccountFacts.data}
-            brokerAccountFactsLoading={brokerAccountFacts.isLoading}
-            brokerAccountFactsError={brokerAccountFacts.isError}
-            brokerFills={brokerFills.data}
-            brokerFillsLoading={brokerFills.isLoading}
-            brokerFillsError={brokerFills.isError}
-            brokerOrderQuery={brokerOrderQuery.data}
-            brokerOrderQueryLoading={brokerOrderQuery.isLoading}
-            brokerOrderQueryError={brokerOrderQuery.isError}
-            executionReconciliationRuns={executionReconciliationRuns.data}
-            executionReconciliationRunDetail={
-              executionReconciliationRunDetail.data
-            }
-            executionReconciliationLoading={
-              executionReconciliationRuns.isLoading
-            }
-            executionReconciliationError={
-              executionReconciliationRuns.isError ||
-              executionReconciliationRunDetail.isError
-            }
-            brokerGatewayLoading={brokerGatewayStatus.isLoading}
-            brokerGatewayError={brokerGatewayStatus.isError}
-            loading={automationCockpit.isLoading}
-            error={automationCockpit.isError}
-          />
-        </div>
-      </details>
+      <DecisionAutomationDisclosure model={model} />
 
       <details
         className="group min-w-0 border-y border-[var(--app-divider)]"
@@ -398,5 +358,72 @@ export function DecisionCockpitContent({
         </div>
       </details>
     </section>
+  );
+}
+
+function DecisionAutomationDisclosure({
+  model,
+}: {
+  model: DecisionCockpitWorkspaceModel;
+}) {
+  const {
+    locale,
+    automationCockpit,
+    brokerGatewayStatus,
+    brokerConnectorHealth,
+    brokerAccountFacts,
+    brokerFills,
+    brokerOrderQuery,
+    executionReconciliationRuns,
+    executionReconciliationRunDetail,
+  } = model;
+
+  return (
+    <details
+      className="min-w-0 border-y border-[var(--app-divider)]"
+      data-testid="decision-automation-disclosure"
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+        <span>
+          {locale === 'zh'
+            ? '自动化与受控执行证据'
+            : 'Automation and controlled execution evidence'}
+        </span>
+        <span className="text-xs font-normal text-[var(--app-text-secondary)]">
+          {locale === 'zh' ? '按需展开' : 'Expand on demand'}
+        </span>
+      </summary>
+      <div className="py-4">
+        <AutomationCockpitPanel
+          cockpit={automationCockpit.data}
+          brokerGatewayStatus={brokerGatewayStatus.data}
+          brokerConnectorHealth={brokerConnectorHealth.data}
+          brokerConnectorHealthLoading={brokerConnectorHealth.isLoading}
+          brokerConnectorHealthError={brokerConnectorHealth.isError}
+          brokerAccountFacts={brokerAccountFacts.data}
+          brokerAccountFactsLoading={brokerAccountFacts.isLoading}
+          brokerAccountFactsError={brokerAccountFacts.isError}
+          brokerFills={brokerFills.data}
+          brokerFillsLoading={brokerFills.isLoading}
+          brokerFillsError={brokerFills.isError}
+          brokerOrderQuery={brokerOrderQuery.data}
+          brokerOrderQueryLoading={brokerOrderQuery.isLoading}
+          brokerOrderQueryError={brokerOrderQuery.isError}
+          executionReconciliationRuns={executionReconciliationRuns.data}
+          executionReconciliationRunDetail={
+            executionReconciliationRunDetail.data
+          }
+          executionReconciliationLoading={executionReconciliationRuns.isLoading}
+          executionReconciliationError={
+            executionReconciliationRuns.isError ||
+            executionReconciliationRunDetail.isError
+          }
+          brokerGatewayLoading={brokerGatewayStatus.isLoading}
+          brokerGatewayError={brokerGatewayStatus.isError}
+          loading={automationCockpit.isLoading}
+          error={automationCockpit.isError}
+        />
+      </div>
+    </details>
   );
 }
