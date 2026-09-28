@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from analytics.dataset_snapshot import (
     build_backtest_dataset_snapshot,
@@ -32,8 +34,13 @@ from data.providers.akshare_tencent_daily import (
 )
 from data.providers.baostock_daily import BAOSTOCK_DAILY_BAR_DESCRIPTOR
 from data.storage.objects import ContentAddressedObjectStore
+from server.db import AppDatabase
+from server.dependencies import AppState, AppStateContextMiddleware
+from server.persistence.jobs import SQLiteJobStore
+from server.routes import market
 from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
 from server.services.daily_market_collection import (
+    DAILY_MARKET_COLLECTION_JOB,
     DailyMarketCollectionJobRequest,
     DailyMarketCollectionService,
 )
@@ -233,6 +240,282 @@ def _collection_payload():
     ).to_payload()
 
 
+def _collection_api(tmp_path: Path) -> tuple[TestClient, SQLiteJobStore]:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    state = AppState()
+    state.db = db
+    app = FastAPI()
+    app.add_middleware(AppStateContextMiddleware, app_state=state)
+    app.include_router(market.create_router())
+    return TestClient(app), SQLiteJobStore(db.path)
+
+
+def _complete_collection_job(
+    store: SQLiteJobStore,
+    service: DailyMarketCollectionService,
+) -> tuple[str, str]:
+    queued = store.enqueue(
+        DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=CHECKED
+    )
+    claimed = store.claim(DAILY_MARKET_COLLECTION_JOB, "fixture", now=CHECKED)
+    assert claimed is not None
+    result_ref = service.run(_collection_payload(), checked_at=CHECKED)
+    store.finish(claimed.lease, now=CHECKED, result_ref=result_ref)
+    return queued.job_id, result_ref
+
+
+@pytest.mark.parametrize("blocked", [False, True])
+def test_collection_quality_http_separates_job_success_from_report_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    blocked: bool,
+) -> None:
+    calls: list[str] = []
+    if blocked:
+        original_row = FakeDailyProvider._row
+
+        def wrong_instrument_row(self, instrument):
+            return replace(
+                original_row(self, instrument),
+                instrument=InstrumentKey("000001", InstrumentType.STOCK),
+            )
+
+        monkeypatch.setattr(FakeDailyProvider, "_row", wrong_instrument_row)
+    service = _collection_service(tmp_path, monkeypatch, _registry(call_log=calls))
+    client, store = _collection_api(tmp_path)
+    job_id, result_ref = _complete_collection_job(store, service)
+    assert calls == ["baostock"]
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality?limit=20")
+
+    assert response.status_code == 200, response.text
+    assert calls == ["baostock"]
+    rows = response.json()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["job_id"] == job_id
+    assert row["trade_date"] == DAY.isoformat()
+    assert row["instrument"] == {"symbol": "600000", "instrument_type": "stock"}
+    assert row["source_policy_id"] == _collection_payload()["source_policy_id"]
+    assert row["job_status"] == "succeeded"
+    assert row["attempt"] == 1
+    assert row["created_at"]
+    assert row["updated_at"]
+    assert row["error"] is None
+    assert row["result_ref"] == result_ref
+    assert row["quality_read_status"] == "available"
+    assert row["quality_attribution_status"] == "verified"
+    quality = row["quality"]
+    assert quality["quality_id"] == result_ref.removeprefix("quality:")
+    assert quality["status"] == ("blocked" if blocked else "pass")
+    assert quality["policy_id"] == "karkinos.market_quality.daily.research_strict.v1"
+    assert (
+        datetime.fromisoformat(quality["checked_at"].replace("Z", "+00:00")) == CHECKED
+    )
+    assert quality["provider"] == "baostock"
+    assert quality["revision_id"].startswith("sha256:")
+    assert quality["materialization_id"].startswith("sha256:")
+    assert quality["observed_instrument_count"] == 1
+    assert quality["expected_instrument_count"] == 1
+    assert bool(quality["diagnostics"]) is blocked
+    assert not DatasetCatalog(tmp_path / "research").path.exists()
+
+
+@pytest.mark.parametrize("damage", ["missing", "corrupted"])
+def test_collection_quality_http_fails_closed_for_unreadable_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    damage: str,
+) -> None:
+    client, store = _collection_api(tmp_path)
+    if damage == "missing":
+        queued = store.enqueue(
+            DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=CHECKED
+        )
+        claimed = store.claim(DAILY_MARKET_COLLECTION_JOB, "fixture", now=CHECKED)
+        assert claimed is not None
+        job_id = queued.job_id
+        result_ref = "quality:sha256:" + "0" * 64
+        store.finish(claimed.lease, now=CHECKED, result_ref=result_ref)
+    else:
+        service = _collection_service(tmp_path, monkeypatch, _registry())
+        job_id, result_ref = _complete_collection_job(store, service)
+        object_id = result_ref.removeprefix("quality:")
+        path = (
+            tmp_path
+            / "research"
+            / "objects"
+            / "sha256"
+            / object_id[7:9]
+            / object_id[9:]
+        )
+        path.chmod(0o600)
+        path.write_bytes(b"corrupted quality evidence")
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality")
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["job_id"] == job_id
+    assert row["job_status"] == "succeeded"
+    assert row["result_ref"] == result_ref
+    assert row["quality_read_status"] == "unreadable"
+    assert row["quality_attribution_status"] == "not_checked"
+    assert row["quality"] is None
+
+
+def test_collection_quality_http_rejects_another_jobs_valid_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _collection_service(tmp_path, monkeypatch, _registry())
+    client, store = _collection_api(tmp_path)
+    other_payload = DailyMarketCollectionJobRequest(
+        trade_date=DAY,
+        instrument=ETF,
+        source_policy_id=_collection_payload()["source_policy_id"],
+        calendar_evidence_refs=("calendar:2026:sse:fixture",),
+    ).to_payload()
+    other_quality_ref = service.run(other_payload, checked_at=CHECKED)
+    queued = store.enqueue(
+        DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=CHECKED
+    )
+    claimed = store.claim(DAILY_MARKET_COLLECTION_JOB, "fixture", now=CHECKED)
+    assert claimed is not None
+    store.finish(claimed.lease, now=CHECKED, result_ref=other_quality_ref)
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality")
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["job_id"] == queued.job_id
+    assert row["job_status"] == "succeeded"
+    assert row["result_ref"] == other_quality_ref
+    assert row["quality_read_status"] == "available"
+    assert row["quality_attribution_status"] == "mismatch"
+    assert row["quality"]["status"] == "pass"
+    assert row["quality"]["provider"] is None
+
+
+def test_collection_quality_http_rejects_report_outside_jobs_source_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _collection_service(tmp_path, monkeypatch, _registry())
+    client, store = _collection_api(tmp_path)
+    free_policy_ref = service.run(_collection_payload(), checked_at=CHECKED)
+    cn_policy_payload = DailyMarketCollectionJobRequest(
+        trade_date=DAY,
+        instrument=STOCK,
+        source_policy_id="karkinos.market.source.cn_research.v1",
+        calendar_evidence_refs=("calendar:2026:sse:fixture",),
+    ).to_payload()
+    queued = store.enqueue(DAILY_MARKET_COLLECTION_JOB, cn_policy_payload, now=CHECKED)
+    claimed = store.claim(DAILY_MARKET_COLLECTION_JOB, "fixture", now=CHECKED)
+    assert claimed is not None
+    store.finish(claimed.lease, now=CHECKED, result_ref=free_policy_ref)
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality")
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["job_id"] == queued.job_id
+    assert row["trade_date"] == DAY.isoformat()
+    assert row["instrument"] == {"symbol": "600000", "instrument_type": "stock"}
+    assert row["source_policy_id"] == cn_policy_payload["source_policy_id"]
+    assert row["job_status"] == "succeeded"
+    assert row["result_ref"] == free_policy_ref
+    assert row["quality_read_status"] == "available"
+    assert row["quality_attribution_status"] == "mismatch"
+    assert row["quality"]["status"] == "pass"
+    assert row["quality"]["provider"] is None
+
+
+def test_collection_quality_http_preserves_report_when_attribution_is_unreadable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_row = FakeDailyProvider._row
+
+    def wrong_instrument_row(self, instrument):
+        return replace(
+            original_row(self, instrument),
+            instrument=InstrumentKey("000001", InstrumentType.STOCK),
+        )
+
+    monkeypatch.setattr(FakeDailyProvider, "_row", wrong_instrument_row)
+    service = _collection_service(tmp_path, monkeypatch, _registry())
+    client, store = _collection_api(tmp_path)
+    job_id, result_ref = _complete_collection_job(store, service)
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    quality = read_market_quality_evidence(
+        objects, objects.resolve_ref(result_ref.removeprefix("quality:"))
+    )
+    assert quality.report.status is MarketQualityStatus.BLOCKED
+    materialization_id = quality.report.materialization_id
+    materialization_path = (
+        objects.root / "sha256" / materialization_id[7:9] / materialization_id[9:]
+    )
+    materialization_path.unlink()
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality")
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["job_id"] == job_id
+    assert row["job_status"] == "succeeded"
+    assert row["quality_read_status"] == "available"
+    assert row["quality_attribution_status"] == "unreadable"
+    assert row["quality"]["status"] == "blocked"
+    assert row["quality"]["provider"] is None
+    assert row["quality"]["diagnostics"]
+
+
+def test_collection_quality_http_omits_other_jobs_and_pending_quality(
+    tmp_path: Path,
+) -> None:
+    client, store = _collection_api(tmp_path)
+    queued = store.enqueue(
+        DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=CHECKED
+    )
+    another_payload = DailyMarketCollectionJobRequest(
+        trade_date=DAY,
+        instrument=ETF,
+        source_policy_id=_collection_payload()["source_policy_id"],
+        calendar_evidence_refs=("calendar:2026:sse:fixture",),
+    ).to_payload()
+    another = store.enqueue(DAILY_MARKET_COLLECTION_JOB, another_payload, now=CHECKED)
+    store.enqueue("market_daily_verified", _collection_payload(), now=CHECKED)
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality?limit=20")
+        limited = client.get("/api/market/daily-collection-quality?limit=1")
+        invalid = client.get("/api/market/daily-collection-quality?limit=0")
+
+    assert response.status_code == 200, response.text
+    assert {row["job_id"] for row in response.json()} == {queued.job_id, another.job_id}
+    assert limited.status_code == 200, limited.text
+    assert len(limited.json()) == 1
+    row = next(row for row in response.json() if row["job_id"] == queued.job_id)
+    assert row["job_id"] == queued.job_id
+    assert row["job_status"] == "queued"
+    assert row["result_ref"] is None
+    assert row["quality_read_status"] == "not_recorded"
+    assert row["quality_attribution_status"] == "not_checked"
+    assert row["quality"] is None
+    assert invalid.status_code == 422
+    assert (
+        store.enqueue(DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=CHECKED)
+        == queued
+    )
+
+
 def test_automatic_collection_persists_single_source_quality_without_dataset(
     tmp_path, monkeypatch
 ):
@@ -250,6 +533,47 @@ def test_automatic_collection_persists_single_source_quality_without_dataset(
     assert quality.report.status is MarketQualityStatus.PASS
     assert not DatasetCatalog(root).path.exists()
     assert not MarketServingStore(root).path.exists()
+
+
+def test_automatic_collection_defaults_quality_time_after_provider_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed_at: datetime | None = None
+
+    class CurrentCompletionProvider(FakeDailyProvider):
+        def fetch_daily_bars(self, request):
+            nonlocal completed_at
+            batch = super().fetch_daily_bars(request)
+            completed_at = datetime.now(timezone.utc)
+            return replace(
+                batch,
+                started_at=completed_at - timedelta(milliseconds=1),
+                completed_at=completed_at,
+            )
+
+    registry = ProviderRegistry(
+        (
+            ProviderRegistration(
+                name="baostock",
+                upstream_group="baostock",
+                daily_bar_factory=lambda: CurrentCompletionProvider(
+                    BAOSTOCK_DAILY_BAR_DESCRIPTOR
+                ),
+            ),
+        )
+    )
+    service = _collection_service(tmp_path, monkeypatch, registry)
+
+    result_ref = service.run(_collection_payload())
+
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    quality = read_market_quality_evidence(
+        objects, objects.resolve_ref(result_ref.removeprefix("quality:"))
+    )
+    assert completed_at is not None
+    assert quality.report.status is MarketQualityStatus.PASS
+    assert quality.report.checked_at >= completed_at
 
 
 def test_collection_falls_back_only_when_source_unavailable(tmp_path, monkeypatch):

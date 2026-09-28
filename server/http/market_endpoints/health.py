@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.market import (
@@ -13,11 +15,13 @@ from server.contracts.http.market import (
     MarketBarsBackfillResponse,
 )
 from server.contracts.http.market_models import (
+    DailyCollectionQualityRunResponse,
     MarketDataHealthResponse,
     QuoteFetchRunResponse,
     VerifiedSourceHealthResponse,
 )
 from server.http.market_endpoints.dependencies import HealthEndpointDependencies
+from server.services.daily_market_collection import list_daily_market_collection_quality
 
 
 def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:
@@ -65,6 +69,31 @@ def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:
                 limit=limit,
             )
         )
+
+    @r.get(
+        "/daily-collection-quality",
+        response_model=list[DailyCollectionQualityRunResponse],
+    )
+    async def get_daily_collection_quality(
+        limit: int = 20,
+    ) -> list[DailyCollectionQualityRunResponse]:
+        """List automatic single-source collection jobs and their quality reports."""
+        from server.dependencies import get_app_state
+
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be within [1, 100]")
+        db = getattr(get_app_state(), "db", None)
+        if db is None:
+            raise HTTPException(
+                status_code=503, detail="daily_collection_quality_unavailable"
+            )
+        try:
+            rows = list_daily_market_collection_quality(db.path, limit=limit)
+        except (OSError, sqlite3.Error) as exc:
+            raise HTTPException(
+                status_code=503, detail="daily_collection_quality_unavailable"
+            ) from exc
+        return [DailyCollectionQualityRunResponse.model_validate(row) for row in rows]
 
     @r.get("/quote-fetch-runs", response_model=list[QuoteFetchRunResponse])
     async def get_quote_fetch_runs(
