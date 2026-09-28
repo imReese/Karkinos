@@ -367,6 +367,19 @@ def test_collection_quality_http_fails_closed_for_unreadable_evidence(
     assert row["quality"] is None
 
 
+def test_collection_quality_http_unavailable_db_does_not_create_one(
+    tmp_path: Path,
+) -> None:
+    client, store = _collection_api(tmp_path)
+    store.path.unlink()
+
+    with client:
+        response = client.get("/api/market/daily-collection-quality")
+
+    assert response.status_code == 503
+    assert not store.path.exists()
+
+
 def test_collection_quality_http_rejects_another_jobs_valid_report(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

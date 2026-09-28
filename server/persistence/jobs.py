@@ -53,14 +53,17 @@ class SQLiteJobStore:
             or not 1 <= limit <= 100
         ):
             raise ValueError("job_limit_invalid")
-        with closing(connect_sqlite(self.path, readonly=True)) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT job_id, kind, payload_json, status, attempt, result_ref, "
-                "error, created_at, updated_at FROM job_runs WHERE kind=? "
-                "ORDER BY updated_at DESC, job_id DESC LIMIT ?",
-                (kind, limit),
-            ).fetchall()
+        try:
+            with closing(connect_sqlite(self.path, readonly=True)) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT job_id, kind, payload_json, status, attempt, result_ref, "
+                    "error, created_at, updated_at FROM job_runs WHERE kind=? "
+                    "ORDER BY updated_at DESC, job_id DESC LIMIT ?",
+                    (kind, limit),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise OSError("job_store_read_unavailable") from exc
         return [dict(row) for row in rows]
 
     def enqueue(self, kind, payload, *, now):
