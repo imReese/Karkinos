@@ -38,6 +38,14 @@ export type PriceStructureChartTypeLabels = {
   line: string;
 };
 
+export type MovingAverageSeries = {
+  period: number;
+  label: string;
+  color: string;
+  path: string;
+  values: Array<number | null>;
+};
+
 export const DEFAULT_CHART_TYPE_LABELS: PriceStructureChartTypeLabels = {
   candlestick: 'K线',
   line: '走势',
@@ -313,6 +321,14 @@ export function buildPriceStructureChartModel({
     : 'var(--app-pnl-negative)';
   const latestPoint = linePoints[linePoints.length - 1] ?? null;
 
+  const maSeries = computeMovingAverages({
+    validBars,
+    plottedBars,
+    plotLeft: plot.left,
+    step,
+    plotY,
+  });
+
   return {
     areaPath,
     candleWidth,
@@ -325,6 +341,7 @@ export function buildPriceStructureChartModel({
     latestPoint,
     linePath,
     linePoints,
+    maSeries,
     max,
     maxVolume,
     min,
@@ -342,6 +359,65 @@ export function buildPriceStructureChartModel({
     xTickIndexes,
     yTicks,
   };
+}
+
+export function computeMovingAverages({
+  validBars,
+  plottedBars,
+  plotLeft,
+  step,
+  plotY,
+}: {
+  validBars: PriceStructureBar[];
+  plottedBars: PriceStructureBar[];
+  plotLeft: number;
+  step: number;
+  plotY: (val: number) => number;
+}): MovingAverageSeries[] {
+  const configs = [
+    { period: 5, label: 'MA5', color: 'var(--app-warning-indicator)' },
+    { period: 10, label: 'MA10', color: 'var(--app-accent)' },
+    { period: 20, label: 'MA20', color: 'var(--app-info-indicator)' },
+  ];
+  return configs.map(({ period, label, color }) => {
+    const maByBar = new Map<PriceStructureBar, number | null>();
+    for (let i = 0; i < validBars.length; i++) {
+      if (i < period - 1) {
+        maByBar.set(validBars[i], null);
+      } else {
+        let sum = 0;
+        for (let j = i - period + 1; j <= i; j++) {
+          sum += validBars[j].close;
+        }
+        maByBar.set(validBars[i], sum / period);
+      }
+    }
+    const values = plottedBars.map((b) => maByBar.get(b) ?? null);
+    const pathSegments: string[] = [];
+    let drawing = false;
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+      if (v !== null && Number.isFinite(v)) {
+        const x = Math.round(plotLeft + step * i + step / 2);
+        const y = Math.round(plotY(v));
+        if (!drawing) {
+          pathSegments.push(`M ${x},${y}`);
+          drawing = true;
+        } else {
+          pathSegments.push(`L ${x},${y}`);
+        }
+      } else {
+        drawing = false;
+      }
+    }
+    return {
+      period,
+      label,
+      color,
+      path: pathSegments.join(' '),
+      values,
+    };
+  });
 }
 
 export type PriceStructureChartModel = NonNullable<
