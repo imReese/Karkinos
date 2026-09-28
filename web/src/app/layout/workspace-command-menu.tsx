@@ -5,9 +5,10 @@ import { Link } from '@tanstack/react-router';
 import { useMotionPresence } from '../../shared/motion';
 import type { Locale } from '../../shared/preferences/context';
 import type { AppCopy } from '../copy';
-import { SearchIcon } from './app-shell-icons';
+import { MarketNavIcon, SearchIcon } from './app-shell-icons';
 import {
   isNavigationItemActive,
+  MARKET_ROUTE,
   NAVIGATION_GROUPS,
 } from './app-shell-navigation-config';
 
@@ -19,6 +20,21 @@ type WorkspaceCommandMenuProps = {
   pathname: string;
 };
 
+type CommandResultItem = {
+  key: string;
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  search?: Record<string, string>;
+  isDirectJump?: boolean;
+};
+
+type CommandResultGroup = {
+  key: string;
+  label: string;
+  items: CommandResultItem[];
+};
+
 export function WorkspaceCommandMenu({
   copy,
   open,
@@ -27,6 +43,7 @@ export function WorkspaceCommandMenu({
   pathname,
 }: WorkspaceCommandMenuProps) {
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const presence = useMotionPresence(open);
@@ -37,6 +54,7 @@ export function WorkspaceCommandMenu({
     }
     const returnFocus = document.activeElement as HTMLElement | null;
     setQuery('');
+    setActiveIndex(0);
     inputRef.current?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -70,16 +88,101 @@ export function WorkspaceCommandMenu({
   }, [open]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredGroups = NAVIGATION_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) =>
-      copy.shell.nav[item.key].toLocaleLowerCase().includes(normalizedQuery),
-    ),
-  })).filter((group) => group.items.length > 0);
+  const trimmedQuery = query.trim();
+
+  const filteredGroups: CommandResultGroup[] = NAVIGATION_GROUPS.map(
+    (group) => ({
+      key: group.key,
+      label: group.label[locale],
+      items: group.items
+        .filter((item) =>
+          copy.shell.nav[item.key]
+            .toLocaleLowerCase()
+            .includes(normalizedQuery),
+        )
+        .map((item) => ({
+          key: item.to,
+          to: item.to,
+          label: copy.shell.nav[item.key],
+          icon: item.icon,
+        })),
+    }),
+  ).filter((group) => group.items.length > 0);
+
+  const isNumericTicker = /^[0-9]{4,6}(\.(SH|SZ|BJ))?$/i.test(trimmedQuery);
+  const isAlphaTicker = /^[A-Za-z]{2,6}$/.test(trimmedQuery);
+  const shouldShowDirectJump =
+    isNumericTicker || (filteredGroups.length === 0 && isAlphaTicker);
+
+  const directQuoteGroup: CommandResultGroup | null = shouldShowDirectJump
+    ? {
+        key: 'direct-quote',
+        label: locale === 'zh' ? '行情直达' : 'Direct Quote',
+        items: [
+          {
+            key: `direct-${trimmedQuery.toUpperCase()}`,
+            to: MARKET_ROUTE,
+            label:
+              locale === 'zh'
+                ? `在行情中查看 ${trimmedQuery.toUpperCase()}`
+                : `View ${trimmedQuery.toUpperCase()} in Market`,
+            icon: MarketNavIcon,
+            search: { symbol: trimmedQuery.toUpperCase() },
+            isDirectJump: true,
+          },
+        ],
+      }
+    : null;
+
+  const allGroups: CommandResultGroup[] = [
+    ...filteredGroups,
+    ...(directQuoteGroup ? [directQuoteGroup] : []),
+  ];
+
+  const flatItems = allGroups.flatMap((group) => group.items);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query]);
+
+  useEffect(() => {
+    if (!open || activeIndex < 0) {
+      return;
+    }
+    const itemEl = panelRef.current?.querySelector<HTMLElement>(
+      `[data-command-item-index="${activeIndex}"]`,
+    );
+    if (typeof itemEl?.scrollIntoView === 'function') {
+      itemEl.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex, open]);
+
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (flatItems.length === 0) return;
+      setActiveIndex((prev) => (prev + 1) % flatItems.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (flatItems.length === 0) return;
+      setActiveIndex((prev) => (prev <= 0 ? flatItems.length - 1 : prev - 1));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (flatItems.length === 0) return;
+      const targetIndex =
+        activeIndex >= 0 && activeIndex < flatItems.length ? activeIndex : 0;
+      const linkEl = panelRef.current?.querySelector<HTMLAnchorElement>(
+        `[data-command-item-index="${targetIndex}"]`,
+      );
+      linkEl?.click();
+    }
+  };
 
   if (!presence.mounted) {
     return null;
   }
+
+  let runningIndex = 0;
 
   return (
     <div
@@ -106,6 +209,7 @@ export function WorkspaceCommandMenu({
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={handleInputKeyDown}
             aria-label={copy.shell.commandPlaceholder}
             placeholder={copy.shell.commandPlaceholder}
             autoComplete="off"
@@ -122,26 +226,34 @@ export function WorkspaceCommandMenu({
           className="app-command-results"
           aria-label={copy.shell.commandResults}
         >
-          {filteredGroups.length > 0 ? (
-            filteredGroups.map((group) => (
+          {allGroups.length > 0 ? (
+            allGroups.map((group) => (
               <div className="app-command-group" key={group.key}>
-                <div className="app-command-group-label">
-                  {group.label[locale]}
-                </div>
+                <div className="app-command-group-label">{group.label}</div>
                 {group.items.map((item) => {
+                  const itemIndex = runningIndex++;
                   const Icon = item.icon;
-                  const active = isNavigationItemActive(pathname, item.to);
+                  const isSelected = itemIndex === activeIndex;
+                  const isCurrent =
+                    !item.isDirectJump &&
+                    isNavigationItemActive(pathname, item.to);
                   return (
                     <Link
-                      key={item.to}
+                      key={item.key}
                       to={item.to}
+                      search={item.search as any}
+                      data-command-item-index={itemIndex}
+                      aria-selected={isSelected ? 'true' : undefined}
                       className={`app-command-result ${
-                        active ? 'app-command-result-active' : ''
+                        isSelected || isCurrent
+                          ? 'app-command-result-active'
+                          : ''
                       }`}
                       onClick={onClose}
+                      onMouseEnter={() => setActiveIndex(itemIndex)}
                     >
                       <Icon className="h-4 w-4" aria-hidden="true" />
-                      <span>{copy.shell.nav[item.key]}</span>
+                      <span>{item.label}</span>
                       <span aria-hidden="true">→</span>
                     </Link>
                   );

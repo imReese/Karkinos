@@ -146,6 +146,9 @@ const operationsRoute = createRoute({
 const marketRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/market',
+  validateSearch: (search: Record<string, unknown>) => ({
+    symbol: typeof search.symbol === 'string' ? search.symbol : undefined,
+  }),
 }).lazy(() =>
   import('../features/market/pages/market-page').then((module) => module.Route),
 );

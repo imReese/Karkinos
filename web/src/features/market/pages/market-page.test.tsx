@@ -950,3 +950,74 @@ test('keeps incomplete valuation-basis blockers ahead of quote review', async ()
     within(panel).queryByText('There are no current holdings to review.'),
   ).toBeNull();
 });
+
+test('supports keyboard navigation (↑ / ↓ / j / k) to cycle watchlist items', async () => {
+  renderMarketPage({
+    items: [
+      {
+        symbol: '600519',
+        asset_class: 'stock',
+        name: '贵州茅台',
+        is_holding: true,
+        quantity: 100,
+        avg_cost: 1600,
+        market_value: 170000,
+        unrealized_pnl: 10000,
+        realized_pnl: 0,
+        last_snapshot_at: '2026-06-17T14:10:00+08:00',
+        price: 1700,
+        volume: 1000,
+        research_count: 3,
+        last_research_at: '2026-06-17T10:00:00+08:00',
+      },
+      {
+        symbol: '000001',
+        asset_class: 'stock',
+        name: '平安银行',
+        is_holding: false,
+        quantity: 0,
+        avg_cost: 0,
+        market_value: 0,
+        unrealized_pnl: 0,
+        realized_pnl: 0,
+        last_snapshot_at: '2026-06-17T14:10:00+08:00',
+        price: 12,
+        volume: 5000,
+        research_count: 1,
+        last_research_at: '2026-06-17T10:00:00+08:00',
+      },
+    ],
+  });
+  const user = userEvent.setup();
+
+  // Initially, 600519 is selected
+  expect(
+    await screen.findByTestId('market-instrument-name-600519'),
+  ).toBeTruthy();
+  const detail = await screen.findByTestId('market-selected-instrument');
+  expect(within(detail).getByText('贵州茅台')).toBeTruthy();
+
+  // Press ArrowDown to switch to 000001
+  await user.keyboard('{ArrowDown}');
+  await waitFor(() => {
+    expect(within(detail).getByText('平安银行')).toBeTruthy();
+  });
+
+  // Press k to switch back to 600519
+  await user.keyboard('k');
+  await waitFor(() => {
+    expect(within(detail).getByText('贵州茅台')).toBeTruthy();
+  });
+
+  // Press j to switch to 000001
+  await user.keyboard('j');
+  await waitFor(() => {
+    expect(within(detail).getByText('平安银行')).toBeTruthy();
+  });
+
+  // Press ArrowUp to switch back to 600519
+  await user.keyboard('{ArrowUp}');
+  await waitFor(() => {
+    expect(within(detail).getByText('贵州茅台')).toBeTruthy();
+  });
+});

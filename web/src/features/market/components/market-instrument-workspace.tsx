@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
@@ -141,6 +141,91 @@ export function MarketInstrumentWorkspaceLoading({
   );
 }
 
+function useWatchlistKeyboardNavigation({
+  items,
+  activeSymbol,
+  onSelect,
+}: {
+  items: ResearchBoardItem[];
+  activeSymbol: string;
+  onSelect: (symbol: string) => void;
+}) {
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.getAttribute('role') === 'textbox')
+      ) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      if (event.key === 'ArrowDown' || event.key === 'j') {
+        event.preventDefault();
+        const currentIndex = items.findIndex((i) => i.symbol === activeSymbol);
+        const nextIndex =
+          currentIndex < 0 ? 0 : Math.min(items.length - 1, currentIndex + 1);
+        const nextItem = items[nextIndex];
+        if (nextItem && nextItem.symbol !== activeSymbol) {
+          onSelect(nextItem.symbol);
+          const row = document.querySelector<HTMLElement>(
+            `[data-market-instrument-row="${nextItem.symbol}"]`,
+          );
+          if (typeof row?.scrollIntoView === 'function') {
+            row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          }
+        }
+      } else if (event.key === 'ArrowUp' || event.key === 'k') {
+        event.preventDefault();
+        const currentIndex = items.findIndex((i) => i.symbol === activeSymbol);
+        const prevIndex = currentIndex < 0 ? 0 : Math.max(0, currentIndex - 1);
+        const prevItem = items[prevIndex];
+        if (prevItem && prevItem.symbol !== activeSymbol) {
+          onSelect(prevItem.symbol);
+          const row = document.querySelector<HTMLElement>(
+            `[data-market-instrument-row="${prevItem.symbol}"]`,
+          );
+          if (typeof row?.scrollIntoView === 'function') {
+            row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [items, activeSymbol, onSelect]);
+}
+
+function resolveQuoteSourceLabel(
+  source: string | null | undefined,
+  locale: Locale,
+): string {
+  if (!source) return '--';
+  const quoteSourceLabels: Record<string, string> = {
+    tushare_realtime_quote:
+      locale === 'zh' ? 'TuShare 实时行情' : 'TuShare real-time quote',
+    tushare_daily: locale === 'zh' ? 'TuShare 日行情' : 'TuShare daily quote',
+    tushare_fund_nav: locale === 'zh' ? 'TuShare 基金净值' : 'TuShare fund NAV',
+    eastmoney_fund_estimate:
+      locale === 'zh' ? '东方财富基金估值' : 'Eastmoney fund estimate',
+    sina_fund_estimate:
+      locale === 'zh' ? '新浪基金盘中估值' : 'Sina intraday fund estimate',
+  };
+  return quoteSourceLabels[source] ?? source;
+}
+
 export function MarketInstrumentWorkspace({
   items,
   healthBySymbol,
@@ -175,20 +260,12 @@ export function MarketInstrumentWorkspace({
   const labels = copy.market;
   const selectedQuoteStatus = selectedHealthQuote?.quote_status ?? null;
   const selectedDailyMove = selectedHealthQuote?.daily_change ?? null;
-  const quoteSourceLabels: Record<string, string> = {
-    tushare_realtime_quote:
-      locale === 'zh' ? 'TuShare 实时行情' : 'TuShare real-time quote',
-    tushare_daily: locale === 'zh' ? 'TuShare 日行情' : 'TuShare daily quote',
-    tushare_fund_nav: locale === 'zh' ? 'TuShare 基金净值' : 'TuShare fund NAV',
-    eastmoney_fund_estimate:
-      locale === 'zh' ? '东方财富基金估值' : 'Eastmoney fund estimate',
-    sina_fund_estimate:
-      locale === 'zh' ? '新浪基金盘中估值' : 'Sina intraday fund estimate',
-  };
-  const selectedQuoteSource = selectedHealthQuote?.quote_source
-    ? (quoteSourceLabels[selectedHealthQuote.quote_source] ??
-      selectedHealthQuote.quote_source)
-    : '--';
+  const selectedQuoteSource = resolveQuoteSourceLabel(
+    selectedHealthQuote?.quote_source,
+    locale,
+  );
+
+  useWatchlistKeyboardNavigation({ items, activeSymbol, onSelect });
 
   return (
     <div
@@ -208,9 +285,17 @@ export function MarketInstrumentWorkspace({
               {labels.scopeBoundary}
             </p>
           </div>
-          <span className="shrink-0 text-xs tabular-nums text-[var(--app-text-secondary)]">
-            {items.length}
-          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span
+              className="app-type-micro hidden items-center gap-0.5 rounded border border-[var(--app-divider)] px-1.5 py-0.5 font-mono text-[var(--app-text-tertiary)] md:inline-flex"
+              title="↑ / ↓ / j / k"
+            >
+              <span>↑↓</span>
+            </span>
+            <span className="text-xs tabular-nums text-[var(--app-text-secondary)]">
+              {items.length}
+            </span>
+          </div>
         </div>
 
         {watchlistEditor}
@@ -452,38 +537,61 @@ export function MarketInstrumentWorkspace({
               ]}
             />
 
-            <dl className="mt-3 grid min-w-0 border-t border-[var(--app-divider)] text-xs sm:grid-cols-2">
-              {[
-                [labels.quoteSource, selectedQuoteSource],
-                [
-                  labels.snapshotLabel,
-                  formatTimestamp(selectedItem.last_snapshot_at),
-                ],
-                [
-                  labels.staleReason,
-                  formatStaleReason(
-                    selectedHealthQuote?.stale_reason,
-                    copy.common.staleReasons,
-                  ),
-                ],
-                [labels.providerNextAction, selectedQuoteNextAction ?? '--'],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="grid min-w-0 grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] gap-3 border-b border-[var(--app-divider)] px-2 py-2 sm:odd:border-r"
-                >
-                  <dt className="text-[var(--app-text-tertiary)]">{label}</dt>
-                  <dd className="min-w-0 break-words text-right text-[var(--app-text-secondary)]">
-                    {value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <MarketInstrumentMetadataList
+              labels={labels}
+              quoteSource={selectedQuoteSource}
+              snapshotAt={selectedItem.last_snapshot_at}
+              staleReason={formatStaleReason(
+                selectedHealthQuote?.stale_reason,
+                copy.common.staleReasons,
+              )}
+              nextAction={selectedQuoteNextAction}
+            />
           </>
         ) : (
           <EvidenceState kind="empty" title={labels.noSelection} />
         )}
       </section>
     </div>
+  );
+}
+
+function MarketInstrumentMetadataList({
+  labels,
+  quoteSource,
+  snapshotAt,
+  staleReason,
+  nextAction,
+}: {
+  labels: {
+    quoteSource: string;
+    snapshotLabel: string;
+    staleReason: string;
+    providerNextAction: string;
+  };
+  quoteSource: string;
+  snapshotAt: string | null | undefined;
+  staleReason: string;
+  nextAction: string | null;
+}) {
+  return (
+    <dl className="mt-3 grid min-w-0 border-t border-[var(--app-divider)] text-xs sm:grid-cols-2">
+      {[
+        [labels.quoteSource, quoteSource],
+        [labels.snapshotLabel, formatTimestamp(snapshotAt)],
+        [labels.staleReason, staleReason],
+        [labels.providerNextAction, nextAction ?? '--'],
+      ].map(([label, value]) => (
+        <div
+          key={label}
+          className="grid min-w-0 grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] gap-3 border-b border-[var(--app-divider)] px-2 py-2 sm:odd:border-r"
+        >
+          <dt className="text-[var(--app-text-tertiary)]">{label}</dt>
+          <dd className="min-w-0 break-words text-right text-[var(--app-text-secondary)]">
+            {value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }

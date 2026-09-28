@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import type { ToastItem } from '../../../shared/ui/toast-stack';
@@ -47,7 +47,24 @@ export function useMarketPageController() {
     );
   const metadataBackfill = useInstrumentMetadataBackfillMutation();
   const barsBackfill = useMarketBarsBackfillMutation();
-  const [selectedSymbol, setSelectedSymbol] = useState('');
+  const [selectedSymbol, setSelectedSymbol] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('symbol') ?? '';
+  });
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      if (typeof window === 'undefined') return;
+      const urlSymbol = new URLSearchParams(window.location.search).get(
+        'symbol',
+      );
+      if (urlSymbol) {
+        setSelectedSymbol(urlSymbol);
+      }
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
   const [newSymbol, setNewSymbol] = useState('');
   const [newAssetClass, setNewAssetClass] = useState('stock');
   const [noteFilterType, setNoteFilterType] = useState('');
