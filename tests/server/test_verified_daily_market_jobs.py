@@ -8,9 +8,11 @@ import pytest
 from core.types import InstrumentKey, InstrumentType
 from server.db import AppDatabase
 from server.persistence.jobs import SQLiteJobStore
+from server.services.daily_market_collection import DAILY_MARKET_COLLECTION_JOB
 from server.services.verified_daily_market_jobs import (
     VERIFIED_DAILY_MARKET_JOB,
     VerifiedDailyMarketJobPlanningError,
+    enqueue_latest_daily_market_collection_jobs,
     enqueue_latest_verified_daily_market_jobs,
 )
 
@@ -109,6 +111,26 @@ def test_planner_enqueues_one_durable_job_per_supported_watchlist_asset(tmp_path
         for job in plan.jobs
     )
     assert all(job.payload["calendar_evidence_refs"] for job in plan.jobs)
+
+
+def test_default_collection_and_explicit_verification_have_distinct_job_identity(
+    tmp_path,
+):
+    db = _planner_db([{"symbol": "600000", "instrument_type": "stock"}])
+    store = _store(tmp_path)
+
+    collected = enqueue_latest_daily_market_collection_jobs(
+        db, _config(), store, now=NOW
+    )
+    verified = enqueue_latest_verified_daily_market_jobs(db, _config(), store, now=NOW)
+
+    assert collected.jobs[0].kind == DAILY_MARKET_COLLECTION_JOB
+    assert collected.jobs[0].payload["instrument"] == {
+        "symbol": "600000",
+        "instrument_type": "stock",
+    }
+    assert verified.jobs[0].kind == VERIFIED_DAILY_MARKET_JOB
+    assert collected.jobs[0].job_id != verified.jobs[0].job_id
 
 
 def test_planner_is_idempotent_for_same_market_facts(tmp_path):

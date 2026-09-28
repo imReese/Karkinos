@@ -1,4 +1,4 @@
-"""Plan durable verified daily-market jobs from persisted application facts."""
+"""Plan daily-market collection and explicit verification jobs from local facts."""
 
 from __future__ import annotations
 
@@ -9,6 +9,10 @@ from typing import Any
 from core.types import InstrumentKey, InstrumentType
 from data.source_policy import source_policy_for_config
 from server.contracts.jobs import JobRun, JobStore
+from server.services.daily_market_collection import (
+    DAILY_MARKET_COLLECTION_JOB,
+    DailyMarketCollectionJobRequest,
+)
 from server.services.market_calendar_dates import (
     resolve_latest_verified_closed_trading_date,
     resolve_verified_closed_trading_dates,
@@ -36,6 +40,34 @@ class VerifiedDailyMarketJobPlan:
         return len(self.jobs)
 
 
+def enqueue_latest_daily_market_collection_jobs(
+    db: Any,
+    config: object,
+    store: JobStore,
+    *,
+    now: datetime,
+    lookback_days: int = 30,
+) -> VerifiedDailyMarketJobPlan:
+    """Collect one source per watched instrument and closed session by default."""
+    resolved_dates, instruments = _planning_facts(db, now, lookback_days)
+    policy = source_policy_for_config(config)
+    jobs = [
+        store.enqueue(
+            DAILY_MARKET_COLLECTION_JOB,
+            DailyMarketCollectionJobRequest(
+                trade_date=date.fromisoformat(resolved.trade_date),
+                instrument=instrument,
+                source_policy_id=policy.policy_id,
+                calendar_evidence_refs=resolved.calendar_evidence_refs,
+            ).to_payload(),
+            now=now,
+        )
+        for resolved in resolved_dates
+        for instrument in instruments
+    ]
+    return _job_plan(resolved_dates, instruments, jobs)
+
+
 def enqueue_latest_verified_daily_market_jobs(
     db: Any,
     config: object,
@@ -44,7 +76,27 @@ def enqueue_latest_verified_daily_market_jobs(
     now: datetime,
     lookback_days: int = 30,
 ) -> VerifiedDailyMarketJobPlan:
-    """Enqueue idempotent instrument/day jobs over verified closed sessions."""
+    """Explicitly enqueue idempotent cross-source verification jobs."""
+    resolved_dates, instruments = _planning_facts(db, now, lookback_days)
+    policy = source_policy_for_config(config)
+    jobs = [
+        store.enqueue(
+            VERIFIED_DAILY_MARKET_JOB,
+            VerifiedDailyMarketJobRequest(
+                trade_date=date.fromisoformat(resolved.trade_date),
+                instruments=(instrument,),
+                source_policy_id=policy.policy_id,
+                calendar_evidence_refs=resolved.calendar_evidence_refs,
+            ).to_payload(),
+            now=now,
+        )
+        for resolved in resolved_dates
+        for instrument in instruments
+    ]
+    return _job_plan(resolved_dates, instruments, jobs)
+
+
+def _planning_facts(db: Any, now: datetime, lookback_days: int):
     if not isinstance(now, datetime):
         raise TypeError("verified_daily_market_job_plan_now_must_be_datetime")
     if now.tzinfo is None or now.utcoffset() is None:
@@ -59,12 +111,7 @@ def enqueue_latest_verified_daily_market_jobs(
         latest = resolve_latest_verified_closed_trading_date(db, now)
         resolved_dates = () if latest is None else (latest,)
     if not resolved_dates:
-        return VerifiedDailyMarketJobPlan(
-            trade_date=None,
-            calendar_evidence_refs=(),
-            instruments=(),
-            jobs=(),
-        )
+        return (), ()
 
     read_watchlist = getattr(db, "list_watchlist_assets_sync", None)
     if not callable(read_watchlist):
@@ -78,33 +125,21 @@ def enqueue_latest_verified_daily_market_jobs(
             "verified_daily_market_watchlist_unreadable"
         ) from exc
 
-    instruments = _supported_watchlist_instruments(rows)
-    policy = source_policy_for_config(config)
+    return resolved_dates, _supported_watchlist_instruments(rows)
 
-    jobs: list[JobRun] = []
+
+def _job_plan(resolved_dates, instruments, jobs: list[JobRun]):
     all_refs: list[str] = []
     for resolved in resolved_dates:
-        trade_date = date.fromisoformat(resolved.trade_date)
         for ref in resolved.calendar_evidence_refs:
             if ref not in all_refs:
                 all_refs.append(ref)
-        for instrument in instruments:
-            request = VerifiedDailyMarketJobRequest(
-                trade_date=trade_date,
-                instruments=(instrument,),
-                source_policy_id=policy.policy_id,
-                calendar_evidence_refs=resolved.calendar_evidence_refs,
-            )
-            jobs.append(
-                store.enqueue(
-                    VERIFIED_DAILY_MARKET_JOB,
-                    request.to_payload(),
-                    now=now,
-                )
-            )
-
     return VerifiedDailyMarketJobPlan(
-        trade_date=date.fromisoformat(resolved_dates[-1].trade_date),
+        trade_date=(
+            date.fromisoformat(resolved_dates[-1].trade_date)
+            if resolved_dates
+            else None
+        ),
         calendar_evidence_refs=tuple(all_refs),
         instruments=instruments,
         jobs=tuple(jobs),
@@ -151,6 +186,7 @@ def _supported_watchlist_instruments(
 
 
 __all__ = [
+    "enqueue_latest_daily_market_collection_jobs",
     "VERIFIED_DAILY_MARKET_JOB",
     "VerifiedDailyMarketJobPlan",
     "VerifiedDailyMarketJobPlanningError",

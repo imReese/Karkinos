@@ -23,9 +23,11 @@ from data.market.contracts import (
 from data.market.cross_source import (
     CrossSourceDailyBarConfigurationError,
     CrossSourceDailyBarIntegrityError,
+    CrossSourceDailyBarUnavailableError,
     ingest_cross_source_daily_bars,
 )
 from data.market.quality import RESEARCH_STRICT_DAILY
+from data.market.quality_evidence import read_market_quality_evidence
 from data.market.verification_evidence import MarketVerificationStatus
 from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
 from data.providers.tushare_daily import TUSHARE_DAILY_BAR_DESCRIPTOR
@@ -176,6 +178,37 @@ def test_cross_source_quality_failure_preserves_quality_evidence_without_verific
     assert result.primary_quality.quality_id.startswith("sha256:")
     assert result.comparison_quality.quality_id.startswith("sha256:")
     assert result.resolution_candidates() == ()
+
+
+def test_primary_quality_is_durable_when_comparison_returns_no_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import data.market.cross_source as cross_source
+
+    saved = []
+    persist = cross_source.publish_market_quality_evidence
+
+    def record(store, report):
+        evidence = persist(store, report)
+        saved.append(evidence)
+        return evidence
+
+    monkeypatch.setattr(cross_source, "publish_market_quality_evidence", record)
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+
+    with pytest.raises(CrossSourceDailyBarUnavailableError, match="no_data"):
+        ingest_cross_source_daily_bars(
+            FakeProvider(TDX_PROVIDER_DESCRIPTOR),
+            FakeProvider(TUSHARE_DAILY_BAR_DESCRIPTOR, include_row=False),
+            store,
+            request=REQUEST,
+            quality_policy=RESEARCH_STRICT_DAILY,
+            normalizer_version="karkinos.market.normalize.v1",
+            checked_at=CHECKED,
+        )
+
+    assert len(saved) == 1
+    assert read_market_quality_evidence(store, saved[0].ref) == saved[0]
 
 
 def test_cross_source_rejects_same_upstream_before_provider_io(tmp_path: Path) -> None:

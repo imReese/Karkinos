@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -17,6 +18,8 @@ from data.market.contracts import (
     ProviderDailyBarBatch,
     ProviderDailyBarRow,
 )
+from data.market.quality import MarketQualityStatus
+from data.market.quality_evidence import read_market_quality_evidence
 from data.market.serving import MarketServingStore
 from data.provider_registry import ProviderRegistration, ProviderRegistry
 from data.providers.akshare_daily import AKSHARE_DAILY_BAR_DESCRIPTOR
@@ -25,6 +28,11 @@ from data.providers.akshare_tencent_daily import (
 )
 from data.providers.baostock_daily import BAOSTOCK_DAILY_BAR_DESCRIPTOR
 from data.storage.objects import ContentAddressedObjectStore
+from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+from server.services.daily_market_collection import (
+    DailyMarketCollectionJobRequest,
+    DailyMarketCollectionService,
+)
 from server.services.research_datasets import dataset_summary
 from server.services.verified_daily_market_data import (
     VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION,
@@ -202,6 +210,123 @@ def _service(
     )
 
 
+def _collection_service(tmp_path, monkeypatch, registry):
+    monkeypatch.setattr(
+        "server.services.daily_market_collection.provider_registry_for_config",
+        lambda config, include_tdx=False: registry,
+    )
+    return DailyMarketCollectionService(
+        tmp_path / "research", SimpleNamespace(tushare_token="")
+    )
+
+
+def _collection_payload():
+    return DailyMarketCollectionJobRequest(
+        trade_date=DAY,
+        instrument=STOCK,
+        source_policy_id="karkinos.market.source.free_cn_research.v1",
+        calendar_evidence_refs=("calendar:2026:sse:fixture",),
+    ).to_payload()
+
+
+def test_automatic_collection_persists_single_source_quality_without_dataset(
+    tmp_path, monkeypatch
+):
+    calls = []
+    service = _collection_service(tmp_path, monkeypatch, _registry(call_log=calls))
+
+    result_ref = service.run(_collection_payload(), checked_at=CHECKED)
+
+    root = tmp_path / "research"
+    store = ContentAddressedObjectStore(root / "objects")
+    quality = read_market_quality_evidence(
+        store, store.resolve_ref(result_ref.removeprefix("quality:"))
+    )
+    assert calls == ["baostock"]
+    assert quality.report.status is MarketQualityStatus.PASS
+    assert not DatasetCatalog(root).path.exists()
+    assert not MarketServingStore(root).path.exists()
+
+
+def test_collection_falls_back_only_when_source_unavailable(tmp_path, monkeypatch):
+    calls = []
+    service = _collection_service(
+        tmp_path,
+        monkeypatch,
+        _registry(baostock_unavailable=True, call_log=calls),
+    )
+
+    assert service.run(_collection_payload(), checked_at=CHECKED).startswith(
+        "quality:sha256:"
+    )
+    assert calls == ["baostock", "akshare_tencent"]
+
+
+def test_blocked_collection_quality_stays_visible_without_source_switch(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    class WrongInstrumentProvider(FakeDailyProvider):
+        def _row(self, instrument):
+            return replace(
+                super()._row(instrument),
+                instrument=InstrumentKey("000001", InstrumentType.STOCK),
+            )
+
+    registry = ProviderRegistry(
+        (
+            ProviderRegistration(
+                name="baostock",
+                upstream_group="baostock",
+                daily_bar_factory=lambda: WrongInstrumentProvider(
+                    BAOSTOCK_DAILY_BAR_DESCRIPTOR, call_log=calls
+                ),
+            ),
+            ProviderRegistration(
+                name="akshare_tencent",
+                upstream_group="tencent",
+                daily_bar_factory=lambda: FakeDailyProvider(
+                    AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR, call_log=calls
+                ),
+            ),
+        )
+    )
+    service = _collection_service(tmp_path, monkeypatch, registry)
+
+    result_ref = service.run(_collection_payload(), checked_at=CHECKED)
+
+    root = tmp_path / "research"
+    store = ContentAddressedObjectStore(root / "objects")
+    quality = read_market_quality_evidence(
+        store, store.resolve_ref(result_ref.removeprefix("quality:"))
+    )
+    assert quality.report.status is MarketQualityStatus.BLOCKED
+    assert calls == ["baostock"]
+    assert not DatasetCatalog(root).path.exists()
+
+
+def test_collection_fences_quality_publication_after_lease_loss(tmp_path, monkeypatch):
+    service = _collection_service(tmp_path, monkeypatch, _registry())
+    monkeypatch.setattr(
+        "server.services.daily_market_collection.publish_market_quality_evidence",
+        lambda *args: pytest.fail("quality evidence published after lease loss"),
+    )
+
+    def lost_lease():
+        raise ValueError("job_lease_lost")
+
+    with pytest.raises(ValueError, match="job_lease_lost"):
+        service.run(
+            _collection_payload(),
+            checked_at=CHECKED,
+            before_publish=lost_lease,
+        )
+
+    assert not DatasetCatalog(tmp_path / "research").path.exists()
+    assert not MarketServingStore(tmp_path / "research").path.exists()
+
+
 def test_verified_daily_market_request_is_canonical_and_secret_free() -> None:
     request = VerifiedDailyMarketJobRequest.from_payload(
         {
@@ -277,6 +402,27 @@ def test_matched_market_publication_is_idempotent(
     assert second == first
     entries = DatasetCatalog(tmp_path / "research").list_daily_bar_datasets()
     assert tuple(item.ref for item in entries) == (first.dataset_ref,)
+
+
+def test_verified_dataset_backtest_binding_uses_selected_provider_not_tdx(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publication = _service(tmp_path, monkeypatch).run(_payload(), checked_at=CHECKED)
+    request = SimpleNamespace(
+        dataset_id=publication.dataset_id,
+        start_date=DAY.isoformat(),
+        end_date=DAY.isoformat(),
+        assets=[],
+    )
+
+    _, handlers, binding = load_dataset_backtest_inputs(tmp_path / "research", request)
+
+    assert binding["source_names"] == ["baostock"]
+    assert binding["cross_source_verified"] is True
+    assert binding["point_in_time_verified"] is False
+    assert {handler._df.attrs["provider_name"] for handler in handlers.values()} == {
+        "baostock"
+    }
 
 
 def test_unavailable_preferred_source_fails_over_to_next_independent_pair(

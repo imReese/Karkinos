@@ -73,7 +73,9 @@ provider_config.tushare_token_env
 karkinos.market.source.free_cn_research.v1
 ```
 
-它不是“选择一个永远可信的主 Provider”，而是按用途解析版本化来源策略。当前研究日线要求未复权数据与两个独立 upstream：
+它不是“选择一个永远可信的主 Provider”，而是按用途解析版本化来源策略。默认后台任务按优先级采集一个可用来源的未复权日线，独立保存单源质量结果；质量阻断不会改选来源来掩盖问题，也不会发布 Dataset。
+
+显式双源核验任务仍要求两个独立 upstream，只有匹配后才发布 verified Dataset v2：
 
 ```text
 BaoStock
@@ -84,7 +86,7 @@ Quality + cross-source verification
 verified Dataset v2
 ```
 
-如果其中一个来源在本次请求中因网络、SDK/API 不可用或空响应而无法形成市场事实，运行时可以按 policy 尝试下一组独立来源，例如 Tencent + Eastmoney。已经形成有效市场事实后的 Quality BLOCKED 或跨源冲突不会通过换源“洗绿”，而是 fail closed。
+如果其中一个来源在本次请求中因网络、SDK/API 不可用或空响应而无法形成市场事实，核验任务可以按 policy 尝试下一组独立来源，例如 Tencent + Eastmoney。已经形成有效市场事实后的 Quality BLOCKED 或跨源冲突不会通过换源“洗绿”，而是 fail closed。单源质量通过、双源一致、历史 PIT 可获得性和收益口径是不同结论；v2 的双源证据本身不授权策略晋级或总收益计算。
 
 免费来源优先级后仍可使用可选增强来源：
 

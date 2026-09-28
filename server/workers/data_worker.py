@@ -19,6 +19,10 @@ from server.release_activation import (
     is_release_activation_guarded,
     wait_for_release_activation,
 )
+from server.services.daily_market_collection import (
+    DAILY_MARKET_COLLECTION_JOB,
+    DailyMarketCollectionService,
+)
 from server.services.market_calendar_automation import MarketCalendarAutomationService
 from server.services.verified_daily_market_data import (
     VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
@@ -27,7 +31,7 @@ from server.services.verified_daily_market_data import (
 )
 from server.services.verified_daily_market_jobs import (
     VERIFIED_DAILY_MARKET_JOB,
-    enqueue_latest_verified_daily_market_jobs,
+    enqueue_latest_daily_market_collection_jobs,
 )
 from server.workers.presence import run_with_presence
 
@@ -127,6 +131,49 @@ async def execute_verified_daily_market_job(
     source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
 ) -> None:
     """Run one durable verified-market job behind lease fencing."""
+    await _execute_daily_market_job(
+        store,
+        job,
+        service,
+        timeout=timeout,
+        heartbeat_interval=heartbeat_interval,
+        result_prefix="dataset:sha256:",
+        label="verified_market",
+        source_resolution_recorder=source_resolution_recorder,
+    )
+
+
+async def execute_daily_market_collection_job(
+    store: JobStore,
+    job: JobRun,
+    service,
+    *,
+    timeout: float = 180,
+    heartbeat_interval: float = 15,
+) -> None:
+    """Persist capture and quality without granting Dataset publication."""
+    await _execute_daily_market_job(
+        store,
+        job,
+        service,
+        timeout=timeout,
+        heartbeat_interval=heartbeat_interval,
+        result_prefix="quality:sha256:",
+        label="daily_collection",
+    )
+
+
+async def _execute_daily_market_job(
+    store: JobStore,
+    job: JobRun,
+    service,
+    *,
+    timeout: float,
+    heartbeat_interval: float,
+    result_prefix: str,
+    label: str,
+    source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
+) -> None:
 
     async def renew():
         while True:
@@ -136,7 +183,7 @@ async def execute_verified_daily_market_job(
             try:
                 store.heartbeat(job.lease, now=datetime.now(timezone.utc))
             except Exception as exc:
-                raise WorkerExecutionAborted("verified_market_job_lease_lost") from exc
+                raise WorkerExecutionAborted(f"{label}_job_lease_lost") from exc
 
     loop = asyncio.get_running_loop()
     work = loop.create_future()
@@ -154,7 +201,7 @@ async def execute_verified_daily_market_job(
         try:
             store.heartbeat(job.lease, now=datetime.now(timezone.utc))
         except Exception as exc:
-            raise WorkerExecutionAborted("verified_market_job_lease_lost") from exc
+            raise WorkerExecutionAborted(f"{label}_job_lease_lost") from exc
 
     def run():
         try:
@@ -174,7 +221,7 @@ async def execute_verified_daily_market_job(
 
     threading.Thread(
         target=run,
-        name="verified-daily-market-job",
+        name=f"{label}-job",
         daemon=True,
     ).start()
     heartbeat = asyncio.create_task(renew())
@@ -185,13 +232,15 @@ async def execute_verified_daily_market_job(
             return_when=asyncio.FIRST_COMPLETED,
         )
         if heartbeat in done or not done:
-            raise WorkerExecutionAborted(
-                "verified_market_execution_deadline_or_lease_lost"
-            )
+            raise WorkerExecutionAborted(f"{label}_execution_deadline_or_lease_lost")
         publication = work.result()
-        result_ref = str(getattr(publication, "result_ref", "") or "").strip()
-        if not result_ref.startswith("dataset:sha256:"):
-            raise RuntimeError("verified_market_result_ref_invalid")
+        result_ref = str(
+            publication
+            if isinstance(publication, str)
+            else getattr(publication, "result_ref", "") or ""
+        ).strip()
+        if not result_ref.startswith(result_prefix):
+            raise RuntimeError(f"{label}_result_ref_invalid")
         _record_source_resolution(
             source_resolution_recorder,
             job,
@@ -284,7 +333,7 @@ async def run_data_worker(config) -> None:
                         logger.exception("Calendar job lease or completion failed")
 
             try:
-                plan = enqueue_latest_verified_daily_market_jobs(
+                plan = enqueue_latest_daily_market_collection_jobs(
                     db,
                     config,
                     store,
@@ -292,12 +341,26 @@ async def run_data_worker(config) -> None:
                 )
                 if plan.planned_count:
                     logger.info(
-                        "Planned verified daily market jobs date=%s count=%d",
+                        "Planned daily market collection jobs date=%s count=%d",
                         plan.trade_date.isoformat() if plan.trade_date else "none",
                         plan.planned_count,
                     )
             except Exception:
-                logger.exception("Verified daily market job planning failed")
+                logger.exception("Daily market collection job planning failed")
+
+            collection_job = store.claim(DAILY_MARKET_COLLECTION_JOB, owner, now=now)
+            if collection_job:
+                service = DailyMarketCollectionService(
+                    db.path.resolve().parent / "research", config
+                )
+                try:
+                    await execute_daily_market_collection_job(
+                        store, collection_job, service
+                    )
+                except WorkerExecutionAborted:
+                    raise
+                except Exception:
+                    logger.exception("Daily market collection job failed")
 
             market_job = store.claim(VERIFIED_DAILY_MARKET_JOB, owner, now=now)
             if market_job:
