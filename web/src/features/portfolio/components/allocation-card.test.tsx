@@ -84,4 +84,25 @@ test('presents canonical cash and securities as account composition', () => {
   expect(
     within(table).queryByRole('columnheader', { name: '市值' }),
   ).toBeNull();
+
+  const allocationBar = screen.getByTestId('portfolio-allocation-bar');
+  expect(allocationBar).toBeTruthy();
+  expect(screen.getByTestId('allocation-bar-segment-cash')).toBeTruthy();
+  expect(screen.getByTestId('allocation-bar-segment-fund')).toBeTruthy();
+  expect(screen.getByTestId('allocation-legend-cash')).toBeTruthy();
+  expect(screen.getByTestId('allocation-legend-fund')).toBeTruthy();
+});
+
+test('renders empty state when allocation items list is empty', () => {
+  render(
+    <PreferencesProvider>
+      <AllocationCard items={[]} />
+    </PreferencesProvider>,
+  );
+
+  expect(screen.queryByTestId('portfolio-allocation-bar')).toBeNull();
+  expect(screen.queryByRole('table')).toBeNull();
+  expect(
+    screen.getByText('当前筛选范围下还没有可展示的账户资产。'),
+  ).toBeTruthy();
 });
