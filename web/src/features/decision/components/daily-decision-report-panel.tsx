@@ -370,7 +370,7 @@ export function DailyDecisionReportPanel({ locale }: { locale: 'zh' | 'en' }) {
               {labels.partial}
             </p>
           ) : null}
-          <div className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
+          <div className="mt-3 max-h-[28rem] divide-y divide-[var(--app-divider)] overflow-y-auto border-y border-[var(--app-divider)] pr-1">
             {reportsQuery.data.reports.map((report) => {
               const expanded = expandedDate === report.report_date;
               const detail =
