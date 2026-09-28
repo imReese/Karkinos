@@ -14,6 +14,17 @@ import pandas as pd
 
 from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.market.contracts import DailyBarCapability, MarketDataProviderDescriptor
+from data.providers.eastmoney import (
+    fetch_eastmoney_realtime_quote_via_tushare,
+)
+from data.providers.tushare import (
+    fetch_tushare_pro_daily_range,
+    fetch_tushare_pro_fund_nav,
+    fetch_tushare_pro_market_daily,
+    fetch_tushare_pro_stock_basic,
+    normalize_tushare_daily_units,
+    tushare_pro_client,
+)
 from data.source import DataSource, normalize_provider_quote
 
 logger = logging.getLogger(__name__)
@@ -43,9 +54,9 @@ def _clean_stock_master_text(value: object) -> str | None:
 
 
 class TushareSource(DataSource):
-    """Tushare 数据源适配器。
+    """TuShare Pro data with legacy Eastmoney realtime quote dispatch.
 
-    需要 Tushare token，通过环境变量 TUSHARE_TOKEN 或构造参数传入。
+    TuShare Pro requests use the token supplied by configuration or the caller.
     """
 
     @property
@@ -61,11 +72,7 @@ class TushareSource(DataSource):
         self._realtime_timeout_seconds = max(float(realtime_timeout_seconds), 0.001)
 
     def _get_pro(self):
-        import tushare as ts
-
-        if self._token:
-            return ts.pro_api(self._token)
-        return ts.pro_api()
+        return tushare_pro_client(self._token)
 
     def supports_bars(
         self,
@@ -90,7 +97,8 @@ class TushareSource(DataSource):
             )
 
         if frequency == BarFrequency.DAILY:
-            df = pro.daily(
+            df = fetch_tushare_pro_daily_range(
+                pro,
                 ts_code=self._stock_ts_code(symbol),
                 start_date=start.strftime("%Y%m%d"),
                 end_date=end.strftime("%Y%m%d"),
@@ -109,7 +117,9 @@ class TushareSource(DataSource):
             normalized_date = datetime.strptime(str(trade_date), "%Y-%m-%d")
         except (TypeError, ValueError) as exc:
             raise ValueError("tushare_market_daily_trade_date_invalid") from exc
-        frame = self._get_pro().daily(trade_date=normalized_date.strftime("%Y%m%d"))
+        frame = fetch_tushare_pro_market_daily(
+            self._get_pro(), trade_date=normalized_date.strftime("%Y%m%d")
+        )
         if frame is None or frame.empty or "ts_code" not in frame.columns:
             raise ValueError("tushare_market_daily_result_empty")
         normalized = self._normalize_bars(frame)
@@ -129,11 +139,10 @@ class TushareSource(DataSource):
         symbol: Symbol,
         asset_class: AssetClass = AssetClass.STOCK,
     ) -> dict | None:
-        """Fetch the latest A-share quote from TuShare.
+        """Fetch the latest A-share quote through the legacy TuShare source.
 
-        TuShare's realtime quote endpoint is preferred for current prices. When
-        it returns no row, fall back to the latest daily bar so non-trading
-        periods still materialize an authoritative local snapshot.
+        Eastmoney realtime quotes via the TuShare SDK are preferred for current
+        prices. When unavailable, fall back to the latest TuShare Pro daily bar.
         """
         if asset_class == AssetClass.STOCK:
             ts_code = self._stock_ts_code(symbol)
@@ -170,7 +179,7 @@ class TushareSource(DataSource):
     def list_symbol_metadata(self) -> list[dict[str, object]]:
         """Return codes and names from the same TuShare stock-master response."""
         pro = self._get_pro()
-        df = pro.stock_basic(exchange="", list_status="L")
+        df = fetch_tushare_pro_stock_basic(pro)
         rows: list[dict[str, object]] = []
         for _, row in df.iterrows():
             provider_symbol = _clean_stock_master_text(row.get("ts_code"))
@@ -238,64 +247,14 @@ class TushareSource(DataSource):
         return None if quote is None else quote.to_payload()
 
     def _fetch_realtime_quote(self, ts_code: str) -> dict | None:
-        import tushare as ts
-
-        df = None
-        try:
-            from tushare.stock import rtq
-
-            df = rtq.get_realtime_quotes_dc(ts_code)
-        except Exception:
-            realtime_quote = getattr(ts, "realtime_quote", None)
-            if not callable(realtime_quote):
-                return None
-            try:
-                df = realtime_quote(ts_code=ts_code, src="dc")
-            except Exception:
-                return None
-        if df is None or df.empty:
-            return None
-
-        row = df.iloc[0].to_dict()
-        price = self._row_float(row, "PRICE", "price")
-        if price is None or price <= 0:
-            return None
-
-        previous_close = self._row_float(row, "PRE_CLOSE", "pre_close")
-        change = self._row_float(row, "CHANGE", "change")
-        if change is None and previous_close not in {None, 0}:
-            change = price - float(previous_close)
-        change_percent = self._row_float(row, "PCT_CHG", "pct_chg")
-        if change_percent is None and previous_close not in {None, 0}:
-            change_percent = (price - float(previous_close)) / float(previous_close)
-        elif change_percent is not None:
-            change_percent = change_percent / 100
-
-        trade_date = self._format_trade_date(self._row_value(row, "DATE", "date"))
-        timestamp = self._format_quote_timestamp(
-            trade_date, self._row_value(row, "TIME", "time")
-        )
-        # DATE identifies the current quote session, not the session that owns
-        # PRE_CLOSE.  Leave that date unclaimed until calendar-backed evidence
-        # is available so ingestion cannot persist yesterday's close as today.
-        return {
-            "price": price,
-            "volume": self._row_float(row, "VOLUME", "volume", "VOL", "vol"),
-            "turnover": self._row_float(row, "AMOUNT", "amount"),
-            "timestamp": timestamp or trade_date,
-            "source": "tushare",
-            "quote_source": "tushare_realtime_quote",
-            "display_name": self._row_str(row, "NAME", "name"),
-            "previous_close": previous_close,
-            "change": change,
-            "change_percent": change_percent,
-        }
+        return fetch_eastmoney_realtime_quote_via_tushare(ts_code)
 
     def _fetch_daily_latest(self, ts_code: str) -> dict | None:
         pro = self._get_pro()
         end = datetime.now()
         start = end - timedelta(days=14)
-        df = pro.daily(
+        df = fetch_tushare_pro_daily_range(
+            pro,
             ts_code=ts_code,
             start_date=start.strftime("%Y%m%d"),
             end_date=end.strftime("%Y%m%d"),
@@ -324,7 +283,8 @@ class TushareSource(DataSource):
         pro = self._get_pro()
         end = datetime.now()
         start = end - timedelta(days=30)
-        df = pro.fund_nav(
+        df = fetch_tushare_pro_fund_nav(
+            pro,
             ts_code=ts_code,
             start_date=start.strftime("%Y%m%d"),
             end_date=end.strftime("%Y%m%d"),
@@ -410,13 +370,6 @@ class TushareSource(DataSource):
         except (TypeError, ValueError):
             return None
 
-    @classmethod
-    def _row_str(cls, row: dict[str, Any], *names: str) -> str | None:
-        value = cls._row_value(row, *names)
-        if value in {None, ""}:
-            return None
-        return str(value)
-
     @staticmethod
     def _optional_percent(value: float | None) -> float | None:
         if value is None:
@@ -431,17 +384,6 @@ class TushareSource(DataSource):
         if len(raw) == 8 and raw.isdigit():
             return f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
         return raw
-
-    @staticmethod
-    def _format_quote_timestamp(trade_date: str | None, time_value: Any) -> str | None:
-        if not trade_date:
-            return None
-        if time_value in {None, ""}:
-            return trade_date
-        formatted_time = str(time_value).strip()
-        if not formatted_time:
-            return trade_date
-        return f"{trade_date}T{formatted_time}"
 
     @staticmethod
     def _normalize_bars(df: pd.DataFrame) -> pd.DataFrame:
@@ -459,7 +401,5 @@ class TushareSource(DataSource):
         if "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"])
         # daily reports lots and thousand CNY; all consumers use shares and CNY.
-        from data.providers.tushare_daily import normalize_tushare_daily_units
-
         df = normalize_tushare_daily_units(df)
         return df

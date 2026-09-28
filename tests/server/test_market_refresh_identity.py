@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from core.types import AssetClass, Symbol
+from data.legacy_sources.tushare import TushareSource
 from domain.instrument import make_etf
 from server.db import AppDatabase
 from server.scheduler_loop import runtime_quotes_from_persisted
-from server.services import market_refresh
+from server.services import market_refresh, market_refresh_provider
 from server.services.market_views.health_inputs import (
     extract_runtime_portfolio,
     find_asset_config,
@@ -59,6 +61,80 @@ def test_etf_cache_lookup_never_accepts_legacy_fund_observation() -> None:
         )
         is None
     )
+
+
+def test_eastmoney_realtime_upstream_survives_quote_ingestion_and_event(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    source = TushareSource(token="fixture-token")
+    monkeypatch.setattr(
+        source,
+        "_fetch_realtime_quote_with_timeout",
+        lambda ts_code: {
+            "price": 10.5,
+            "timestamp": "2026-01-12T11:22:00+08:00",
+            "source": "tushare",
+            "quote_source": "tushare_realtime_quote",
+            "metadata": {
+                "upstream_group": "eastmoney",
+                "transport_sdk": "tushare",
+                "provider_internal_note": "discarded",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        market_refresh_provider,
+        "_quote_sources",
+        lambda **kwargs: {"tushare": source},
+    )
+    state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600001", "instrument_type": "stock"}],
+            data_source="tushare",
+            market_data_source_policy=None,
+        ),
+        db=db,
+        scheduler=None,
+    )
+
+    payload = market_refresh_provider.load_provider_quote_payload(
+        state,
+        "600001",
+        AssetClass.STOCK,
+        fetch_with_timeout=lambda source, symbol, asset_class, timeout_seconds: (
+            source.fetch_latest(Symbol(symbol), asset_class)
+        ),
+        provider_timeout_seconds=2.0,
+        index_timeout_seconds=2.0,
+    )
+
+    assert payload is not None
+    assert payload["metadata"] == {
+        "upstream_group": "eastmoney",
+        "transport_sdk": "tushare",
+    }
+    market_refresh.persist_latest_snapshot(state, "600001", payload)
+    latest = db.get_latest_quote_sync("600001", "stock")
+    assert latest is not None
+    assert latest["provider_name"] == "tushare"
+    assert latest["quote_source"] == "tushare_realtime_quote"
+    stored_metadata = json.loads(latest["metadata_json"])
+    assert stored_metadata["upstream_group"] == "eastmoney"
+    assert stored_metadata["transport_sdk"] == "tushare"
+    assert "provider_internal_note" not in stored_metadata
+    events = db.list_events_sync(
+        event_type="market.quote.snapshot.recorded",
+        entity_id="600001",
+    )
+    assert len(events) == 1
+    event_payload = json.loads(events[0]["payload_json"])
+    assert event_payload["provider_name"] == "tushare"
+    assert event_payload["quote_source"] == "tushare_realtime_quote"
+    assert event_payload["metadata"]["upstream_group"] == "eastmoney"
+    assert event_payload["metadata"]["transport_sdk"] == "tushare"
 
 
 def test_manual_etf_refresh_persists_and_publishes_canonical_identity(

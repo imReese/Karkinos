@@ -9,7 +9,7 @@ import pytest
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import DailyBarProvider, DailyBarRequest
-from data.providers.baostock_daily import (
+from data.providers.baostock import (
     BAOSTOCK_DAILY_BAR_DESCRIPTOR,
     BaoStockDailyBarError,
     BaoStockDailyBarProvider,

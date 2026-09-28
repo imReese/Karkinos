@@ -31,11 +31,11 @@ from data.market.quality_evidence import read_market_quality_evidence
 from data.market.serving import MarketServingStore
 from data.market.verification_evidence import read_market_verification_evidence
 from data.provider_registry import ProviderRegistration, ProviderRegistry
-from data.providers.akshare_daily import AKSHARE_DAILY_BAR_DESCRIPTOR
-from data.providers.akshare_tencent_daily import (
+from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
+from data.providers.eastmoney import AKSHARE_DAILY_BAR_DESCRIPTOR
+from data.providers.tencent import (
     AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR,
 )
-from data.providers.baostock_daily import BAOSTOCK_DAILY_BAR_DESCRIPTOR
 from data.storage.objects import ContentAddressedObjectStore
 from server.db import AppDatabase
 from server.dependencies import AppState, AppStateContextMiddleware

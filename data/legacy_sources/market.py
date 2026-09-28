@@ -8,12 +8,16 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
+from data.legacy_sources.funds import OpenEndFundMixin
 from data.market.contracts import DailyBarCapability, MarketDataProviderDescriptor
-from data.providers.akshare_open_end_funds import OpenEndFundMixin
-from data.providers.akshare_support import CHINA_MARKET_TZ as _CHINA_MARKET_TZ
-from data.providers.akshare_support import previous_weekday as _previous_weekday
-from data.providers.akshare_support import provider_network_env as _provider_network_env
-from data.providers.akshare_support import row_float as _row_float
+from data.providers import eastmoney as eastmoney_upstream
+from data.providers import sge as sge_upstream
+from data.providers import sina as sina_upstream
+from data.providers import tencent as tencent_upstream
+from data.providers.akshare_sdk import CHINA_MARKET_TZ as _CHINA_MARKET_TZ
+from data.providers.akshare_sdk import call_with_retry as _retry_provider_call
+from data.providers.akshare_sdk import previous_weekday as _previous_weekday
+from data.providers.akshare_sdk import row_float as _row_float
 from data.source import DataSource, normalize_provider_quote
 
 logger = logging.getLogger(__name__)
@@ -114,6 +118,18 @@ _HIST_CONFIG: dict[AssetClass, tuple[str, dict, bool]] = {
     ),
 }
 
+_QUOTE_UPSTREAM: dict[str, tuple[str, str | None]] = {
+    "akshare_stock_bid_ask": ("eastmoney", "akshare"),
+    "akshare_fund_etf_spot": ("eastmoney", "akshare"),
+    "akshare_sge_spot": ("sge", "akshare"),
+    "akshare_bond_spot": ("sina", "akshare"),
+    "akshare_index_daily_tx": ("tencent", "akshare"),
+    "akshare_index_spot_em": ("eastmoney", "akshare"),
+    "akshare_index_spot_sina": ("sina", "akshare"),
+    "eastmoney_fund_page": ("eastmoney", None),
+    "sina_fund_estimate": ("sina", None),
+}
+
 
 class AKShareSource(OpenEndFundMixin, DataSource):
     """AKShare 多资产数据源适配器。
@@ -205,31 +221,17 @@ class AKShareSource(OpenEndFundMixin, DataSource):
         **kwargs,
     ):
         """带重试的 AKShare API 调用。"""
-        import time
-
-        retries = self._MAX_RETRIES if max_retries is None else max(int(max_retries), 1)
-        retry_delay = (
-            self._RETRY_DELAY
-            if retry_delay_seconds is None
-            else max(float(retry_delay_seconds), 0.0)
+        return _retry_provider_call(
+            func,
+            max_retries=self._MAX_RETRIES if max_retries is None else max_retries,
+            retry_delay_seconds=(
+                self._RETRY_DELAY
+                if retry_delay_seconds is None
+                else retry_delay_seconds
+            ),
+            logger=logger,
+            **kwargs,
         )
-        last_error = None
-        for attempt in range(retries):
-            try:
-                with _provider_network_env():
-                    return func(**kwargs)
-            except Exception as e:
-                last_error = e
-                if attempt < retries - 1:
-                    logger.warning(
-                        "AKShare 调用失败 (第%d次), %.3fs 后重试: %s",
-                        attempt + 1,
-                        retry_delay,
-                        e,
-                    )
-                    if retry_delay:
-                        time.sleep(retry_delay)
-        raise last_error
 
     def fetch_bars(
         self,
@@ -259,7 +261,6 @@ class AKShareSource(OpenEndFundMixin, DataSource):
             )
 
         func_name, col_map, has_volume = config
-        func = getattr(ak, func_name)
 
         # A股/ETF/指数支持日期范围参数；黄金/债券需全量拉取后过滤
         if asset_class in (AssetClass.STOCK, AssetClass.FUND, AssetClass.INDEX):
@@ -267,26 +268,32 @@ class AKShareSource(OpenEndFundMixin, DataSource):
                 symbol
             ):
                 df = self._fetch_open_end_fund_bars(symbol, start, end)
-            elif asset_class == AssetClass.INDEX:
-                df = self._call_with_retry(
-                    func,
-                    symbol=str(symbol),
-                    period="daily",
-                    start_date=start.strftime("%Y%m%d"),
-                    end_date=end.strftime("%Y%m%d"),
-                )
             else:
-                df = self._call_with_retry(
-                    func,
+                df = eastmoney_upstream.legacy_daily_bars(
+                    ak,
+                    self._call_with_retry,
+                    endpoint=func_name,
                     symbol=str(symbol),
-                    period="daily",
                     start_date=start.strftime("%Y%m%d"),
                     end_date=end.strftime("%Y%m%d"),
-                    adjust="" if asset_class == AssetClass.STOCK else "qfq",
+                    adjust=(
+                        None
+                        if asset_class == AssetClass.INDEX
+                        else ""
+                        if asset_class == AssetClass.STOCK
+                        else "qfq"
+                    ),
                 )
         else:
             # 黄金/债券：全量拉取
-            df = self._call_with_retry(func, symbol=str(symbol))
+            if asset_class == AssetClass.GOLD:
+                df = sge_upstream.legacy_gold_daily(
+                    ak, self._call_with_retry, symbol=str(symbol)
+                )
+            else:
+                df = sina_upstream.legacy_bond_daily(
+                    ak, self._call_with_retry, symbol=str(symbol)
+                )
 
         if not {"timestamp", "open", "high", "low", "close", "volume"}.issubset(
             df.columns
@@ -294,7 +301,7 @@ class AKShareSource(OpenEndFundMixin, DataSource):
             df = self._normalize_bars(df, col_map, has_volume)
 
         if asset_class == AssetClass.STOCK:
-            from data.providers.akshare_daily import normalize_akshare_stock_daily_units
+            from data.providers.eastmoney import normalize_akshare_stock_daily_units
 
             df = normalize_akshare_stock_daily_units(df)
 
@@ -317,15 +324,17 @@ class AKShareSource(OpenEndFundMixin, DataSource):
         asset_class: AssetClass,
     ) -> pd.DataFrame:
         """获取分钟线数据（仅 A股/ETF）。"""
-        if asset_class == AssetClass.STOCK:
-            func = ak.stock_zh_a_hist_min_em
-        elif asset_class == AssetClass.FUND:
-            func = ak.fund_etf_hist_min_em
-        else:
+        if asset_class not in (AssetClass.STOCK, AssetClass.FUND):
             raise NotImplementedError(f"Minute bars not supported for {asset_class}")
 
         period = "1" if frequency == BarFrequency.MIN_1 else "5"
-        df = self._call_with_retry(func, symbol=str(symbol), period=period)
+        df = eastmoney_upstream.legacy_minute_bars(
+            ak,
+            self._call_with_retry,
+            asset_class=asset_class.value,
+            symbol=str(symbol),
+            period=period,
+        )
 
         col_map = {
             "时间": "timestamp",
@@ -363,8 +372,7 @@ class AKShareSource(OpenEndFundMixin, DataSource):
         """Return codes and names from the same AKShare stock-master response."""
         import akshare as ak
 
-        with _provider_network_env():
-            df = ak.stock_zh_a_spot_em()
+        df = eastmoney_upstream.legacy_stock_master(ak)
         rows: list[dict[str, object]] = []
         for _, row in df.iterrows():
             symbol = _clean_stock_master_text(row.get("代码"))
@@ -402,12 +410,12 @@ class AKShareSource(OpenEndFundMixin, DataSource):
         )
         start_date = (completed_date - timedelta(days=14)).strftime("%Y%m%d")
         end_date = completed_date.strftime("%Y%m%d")
-        with _provider_network_env():
-            daily = ak.stock_zh_index_daily_tx(
-                symbol=provider_symbol,
-                start_date=start_date,
-                end_date=end_date,
-            )
+        daily = tencent_upstream.legacy_index_daily(
+            ak,
+            symbol=provider_symbol,
+            start_date=start_date,
+            end_date=end_date,
+        )
         if daily.empty or not {"date", "close"}.issubset(daily.columns):
             return None
         rows = daily.copy()
@@ -452,8 +460,7 @@ class AKShareSource(OpenEndFundMixin, DataSource):
         )
         provisional_sina_row = None
         try:
-            with _provider_network_env():
-                sina = ak.stock_zh_index_spot_sina()
+            sina = sina_upstream.legacy_index_spot(ak)
             rows = sina[sina["代码"].astype(str) == provider_symbol]
             if not rows.empty:
                 provisional_sina_row = rows.iloc[0]
@@ -477,8 +484,7 @@ class AKShareSource(OpenEndFundMixin, DataSource):
             "深证系列指数" if symbol_text.startswith("399") else "上证系列指数"
         )
         try:
-            with _provider_network_env():
-                eastmoney = ak.stock_zh_index_spot_em(symbol=index_series)
+            eastmoney = eastmoney_upstream.legacy_index_spot(ak, symbol=index_series)
             rows = eastmoney[eastmoney["代码"].astype(str) == symbol_text]
             if not rows.empty:
                 return rows.iloc[0], "akshare_index_spot_em"
@@ -502,10 +508,8 @@ class AKShareSource(OpenEndFundMixin, DataSource):
 
         try:
             if asset_class == AssetClass.STOCK:
-                frame = self._call_with_retry(
-                    ak.stock_bid_ask_em,
-                    symbol=str(symbol),
-                    retry_delay_seconds=0,
+                frame = eastmoney_upstream.legacy_stock_bid_ask(
+                    ak, self._call_with_retry, symbol=str(symbol)
                 )
                 observed_at = datetime.now(_CHINA_MARKET_TZ)
                 payload = self._stock_bid_ask_payload(
@@ -523,7 +527,7 @@ class AKShareSource(OpenEndFundMixin, DataSource):
                         provider_symbol=self._resolve_open_end_fund_code(symbol),
                     )
 
-                df = self._call_with_retry(ak.fund_etf_spot_em)
+                df = eastmoney_upstream.legacy_etf_spot(ak, self._call_with_retry)
                 row = df[df["代码"] == str(symbol)]
                 if row.empty:
                     return None
@@ -540,7 +544,9 @@ class AKShareSource(OpenEndFundMixin, DataSource):
                 return self._normalize_latest_quote(symbol, asset_class, payload)
 
             elif asset_class == AssetClass.GOLD:
-                df = self._call_with_retry(ak.spot_quotations_sge, symbol=str(symbol))
+                df = sge_upstream.legacy_gold_spot(
+                    ak, self._call_with_retry, symbol=str(symbol)
+                )
                 if df.empty:
                     return None
                 row = df.iloc[0]
@@ -560,7 +566,7 @@ class AKShareSource(OpenEndFundMixin, DataSource):
                 )
 
             elif asset_class == AssetClass.BOND:
-                df = self._call_with_retry(ak.bond_zh_hs_spot)
+                df = sina_upstream.legacy_bond_spot(ak, self._call_with_retry)
                 row = df[df["代码"] == str(symbol)]
                 if row.empty:
                     return None
@@ -623,6 +629,16 @@ class AKShareSource(OpenEndFundMixin, DataSource):
         payload: dict | None,
         provider_symbol: str | None = None,
     ) -> dict | None:
+        if payload is not None:
+            route = _QUOTE_UPSTREAM.get(str(payload.get("quote_source") or ""))
+            if route is not None:
+                upstream_group, transport_sdk = route
+                metadata = payload.get("metadata")
+                provenance = dict(metadata) if isinstance(metadata, dict) else {}
+                provenance["upstream_group"] = upstream_group
+                if transport_sdk is not None:
+                    provenance["transport_sdk"] = transport_sdk
+                payload = {**payload, "metadata": provenance}
         quote = normalize_provider_quote(
             symbol,
             asset_class,

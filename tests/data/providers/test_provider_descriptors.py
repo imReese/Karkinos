@@ -1,9 +1,9 @@
 """Provider identity and capability contracts for the unified data plane."""
 
 from core.types import InstrumentType
-from data.providers.akshare_source import AKSHARE_PROVIDER_DESCRIPTOR, AKShareSource
+from data.legacy_sources.market import AKSHARE_PROVIDER_DESCRIPTOR, AKShareSource
+from data.legacy_sources.tushare import TUSHARE_PROVIDER_DESCRIPTOR, TushareSource
 from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR, TdxDailyBarProvider
-from data.providers.tushare_source import TUSHARE_PROVIDER_DESCRIPTOR, TushareSource
 
 
 def test_tdx_declares_unadjusted_stock_and_etf_daily_capability() -> None:

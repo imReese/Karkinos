@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from core.types import AssetClass, BarFrequency, Symbol
-from data.providers.tushare_source import TushareSource
+from data.legacy_sources.tushare import TushareSource
 
 
 def test_tushare_bars_capability_is_stock_daily_only():
@@ -119,6 +119,21 @@ def test_tushare_fetch_bars_uses_beijing_exchange_symbol(monkeypatch):
     assert frame.iloc[0]["close"] == 10.1
 
 
+def test_tushare_legacy_pro_daily_error_propagates(monkeypatch) -> None:
+    class FakePro:
+        def daily(self, **kwargs):
+            raise RuntimeError("pro_daily_unavailable")
+
+    monkeypatch.setattr(TushareSource, "_get_pro", lambda self: FakePro())
+
+    with pytest.raises(RuntimeError, match="pro_daily_unavailable"):
+        TushareSource(token="token-1234").fetch_bars(
+            Symbol("600001"),
+            pd.Timestamp("2026-08-01").to_pydatetime(),
+            pd.Timestamp("2026-08-21").to_pydatetime(),
+        )
+
+
 def test_tushare_maps_new_beijing_92_prefix_to_bj_exchange() -> None:
     assert TushareSource._stock_ts_code(Symbol("920001")) == "920001.BJ"
 
@@ -159,6 +174,7 @@ def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):
         "change": pytest.approx(0.11),
         "change_percent": pytest.approx(0.012716763),
         "display_name": "示例能源",
+        "metadata": {"upstream_group": "eastmoney", "transport_sdk": "tushare"},
         "previous_close": 8.65,
         "price": 8.76,
         "provider_name": "tushare",
@@ -171,6 +187,50 @@ def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):
         "volume": 123456.0,
     }
     assert calls["realtime"] == ("600001.SH", "dc")
+
+
+def test_tushare_realtime_uses_eastmoney_dc_sdk_before_compat_fallback(monkeypatch):
+    calls: list[str] = []
+
+    def get_realtime_quotes_dc(ts_code):
+        calls.append(ts_code)
+        return pd.DataFrame(
+            {
+                "DATE": ["20260112"],
+                "TIME": ["09:31:00"],
+                "PRICE": [8.76],
+                "PRE_CLOSE": [8.65],
+            }
+        )
+
+    def unexpected_fallback(**kwargs):
+        raise AssertionError("Eastmoney dc SDK endpoint should be preferred")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "tushare",
+        SimpleNamespace(realtime_quote=unexpected_fallback),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "tushare.stock",
+        SimpleNamespace(
+            rtq=SimpleNamespace(get_realtime_quotes_dc=get_realtime_quotes_dc)
+        ),
+    )
+
+    result = TushareSource(token="token-1234")._fetch_realtime_quote("600001.SH")
+
+    assert calls == ["600001.SH"]
+    assert result is not None
+    assert result["price"] == 8.76
+    assert result["source"] == "tushare"
+    assert result["quote_source"] == "tushare_realtime_quote"
+    assert result["metadata"] == {
+        "upstream_group": "eastmoney",
+        "transport_sdk": "tushare",
+    }
+    assert result["timestamp"] == "2026-01-12T09:31:00"
 
 
 def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
@@ -229,6 +289,7 @@ def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
     assert result["quote_source"] == "tushare_daily"
     assert result["provider_name"] == "tushare"
     assert result["provider_symbol"] == "600002.SH"
+    assert "metadata" not in result
     assert result["symbol"] == "600002"
     assert result["asset_class"] == "stock"
     assert calls["pro_api_token"] == "token-1234"

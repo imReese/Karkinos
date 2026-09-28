@@ -9,7 +9,7 @@ import pytest
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import DailyBarProvider, DailyBarRequest
-from data.providers.tushare_daily import (
+from data.providers.tushare import (
     TUSHARE_DAILY_BAR_DESCRIPTOR,
     TushareDailyBarProvider,
     TushareDailyBarRequestError,

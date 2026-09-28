@@ -94,6 +94,16 @@ HTTP 明确提交双源任务和读取状态；普通回测只绑定已发布的
 故障切换和交叉核验分别建模：主源失败，不让核验源顶替主源并核验自己。
 新增来源须完成口径映射和适配器检查，再进入允许配置集合。
 
+`data/providers/` 按实际数据上游组织：`eastmoney.py`、`tencent.py`、`tushare.py`、
+`tdx.py`、`baostock.py`、`sina.py`、`sge.py`。AKShare 只是多个上游接口的
+SDK，`akshare_sdk.py` 仅保留通用调用辅助；旧多资产 `DataSource` 分发类在
+`data/legacy_sources/`，自身不拥有上游请求。TuShare SDK 的 `dc` 实时报价归
+东方财富模块。模块位置不改变已持久化的 provider ID、adapter_version、
+payload_format 或 Dataset 引用。新报价在 metadata 中记录实际
+`upstream_group` 和适用的 `transport_sdk`；TuShare `dc` 报价的值分别是
+`eastmoney` 和 `tushare`。原有 `provider_name`、`quote_source` 保持不变，
+供历史读取与盘后规则使用。
+
 ## 6. 数据与质量语义
 
 统一使用证券类型+代码、明确交易所映射、交易日、UTC 时刻、CNY、股/份、元。

@@ -126,6 +126,15 @@ def load_provider_quote_payload(
         "nav_date": snapshot.get("nav_date")
         or (snapshot.get("timestamp") if asset_class == AssetClass.FUND else None),
     }
+    source_metadata = snapshot.get("metadata")
+    if isinstance(source_metadata, dict):
+        provenance = {}
+        for key in ("upstream_group", "transport_sdk"):
+            value = source_metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                provenance[key] = value.strip()
+        if provenance:
+            payload["metadata"] = provenance
     display_name = snapshot.get("display_name") or snapshot.get("name")
     if display_name:
         payload["display_name"] = str(display_name)

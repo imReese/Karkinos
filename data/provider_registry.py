@@ -117,14 +117,17 @@ def build_provider_registry(
     include_tdx: bool = True,
 ) -> ProviderRegistry:
     """Build the supported local provider registry without performing I/O."""
-    from data.providers.akshare_daily import AkshareDailyBarProvider
-    from data.providers.akshare_source import AKShareSource
-    from data.providers.akshare_tencent_daily import AkshareTencentDailyBarProvider
-    from data.providers.baostock_daily import BaoStockDailyBarProvider
+    from data.legacy_sources.market import AKShareSource
+    from data.legacy_sources.tushare import TushareSource
+    from data.providers.baostock import BaoStockDailyBarProvider
+    from data.providers.eastmoney import AkshareDailyBarProvider
     from data.providers.tdx import TdxDailyBarProvider
-    from data.providers.tencent import TencentDailyBarProvider, TencentSource
-    from data.providers.tushare_daily import TushareDailyBarProvider
-    from data.providers.tushare_source import TushareSource
+    from data.providers.tencent import (
+        AkshareTencentDailyBarProvider,
+        TencentDailyBarProvider,
+        TencentSource,
+    )
+    from data.providers.tushare import TushareDailyBarProvider
 
     registrations: list[ProviderRegistration] = [
         ProviderRegistration(
