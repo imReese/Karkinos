@@ -9,15 +9,20 @@ import os
 import threading
 import uuid
 from collections.abc import Callable
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 
+from data.market.contracts import MarketDataProviderDescriptor
 from data.source_policy import (
     source_policy_for_config,
     verification_source_policy_for_config,
 )
 from server.contracts.jobs import JobRun, JobStore
 from server.db import AppDatabase
-from server.persistence.jobs import SQLiteJobStore
+from server.persistence.jobs import SQLiteJobStore, job_id_for
+from server.persistence.market_daily_call_budget import (
+    MarketDailyProviderBudgetDeferred,
+    reserve_market_daily_provider_call,
+)
 from server.persistence.runtime_controls import RuntimeControlRepository
 from server.release_activation import (
     is_release_activation_guarded,
@@ -28,12 +33,15 @@ from server.services.daily_market_collection import (
     DailyMarketCollectionFailure,
     DailyMarketCollectionJobRequest,
     DailyMarketCollectionService,
+    collection_capture_completed_at,
 )
 from server.services.market_calendar_automation import MarketCalendarAutomationService
 from server.services.market_calendar_dates import (
+    resolve_verified_closed_trading_dates,
     resolve_verified_closed_trading_dates_in_range,
 )
 from server.services.market_calendar_evidence import validate_verified_market_calendar
+from server.services.market_hours import get_shanghai_now
 from server.services.verified_daily_market_data import (
     VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
     VerifiedDailyMarketDataService,
@@ -101,6 +109,67 @@ def _require_current_daily_market_collection_job(
     )
     if blocker is not None:
         raise DailyMarketCollectionFailure(f"daily_market_collection_{blocker}")
+    if request.observation_round is not None:
+        _require_current_collection_revision(db, request)
+
+
+def _require_current_collection_revision(
+    db: AppDatabase,
+    request: DailyMarketCollectionJobRequest,
+) -> None:
+    """A queued second observation must retain its baseline and due session."""
+    now = datetime.now(timezone.utc)
+    round_value = request.observation_round
+    if round_value is None:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_revision_round_missing"
+        )
+    next_date = date.fromisoformat(round_value.rsplit(".", 1)[-1])
+    try:
+        closed = resolve_verified_closed_trading_dates(db, now, lookback_days=30)
+    except Exception as exc:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_revision_calendar_unreadable"
+        ) from exc
+    following_session = next(
+        (
+            following
+            for current, following in zip(closed, closed[1:])
+            if date.fromisoformat(current.trade_date) == request.trade_date
+            and date.fromisoformat(following.trade_date) == next_date
+        ),
+        None,
+    )
+    if following_session is None:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_revision_session_stale"
+        )
+    base_payload = DailyMarketCollectionJobRequest(
+        trade_date=request.trade_date,
+        instrument=request.instrument,
+        source_policy_id=request.source_policy_id,
+        calendar_evidence_refs=request.calendar_evidence_refs,
+    ).to_payload()
+    try:
+        base = SQLiteJobStore(db.path).get(
+            job_id_for(DAILY_MARKET_COLLECTION_JOB, base_payload)
+        )
+        if base is None or base.status != "succeeded" or not base.result_ref:
+            raise ValueError("base_job_not_succeeded")
+        completed_at = collection_capture_completed_at(
+            db.path.resolve().parent / "research",
+            request=DailyMarketCollectionJobRequest.from_payload(base_payload),
+            result_ref=base.result_ref,
+        )
+    except Exception as exc:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_revision_base_unreadable"
+        ) from exc
+    next_close = datetime.combine(next_date, time(16), get_shanghai_now(now).tzinfo)
+    if completed_at >= next_close:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_revision_base_too_late"
+        )
 
 
 def _require_current_verified_daily_market_job(
@@ -258,6 +327,7 @@ async def execute_verified_daily_market_job(
     heartbeat_interval: float = 15,
     source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
     request_validator: Callable[[], None] | None = None,
+    before_provider_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
 ) -> None:
     """Run one durable verified-market job behind lease fencing."""
     await _execute_daily_market_job(
@@ -270,6 +340,7 @@ async def execute_verified_daily_market_job(
         label="verified_market",
         source_resolution_recorder=source_resolution_recorder,
         request_validator=request_validator,
+        before_provider_fetch=before_provider_fetch,
     )
 
 
@@ -281,6 +352,7 @@ async def execute_daily_market_collection_job(
     timeout: float = 180,
     heartbeat_interval: float = 15,
     request_validator: Callable[[], None] | None = None,
+    before_provider_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
 ) -> None:
     """Persist capture and quality without granting Dataset publication."""
     await _execute_daily_market_job(
@@ -292,6 +364,7 @@ async def execute_daily_market_collection_job(
         result_prefix="quality:sha256:",
         label="daily_collection",
         request_validator=request_validator,
+        before_provider_fetch=before_provider_fetch,
     )
 
 
@@ -306,6 +379,7 @@ async def _execute_daily_market_job(
     label: str,
     source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
     request_validator: Callable[[], None] | None = None,
+    before_provider_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
 ) -> None:
 
     async def renew():
@@ -342,11 +416,11 @@ async def _execute_daily_market_job(
         try:
             if request_validator is not None:
                 request_validator()
+            kwargs: dict[str, object] = {"before_publish": before_publish}
+            if before_provider_fetch is not None:
+                kwargs["before_provider_fetch"] = before_provider_fetch
             result, error = (
-                service.run(
-                    job.payload,
-                    before_publish=before_publish,
-                ),
+                service.run(job.payload, **kwargs),
                 None,
             )
         except Exception as exc:
@@ -369,6 +443,10 @@ async def _execute_daily_market_job(
             return_when=asyncio.FIRST_COMPLETED,
         )
         if heartbeat in done or not done:
+            if work in done:
+                simultaneous_error = work.exception()
+                if isinstance(simultaneous_error, MarketDailyProviderBudgetDeferred):
+                    raise simultaneous_error
             raise WorkerExecutionAborted(f"{label}_execution_deadline_or_lease_lost")
         publication = work.result()
         result_ref = str(
@@ -392,6 +470,9 @@ async def _execute_daily_market_job(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
+        if isinstance(exc, MarketDailyProviderBudgetDeferred):
+            # The reservation transaction already requeued this leased job.
+            return
         _record_source_resolution(
             source_resolution_recorder,
             job,
@@ -501,6 +582,20 @@ async def run_data_worker(config) -> None:
                 service = DailyMarketCollectionService(
                     db.path.resolve().parent / "research", config
                 )
+
+                def before_collection_fetch(
+                    descriptor: MarketDataProviderDescriptor,
+                ) -> None:
+                    _require_current_daily_market_collection_job(
+                        db, config, collection_job
+                    )
+                    reserve_market_daily_provider_call(
+                        db.path,
+                        collection_job.lease,
+                        descriptor,
+                        now=datetime.now(timezone.utc),
+                    )
+
                 try:
                     await execute_daily_market_collection_job(
                         store,
@@ -511,6 +606,7 @@ async def run_data_worker(config) -> None:
                                 db, config, collection_job
                             )
                         ),
+                        before_provider_fetch=before_collection_fetch,
                     )
                 except WorkerExecutionAborted:
                     raise
@@ -523,6 +619,18 @@ async def run_data_worker(config) -> None:
                     db.path.resolve().parent / "research",
                     config,
                 )
+
+                def before_verified_fetch(
+                    descriptor: MarketDataProviderDescriptor,
+                ) -> None:
+                    _require_current_verified_daily_market_job(db, config, market_job)
+                    reserve_market_daily_provider_call(
+                        db.path,
+                        market_job.lease,
+                        descriptor,
+                        now=datetime.now(timezone.utc),
+                    )
+
                 try:
                     await execute_verified_daily_market_job(
                         store,
@@ -533,6 +641,7 @@ async def run_data_worker(config) -> None:
                                 db, config, market_job
                             )
                         ),
+                        before_provider_fetch=before_verified_fetch,
                         source_resolution_recorder=lambda payload: db.append_event_sync(
                             event_type=VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
                             timestamp=datetime.now(timezone.utc).isoformat(),

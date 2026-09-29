@@ -33,11 +33,16 @@ from data.providers.tushare import TUSHARE_DAILY_BAR_DESCRIPTOR
 from data.source_policy import FREE_CN_RESEARCH_V1
 from data.storage.objects import ContentAddressedObjectStore
 from server.contracts.http.backtest import StrategySignalPreviewRequest
+from server.contracts.http.strategy_models import BacktestRequest
 from server.db import AppDatabase
 from server.dependencies import AppState, AppStateContextMiddleware
 from server.http.backtest_endpoints.datasets import create_router
 from server.persistence.jobs import SQLiteJobStore
-from server.services.backtest_views.strategy_inputs import load_signal_preview_bars
+from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+from server.services.backtest_views.strategy_inputs import (
+    load_signal_preview_bars,
+    run_strategy_signal_preview,
+)
 from server.services.market_calendar_evidence import validate_verified_market_calendar
 from server.services.research_datasets import (
     ResearchDatasetError,
@@ -90,9 +95,9 @@ def _db(tmp_path: Path):
     )
 
 
-def _side(store, day: date, descriptor):
+def _side(store, day: date, descriptor, *, available_at_event: bool = False):
     completed = datetime(day.year, day.month, day.day, 8, tzinfo=timezone.utc)
-    checked = completed + timedelta(minutes=5)
+    checked = completed if available_at_event else completed + timedelta(minutes=5)
     capture = capture_provider_payload(
         store,
         provider=descriptor.provider,
@@ -108,7 +113,9 @@ def _side(store, day: date, descriptor):
     bar = normalize_daily_bar(
         instrument=STOCK,
         session_date=day,
-        event_time=completed - timedelta(hours=1),
+        event_time=(
+            completed if available_at_event else completed - timedelta(hours=1)
+        ),
         available_at=completed,
         captured_at=completed,
         open_value="10.31",
@@ -139,10 +146,20 @@ def _side(store, day: date, descriptor):
     return revision, materialization, quality
 
 
-def _verified_day(root: Path, day: date):
+def _verified_day(
+    root: Path,
+    day: date,
+    *,
+    available_at_event: bool = False,
+    verification_at_event: bool = False,
+):
     store = ContentAddressedObjectStore(root / "objects")
-    primary = _side(store, day, TDX_PROVIDER_DESCRIPTOR)
-    comparison = _side(store, day, TUSHARE_DAILY_BAR_DESCRIPTOR)
+    primary = _side(
+        store, day, TDX_PROVIDER_DESCRIPTOR, available_at_event=available_at_event
+    )
+    comparison = _side(
+        store, day, TUSHARE_DAILY_BAR_DESCRIPTOR, available_at_event=available_at_event
+    )
     verification = publish_market_verification_evidence(
         store,
         report=reconcile_daily_bar_revisions(
@@ -158,7 +175,14 @@ def _verified_day(root: Path, day: date):
         primary_descriptor=TDX_PROVIDER_DESCRIPTOR,
         comparison_descriptor=TUSHARE_DAILY_BAR_DESCRIPTOR,
         policy=STRICT_DAILY_RECONCILIATION,
-        checked_at=datetime(day.year, day.month, day.day, 8, 5, tzinfo=timezone.utc),
+        checked_at=datetime(
+            day.year,
+            day.month,
+            day.day,
+            8,
+            0 if verification_at_event else 5,
+            tzinfo=timezone.utc,
+        ),
     )
     snapshot = DailyBarDatasetSnapshot(
         start_date=day,
@@ -202,6 +226,81 @@ def _finished_job(db, day: date, dataset_id: str) -> str:
 
 def _request() -> DailyBarRequest:
     return DailyBarRequest((STOCK,), DAYS[0], DAYS[-1])
+
+
+@pytest.mark.parametrize(
+    ("available_at_event", "verification_at_event", "late_bars", "late_checks"),
+    (
+        (False, False, 1, 1),
+        (True, False, 0, 1),
+        (True, True, 0, 0),
+    ),
+)
+def test_v2_decision_availability_checks_bound_verification_time(
+    tmp_path: Path,
+    available_at_event: bool,
+    verification_at_event: bool,
+    late_bars: int,
+    late_checks: int,
+) -> None:
+    ref = _verified_day(
+        tmp_path,
+        DAYS[0],
+        available_at_event=available_at_event,
+        verification_at_event=verification_at_event,
+    )
+    _, _, binding = load_dataset_backtest_inputs(
+        tmp_path,
+        BacktestRequest(
+            dataset_id=ref.dataset_id,
+            start_date=DAYS[0].isoformat(),
+            end_date=DAYS[0].isoformat(),
+            assets=[{"symbol": STOCK.symbol, "asset_class": "stock"}],
+        ),
+    )
+    availability = binding["decision_availability"]
+    assert availability["checked_bar_count"] == 1
+    assert availability["late_bar_count"] == late_bars
+    assert availability["late_verification_count"] == late_checks
+    assert availability["status"] == ("blocked" if late_bars or late_checks else "pass")
+    assert (availability["first_late_bar"] is None) is (late_bars == 0)
+    assert (availability["first_late_verification"] is None) is (late_checks == 0)
+    assert binding["cross_source_verified"] is True
+    assert binding["point_in_time_verified"] is False
+
+
+def test_v2_decision_audit_fails_closed_on_unreadable_bound_verification(
+    tmp_path: Path,
+) -> None:
+    ref = _verified_day(tmp_path, DAYS[0])
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    verification_id = (
+        read_daily_bar_dataset(store, ref).snapshot.partitions[0].verification_id
+    )
+    assert verification_id is not None
+    verification_ref = store.resolve_ref(verification_id)
+    path = (
+        tmp_path
+        / "objects"
+        / "sha256"
+        / verification_ref.digest[:2]
+        / verification_ref.digest[2:]
+    )
+    path.chmod(0o600)
+    path.write_bytes(b"corrupted verification evidence")
+
+    with pytest.raises(
+        ResearchDatasetError, match="dataset_unreadable_no_remote_fallback"
+    ):
+        load_dataset_backtest_inputs(
+            tmp_path,
+            BacktestRequest(
+                dataset_id=ref.dataset_id,
+                start_date=DAYS[0].isoformat(),
+                end_date=DAYS[0].isoformat(),
+                assets=[{"symbol": STOCK.symbol, "asset_class": "stock"}],
+            ),
+        )
 
 
 def test_verified_interval_limits_explicit_range_to_366_natural_days(
@@ -255,22 +354,25 @@ def test_exact_successful_jobs_publish_replayable_verified_interval(
         partition.verification_id is not None
         for partition in interval.snapshot.partitions
     )
-    bars, preview_snapshot = load_signal_preview_bars(
-        StrategySignalPreviewRequest(
-            dataset_id=summary["dataset_id"],
-            symbol=STOCK.symbol,
-            asset_class="stock",
-            start_date=DAYS[0].isoformat(),
-            end_date=DAYS[-1].isoformat(),
-        ),
-        None,
-        db,
+    preview_request = StrategySignalPreviewRequest(
+        dataset_id=summary["dataset_id"],
+        symbol=STOCK.symbol,
+        asset_class="stock",
+        start_date=DAYS[0].isoformat(),
+        end_date=DAYS[-1].isoformat(),
     )
+    bars, preview_snapshot = load_signal_preview_bars(preview_request, None, db)
     assert len(bars) == len(DAYS)
     assert preview_snapshot["immutable_dataset_id"] == summary["dataset_id"]
     assert preview_snapshot["cross_source_verified"] is True
     assert preview_snapshot["point_in_time_verified"] is False
     assert preview_snapshot["price_basis"] == "unadjusted"
+    preview = run_strategy_signal_preview(preview_request, None, db)
+    assert preview["dataset_snapshot_id"] == preview_snapshot["snapshot_id"]
+    assert preview["decision_availability"]["checked_bar_count"] == len(DAYS)
+    assert preview["decision_availability"]["late_bar_count"] == len(DAYS)
+    assert preview["decision_availability"]["late_verification_count"] == len(DAYS)
+    assert preview["decision_availability"]["status"] == "blocked"
     assert (
         publish_verified_interval_dataset(root, _request(), db=db, job_ids=job_ids)[
             "dataset_id"

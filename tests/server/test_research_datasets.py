@@ -48,10 +48,11 @@ _REQUEST = DailyBarRequest(
 class _Provider:
     """仅替换外部请求；Adapter、质量评估、落盘和发布都使用真实实现。"""
 
-    def __init__(self, *, correction=False, fail_day=None):
+    def __init__(self, *, correction=False, fail_day=None, capture_at_close=False):
         self.calls = []
         self.correction = correction
         self.fail_day = fail_day
+        self.capture_at_close = capture_at_close
 
     def fetch_daily_bars(self, request):
         day = request.start_date
@@ -70,7 +71,11 @@ class _Provider:
             )
         }
         client = SimpleNamespace(get_market_data=lambda **kwargs: response)
-        instant = datetime(2026, 9, 16, 8, int(self.correction), tzinfo=timezone.utc)
+        instant = (
+            datetime(day.year, day.month, day.day, 7, tzinfo=timezone.utc)
+            if self.capture_at_close
+            else datetime(2026, 9, 16, 8, int(self.correction), tzinfo=timezone.utc)
+        )
         return TdxDailyBarProvider(client, clock=lambda: instant).fetch_daily_bars(
             request
         )
@@ -243,6 +248,58 @@ def test_calendar_is_verified_and_does_not_infer_weekdays(monkeypatch):
     assert _verified_dates(db, _DAYS[0], _DAYS[-1], config=SimpleNamespace()) == _DAYS
 
 
+def test_bound_dataset_at_event_availability_still_has_no_pit_admission(
+    tmp_path, monkeypatch
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    provider = _Provider(capture_at_close=True)
+    ref = _publish(tmp_path / "research", provider)
+    monkeypatch.setenv("KARKINOS_BACKTEST_REPORT_DIR", str(tmp_path / "reports"))
+    state = AppState()
+    state.db, state.config = db, ServerConfig()
+    app = FastAPI()
+    app.add_middleware(AppStateContextMiddleware, app_state=state)
+    app.include_router(create_router())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/backtest/run",
+            json=_backtest_request(ref).model_dump(mode="json"),
+        )
+        assert response.status_code == 200, response.text
+        result = response.json()
+        availability = result["metrics_json"]["dataset_binding"][
+            "decision_availability"
+        ]
+        assert availability["status"] == "pass"
+        assert availability["checked_bar_count"] == len(_DAYS)
+        assert availability["late_bar_count"] == 0
+        assert availability["late_verification_count"] == 0
+        assert availability["first_late_bar"] is None
+        assert availability["first_late_verification"] is None
+        assert result["metrics_json"]["dataset_snapshot"]["immutable_dataset_id"] == (
+            ref.dataset_id
+        )
+        assert (
+            result["metrics_json"]["dataset_snapshot"]["point_in_time_verified"]
+            is False
+        )
+        admission = next(
+            item
+            for item in result["research_evidence_bundle"]["analyzers"]
+            if item["name"] == "research_admission"
+        )
+        assert admission["status"] == "blocked"
+        assert admission["details"]["decision_availability"] == availability
+        assert result["research_evidence_bundle"]["gate_status"] == "blocked"
+        saved = client.get(f"/api/backtest/results/{result['id']}").json()
+        assert saved["metrics_json"]["dataset_binding"]["decision_availability"] == (
+            availability
+        )
+    assert provider.calls == list(_DAYS)
+
+
 def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
     tmp_path, monkeypatch
 ):
@@ -307,6 +364,24 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
         assert (
             result["metrics_json"]["dataset_binding"]["point_in_time_verified"] is False
         )
+        availability = result["metrics_json"]["dataset_binding"][
+            "decision_availability"
+        ]
+        assert availability["schema_version"] == (
+            "karkinos.dataset_decision_availability.v1"
+        )
+        assert availability["decision_time_basis"] == "bar_event_time"
+        assert availability["does_not_validate"] == [
+            "execution_timing",
+            "historical_universe",
+            "corporate_action_returns",
+        ]
+        assert availability["status"] == "blocked"
+        assert availability["checked_bar_count"] == len(_DAYS)
+        assert availability["late_bar_count"] == len(_DAYS)
+        assert availability["late_verification_count"] == 0
+        assert availability["first_late_bar"]["session_date"] == _DAYS[0].isoformat()
+        assert availability["first_late_verification"] is None
         assert (
             result["metrics_json"]["dataset_snapshot"]["immutable_dataset_id"]
             == dataset_id
@@ -318,8 +393,17 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
         }
         assert analyzer_statuses["data_quality"] == "pass"
         assert analyzer_statuses["research_admission"] == "blocked"
+        admission = next(
+            item
+            for item in research_evidence["analyzers"]
+            if item["name"] == "research_admission"
+        )
+        assert admission["details"]["decision_availability"] == availability
         saved = client.get(f"/api/backtest/results/{result['id']}").json()
         assert saved["config"]["dataset_id"] == dataset_id
+        assert saved["metrics_json"]["dataset_binding"]["decision_availability"] == (
+            availability
+        )
         frozen = saved["metrics_json"]["dataset_snapshot"]
         replay = verify_backtest_dataset_snapshot_replay(frozen, store_root=tmp_path)
         assert frozen["research_use"] == "exploratory_backtest"
@@ -344,6 +428,7 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
         assert preview.status_code == 200, preview.text
         preview_data = preview.json()
         assert preview_data["dataset_snapshot_id"] == frozen["snapshot_id"]
+        assert preview_data["decision_availability"] == availability
         assert preview_data["does_not_enable_execution"] is True
         assert preview_data["outputs"][0]["evidence"]["bar_count"] == len(_DAYS)
         for changes, code in (

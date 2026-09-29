@@ -40,12 +40,17 @@ from data.storage.objects import ContentAddressedObjectStore
 from server.db import AppDatabase
 from server.dependencies import AppState, AppStateContextMiddleware
 from server.persistence.jobs import SQLiteJobStore
+from server.persistence.market_daily_call_budget import (
+    BUDGET_DEFERRED_CODE,
+    reserve_market_daily_provider_call,
+)
 from server.routes import market
 from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
 from server.services.daily_market_collection import (
     DAILY_MARKET_COLLECTION_JOB,
     DailyMarketCollectionJobRequest,
     DailyMarketCollectionService,
+    collection_capture_completed_at,
 )
 from server.services.research_datasets import dataset_summary
 from server.services.verified_daily_market_data import (
@@ -739,6 +744,25 @@ def test_automatic_collection_defaults_quality_time_after_provider_capture(
     assert quality.report.checked_at >= completed_at
 
 
+def test_revision_planner_reads_attributed_base_capture_time(tmp_path, monkeypatch):
+    service = _collection_service(tmp_path, monkeypatch, _registry())
+    result_ref = service.run(_collection_payload(), checked_at=CHECKED)
+    request = DailyMarketCollectionJobRequest.from_payload(_collection_payload())
+
+    assert (
+        collection_capture_completed_at(
+            tmp_path / "research", request=request, result_ref=result_ref
+        )
+        == CAPTURED
+    )
+    with pytest.raises(ValueError, match="quality_lineage_mismatch"):
+        collection_capture_completed_at(
+            tmp_path / "research",
+            request=replace(request, instrument=ETF),
+            result_ref=result_ref,
+        )
+
+
 def test_collection_falls_back_only_when_source_unavailable(tmp_path, monkeypatch):
     calls = []
     service = _collection_service(
@@ -751,6 +775,97 @@ def test_collection_falls_back_only_when_source_unavailable(tmp_path, monkeypatc
         "quality:sha256:"
     )
     assert calls == ["baostock", "akshare_tencent"]
+
+
+def test_collection_budget_hook_runs_for_each_actual_candidate_before_io(
+    tmp_path, monkeypatch
+):
+    calls: list[str] = []
+    reserved: list[str] = []
+    service = _collection_service(
+        tmp_path,
+        monkeypatch,
+        _registry(baostock_unavailable=True, call_log=calls),
+    )
+
+    service.run(
+        _collection_payload(),
+        checked_at=CHECKED,
+        before_provider_fetch=lambda descriptor: reserved.append(
+            descriptor.upstream_group
+        ),
+    )
+
+    assert reserved == ["baostock", "tencent"]
+    assert calls == ["baostock", "akshare_tencent"]
+
+
+def test_verified_budget_hook_runs_per_source_and_blocks_before_io(
+    tmp_path, monkeypatch
+):
+    calls: list[str] = []
+    service = _service(tmp_path, monkeypatch, call_log=calls)
+
+    def exhausted(_descriptor):
+        raise RuntimeError("budget_exhausted_fixture")
+
+    with pytest.raises(RuntimeError, match="budget_exhausted_fixture"):
+        service.run(_payload(), before_provider_fetch=exhausted)
+    assert calls == []
+
+    reserved: list[str] = []
+    service.run(
+        _payload(),
+        checked_at=CHECKED,
+        before_provider_fetch=lambda descriptor: reserved.append(
+            descriptor.upstream_group
+        ),
+    )
+    assert reserved == ["baostock", "tencent"]
+    assert calls == ["baostock", "akshare_tencent"]
+
+
+@pytest.mark.asyncio
+async def test_collection_worker_defers_exhausted_budget_before_real_provider_entry(
+    tmp_path, monkeypatch
+):
+    calls: list[str] = []
+    service = _collection_service(tmp_path, monkeypatch, _registry(call_log=calls))
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    store.enqueue(DAILY_MARKET_COLLECTION_JOB, _collection_payload(), now=now)
+    job = store.claim(DAILY_MARKET_COLLECTION_JOB, "fixture", now=now)
+    assert job is not None
+    reserve_market_daily_provider_call(
+        store.path,
+        job.lease,
+        BAOSTOCK_DAILY_BAR_DESCRIPTOR,
+        now=now,
+        daily_limit=1,
+    )
+
+    await execute_daily_market_collection_job(
+        store,
+        job,
+        service,
+        heartbeat_interval=60,
+        before_provider_fetch=lambda descriptor: reserve_market_daily_provider_call(
+            store.path,
+            job.lease,
+            descriptor,
+            now=datetime.now(timezone.utc),
+            daily_limit=1,
+        ),
+    )
+
+    assert calls == []
+    persisted = store.get(job.job_id)
+    assert persisted is not None
+    assert persisted.status == "queued"
+    assert persisted.error == BUDGET_DEFERRED_CODE
+    assert persisted.attempt == 1
 
 
 def test_blocked_collection_quality_stays_visible_without_source_switch(

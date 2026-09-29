@@ -251,3 +251,8 @@ def _job_identity(kind: str, payload: dict[str, Any]) -> tuple[str, str, str]:
     fingerprint = hashlib.sha256(encoded.encode()).hexdigest()
     job_id = hashlib.sha256(f"{kind}:{fingerprint}".encode()).hexdigest()
     return job_id, fingerprint, encoded
+
+
+def job_id_for(kind: str, payload: dict[str, Any]) -> str:
+    """Derive an existing job's identity without inserting it."""
+    return _job_identity(kind, payload)[0]

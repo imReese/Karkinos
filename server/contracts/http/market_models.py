@@ -143,6 +143,19 @@ class VerifiedSourceHealthResponse(BaseModel):
     latest: VerifiedSourceLatestResolution | None = None
 
 
+class MarketDailyProviderBudgetUsage(BaseModel):
+    used: int
+    limit: int
+    remaining: int
+
+
+class MarketDailyProviderBudgetResponse(BaseModel):
+    schema_version: str = "karkinos.market_daily_provider_budget.v1"
+    scope: Literal["managed_daily_market_jobs"]
+    shanghai_date: str
+    groups: dict[str, MarketDailyProviderBudgetUsage]
+
+
 class DailyCollectionQualityReportResponse(BaseModel):
     quality_id: str
     status: Literal["pass", "degraded", "blocked"]
@@ -161,6 +174,7 @@ class DailyCollectionQualityRunResponse(BaseModel):
     trade_date: str | None = None
     instrument: dict[str, str] | None = None
     source_policy_id: str | None = None
+    observation_round: str | None = None
     job_status: Literal["queued", "running", "succeeded", "failed"]
     attempt: int
     created_at: str

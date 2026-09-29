@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -10,6 +11,7 @@ from data.market.contracts import (
     DailyBarProvider,
     DailyBarProviderUnavailableError,
     DailyBarRequest,
+    MarketDataProviderDescriptor,
 )
 from data.market.ingestion import (
     DailyBarIngestionNoData,
@@ -114,6 +116,7 @@ def ingest_cross_source_daily_bars(
     normalizer_version: str,
     reconciliation_policy: DailyBarReconciliationPolicy = STRICT_DAILY_RECONCILIATION,
     checked_at: datetime | None = None,
+    before_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
 ) -> CrossSourceDailyBarResult:
     """Capture, normalize, quality-check, reconcile, and persist two sources."""
     if not isinstance(store, ContentAddressedObjectStore):
@@ -145,6 +148,7 @@ def ingest_cross_source_daily_bars(
         quality_policy=quality_policy,
         normalizer_version=normalizer_version,
         checked_at=quality_checked_at,
+        before_fetch=before_fetch,
     )
     _validate_ingestion_identity(primary, primary_descriptor)
     primary_quality = publish_market_quality_evidence(store, primary.quality)
@@ -156,6 +160,7 @@ def ingest_cross_source_daily_bars(
         quality_policy=quality_policy,
         normalizer_version=normalizer_version,
         checked_at=quality_checked_at,
+        before_fetch=before_fetch,
     )
     _validate_ingestion_identity(comparison, comparison_descriptor)
     comparison_quality = publish_market_quality_evidence(store, comparison.quality)
@@ -212,6 +217,7 @@ def _ingest_provider(
     quality_policy: DailyBarQualityPolicy,
     normalizer_version: str,
     checked_at: datetime | None,
+    before_fetch: Callable[[MarketDataProviderDescriptor], None] | None,
 ) -> DailyBarIngestionResult:
     try:
         return ingest_daily_bars(
@@ -221,6 +227,7 @@ def _ingest_provider(
             quality_policy=quality_policy,
             normalizer_version=normalizer_version,
             checked_at=checked_at,
+            before_fetch=before_fetch,
         )
     except DailyBarIngestionNoData as exc:
         raise CrossSourceDailyBarUnavailableError(

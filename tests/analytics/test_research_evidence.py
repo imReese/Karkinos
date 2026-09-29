@@ -153,6 +153,9 @@ def test_immutable_dataset_keeps_bar_quality_distinct_from_research_admission():
     assert analyzers["research_admission"]["details"]["research_use"] == (
         "exploratory_backtest"
     )
+    assert analyzers["research_admission"]["details"]["decision_availability"] == {
+        "status": "not_evaluated"
+    }
     assert bundle["promotion_gate"]["status"] == "blocked"
     assert "Historical availability has not been verified." in bundle["limitations"]
     assert "Corporate actions are not modeled in returns." in bundle["limitations"]

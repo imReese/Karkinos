@@ -35,7 +35,7 @@ Revision 是“Provider 曾经提供过哪版市场事实”，Quality 只决定
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -46,6 +46,7 @@ from data.market.capture import (
 from data.market.contracts import (
     DailyBarProvider,
     DailyBarRequest,
+    MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
 )
 from data.market.normalize import (
@@ -127,6 +128,7 @@ def ingest_daily_bars(
     normalizer_version: str,
     checked_at: datetime | None = None,
     additional_diagnostics: Iterable[MarketQualityDiagnostic] = (),
+    before_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
 ) -> DailyBarIngestionResult:
     """执行一次完整的日线 Market Data ingestion。
 
@@ -138,6 +140,8 @@ def ingest_daily_bars(
 
     Quality BLOCKED 不抛异常，而是作为正常 ingestion 结果返回。
     """
+    if before_fetch is not None:
+        before_fetch(provider.descriptor)
     try:
         batch = provider.fetch_daily_bars(request)
     except Exception:

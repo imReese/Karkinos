@@ -9,10 +9,15 @@ from unittest.mock import Mock
 
 import pytest
 
+from core.types import InstrumentKey, InstrumentType
 from data.source_policy import CN_RESEARCH_V1, FREE_CN_RESEARCH_V1
 from server.db import AppDatabase
 from server.persistence.jobs import SQLiteJobStore
-from server.services.daily_market_collection import DailyMarketCollectionFailure
+from server.services.daily_market_collection import (
+    DailyMarketCollectionFailure,
+    DailyMarketCollectionJobRequest,
+)
+from server.services.market_calendar_dates import VerifiedClosedTradingDate
 from server.services.verified_daily_market_jobs import (
     DAILY_MARKET_COLLECTION_JOB,
     enqueue_latest_daily_market_collection_jobs,
@@ -71,6 +76,70 @@ def _claimed_collection(tmp_path):
     )
     assert job is not None
     return db, config, store, job
+
+
+@pytest.mark.asyncio
+async def test_revision_job_rechecks_next_closed_session_before_provider(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_watchlist_asset_sync(symbol="600000", instrument_type="stock")
+    config = SimpleNamespace(market_data_source_policy=CN_RESEARCH_V1.policy_id)
+    store = SQLiteJobStore(db.path)
+    instrument = InstrumentKey("600000", InstrumentType.STOCK)
+    base_request = DailyMarketCollectionJobRequest(
+        trade_date=date(2026, 9, 17),
+        instrument=instrument,
+        source_policy_id=CN_RESEARCH_V1.policy_id,
+        calendar_evidence_refs=("base-calendar",),
+    )
+    now = datetime.now(timezone.utc)
+    store.enqueue(DAILY_MARKET_COLLECTION_JOB, base_request.to_payload(), now=now)
+    base = store.claim(DAILY_MARKET_COLLECTION_JOB, "worker", now=now)
+    assert base is not None
+    store.finish(base.lease, now=now, result_ref="quality:sha256:" + "a" * 64)
+    revision_request = replace(
+        base_request,
+        observation_round="post_close.next_session.2026-09-18",
+    )
+    store.enqueue(DAILY_MARKET_COLLECTION_JOB, revision_request.to_payload(), now=now)
+    revision = store.claim(DAILY_MARKET_COLLECTION_JOB, "worker", now=now)
+    assert revision is not None
+    sessions = [
+        VerifiedClosedTradingDate("2026-09-17", ("base-calendar",)),
+        VerifiedClosedTradingDate("2026-09-18", ("next-calendar",)),
+    ]
+    monkeypatch.setattr(
+        "server.workers.data_worker._current_daily_market_calendar_blocker",
+        lambda *args: None,
+    )
+    monkeypatch.setattr(
+        "server.workers.data_worker.resolve_verified_closed_trading_dates",
+        lambda *args, **kwargs: tuple(sessions),
+    )
+    monkeypatch.setattr(
+        "server.workers.data_worker.collection_capture_completed_at",
+        lambda *args, **kwargs: datetime(2026, 9, 17, 8, tzinfo=timezone.utc),
+    )
+    _require_current_daily_market_collection_job(db, config, revision)
+
+    sessions[1] = VerifiedClosedTradingDate("2026-09-18", ("changed-calendar",))
+    _require_current_daily_market_collection_job(db, config, revision)
+    sessions[1] = VerifiedClosedTradingDate("2026-09-19", ("changed-calendar",))
+    service = Mock()
+    await execute_daily_market_collection_job(
+        store,
+        revision,
+        service,
+        request_validator=lambda: _require_current_daily_market_collection_job(
+            db, config, revision
+        ),
+    )
+    service.run.assert_not_called()
+    saved = store.get(revision.job_id)
+    assert saved is not None
+    assert saved.error == "daily_market_collection_revision_session_stale"
 
 
 @pytest.mark.asyncio

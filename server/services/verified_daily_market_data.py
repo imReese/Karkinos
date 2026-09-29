@@ -17,7 +17,7 @@ from data.dataset.resolver import (
     DailyBarDatasetResolverPolicy,
     resolve_daily_bar_dataset,
 )
-from data.market.contracts import DailyBarRequest
+from data.market.contracts import DailyBarRequest, MarketDataProviderDescriptor
 from data.market.cross_source import (
     CrossSourceDailyBarResult,
     CrossSourceDailyBarUnavailableError,
@@ -255,6 +255,8 @@ class VerifiedDailyMarketDataService:
         *,
         checked_at: datetime | None = None,
         before_publish: Callable[[], None] | None = None,
+        before_provider_fetch: Callable[[MarketDataProviderDescriptor], None]
+        | None = None,
     ) -> VerifiedDailyMarketPublication:
         request = VerifiedDailyMarketJobRequest.from_payload(payload)
         checked_at = _utc_now(checked_at) if checked_at is not None else None
@@ -294,6 +296,7 @@ class VerifiedDailyMarketDataService:
                     normalizer_version=_NORMALIZER_VERSION,
                     reconciliation_policy=pair.reconciliation_policy,
                     checked_at=checked_at,
+                    before_fetch=before_provider_fetch,
                 )
             except CrossSourceDailyBarUnavailableError as exc:
                 unavailable_providers.add(exc.provider)
