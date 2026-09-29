@@ -9,6 +9,7 @@ import {
   MarketInstrumentWorkspace,
   MarketInstrumentWorkspaceLoading,
 } from '../components/market-instrument-workspace';
+import { MarketBenchmarkRibbon } from '../components/market-benchmark-ribbon';
 import type { MarketPageController } from './market-page-controller';
 import { MarketDataEvidenceWorkspace } from './market-data-evidence-workspace';
 import { MarketResearchNotesWorkspace } from './market-research-notes-workspace';
@@ -81,6 +82,7 @@ function MarketResolvedWorkspace({
 }) {
   return (
     <div className="space-y-4 sm:space-y-5">
+      <MarketBenchmarkRibbon controller={controller} />
       <MarketInstrumentSelection controller={controller} />
       <MarketResearchNotesWorkspace controller={controller} />
       <MarketHoldingEvidenceReview controller={controller} />

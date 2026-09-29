@@ -101,10 +101,14 @@ export function PriceStructureLegend({
   model,
   showMovingAverages = true,
   onToggleMovingAverages,
+  visiblePeriods = [5, 10, 20, 60],
+  onTogglePeriod,
 }: {
   model: PriceStructureChartModel;
   showMovingAverages?: boolean;
   onToggleMovingAverages?: () => void;
+  visiblePeriods?: number[];
+  onTogglePeriod?: (period: number) => void;
 }) {
   const { chartType, maSeries, plottedMarkers, plottedReferenceLines } = model;
   const hasCandlestick = chartType === 'candlestick';
@@ -131,19 +135,50 @@ export function PriceStructureLegend({
         </button>
       ) : null}
       {hasCandlestick && showMovingAverages
-        ? maSeries.map((s) => (
-            <span
-              key={s.label}
-              style={{ color: s.color }}
-              className="flex items-center gap-1 font-mono"
-            >
+        ? maSeries.map((s) => {
+            const isPeriodActive = visiblePeriods.includes(s.period);
+            if (onTogglePeriod) {
+              return (
+                <button
+                  key={s.label}
+                  type="button"
+                  data-testid={`chart-ma-pill-${s.period}`}
+                  aria-pressed={isPeriodActive}
+                  onClick={() => onTogglePeriod(s.period)}
+                  aria-label={`Toggle ${s.label}`}
+                  className={`app-type-micro inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono font-medium transition-colors ${
+                    isPeriodActive
+                      ? 'border-current bg-[color-mix(in_srgb,var(--app-surface-raised)_70%,transparent)]'
+                      : 'border-[color-mix(in_srgb,var(--app-border)_40%,transparent)] text-[var(--app-muted)] opacity-50 line-through'
+                  }`}
+                  style={{ color: isPeriodActive ? s.color : undefined }}
+                >
+                  <span
+                    className="inline-block h-1.5 w-1.5 rounded-full"
+                    style={{
+                      backgroundColor: isPeriodActive
+                        ? s.color
+                        : 'var(--app-muted)',
+                    }}
+                  />
+                  {s.label}
+                </button>
+              );
+            }
+            return (
               <span
-                className="inline-block h-1 w-2.5 rounded-full"
-                style={{ backgroundColor: s.color }}
-              />
-              {s.label}
-            </span>
-          ))
+                key={s.label}
+                style={{ color: s.color }}
+                className="flex items-center gap-1 font-mono"
+              >
+                <span
+                  className="inline-block h-1 w-2.5 rounded-full"
+                  style={{ backgroundColor: s.color }}
+                />
+                {s.label}
+              </span>
+            );
+          })
         : null}
       {plottedMarkers.some((marker) => marker.kind === 'buy') ? (
         <span className="rounded-full border border-[color-mix(in_srgb,var(--app-chart-buy)_42%,transparent)] px-2 py-0.5 text-[var(--app-chart-buy)]">

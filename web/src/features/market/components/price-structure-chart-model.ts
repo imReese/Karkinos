@@ -378,6 +378,7 @@ export function computeMovingAverages({
     { period: 5, label: 'MA5', color: 'var(--app-warning-indicator)' },
     { period: 10, label: 'MA10', color: 'var(--app-accent)' },
     { period: 20, label: 'MA20', color: 'var(--app-info-indicator)' },
+    { period: 60, label: 'MA60', color: 'var(--app-chart-sell)' },
   ];
   return configs.map(({ period, label, color }) => {
     const maByBar = new Map<PriceStructureBar, number | null>();

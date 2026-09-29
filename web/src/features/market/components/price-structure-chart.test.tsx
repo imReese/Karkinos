@@ -315,6 +315,44 @@ test('renders moving average lines and allows toggling them', () => {
   expect(screen.getByTestId('kline-ma-series')).toBeTruthy();
 });
 
+test('allows toggling individual MA lines (MA5, MA20, MA60)', () => {
+  const bars = Array.from({ length: 65 }, (_, i) => {
+    const d = new Date(Date.UTC(2026, 0, i + 1));
+    return {
+      timestamp: d.toISOString().slice(0, 10),
+      open: 100 + i,
+      high: 105 + i,
+      low: 95 + i,
+      close: 102 + i,
+      volume: 50000,
+    };
+  });
+
+  render(
+    <PriceStructureChart
+      titleLabel="Price range / K-line"
+      priceLabel="Price"
+      emptyLabel="No chart"
+      bars={bars}
+    />,
+  );
+
+  expect(screen.getByTestId('kline-ma5')).toBeTruthy();
+  expect(screen.getByTestId('kline-ma20')).toBeTruthy();
+  expect(screen.getByTestId('kline-ma60')).toBeTruthy();
+
+  const pill5 = screen.getByTestId('chart-ma-pill-5');
+  expect(pill5.getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(pill5);
+  expect(pill5.getAttribute('aria-pressed')).toBe('false');
+  expect(screen.queryByTestId('kline-ma5')).toBeNull();
+  expect(screen.getByTestId('kline-ma20')).toBeTruthy();
+
+  fireEvent.click(pill5);
+  expect(pill5.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByTestId('kline-ma5')).toBeTruthy();
+});
+
 test('activates crosshair and shows HUD on hover', () => {
   const bars = [
     {

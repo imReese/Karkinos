@@ -16,6 +16,7 @@ export function PriceStructureChartSvg({
   hoverIndex = null,
   onHoverIndexChange,
   showMovingAverages = true,
+  visiblePeriods = [5, 10, 20, 60],
 }: {
   axisLabels: KlineAxisLabels;
   model: PriceStructureChartModel;
@@ -25,6 +26,7 @@ export function PriceStructureChartSvg({
   hoverIndex?: number | null;
   onHoverIndexChange?: (index: number | null) => void;
   showMovingAverages?: boolean;
+  visiblePeriods?: number[];
 }) {
   const {
     areaPath,
@@ -218,6 +220,7 @@ export function PriceStructureChartSvg({
         chartType={chartType}
         maSeries={maSeries}
         showMovingAverages={showMovingAverages}
+        visiblePeriods={visiblePeriods}
       />
       {chartType === 'line' ? (
         <g data-testid="price-line-series">
@@ -354,7 +357,7 @@ function PriceStructureCandles({
           : 'var(--app-pnl-negative)';
         return (
           <g
-            key={`${bar.timestamp ?? index}-${bar.close}`}
+            key={`${bar.timestamp ?? 'bar'}-${index}-${bar.close}`}
             data-testid="kline-candle"
           >
             <line
@@ -398,17 +401,20 @@ function PriceStructureMovingAverages({
   chartType,
   maSeries,
   showMovingAverages,
+  visiblePeriods = [5, 10, 20, 60],
 }: {
   chartType: string;
   maSeries: PriceStructureChartModel['maSeries'];
   showMovingAverages: boolean;
+  visiblePeriods?: number[];
 }) {
   if (chartType !== 'candlestick' || !showMovingAverages) {
     return null;
   }
+  const filtered = maSeries.filter((s) => visiblePeriods.includes(s.period));
   return (
     <g data-testid="kline-ma-series">
-      {maSeries.map((s) =>
+      {filtered.map((s) =>
         s.path ? (
           <path
             key={s.label}
@@ -535,7 +541,7 @@ function PriceStructureVolumeSeries({
         );
         return (
           <rect
-            key={`${bar?.timestamp ?? index}-volume`}
+            key={`${bar?.timestamp ?? 'bar'}-${index}-volume`}
             data-testid="kline-volume-bar"
             x={Math.round(x - candleWidth / 2)}
             y={Math.round(volumePlot.bottom - height)}
