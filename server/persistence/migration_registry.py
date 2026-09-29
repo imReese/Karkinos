@@ -477,4 +477,22 @@ MIGRATIONS = (
         name="record_background_job_failure_evidence",
         statements=("ALTER TABLE job_runs ADD COLUMN failure_evidence_ref TEXT",),
     ),
+    SchemaMigration(
+        version=21,
+        name="record_market_daily_provider_call_reservations",
+        statements=(
+            """
+            CREATE TABLE market_daily_provider_call_reservations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shanghai_date TEXT NOT NULL,
+                upstream_group TEXT NOT NULL,
+                job_id TEXT NOT NULL,
+                job_attempt INTEGER NOT NULL,
+                reserved_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX market_daily_provider_call_budget_idx "
+            "ON market_daily_provider_call_reservations(shanghai_date, upstream_group)",
+        ),
+    ),
 )

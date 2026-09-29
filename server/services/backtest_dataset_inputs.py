@@ -11,6 +11,7 @@ from core.types import InstrumentKey, InstrumentType, Symbol
 from data.dataset.model import DatasetRef
 from data.dataset.reader import read_daily_bar_dataset
 from data.handler import DataHandler
+from data.market.verification_evidence import read_market_verification_evidence
 from data.storage.objects import ContentAddressedObjectStore
 from domain.instrument import make_etf, make_stock
 from server.services.research_datasets import (
@@ -24,6 +25,7 @@ def load_dataset_backtest_inputs(root: Path, request):
     try:
         ref = DatasetRef(store.resolve_ref(request.dataset_id))
         restored = read_daily_bar_dataset(store, ref)
+        decision_availability = _decision_availability_summary(store, restored)
     except Exception:
         raise ResearchDatasetError("dataset_unreadable_no_remote_fallback") from None
     snapshot = restored.snapshot
@@ -113,9 +115,66 @@ def load_dataset_backtest_inputs(root: Path, request):
         "cross_source_verified": snapshot.verification_bound,
         "offline_replay": True,
         "point_in_time_verified": False,
+        "decision_availability": decision_availability,
         "limitations": [
             "Historical backfill is a frozen research snapshot, not proof of historical availability.",
             "Unadjusted prices do not model corporate-action cash flows or total returns.",
         ],
     }
     return instruments, handlers, binding
+
+
+def _decision_availability_summary(store, restored) -> dict:
+    """Audit when the current same-bar engine exposes each bound observation."""
+    verification_times = {}
+    for partition in restored.snapshot.partitions:
+        if partition.verification_id is not None:
+            verification = read_market_verification_evidence(
+                store, store.resolve_ref(partition.verification_id)
+            )
+            verification_times[partition.partition_date] = verification.checked_at
+
+    late_bar_count = 0
+    late_verification_count = 0
+    first_late_bar = None
+    first_late_verification = None
+    for bar in restored.bars:
+        decision_at = bar.event_time
+        if bar.available_at > decision_at:
+            late_bar_count += 1
+            if first_late_bar is None:
+                first_late_bar = {
+                    "instrument_type": bar.instrument.instrument_type.value,
+                    "symbol": bar.instrument.symbol,
+                    "session_date": bar.session_date.isoformat(),
+                    "decision_at": decision_at.isoformat(),
+                    "available_at": bar.available_at.isoformat(),
+                }
+        checked_at = verification_times.get(bar.session_date)
+        if checked_at is not None and checked_at > decision_at:
+            late_verification_count += 1
+            if first_late_verification is None:
+                first_late_verification = {
+                    "instrument_type": bar.instrument.instrument_type.value,
+                    "symbol": bar.instrument.symbol,
+                    "session_date": bar.session_date.isoformat(),
+                    "decision_at": decision_at.isoformat(),
+                    "checked_at": checked_at.isoformat(),
+                }
+
+    return {
+        "schema_version": "karkinos.dataset_decision_availability.v1",
+        "decision_time_basis": "bar_event_time",
+        "covers": "bound_bar_and_verification_availability_at_replay_event_time",
+        "does_not_validate": [
+            "execution_timing",
+            "historical_universe",
+            "corporate_action_returns",
+        ],
+        "status": "blocked" if late_bar_count or late_verification_count else "pass",
+        "checked_bar_count": len(restored.bars),
+        "late_bar_count": late_bar_count,
+        "late_verification_count": late_verification_count,
+        "first_late_bar": first_late_bar,
+        "first_late_verification": first_late_verification,
+    }

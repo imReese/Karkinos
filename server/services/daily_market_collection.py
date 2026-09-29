@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -10,10 +11,15 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
-from data.market.capture import ProviderCaptureError, read_provider_capture
+from data.market.capture import (
+    ProviderCapture,
+    ProviderCaptureError,
+    read_provider_capture,
+)
 from data.market.contracts import (
     DailyBarProviderUnavailableError,
     DailyBarRequest,
+    MarketDataProviderDescriptor,
 )
 from data.market.ingestion import (
     DailyBarIngestionCapturedFailure,
@@ -56,9 +62,10 @@ class DailyMarketCollectionJobRequest:
     instrument: InstrumentKey
     source_policy_id: str
     calendar_evidence_refs: tuple[str, ...]
+    observation_round: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": DAILY_MARKET_COLLECTION_JOB_SCHEMA_VERSION,
             "trade_date": self.trade_date.isoformat(),
             "instrument": {
@@ -68,6 +75,9 @@ class DailyMarketCollectionJobRequest:
             "source_policy_id": self.source_policy_id,
             "calendar_evidence_refs": list(self.calendar_evidence_refs),
         }
+        if self.observation_round is not None:
+            payload["observation_round"] = self.observation_round
+        return payload
 
     @classmethod
     def from_payload(
@@ -76,13 +86,23 @@ class DailyMarketCollectionJobRequest:
         if (
             not isinstance(payload, Mapping)
             or set(payload)
-            != {
-                "schema_version",
-                "trade_date",
-                "instrument",
-                "source_policy_id",
-                "calendar_evidence_refs",
-            }
+            not in (
+                {
+                    "schema_version",
+                    "trade_date",
+                    "instrument",
+                    "source_policy_id",
+                    "calendar_evidence_refs",
+                },
+                {
+                    "schema_version",
+                    "trade_date",
+                    "instrument",
+                    "source_policy_id",
+                    "calendar_evidence_refs",
+                    "observation_round",
+                },
+            )
             or payload.get("schema_version")
             != DAILY_MARKET_COLLECTION_JOB_SCHEMA_VERSION
         ):
@@ -115,7 +135,25 @@ class DailyMarketCollectionJobRequest:
         ):
             raise ValueError("daily_market_collection_payload_invalid")
         resolve_market_source_policy(policy_id)
-        return cls(trade_date, instrument, policy_id, refs)
+        round_value = payload.get("observation_round")
+        if round_value is not None:
+            if (
+                not isinstance(round_value, str)
+                or re.fullmatch(
+                    r"post_close\.next_session\.\d{4}-\d{2}-\d{2}", round_value
+                )
+                is None
+            ):
+                raise ValueError("daily_market_collection_observation_round_invalid")
+            try:
+                next_date = date.fromisoformat(round_value.rsplit(".", 1)[-1])
+            except ValueError as exc:
+                raise ValueError(
+                    "daily_market_collection_observation_round_invalid"
+                ) from exc
+            if next_date <= trade_date:
+                raise ValueError("daily_market_collection_observation_round_invalid")
+        return cls(trade_date, instrument, policy_id, refs, round_value)
 
 
 class DailyMarketCollectionService:
@@ -131,6 +169,8 @@ class DailyMarketCollectionService:
         *,
         checked_at: datetime | None = None,
         before_publish: Callable[[], None] | None = None,
+        before_provider_fetch: Callable[[MarketDataProviderDescriptor], None]
+        | None = None,
     ) -> str:
         request = DailyMarketCollectionJobRequest.from_payload(payload)
         if checked_at is not None and (
@@ -165,6 +205,7 @@ class DailyMarketCollectionService:
                     quality_policy=RESEARCH_STRICT_DAILY,
                     normalizer_version=_NORMALIZER_VERSION,
                     checked_at=checked_at,
+                    before_fetch=before_provider_fetch,
                 )
             except DailyBarProviderUnavailableError:
                 continue
@@ -232,6 +273,7 @@ def _collection_quality_row(
             else None
         ),
         "source_policy_id": request.source_policy_id if request else None,
+        "observation_round": request.observation_round if request else None,
         "job_status": row["status"],
         "attempt": row["attempt"],
         "created_at": row["created_at"],
@@ -269,7 +311,7 @@ def _collection_quality_row(
         result["quality_attribution_status"] = "unreadable"
         return result
     try:
-        provider = _collection_quality_provider(
+        capture = _collection_quality_capture(
             objects, request=request, report=evidence.report
         )
     except ValueError:
@@ -284,16 +326,34 @@ def _collection_quality_row(
         result["quality_attribution_status"] = "unreadable"
         return result
     result["quality_attribution_status"] = "verified"
-    result["quality"]["provider"] = provider
+    result["quality"]["provider"] = capture.provider
     return result
 
 
-def _collection_quality_provider(
+def collection_capture_completed_at(
+    root: str | Path,
+    *,
+    request: DailyMarketCollectionJobRequest,
+    result_ref: str,
+) -> datetime:
+    """Validate a successful collection's attribution before scheduling revision."""
+    if not result_ref.startswith("quality:sha256:"):
+        raise ValueError("daily_market_collection_quality_ref_invalid")
+    objects = ContentAddressedObjectStore(Path(root) / "objects")
+    evidence = read_market_quality_evidence(
+        objects, objects.resolve_ref(result_ref.removeprefix("quality:"))
+    )
+    return _collection_quality_capture(
+        objects, request=request, report=evidence.report
+    ).completed_at
+
+
+def _collection_quality_capture(
     objects: ContentAddressedObjectStore,
     *,
     request: DailyMarketCollectionJobRequest,
     report: MarketDataQualityReport,
-) -> str:
+) -> ProviderCapture:
     revision = read_market_revision(
         objects, MarketRevisionRef(objects.resolve_ref(report.revision_id))
     )
@@ -319,7 +379,7 @@ def _collection_quality_provider(
         or report.expected_instrument_count != 1
     ):
         raise ValueError("daily_market_collection_quality_lineage_mismatch")
-    return revision.provider
+    return capture
 
 
 def _collection_quality_report(

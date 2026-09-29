@@ -220,6 +220,15 @@ def build_research_evidence_bundle(
         research_limitations = _list_of_dicts(
             dataset_snapshot.get("research_limitations")
         )
+        dataset_binding = _json_object(metrics_json.get("dataset_binding"))
+        decision_availability = _json_object(
+            dataset_binding.get("decision_availability")
+        )
+        if (
+            decision_availability.get("schema_version")
+            != "karkinos.dataset_decision_availability.v1"
+        ):
+            decision_availability = {"status": "not_evaluated"}
         analyzer_results.append(
             AnalyzerResult(
                 name="research_admission",
@@ -234,6 +243,7 @@ def build_research_evidence_bundle(
                     "cross_source_verified": dataset_snapshot.get(
                         "cross_source_verified"
                     ),
+                    "decision_availability": decision_availability,
                 },
                 limitations=[
                     str(item.get("message") or item.get("code"))

@@ -109,6 +109,7 @@ class StrategySignalPreviewResponse(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     run_id: str
     dataset_snapshot_id: str | None = None
+    decision_availability: dict[str, Any] | None = None
     record_count: int
     outputs: list[dict[str, Any]] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)

@@ -208,37 +208,8 @@ def load_signal_preview_bars(
     from data.store import DataStore
 
     if request.dataset_id is not None:
-        from server.runtime_paths import resolve_data_dir
-        from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
-
-        if not request.start_date or not request.end_date:
-            raise HTTPException(422, "dataset_preview_dates_required")
-        symbol, asset_class = signal_preview_symbol_asset_class(
-            request.symbol, request.asset_class
-        )
-        dataset_request = BacktestRequest(
-            dataset_id=request.dataset_id,
-            start_date=request.start_date,
-            end_date=request.end_date,
-            assets=[{"symbol": request.symbol, "asset_class": asset_class.value}],
-        )
-        root = (
-            db.path.resolve().parent
-            if db is not None
-            else Path(resolve_data_dir()).resolve()
-        ) / "research"
-        _, handlers, binding = load_dataset_backtest_inputs(root, dataset_request)
-        source_names = binding["source_names"]
-        snapshot = build_backtest_dataset_snapshot(
-            start_date=request.start_date,
-            end_date=request.end_date,
-            configured_source=source_names[0] if len(source_names) == 1 else None,
-            data_handlers=handlers,
-            store=None,
-            source_names=source_names,
-            research_dataset_binding=binding,
-        )
-        return tuple(handlers[symbol]), snapshot
+        bars, snapshot, _ = _load_bound_dataset_preview_bars(request, db)
+        return bars, snapshot
 
     start_date = request.start_date or getattr(config, "start_date", None)
     end_date = request.end_date or getattr(config, "end_date", None)
@@ -298,6 +269,44 @@ def load_signal_preview_bars(
     return tuple(handler), snapshot
 
 
+def _load_bound_dataset_preview_bars(
+    request: StrategySignalPreviewRequest,
+    db: Any | None,
+) -> tuple[tuple[MarketEvent, ...], dict[str, Any], dict[str, Any]]:
+    from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+    from server.runtime_paths import resolve_data_dir
+    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+
+    if not request.start_date or not request.end_date:
+        raise HTTPException(422, "dataset_preview_dates_required")
+    symbol, asset_class = signal_preview_symbol_asset_class(
+        request.symbol, request.asset_class
+    )
+    dataset_request = BacktestRequest(
+        dataset_id=request.dataset_id,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        assets=[{"symbol": request.symbol, "asset_class": asset_class.value}],
+    )
+    root = (
+        db.path.resolve().parent
+        if db is not None
+        else Path(resolve_data_dir()).resolve()
+    ) / "research"
+    _, handlers, binding = load_dataset_backtest_inputs(root, dataset_request)
+    source_names = binding["source_names"]
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        configured_source=source_names[0] if len(source_names) == 1 else None,
+        data_handlers=handlers,
+        store=None,
+        source_names=source_names,
+        research_dataset_binding=binding,
+    )
+    return tuple(handlers[symbol]), snapshot, binding["decision_availability"]
+
+
 def run_strategy_signal_preview(
     request: StrategySignalPreviewRequest,
     config: Any,
@@ -315,6 +324,7 @@ def run_strategy_signal_preview(
         & request.model_fields_set
     ):
         raise HTTPException(422, "dataset_preview_input_conflict")
+    decision_availability = None
     if request.bars:
         bars = tuple(
             preview_bar_to_market_event(
@@ -325,16 +335,23 @@ def run_strategy_signal_preview(
             for bar in request.bars
         )
         dataset_snapshot = request.dataset_snapshot
+    elif request.dataset_id is not None:
+        bars, dataset_snapshot, decision_availability = (
+            _load_bound_dataset_preview_bars(request, db)
+        )
     else:
         bars, dataset_snapshot = load_signal_preview_bars(request, config, db)
 
-    return build_strategy_signal_preview(
+    preview = build_strategy_signal_preview(
         strategy_id=request.strategy,
         symbol=request.symbol,
         params=request.params,
         bars=bars,
         dataset_snapshot=dataset_snapshot,
     )
+    if decision_availability is not None:
+        preview["decision_availability"] = decision_availability
+    return preview
 
 
 __all__ = (

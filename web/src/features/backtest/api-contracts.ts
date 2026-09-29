@@ -254,6 +254,7 @@ export type StrategySignalPreviewResponse = {
   params: Record<string, number | string | boolean | null>;
   run_id: string;
   dataset_snapshot_id?: string | null;
+  decision_availability?: Record<string, unknown> | null;
   record_count: number;
   outputs: StrategySignalPreviewOutput[];
   limitations: string[];

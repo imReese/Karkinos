@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.market import (
@@ -14,11 +16,15 @@ from server.contracts.http.market import (
 )
 from server.contracts.http.market_models import (
     DailyCollectionQualityRunResponse,
+    MarketDailyProviderBudgetResponse,
     MarketDataHealthResponse,
     QuoteFetchRunResponse,
     VerifiedSourceHealthResponse,
 )
 from server.http.market_endpoints.dependencies import HealthEndpointDependencies
+from server.persistence.market_daily_call_budget import (
+    market_daily_provider_call_budget_status,
+)
 from server.services.daily_market_collection import list_daily_market_collection_quality
 
 
@@ -92,6 +98,27 @@ def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:
                 status_code=503, detail="daily_collection_quality_unavailable"
             ) from exc
         return [DailyCollectionQualityRunResponse.model_validate(row) for row in rows]
+
+    @r.get(
+        "/daily-provider-budget",
+        response_model=MarketDailyProviderBudgetResponse,
+    )
+    async def get_daily_provider_budget() -> MarketDailyProviderBudgetResponse:
+        """Read the shared daily-bar call allowance without provider I/O."""
+        from server.dependencies import get_app_state
+
+        db = getattr(get_app_state(), "db", None)
+        if db is None:
+            raise HTTPException(503, "market_daily_provider_budget_unavailable")
+        try:
+            usage = market_daily_provider_call_budget_status(
+                db.path, now=datetime.now(timezone.utc)
+            )
+        except (OSError, ValueError):
+            raise HTTPException(
+                503, "market_daily_provider_budget_unavailable"
+            ) from None
+        return MarketDailyProviderBudgetResponse.model_validate(usage)
 
     @r.get("/quote-fetch-runs", response_model=list[QuoteFetchRunResponse])
     async def get_quote_fetch_runs(

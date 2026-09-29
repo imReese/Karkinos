@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
+from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
@@ -12,9 +14,11 @@ from data.source_policy import (
     verification_source_policy_for_config,
 )
 from server.contracts.jobs import JobRun, JobStore
+from server.persistence.jobs import SQLiteJobStore, job_id_for
 from server.services.daily_market_collection import (
     DAILY_MARKET_COLLECTION_JOB,
     DailyMarketCollectionJobRequest,
+    collection_capture_completed_at,
 )
 from server.services.market_calendar_dates import (
     resolve_latest_verified_closed_trading_date,
@@ -25,6 +29,7 @@ from server.services.market_hours import get_shanghai_now
 from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
 
 VERIFIED_DAILY_MARKET_JOB = "market_daily_verified"
+logger = logging.getLogger(__name__)
 
 
 class VerifiedDailyMarketJobPlanningError(RuntimeError):
@@ -56,8 +61,8 @@ def enqueue_latest_daily_market_collection_jobs(
     """Collect one source per watched instrument and closed session by default."""
     resolved_dates, instruments = _planning_facts(db, now, lookback_days)
     policy = source_policy_for_config(config)
-    jobs = [
-        store.enqueue(
+    base_jobs = {
+        (resolved.trade_date, instrument): store.enqueue(
             DAILY_MARKET_COLLECTION_JOB,
             DailyMarketCollectionJobRequest(
                 trade_date=date.fromisoformat(resolved.trade_date),
@@ -69,7 +74,55 @@ def enqueue_latest_daily_market_collection_jobs(
         )
         for resolved in resolved_dates
         for instrument in instruments
-    ]
+    }
+    jobs = list(base_jobs.values())
+    db_path = getattr(store, "path", None)
+    if db_path is not None:
+        research_root = Path(db_path).resolve().parent / "research"
+        local_tz = get_shanghai_now(now).tzinfo
+        for current, following in zip(resolved_dates, resolved_dates[1:]):
+            next_date = date.fromisoformat(following.trade_date)
+            next_close = datetime.combine(next_date, time(16), local_tz)
+            for instrument in instruments:
+                base = base_jobs[(current.trade_date, instrument)]
+                if base.status != "succeeded" or not base.result_ref:
+                    continue
+                request = DailyMarketCollectionJobRequest.from_payload(base.payload)
+                revision_payload = DailyMarketCollectionJobRequest(
+                    trade_date=request.trade_date,
+                    instrument=instrument,
+                    source_policy_id=policy.policy_id,
+                    calendar_evidence_refs=request.calendar_evidence_refs,
+                    observation_round=(
+                        f"post_close.next_session.{following.trade_date}"
+                    ),
+                ).to_payload()
+                if isinstance(store, SQLiteJobStore):
+                    existing = store.get(
+                        job_id_for(DAILY_MARKET_COLLECTION_JOB, revision_payload)
+                    )
+                    if existing is not None:
+                        jobs.append(existing)
+                        continue
+                try:
+                    captured_at = collection_capture_completed_at(
+                        research_root, request=request, result_ref=base.result_ref
+                    )
+                except Exception:
+                    logger.warning(
+                        "Skipping automatic revision without readable base evidence job=%s",
+                        base.job_id,
+                    )
+                    continue
+                if captured_at >= next_close:
+                    continue
+                jobs.append(
+                    store.enqueue(
+                        DAILY_MARKET_COLLECTION_JOB,
+                        revision_payload,
+                        now=now,
+                    )
+                )
     return _job_plan(resolved_dates, instruments, jobs)
 
 
