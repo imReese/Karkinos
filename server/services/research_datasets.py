@@ -46,7 +46,7 @@ from data.market.revision import (
 )
 from data.market.serving import MarketServingStore
 from data.market.verification_evidence import read_market_verification_evidence
-from data.providers.tdx_runtime import TdxRuntimeSettings, prepare_tdx_runtime
+from data.providers.tdx import TdxRuntimeSettings, prepare_tdx_runtime
 from data.storage.objects import ContentAddressedObjectStore
 from server.persistence.jobs import SQLiteJobStore
 from server.services.market_calendar_evidence import validate_verified_market_calendar

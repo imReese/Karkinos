@@ -207,7 +207,7 @@ async def lifespan(app: FastAPI):
                 migrated_count,
             )
     state.db = db
-    from data.providers.tdx_runtime import (
+    from data.providers.tdx import (
         TdxRuntimeConfigurationError,
         TdxRuntimeSettings,
     )

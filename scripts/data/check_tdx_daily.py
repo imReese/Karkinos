@@ -421,7 +421,7 @@ def main(argv: list[str] | None = None) -> int:
     # 配置只在父进程读取一次，子进程不再解析文件或使用其他配置优先级。
     sys.path.insert(0, str(REPO_ROOT))
     try:
-        from data.providers.tdx_runtime import (
+        from data.providers.tdx import (
             TDX_KEY_ENV,
             TDX_USER_ENV,
             TdxRuntimeConfigurationError,

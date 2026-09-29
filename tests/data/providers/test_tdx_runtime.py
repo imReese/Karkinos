@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from data.providers import tdx_runtime
-from data.providers.tdx_runtime import (
+from data.providers import tdx
+from data.providers.tdx import (
     TdxRuntimeConfigurationError,
     TdxRuntimeSettings,
     prepare_tdx_runtime,
@@ -35,7 +35,7 @@ def sdk_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "[TcHqHost]\nHostNum=1\n[TcDsHost]\nHostNum=1\n[Token]\ntoken=old-installed-token\nuser=old-user\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(tdx_runtime, "_sdk_library_directory", lambda: source)
+    monkeypatch.setattr(tdx, "_sdk_library_directory", lambda: source)
     return source
 
 
