@@ -222,7 +222,7 @@ export function PortfolioAnalysisSection({
           )}
 
           <aside
-            className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:border-t-0 xl:pt-0"
+            className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:border-t-0 xl:pt-0 xl:sticky xl:top-4 self-start"
             data-portfolio-analysis-secondary
           >
             {state.mode === 'strategy' ? (

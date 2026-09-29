@@ -14,7 +14,8 @@
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC',
     'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
   --app-font-mono:
-    'JetBrains Mono', 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, monospace;
+    'SF Mono', 'SFMono-Regular', 'JetBrains Mono', 'IBM Plex Mono',
+    ui-monospace, Menlo, Monaco, Consolas, monospace;
   --app-font-weight-regular: 400;
   --app-font-weight-medium: 500;
   --app-font-weight-semibold: 600;
@@ -283,6 +284,13 @@ body {
 
 *:where(.font-mono, .tabular-nums) {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.app-chart-stage text {
+  font-family: var(--app-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
 }
 
 a {

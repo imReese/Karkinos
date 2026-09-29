@@ -2,6 +2,7 @@ import { ChevronDown } from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { WorkbenchSelect } from '../../../shared/ui/workbench';
 import type { ManualOrderStatus } from '../api';
 import { ManualTicketExportPanel } from './manual-ticket-export-panel';
 import { OrderQueue } from './order-queue';
@@ -69,22 +70,20 @@ export function TradingReviewQueue({
           <div className="grid min-w-0 w-full gap-3 sm:grid-cols-[minmax(180px,220px)_minmax(0,1fr)] xl:max-w-[440px] xl:grid-cols-[minmax(150px,180px)_minmax(0,1fr)] 2xl:max-w-[680px] 2xl:grid-cols-[minmax(180px,220px)_minmax(0,1fr)]">
             <label className="grid gap-2 text-sm font-medium">
               {labels.statusFilter}
-              <select
-                className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
-                value={status}
-                onChange={(event) =>
-                  setStatus(event.target.value as ManualOrderStatus)
-                }
+              <WorkbenchSelect
                 aria-label={labels.statusFilter}
-              >
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option === 'all'
+                value={status}
+                onChange={(val) => setStatus(val as ManualOrderStatus)}
+                options={STATUS_OPTIONS.map((option) => ({
+                  value: option,
+                  label:
+                    option === 'all'
                       ? labels.allStatuses
-                      : statusLabel(option, labels, locale)}
-                  </option>
-                ))}
-              </select>
+                      : statusLabel(option, labels, locale),
+                }))}
+                className="w-full"
+                buttonClassName="w-full h-11 px-3 py-2 text-sm sm:h-10"
+              />
             </label>
             <details
               className="group min-w-0 border-y border-[var(--app-divider)] sm:border-y-0"
@@ -124,18 +123,18 @@ export function TradingReviewQueue({
                 </label>
                 <label className="grid gap-2 text-sm font-medium">
                   {labels.sideFilter}
-                  <select
-                    className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
-                    value={sideFilter}
-                    onChange={(event) =>
-                      setSideFilter(event.target.value as SideFilter)
-                    }
+                  <WorkbenchSelect
                     aria-label={labels.sideFilter}
-                  >
-                    <option value="all">{labels.allSides}</option>
-                    <option value="buy">{labels.buy}</option>
-                    <option value="sell">{labels.sell}</option>
-                  </select>
+                    value={sideFilter}
+                    onChange={(val) => setSideFilter(val as SideFilter)}
+                    options={[
+                      { value: 'all', label: labels.allSides },
+                      { value: 'buy', label: labels.buy },
+                      { value: 'sell', label: labels.sell },
+                    ]}
+                    className="w-full"
+                    buttonClassName="w-full h-11 px-3 py-2 text-sm sm:h-10"
+                  />
                 </label>
               </div>
             </details>

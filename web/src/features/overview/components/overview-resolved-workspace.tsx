@@ -56,7 +56,7 @@ export function OverviewResolvedWorkspace({
         onAction={() => void equityCurve.refetch()}
       />
     ) : (
-      <>
+      <div className="flex flex-1 min-w-0 flex-col">
         {equityCurve.isError ? (
           <p
             role="status"
@@ -71,7 +71,7 @@ export function OverviewResolvedWorkspace({
           range={equityCurveRange}
           onRangeChange={setEquityCurveRange}
         />
-      </>
+      </div>
     );
 
   const calendar =
@@ -103,12 +103,12 @@ export function OverviewResolvedWorkspace({
         className="min-w-0 border-b border-[var(--app-divider)] pb-6"
         data-testid="overview-performance-card"
       >
-        <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-          <div className="min-w-0">
+        <div className="grid min-w-0 items-stretch gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+          <div className="flex h-full min-w-0 flex-col">
             <div
               role="tablist"
               aria-label={copy.overview.dashboard.equityPanel}
-              className="mb-4 flex max-w-full overflow-x-auto border-b border-[var(--app-divider)]"
+              className="mb-4 flex max-w-full shrink-0 overflow-x-auto border-b border-[var(--app-divider)]"
               data-testid="overview-analysis-view-tabs"
             >
               <button
@@ -143,12 +143,13 @@ export function OverviewResolvedWorkspace({
               </button>
             </div>
 
-            <div className="min-w-0">
+            <div className="flex flex-1 min-w-0 flex-col">
               {analysisView === 'curve' ? (
                 <div
                   id="overview-analysis-panel-curve"
                   role="tabpanel"
                   aria-labelledby="overview-analysis-tab-curve"
+                  className="flex flex-1 min-w-0 flex-col"
                 >
                   {performance}
                 </div>
@@ -157,6 +158,7 @@ export function OverviewResolvedWorkspace({
                   id="overview-analysis-panel-calendar"
                   role="tabpanel"
                   aria-labelledby="overview-analysis-tab-calendar"
+                  className="flex flex-1 min-w-0 flex-col"
                 >
                   {calendar}
                 </div>

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import type { AppCopy } from '../../../shared/i18n/context';
+import { WorkbenchSelect } from '../../../shared/ui/workbench';
 import type {
   ReturnCalendarMetric,
   ReturnCalendarPeriod,
@@ -111,33 +112,29 @@ export function ReturnCalendarToolbar({
       </div>
       <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         {period === 'day' ? (
-          <select
+          <WorkbenchSelect
             aria-label={copy.explainability.month}
-            data-testid="return-calendar-period-select"
+            testId="return-calendar-period-select"
             value={activeMonth}
-            onChange={(event) => onMonthChange(event.target.value)}
-            className="app-field h-9 min-w-0 rounded-full px-3 text-sm sm:w-40"
-          >
-            {monthOptions.map((month) => (
-              <option key={month} value={month}>
-                {month}
-              </option>
-            ))}
-          </select>
+            onChange={onMonthChange}
+            options={monthOptions.map((month) => ({
+              value: month,
+              label: month,
+            }))}
+            buttonClassName="h-9 min-w-0 rounded-full px-3 text-sm sm:w-40"
+          />
         ) : period === 'week' || period === 'month' ? (
-          <select
+          <WorkbenchSelect
             aria-label={copy.explainability.year}
-            data-testid="return-calendar-period-select"
+            testId="return-calendar-period-select"
             value={activeYear}
-            onChange={(event) => onYearChange(event.target.value)}
-            className="app-field h-9 min-w-0 rounded-full px-3 text-sm sm:w-32"
-          >
-            {yearOptions.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
+            onChange={onYearChange}
+            options={yearOptions.map((year) => ({
+              value: year,
+              label: year,
+            }))}
+            buttonClassName="h-9 min-w-0 rounded-full px-3 text-sm sm:w-32"
+          />
         ) : (
           <div className="hidden sm:block" aria-hidden="true" />
         )}

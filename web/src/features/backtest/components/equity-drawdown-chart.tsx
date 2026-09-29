@@ -172,6 +172,7 @@ export function EquityDrawdownChart({
             <AreaChart
               accessibilityLayer
               baseValue="dataMin"
+              className="app-chart-stage"
               data={data}
               height={height}
               margin={{ top: 18, right: 18, bottom: 8, left: 8 }}
@@ -311,6 +312,7 @@ export function EquityDrawdownChart({
           {({ height, width }) => (
             <AreaChart
               accessibilityLayer
+              className="app-chart-stage"
               data={data}
               height={height}
               margin={{ top: 16, right: 18, bottom: 4, left: 8 }}

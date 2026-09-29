@@ -123,7 +123,7 @@ export function PriceStructureChartView({
               }
               className="app-type-micro mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_70%,transparent)] px-2.5 py-1 font-mono tabular-nums text-[var(--app-text-secondary)]"
             >
-              <span className="font-semibold text-[var(--app-text)]">
+              <span className="font-medium text-[var(--app-text)]">
                 {formatDateTick(activeBar.timestamp, activeIndex)}
               </span>
               <span>

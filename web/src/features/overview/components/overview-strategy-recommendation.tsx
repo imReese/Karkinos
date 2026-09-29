@@ -341,7 +341,7 @@ function RecommendationActionItem({
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-2">
+      <div className="mt-3 grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
         <div className="min-w-0">
           <div className="app-type-label text-[var(--app-text-tertiary)]">
             {actionPriceLabel(action.side, dashboard)}
@@ -412,7 +412,7 @@ function RecommendationActionItem({
       positionEffect != null ||
       constraintChecks.length > 0 ? (
         <div className="mt-3 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/40 p-2.5">
-          <div className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2">
+          <div className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
             {netCash != null ? (
               <div>
                 <span className="text-[var(--app-text-tertiary)]">
@@ -554,10 +554,10 @@ export function OverviewStrategyRecommendation({
   return (
     <section
       data-testid="overview-strategy-recommendation"
-      className={('min-w-0 ' + (className ?? '')).trim()}
+      className={('flex flex-col min-w-0 ' + (className ?? '')).trim()}
       aria-label={dashboard.strategyRecommendationTitle}
     >
-      <div className="mb-4 flex h-9 items-center border-b border-[var(--app-divider)]">
+      <div className="mb-4 flex h-9 shrink-0 items-center border-b border-[var(--app-divider)]">
         <SectionHeader
           title={dashboard.strategyRecommendationTitle}
           meta={recommendationDate === '--' ? undefined : recommendationDate}
@@ -591,8 +591,8 @@ export function OverviewStrategyRecommendation({
         />
       ) : plan ? (
         showDetailedActions ? (
-          <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-1 min-w-0 flex-col rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
               <StatusBadge tone={statusTone(presentationLevel)}>
                 {statusLabel(presentationLevel, dashboard)}
               </StatusBadge>
@@ -603,7 +603,7 @@ export function OverviewStrategyRecommendation({
               </div>
             </div>
 
-            <ul className="mt-3 divide-y divide-[var(--app-divider)] max-h-[32rem] overflow-y-auto overscroll-y-contain pr-1">
+            <ul className="mt-3 flex-1 divide-y divide-[var(--app-divider)] overflow-y-auto overscroll-y-contain pr-1 max-h-[30rem]">
               {presentationActions.map((action, index) => (
                 <RecommendationActionItem
                   key={
@@ -623,14 +623,14 @@ export function OverviewStrategyRecommendation({
             </ul>
 
             {presentationLevel !== 'manual_review' ? (
-              <p className="app-type-compact mt-3 border-t border-[var(--app-divider)] pt-3 text-[var(--app-text-secondary)]">
+              <p className="app-type-compact mt-3 shrink-0 border-t border-[var(--app-divider)] pt-3 text-[var(--app-text-secondary)]">
                 {presentationLevel === 'portfolio_preview'
                   ? dashboard.strategyRecommendationRefreshForReview
                   : dashboard.strategyRecommendationSignalOnly}
               </p>
             ) : null}
 
-            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--app-divider)] pt-3">
+            <div className="mt-4 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--app-divider)] pt-3">
               {presentationLevel === 'manual_review' ? (
                 <a
                   href="/trading"
@@ -674,7 +674,7 @@ export function OverviewStrategyRecommendation({
       (currentGeneration || !todayQuery.isLoading || quoteTooOldForReview) ? (
         <div
           data-testid="overview-recommendation-evidence"
-          className="mt-2 space-y-1 app-type-compact text-[var(--app-text-secondary)]"
+          className="mt-2 shrink-0 space-y-1 app-type-compact text-[var(--app-text-secondary)]"
         >
           {currentGeneration || !todayQuery.isLoading ? (
             <p>

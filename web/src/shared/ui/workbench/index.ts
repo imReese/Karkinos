@@ -35,3 +35,4 @@ export { Disclosure } from './disclosure';
 export { ExceptionBoundary } from './exception-boundary';
 export { Register, RegisterRow, type RegisterTone } from './register';
 export { SectionHeader } from './section';
+export { WorkbenchSelect, type SelectOption } from './select';

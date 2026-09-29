@@ -217,7 +217,7 @@ export function ReturnCurveChart({
     >
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="block h-[360px] w-full min-w-[720px] sm:h-[420px] sm:min-w-0"
+        className="app-chart-stage block h-[360px] w-full min-w-[720px] sm:h-[420px] sm:min-w-0"
         data-testid="return-curve-chart"
       >
         <line
