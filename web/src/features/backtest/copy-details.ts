@@ -118,6 +118,31 @@ export const backtestDetailsCopy = {
       unknown: 'Unknown',
       notAvailable: 'N/A',
     },
+    decisionAvailability: {
+      kicker: 'Research input timing',
+      title: 'Decision-time availability',
+      pass: 'No late evidence in this check',
+      blocked: 'Late evidence found',
+      notEvaluated: 'Not evaluated',
+      scope:
+        "Compares each bound bar and its verification time with that bar's replay timestamp. A clear result is only a local timing check, not historical PIT admission.",
+      checkedBars: 'Bars checked',
+      lateBars: 'Bars available after replay time',
+      lateVerifications: 'Bars whose verification finished after replay time',
+      firstLateBar: 'First late bar',
+      firstLateVerification: 'First late verification',
+      replayTime: 'Replay time (Shanghai)',
+      barAvailableAt: 'Available (Shanghai)',
+      verificationTime: 'Verified (Shanghai)',
+      missingEvidence:
+        'This saved Dataset result has no supported decision-time availability check.',
+      backtestBoundary:
+        'The current engine can read a bar close, create a signal, and fill on that same bar using the signal reference price. These returns cannot establish executable PIT performance.',
+      previewBoundary:
+        'This preview creates no order or fill. Related backtests use same-bar fills and cannot establish executable PIT performance.',
+      researchBoundary:
+        'Research only: historical universe membership and corporate-action returns remain unverified; this check does not allow strategy promotion.',
+    },
     strategySnapshot: {
       kicker: 'Strategy audit',
       title: 'Strategy snapshot',
@@ -330,6 +355,31 @@ export const backtestDetailsCopy = {
       no: '否',
       unknown: '未知',
       notAvailable: '不可用',
+    },
+    decisionAvailability: {
+      kicker: '研究输入时序',
+      title: '决策时点可用性',
+      pass: '本项检查未发现延迟证据',
+      blocked: '发现延迟证据',
+      notEvaluated: '未评估',
+      scope:
+        '逐根比较固定 K 线及其核验时间与回放事件时间。即使本项未发现延迟，也只是局部时序检查，不代表历史 PIT 准入。',
+      checkedBars: '已检查 K 线',
+      lateBars: '回放时点后才可用的 K 线',
+      lateVerifications: '核验晚于回放时点的 K 线',
+      firstLateBar: '首条延迟 K 线',
+      firstLateVerification: '首次延迟核验',
+      replayTime: '回放时点（上海）',
+      barAvailableAt: '可用时间（上海）',
+      verificationTime: '核验时间（上海）',
+      missingEvidence:
+        '这份已保存 Dataset 结果没有可识别的决策时点可用性检查。',
+      backtestBoundary:
+        '当前引擎可读取当根收盘价后生成信号，并使用信号参考价在同一根 K 线成交；这些收益不能证明历史时点可执行的表现。',
+      previewBoundary:
+        '本预览不创建订单或成交；关联回测在同一根 K 线成交，不能证明历史时点可执行的表现。',
+      researchBoundary:
+        '仅供研究：历史标的池成员资格与公司行动收益仍未核实；本项检查不允许策略晋级。',
     },
     strategySnapshot: {
       kicker: '策略审计',

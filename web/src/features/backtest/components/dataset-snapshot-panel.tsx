@@ -10,6 +10,7 @@ import {
   normalizeMarketDataStatus,
 } from '../../../shared/market-data-status';
 import type { BacktestReport, DatasetSnapshot } from '../api';
+import { DecisionAvailabilityPanel } from './decision-availability-panel';
 
 function boolLabel(
   value: boolean,
@@ -113,6 +114,15 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
                 : 'Exploratory backtest only; not strategy advancement evidence'}
             </div>
           ) : null}
+        </div>
+      ) : null}
+      {snapshot.immutable_dataset_id ? (
+        <div className="mt-4">
+          <DecisionAvailabilityPanel
+            availability={
+              report.metrics_json?.dataset_binding?.decision_availability
+            }
+          />
         </div>
       ) : null}
       <div className="mt-4 grid grid-cols-2 gap-2">

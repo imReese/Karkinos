@@ -22,6 +22,7 @@ import {
   PaperShadowPreviewResult,
 } from './strategy-preview-results';
 import { isPositiveNumber } from './backtest-page-model';
+import { DecisionAvailabilityPanel } from './decision-availability-panel';
 
 export function StrategySignalPreviewPanel({
   preview,
@@ -212,6 +213,14 @@ export function StrategySignalPreviewPanel({
               </div>
             </div>
           </div>
+          {preview?.decision_availability ? (
+            <div className="mt-4">
+              <DecisionAvailabilityPanel
+                availability={preview.decision_availability}
+                preview
+              />
+            </div>
+          ) : null}
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="border-t border-[var(--app-divider)] py-3">
               <div className="app-muted text-xs font-semibold">

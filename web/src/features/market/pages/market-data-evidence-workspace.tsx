@@ -13,16 +13,25 @@ import {
   StatusBadge,
   Timeline,
 } from '../../../shared/ui/workbench';
-import type { QuoteFetchRun } from '../api';
+import {
+  useDailyCollectionQualityQuery,
+  useMarketDailyProviderBudgetQuery,
+  type DailyCollectionQualityRun,
+  type QuoteFetchRun,
+} from '../api';
 import { MarketRefreshButton } from '../components/market-refresh-button';
 import type { MarketPageController } from './market-page-controller';
 import { formatAge } from './market-page-format';
 
 export function MarketDataEvidenceWorkspace({
   controller,
+  active,
 }: {
   controller: MarketPageController;
+  active: boolean;
 }) {
+  const dailyCollection = useDailyCollectionQualityQuery(active);
+  const dailyBudget = useMarketDailyProviderBudgetQuery(active);
   const {
     barsBackfill,
     cacheBound,
@@ -273,8 +282,216 @@ export function MarketDataEvidenceWorkspace({
           />
         </div>
       </details>
+      <DailyResearchCollectionPanel
+        runs={dailyCollection.data}
+        runsLoading={dailyCollection.isLoading}
+        runsError={dailyCollection.isError}
+        budget={dailyBudget.data}
+        budgetLoading={dailyBudget.isLoading}
+        budgetError={dailyBudget.isError}
+      />
     </div>
   );
+}
+
+function DailyResearchCollectionPanel({
+  runs,
+  runsLoading,
+  runsError,
+  budget,
+  budgetLoading,
+  budgetError,
+}: {
+  runs: DailyCollectionQualityRun[] | undefined;
+  runsLoading: boolean;
+  runsError: boolean;
+  budget: ReturnType<typeof useMarketDailyProviderBudgetQuery>['data'];
+  budgetLoading: boolean;
+  budgetError: boolean;
+}) {
+  const { locale } = usePreferences();
+  const zh = locale === 'zh';
+  const budgetKnown =
+    budget?.scope === 'managed_daily_market_jobs' &&
+    Object.keys(budget.groups).length > 0;
+
+  return (
+    <section
+      className="min-w-0 border-y border-[var(--app-divider)] py-4 lg:col-span-2"
+      data-testid="market-daily-research-collection"
+    >
+      <div className="app-kicker app-type-overline">
+        {zh ? '研究数据维护' : 'Research data maintenance'}
+      </div>
+      <h2 className="mt-1 text-lg font-semibold text-[var(--app-text)]">
+        {zh ? '自动日线采集' : 'Automatic daily-bar collection'}
+      </h2>
+      <p className="app-muted mt-2 text-xs leading-5">
+        {zh
+          ? '这里仅显示受管单源采集与质量证据；成功不代表跨源核验、历史 PIT 可用或 Dataset 已发布。'
+          : 'This shows managed single-source capture and quality evidence only. Success does not establish cross-source agreement, historical PIT availability, or Dataset publication.'}
+      </p>
+
+      <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
+        <h3 className="text-sm font-semibold">
+          {zh ? '今日上游调用预算' : "Today's upstream attempt budget"}
+        </h3>
+        <p className="app-muted mt-1 text-xs leading-5">
+          {zh
+            ? '自动单源与显式双源受管日线任务共用，按上海自然日统计每次 fetch_daily_bars 前的预留尝试；不是供应商配额或 SDK 内部远端请求数，也不包含旧 TDX 直接准备。'
+            : 'Automatic single-source and explicit two-source managed daily-bar jobs share this budget. It counts reservations before each fetch_daily_bars attempt by Shanghai day, not provider quota or SDK internal requests; legacy direct TDX preparation is outside this scope.'}
+        </p>
+        {budgetLoading ? (
+          <p className="app-muted mt-2 text-xs">
+            {zh ? '正在读取预算…' : 'Loading budget…'}
+          </p>
+        ) : budgetError || !budgetKnown ? (
+          <p className="mt-2 text-xs text-[var(--app-warning-text)]">
+            {zh
+              ? '预算用量未知，不能据此判断还可采集多少。'
+              : 'Budget usage is unknown; remaining collection capacity cannot be inferred.'}
+          </p>
+        ) : (
+          <>
+            <p className="app-muted mt-2 text-xs tabular-nums">
+              {zh ? '上海日期：' : 'Shanghai date: '}
+              {budget.shanghai_date}
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {Object.entries(budget.groups).map(([group, usage]) => (
+                <div
+                  key={group}
+                  className="border-l-2 border-[var(--app-divider)] py-1 pl-3 text-xs"
+                >
+                  <div className="font-semibold">{group}</div>
+                  <div className="mt-1 tabular-nums text-[var(--app-text-secondary)]">
+                    {zh ? '已用' : 'Used'} {usage.used}/{usage.limit} ·{' '}
+                    {zh ? '剩余' : 'Remaining'} {usage.remaining}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
+        <h3 className="text-sm font-semibold">
+          {zh
+            ? '最近单源质量与修订'
+            : 'Recent single-source quality and revisions'}
+        </h3>
+        {runsLoading ? (
+          <p className="app-muted mt-2 text-xs">
+            {zh ? '正在读取采集记录…' : 'Loading collection records…'}
+          </p>
+        ) : runsError || !runs ? (
+          <p className="mt-2 text-xs text-[var(--app-warning-text)]">
+            {zh
+              ? '采集记录读取失败，质量与修订状态未知。'
+              : 'Collection records could not be read; quality and revision status are unknown.'}
+          </p>
+        ) : runs.length === 0 ? (
+          <p className="app-muted mt-2 text-xs">
+            {zh
+              ? '暂无受管日线采集记录；不能据此推断历史数据覆盖。'
+              : 'No managed daily-bar collection records yet; historical coverage is unknown.'}
+          </p>
+        ) : (
+          <ol
+            className="mt-2 divide-y divide-[var(--app-divider)]"
+            aria-label={zh ? '最近单源采集' : 'Recent single-source collection'}
+          >
+            {runs.slice(0, 8).map((run) => (
+              <li key={run.job_id} className="py-2 text-xs leading-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <span className="font-semibold tabular-nums">
+                    {run.trade_date ?? (zh ? '日期未知' : 'Unknown date')} ·{' '}
+                    {run.instrument?.symbol ??
+                      (zh ? '标的未知' : 'Unknown symbol')}
+                  </span>
+                  <span className="text-[var(--app-text-secondary)]">
+                    {collectionRoundLabel(run.observation_round, zh)}
+                  </span>
+                </div>
+                <div className="mt-1 text-[var(--app-text-secondary)]">
+                  {zh ? '任务：' : 'Job: '}
+                  {formatPublicStatus(run.job_status, locale)} ·{' '}
+                  {zh ? '质量：' : 'Quality: '}
+                  {collectionQualityLabel(run, zh)}
+                  {run.quality_attribution_status === 'verified' &&
+                  run.quality?.provider
+                    ? ` · ${zh ? '来源：' : 'Source: '}${run.quality.provider}`
+                    : ''}
+                </div>
+                {run.quality_attribution_status === 'verified' &&
+                run.quality?.checked_at ? (
+                  <div className="mt-1 tabular-nums text-[var(--app-text-tertiary)]">
+                    {zh ? '检查时间：' : 'Checked at: '}
+                    {formatTimestamp(run.quality.checked_at)}
+                  </div>
+                ) : null}
+                {run.error ? (
+                  <div className="mt-1 break-words text-[var(--app-warning-text)]">
+                    {zh ? '错误：' : 'Error: '}
+                    {formatPublicCode(run.error, locale)}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function collectionRoundLabel(round: string | null, zh: boolean) {
+  if (round === null) {
+    return zh ? '基线采集' : 'Baseline capture';
+  }
+  const nextSession = /^post_close\.next_session\.(\d{4}-\d{2}-\d{2})$/.exec(
+    round,
+  );
+  return nextSession
+    ? `${zh ? '次交易日复查' : 'Next-session recheck'} · ${nextSession[1]}`
+    : zh
+      ? '未知修订轮次'
+      : 'Unknown revision round';
+}
+
+function collectionQualityLabel(run: DailyCollectionQualityRun, zh: boolean) {
+  if (run.job_status !== 'succeeded') {
+    return zh ? '尚无结论' : 'Not established';
+  }
+  if (run.quality_read_status === 'not_recorded') {
+    return zh ? '尚无质量证据' : 'No quality evidence';
+  }
+  if (run.quality_read_status !== 'available') {
+    return zh ? '证据不可读取' : 'Evidence unreadable';
+  }
+  if (run.quality_attribution_status === 'mismatch') {
+    return zh ? '证据归属不匹配' : 'Evidence attribution mismatch';
+  }
+  if (run.quality_attribution_status === 'unreadable') {
+    return zh ? '证据链不可读取' : 'Evidence lineage unreadable';
+  }
+  if (run.quality_attribution_status !== 'verified') {
+    return zh ? '证据归属未核实' : 'Evidence attribution unverified';
+  }
+  if (!run.quality) {
+    return zh ? '质量未知' : 'Quality unknown';
+  }
+  if (run.quality.status === 'pass') {
+    return zh ? '单源检查通过' : 'Single-source checks passed';
+  }
+  if (run.quality.status === 'degraded') {
+    return zh ? '单源检查降级' : 'Single-source checks degraded';
+  }
+  if (run.quality.status === 'blocked') {
+    return zh ? '单源检查阻断' : 'Single-source checks blocked';
+  }
+  return zh ? '质量未知' : 'Quality unknown';
 }
 
 function MarketDataOperationsPanel({

@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import {
   EvidenceState,
   StatusBadge,
@@ -211,10 +213,12 @@ function MarketGlobalDataEvidence({
   controller: MarketPageController;
 }) {
   const { copy, evidenceModeLabel, staleCount } = controller;
+  const [open, setOpen] = useState(false);
   return (
     <details
       className="group min-w-0 border-t border-[var(--app-divider)]"
       data-testid="market-global-data-evidence"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
@@ -237,7 +241,7 @@ function MarketGlobalDataEvidence({
         </span>
       </summary>
       <div className="border-t border-[var(--app-divider)] pt-3">
-        <MarketDataEvidenceWorkspace controller={controller} />
+        <MarketDataEvidenceWorkspace controller={controller} active={open} />
       </div>
     </details>
   );
