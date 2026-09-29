@@ -141,6 +141,7 @@ BacktestSweepRequest
 BacktestSweepResponse
 BacktestSweepResult
 CostSummary
+DatasetDecisionAvailability
 DatasetQuality
 DatasetQualityIssue
 DatasetSnapshot

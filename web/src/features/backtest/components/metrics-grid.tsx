@@ -8,12 +8,13 @@ import {
   formatPercent,
 } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
 import type { BacktestReport } from '../api';
 
 type MetricItem = {
   label: string;
   value: string;
-  detail: string;
+  detail: MetricStripItem['detail'];
   tone?: MetricStripItem['tone'];
 };
 
@@ -31,7 +32,11 @@ function formatNumber(value: unknown) {
 
 export function MetricsGrid({ report }: { report: BacktestReport }) {
   const labels = useCopy().backtest.metrics;
+  const { locale } = usePreferences();
   const metrics = { ...report.metrics, ...report.metrics_json };
+  const boundDataset = Boolean(
+    report.metrics_json?.dataset_snapshot?.immutable_dataset_id,
+  );
   const costs = report.cost_summary_json ?? {};
   const totalCommission =
     costs.total_commission ?? metrics.total_commission ?? 0;
@@ -42,9 +47,19 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
     {
       label: labels.totalReturn,
       value: formatRatio(metrics.total_return),
-      detail: `${formatCurrency(metrics.initial_cash)} -> ${formatCurrency(
-        metrics.final_equity,
-      )}`,
+      detail: (
+        <>
+          {formatCurrency(metrics.initial_cash)} -&gt;{' '}
+          {formatCurrency(metrics.final_equity)}
+          {boundDataset ? (
+            <span className="mt-1 block text-[var(--app-warning-text)]">
+              {locale === 'zh'
+                ? '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。'
+                : 'Simulated equity return; excludes dividends and other corporate actions, so this is not total economic return.'}
+            </span>
+          ) : null}
+        </>
+      ),
       tone:
         finiteNumber(metrics.total_return) > 0
           ? 'pnl-positive'

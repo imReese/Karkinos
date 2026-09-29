@@ -77,6 +77,31 @@ export type DatasetSnapshot = {
   symbol_universe: DatasetSnapshotSymbol[];
 };
 
+export type DatasetDecisionAvailability = {
+  schema_version: 'karkinos.dataset_decision_availability.v1';
+  decision_time_basis: 'bar_event_time';
+  covers: string;
+  does_not_validate: string[];
+  status: 'pass' | 'blocked';
+  checked_bar_count: number;
+  late_bar_count: number;
+  late_verification_count: number;
+  first_late_bar: {
+    instrument_type: string;
+    symbol: string;
+    session_date: string;
+    decision_at: string;
+    available_at: string;
+  } | null;
+  first_late_verification: {
+    instrument_type: string;
+    symbol: string;
+    session_date: string;
+    decision_at: string;
+    checked_at: string;
+  } | null;
+};
+
 export type AfterCostEvidence = {
   net_pnl?: number;
   total_cost?: number;
@@ -254,7 +279,7 @@ export type StrategySignalPreviewResponse = {
   params: Record<string, number | string | boolean | null>;
   run_id: string;
   dataset_snapshot_id?: string | null;
-  decision_availability?: Record<string, unknown> | null;
+  decision_availability?: DatasetDecisionAvailability | null;
   record_count: number;
   outputs: StrategySignalPreviewOutput[];
   limitations: string[];
@@ -463,6 +488,9 @@ export type BacktestReport = {
   metrics: BacktestMetrics;
   metrics_json?: Partial<BacktestMetrics> & {
     dataset_snapshot?: DatasetSnapshot;
+    dataset_binding?: {
+      decision_availability?: DatasetDecisionAvailability | null;
+    };
     evidence_bundle?: AfterCostEvidence;
     oos_validation?: OutOfSampleValidation;
     strategy_metadata?: StrategyMetadataSnapshot;

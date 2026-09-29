@@ -163,6 +163,30 @@ export type QuoteFetchRun = {
   metadata: Record<string, unknown> | null;
 };
 
+export type DailyCollectionQualityRun = {
+  job_id: string;
+  trade_date: string | null;
+  instrument: { symbol: string; instrument_type: string } | null;
+  observation_round: string | null;
+  job_status: 'queued' | 'running' | 'succeeded' | 'failed';
+  attempt: number;
+  error: string | null;
+  quality_read_status: 'not_recorded' | 'available' | 'unreadable';
+  quality_attribution_status:
+    'not_checked' | 'verified' | 'unreadable' | 'mismatch';
+  quality: {
+    status: 'pass' | 'degraded' | 'blocked';
+    provider: string | null;
+    checked_at: string;
+  } | null;
+};
+
+export type MarketDailyProviderBudget = {
+  scope: 'managed_daily_market_jobs';
+  shanghai_date: string;
+  groups: Record<string, { used: number; limit: number; remaining: number }>;
+};
+
 export type ConfirmedFundNavRefreshResponse = {
   schema_version: 'karkinos.confirmed_fund_nav_refresh.v1';
   request_id: string;
@@ -350,6 +374,32 @@ export function useQuoteFetchRunsQuery(enabled = true) {
       apiClient<QuoteFetchRun[]>('/api/market/quote-fetch-runs?limit=8'),
     staleTime: 10_000,
     enabled,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useDailyCollectionQualityQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['market-daily-collection-quality'],
+    queryFn: () =>
+      apiClient<DailyCollectionQualityRun[]>(
+        '/api/market/daily-collection-quality?limit=8',
+      ),
+    enabled,
+    staleTime: 10_000,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useMarketDailyProviderBudgetQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['market-daily-provider-budget'],
+    queryFn: () =>
+      apiClient<MarketDailyProviderBudget>('/api/market/daily-provider-budget'),
+    enabled,
+    staleTime: 10_000,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }

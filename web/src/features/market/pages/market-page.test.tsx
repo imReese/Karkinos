@@ -94,6 +94,10 @@ function installMarketFetchMock(
     notes?: Array<Record<string, unknown>>;
     boardResponse?: Promise<Response>;
     klineResponse?: Promise<Response>;
+    dailyCollection?: Array<Record<string, unknown>>;
+    dailyCollectionResponse?: Response;
+    dailyBudget?: Record<string, unknown>;
+    dailyBudgetResponse?: Response;
   } = {},
 ) {
   const boardHealth = {
@@ -183,6 +187,27 @@ function installMarketFetchMock(
             metadata: null,
           },
         ]);
+      }
+      if (url.includes('/api/market/daily-collection-quality')) {
+        return (
+          overrides.dailyCollectionResponse ??
+          jsonResponse(overrides.dailyCollection ?? [])
+        );
+      }
+      if (url.includes('/api/market/daily-provider-budget')) {
+        return (
+          overrides.dailyBudgetResponse ??
+          jsonResponse(
+            overrides.dailyBudget ?? {
+              schema_version: 'karkinos.market_daily_provider_budget.v1',
+              scope: 'managed_daily_market_jobs',
+              shanghai_date: '2026-06-17',
+              groups: {
+                baostock: { used: 0, limit: 100, remaining: 100 },
+              },
+            },
+          )
+        );
       }
       if (url.includes('/api/market/research-notes')) {
         return jsonResponse({ items: overrides.notes ?? [] });
@@ -364,6 +389,136 @@ test('renders market data operations and triggers manual backfills', async () =>
       expect.objectContaining({ method: 'POST' }),
     );
   });
+});
+
+test('shows managed daily-bar quality, revision rounds, and attempt budget in market evidence', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderMarketPage({
+    dailyCollection: [
+      {
+        job_id: 'baseline-job',
+        trade_date: '2026-06-16',
+        instrument: { symbol: '600519', instrument_type: 'stock' },
+        observation_round: null,
+        job_status: 'succeeded',
+        attempt: 1,
+        error: null,
+        quality_read_status: 'available',
+        quality_attribution_status: 'verified',
+        quality: {
+          status: 'pass',
+          provider: 'baostock',
+          checked_at: '2026-06-16T16:02:00+08:00',
+        },
+      },
+      {
+        job_id: 'revision-job',
+        trade_date: '2026-06-16',
+        instrument: { symbol: '600519', instrument_type: 'stock' },
+        observation_round: 'post_close.next_session.2026-06-17',
+        job_status: 'succeeded',
+        attempt: 1,
+        error: null,
+        quality_read_status: 'available',
+        quality_attribution_status: 'verified',
+        quality: {
+          status: 'pass',
+          provider: 'baostock',
+          checked_at: '2026-06-17T16:03:00+08:00',
+        },
+      },
+      {
+        job_id: 'unattributed-job',
+        trade_date: '2026-06-15',
+        instrument: { symbol: '000001', instrument_type: 'stock' },
+        observation_round: null,
+        job_status: 'succeeded',
+        attempt: 1,
+        error: null,
+        quality_read_status: 'available',
+        quality_attribution_status: 'mismatch',
+        quality: {
+          status: 'pass',
+          provider: null,
+          checked_at: '2026-06-15T16:03:00+08:00',
+        },
+      },
+    ],
+    dailyBudget: {
+      schema_version: 'karkinos.market_daily_provider_budget.v1',
+      scope: 'managed_daily_market_jobs',
+      shanghai_date: '2026-06-17',
+      groups: {
+        baostock: { used: 2, limit: 100, remaining: 98 },
+        tencent: { used: 1, limit: 100, remaining: 99 },
+      },
+    },
+  });
+
+  const disclosure = await screen.findByTestId('market-global-data-evidence');
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/market/daily-collection-quality'),
+    ),
+  ).toBe(false);
+  await user.click(disclosure.querySelector('summary') as HTMLElement);
+
+  const panel = await screen.findByTestId('market-daily-research-collection');
+  expect(
+    (await within(panel).findAllByText(/Single-source checks passed/)).length,
+  ).toBe(2);
+  expect(within(panel).getAllByText('Baseline capture')).toHaveLength(2);
+  expect(
+    within(panel).getByText('Next-session recheck · 2026-06-17'),
+  ).toBeTruthy();
+  expect(within(panel).getByText(/Evidence attribution mismatch/)).toBeTruthy();
+  expect(within(panel).getByText(/Used 2\/100 · Remaining 98/)).toBeTruthy();
+  expect(
+    within(panel).getByText(
+      /Automatic single-source and explicit two-source managed daily-bar jobs share this budget/,
+    ),
+  ).toBeTruthy();
+  expect(
+    within(panel).getByText(/does not establish cross-source agreement/),
+  ).toBeTruthy();
+  await waitFor(() => {
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain(
+      '/api/market/daily-provider-budget',
+    );
+  });
+});
+
+test('distinguishes daily-bar evidence read failures from no collection samples', async () => {
+  const user = userEvent.setup();
+  renderMarketPage({
+    dailyCollectionResponse: new Response('unavailable', { status: 503 }),
+    dailyBudgetResponse: new Response('unavailable', { status: 503 }),
+  });
+  const disclosure = await screen.findByTestId('market-global-data-evidence');
+  await user.click(disclosure.querySelector('summary') as HTMLElement);
+  const panel = await screen.findByTestId('market-daily-research-collection');
+  expect(
+    await within(panel).findByText(/Budget usage is unknown/),
+  ).toBeTruthy();
+  expect(
+    await within(panel).findByText(/Collection records could not be read/),
+  ).toBeTruthy();
+  expect(
+    within(panel).queryByText(/No managed daily-bar collection records/),
+  ).toBeNull();
+});
+
+test('reports an empty managed daily-bar history without claiming coverage', async () => {
+  const user = userEvent.setup();
+  renderMarketPage();
+  const disclosure = await screen.findByTestId('market-global-data-evidence');
+  await user.click(disclosure.querySelector('summary') as HTMLElement);
+  const panel = await screen.findByTestId('market-daily-research-collection');
+  expect(
+    await within(panel).findByText(
+      /No managed daily-bar collection records yet/,
+    ),
+  ).toBeTruthy();
 });
 
 test('keeps full research-note evidence behind an explicit disclosure', async () => {
