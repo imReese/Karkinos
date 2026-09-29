@@ -1,4 +1,8 @@
-import { formatTimestamp } from '../../../shared/format';
+import {
+  formatCurrency,
+  formatPercent,
+  formatTimestamp,
+} from '../../../shared/format';
 import {
   ControlledActionZone,
   EvidenceState as WorkbenchEvidenceState,
@@ -147,7 +151,17 @@ export function HoldingPositionPanel({
 }
 
 export function HoldingPnlCostsPanel({ activeTab, model }: HoldingPanelProps) {
-  const { labels } = model.source;
+  const { labels, locale, position } = model.source;
+  const isZh = locale === 'zh';
+  const hasPriceAndCost =
+    position.avg_cost != null &&
+    position.avg_cost > 0 &&
+    position.latest_price != null &&
+    position.latest_price > 0;
+  const cushionPct = hasPriceAndCost
+    ? (position.latest_price! - position.avg_cost!) / position.avg_cost!
+    : null;
+
   return (
     <section
       id="holding-panel-pnl-costs"
@@ -181,6 +195,64 @@ export function HoldingPnlCostsPanel({ activeTab, model }: HoldingPanelProps) {
           />
         ) : null}
         <MetricGrid metrics={model.metrics.valuationMetrics} />
+        {hasPriceAndCost && cushionPct != null ? (
+          <div
+            data-testid="holding-cost-cushion-perspective"
+            className="rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_65%,transparent)] p-3 space-y-2"
+          >
+            <div className="flex items-center justify-between">
+              <span className="app-type-micro font-semibold text-[var(--app-text)]">
+                {isZh ? '成本线与安全垫透视' : 'Cost Basis & Safety Cushion'}
+              </span>
+              <span
+                className={`app-type-micro font-mono font-semibold px-2 py-0.5 rounded-full ${
+                  cushionPct >= 0
+                    ? 'text-[var(--app-pnl-positive)] bg-[color-mix(in_srgb,var(--app-pnl-positive)_12%,transparent)]'
+                    : 'text-[var(--app-pnl-negative)] bg-[color-mix(in_srgb,var(--app-pnl-negative)_12%,transparent)]'
+                }`}
+              >
+                {cushionPct >= 0
+                  ? isZh
+                    ? '处于安全垫内'
+                    : 'In safety cushion'
+                  : isZh
+                    ? '跌破成本线'
+                    : 'Below cost basis'}{' '}
+                ({cushionPct >= 0 ? '+' : ''}
+                {formatPercent(cushionPct)})
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs font-mono tabular-nums">
+              <div>
+                <span className="app-muted block">
+                  {isZh ? '持仓成本价' : 'Cost basis'}
+                </span>
+                <span className="font-semibold text-[var(--app-text)]">
+                  {formatCurrency(position.avg_cost)}
+                </span>
+              </div>
+              <div>
+                <span className="app-muted block">
+                  {isZh ? '最新现价' : 'Latest price'}
+                </span>
+                <span className="font-semibold text-[var(--app-text)]">
+                  {formatCurrency(position.latest_price)}
+                </span>
+              </div>
+              <div>
+                <span className="app-muted block">
+                  {isZh ? '价差区间' : 'Spread delta'}
+                </span>
+                <span
+                  className={`font-semibold ${cushionPct >= 0 ? 'text-[var(--app-pnl-positive)]' : 'text-[var(--app-pnl-negative)]'}`}
+                >
+                  {cushionPct >= 0 ? '+' : ''}
+                  {formatCurrency(position.latest_price! - position.avg_cost!)}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );

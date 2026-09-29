@@ -13,6 +13,7 @@ import {
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
 import { PortfolioAllocationBar } from '../components/allocation-card';
+import { RebalanceAlertBanner } from '../components/rebalance-alert-banner';
 import { PortfolioEvidenceReviewPanel } from './portfolio-evidence-review-panel';
 import { PortfolioPageLoadingView } from './portfolio-page-loading-view';
 import type {
@@ -252,6 +253,11 @@ export function PortfolioPageView({
           />
         </section>
       ) : null}
+
+      <RebalanceAlertBanner
+        copy={copy.portfolio}
+        tradingPlan={model.tradingPlan}
+      />
 
       <PortfolioCurrentHoldingsSection actions={actions} model={model} />
       {state.evidenceFilter !== 'clear' ? (
