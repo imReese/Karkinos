@@ -11006,13 +11006,27 @@ def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch)
     assert "not investment advice" in response.limitations[0]
 
 
-def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypatch):
+def _benchmark_fixture_rows_with_research_pass():
     from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
+
+    rows = build_benchmark_fixture_backtest_rows()
+    for row in rows:
+        metrics = json.loads(str(row["metrics_json"]))
+        metrics["research_evidence_bundle"] = {
+            "schema_version": "karkinos.research_evidence.v1",
+            "gate_status": "pass",
+            "promotion_gate": {"status": "pass"},
+        }
+        row["metrics_json"] = json.dumps(metrics)
+    return rows
+
+
+def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypatch):
     from server.routes import backtest as backtest_routes
 
     class FakeDb:
         async def get_backtest_results(self):
-            return build_benchmark_fixture_backtest_rows()
+            return _benchmark_fixture_rows_with_research_pass()
 
         def get_risk_decisions_sync(self, limit=500, offset=0):
             return [
@@ -11081,12 +11095,11 @@ def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypa
 def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_without_attribution(
     monkeypatch,
 ):
-    from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
     from server.routes import backtest as backtest_routes
 
     class FakeDb:
         async def get_backtest_results(self):
-            return build_benchmark_fixture_backtest_rows()
+            return _benchmark_fixture_rows_with_research_pass()
 
         def get_risk_decisions_sync(self, limit=500, offset=0):
             return [

@@ -60,8 +60,15 @@ def _with_research_gate(row: dict, *, status: str) -> dict:
     return updated
 
 
+def _passed_backtest_row(strategy_id: str) -> dict:
+    return _with_research_gate(_backtest_row(strategy_id), status="pass")
+
+
 def _all_backtest_rows() -> list[dict]:
-    return [_backtest_row(strategy_id) for strategy_id in sorted(REQUIRED_STRATEGY_IDS)]
+    return [
+        _passed_backtest_row(strategy_id)
+        for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
+    ]
 
 
 def _all_risk_decisions(*, passed: bool = False) -> list[dict]:
@@ -81,7 +88,7 @@ def _all_shadow_orders(*, divergence_status: str | None = None) -> list[dict]:
 def test_strategy_promotion_readiness_requires_risk_shadow_and_divergence_evidence():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
-        [_backtest_row("dual_ma")],
+        [_passed_backtest_row("dual_ma")],
         [_risk_decision("dual_ma", passed=False)],
         [_shadow_order("dual_ma")],
     )
@@ -119,13 +126,28 @@ def test_strategy_promotion_readiness_marks_strategy_promotable_only_when_all_ga
     assert "not investment advice" in readiness.limitations[0]
 
 
+def test_strategy_promotion_readiness_blocks_legacy_result_without_research_gate():
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [_backtest_row("dual_ma")],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+    )
+
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+    assert row.backtest_result_id == 101
+    assert row.has_after_cost_and_oos_evidence is True
+    assert row.is_promotable is False
+    assert row.missing_requirements == ["research_evidence_gate_pass"]
+
+
 def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_blocks():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
         [
             _with_research_gate(_backtest_row("dual_ma"), status="blocked"),
             *[
-                _backtest_row(strategy_id)
+                _passed_backtest_row(strategy_id)
                 for strategy_id in sorted(REQUIRED_STRATEGY_IDS - {"dual_ma"})
             ],
         ],
@@ -164,6 +186,21 @@ def test_strategy_promotion_readiness_uses_latest_result_research_gate():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
         [newest, older],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+    )
+
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+    assert row.backtest_result_id == 202
+    assert row.missing_requirements == ["research_evidence_gate_pass"]
+
+
+def test_strategy_promotion_readiness_does_not_reuse_older_pass_for_legacy_result():
+    newest = _backtest_row("dual_ma")
+    newest["id"] = 202
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [newest, _passed_backtest_row("dual_ma")],
         [_risk_decision("dual_ma", passed=False)],
         [_shadow_order("dual_ma", divergence_status="within_expectations")],
     )
@@ -221,7 +258,7 @@ def test_strategy_promotion_readiness_blocks_when_account_truth_gate_blocks():
 def test_strategy_promotion_readiness_blocks_when_account_truth_gate_is_enabled_but_missing():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
-        [_backtest_row("dual_ma")],
+        [_passed_backtest_row("dual_ma")],
         [_risk_decision("dual_ma", passed=False)],
         [_shadow_order("dual_ma", divergence_status="within_expectations")],
         account_truth_scores=[],
@@ -255,7 +292,7 @@ def test_strategy_promotion_readiness_allows_when_account_truth_gate_passes():
 def test_strategy_promotion_readiness_blocks_assigned_strategy_when_attribution_is_pending():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
-        [_backtest_row("dual_ma")],
+        [_passed_backtest_row("dual_ma")],
         [_risk_decision("dual_ma", passed=False)],
         [_shadow_order("dual_ma", divergence_status="within_expectations")],
         account_strategy_assignments=[
@@ -286,7 +323,7 @@ def test_strategy_promotion_readiness_blocks_assigned_strategy_when_attribution_
 def test_strategy_promotion_readiness_allows_assigned_strategy_when_contribution_is_estimated():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
-        [_backtest_row("dual_ma")],
+        [_passed_backtest_row("dual_ma")],
         [_risk_decision("dual_ma", passed=False)],
         [_shadow_order("dual_ma", divergence_status="within_expectations")],
         account_strategy_assignments=[
