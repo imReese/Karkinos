@@ -40,7 +40,9 @@ class LiveContextProvider:
             instruments = dict(portfolio.instruments)
 
         positions_value = sum(
-            Decimal(str(position.market_value)) for position in positions.values()
+            Decimal(str(position.market_value))
+            for position in positions.values()
+            if getattr(position, "market_value", None) is not None
         )
         total_equity = cash + positions_value
         if total_equity > self._peak_equity:

@@ -3386,6 +3386,133 @@ async def test_formula_repair_is_bounded_and_charged_to_existing_budget(
         assert len(audit.list_drafts(fixture.last_result["session_id"])) == 1
 
 
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "repair_succeeds,prior_calls", [(True, 0), (False, 0), (True, 9)]
+)
+async def test_critique_repair_is_bounded_and_charged_to_existing_budget(
+    tmp_path, repair_succeeds, prior_calls
+) -> None:
+    service = _service(tmp_path)
+    service.update_policy(_policy_payload(enabled=True))
+    store = service._store
+    run, _ = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="critique-repair-test",
+        baseline_seed_result_id=1,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+        research_context_id="normalized-critique-repair",
+        valuation_snapshot_id=None,
+        ledger_cutoff_id=0,
+        now="2026-08-11T08:00:00+00:00",
+    )
+    for index in range(prior_calls):
+        store.claim_provider_call(
+            call_id=f"earlier-{index}",
+            run_id="earlier",
+            market_date=run["market_date"],
+            call_kind="critique",
+            call_limit=10,
+            now="2026-08-11T08:00:00+00:00",
+        )
+
+    class CritiqueRepairResearch(_FixtureResearch):
+        async def critique(self, request):
+            self.critique_calls += 1
+            if self.critique_calls == 1 or not repair_succeeds:
+                return {
+                    "status": "failed",
+                    "failure_code": "critique_schema_invalid",
+                    "critique_id": f"failed-critique-{request.draft_id}",
+                    "artifact": None,
+                }
+            return {
+                "status": "completed",
+                "failure_code": None,
+                "critique_id": f"critique-{request.draft_id}",
+                "artifact": {
+                    "supported_claims": ["Drawdown improved in the frozen run."],
+                    "evidence_gaps": ["More regimes are needed."],
+                    "provider_provenance": {"usage": {"total_tokens": 900}},
+                },
+            }
+
+    fixture = CritiqueRepairResearch(candidate_result_id=1)
+    draft = {
+        "draft_id": "draft-auto-1",
+        "contract": {},
+        "formula_ast": {},
+    }
+    hypotheses = {"session_id": "session-1"}
+    iteration_context = _build_iteration_context(
+        iteration_number=1,
+        total_iterations=5,
+        previous_iteration=None,
+    )
+    db = AppDatabase(tmp_path / "app.db")
+    candidate_payload = _normalized_research_result(
+        total_return=0.12,
+        sharpe=1.2,
+        drawdown=0.08,
+        include_parameter_panel=True,
+    )
+    res_id = await db.save_backtest_result(
+        config_json=json.dumps({"strategy": "ai_formula_research"}),
+        initial_cash=candidate_payload["initial_cash"],
+        final_equity=candidate_payload["final_equity"],
+        total_return=candidate_payload["total_return"],
+        sharpe=candidate_payload["sharpe"],
+        max_dd=candidate_payload["max_drawdown"],
+        equity_curve_json=json.dumps(candidate_payload["equity_curve"]),
+        annual_return=candidate_payload["annual_return"],
+        sortino=candidate_payload["sortino"],
+        win_rate=candidate_payload["win_rate"],
+        duration_days=candidate_payload["duration_days"],
+        metrics_json=json.dumps(candidate_payload["metrics_json"]),
+        cost_summary_json=json.dumps(candidate_payload["cost_summary_json"]),
+    )
+    fixture.candidate_result_id = res_id
+    service._db = db
+
+    operation = service._run_candidate(
+        run=run,
+        policy=service.get_policy(),
+        hypotheses=hypotheses,
+        draft=draft,
+        iteration_context=iteration_context,
+        baseline_result_id=res_id,
+        local_research=fixture,
+        external_research=fixture,
+    )
+
+    if repair_succeeds and not prior_calls:
+        candidate = await operation
+        assert candidate["status"] in {
+            "awaiting_human_approval",
+            "evaluated_research_only",
+            "research_blocked",
+        }
+        assert candidate["status"] != "failed_closed"
+        assert candidate["critique_id"] == "critique-draft-auto-1"
+        assert fixture.critique_calls == 2
+    else:
+        candidate = await operation
+        assert candidate["status"] == "failed_closed"
+        assert candidate["recommendation"] == "reject"
+        expected = (
+            "daily_provider_call_limit_reached"
+            if prior_calls
+            else "critique_schema_invalid"
+        )
+        assert candidate["comparison"]["failure_code"] == expected
+        assert fixture.critique_calls == (1 if prior_calls else 2)
+
+    usage = store.usage_for_market_date(run["market_date"])
+    assert usage["provider_calls"] == prior_calls + fixture.critique_calls
+
+
 def _seed_four_round_timeout_resume_state(
     *,
     store: ShadowResearchStore,

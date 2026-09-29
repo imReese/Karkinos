@@ -455,8 +455,28 @@ def test_financial_preflight_has_independent_portfolio_valuation_gate() -> None:
     assert result["financial_gate_status"] == "blocked"
     assert result["eligible_for_background_attempt"] is False
     assert result["financial_blockers"] == ["valuation_snapshot_not_complete"]
-    assert result["operator_checklist"][0]["gate"] == "portfolio_valuation"
     assert result["database_writes_performed"] is False
+
+
+def test_financial_preflight_passes_when_fund_valuation_degraded_but_stock_lane_complete() -> (
+    None
+):
+    inputs = _financial_preflight_inputs()
+    portfolio = inputs["decision_payload"]["summary"]["portfolio"]
+    portfolio["valuation_status"] = "missing"
+    portfolio["valuation_lanes"] = [
+        {"asset_class": "stock", "status": "complete"},
+        {"asset_class": "fund", "status": "missing"},
+    ]
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    gates = {item["gate"]: item for item in result["gates"]}
+    assert gates["portfolio_valuation"] == {
+        "gate": "portfolio_valuation",
+        "status": "pass",
+        "blockers": [],
+    }
 
 
 def test_promoted_scan_cache_identity_includes_valuation_status() -> None:

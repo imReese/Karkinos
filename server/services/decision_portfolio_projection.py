@@ -161,7 +161,9 @@ def portfolio_state_summary(
     symbols: list[str] = []
     instrument_types: dict[str, str] = {}
     position_values: list[float] = []
+    stock_position_values: list[float] = []
     position_valuation_complete = True
+    stock_valuation_complete = True
     for symbol, position in position_items:
         quantity = getattr(position, "quantity", getattr(position, "shares", None))
         if is_economically_zero_quantity(quantity):
@@ -171,13 +173,18 @@ def portfolio_state_summary(
         instrument = instruments.get(symbol)
         instrument_type = getattr(instrument, "instrument_type", None)
         instrument_type_value = getattr(instrument_type, "value", instrument_type)
-        if str(instrument_type_value or "").strip():
-            instrument_types[symbol_text] = str(instrument_type_value)
+        resolved_type = str(instrument_type_value or "").strip().lower()
+        if resolved_type:
+            instrument_types[symbol_text] = resolved_type
         market_value = position_market_value(position)
         if market_value is None:
             position_valuation_complete = False
+            if resolved_type in {"", "stock"}:
+                stock_valuation_complete = False
         else:
             position_values.append(market_value)
+            if resolved_type in {"", "stock"}:
+                stock_position_values.append(market_value)
     cash = float_or_zero(getattr(portfolio, "cash", 0.0))
     snapshot = context.get("valuation_snapshot")
     aggregate_valuation_complete = (
@@ -190,6 +197,10 @@ def portfolio_state_summary(
         if total_market_value is not None
         else None
     )
+    stock_market_value = (
+        sum(stock_position_values) if stock_valuation_complete else None
+    )
+    stock_equity = cash + stock_market_value if stock_market_value is not None else None
     result = {
         "status": "available" if valuation_complete else "blocked",
         "cash": cash,
@@ -198,12 +209,17 @@ def portfolio_state_summary(
         "instrument_types": instrument_types,
         "total_market_value": total_market_value,
         "total_equity": total_equity,
+        "stock_market_value": stock_market_value,
+        "stock_equity": stock_equity,
         "board_buy_permissions": board_permissions,
     }
     if isinstance(snapshot, dict):
         from server.services.valuation_snapshot import valuation_identity_fields
 
         result.update(valuation_identity_fields(snapshot))
+        result["valuation_lanes"] = list(snapshot.get("valuation_lanes") or [])
+    else:
+        result["valuation_lanes"] = []
     result["fact_authority"] = context.get("authority")
     return result
 

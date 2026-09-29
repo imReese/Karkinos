@@ -972,3 +972,80 @@ def test_scan_outside_decision_window_evaluates_signals_without_persisting_actio
     assert result["action_tasks"] == []
     assert db.get_action_tasks_sync(statuses=["pending"], limit=20) == []
     assert db.list_signal_journal_sync(limit=20) == []
+
+
+def test_asset_class_valuation_health_isolation() -> None:
+    from server.projections.valuation_snapshot import is_asset_class_valuation_healthy
+
+    assert is_asset_class_valuation_healthy({"valuation_status": "complete"}, "stock")
+    assert is_asset_class_valuation_healthy({"status": "complete"}, "fund")
+
+    degraded_portfolio = {
+        "valuation_status": "missing",
+        "valuation_lanes": [
+            {"asset_class": "stock", "status": "complete"},
+            {"asset_class": "fund", "status": "missing"},
+        ],
+    }
+    assert is_asset_class_valuation_healthy(degraded_portfolio, "stock") is True
+    assert is_asset_class_valuation_healthy(degraded_portfolio, "fund") is False
+
+    cash_only_portfolio = {
+        "valuation_status": "missing",
+        "valuation_lanes": [
+            {"asset_class": "stock", "status": "not_applicable"},
+            {"asset_class": "fund", "status": "missing"},
+        ],
+    }
+    assert is_asset_class_valuation_healthy(cash_only_portfolio, "stock") is True
+
+    unhealthy_stock_portfolio = {
+        "valuation_status": "missing",
+        "valuation_lanes": [
+            {"asset_class": "stock", "status": "missing"},
+            {"asset_class": "fund", "status": "complete"},
+        ],
+    }
+    assert is_asset_class_valuation_healthy(unhealthy_stock_portfolio, "stock") is False
+
+
+def test_scan_succeeds_when_fund_valuation_lane_is_missing_but_stock_lane_is_complete(
+    tmp_path,
+) -> None:
+    db, service, symbols = _service(tmp_path, produces_signals=True)
+    portfolio = {
+        "total_equity": None,
+        "stock_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "missing",
+        "valuation_lanes": [
+            {
+                "asset_class": "stock",
+                "status": "complete",
+                "quote_count": 1,
+                "complete_quote_count": 1,
+                "review_required_quote_count": 0,
+                "blocker_statuses": [],
+            },
+            {
+                "asset_class": "fund",
+                "status": "missing",
+                "quote_count": 3,
+                "complete_quote_count": 0,
+                "review_required_quote_count": 3,
+                "blocker_statuses": ["missing"],
+            },
+        ],
+        "symbols": [symbols[0], "019999"],
+        "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
+        "valuation_snapshot_id": "valuation-fixture",
+    }
+
+    result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+
+    assert result["status"] == "completed"
+    assert "valuation_snapshot_not_complete" not in result["blockers"]
+    assert "portfolio_total_equity_invalid" not in result["blockers"]
+    assert result["selected_signal_count"] == 5
+    assert len(result["action_tasks"]) == 5

@@ -19,6 +19,7 @@ from server.services.decision_contracts import (
     action_trade_date,
     int_or_none,
 )
+from server.services.valuation_snapshot import is_asset_class_valuation_healthy
 
 
 async def run_batch_pre_trade_risk(
@@ -250,7 +251,13 @@ def batch_pre_trade_risk_evidence_gate(
         )
     if not snapshot_id:
         blockers.append({"code": "valuation_snapshot_identity_missing"})
-    if valuation_status != "complete":
+    task_asset_classes = {
+        str(task.get("asset_class") or "stock").strip().lower() for task in tasks
+    } or {"stock"}
+    if not all(
+        is_asset_class_valuation_healthy(snapshot_payload, ac)
+        for ac in task_asset_classes
+    ):
         blockers.append(
             {
                 "code": "valuation_snapshot_not_complete",

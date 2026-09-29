@@ -46,6 +46,7 @@ from server.services.strategy_promotion_pipeline import (
     AI_SHADOW_STRATEGY_PREFIX,
     resolve_strategy_order_generation_gate,
 )
+from server.services.valuation_snapshot import is_asset_class_valuation_healthy
 
 PROMOTED_STRATEGY_UNIVERSE_SCAN_SCHEMA_VERSION = (
     "karkinos.promoted_strategy_universe_scan.v1"
@@ -189,14 +190,18 @@ class PromotedStrategyUniverseScanService:
         portfolio_summary: Mapping[str, Any],
     ) -> tuple[dict[str, Any], list[str]]:
         blockers: list[str] = []
+        stock_equity = positive_float(portfolio_summary.get("stock_equity"))
         total_equity = positive_float(portfolio_summary.get("total_equity"))
         if total_equity is None:
-            blockers.append("portfolio_total_equity_invalid")
-            total_equity = 0.0
+            if stock_equity is not None:
+                total_equity = stock_equity
+            else:
+                blockers.append("portfolio_total_equity_invalid")
+                total_equity = 0.0
         valuation_status = (
             str(portfolio_summary.get("valuation_status") or "missing").strip().lower()
         )
-        if valuation_status != "complete":
+        if not is_asset_class_valuation_healthy(portfolio_summary, "stock"):
             blockers.append("valuation_snapshot_not_complete")
         valuation_snapshot_id = str(
             portfolio_summary.get("valuation_snapshot_id") or ""
@@ -205,11 +210,13 @@ class PromotedStrategyUniverseScanService:
             blockers.append("valuation_snapshot_identity_missing")
         return {
             "total_equity": total_equity,
+            "stock_equity": stock_equity,
             "cash": _nonnegative_cash(portfolio_summary.get("cash")),
             "fact_authority": portfolio_summary.get("fact_authority"),
             "board_buy_permissions": portfolio_summary.get("board_buy_permissions"),
             "valuation_status": valuation_status,
             "valuation_snapshot_id": valuation_snapshot_id,
+            "valuation_lanes": list(portfolio_summary.get("valuation_lanes") or []),
             "symbols": sorted(
                 {
                     str(symbol)
