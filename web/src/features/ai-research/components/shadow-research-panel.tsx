@@ -442,7 +442,7 @@ export function ShadowResearchPanel() {
           className="app-button-secondary min-h-11 px-4 py-2 text-sm font-semibold"
           disabled={
             run.isPending ||
-            !status?.policy.enabled ||
+            !status?.policy?.enabled ||
             !persistedPolicyReady ||
             !providerWindowEligible
           }

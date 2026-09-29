@@ -936,3 +936,46 @@ test('pauses an approved candidate through the canonical lifecycle state', async
       .textContent,
   ).toContain('Paper/shadow approved');
 });
+
+test('renders critique evolution timeline and strategy lab clone link for candidates', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+      return jsonResponse(status);
+    }
+    if (url.endsWith('/api/strategy-promotion/states')) {
+      return jsonResponse([]);
+    }
+    return jsonResponse({});
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <PreferencesProvider>
+        <ShadowResearchPanel />
+      </PreferencesProvider>
+    </QueryClientProvider>,
+  );
+
+  // Check clone link to Strategy Lab
+  const cloneLink = await screen.findByTestId('shadow-research-clone-backtest');
+  expect(cloneLink).toBeTruthy();
+  expect(cloneLink.getAttribute('href')).toContain(
+    '/backtest?strategy=draft-1',
+  );
+
+  // Check Critique Evolution Timeline
+  const timeline = await screen.findByTestId('critique-evolution-timeline');
+  expect(timeline).toBeTruthy();
+  expect(timeline.textContent).toContain(
+    'Critique self-healing & evolution timeline',
+  );
+  expect(timeline.textContent).toContain('Self-healing converged');
+  expect(timeline.textContent).toContain('Sharpe: +0.60');
+  expect(timeline.textContent).toContain('Return: +7.0%');
+});
