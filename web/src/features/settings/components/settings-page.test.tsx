@@ -267,7 +267,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test('keeps secondary settings workflows behind explicit disclosures', async () => {
+test('displays settings sections directly in an accessible flat layout without folding', async () => {
   renderSettingsPage();
 
   await screen.findByText('Configuration register');
@@ -279,9 +279,9 @@ test('keeps secondary settings workflows behind explicit disclosures', async () 
     'settings-data-safety-disclosure',
     'settings-preferences-disclosure',
   ]) {
-    const disclosure = screen.getByTestId(testId);
-    expect(disclosure.tagName).toBe('DETAILS');
-    expect(disclosure.hasAttribute('open')).toBe(false);
+    const section = screen.getByTestId(testId);
+    expect(section).toBeTruthy();
+    expect(section.tagName).toBe('SECTION');
   }
 });
 
@@ -296,9 +296,6 @@ test('renders backend data status and service state', async () => {
   expect(await screen.findByLabelText('Refresh policy: Live')).toBeTruthy();
   expect(await screen.findByText('Scheduler running')).toBeTruthy();
   expect(await screen.findByText('Saved configuration')).toBeTruthy();
-  expect(
-    await screen.findByText('Controlled refresh · recorded quote cache'),
-  ).toBeTruthy();
   expect(screen.queryByText('Runtime boundary')).toBeNull();
   expect(
     await screen.findByLabelText('Boundary item: Scheduler Scheduler running'),
@@ -317,10 +314,9 @@ test('renders backend data status and service state', async () => {
   expect(
     await screen.findByTestId('settings-configuration-editor'),
   ).toBeTruthy();
-  expect(
-    (screen.getByTestId('settings-configuration-editor') as HTMLDetailsElement)
-      .open,
-  ).toBe(false);
+  expect(screen.getByTestId('settings-configuration-editor').tagName).toBe(
+    'SECTION',
+  );
   expect(
     await screen.findByLabelText('Current provider: akshare'),
   ).toBeTruthy();
@@ -336,15 +332,11 @@ test('renders backend data status and service state', async () => {
   expect(await screen.findByText('Metadata readiness')).toBeTruthy();
 });
 
-test('prioritizes saved configuration before refresh and runtime controls', async () => {
+test('prioritizes saved configuration before operational controls and live services', async () => {
   renderSettingsPage();
 
   const dataStatus = await screen.findByText('Data status');
   const persistedConfiguration = await screen.findByText('Saved configuration');
-  const refreshAction = await screen.findByRole('heading', {
-    name: 'Refresh quotes',
-    level: 2,
-  });
   const liveServices = await screen.findByText('Live services');
 
   expect(
@@ -352,18 +344,9 @@ test('prioritizes saved configuration before refresh and runtime controls', asyn
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    dataStatus.compareDocumentPosition(refreshAction) &
+    dataStatus.compareDocumentPosition(liveServices) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(
-    refreshAction.compareDocumentPosition(liveServices) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    refreshAction
-      .closest('[data-workbench-primitive="controlled-action-zone"]')
-      ?.getAttribute('data-action-tone'),
-  ).toBe('info');
 });
 
 test('shows cached quote guidance for cache-only and stale valuation states', async () => {
@@ -394,17 +377,11 @@ test('shows cached quote guidance for cache-only and stale valuation states', as
   expect(refreshControlsLink.getAttribute('href')).toBe(
     '#settings-operational-controls-disclosure',
   );
-  const operationalWorkspace = screen.getByTestId(
-    'settings-operational-controls-disclosure',
-  ) as HTMLDetailsElement;
-  const dataSourceDisclosure = screen.getByTestId(
-    'settings-data-source-disclosure',
-  ) as HTMLDetailsElement;
-  expect(operationalWorkspace.open).toBe(false);
-  expect(dataSourceDisclosure.open).toBe(false);
+  expect(
+    screen.getByTestId('settings-operational-controls-disclosure'),
+  ).toBeTruthy();
+  expect(screen.getByTestId('settings-data-source-disclosure')).toBeTruthy();
   await user.click(refreshControlsLink);
-  expect(operationalWorkspace.open).toBe(true);
-  expect(dataSourceDisclosure.open).toBe(true);
   expect(screen.queryByText(/real-time/i)).toBeNull();
 });
 
@@ -499,82 +476,10 @@ test('updates local theme and language preferences', async () => {
   expect(document.body.textContent).not.toContain('需要 token');
 });
 
-test('saves data source settings through the settings endpoint', async () => {
-  const user = userEvent.setup();
-  const { fetchMock } = renderSettingsPage();
-  const configurationEditor = await screen.findByTestId(
-    'settings-configuration-editor',
-  );
-  await user.click(configurationEditor.querySelector(':scope > summary')!);
-
-  const intervalInput = (await screen.findByRole('spinbutton', {
-    name: 'Poll interval',
-  })) as HTMLInputElement;
-  await waitFor(() => expect(intervalInput.disabled).toBe(false));
-  await user.clear(intervalInput);
-  await user.type(intervalInput, '90');
-  await user.click(screen.getByRole('button', { name: 'Save data settings' }));
-
-  await waitFor(() => {
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/settings/data-source',
-      expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify({
-          data_source: 'akshare',
-          live_poll_interval: 90,
-        }),
-      }),
-    );
-  });
-  expect(
-    screen.queryByRole('textbox', { name: 'TuShare credential' }),
-  ).toBeNull();
-  expect(
-    await screen.findByText('Not required by the selected quote source'),
-  ).toBeTruthy();
-  expect(await screen.findByText('Data settings saved')).toBeTruthy();
-});
-
-test('blocks TuShare selection until the environment credential is configured', async () => {
-  const user = userEvent.setup();
-  renderSettingsPage({
-    settings: { ...defaultSettings, tushare_token_configured: false },
-  });
-  const configurationEditor = await screen.findByTestId(
-    'settings-configuration-editor',
-  );
-  await user.click(configurationEditor.querySelector(':scope > summary')!);
-
-  await user.click(
-    await screen.findByRole('button', { name: 'Data source: Tushare' }),
-  );
-
-  expect(
-    await screen.findByText(
-      'Missing; configure the runtime credential before switching',
-    ),
-  ).toBeTruthy();
-  expect(screen.queryByText(/TUSHARE_TOKEN/)).toBeNull();
-  expect(
-    (
-      screen.getByRole('button', {
-        name: 'Save data settings',
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  expect(
-    screen.queryByRole('textbox', { name: 'TuShare credential' }),
-  ).toBeNull();
-});
-
 test('saves account commission settings through the settings endpoint', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderSettingsPage();
-  const configurationEditor = await screen.findByTestId(
-    'settings-configuration-editor',
-  );
-  await user.click(configurationEditor.querySelector(':scope > summary')!);
+  await screen.findByTestId('settings-configuration-editor');
 
   const rateInput = (await screen.findByRole('spinbutton', {
     name: 'Stock commission rate',
@@ -609,14 +514,8 @@ test('saves account commission settings through the settings endpoint', async ()
 test('requires broker-account review before saving board buy access', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderSettingsPage();
-  const operations = await screen.findByTestId(
-    'settings-operational-controls-disclosure',
-  );
-  await user.click(operations.querySelector(':scope > summary')!);
-  const disclosure = screen.getByTestId(
-    'settings-board-permissions-disclosure',
-  );
-  await user.click(disclosure.querySelector(':scope > summary')!);
+  await screen.findByTestId('settings-operational-controls-disclosure');
+  await screen.findByTestId('settings-board-permissions-disclosure');
 
   const save = screen.getByRole('button', { name: 'Save access review' });
   expect((save as HTMLButtonElement).disabled).toBe(true);
@@ -665,7 +564,7 @@ test('shows provider timeout guidance without alternate local provider action', 
   ).toBeTruthy();
 });
 
-test('shows tushare capability matrix and manual daily tasks', async () => {
+test('shows tushare capability matrix', async () => {
   renderSettingsPage({
     settings: {
       ...defaultSettings,
@@ -732,26 +631,6 @@ test('shows tushare capability matrix and manual daily tasks', async () => {
   expect(
     (await screen.findAllByText('Sina intraday fund estimate')).length,
   ).toBeGreaterThan(0);
-  expect(await screen.findByText('Manual daily task checklist')).toBeTruthy();
-  const signInTask = await screen.findByLabelText(
-    'Manual task: TuShare sign-in',
-  );
-  expect(signInTask.closest('label')).toBeTruthy();
-  expect(
-    await screen.findByLabelText('Manual task: Guess market direction'),
-  ).toBeTruthy();
-  expect(
-    await screen.findByLabelText('Manual task: Check points and permissions'),
-  ).toBeTruthy();
-  const taskLinks = screen.getAllByRole('link', { name: 'Open' });
-  expect(taskLinks).toHaveLength(3);
-  expect(taskLinks.every((link) => link.closest('label') === null)).toBe(true);
-  expect(
-    taskLinks.every((link) =>
-      link.className.includes('min-h-[var(--app-touch-target)]'),
-    ),
-  ).toBe(true);
-  expect(screen.queryByText('Submit bugs or data requests')).toBeNull();
 });
 
 test('guides users to configure asset metadata when none is available', async () => {

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { createLazyRoute } from '@tanstack/react-router';
+import { Plus } from 'lucide-react';
 
 import { useCopy, type AppCopy } from '../../../shared/i18n/context';
 import { ToastStack, type ToastItem } from '../../../shared/ui/toast-stack';
@@ -405,9 +406,10 @@ export function ActivityPage() {
           actions={
             <button
               type="button"
-              className="app-button-secondary px-3 py-2 text-xs"
+              className="app-button-secondary inline-flex items-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold shadow-xs"
               onClick={() => setEntryDrawerOpen(true)}
             >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               {copy.activity.entryTools.openAction}
             </button>
           }

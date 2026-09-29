@@ -1,4 +1,14 @@
 import { useMemo, useState } from 'react';
+import {
+  ArrowLeftRight,
+  Briefcase,
+  Coins,
+  Layers,
+  Search,
+  SlidersHorizontal,
+  Wallet,
+  X,
+} from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
@@ -15,6 +25,24 @@ import {
   type LedgerSubcategory,
   type SpecificLedgerSubcategory,
 } from './activity-feed-model';
+
+function getCategoryIcon(category: LedgerEntryCategory) {
+  switch (category) {
+    case 'trade':
+      return ArrowLeftRight;
+    case 'cash':
+      return Wallet;
+    case 'dividend':
+      return Coins;
+    case 'adjustment':
+      return SlidersHorizontal;
+    case 'other':
+      return Briefcase;
+    case 'all':
+    default:
+      return Layers;
+  }
+}
 
 export function ActivityFeedLoading() {
   const copy = useCopy();
@@ -230,15 +258,16 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
             {LEDGER_ENTRY_CATEGORIES.map((category) => {
               const count = categoryCounts.get(category) ?? 0;
               const isSelected = selectedCategory === category;
+              const CategoryIcon = getCategoryIcon(category);
               return (
                 <button
                   key={category}
                   aria-label={`${labels.categoryLabels[category]} ${labels.count(count)}`}
                   aria-pressed={isSelected}
-                  className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors xl:min-h-8 ${
+                  className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-3 py-1.5 text-xs font-semibold transition-all ${
                     isSelected
-                      ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
-                      : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
+                      ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-xs'
+                      : 'border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] hover:text-[var(--app-soft)]'
                   }`}
                   onClick={() => {
                     setSelectedCategory(category);
@@ -247,10 +276,18 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   }}
                   type="button"
                 >
+                  <CategoryIcon
+                    className="h-3.5 w-3.5 opacity-80"
+                    aria-hidden="true"
+                  />
                   <span>{labels.categoryLabels[category]}</span>
                   <span
                     aria-hidden="true"
-                    className="app-type-micro font-mono tabular-nums"
+                    className={`app-type-micro font-mono tabular-nums rounded-full px-1.5 py-0.5 ${
+                      isSelected
+                        ? 'bg-[var(--app-accent-ghost)] text-[var(--app-accent-strong)]'
+                        : 'bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] text-[var(--app-muted)]'
+                    }`}
                   >
                     {count}
                   </span>
@@ -258,11 +295,14 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
               );
             })}
           </div>
-          <label className="min-w-0 lg:w-[260px]">
+          <div className="relative min-w-0 lg:w-[280px]">
             <span className="sr-only">{labels.searchLabel}</span>
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-[var(--app-muted)]">
+              <Search className="h-3.5 w-3.5" aria-hidden="true" />
+            </div>
             <input
               aria-label={labels.searchLabel}
-              className="app-field h-9 w-full rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
+              className="app-field h-9 w-full rounded-[var(--app-radius-control)] pl-8 pr-7 text-xs font-medium placeholder:text-[var(--app-muted)] focus:border-[var(--app-accent-border)] focus:ring-1 focus:ring-[var(--app-accent-border)]"
               onChange={(event) => {
                 setQuery(event.target.value);
                 setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
@@ -271,7 +311,20 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
               type="search"
               value={query}
             />
-          </label>
+            {query ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('');
+                  setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
+                }}
+                className="absolute inset-y-0 right-0 flex items-center pr-2 text-[var(--app-muted)] hover:text-[var(--app-text)]"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
         </div>
         {subcategoryOptions.length > 1 ? (
           <div
@@ -286,9 +339,9 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   key={option.key}
                   aria-label={`${option.label} ${labels.count(option.count)}`}
                   aria-pressed={isSelected}
-                  className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors xl:min-h-8 ${
+                  className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 py-1 text-xs font-semibold transition-all ${
                     isSelected
-                      ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
+                      ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-xs'
                       : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
                   }`}
                   onClick={() => {
@@ -300,7 +353,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   <span>{option.label}</span>
                   <span
                     aria-hidden="true"
-                    className="app-type-micro font-mono tabular-nums"
+                    className="app-type-micro font-mono tabular-nums opacity-80"
                   >
                     {option.count}
                   </span>
@@ -321,7 +374,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           </div>
         ) : (
           <div
-            className="min-w-0 max-w-full md:overflow-x-auto md:overscroll-x-contain"
+            className="min-w-0 max-w-full max-h-[34rem] overflow-y-auto overscroll-y-contain md:overflow-x-auto md:overscroll-x-contain"
             data-testid="activity-history-table-scroll"
           >
             <table
@@ -329,15 +382,23 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
               className="app-data-table block w-full min-w-0 text-left text-sm md:table md:min-w-[760px]"
               data-testid="activity-history-table"
             >
-              <thead className="hidden md:table-header-group">
-                <tr>
-                  <th className="px-4 py-2.5">{labels.columns.time}</th>
-                  <th className="px-4 py-2.5">{labels.columns.activity}</th>
-                  <th className="px-4 py-2.5">{labels.columns.instrument}</th>
-                  <th className="px-4 py-2.5 text-right">
+              <thead className="hidden md:table-header-group sticky top-0 z-10 bg-[var(--app-surface-0)]">
+                <tr className="border-b border-[var(--app-divider)] bg-[var(--app-surface-0)]">
+                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
+                    {labels.columns.time}
+                  </th>
+                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
+                    {labels.columns.activity}
+                  </th>
+                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
+                    {labels.columns.instrument}
+                  </th>
+                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-right text-xs font-semibold text-[var(--app-text-secondary)]">
                     {labels.columns.amount}
                   </th>
-                  <th className="px-4 py-2.5">{labels.columns.detail}</th>
+                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
+                    {labels.columns.detail}
+                  </th>
                 </tr>
               </thead>
               <tbody
@@ -361,29 +422,45 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-3 sm:px-5">
             <span
               aria-live="polite"
-              className="app-muted text-xs font-semibold"
+              className="app-muted text-xs font-medium"
               data-testid="activity-history-progress"
             >
               {labels.showing(visibleEntries.length, filteredEntries.length)}
             </span>
             {remainingEntryCount > 0 ? (
-              <button
-                className="app-button-secondary min-h-11 px-4 text-sm"
-                data-testid="activity-history-show-more"
-                onClick={() =>
-                  setVisibleEntryCount((count) =>
-                    Math.min(
-                      count + ACTIVITY_PAGE_SIZE,
-                      filteredEntries.length,
-                    ),
-                  )
-                }
-                type="button"
-              >
-                {labels.showMore(
-                  Math.min(ACTIVITY_PAGE_SIZE, remainingEntryCount),
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="app-button-secondary inline-flex items-center gap-1.5 rounded-[var(--app-radius-control)] px-3.5 py-1.5 text-xs font-semibold shadow-xs"
+                  data-testid="activity-history-show-more"
+                  onClick={() =>
+                    setVisibleEntryCount((count) =>
+                      Math.min(
+                        count + ACTIVITY_PAGE_SIZE,
+                        filteredEntries.length,
+                      ),
+                    )
+                  }
+                  type="button"
+                >
+                  <span>
+                    {labels.showMore(
+                      Math.min(ACTIVITY_PAGE_SIZE, remainingEntryCount),
+                    )}
+                  </span>
+                  <span className="app-type-micro font-mono tabular-nums opacity-75">
+                    +{Math.min(ACTIVITY_PAGE_SIZE, remainingEntryCount)}
+                  </span>
+                </button>
+                <button
+                  className="app-button-ghost inline-flex items-center gap-1 rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-xs font-semibold text-[var(--app-soft)] hover:text-[var(--app-text)]"
+                  data-testid="activity-history-show-all"
+                  onClick={() => setVisibleEntryCount(filteredEntries.length)}
+                  type="button"
+                >
+                  {labels.showAll ??
+                    (locale === 'zh' ? '展开全部' : 'Show all')}
+                </button>
+              </div>
             ) : null}
           </div>
         ) : null}
