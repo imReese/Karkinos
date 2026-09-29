@@ -492,6 +492,8 @@ def _scan_summary(row: dict[str, Any], *, include_receipts: bool) -> dict[str, A
                 "decision_date": str(row.get("run_date") or ""),
                 "frozen_market_date": signal.get("frozen_market_date"),
                 "symbol": str(signal.get("symbol") or ""),
+                "display_name": signal.get("display_name") or signal.get("name"),
+                "name": signal.get("name") or signal.get("display_name"),
                 "direction": str(signal.get("direction") or ""),
                 "strategy_id": str(signal.get("strategy_id") or ""),
                 "scan_run_id": str(row.get("run_id") or ""),

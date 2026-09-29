@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { registerInstrumentDisplayNames } from '../../../shared/instrument-display';
 import {
   useAutomationCockpitQuery,
   useBrokerConnectorHealthQuery,
@@ -62,6 +63,26 @@ export function useDecisionCockpitWorkspace() {
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [healthyGateMatrixExpanded, setHealthyGateMatrixExpanded] =
     useState(false);
+
+  useEffect(() => {
+    if (today.data?.candidates) {
+      registerInstrumentDisplayNames(today.data.candidates);
+    }
+    if (tradingPlan.data?.order_intents) {
+      registerInstrumentDisplayNames(tradingPlan.data.order_intents);
+    }
+    if (signalActions.data) {
+      registerInstrumentDisplayNames(signalActions.data);
+    }
+    if (signalJournal.data) {
+      registerInstrumentDisplayNames(signalJournal.data.map((j) => j.signal));
+    }
+  }, [
+    today.data?.candidates,
+    tradingPlan.data?.order_intents,
+    signalActions.data,
+    signalJournal.data,
+  ]);
   const loading = !today.data && today.isLoading;
   const error = today.data ? null : today.error;
   const lanes = useMemo(

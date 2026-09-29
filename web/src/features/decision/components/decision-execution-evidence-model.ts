@@ -1,5 +1,6 @@
 import { type Locale } from '../../../shared/preferences/context';
 import { formatCurrency } from '../../../shared/format';
+import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import {
   type ExecutionReconciliationRun,
   type ExecutionReconciliationItem,
@@ -361,7 +362,9 @@ export function stagedFillSymbolSummary(
     new Set(
       fills.fills
         .map((fill) =>
-          typeof fill.symbol === 'string' ? fill.symbol.trim() : '',
+          typeof fill.symbol === 'string'
+            ? formatInstrumentDisplayLabel(fill) || fill.symbol.trim()
+            : '',
         )
         .filter(Boolean),
     ),

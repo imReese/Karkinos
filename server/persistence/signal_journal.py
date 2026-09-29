@@ -24,6 +24,38 @@ from server.persistence.signal_journal_projection import (
 logger = logging.getLogger(__name__)
 
 
+def _load_symbol_display_names(conn: sqlite3.Connection) -> dict[str, str]:
+    """Load symbol-to-name mapping from watchlist_assets and instrument_metadata."""
+    names: dict[str, str] = {}
+    try:
+        rows = conn.execute(
+            "SELECT symbol, display_name FROM watchlist_assets"
+        ).fetchall()
+        for r in rows:
+            sym = str(r[0] or "").strip()
+            name = str(r[1] or "").strip()
+            if sym and name:
+                names[sym] = name
+                names[sym.upper()] = name
+                names[sym.lower()] = name
+    except Exception:
+        pass
+    try:
+        rows = conn.execute(
+            "SELECT symbol, display_name FROM instrument_metadata"
+        ).fetchall()
+        for r in rows:
+            sym = str(r[0] or "").strip()
+            name = str(r[1] or "").strip()
+            if sym and name:
+                names[sym] = name
+                names[sym.upper()] = name
+                names[sym.lower()] = name
+    except Exception:
+        pass
+    return names
+
+
 class SignalJournalRepository(SQLiteRepository):
     """Own signals, action tasks, reviews, and persisted risk decisions."""
 
@@ -90,7 +122,44 @@ class SignalJournalRepository(SQLiteRepository):
                 (limit, offset),
             )
             rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+            symbol_names: dict[str, str] = {}
+            try:
+                name_cur = await db.execute(
+                    "SELECT symbol, display_name FROM watchlist_assets"
+                )
+                for r in await name_cur.fetchall():
+                    if r[0] and r[1]:
+                        symbol_names[str(r[0])] = str(r[1])
+                        symbol_names[str(r[0]).upper()] = str(r[1])
+                        symbol_names[str(r[0]).lower()] = str(r[1])
+            except Exception:
+                pass
+            try:
+                name_cur = await db.execute(
+                    "SELECT symbol, display_name FROM instrument_metadata"
+                )
+                for r in await name_cur.fetchall():
+                    if r[0] and r[1]:
+                        symbol_names[str(r[0])] = str(r[1])
+                        symbol_names[str(r[0]).upper()] = str(r[1])
+                        symbol_names[str(r[0]).lower()] = str(r[1])
+            except Exception:
+                pass
+            results = []
+            for row in rows:
+                item = dict(row)
+                sym = item.get("symbol")
+                if sym and not item.get("display_name"):
+                    name = (
+                        symbol_names.get(sym)
+                        or symbol_names.get(sym.upper())
+                        or symbol_names.get(sym.lower())
+                    )
+                    if name:
+                        item["display_name"] = name
+                        item["name"] = name
+                results.append(item)
+            return results
 
     async def get_latest_signals(self, limit: int = 10) -> list[dict[str, Any]]:
         """获取最新信号。"""
@@ -108,6 +177,7 @@ class SignalJournalRepository(SQLiteRepository):
         """List signal → action task → risk decision journal entries."""
         with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            symbol_names = _load_symbol_display_names(conn)
             signal_rows = conn.execute(
                 """
                 SELECT *
@@ -147,6 +217,16 @@ class SignalJournalRepository(SQLiteRepository):
         actions_by_signal: dict[int, dict[str, Any]] = {}
         for row in action_rows:
             action = dict(row)
+            sym = action.get("symbol")
+            if sym and not action.get("display_name"):
+                name = (
+                    symbol_names.get(sym)
+                    or symbol_names.get(sym.upper())
+                    or symbol_names.get(sym.lower())
+                )
+                if name:
+                    action["display_name"] = name
+                    action["name"] = name
             source_signal_id = action.get("source_signal_id")
             if (
                 source_signal_id is not None
@@ -195,6 +275,16 @@ class SignalJournalRepository(SQLiteRepository):
         entries: list[dict[str, Any]] = []
         for row in signal_rows:
             signal = dict(row)
+            sym = signal.get("symbol")
+            if sym and not signal.get("display_name"):
+                name = (
+                    symbol_names.get(sym)
+                    or symbol_names.get(sym.upper())
+                    or symbol_names.get(sym.lower())
+                )
+                if name:
+                    signal["display_name"] = name
+                    signal["name"] = name
             signal_id = int(signal["id"])
             action = actions_by_signal.get(signal_id)
             risk = risks_by_signal.get(signal_id)
@@ -350,6 +440,18 @@ class SignalJournalRepository(SQLiteRepository):
     ) -> list[dict[str, Any]]:
         """Attach latest risk-gate outcome for each action task's source signal."""
         tasks = [dict(row) for row in rows]
+        symbol_names = _load_symbol_display_names(conn)
+        for task in tasks:
+            sym = task.get("symbol")
+            if sym and not task.get("display_name"):
+                name = (
+                    symbol_names.get(sym)
+                    or symbol_names.get(sym.upper())
+                    or symbol_names.get(sym.lower())
+                )
+                if name:
+                    task["display_name"] = name
+                    task["name"] = name
         source_signal_ids = [
             int(task["source_signal_id"])
             for task in tasks

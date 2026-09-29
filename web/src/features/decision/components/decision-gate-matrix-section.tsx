@@ -57,7 +57,7 @@ export function DecisionGateMatrixSection({
             {gateItems.map((item, index) => (
               <li
                 key={item.id}
-                className="app-decision-gate-step"
+                className="app-decision-gate-step rounded-[var(--app-radius-surface)] p-2 transition-colors hover:bg-[var(--app-surface-raised)]"
                 data-gate-state={item.state}
               >
                 <div className="flex min-w-0 items-center gap-2">
@@ -69,7 +69,24 @@ export function DecisionGateMatrixSection({
                     aria-hidden="true"
                   />
                 </div>
-                <span className="app-decision-gate-label">{item.gate}</span>
+                <div className="mt-1 flex items-baseline justify-between gap-1">
+                  <span className="app-decision-gate-label font-medium text-xs text-[var(--app-text)]">
+                    {item.gate}
+                  </span>
+                  <span className="app-type-micro font-mono text-[var(--app-success-text)]">
+                    ✓ {locale === 'zh' ? '已通过' : 'Passed'}
+                  </span>
+                </div>
+                {item.reason ? (
+                  <p
+                    className="app-type-micro mt-0.5 line-clamp-1 text-[var(--app-text-secondary)]"
+                    title={
+                      typeof item.reason === 'string' ? item.reason : undefined
+                    }
+                  >
+                    {item.reason}
+                  </p>
+                ) : null}
               </li>
             ))}
           </ol>

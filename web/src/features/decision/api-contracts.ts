@@ -254,6 +254,8 @@ export type DecisionResponse = {
 export type DailyTradingPlanOrderIntent = {
   action_id: number | null;
   symbol: string | null;
+  display_name?: string | null;
+  name?: string | null;
   asset_class: string | null;
   side: string;
   target_weight: number;

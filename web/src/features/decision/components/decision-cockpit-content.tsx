@@ -167,7 +167,7 @@ export function DecisionCockpitContent({
       />
 
       <details
-        className="group min-w-0 border-y border-[var(--app-divider)]"
+        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
         data-testid="decision-daily-reports-disclosure"
       >
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
@@ -205,25 +205,29 @@ export function DecisionCockpitContent({
       </div>
 
       <details
-        className="min-w-0 border-y border-[var(--app-divider)]"
+        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
         data-testid="decision-quality-disclosure"
       >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
           <span>
             {locale === 'zh' ? '决策证据登记' : 'Decision evidence register'}
           </span>
-          <span className="text-xs font-normal text-[var(--app-text-secondary)]">
-            {locale === 'zh' ? '按需展开' : 'Expand on demand'}
+          <span className="flex shrink-0 items-center gap-2 text-xs font-normal text-[var(--app-text-secondary)]">
+            <span>{locale === 'zh' ? '按需展开' : 'Expand on demand'}</span>
+            <ChevronDown
+              aria-hidden="true"
+              className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+            />
           </span>
         </summary>
-        <div className="py-4">
+        <div className="border-t border-[var(--app-divider)] py-4">
           <DecisionQualityPanel />
         </div>
       </details>
 
       {idleTradingPlan ? (
         <details
-          className="group min-w-0 border-y border-[var(--app-divider)]"
+          className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
           data-testid="decision-daily-trading-plan-disclosure"
         >
           <summary className="flex min-h-16 cursor-pointer list-none items-start justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
@@ -268,7 +272,7 @@ export function DecisionCockpitContent({
       <DecisionAutomationDisclosure model={model} />
 
       <details
-        className="group min-w-0 border-y border-[var(--app-divider)]"
+        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
         data-testid="decision-supporting-details"
       >
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
@@ -380,7 +384,7 @@ function DecisionAutomationDisclosure({
 
   return (
     <details
-      className="min-w-0 border-y border-[var(--app-divider)]"
+      className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
       data-testid="decision-automation-disclosure"
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">

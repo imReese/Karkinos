@@ -10,6 +10,7 @@ import {
   formatStrategyDisplayName,
   type StrategyNameMap,
 } from '../../../shared/strategy-display';
+import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import {
   type PaperShadowCostSummary,
   type PaperShadowDivergenceSummary,
@@ -356,7 +357,8 @@ export function paperShadowMarketContextItems(
       : '',
     priceBasis ? `${labels.priceBasis}: ${priceBasis}` : '',
     ...(context?.symbols ?? []).map((item) => {
-      const symbol = item.symbol?.trim() || '--';
+      const symbol =
+        formatInstrumentDisplayLabel(item) || item.symbol?.trim() || '--';
       const expected = formatCurrency(
         numericCostSummaryValue(item.expected_price),
       );

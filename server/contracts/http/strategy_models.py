@@ -17,6 +17,8 @@ class SignalResponse(BaseModel):
     timestamp: str
     strategy_id: str
     symbol: str
+    name: str | None = None
+    display_name: str | None = None
     direction: str
     target_weight: float
     price: float | None = None

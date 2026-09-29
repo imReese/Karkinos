@@ -199,10 +199,10 @@ export function DecisionOutcomeReviewPanel({
   const contribution = target?.strategy_contribution_report;
 
   return (
-    <div className="mt-2 border-t border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] pt-2">
+    <>
       <button
         type="button"
-        className="app-button-secondary app-type-micro inline-flex min-h-8 items-center justify-center rounded-xl px-2.5 py-1.5 font-semibold"
+        className="app-button-secondary app-type-micro inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 font-semibold"
         aria-expanded={expanded}
         onClick={() => void openPreview()}
       >
@@ -212,7 +212,7 @@ export function DecisionOutcomeReviewPanel({
       {expanded ? (
         <div
           data-testid={`decision-outcome-review-${signalId}`}
-          className="mt-3 grid gap-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] p-3"
+          className="basis-full w-full mt-3 grid gap-3 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3"
         >
           {preview.isPending ? (
             <p className="app-muted text-xs">{labels.loading}</p>
@@ -223,7 +223,7 @@ export function DecisionOutcomeReviewPanel({
               </p>
               <button
                 type="button"
-                className="app-button-secondary app-type-micro min-h-8 rounded-xl px-2.5 py-1.5 font-semibold"
+                className="app-button-secondary app-type-micro min-h-8 rounded-[var(--app-radius-control)] px-2.5 py-1.5 font-semibold"
                 onClick={() => void refreshPreview()}
               >
                 {labels.retry}
@@ -261,7 +261,7 @@ export function DecisionOutcomeReviewPanel({
               <dl className="app-type-micro grid gap-2 sm:grid-cols-2">
                 <div>
                   <dt className="app-muted">{labels.execution}</dt>
-                  <dd className="mt-0.5 font-semibold text-[var(--app-soft)]">
+                  <dd className="mt-0.5 font-semibold text-[var(--app-text)]">
                     {reviewLabel(target.execution_evidence.status, locale)} ·{' '}
                     {target.execution_evidence.order_count}/
                     {target.execution_evidence.fill_count}
@@ -269,7 +269,7 @@ export function DecisionOutcomeReviewPanel({
                 </div>
                 <div>
                   <dt className="app-muted">{labels.financial}</dt>
-                  <dd className="mt-0.5 font-semibold text-[var(--app-soft)]">
+                  <dd className="mt-0.5 font-semibold text-[var(--app-text)]">
                     {reviewLabel(target.financial_evidence_status, locale)}
                     {contribution?.net_contribution != null
                       ? ` · ${formatCurrency(contribution.net_contribution)}`
@@ -278,7 +278,7 @@ export function DecisionOutcomeReviewPanel({
                 </div>
               </dl>
               {target.blockers.length > 0 ? (
-                <p className="app-type-compact rounded-lg border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] px-2.5 py-2 text-[var(--app-warning)]">
+                <p className="app-type-compact rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] px-2.5 py-2 text-[var(--app-warning)]">
                   {labels.blocked}:{' '}
                   {target.blockers
                     .map((item) => formatPublicCode(item, locale))
@@ -289,25 +289,25 @@ export function DecisionOutcomeReviewPanel({
               {record.data ? (
                 <div
                   role="status"
-                  className="text-xs text-[var(--app-success)]"
+                  className="text-xs text-[var(--app-success-text)]"
                 >
                   {labels.recorded} · {record.data.review.review_id}
                 </div>
               ) : (
                 <div className="grid gap-2">
-                  <label className="app-type-micro grid gap-1 text-[var(--app-muted)]">
+                  <label className="app-type-micro grid gap-1 text-[var(--app-text-secondary)]">
                     {labels.reviewer}
                     <input
-                      className="app-field rounded-xl px-2.5 py-2 text-xs text-[var(--app-text)]"
+                      className="app-field rounded-[var(--app-radius-control)] px-2.5 py-2 text-xs text-[var(--app-text)]"
                       value={reviewedBy}
                       onChange={(event) => setReviewedBy(event.target.value)}
                     />
                   </label>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="app-type-micro grid gap-1 text-[var(--app-muted)]">
+                    <label className="app-type-micro grid gap-1 text-[var(--app-text-secondary)]">
                       {labels.decision}
                       <select
-                        className="app-field rounded-xl px-2.5 py-2 text-xs text-[var(--app-text)]"
+                        className="app-field rounded-[var(--app-radius-control)] px-2.5 py-2 text-xs text-[var(--app-text)]"
                         value={decision}
                         onChange={(event) =>
                           setDecision(event.target.value as ReviewDecision)
@@ -327,10 +327,10 @@ export function DecisionOutcomeReviewPanel({
                         </option>
                       </select>
                     </label>
-                    <label className="app-type-micro grid gap-1 text-[var(--app-muted)]">
+                    <label className="app-type-micro grid gap-1 text-[var(--app-text-secondary)]">
                       {labels.outcome}
                       <select
-                        className="app-field rounded-xl px-2.5 py-2 text-xs text-[var(--app-text)]"
+                        className="app-field rounded-[var(--app-radius-control)] px-2.5 py-2 text-xs text-[var(--app-text)]"
                         value={outcome}
                         onChange={(event) =>
                           setOutcome(event.target.value as ReviewOutcome)
@@ -344,10 +344,10 @@ export function DecisionOutcomeReviewPanel({
                       </select>
                     </label>
                   </div>
-                  <label className="app-type-micro grid gap-1 text-[var(--app-muted)]">
+                  <label className="app-type-micro grid gap-1 text-[var(--app-text-secondary)]">
                     {labels.note}
                     <textarea
-                      className="app-field min-h-20 rounded-xl px-2.5 py-2 text-xs leading-5 text-[var(--app-text)]"
+                      className="app-field min-h-20 rounded-[var(--app-radius-control)] px-2.5 py-2 text-xs leading-5 text-[var(--app-text)]"
                       placeholder={labels.notePlaceholder}
                       value={note}
                       onChange={(event) => setNote(event.target.value)}
@@ -363,7 +363,7 @@ export function DecisionOutcomeReviewPanel({
                   ) : null}
                   <button
                     type="button"
-                    className="app-button-primary min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                    className="app-button-primary min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={
                       record.isPending || !note.trim() || !reviewedBy.trim()
                     }
@@ -377,6 +377,6 @@ export function DecisionOutcomeReviewPanel({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
