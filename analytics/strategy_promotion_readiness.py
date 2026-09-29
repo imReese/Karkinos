@@ -137,7 +137,7 @@ def build_strategy_promotion_readiness(
         strategy_id = validation_row.strategy_id
         has_validation = validation_row.is_ready
         research_gate_status = research_gate_status_by_strategy.get(strategy_id)
-        has_research_gate = research_gate_status in {None, "pass"}
+        has_research_gate = research_gate_status == "pass"
         has_risk_block = strategy_id in blocked_risk_strategies
         has_shadow = strategy_id in shadow_strategies
         has_divergence_review = strategy_id in divergence_reviewed_strategies
