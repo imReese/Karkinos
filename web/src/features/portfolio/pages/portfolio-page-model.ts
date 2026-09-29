@@ -1,7 +1,10 @@
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
 import { formatTimestamp } from '../../../shared/format';
-import type { useAccountStrategyContributionQuery } from '../portfolio-feature-boundary';
+import type {
+  useAccountStrategyContributionQuery,
+  useDailyTradingPlanQuery,
+} from '../portfolio-feature-boundary';
 import type {
   useLiveHoldingsQuery,
   usePortfolioCockpitQuery,
@@ -37,6 +40,7 @@ export type PortfolioPageModelSource = {
   cockpit: ReturnType<typeof usePortfolioCockpitQuery>;
   liveHoldings: ReturnType<typeof useLiveHoldingsQuery>;
   strategyContribution: ReturnType<typeof useAccountStrategyContributionQuery>;
+  tradingPlan?: ReturnType<typeof useDailyTradingPlanQuery>;
 };
 
 export function buildPortfolioPageModel(source: PortfolioPageModelSource) {
@@ -131,6 +135,7 @@ export function buildPortfolioPageModel(source: PortfolioPageModelSource) {
       : undefined,
     isInitialPortfolioLoad: !snapshot.data && snapshot.isLoading,
     portfolioPrimaryFailureDetail: copy.portfolio.summary.errorDetail,
+    tradingPlan: source.tradingPlan?.data ?? null,
   };
 }
 

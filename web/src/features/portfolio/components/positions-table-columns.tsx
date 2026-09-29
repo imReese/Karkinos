@@ -192,6 +192,15 @@ export function buildPositionColumns({
     cell: ({ row }) => {
       const position = row.original;
       const subtext = resolvePositionMarketValueSubtext(position, locale);
+      const hasPriceAndCost =
+        position.latest_price != null &&
+        position.latest_price > 0 &&
+        position.avg_cost != null &&
+        position.avg_cost > 0;
+      const cushionPct = hasPriceAndCost
+        ? (position.latest_price! - position.avg_cost!) / position.avg_cost!
+        : null;
+
       return (
         <span data-testid={`position-market-value-${position.symbol}`}>
           <PositionNumericCell value={formatCurrency(position.market_value)} />
@@ -201,6 +210,32 @@ export function buildPositionColumns({
               title={`${locale === 'zh' ? '持仓数量' : 'Quantity'}: ${formatQuantity(position.quantity)}`}
             >
               {subtext}
+            </span>
+          ) : null}
+          {cushionPct != null ? (
+            <span
+              data-testid={`position-cost-cushion-${position.symbol}`}
+              className="app-type-micro mt-0.5 flex items-center justify-end gap-1 font-mono tabular-nums"
+              title={
+                locale === 'zh'
+                  ? '现价相对持仓成本的安全垫与盈亏区间'
+                  : 'Safety cushion and PnL spread relative to cost basis'
+              }
+            >
+              <span className="app-muted">
+                {locale === 'zh' ? '安全垫' : 'Cushion'}
+              </span>
+              <span
+                className={`font-semibold ${
+                  cushionPct > 0
+                    ? 'text-[var(--app-pnl-positive)]'
+                    : cushionPct < 0
+                      ? 'text-[var(--app-pnl-negative)]'
+                      : 'text-[var(--app-muted)]'
+                }`}
+              >
+                {formatSignedPercent(cushionPct)}
+              </span>
             </span>
           ) : null}
         </span>

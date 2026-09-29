@@ -359,4 +359,22 @@ export const portfolioEnCopy = {
     summaryOnly:
       'Instrument-level quote, cost, and K-line details are shown in the holdings list and detail pages below.',
   },
+  rebalanceAlert: {
+    title: "Today's rebalancing alert",
+    rebalancePending: (count: number) =>
+      `${count} rebalancing action${count === 1 ? '' : 's'} recommended for today`,
+    buySellSummary: (buy: number, sell: number) => `Buy ${buy} · Sell ${sell}`,
+    requiresApproval: (count: number) => `${count} need manual approval`,
+    blockedActions: (count: number) => `${count} risk-blocked`,
+    estimatedTurnover: 'Est. turnover',
+    goToDecision: 'Go to Decision Cockpit',
+  },
+  costCushion: {
+    label: 'Safety cushion',
+    cost: 'Cost',
+    currentPrice: 'Current',
+    cushionDetail: 'Distance from cost basis',
+    profitZone: 'In profit',
+    lossZone: 'In drawdown',
+  },
 } satisfies Record<string, unknown>;

@@ -4,6 +4,7 @@ import {
   formatDate,
   formatPercent,
   formatPrice,
+  formatReturnPercent,
 } from '../../../shared/format';
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
@@ -215,11 +216,33 @@ export function PositionsTableMobileList({
               ) : null}
 
               {!model.showHistoryColumns && model.variant !== 'dashboard' ? (
-                <div className="mt-3 flex min-w-0 items-center gap-2 border-t border-[var(--app-divider)] pt-2">
+                <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 border-t border-[var(--app-divider)] pt-2">
                   <PositionPricing position={position} locale={locale} />
-                  <span className="ml-auto whitespace-nowrap text-xs font-mono tabular-nums text-[var(--app-text-secondary)]">
-                    {formatPrice(position.latest_price)}
-                  </span>
+                  <div className="ml-auto flex items-center gap-2 whitespace-nowrap text-xs font-mono tabular-nums">
+                    {position.avg_cost != null &&
+                    position.avg_cost > 0 &&
+                    position.latest_price != null &&
+                    position.latest_price > 0 ? (
+                      <span
+                        data-testid={`position-mobile-cost-cushion-${position.symbol}`}
+                        className={`app-type-micro font-medium ${
+                          position.latest_price >= position.avg_cost
+                            ? 'text-[var(--app-pnl-positive)]'
+                            : 'text-[var(--app-pnl-negative)]'
+                        }`}
+                      >
+                        {locale === 'zh' ? '安全垫' : 'Cushion'}{' '}
+                        {position.latest_price >= position.avg_cost ? '+' : ''}
+                        {formatReturnPercent(
+                          (position.latest_price - position.avg_cost) /
+                            position.avg_cost,
+                        )}
+                      </span>
+                    ) : null}
+                    <span className="text-[var(--app-text-secondary)]">
+                      {formatPrice(position.latest_price)}
+                    </span>
+                  </div>
                 </div>
               ) : null}
             </a>

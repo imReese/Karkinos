@@ -87,6 +87,9 @@ test('renders the compact canonical holdings table with direct detail drill-down
   expect(unrealizedCell.textContent).toContain('¥6,000.00');
   expect(unrealizedCell.textContent).toContain('+6.67%');
 
+  const cushionCell = screen.getByTestId('position-cost-cushion-600519');
+  expect(cushionCell.textContent).toContain('+6.67%');
+
   expect(screen.getByTestId('position-realized-600519').textContent).toBe(
     '¥120.00',
   );

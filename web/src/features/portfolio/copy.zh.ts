@@ -343,4 +343,21 @@ export const portfolioZhCopy = {
     holdingDetailLink: (symbol: string) => `持仓明细：${symbol}`,
     summaryOnly: '单只标的行情、成本和 K 线在下方持仓明细与详情页中查看。',
   },
+  rebalanceAlert: {
+    title: '今日调仓提醒',
+    rebalancePending: (count: number) => `今日有 ${count} 项组合调仓建议待执行`,
+    buySellSummary: (buy: number, sell: number) => `买入 ${buy} · 卖出 ${sell}`,
+    requiresApproval: (count: number) => `${count} 笔需人工确认`,
+    blockedActions: (count: number) => `${count} 项风控阻断`,
+    estimatedTurnover: '预估换手',
+    goToDecision: '前往决策研判',
+  },
+  costCushion: {
+    label: '安全垫',
+    cost: '成本',
+    currentPrice: '现价',
+    cushionDetail: '现价相对成本价的安全垫区间',
+    profitZone: '浮盈区',
+    lossZone: '浮亏区',
+  },
 } satisfies Record<string, unknown>;

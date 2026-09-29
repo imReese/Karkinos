@@ -13,7 +13,10 @@ import type {
   PositionSort,
   QuoteFilter,
 } from '../components/workspace-toolbar';
-import { useAccountStrategyContributionQuery } from '../portfolio-feature-boundary';
+import {
+  useAccountStrategyContributionQuery,
+  useDailyTradingPlanQuery,
+} from '../portfolio-feature-boundary';
 import {
   buildPortfolioPageModel,
   type PortfolioMode,
@@ -43,6 +46,7 @@ export function PortfolioPageController() {
   const strategyContribution = useAccountStrategyContributionQuery(
     strategyAnalysisEnabled,
   );
+  const tradingPlan = useDailyTradingPlanQuery(primaryPortfolioQueriesSettled);
   const model = buildPortfolioPageModel({
     copy,
     locale,
@@ -54,6 +58,7 @@ export function PortfolioPageController() {
     cockpit,
     liveHoldings,
     strategyContribution,
+    tradingPlan,
   });
   const actions: PortfolioPageActions = {
     onOpenPosition: (symbol) => {
