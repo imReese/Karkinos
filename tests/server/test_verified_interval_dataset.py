@@ -32,10 +32,12 @@ from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
 from data.providers.tushare import TUSHARE_DAILY_BAR_DESCRIPTOR
 from data.source_policy import FREE_CN_RESEARCH_V1
 from data.storage.objects import ContentAddressedObjectStore
+from server.contracts.http.backtest import StrategySignalPreviewRequest
 from server.db import AppDatabase
 from server.dependencies import AppState, AppStateContextMiddleware
 from server.http.backtest_endpoints.datasets import create_router
 from server.persistence.jobs import SQLiteJobStore
+from server.services.backtest_views.strategy_inputs import load_signal_preview_bars
 from server.services.market_calendar_evidence import validate_verified_market_calendar
 from server.services.research_datasets import (
     ResearchDatasetError,
@@ -253,6 +255,22 @@ def test_exact_successful_jobs_publish_replayable_verified_interval(
         partition.verification_id is not None
         for partition in interval.snapshot.partitions
     )
+    bars, preview_snapshot = load_signal_preview_bars(
+        StrategySignalPreviewRequest(
+            dataset_id=summary["dataset_id"],
+            symbol=STOCK.symbol,
+            asset_class="stock",
+            start_date=DAYS[0].isoformat(),
+            end_date=DAYS[-1].isoformat(),
+        ),
+        None,
+        db,
+    )
+    assert len(bars) == len(DAYS)
+    assert preview_snapshot["immutable_dataset_id"] == summary["dataset_id"]
+    assert preview_snapshot["cross_source_verified"] is True
+    assert preview_snapshot["point_in_time_verified"] is False
+    assert preview_snapshot["price_basis"] == "unadjusted"
     assert (
         publish_verified_interval_dataset(root, _request(), db=db, job_ids=job_ids)[
             "dataset_id"

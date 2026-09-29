@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from server.config import BacktestConfig
 from server.contracts.http.backtest import (
@@ -17,6 +17,7 @@ from server.contracts.http.backtest import (
 from server.http.backtest_endpoints.dependencies import (
     StrategyCatalogEndpointDependencies,
 )
+from server.services.research_datasets import ResearchDatasetError
 
 
 def create_router(dependencies: StrategyCatalogEndpointDependencies) -> APIRouter:
@@ -130,7 +131,15 @@ def create_router(dependencies: StrategyCatalogEndpointDependencies) -> APIRoute
         state = get_app_state()
         config = state.config or BacktestConfig()
         request = _validate_signal_preview_strategy_params(request)
-        preview = await asyncio.to_thread(_run_strategy_signal_preview, request, config)
+        try:
+            preview = await asyncio.to_thread(
+                _run_strategy_signal_preview,
+                request,
+                config,
+                getattr(state, "db", None),
+            )
+        except ResearchDatasetError as exc:
+            raise HTTPException(409, str(exc)) from None
         return StrategySignalPreviewResponse(**preview)
 
     return r

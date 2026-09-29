@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import DailyBarRequest
@@ -37,14 +37,20 @@ class PrepareDatasetRequest(BaseModel):
     refresh: bool = False
 
 
-class PrepareVerifiedJobsRequest(BaseModel):
+class VerifiedDatasetRangeRequest(BaseModel):
     symbol: str = Field(pattern=r"^[0-9]{6}$")
     instrument_type: Literal["stock", "etf"]
     start_date: date
     end_date: date
 
 
-class PublishVerifiedIntervalRequest(PrepareVerifiedJobsRequest):
+class PrepareVerifiedJobsRequest(VerifiedDatasetRangeRequest):
+    model_config = ConfigDict(extra="forbid")
+
+    reobserve: StrictBool = False
+
+
+class PublishVerifiedIntervalRequest(VerifiedDatasetRangeRequest):
     job_ids: list[str] = Field(min_length=1, max_length=366)
 
 
@@ -110,6 +116,7 @@ def create_router() -> APIRouter:
                 start_date=payload.start_date,
                 end_date=payload.end_date,
                 now=datetime.now(timezone.utc),
+                reobserve=payload.reobserve,
             )
         except VerifiedDailyMarketJobPlanningError as exc:
             raise HTTPException(409, str(exc)) from None
@@ -125,6 +132,7 @@ def create_router() -> APIRouter:
                     "trade_date": job.payload["trade_date"],
                     "job_id": job.job_id,
                     "source_policy_id": job.payload["source_policy_id"],
+                    "observation_round": job.payload["observation_round"],
                     "status": job.status,
                     "result_ref": job.result_ref,
                 }
@@ -185,6 +193,7 @@ def create_router() -> APIRouter:
             "trade_date": request.trade_date.isoformat(),
             "job_id": job.job_id,
             "source_policy_id": request.source_policy_id,
+            "observation_round": request.observation_round,
             "status": job.status,
             "attempt": job.attempt,
             "result_ref": job.result_ref,

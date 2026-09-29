@@ -21,6 +21,7 @@ from server.services.market_calendar_dates import (
     resolve_verified_closed_trading_dates,
     resolve_verified_closed_trading_dates_in_range,
 )
+from server.services.market_hours import get_shanghai_now
 from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
 
 VERIFIED_DAILY_MARKET_JOB = "market_daily_verified"
@@ -109,12 +110,15 @@ def enqueue_verified_daily_market_jobs_for_range(
     start_date: date,
     end_date: date,
     now: datetime,
+    reobserve: bool = False,
 ) -> tuple[JobRun, ...]:
     """Explicitly enqueue one verified-source job for each closed SSE session."""
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("verified_daily_market_job_plan_now_must_be_timezone_aware")
     if instrument.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}:
         raise ValueError("verified_daily_market_instrument_type_unsupported")
+    if not isinstance(reobserve, bool):
+        raise ValueError("verified_daily_market_reobserve_invalid")
     resolved_dates = resolve_verified_closed_trading_dates_in_range(
         db, now, start_date=start_date, end_date=end_date
     )
@@ -123,12 +127,18 @@ def enqueue_verified_daily_market_jobs_for_range(
             "verified_daily_market_trading_dates_unavailable"
         )
     policy = verification_source_policy_for_config(config)
+    observation_round = (
+        f"post_close.reobserve.{get_shanghai_now(now).date().isoformat()}"
+        if reobserve
+        else "post_close.v1"
+    )
     payloads = tuple(
         VerifiedDailyMarketJobRequest(
             trade_date=date.fromisoformat(resolved.trade_date),
             instruments=(instrument,),
             source_policy_id=policy.policy_id,
             calendar_evidence_refs=resolved.calendar_evidence_refs,
+            observation_round=observation_round,
         ).to_payload()
         for resolved in resolved_dates
     )
@@ -164,7 +174,7 @@ def _planning_facts(db: Any, now: datetime, lookback_days: int):
             "verified_daily_market_watchlist_unreadable"
         ) from exc
 
-    return resolved_dates, _supported_watchlist_instruments(rows)
+    return resolved_dates, supported_watchlist_instruments(rows)
 
 
 def _job_plan(resolved_dates, instruments, jobs: list[JobRun]):
@@ -185,7 +195,7 @@ def _job_plan(resolved_dates, instruments, jobs: list[JobRun]):
     )
 
 
-def _supported_watchlist_instruments(
+def supported_watchlist_instruments(
     rows: list[dict[str, Any]],
 ) -> tuple[InstrumentKey, ...]:
     result: list[InstrumentKey] = []
@@ -226,6 +236,7 @@ def _supported_watchlist_instruments(
 
 __all__ = [
     "enqueue_latest_daily_market_collection_jobs",
+    "supported_watchlist_instruments",
     "VERIFIED_DAILY_MARKET_JOB",
     "VerifiedDailyMarketJobPlan",
     "VerifiedDailyMarketJobPlanningError",

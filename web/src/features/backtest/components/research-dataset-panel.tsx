@@ -25,6 +25,7 @@ export function ResearchDatasetPanel() {
   } = useBacktestPage();
   const [open, setOpen] = useState(false);
   const [refresh, setRefresh] = useState(false);
+  const [reobserve, setReobserve] = useState(false);
   const [error, setError] = useState('');
   const [verification, setVerification] = useState<{
     key: string;
@@ -90,7 +91,9 @@ export function ResearchDatasetPanel() {
     if (!range) return;
     setError('');
     try {
-      const result = await prepareVerified.mutateAsync(range);
+      const result = await prepareVerified.mutateAsync(
+        reobserve ? { ...range, reobserve: true } : range,
+      );
       setVerification({ key: rangeKey, jobs: result.jobs });
     } catch (failure) {
       setError(datasetErrorMessage(failure, zh));
@@ -229,6 +232,17 @@ export function ResearchDatasetPanel() {
               ? '默认核验策略首选 BaoStock 与腾讯日线（经 AKShare SDK），按不同上游计两源；同一腾讯上游的 tencent 与 akshare_tencent 不算两票。实际任务策略以提交后返回的 ID 为准。'
               : 'The default verification policy first pairs BaoStock with Tencent daily bars through the AKShare SDK. They have different upstreams; tencent and akshare_tencent share one upstream and do not count as two sources. The returned policy ID identifies this request.'}
           </p>
+          <label className="mt-2 flex items-start gap-2 text-xs leading-5">
+            <input
+              type="checkbox"
+              checked={reobserve}
+              disabled={busy}
+              onChange={(event) => setReobserve(event.target.checked)}
+            />
+            {zh
+              ? '重新观察供应商修订（同日相同请求复用任务；旧 Dataset 保留）'
+              : 'Observe provider revisions again (identical same-day requests reuse jobs; old datasets remain)'}
+          </label>
           {currentJobs ? (
             <p
               className="app-muted mt-1 break-all text-xs"
@@ -240,6 +254,14 @@ export function ResearchDatasetPanel() {
                 : zh
                   ? '任务策略不一致'
                   : 'Job policies differ'}
+            </p>
+          ) : null}
+          {currentJobs?.[0]?.observation_round ? (
+            <p className="app-muted mt-1 break-all text-xs">
+              {zh ? '观察轮次：' : 'Observation round: '}
+              <span className="font-mono tabular-nums">
+                {currentJobs[0].observation_round}
+              </span>
             </p>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
@@ -303,6 +325,13 @@ export function ResearchDatasetPanel() {
                 ? ' · 当前服务未配置 TDX Key'
                 : ' · TDX key missing in server configuration'
               : ''}
+          </p>
+        ) : null}
+        {datasets.data?.unreadable_dataset_count ? (
+          <p role="status" className="text-xs text-[var(--app-danger)]">
+            {zh
+              ? `本次列表有 ${datasets.data.unreadable_dataset_count} 个 Dataset 清单无法读取，已隐藏；已有引用仍须单独校验。`
+              : `${datasets.data.unreadable_dataset_count} dataset manifests in this list could not be read and are hidden; existing references still require individual validation.`}
           </p>
         ) : null}
         {error || datasets.error ? (

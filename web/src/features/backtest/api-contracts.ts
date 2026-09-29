@@ -209,6 +209,7 @@ export type StrategySignalPreviewRequest = {
   asset_class?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  dataset_id?: string | null;
   params?: Record<string, number | string | boolean | null>;
 };
 

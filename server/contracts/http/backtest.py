@@ -96,6 +96,7 @@ class StrategySignalPreviewRequest(BaseModel):
     asset_class: str | None = None
     start_date: str | None = None
     end_date: str | None = None
+    dataset_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     params: dict[str, Any] | None = None
     bars: list[StrategySignalPreviewBar] = Field(default_factory=list)
     dataset_snapshot: dict[str, Any] = Field(default_factory=dict)

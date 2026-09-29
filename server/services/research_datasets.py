@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.manifest import (
+    DatasetManifestError,
     publish_daily_bar_dataset_manifest,
     read_daily_bar_dataset_manifest,
 )
@@ -230,11 +231,19 @@ class ResearchDatasetService:
         entries = (
             catalog.list_daily_bar_datasets(limit=100) if catalog.path.exists() else ()
         )
+        datasets = []
+        unreadable_dataset_count = 0
+        for entry in entries:
+            try:
+                datasets.append(dataset_summary(self.root, entry.ref))
+            except (DatasetManifestError, ResearchDatasetError, OSError):
+                unreadable_dataset_count += 1
         return {
             "tdx_configured": self._settings.configured,
             "storage_path": str(self.root),
             "busy": self._lock.locked(),
-            "datasets": [dataset_summary(self.root, item.ref) for item in entries],
+            "datasets": datasets,
+            "unreadable_dataset_count": unreadable_dataset_count,
         }
 
     def prepare(

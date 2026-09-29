@@ -230,13 +230,16 @@ export function useBacktestPageController() {
       paperShadowPreview.reset();
       attributionPreview.reset();
       const previewAsset = payload.assets?.[0];
-      if (previewAsset && !selectedDataset) {
+      if (previewAsset) {
         signalPreview.mutate({
           strategy: payload.strategy,
           symbol: previewAsset.symbol,
           asset_class: previewAsset.asset_class,
           start_date: payload.start_date,
           end_date: payload.end_date,
+          ...(selectedDataset
+            ? { dataset_id: selectedDataset.dataset_id }
+            : {}),
           params: payload.params,
         });
       }

@@ -18,6 +18,7 @@ export type VerifiedDatasetJob = {
   trade_date: string;
   job_id: string;
   source_policy_id: string;
+  observation_round?: string;
   status: string;
   result_ref: string | null;
   error?: string | null;
@@ -35,6 +36,7 @@ type DatasetStatus = {
   storage_path: string;
   busy: boolean;
   datasets: PublishedDataset[];
+  unreadable_dataset_count?: number;
 };
 
 export function usePublishedDatasets(enabled: boolean) {
@@ -64,7 +66,7 @@ export function usePrepareDataset() {
 
 export function usePrepareVerifiedDatasetJobs() {
   return useMutation({
-    mutationFn: (payload: VerifiedDatasetRange) =>
+    mutationFn: (payload: VerifiedDatasetRange & { reobserve?: boolean }) =>
       postJson<{ jobs: VerifiedDatasetJob[] }>(
         '/api/backtest/datasets/verified-jobs',
         payload,
