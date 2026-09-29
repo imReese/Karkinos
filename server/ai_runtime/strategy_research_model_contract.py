@@ -276,6 +276,77 @@ def normalize_hypothesis_payload(
     return {"drafts": json.loads(canonical_json(drafts))}
 
 
+def _coerce_critique_text(raw: Any, default_if_empty: str = "none_reported") -> str:
+    """Coerce qualitative text field from provider into a clean non-empty string."""
+    if raw is None:
+        return default_if_empty
+    if isinstance(raw, str):
+        cleaned = raw.strip()
+        return cleaned if cleaned else default_if_empty
+    if isinstance(raw, (int, float, bool)):
+        return str(raw).strip()
+    if isinstance(raw, (list, tuple)):
+        parts = [_coerce_critique_text(item, "") for item in raw]
+        joined = "; ".join(p for p in parts if p)
+        return joined if joined else default_if_empty
+    if isinstance(raw, Mapping):
+        for candidate in (
+            "summary",
+            "description",
+            "text",
+            "sensitivity",
+            "assessment",
+            "analysis",
+            "content",
+            "risk",
+            "level",
+        ):
+            v = raw.get(candidate)
+            if isinstance(v, str) and v.strip():
+                other_items = [
+                    f"{k}: {val}"
+                    for k, val in raw.items()
+                    if k != candidate and str(val).strip()
+                ]
+                return (
+                    f"{v.strip()} ({'; '.join(other_items)})"
+                    if other_items
+                    else v.strip()
+                )
+        parts = [
+            f"{k}: {_coerce_critique_text(v, '')}"
+            for k, v in raw.items()
+            if _coerce_critique_text(v, "")
+        ]
+        joined = "; ".join(parts)
+        return joined if joined else default_if_empty
+    s = str(raw).strip()
+    return s if s else default_if_empty
+
+
+def _coerce_critique_list(raw: Any, fallback_item: str) -> list[str]:
+    """Coerce qualitative list field from provider into a non-empty string list."""
+    if raw is None:
+        return [fallback_item]
+    if isinstance(raw, (list, tuple)):
+        items = []
+        for x in raw:
+            text = _coerce_critique_text(x, "")
+            if text:
+                items.append(text)
+        return items if items else [fallback_item]
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return [fallback_item]
+        lines = [
+            line.lstrip("-*• \t").strip() for line in text.splitlines() if line.strip()
+        ]
+        return lines if lines else [text]
+    text = _coerce_critique_text(raw, fallback_item)
+    return [text] if text else [fallback_item]
+
+
 def normalize_critique_payload(
     value: Any,
     evidence_reference_id: str,
@@ -298,40 +369,62 @@ def normalize_critique_payload(
         "citations",
         "canonical_binding_echo",
     }
-    if not isinstance(value, dict) or set(value) != required:
+    if isinstance(value, dict):
+        for wrapper in ("critique", "output", "data"):
+            inner = value.get(wrapper)
+            if isinstance(inner, dict) and required.intersection(set(inner)):
+                value = inner
+                break
+
+    if not isinstance(value, dict):
         raise ExternalResearchInvalidResponseError("critique_schema_invalid")
-    non_list_fields = {
+
+    if "citations" not in value or "canonical_binding_echo" not in value:
+        raise ExternalResearchInvalidResponseError("critique_schema_invalid")
+
+    non_list_text_fields = {
         "cost_turnover_sensitivity",
         "concentration_risk",
         "sample_dependence",
         "possible_overfitting",
         "uncertainty",
-        "canonical_binding_echo",
     }
-    list_fields = required - non_list_fields
+    list_fields = {
+        "supported_claims",
+        "contradicted_claims",
+        "evidence_gaps",
+        "recommended_ablations",
+        "recommended_walk_forward_stress_tests",
+        "explicit_failure_conditions",
+    }
+
+    normalized: dict[str, Any] = {}
     for key in list_fields:
-        items = value.get(key)
-        if (
-            not isinstance(items, list)
-            or not items
-            or any(not isinstance(item, str) or not item.strip() for item in items)
-        ):
-            raise ExternalResearchInvalidResponseError(f"critique_{key}_invalid")
-    for key in non_list_fields - {"canonical_binding_echo"}:
-        if not isinstance(value.get(key), str) or not value[key].strip():
-            raise ExternalResearchInvalidResponseError(f"critique_{key}_invalid")
+        normalized[key] = _coerce_critique_list(
+            value.get(key),
+            fallback_item=f"none_reported_{key}",
+        )
+    for key in non_list_text_fields:
+        normalized[key] = _coerce_critique_text(
+            value.get(key),
+            default_if_empty="none_reported",
+        )
+
+    normalized["citations"] = value.get("citations")
+    normalized["canonical_binding_echo"] = value.get("canonical_binding_echo")
+
     expected_binding_echo = critique_input.get("required_binding_echo")
     if not isinstance(expected_binding_echo, Mapping) or canonical_json(
-        value.get("canonical_binding_echo")
+        normalized.get("canonical_binding_echo")
     ) != canonical_json(expected_binding_echo):
         raise ExternalResearchInvalidResponseError("critique_binding_echo_mismatch")
-    if value["citations"] != list(citation_catalog):
+    if normalized["citations"] != list(citation_catalog):
         raise ExternalResearchInvalidResponseError(
             "critique_citation_contract_mismatch"
         )
     citation_sources = {"critique_input": critique_input}
     resolved_citations: list[str] = []
-    for citation_id in value["citations"]:
+    for citation_id in normalized["citations"]:
         path = citation_catalog.get(citation_id)
         if path is None or not citation_path_exists(path, citation_sources):
             raise ExternalResearchInvalidResponseError(
@@ -347,7 +440,7 @@ def normalize_critique_payload(
         )
     return {
         "schema_version": STRATEGY_BACKTEST_CRITIQUE_CONTRACT,
-        **json.loads(canonical_json({**value, "citations": resolved_citations})),
+        **json.loads(canonical_json({**normalized, "citations": resolved_citations})),
         "evidence_reference_ids": [evidence_reference_id],
     }
 

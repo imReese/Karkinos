@@ -2627,3 +2627,64 @@ async def test_critique_with_changed_canonical_binding_echo_fails_closed(
     assert result["status"] == "failed"
     assert result["artifact"] is None
     assert len(transport.calls) == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_critique_with_non_string_qualitative_fields_is_resiliently_normalized(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    hypotheses = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="hypothesis-critique-resilient",
+            requested_by="human:reese",
+            account_alias="synthetic-research-only",
+            research_question="Critique must resiliently normalize non-string qualitative fields.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        )
+    )
+    draft = hypotheses["drafts"][0]
+    backtest = await service.run_formula_backtest(
+        FormulaBacktestRequest(
+            idempotency_key="backtest-critique-resilient",
+            requested_by="human:reese",
+            session_id=hypotheses["session_id"],
+            draft_id=draft["draft_id"],
+            confirmation=BACKTEST_CONFIRMATION,
+        )
+    )
+    response = transport._responses[0].payload
+    content = json.loads(response["choices"][0]["message"]["content"])
+    # Simulate LLM returning structured/nested qualitative fields instead of plain strings
+    content["cost_turnover_sensitivity"] = {
+        "sensitivity": "high",
+        "notes": "Sensitive to transaction cost at higher turnover",
+    }
+    content["sample_dependence"] = ["Depends on short lookback", "Needs longer sample"]
+    content["possible_overfitting"] = 0.85
+    content["supported_claims"] = "Single string claim instead of list"
+    response["choices"][0]["message"]["content"] = json.dumps(content)
+
+    result = await service.critique(
+        CritiqueRequest(
+            idempotency_key="critique-resilient-test",
+            requested_by="human:reese",
+            session_id=hypotheses["session_id"],
+            draft_id=draft["draft_id"],
+            backtest_run_id=backtest["backtest_run_id"],
+            confirmation=CRITIQUE_EXPORT_CONFIRMATION,
+        )
+    )
+
+    assert result["status"] == "completed"
+    artifact = result["artifact"]
+    assert artifact is not None
+    assert isinstance(artifact["cost_turnover_sensitivity"], str)
+    assert "Sensitive to transaction cost" in artifact["cost_turnover_sensitivity"]
+    assert isinstance(artifact["sample_dependence"], str)
+    assert "Depends on short lookback" in artifact["sample_dependence"]
+    assert artifact["possible_overfitting"] == "0.85"
+    assert isinstance(artifact["supported_claims"], list)
+    assert artifact["supported_claims"] == ["Single string claim instead of list"]
