@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import DailyBarRequest
-from data.providers.tdx_runtime import TdxRuntimeConfigurationError
+from data.providers.tdx import TdxRuntimeConfigurationError
 from server.dependencies import get_app_state
 from server.persistence.jobs import JobIdentityConflictError, SQLiteJobStore
 from server.services.research_datasets import (

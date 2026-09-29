@@ -23,8 +23,7 @@ from data.dataset.catalog import DatasetCatalog
 from data.dataset.reader import read_daily_bar_dataset
 from data.market.contracts import DailyBarRequest
 from data.market.serving import MarketServingStore
-from data.providers.tdx import TdxDailyBarProvider
-from data.providers.tdx_runtime import TdxRuntimeSettings
+from data.providers.tdx import TdxDailyBarProvider, TdxRuntimeSettings
 from data.storage.objects import ContentAddressedObjectStore
 from server.config import ServerConfig
 from server.contracts.http.strategy_models import BacktestRequest
