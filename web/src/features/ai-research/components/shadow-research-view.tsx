@@ -404,14 +404,14 @@ export function CritiqueEvolutionTimeline({
           {copy.critiqueTrajectory}
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-success-text)]">
+          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-2 py-0.5 app-type-micro font-medium text-[var(--app-success-text)]">
             {copy.selfHealingConverged}
           </span>
-          <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-text-secondary)]">
+          <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 app-type-micro font-medium text-[var(--app-text-secondary)]">
             {copy.schemaValidationPass}
           </span>
           {lineage?.sequential_feedback_bound ? (
-            <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-text-secondary)]">
+            <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 app-type-micro font-medium text-[var(--app-text-secondary)]">
               {copy.sequentialFeedbackBound}
             </span>
           ) : null}
@@ -424,7 +424,7 @@ export function CritiqueEvolutionTimeline({
 
       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
         <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2.5">
-          <div className="app-muted text-[11px] font-semibold">
+          <div className="app-muted app-type-micro font-semibold">
             {lineage
               ? `${copy.iterationRound} ${lineage.iteration_number}/${lineage.total_iterations}`
               : copy.iterationRound}
@@ -434,7 +434,7 @@ export function CritiqueEvolutionTimeline({
               ? `FP: ${lineage.formula_fingerprint.slice(0, 16)}…`
               : candidate.draft_id}
           </div>
-          <div className="app-muted mt-1 text-[11px]">
+          <div className="app-muted mt-1 app-type-micro">
             {lineage?.parent_draft_id
               ? `Parent: ${lineage.parent_draft_id}`
               : 'Initial formula seed'}
@@ -442,10 +442,10 @@ export function CritiqueEvolutionTimeline({
         </div>
 
         <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2.5">
-          <div className="app-muted text-[11px] font-semibold">
+          <div className="app-muted app-type-micro font-semibold">
             {copy.critique}
           </div>
-          <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+          <div className="mt-1 flex flex-wrap gap-1 app-type-micro">
             <span className="text-[var(--app-success-text)]">
               {critique?.supported_claims?.length ?? 0} claims pass
             </span>
@@ -455,14 +455,14 @@ export function CritiqueEvolutionTimeline({
             </span>
           </div>
           {critique?.uncertainty ? (
-            <div className="app-muted mt-1 text-[11px] truncate">
+            <div className="app-muted mt-1 app-type-micro truncate">
               {critique.uncertainty}
             </div>
           ) : null}
         </div>
 
         <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2.5">
-          <div className="app-muted text-[11px] font-semibold">
+          <div className="app-muted app-type-micro font-semibold">
             {copy.metricEvolution}
           </div>
           <div className="mt-1 font-mono text-xs tabular-nums">
@@ -502,7 +502,7 @@ export function CritiqueEvolutionTimeline({
             ) : null}
           </div>
           {target ? (
-            <div className="app-muted mt-1 text-[11px]">
+            <div className="app-muted mt-1 app-type-micro">
               OOS: {target.oos_validation_status} ({target.oos_fold_count}{' '}
               folds)
             </div>

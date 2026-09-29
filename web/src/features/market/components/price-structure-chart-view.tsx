@@ -71,6 +71,17 @@ export function PriceStructureChartView({
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [showMovingAverages, setShowMovingAverages] = useState(true);
+  const [visiblePeriods, setVisiblePeriods] = useState<number[]>([
+    5, 10, 20, 60,
+  ]);
+
+  const handleTogglePeriod = (period: number) => {
+    setVisiblePeriods((prev) =>
+      prev.includes(period)
+        ? prev.filter((p) => p !== period)
+        : [...prev, period],
+    );
+  };
 
   const activeIndex =
     hoverIndex !== null &&
@@ -161,14 +172,16 @@ export function PriceStructureChartView({
                 </span>
               ) : null}
               {showMovingAverages &&
-                model.maSeries.map((s) => {
-                  const val = s.values[activeIndex];
-                  return val !== null ? (
-                    <span key={s.period} style={{ color: s.color }}>
-                      {s.label} {formatAmount(val)}
-                    </span>
-                  ) : null;
-                })}
+                model.maSeries
+                  .filter((s) => visiblePeriods.includes(s.period))
+                  .map((s) => {
+                    const val = s.values[activeIndex];
+                    return val !== null ? (
+                      <span key={s.period} style={{ color: s.color }}>
+                        {s.label} {formatAmount(val)}
+                      </span>
+                    ) : null;
+                  })}
             </div>
           ) : null}
           <PriceStructureChartSvg
@@ -180,6 +193,7 @@ export function PriceStructureChartView({
             hoverIndex={hoverIndex}
             onHoverIndexChange={setHoverIndex}
             showMovingAverages={showMovingAverages}
+            visiblePeriods={visiblePeriods}
           />
           <div className="app-type-micro mt-2 flex flex-col gap-1 font-mono tabular-nums text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
             <span>
@@ -199,6 +213,8 @@ export function PriceStructureChartView({
             onToggleMovingAverages={() =>
               setShowMovingAverages((prev) => !prev)
             }
+            visiblePeriods={visiblePeriods}
+            onTogglePeriod={handleTogglePeriod}
           />
         </div>
       </div>

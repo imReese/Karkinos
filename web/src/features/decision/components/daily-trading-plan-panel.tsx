@@ -212,7 +212,7 @@ function TradingPlanOrderIntentPreview({
                   <div className="app-muted app-type-overline mb-1.5 text-xs">
                     {labels.tradingPlanCurrentVsTarget}
                   </div>
-                  <div className="grid min-w-0 grid-cols-3 gap-2 rounded-[var(--app-radius-control)] bg-[color-mix(in_srgb,var(--app-surface-muted)_50%,transparent)] p-2 text-xs">
+                  <div className="grid min-w-0 grid-cols-3 gap-2 rounded-[var(--app-radius-control)] bg-[color-mix(in_srgb,var(--app-surface-raised)_50%,transparent)] p-2 text-xs">
                     <div>
                       <div className="app-muted">
                         {labels.tradingPlanCurrentQuantity} /{' '}
@@ -222,7 +222,7 @@ function TradingPlanOrderIntentPreview({
                         {currentQty} &rarr; {targetQty}
                       </div>
                       <div
-                        className={`font-mono text-[11px] tabular-nums font-medium ${
+                        className={`font-mono app-type-micro tabular-nums font-medium ${
                           qtyDelta > 0
                             ? 'text-[var(--app-success-text)]'
                             : qtyDelta < 0
@@ -247,7 +247,7 @@ function TradingPlanOrderIntentPreview({
                       </div>
                       {weightDelta !== null ? (
                         <div
-                          className={`font-mono text-[11px] tabular-nums font-medium ${
+                          className={`font-mono app-type-micro tabular-nums font-medium ${
                             weightDelta > 0
                               ? 'text-[var(--app-success-text)]'
                               : weightDelta < 0
@@ -271,7 +271,7 @@ function TradingPlanOrderIntentPreview({
                         {formatCurrency(targetVal)}
                       </div>
                       <div
-                        className={`font-mono text-[11px] tabular-nums font-medium ${
+                        className={`font-mono app-type-micro tabular-nums font-medium ${
                           valDelta > 0
                             ? 'text-[var(--app-success-text)]'
                             : valDelta < 0
