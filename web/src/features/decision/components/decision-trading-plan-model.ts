@@ -6,6 +6,7 @@ import {
   formatPublicNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
+import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import {
   type OperationsTodayResponse,
   type PaperShadowReviewQueueItem,
@@ -285,6 +286,7 @@ export function paperShadowReviewQueueItemTitle(
   locale: Locale,
 ) {
   const primary =
+    formatInstrumentDisplayLabel(item) ||
     item.symbol?.trim() ||
     (item.order_id
       ? formatPublicEvidenceReference(

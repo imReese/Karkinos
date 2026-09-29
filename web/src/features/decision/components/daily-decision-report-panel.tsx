@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { apiClient } from '../../../shared/api/client';
 import { formatPublicCode } from '../../../shared/public-labels';
+import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import { StatusBadge } from '../../../shared/ui/workbench';
 
 const PAGE_SIZE = 20;
@@ -448,7 +449,7 @@ export function DailyDecisionReportPanel({ locale }: { locale: 'zh' | 'en' }) {
                           key={`${item.scan_run_id}:${item.symbol}:${index}`}
                         >
                           <span className="font-semibold text-[var(--app-text)]">
-                            {item.symbol}
+                            {formatInstrumentDisplayLabel(item)}
                           </span>{' '}
                           · {labels.accountBlocked} · {item.board} ·{' '}
                           {formatPublicCode(item.reason, locale)}
@@ -478,7 +479,8 @@ export function DailyDecisionReportPanel({ locale }: { locale: 'zh' | 'en' }) {
                         visible.candidates.map((candidate) => (
                           <div key={candidate.source_ref}>
                             <span className="font-semibold text-[var(--app-text)]">
-                              {candidate.symbol} · {candidate.direction}
+                              {formatInstrumentDisplayLabel(candidate)} ·{' '}
+                              {candidate.direction}
                             </span>{' '}
                             ·{' '}
                             {candidate.report_authoritative
@@ -505,7 +507,8 @@ export function DailyDecisionReportPanel({ locale }: { locale: 'zh' | 'en' }) {
                         research.operations.map((operation) => (
                           <div key={operation.source_ref}>
                             <span className="font-semibold text-[var(--app-text)]">
-                              {operation.symbol} · {operation.operation}
+                              {formatInstrumentDisplayLabel(operation)} ·{' '}
+                              {operation.operation}
                             </span>{' '}
                             · {labels.research}
                             <div className="break-all font-mono">

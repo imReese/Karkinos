@@ -591,3 +591,48 @@ def test_signal_review_binds_canonical_contribution_and_exposes_later_drift(
         revalidated["current_target"]["target_fingerprint"]
         != (preview["target_fingerprint"])
     )
+
+
+def test_signal_journal_resolves_instrument_display_name(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "INSERT INTO watchlist_assets (symbol, display_name, asset_class, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("603659", "璞泰来", "stock", "2026-04-18T00:00:00", "2026-04-18T00:00:00"),
+        )
+        conn.commit()
+
+    db.save_signal_sync(
+        timestamp="2026-04-18T09:30:00",
+        strategy_id="dual_ma",
+        symbol="603659",
+        direction="buy",
+        target_weight=0.1,
+        price=22.5,
+        asset_class="stock",
+    )
+    db.upsert_action_task_sync(
+        source_signal_id=1,
+        symbol="603659",
+        title="买入 603659",
+        detail="触发买入信号",
+        direction="buy",
+        urgency="normal",
+        target_weight=0.1,
+        price=22.5,
+        strategy_id="dual_ma",
+        timestamp="2026-04-18T09:30:00",
+        asset_class="stock",
+    )
+
+    entries = db.list_signal_journal_sync(limit=10)
+    assert len(entries) == 1
+    assert entries[0]["signal"]["symbol"] == "603659"
+    assert entries[0]["signal"]["display_name"] == "璞泰来"
+    assert entries[0]["action_task"]["display_name"] == "璞泰来"
+
+    tasks = db.get_action_tasks_sync(limit=10)
+    assert len(tasks) == 1
+    assert tasks[0]["display_name"] == "璞泰来"

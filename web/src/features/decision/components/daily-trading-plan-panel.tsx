@@ -190,7 +190,7 @@ function TradingPlanOrderIntentPreview({
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-2 text-sm">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-[var(--app-text)]">
-                      {intent.symbol}
+                      {formatInstrumentDisplayLabel(intent)}
                     </span>
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${

@@ -536,6 +536,8 @@ class ActionCard(BaseModel):
     id: int | None = None
     source_signal_id: int | None = None
     symbol: str
+    display_name: str | None = None
+    name: str | None = None
     title: str
     detail: str
     direction: str

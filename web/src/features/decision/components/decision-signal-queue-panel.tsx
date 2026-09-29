@@ -65,7 +65,7 @@ function OperatingPostureCard({
   signalCount: number;
 }) {
   return (
-    <div className="rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3.5">
+    <div className="rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3.5 space-y-3">
       <div className="flex items-center justify-between">
         <span className="app-type-micro font-semibold text-[var(--app-text-tertiary)] uppercase tracking-wider">
           {locale === 'zh'
@@ -76,7 +76,7 @@ function OperatingPostureCard({
           {locale === 'zh' ? '风控通过 · 无待办' : 'Risk Passed · Clear'}
         </StatusBadge>
       </div>
-      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
         <div className="min-w-0">
           <dt className="text-[var(--app-text-secondary)]">
             {locale === 'zh' ? '策略信号流水' : 'Recorded Signals'}
@@ -112,6 +112,19 @@ function OperatingPostureCard({
           </dd>
         </div>
       </dl>
+      <div className="border-t border-[var(--app-divider)] pt-2.5 text-xs text-[var(--app-text-secondary)]">
+        <div className="flex items-center gap-1.5 text-[var(--app-text)] font-medium">
+          <span className="inline-block size-1.5 rounded-full bg-[var(--app-success-indicator)]" />
+          <span>
+            {locale === 'zh' ? '安全边界已锁定' : 'Safety Boundaries Locked'}
+          </span>
+        </div>
+        <p className="app-type-micro mt-1 leading-5 text-[var(--app-text-secondary)]">
+          {locale === 'zh'
+            ? '所有策略信号均需经风控闸门与人工确认后方可落地，真实资金权限保持关闭。'
+            : 'All strategy signals require risk gates and manual confirmation; real-money authority remains off.'}
+        </p>
+      </div>
     </div>
   );
 }
@@ -218,12 +231,18 @@ function SignalJournalCard({
       </dl>
 
       {strategyAuditId ? (
-        <div className="app-muted mt-1.5 break-words font-mono app-type-micro text-[var(--app-text-tertiary)]">
+        <div
+          className="app-muted mt-1.5 truncate font-mono app-type-micro text-[var(--app-text-tertiary)]"
+          title={`${labels.strategyAuditId}: ${strategyAuditId}`}
+        >
           {labels.strategyAuditId}: {strategyAuditId}
         </div>
       ) : null}
       {publicSourceRef ? (
-        <div className="mt-1 break-words font-mono app-type-micro text-[var(--app-text-tertiary)]">
+        <div
+          className="mt-1 truncate font-mono app-type-micro text-[var(--app-text-tertiary)]"
+          title={publicSourceRef}
+        >
           {publicSourceRef}
         </div>
       ) : null}
@@ -332,7 +351,13 @@ export function SignalQueuePanel({
             </button>
           </div>
         ) : (
-          <div className="mt-4 grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+          <div
+            className={`mt-4 grid min-w-0 gap-5 ${
+              actions.length === 0
+                ? 'xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]'
+                : 'xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]'
+            }`}
+          >
             <div className="grid min-w-0 max-h-[36rem] gap-3 overflow-y-auto pr-1">
               {actions.length === 0 ? (
                 <div className="space-y-3">
@@ -480,7 +505,11 @@ export function SignalQueuePanel({
                   </span>
                 ) : null}
               </div>
-              <div className="mt-2 grid max-h-[36rem] gap-2.5 overflow-y-auto pr-1">
+              <div
+                className={`mt-2 grid max-h-[36rem] gap-2.5 overflow-y-auto pr-1 ${
+                  actions.length === 0 ? 'sm:grid-cols-2' : ''
+                }`}
+              >
                 {latestJournal.length === 0 ? (
                   <div className="app-muted text-sm">
                     {labels.noSignalJournal}

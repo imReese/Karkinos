@@ -16,11 +16,56 @@ const COMMON_A_SHARE_NAMES: Record<string, string> = {
   '000858': '五粮液',
   '300750': '宁德时代',
   '600036': '招商银行',
+  '603659': '璞泰来',
+  '600869': '远东股份',
+  '600000': '浦发银行',
+  '601166': '兴业银行',
+  '601398': '工商银行',
+  '601288': '农业银行',
+  '601939': '建设银行',
+  '601988': '中国银行',
+  '000333': '美的集团',
+  '000651': '格力电器',
+  '002594': '比亚迪',
   '510300': '沪深300ETF',
   '510500': '中证500ETF',
   '159915': '创业板ETF',
   '588000': '科创50ETF',
+  '518880': '黄金ETF',
 };
+
+const dynamicInstrumentNames = new Map<string, string>();
+
+export function registerInstrumentDisplayNames(
+  entries:
+    | Array<InstrumentDisplayRecord | null | undefined>
+    | Record<string, string | null | undefined>
+    | null
+    | undefined,
+) {
+  if (!entries) return;
+  if (Array.isArray(entries)) {
+    for (const item of entries) {
+      const sym = item?.symbol?.trim();
+      const name = item?.display_name?.trim() || item?.name?.trim();
+      if (sym && name) {
+        dynamicInstrumentNames.set(sym, name);
+        dynamicInstrumentNames.set(sym.toLowerCase(), name);
+        dynamicInstrumentNames.set(sym.toUpperCase(), name);
+      }
+    }
+  } else if (typeof entries === 'object') {
+    for (const [sym, rawName] of Object.entries(entries)) {
+      const trimmedSym = sym?.trim();
+      const trimmedName = rawName?.trim();
+      if (trimmedSym && trimmedName) {
+        dynamicInstrumentNames.set(trimmedSym, trimmedName);
+        dynamicInstrumentNames.set(trimmedSym.toLowerCase(), trimmedName);
+        dynamicInstrumentNames.set(trimmedSym.toUpperCase(), trimmedName);
+      }
+    }
+  }
+}
 
 export function formatInstrumentDisplayLabel(
   instrument: InstrumentDisplayRecord | null | undefined,
@@ -30,7 +75,11 @@ export function formatInstrumentDisplayLabel(
     instrument?.display_name?.trim() ||
     instrument?.name?.trim() ||
     (symbol
-      ? (COMMON_A_SHARE_NAMES[symbol.toLowerCase()] ??
+      ? (dynamicInstrumentNames.get(symbol) ??
+        dynamicInstrumentNames.get(symbol.toLowerCase()) ??
+        dynamicInstrumentNames.get(symbol.toUpperCase()) ??
+        COMMON_A_SHARE_NAMES[symbol.toLowerCase()] ??
+        COMMON_A_SHARE_NAMES[symbol.toUpperCase()] ??
         COMMON_A_SHARE_NAMES[symbol])
       : '') ||
     '';
