@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 from types import SimpleNamespace
 from typing import Any
@@ -213,11 +214,14 @@ def portfolio_state_summary(
         "stock_equity": stock_equity,
         "board_buy_permissions": board_permissions,
     }
-    if isinstance(snapshot, dict):
+    if isinstance(snapshot, Mapping):
         from server.services.valuation_snapshot import valuation_identity_fields
 
-        result.update(valuation_identity_fields(snapshot))
-        result["valuation_lanes"] = list(snapshot.get("valuation_lanes") or [])
+        result.update(valuation_identity_fields(dict(snapshot)))
+        result["valuation_lanes"] = [
+            dict(lane) if isinstance(lane, Mapping) else lane
+            for lane in (snapshot.get("valuation_lanes") or [])
+        ]
     else:
         result["valuation_lanes"] = []
     result["fact_authority"] = context.get("authority")

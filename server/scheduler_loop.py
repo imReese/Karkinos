@@ -212,9 +212,15 @@ class SchedulerLoop:
                 "configured scheduler quote provider is unavailable: "
                 f"{provider_names[0]}"
             )
-        fallback_source = (
-            runtime.sources.get(provider_names[1]) if len(provider_names) > 1 else None
-        )
+        fallback_source = None
+        for candidate_name in provider_names[1:]:
+            candidate = runtime.sources.get(candidate_name)
+            if candidate is not None:
+                if fallback_source is None:
+                    fallback_source = candidate
+                if candidate_name in {"akshare", "eastmoney"}:
+                    fallback_source = candidate
+                    break
         feed = dependencies.live_data_feed_factory(
             source,
             DiscardingEventPublisher(),

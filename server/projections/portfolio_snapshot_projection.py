@@ -86,6 +86,26 @@ def _overdue_published_fund_price(
     return price if price.is_finite() and price > 0 else None
 
 
+def _overdue_published_session_close_price(
+    quote: dict | None, instrument_type: str
+) -> Decimal | None:
+    if (
+        quote is None
+        or instrument_type == InstrumentType.OPEN_END_FUND.value
+        or quote.get("quote_status") not in {"stale", "confirmed", "live"}
+        or quote.get("stale_reason") != "quote_older_than_expected_session"
+    ):
+        return None
+    semantics = quote_pricing_semantics(quote, instrument_type=instrument_type)
+    if semantics["pricing_authority"] != "authoritative":
+        return None
+    try:
+        price = Decimal(str(quote.get("price")))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return price if price.is_finite() and price > 0 else None
+
+
 def build_portfolio_snapshot_sync(
     state,
     *,
@@ -287,6 +307,14 @@ def build_portfolio_snapshot_sync(
                     Decimal(str(pos.quantity)), Decimal(str(pos.avg_cost)), fund_price
                 ).market_value
                 indicative_nav_dates.append(str(quote["nav_date"]))
+            elif (
+                close_price := _overdue_published_session_close_price(
+                    quote, instrument_type
+                )
+            ) is not None:
+                indicative_total += value_position(
+                    Decimal(str(pos.quantity)), Decimal(str(pos.avg_cost)), close_price
+                ).market_value
             else:
                 indicative_available = False
         elif presence == "closed":
@@ -318,7 +346,6 @@ def build_portfolio_snapshot_sync(
         float(indicative_total)
         if total_equity is None
         and indicative_available
-        and indicative_nav_dates
         and valuation_snapshot.get("status") == "degraded"
         else None
     )
@@ -394,7 +421,7 @@ def build_portfolio_snapshot_sync(
             indicative_total_equity=indicative_total_equity,
             indicative_fund_nav_date=(
                 min(indicative_nav_dates)
-                if indicative_total_equity is not None
+                if indicative_total_equity is not None and indicative_nav_dates
                 else None
             ),
             total_deposits=total_deposits,
