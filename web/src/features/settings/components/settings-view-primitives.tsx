@@ -49,40 +49,59 @@ export function SettingsDisclosure({
   detail,
   badge,
   children,
+  variant = 'card',
 }: {
   testId: string;
   title: string;
   detail: string;
   badge?: ReactNode;
   children: ReactNode;
+  variant?: 'card' | 'section';
 }) {
+  if (variant === 'section') {
+    return (
+      <section
+        className="min-w-0 space-y-4 pt-2"
+        id={testId}
+        data-testid={testId}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-divider)] pb-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
+                {title}
+              </h2>
+              {badge ? <span className="shrink-0">{badge}</span> : null}
+            </div>
+            <p className="app-muted mt-1 text-xs leading-5">{detail}</p>
+          </div>
+        </div>
+        <div className="space-y-4">{children}</div>
+      </section>
+    );
+  }
+
   return (
-    <details
-      className="group/details min-w-0 border-y border-[var(--app-divider)]"
+    <section
+      className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-4 sm:p-5"
       id={testId}
       data-testid={testId}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 py-3.5 -mx-1 px-1 rounded-[var(--app-radius-control)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
-        <span className="min-w-0">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="block text-sm font-semibold text-[var(--app-text)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-divider)] pb-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-[var(--app-text)]">
               {title}
-            </span>
+            </h3>
             {badge ? <span className="shrink-0">{badge}</span> : null}
-          </span>
-          <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
+          </div>
+          <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
             {detail}
-          </span>
-        </span>
-        <span
-          aria-hidden="true"
-          className="shrink-0 text-sm font-mono font-semibold text-[var(--app-text-secondary)] group-hover/details:text-[var(--app-accent)] transition-colors"
-        >
-          +
-        </span>
-      </summary>
-      <div className="space-y-4 py-4">{children}</div>
-    </details>
+          </p>
+        </div>
+      </div>
+      <div className="space-y-4 pt-4">{children}</div>
+    </section>
   );
 }
 
@@ -176,45 +195,6 @@ export function CapabilityRow({
   );
 }
 
-export function ManualTaskRow({
-  label,
-  href,
-  actionLabel,
-  checked,
-  onChange,
-}: {
-  label: string;
-  href: string;
-  actionLabel: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center border-t border-[var(--app-divider)] first:border-t-0">
-      <label className="flex min-h-[var(--app-touch-target)] min-w-0 cursor-pointer items-center gap-3 px-3 py-2">
-        <input
-          type="checkbox"
-          className="h-5 w-5 shrink-0 accent-[var(--app-accent)]"
-          checked={checked}
-          aria-label={`Manual task: ${label}`}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span className="min-w-0 text-sm font-medium text-[var(--app-soft)]">
-          {label}
-        </span>
-      </label>
-      <a
-        className="app-link inline-flex min-h-[var(--app-touch-target)] items-center px-3 py-2 text-xs font-semibold"
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {actionLabel}
-      </a>
-    </div>
-  );
-}
-
 export function PreferenceGroup({
   label,
   helper,
@@ -223,26 +203,30 @@ export function PreferenceGroup({
   onChange,
 }: {
   label: string;
-  helper: string;
+  helper?: string;
   options: Array<[string, string]>;
   value: string;
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="grid gap-2">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold">{label}</div>
-        <div className="app-muted text-xs">{helper}</div>
+    <div className="flex flex-wrap items-center justify-between gap-3 py-2 border-b border-[var(--app-divider)] last:border-b-0">
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs font-semibold text-[var(--app-text)]">
+          {label}
+        </span>
+        {helper ? (
+          <span className="app-muted app-type-micro">({helper})</span>
+        ) : null}
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="inline-flex items-center rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-0.5">
         {options.map(([optionValue, optionLabel]) => (
           <button
             key={optionValue}
             type="button"
-            className={`rounded-[var(--app-radius-control)] border px-3 py-2 text-sm font-semibold transition-colors ${
+            className={`rounded-[calc(var(--app-radius-control)-2px)] px-2.5 py-0.5 text-xs font-medium transition-all ${
               value === optionValue
-                ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent-text)]'
-                : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] text-[var(--app-soft)] hover:border-[color-mix(in_srgb,var(--app-border)_48%,transparent)]'
+                ? 'border border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent-text)] shadow-xs'
+                : 'border border-transparent text-[var(--app-soft)] hover:text-[var(--app-text)]'
             }`}
             aria-pressed={value === optionValue}
             onClick={() => onChange(optionValue)}
@@ -266,10 +250,59 @@ export function InlineNotice({
 }) {
   return (
     <div
-      className={`rounded-[var(--app-radius-control)] border px-4 py-3 ${getStatusToneClasses(tone)}`}
+      className={`rounded-[var(--app-radius-control)] border px-3.5 py-2.5 ${getStatusToneClasses(tone)}`}
     >
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-1 text-xs leading-5">{detail}</div>
+      <div className="text-xs font-semibold">{title}</div>
+      <div className="mt-0.5 text-xs leading-5 opacity-90">{detail}</div>
     </div>
+  );
+}
+
+export type BeaconTone = 'success' | 'warning' | 'danger' | 'neutral';
+
+export function BeaconDot({
+  tone = 'success',
+  ariaLabel,
+  pulse = true,
+}: {
+  tone?: BeaconTone;
+  ariaLabel?: string;
+  pulse?: boolean;
+}) {
+  const colorMap: Record<BeaconTone, { bg: string; ping: string }> = {
+    success: {
+      bg: 'bg-[var(--app-success-indicator)]',
+      ping: 'bg-[var(--app-success-indicator)]',
+    },
+    warning: {
+      bg: 'bg-[var(--app-warning-indicator)]',
+      ping: 'bg-[var(--app-warning-indicator)]',
+    },
+    danger: {
+      bg: 'bg-[var(--app-danger-indicator)]',
+      ping: 'bg-[var(--app-danger-indicator)]',
+    },
+    neutral: {
+      bg: 'bg-[var(--app-muted)]',
+      ping: 'bg-[var(--app-muted)]',
+    },
+  };
+  const colors = colorMap[tone] || colorMap.neutral;
+
+  return (
+    <span
+      className="app-beacon-dot"
+      aria-label={ariaLabel}
+      title={ariaLabel}
+      role="status"
+    >
+      {pulse ? (
+        <span
+          className={`app-beacon-dot-ping ${colors.ping}`}
+          aria-hidden="true"
+        />
+      ) : null}
+      <span className={`app-beacon-dot-core ${colors.bg}`} aria-hidden="true" />
+    </span>
   );
 }

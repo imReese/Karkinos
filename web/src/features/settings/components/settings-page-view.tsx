@@ -29,6 +29,7 @@ export function SettingsPageView({
     <section
       className="app-workbench-route space-y-4 sm:space-y-5"
       data-workbench-route="settings"
+      data-workbench-width="wide"
     >
       <WorkspaceHeader
         eyebrow={copy.settings.kicker}
@@ -60,6 +61,7 @@ export function SettingsPageView({
         testId="settings-operational-controls-disclosure"
         title={copy.settings.operationalControls}
         detail={copy.settings.operationalControlsDetail}
+        variant="section"
       >
         <SettingsOperationsWorkspace controller={controller} />
       </SettingsDisclosure>
@@ -68,6 +70,7 @@ export function SettingsPageView({
         testId="settings-local-preferences-boundaries-disclosure"
         title={copy.settings.localPreferencesBoundaries}
         detail={copy.settings.localPreferencesBoundariesDetail}
+        variant="section"
       >
         <SettingsPreferencesWorkspace controller={controller} />
       </SettingsDisclosure>

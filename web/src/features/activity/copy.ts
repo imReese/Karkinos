@@ -44,6 +44,7 @@ export const activityCopy = {
       showing: (visible: number, total: number) =>
         `Showing ${visible} of ${total} entries`,
       showMore: (count: number) => `Show ${count} more entries`,
+      showAll: 'Show all',
       tableScrollLabel: 'Ledger entries table',
       empty:
         'No entries yet. Submit a trade, cash flow, dividend, or adjustment to build the timeline.',
@@ -286,6 +287,7 @@ export const activityCopy = {
       showing: (visible: number, total: number) =>
         `已显示 ${visible} / ${total} 条`,
       showMore: (count: number) => `再显示 ${count} 条`,
+      showAll: '展开全部',
       tableScrollLabel: '账本流水表格',
       empty:
         '还没有流水。先录入交易、资金流水、分红或手工调整，时间线就会开始累计。',

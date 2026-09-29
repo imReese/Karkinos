@@ -742,6 +742,45 @@ textarea {
   }
 }
 
+.app-beacon-dot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.625rem;
+  height: 0.625rem;
+  flex-shrink: 0;
+}
+
+.app-beacon-dot-ping {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  animation: app-beacon-wave 2.2s var(--app-ease-standard) infinite;
+}
+
+.app-beacon-dot-core {
+  position: relative;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+}
+
+@keyframes app-beacon-wave {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+}
+
 .app-status-chip > button > span:first-child,
 .app-status-chip [data-status-chip-part='meta'] {
   font-size: var(--app-font-size-micro);

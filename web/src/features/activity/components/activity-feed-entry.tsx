@@ -89,9 +89,12 @@ export function LedgerExecutionDetails({
   }
 
   return (
-    <div className="app-muted app-type-label mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
+    <div className="app-muted app-type-label mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5">
       {details.map((item) => (
-        <span key={item.label} className="whitespace-nowrap">
+        <span
+          key={item.label}
+          className="app-type-micro whitespace-nowrap rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-1.5 py-0.5"
+        >
           {item.label} {item.value}
         </span>
       ))}
@@ -123,7 +126,7 @@ export function ActivityLedgerRow({
   return (
     <tr
       key={entry.id}
-      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 px-3 py-4 md:table-row md:p-0"
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 px-3 py-3.5 transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] md:table-row md:p-0"
     >
       <td
         className={`col-start-2 ${correction ? 'row-start-3' : 'row-start-2'} block p-0 text-right align-top md:table-cell md:px-4 md:py-3 md:text-left`}

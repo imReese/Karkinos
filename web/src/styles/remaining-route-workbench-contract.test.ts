@@ -334,9 +334,6 @@ describe('remaining route workbench contract', () => {
   it('removes superseded route-local metric card components', () => {
     expect(ACTIVITY).not.toContain('function ActivityMetric');
     expect(TRADING).not.toContain('function StatusTile');
-    expect(
-      SETTINGS.match(/<ControlledActionZone/g)?.length ?? 0,
-    ).toBeGreaterThanOrEqual(1);
     expect(SETTINGS).not.toContain('startLive');
     expect(SETTINGS).not.toContain('stopLive');
   });

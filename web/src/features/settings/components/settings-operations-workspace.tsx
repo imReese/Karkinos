@@ -1,18 +1,15 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { formatTimestamp } from '../../../shared/format';
-import { ControlledActionZone } from '../../../shared/ui/workbench';
 import {
   type BoardBuyPermissions,
   type BoardPermissionStatus,
   useBoardBuyPermissionsQuery,
   useUpdateBoardBuyPermissionsMutation,
 } from '../api';
-import { MarketRefreshButton } from '../settings-feature-boundary';
 import type { SettingsPageController } from './settings-page-controller';
 import {
   CapabilityRow,
-  ManualTaskRow,
   RegisterRow,
   SettingsDisclosure,
 } from './settings-view-primitives';
@@ -23,11 +20,13 @@ export function SettingsOperationsWorkspace({
   controller: SettingsPageController;
 }) {
   return (
-    <>
+    <div className="space-y-4">
       <SettingsDataSourceOperations controller={controller} />
-      <SettingsBoardPermissions controller={controller} />
-      <SettingsLiveServices controller={controller} />
-    </>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SettingsBoardPermissions controller={controller} />
+        <SettingsLiveServices controller={controller} />
+      </div>
+    </div>
   );
 }
 
@@ -94,13 +93,15 @@ function SettingsBoardPermissions({
                 ? '尚无有效的账户权限核实记录'
                 : 'No current access review'}
         </p>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-3">
           {BOARDS.map((board) => (
             <label
               key={board}
               className="space-y-1 text-xs text-[var(--app-text)]"
             >
-              <span className="font-semibold">{names[board]}</span>
+              <span className="font-medium text-[var(--app-soft)]">
+                {names[board]}
+              </span>
               <select
                 value={boards[board]}
                 onChange={(event) =>
@@ -109,7 +110,7 @@ function SettingsBoardPermissions({
                     [board]: event.target.value as BoardPermissionStatus,
                   }))
                 }
-                className="w-full rounded border border-[var(--app-border)] bg-[var(--app-surface-0)] p-2"
+                className="w-full rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-0)] px-2 py-1.5 text-xs text-[var(--app-text)] outline-hidden focus:border-[var(--app-accent-border)]"
               >
                 {options.map(([value, label]) => (
                   <option key={value} value={value}>
@@ -120,7 +121,7 @@ function SettingsBoardPermissions({
             </label>
           ))}
         </div>
-        <p className="app-muted text-xs">
+        <p className="app-muted app-type-micro">
           {locale === 'zh'
             ? '科创板买入目前仍会被阻断，因为下游计划尚未支持其交易单位。'
             : 'STAR buys remain blocked until the downstream plan supports its order quantity rule.'}
@@ -131,7 +132,7 @@ function SettingsBoardPermissions({
             checked={confirmed}
             onChange={(event) => setConfirmed(event.target.checked)}
           />
-          <span>
+          <span className="app-muted text-xs">
             {locale === 'zh'
               ? '我已在券商账户核对以上权限；此设置只用于筛选候选，不授权交易。'
               : 'I checked these permissions in my broker account. This filters candidates and does not authorize trading.'}
@@ -147,7 +148,7 @@ function SettingsBoardPermissions({
           disabled={
             !confirmed || update.isPending || status.isLoading || status.isError
           }
-          className="app-link text-xs font-semibold disabled:opacity-50"
+          className="app-button-secondary w-fit rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         >
           {locale === 'zh' ? '保存权限核实' : 'Save access review'}
         </button>
@@ -168,11 +169,8 @@ function SettingsDataSourceOperations({
     hasFundEstimate,
     isFundNavBlocked,
     latestFallbackQuote,
-    manualTasks,
-    manualTasksDone,
     permissionReason,
     providerName,
-    setManualTasksDone,
   } = controller;
   return (
     <div className="min-w-0">
@@ -243,38 +241,6 @@ function SettingsDataSourceOperations({
               : ''}
           </p>
         </section>
-
-        <section className="min-w-0 border-y border-[var(--app-divider)] py-3">
-          <h3 className="text-sm font-semibold text-[var(--app-text)]">
-            {copy.settings.manualDailyTaskChecklist}
-          </h3>
-          <div className="mt-2 divide-y divide-[var(--app-divider)]">
-            {manualTasks.map((task) => (
-              <ManualTaskRow
-                key={task.id}
-                label={task.label}
-                href={task.href}
-                actionLabel={copy.settings.openExternal}
-                checked={Boolean(manualTasksDone[task.id])}
-                onChange={(checked) =>
-                  setManualTasksDone((current) => ({
-                    ...current,
-                    [task.id]: checked,
-                  }))
-                }
-              />
-            ))}
-          </div>
-        </section>
-
-        <ControlledActionZone
-          tone="info"
-          title={copy.market.refreshQuotes}
-          description={copy.settings.refreshActionDetail}
-          evidence={copy.settings.refreshActionEvidence}
-        >
-          <MarketRefreshButton />
-        </ControlledActionZone>
       </SettingsDisclosure>
     </div>
   );
