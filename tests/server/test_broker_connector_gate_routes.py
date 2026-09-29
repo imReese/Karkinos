@@ -146,7 +146,9 @@ def test_backtest_promotion_readiness_blocks_from_unresolved_connector_evidence(
     assert all(row.account_truth_gate_status == "blocked" for row in response.rows)
     assert all(row.account_truth_score is not None for row in response.rows)
     assert all(
-        row.missing_requirements == ["account_truth_gate_pass"] for row in response.rows
+        row.missing_requirements
+        == ["research_evidence_gate_pass", "account_truth_gate_pass"]
+        for row in response.rows
     )
 
 
