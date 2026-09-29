@@ -1073,3 +1073,56 @@ test('Overview keeps the shared financial status rail in the global toolbar', as
     '/market',
   );
 });
+
+test('allows triggering quote refresh directly from the global toolbar', async () => {
+  let refreshed = false;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof Request
+          ? input.url
+          : input.toString();
+    if (url.includes('/api/account/overview')) {
+      return jsonResponse(defaultOverview);
+    }
+    if (url.includes('/api/market/quotes/refresh')) {
+      refreshed = true;
+      return jsonResponse({
+        quote_status: 'live',
+        refreshed: [{ symbol: '600519.SH', status: 'live' }],
+        skipped: [],
+        failed: [],
+      });
+    }
+    if (url.includes('/api/market/health')) {
+      return jsonResponse({
+        ...defaultMarketHealth,
+        latest_quote_timestamp: refreshed
+          ? '2026-05-16T22:45:00+08:00'
+          : '2026-05-16T22:40:00+08:00',
+      });
+    }
+    return new Response('Not found', { status: 404 });
+  });
+
+  renderShell({ initialPath: '/portfolio', fetchImpl: fetchMock });
+  const user = userEvent.setup();
+
+  const refreshButton = await screen.findByTestId(
+    'toolbar-refresh-market-button',
+  );
+  expect(refreshButton).toBeTruthy();
+  expect(refreshed).toBe(false);
+
+  await user.click(refreshButton);
+
+  await waitFor(() => {
+    expect(refreshed).toBe(true);
+  });
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      input.toString().includes('/api/market/quotes/refresh'),
+    ),
+  ).toBe(true);
+});

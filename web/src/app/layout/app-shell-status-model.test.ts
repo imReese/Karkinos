@@ -130,4 +130,35 @@ describe('deriveToolbarStatusModel', () => {
     expect(model.valuationTimestamp).toBe('11:55');
     expect(model.marketTimestamp).toBe('09-21 15:00');
   });
+
+  it('reflects syncing state when quotes are actively refreshing', () => {
+    const model = deriveToolbarStatusModel({
+      accountOverview: {
+        data: {
+          valuation_timestamp: '2026-09-22T11:55:00+08:00',
+          quote_status: 'live',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      marketHealth: {
+        data: {
+          market_open: true,
+          refresh_policy: 'live',
+          source_health: 'healthy',
+          latest_quote_timestamp: '2026-09-22T11:30:00+08:00',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      isRefreshingQuotes: true,
+      locale: 'zh',
+      copy: copy.zh,
+      now: referenceDate,
+    });
+
+    expect(model.marketStatus.indicator).toBe('syncing');
+    expect(model.marketStatus.tone).toBe('warning');
+    expect(model.marketStatus.value).toBe('刷新中');
+  });
 });
