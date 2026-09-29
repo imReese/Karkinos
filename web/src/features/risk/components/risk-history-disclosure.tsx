@@ -1,6 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 
-import { StatusBadge } from '../../../shared/ui/workbench';
+import { StatusBadge, WorkbenchSelect } from '../../../shared/ui/workbench';
 import type { RiskPageController } from '../model/use-risk-page-controller';
 import { RiskHistoryWorkspace } from './risk-history-workspace';
 
@@ -107,26 +107,28 @@ function RiskHistoryFilters({
         <span className="text-sm font-medium">
           {copy.explainability.timelineEventKind}
         </span>
-        <select
+        <WorkbenchSelect
           value={controller.timelineEventKind}
-          onChange={(event) =>
-            controller.setTimelineEventKind(event.target.value)
-          }
-          className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+          onChange={(val) => controller.setTimelineEventKind(val)}
+          options={[
+            { value: '', label: copy.explainability.allEvents },
+            { value: 'cash_deposit', label: copy.explainability.deposits },
+            {
+              value: 'cash_withdrawal',
+              label: copy.explainability.withdrawals,
+            },
+            { value: 'dividend', label: copy.explainability.dividends },
+            { value: 'trade_buy', label: copy.explainability.buys },
+            { value: 'trade_sell', label: copy.explainability.sells },
+            {
+              value: 'manual_adjustment',
+              label: copy.explainability.adjustments,
+            },
+          ]}
           aria-label={copy.explainability.timelineEventKind}
-        >
-          <option value="">{copy.explainability.allEvents}</option>
-          <option value="cash_deposit">{copy.explainability.deposits}</option>
-          <option value="cash_withdrawal">
-            {copy.explainability.withdrawals}
-          </option>
-          <option value="dividend">{copy.explainability.dividends}</option>
-          <option value="trade_buy">{copy.explainability.buys}</option>
-          <option value="trade_sell">{copy.explainability.sells}</option>
-          <option value="manual_adjustment">
-            {copy.explainability.adjustments}
-          </option>
-        </select>
+          className="w-full"
+          buttonClassName="w-full h-10 px-3 py-2 text-sm"
+        />
       </label>
     </div>
   );

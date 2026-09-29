@@ -118,10 +118,10 @@ export function OverviewEquityCurve({
     'var(--app-accent)';
 
   return (
-    <div className="min-w-0">
+    <div className="flex flex-1 min-w-0 flex-col">
       <SectionHeader
         title={copy.overview.dashboard.equityPanel}
-        className="overview-spotlight-heading mb-3"
+        className="overview-spotlight-heading mb-3 shrink-0"
         actions={
           <div
             className="app-inline-segmented"
@@ -149,7 +149,7 @@ export function OverviewEquityCurve({
       />
 
       <div
-        className="mb-2 flex min-w-0 flex-wrap items-center gap-1"
+        className="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-1"
         data-testid="equity-series-controls"
         role="group"
         aria-label={labels.series}
@@ -186,7 +186,7 @@ export function OverviewEquityCurve({
         ref={chartRef}
         className={
           (usablePoints.length >= 2
-            ? 'h-[260px] sm:h-[320px] lg:h-[380px] xl:h-[400px]'
+            ? 'flex-1 min-h-[300px] sm:min-h-[340px] xl:min-h-[380px]'
             : 'h-[72px] sm:h-[84px]') + ' min-w-0 overflow-hidden'
         }
       >
@@ -195,9 +195,11 @@ export function OverviewEquityCurve({
             data-testid="equity-chart-frame"
             role="img"
             aria-label={selectedLabel}
+            className="h-full w-full"
           >
             {size ? (
               <ComposedChart
+                className="app-chart-stage"
                 width={size.width}
                 height={size.height}
                 data={chartPoints}

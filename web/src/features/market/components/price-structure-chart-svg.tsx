@@ -311,7 +311,7 @@ export function PriceStructureChartSvg({
               y={y + 3}
               textAnchor="middle"
               fill={tone}
-              className="text-[length:var(--app-font-size-micro)] font-bold"
+              className="text-[length:var(--app-font-size-micro)] font-bold font-mono"
             >
               {isBuy ? 'B' : 'S'}
             </text>
@@ -515,7 +515,7 @@ function PriceStructureVolumeSeries({
         x={plot.right}
         y={volumePlot.top - 6}
         textAnchor="end"
-        className="fill-current text-[length:var(--app-font-size-micro)] font-mono"
+        className="fill-current text-[length:var(--app-font-size-micro)] font-mono tabular-nums"
       >
         {axisVolumeLabel}
       </text>
