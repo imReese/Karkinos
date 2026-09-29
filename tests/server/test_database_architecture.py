@@ -172,6 +172,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "legacy_fund_trade_duplicate_repair.py": 1,
         "manual_order_ticket_uow.py": 2,
         "manual_trade_uow.py": 2,
+        "market_daily_call_budget.py": 1,
         "market_calendar.py": 2,
         "market_calendar_publication_uow.py": 1,
         "memory_informed_analysis_uow.py": 2,
