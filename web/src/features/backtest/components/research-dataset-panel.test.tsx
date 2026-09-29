@@ -103,6 +103,7 @@ test('selecting a stored dataset does not trigger acquisition and errors do not 
               busy: false,
               storage_path: '/workspace/data/research',
               datasets: [dataset],
+              unreadable_dataset_count: 1,
             }),
             { status: 200 },
           );
@@ -114,6 +115,9 @@ test('selecting a stored dataset does not trigger acquisition and errors do not 
   disclosure.open = true;
   fireEvent(disclosure, new Event('toggle'));
   await screen.findByText(/持久目录：/);
+  expect(screen.getByRole('status').textContent).toContain(
+    '1 个 Dataset 清单无法读取',
+  );
   fireEvent.change(screen.getByLabelText('本次回测的数据输入'), {
     target: { value: dataset.dataset_id },
   });
@@ -229,5 +233,51 @@ test('explicit verification publishes only after every job succeeds and selects 
     start_date: '2026-09-07',
     end_date: '2026-09-11',
     job_ids: [firstId, secondId],
+  });
+});
+
+test('revision observation is explicitly requested and preserves the selected range', async () => {
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/verified-jobs') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ jobs: [] }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          tdx_configured: true,
+          busy: false,
+          storage_path: '/workspace/data/research',
+          datasets: [],
+        }),
+        { status: 200 },
+      );
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const { container } = mount();
+  const disclosure = container.querySelector('details')!;
+  disclosure.open = true;
+  fireEvent(disclosure, new Event('toggle'));
+  await screen.findByText(/持久目录：/);
+  fireEvent.click(screen.getByLabelText(/重新观察供应商修订/));
+  fireEvent.click(screen.getByRole('button', { name: '提交双源核验' }));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input).endsWith('/verified-jobs') && init?.method === 'POST',
+      ),
+    ).toBe(true),
+  );
+  const submission = fetchMock.mock.calls.find(
+    ([input, init]) =>
+      String(input).endsWith('/verified-jobs') && init?.method === 'POST',
+  );
+  expect(JSON.parse(String(submission?.[1]?.body))).toEqual({
+    symbol: '600000',
+    instrument_type: 'stock',
+    start_date: '2026-09-07',
+    end_date: '2026-09-11',
+    reobserve: true,
   });
 });

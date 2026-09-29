@@ -3113,6 +3113,29 @@ test('keeps sweep and comparison available with one selected Dataset', async () 
     expect(payload.start_date).toBe('2025-01-02');
     expect(payload.end_date).toBe('2026-09-18');
   }
+
+  const runButton = screen.getByRole('button', { name: 'Run backtest' });
+  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/signal-preview',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const previewCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/signal-preview'),
+  );
+  const previewPayload = JSON.parse(String(previewCall?.[1]?.body));
+  expect(previewPayload).toMatchObject({
+    dataset_id: datasetId,
+    strategy: 'dual_ma',
+    symbol: '600002',
+    asset_class: 'stock',
+    start_date: '2025-01-02',
+    end_date: '2026-09-18',
+  });
+  expect(previewPayload.bars).toBeUndefined();
+  expect(previewPayload.dataset_snapshot).toBeUndefined();
 });
 
 test('accepts localized comparison parameter names while submitting API keys', async () => {

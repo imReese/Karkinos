@@ -11,7 +11,10 @@ import uuid
 from collections.abc import Callable
 from datetime import date, datetime, timezone
 
-from data.source_policy import verification_source_policy_for_config
+from data.source_policy import (
+    source_policy_for_config,
+    verification_source_policy_for_config,
+)
 from server.contracts.jobs import JobRun, JobStore
 from server.db import AppDatabase
 from server.persistence.jobs import SQLiteJobStore
@@ -23,6 +26,7 @@ from server.release_activation import (
 from server.services.daily_market_collection import (
     DAILY_MARKET_COLLECTION_JOB,
     DailyMarketCollectionFailure,
+    DailyMarketCollectionJobRequest,
     DailyMarketCollectionService,
 )
 from server.services.market_calendar_automation import MarketCalendarAutomationService
@@ -39,6 +43,7 @@ from server.services.verified_daily_market_data import (
 from server.services.verified_daily_market_jobs import (
     VERIFIED_DAILY_MARKET_JOB,
     enqueue_latest_daily_market_collection_jobs,
+    supported_watchlist_instruments,
 )
 from server.workers.presence import run_with_presence
 
@@ -52,6 +57,50 @@ class WorkerExecutionAborted(RuntimeError):
 
 class VerifiedDailyMarketJobNotCurrent(RuntimeError):
     """A queued verification no longer has current policy or calendar authority."""
+
+
+def _require_current_daily_market_collection_job(
+    db: AppDatabase,
+    config: object,
+    job: JobRun,
+) -> None:
+    """Recheck automatic collection scope before provider I/O and quality publication."""
+    try:
+        request = DailyMarketCollectionJobRequest.from_payload(job.payload)
+    except (TypeError, ValueError) as exc:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_payload_invalid"
+        ) from exc
+    try:
+        current_policy_id = source_policy_for_config(config).policy_id
+    except (TypeError, ValueError) as exc:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_source_policy_stale"
+        ) from exc
+    if request.source_policy_id != current_policy_id:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_source_policy_stale"
+        )
+
+    read_watchlist = getattr(db, "list_watchlist_assets_sync", None)
+    if not callable(read_watchlist):
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_watchlist_unreadable"
+        )
+    try:
+        instruments = supported_watchlist_instruments(read_watchlist() or [])
+    except Exception as exc:
+        raise DailyMarketCollectionFailure(
+            "daily_market_collection_watchlist_unreadable"
+        ) from exc
+    if request.instrument not in instruments:
+        raise DailyMarketCollectionFailure("daily_market_collection_watchlist_stale")
+
+    blocker = _current_daily_market_calendar_blocker(
+        db, request.trade_date, request.calendar_evidence_refs
+    )
+    if blocker is not None:
+        raise DailyMarketCollectionFailure(f"daily_market_collection_{blocker}")
 
 
 def _require_current_verified_daily_market_job(
@@ -68,56 +117,58 @@ def _require_current_verified_daily_market_job(
         raise VerifiedDailyMarketJobNotCurrent(
             "verified_daily_market_source_policy_stale"
         )
+    blocker = _current_daily_market_calendar_blocker(
+        db, request.trade_date, request.calendar_evidence_refs
+    )
+    if blocker is not None:
+        raise VerifiedDailyMarketJobNotCurrent(f"verified_daily_market_{blocker}")
+
+
+def _current_daily_market_calendar_blocker(
+    db: AppDatabase, trade_date: date, calendar_evidence_refs: tuple[str, ...]
+) -> str | None:
+    """Use the same closed-session evidence check for both durable daily jobs."""
     try:
         dates = resolve_verified_closed_trading_dates_in_range(
             db,
             datetime.now(timezone.utc),
-            start_date=request.trade_date,
-            end_date=request.trade_date,
+            start_date=trade_date,
+            end_date=trade_date,
         )
-    except ValueError as exc:
-        raise VerifiedDailyMarketJobNotCurrent(
-            "verified_daily_market_session_not_closed"
-        ) from exc
-    if len(dates) != 1 or dates[0].trade_date != request.trade_date.isoformat():
-        raise VerifiedDailyMarketJobNotCurrent(
-            "verified_daily_market_calendar_evidence_stale"
-        )
+    except ValueError:
+        return "session_not_closed"
+    except Exception:
+        return "calendar_evidence_stale"
+    if len(dates) != 1 or dates[0].trade_date != trade_date.isoformat():
+        return "calendar_evidence_stale"
     current_refs = dates[0].calendar_evidence_refs
     if len(current_refs) != 1:
-        raise VerifiedDailyMarketJobNotCurrent(
-            "verified_daily_market_calendar_evidence_stale"
-        )
+        return "calendar_evidence_stale"
     accepted_refs = {current_refs[0]}
     # The legacy latest-day planner included the following year's calendar when
     # it fell back to the previous year's last session at the year boundary.
-    if len(request.calendar_evidence_refs) == 2:
+    if len(calendar_evidence_refs) == 2:
         try:
             year_days = resolve_verified_closed_trading_dates_in_range(
                 db,
                 datetime.now(timezone.utc),
-                start_date=date(request.trade_date.year, 1, 1),
-                end_date=date(request.trade_date.year, 12, 31),
+                start_date=date(trade_date.year, 1, 1),
+                end_date=date(trade_date.year, 12, 31),
             )
-        except ValueError as exc:
-            raise VerifiedDailyMarketJobNotCurrent(
-                "verified_daily_market_calendar_evidence_stale"
-            ) from exc
-        if not year_days or year_days[-1].trade_date != request.trade_date.isoformat():
-            raise VerifiedDailyMarketJobNotCurrent(
-                "verified_daily_market_calendar_evidence_stale"
+            if not year_days or year_days[-1].trade_date != trade_date.isoformat():
+                return "calendar_evidence_stale"
+            following = validate_verified_market_calendar(
+                db.get_market_calendar_snapshot_sync(
+                    exchange="SSE", year=trade_date.year + 1
+                )
             )
-        following = validate_verified_market_calendar(
-            db.get_market_calendar_snapshot_sync(
-                exchange="SSE", year=request.trade_date.year + 1
-            )
-        )
+        except Exception:
+            return "calendar_evidence_stale"
         if following.verified and following.evidence_ref is not None:
             accepted_refs.add(following.evidence_ref)
-    if set(request.calendar_evidence_refs) != accepted_refs:
-        raise VerifiedDailyMarketJobNotCurrent(
-            "verified_daily_market_calendar_evidence_stale"
-        )
+    if set(calendar_evidence_refs) != accepted_refs:
+        return "calendar_evidence_stale"
+    return None
 
 
 async def execute_calendar_job(
@@ -229,6 +280,7 @@ async def execute_daily_market_collection_job(
     *,
     timeout: float = 180,
     heartbeat_interval: float = 15,
+    request_validator: Callable[[], None] | None = None,
 ) -> None:
     """Persist capture and quality without granting Dataset publication."""
     await _execute_daily_market_job(
@@ -239,6 +291,7 @@ async def execute_daily_market_collection_job(
         heartbeat_interval=heartbeat_interval,
         result_prefix="quality:sha256:",
         label="daily_collection",
+        request_validator=request_validator,
     )
 
 
@@ -450,7 +503,14 @@ async def run_data_worker(config) -> None:
                 )
                 try:
                     await execute_daily_market_collection_job(
-                        store, collection_job, service
+                        store,
+                        collection_job,
+                        service,
+                        request_validator=lambda: (
+                            _require_current_daily_market_collection_job(
+                                db, config, collection_job
+                            )
+                        ),
                     )
                 except WorkerExecutionAborted:
                     raise

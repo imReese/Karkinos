@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
@@ -199,11 +200,45 @@ def resolve_backtest_data_plane(
 def load_signal_preview_bars(
     request: StrategySignalPreviewRequest,
     config: Any,
+    db: Any | None = None,
 ) -> tuple[tuple[MarketEvent, ...], dict[str, Any]]:
     """Load single-symbol preview bars through the backtest data plane."""
     from analytics.dataset_snapshot import build_backtest_dataset_snapshot
     from data.manager import DataManager
     from data.store import DataStore
+
+    if request.dataset_id is not None:
+        from server.runtime_paths import resolve_data_dir
+        from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+
+        if not request.start_date or not request.end_date:
+            raise HTTPException(422, "dataset_preview_dates_required")
+        symbol, asset_class = signal_preview_symbol_asset_class(
+            request.symbol, request.asset_class
+        )
+        dataset_request = BacktestRequest(
+            dataset_id=request.dataset_id,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            assets=[{"symbol": request.symbol, "asset_class": asset_class.value}],
+        )
+        root = (
+            db.path.resolve().parent
+            if db is not None
+            else Path(resolve_data_dir()).resolve()
+        ) / "research"
+        _, handlers, binding = load_dataset_backtest_inputs(root, dataset_request)
+        source_names = binding["source_names"]
+        snapshot = build_backtest_dataset_snapshot(
+            start_date=request.start_date,
+            end_date=request.end_date,
+            configured_source=source_names[0] if len(source_names) == 1 else None,
+            data_handlers=handlers,
+            store=None,
+            source_names=source_names,
+            research_dataset_binding=binding,
+        )
+        return tuple(handlers[symbol]), snapshot
 
     start_date = request.start_date or getattr(config, "start_date", None)
     end_date = request.end_date or getattr(config, "end_date", None)
@@ -266,10 +301,20 @@ def load_signal_preview_bars(
 def run_strategy_signal_preview(
     request: StrategySignalPreviewRequest,
     config: Any,
+    db: Any | None = None,
 ) -> dict[str, Any]:
     """Run a research-only strategy signal preview from bars or data config."""
     from analytics.strategy_signal_preview import build_strategy_signal_preview
 
+    if (
+        request.dataset_id is not None
+        and {
+            "bars",
+            "dataset_snapshot",
+        }
+        & request.model_fields_set
+    ):
+        raise HTTPException(422, "dataset_preview_input_conflict")
     if request.bars:
         bars = tuple(
             preview_bar_to_market_event(
@@ -281,7 +326,7 @@ def run_strategy_signal_preview(
         )
         dataset_snapshot = request.dataset_snapshot
     else:
-        bars, dataset_snapshot = load_signal_preview_bars(request, config)
+        bars, dataset_snapshot = load_signal_preview_bars(request, config, db)
 
     return build_strategy_signal_preview(
         strategy_id=request.strategy,

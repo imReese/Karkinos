@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -144,11 +145,13 @@ def test_verified_jobs_http_enqueues_only_verified_closed_sessions_and_is_idempo
     assert status.json()["source_policy_id"] == (
         "karkinos.market.source.free_cn_research.v1"
     )
+    assert status.json()["observation_round"] == "post_close.v1"
     jobs = first.json()["jobs"]
     assert [job["trade_date"] for job in jobs] == ["2026-09-16", "2026-09-18"]
     assert {job["source_policy_id"] for job in jobs} == {
         "karkinos.market.source.free_cn_research.v1"
     }
+    assert {job["observation_round"] for job in jobs} == {"post_close.v1"}
     assert len({job["job_id"] for job in jobs}) == 2
     assert all(job["status"] == "queued" and job["result_ref"] is None for job in jobs)
     persisted = store.list_recent(VERIFIED_DAILY_MARKET_JOB)
@@ -162,6 +165,79 @@ def test_verified_jobs_http_enqueues_only_verified_closed_sessions_and_is_idempo
     )
     assert store.list_recent(DAILY_MARKET_COLLECTION_JOB) == []
     assert not DatasetCatalog(tmp_path / "research").path.exists()
+
+
+def test_verified_jobs_http_reobservation_is_explicit_and_same_day_idempotent(
+    tmp_path,
+):
+    client, store = _verified_jobs_api(
+        tmp_path,
+        trading_dates={date(2026, 9, 16), date(2026, 9, 18)},
+    )
+    request = {
+        "symbol": "600000",
+        "instrument_type": "stock",
+        "start_date": "2026-09-16",
+        "end_date": "2026-09-18",
+    }
+    with client:
+        first = client.post("/api/backtest/datasets/verified-jobs", json=request)
+        revised = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={**request, "reobserve": True},
+        )
+        repeated = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={**request, "reobserve": True},
+        )
+        old_status = client.get(
+            f"/api/backtest/datasets/verified-jobs/{first.json()['jobs'][0]['job_id']}"
+        )
+        new_status = client.get(
+            f"/api/backtest/datasets/verified-jobs/{revised.json()['jobs'][0]['job_id']}"
+        )
+
+    assert first.status_code == 200, first.text
+    assert revised.status_code == 200, revised.text
+    assert repeated.json() == revised.json()
+    assert {job["observation_round"] for job in first.json()["jobs"]} == {
+        "post_close.v1"
+    }
+    new_rounds = {job["observation_round"] for job in revised.json()["jobs"]}
+    assert len(new_rounds) == 1
+    assert re.fullmatch(
+        r"post_close\.reobserve\.\d{4}-\d{2}-\d{2}", next(iter(new_rounds))
+    )
+    assert {job["job_id"] for job in first.json()["jobs"]}.isdisjoint(
+        {job["job_id"] for job in revised.json()["jobs"]}
+    )
+    assert old_status.json()["observation_round"] == "post_close.v1"
+    assert new_status.json()["observation_round"] == next(iter(new_rounds))
+    assert len(store.list_recent(VERIFIED_DAILY_MARKET_JOB)) == 4
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"reobserve": "true"}, {"observation_round": "arbitrary.round"}],
+)
+def test_verified_jobs_http_rejects_unbounded_round_inputs(tmp_path, extra):
+    client, store = _verified_jobs_api(
+        tmp_path,
+        trading_dates={date(2026, 9, 18)},
+    )
+    with client:
+        response = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={
+                "symbol": "600000",
+                "instrument_type": "stock",
+                "start_date": "2026-09-18",
+                "end_date": "2026-09-18",
+                **extra,
+            },
+        )
+    assert response.status_code == 422
+    assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []
 
 
 def test_verified_jobs_http_rejects_unverified_calendar_without_partial_enqueue(
@@ -292,6 +368,51 @@ def test_verified_jobs_do_not_enqueue_todays_session_before_post_close(tmp_path)
             now=datetime(2026, 9, 18, 7, 30, tzinfo=timezone.utc),
         )
     assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []
+
+
+def test_reobservation_round_uses_shanghai_day_and_preserves_default_identity(
+    tmp_path,
+):
+    store = _store(tmp_path)
+    db = _planner_db([])
+    instrument = InstrumentKey("600000", InstrumentType.STOCK)
+    request = {
+        "instrument": instrument,
+        "start_date": TRADE_DATE,
+        "end_date": TRADE_DATE,
+    }
+    first = enqueue_verified_daily_market_jobs_for_range(
+        db, _config(), store, now=NOW, **request
+    )[0]
+    same_default = enqueue_verified_daily_market_jobs_for_range(
+        db, _config(), store, now=NOW + timedelta(days=1), **request
+    )[0]
+    revised = enqueue_verified_daily_market_jobs_for_range(
+        db, _config(), store, now=NOW, reobserve=True, **request
+    )[0]
+    same_day = enqueue_verified_daily_market_jobs_for_range(
+        db,
+        _config(),
+        store,
+        now=NOW + timedelta(hours=1),
+        reobserve=True,
+        **request,
+    )[0]
+    next_day = enqueue_verified_daily_market_jobs_for_range(
+        db,
+        _config(),
+        store,
+        now=NOW + timedelta(hours=8),
+        reobserve=True,
+        **request,
+    )[0]
+
+    assert first.job_id == same_default.job_id
+    assert first.payload["observation_round"] == "post_close.v1"
+    assert revised.job_id == same_day.job_id
+    assert revised.payload["observation_round"] == "post_close.reobserve.2026-09-18"
+    assert next_day.payload["observation_round"] == ("post_close.reobserve.2026-09-19")
+    assert len({first.job_id, revised.job_id, next_day.job_id}) == 3
 
 
 def test_planner_enqueues_one_durable_job_per_supported_watchlist_asset(tmp_path):

@@ -120,6 +120,28 @@ def test_persistent_publication_survives_restart_and_reuses_without_credentials(
     assert _publish(tmp_path, _Provider(fail_day=_DAYS[0])) == ref
 
 
+def test_catalog_status_isolates_one_corrupt_dataset_manifest(tmp_path):
+    healthy = _publish(tmp_path)
+    corrupt = _publish(tmp_path, _Provider(correction=True), refresh=True)
+    assert healthy != corrupt
+    service = ResearchDatasetService(tmp_path, TdxRuntimeSettings())
+    assert len(service.status()["datasets"]) == 2
+
+    path = (
+        tmp_path
+        / "objects"
+        / "sha256"
+        / corrupt.manifest_ref.digest[:2]
+        / corrupt.manifest_ref.digest[2:]
+    )
+    path.chmod(0o600)
+    path.write_bytes(b"broken")
+
+    status = service.status()
+    assert [item["dataset_id"] for item in status["datasets"]] == [healthy.dataset_id]
+    assert status["unreadable_dataset_count"] == 1
+
+
 def test_failed_preparation_resumes_only_missing_sessions(tmp_path):
     first = _Provider(fail_day=_DAYS[2])
     with pytest.raises(RuntimeError, match="controlled network failure"):
@@ -309,6 +331,48 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
             "historical_availability_unverified",
             "unadjusted_corporate_actions_unmodeled",
         }
+        preview_body = {
+            "dataset_id": dataset_id,
+            "strategy": "dual_ma",
+            "symbol": "600000",
+            "asset_class": "stock",
+            "start_date": _DAYS[0].isoformat(),
+            "end_date": _DAYS[-1].isoformat(),
+            "params": {"short_period": 2, "long_period": 3},
+        }
+        preview = client.post("/api/backtest/signal-preview", json=preview_body)
+        assert preview.status_code == 200, preview.text
+        preview_data = preview.json()
+        assert preview_data["dataset_snapshot_id"] == frozen["snapshot_id"]
+        assert preview_data["does_not_enable_execution"] is True
+        assert preview_data["outputs"][0]["evidence"]["bar_count"] == len(_DAYS)
+        for changes, code in (
+            ({"symbol": "000001"}, "dataset_request_universe_mismatch"),
+            ({"start_date": _DAYS[1].isoformat()}, "dataset_request_date_mismatch"),
+        ):
+            failed = client.post(
+                "/api/backtest/signal-preview", json={**preview_body, **changes}
+            )
+            assert failed.status_code == 409, failed.text
+            assert failed.json()["detail"] == code
+        for missing_date in ("start_date", "end_date"):
+            failed = client.post(
+                "/api/backtest/signal-preview",
+                json={**preview_body, missing_date: None},
+            )
+            assert failed.status_code == 422, failed.text
+            assert failed.json()["detail"] == "dataset_preview_dates_required"
+        for conflict in (
+            {"bars": [{"timestamp": "2026-09-07", "close": 1}]},
+            {"bars": []},
+            {"dataset_snapshot": {"snapshot_id": "client-claim"}},
+            {"dataset_snapshot": {}},
+        ):
+            failed = client.post(
+                "/api/backtest/signal-preview", json={**preview_body, **conflict}
+            )
+            assert failed.status_code == 422, failed.text
+            assert failed.json()["detail"] == "dataset_preview_input_conflict"
         assert replay["verified_symbol_count"] == 1
         assert replay["status"] == "pass"
         assert replay["blockers"] == []
@@ -337,6 +401,12 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
         )
         object_path.chmod(0o600)
         object_path.write_bytes(b"broken")
+        failed_preview = client.post("/api/backtest/signal-preview", json=preview_body)
+        assert failed_preview.status_code == 409, failed_preview.text
+        assert (
+            failed_preview.json()["detail"] == "dataset_unreadable_no_remote_fallback"
+        )
+        assert provider.calls == list(_DAYS)
         missing = verify_backtest_dataset_snapshot_replay(frozen, store_root=tmp_path)
         assert missing["verified_symbol_count"] == 0
         assert missing["blockers"] == ["dataset_replay_immutable_dataset_unreadable"]
