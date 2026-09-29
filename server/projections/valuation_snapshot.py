@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+from collections.abc import Mapping, Sequence
 from datetime import datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -523,6 +524,45 @@ def valuation_lanes_from_quotes(
     return lanes
 
 
+def valuation_lane_status(
+    valuation: Mapping[str, Any],
+    asset_class: str,
+) -> str | None:
+    """Return the status of an asset-class lane from a valuation snapshot."""
+    lanes = valuation.get("valuation_lanes")
+    if not isinstance(lanes, Sequence):
+        return None
+    normalized_target = str(asset_class or "").strip().lower()
+    for lane in lanes:
+        if not isinstance(lane, Mapping):
+            continue
+        lane_asset_class = str(lane.get("asset_class") or "").strip().lower()
+        if lane_asset_class == normalized_target:
+            status = str(lane.get("status") or "").strip().lower()
+            return status or None
+    return None
+
+
+def is_asset_class_valuation_healthy(
+    valuation: Mapping[str, Any],
+    asset_class: str = "stock",
+) -> bool:
+    """Return whether a specific asset-class valuation lane is complete or not applicable."""
+    if not isinstance(valuation, Mapping):
+        return False
+    status = (
+        str(valuation.get("valuation_status") or valuation.get("status") or "")
+        .strip()
+        .lower()
+    )
+    if status == "complete":
+        return True
+    lane_status = valuation_lane_status(valuation, asset_class)
+    if lane_status in {"complete", "not_applicable"}:
+        return True
+    return False
+
+
 def _normalized_instrument_type(value: Any) -> str:
     normalized = str(value or "stock").strip().lower().replace("-", "_")
     if normalized in {"fund", "openend_fund"}:
@@ -788,12 +828,14 @@ def valuation_snapshot_from_row(row: dict[str, Any]) -> dict[str, Any]:
 __all__ = [
     "VALUATION_POLICY_VERSION",
     "build_current_valuation_snapshot",
+    "is_asset_class_valuation_healthy",
     "ledger_identity_from_rows",
     "load_persisted_quote_rows",
     "quote_valuation_status",
     "select_latest_observation_rows",
     "select_authoritative_valuation_marks",
     "valuation_identity_fields",
+    "valuation_lane_status",
     "valuation_lanes_from_quotes",
     "valuation_snapshot_from_row",
     "validate_valuation_snapshot",

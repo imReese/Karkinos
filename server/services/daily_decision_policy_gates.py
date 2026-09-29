@@ -38,6 +38,7 @@ from server.services.daily_decision_preflight_operator import (
     build_preflight_operator_step,
     safe_preflight_blocker,
 )
+from server.services.valuation_snapshot import is_asset_class_valuation_healthy
 
 _ACCOUNT_ACTION_READ_ONLY_WINDOW_BLOCKERS = {
     "decision_generated_outside_reviewed_window",
@@ -237,7 +238,7 @@ def current_account_action_evidence_blockers(
 
     summary = object_dict(decision_payload.get("summary"))
     portfolio = object_dict(summary.get("portfolio"))
-    if str(portfolio.get("valuation_status") or "").lower() != "complete":
+    if not is_asset_class_valuation_healthy(portfolio, "stock"):
         blockers.append("valuation_snapshot_not_complete")
 
     market = object_dict(summary.get("market_data"))
@@ -298,15 +299,12 @@ def project_daily_candidate_financial_preflight(
     portfolio = object_dict(
         object_dict(decision_payload.get("summary")).get("portfolio")
     )
-    portfolio_valuation_status = (
-        str(portfolio.get("valuation_status") or "missing").strip().lower()
-    )
     financial_gates.append(
         build_preflight_gate(
             "portfolio_valuation",
             (
                 []
-                if portfolio_valuation_status == "complete"
+                if is_asset_class_valuation_healthy(portfolio, "stock")
                 else ["valuation_snapshot_not_complete"]
             ),
         )

@@ -230,7 +230,9 @@ def account_eligible_signals(
         if portfolio.get("fact_authority") == "persisted_valuation_snapshot"
         else None
     )
-    equity = _nonnegative_decimal(portfolio.get("total_equity"))
+    equity = _nonnegative_decimal(
+        portfolio.get("total_equity") or portfolio.get("stock_equity")
+    )
     remaining = (
         max(cash - equity * cash_buffer_ratio, Decimal("0"))
         if cash is not None and equity is not None

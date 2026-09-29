@@ -51,6 +51,36 @@ from server.services.ai_shadow_research_support import (
 )
 
 
+def _is_repairable_critique_failure(failure_code: str | None) -> bool:
+    if not failure_code:
+        return False
+    code = str(failure_code).strip().lower()
+    return (
+        code.startswith("critique_")
+        or code.startswith("provider_")
+        or code
+        in {
+            "external_research_invalid_response",
+            "provider_content_not_json",
+            "provider_content_not_json_object",
+            "provider_invalid_json",
+            "provider_output_truncated",
+            "provider_citation_not_in_bound_input",
+        }
+    ) and not any(
+        marker in code
+        for marker in (
+            "already_claimed",
+            "unauthorized",
+            "authentication",
+            "forbidden",
+            "fenced",
+            "cancelled",
+            "rate_limited",
+        )
+    )
+
+
 class AiShadowResearchCandidateWorkflowMixin:
     async def _generate_iteration_hypothesis(
         self,
@@ -281,58 +311,92 @@ class AiShadowResearchCandidateWorkflowMixin:
                 if local_evidence_blockers:
                     raise ShadowResearchRejected(local_evidence_blockers[0])
             self._require_runtime_authorization(policy)
-            call_id = f"{run['run_id']}:critique:{draft_id}"
+            base_call_id = f"{run['run_id']}:critique:{draft_id}"
             if critique_resume_extension_id:
-                call_id += (
+                base_call_id += (
                     ":corrected-panel-citation-resume:"
                     + content_fingerprint(
                         {"extension_id": critique_resume_extension_id}
                     )[:12]
                 )
-            self._require_provider_call_window()
-            _, call_reused = self._store.claim_provider_call(
-                call_id=call_id,
-                run_id=str(run["run_id"]),
-                market_date=str(run["market_date"]),
-                call_kind="critique",
-                call_limit=policy.max_provider_calls_per_market_date,
-                daily_token_budget=policy.daily_token_budget,
-                now=self._utc_now(),
-            )
-            if call_reused:
-                raise ShadowResearchRejected("critique_provider_call_already_claimed")
-            try:
-                critique = await external_research.critique(
-                    CritiqueRequest(
-                        idempotency_key=call_id,
-                        requested_by=f"automation:{policy.updated_by}",
-                        session_id=str(hypotheses["session_id"]),
-                        draft_id=draft_id,
-                        backtest_run_id=backtest_run_id,
-                        confirmation=CRITIQUE_EXPORT_CONFIRMATION,
-                    )
+            critique = None
+            for critique_attempt in range(2):
+                call_id = (
+                    base_call_id if critique_attempt == 0 else f"{base_call_id}:repair"
                 )
-            except ProviderCallDeferred as exc:
-                self._defer_provider_call(call_id, str(exc))
-                raise
-            except ProviderExecutionFenced:
-                raise
-            except asyncio.CancelledError:
-                self._fail_provider_call(call_id, "provider_call_cancelled_uncertain")
-                raise
-            except Exception as exc:
-                self._fail_provider_call(call_id, shadow_research_failure_code(exc))
-                raise
-            self._require_execution_current()
-            self._store.finish_provider_call(
-                call_id,
-                status=str(critique.get("status") or "failed"),
-                actual_tokens=shadow_research_critique_usage(critique),
-                failure_code=critique.get("failure_code"),
-                now=self._utc_now(),
-            )
-            if critique.get("status") != "completed":
+                self._require_provider_call_window()
+                _, call_reused = self._store.claim_provider_call(
+                    call_id=call_id,
+                    run_id=str(run["run_id"]),
+                    market_date=str(run["market_date"]),
+                    call_kind="critique",
+                    call_limit=policy.max_provider_calls_per_market_date,
+                    daily_token_budget=policy.daily_token_budget,
+                    now=self._utc_now(),
+                )
+                if call_reused:
+                    if critique_attempt > 0:
+                        break
+                    raise ShadowResearchRejected(
+                        "critique_provider_call_already_claimed"
+                    )
+                try:
+                    critique = await external_research.critique(
+                        CritiqueRequest(
+                            idempotency_key=call_id,
+                            requested_by=f"automation:{policy.updated_by}",
+                            session_id=str(hypotheses["session_id"]),
+                            draft_id=draft_id,
+                            backtest_run_id=backtest_run_id,
+                            confirmation=CRITIQUE_EXPORT_CONFIRMATION,
+                        )
+                    )
+                except ProviderCallDeferred as exc:
+                    self._defer_provider_call(call_id, str(exc))
+                    raise
+                except ProviderExecutionFenced:
+                    raise
+                except asyncio.CancelledError:
+                    self._fail_provider_call(
+                        call_id, "provider_call_cancelled_uncertain"
+                    )
+                    raise
+                except Exception as exc:
+                    failure_code = shadow_research_failure_code(exc)
+                    self._fail_provider_call(call_id, failure_code)
+                    if critique_attempt == 0 and _is_repairable_critique_failure(
+                        failure_code
+                    ):
+                        continue
+                    raise
+                self._require_execution_current()
+                self._store.finish_provider_call(
+                    call_id,
+                    status=str(critique.get("status") or "failed"),
+                    actual_tokens=shadow_research_critique_usage(critique),
+                    failure_code=critique.get("failure_code"),
+                    now=self._utc_now(),
+                )
+                if critique.get("status") == "completed":
+                    break
                 failure_code = str(critique.get("failure_code") or "").strip()
+                if critique_attempt == 0 and _is_repairable_critique_failure(
+                    failure_code
+                ):
+                    continue
+                if (
+                    failure_code
+                    and len(failure_code) <= 160
+                    and all(char.isalnum() or char in "_:-." for char in failure_code)
+                ):
+                    raise ShadowResearchRejected(failure_code)
+                raise ShadowResearchRejected("strategy_critique_not_complete")
+
+            if critique is None or critique.get("status") != "completed":
+                failure_code = str(
+                    (critique or {}).get("failure_code")
+                    or "strategy_critique_not_complete"
+                ).strip()
                 if (
                     failure_code
                     and len(failure_code) <= 160
