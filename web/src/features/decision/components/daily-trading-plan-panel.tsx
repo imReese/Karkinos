@@ -119,6 +119,16 @@ function TradingPlanSummary({ plan }: { plan: DailyTradingPlanResponse }) {
         <span className="app-chip">{labels.tradingPlanDefaultManual}</span>
         <span className="app-chip">{labels.tradingPlanBrokerDisabled}</span>
       </div>
+      {plan.order_intent_count > 0 || plan.manual_ready_count > 0 ? (
+        <div className="mt-3">
+          <a
+            href="/trading"
+            className="app-button-primary inline-flex min-h-8 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+          >
+            {labels.tradingPlanGoToExecutionQueue} &rarr;
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -130,86 +140,219 @@ function TradingPlanOrderIntentPreview({
 }) {
   const labels = useCopy().decision;
   const { locale } = usePreferences();
-  const firstIntent = plan.order_intents?.[0];
-  const constraintChecks = firstIntent?.constraint_checks ?? [];
+  const intents = plan.order_intents ?? [];
   return (
     <div className="min-w-0 border-l-2 border-[var(--app-divider)] py-1 pl-3">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
           {labels.tradingPlanOrderIntentPreviews}
         </div>
-        <span className="app-chip">{plan.order_intent_count}</span>
+        <div className="flex items-center gap-2">
+          <span className="app-chip">{plan.order_intent_count}</span>
+          {intents.length > 0 ? (
+            <a
+              href="/trading"
+              className="app-button-primary inline-flex min-h-7 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-semibold"
+              title={labels.tradingPlanGoToExecutionDetail}
+            >
+              {labels.tradingPlanGoToExecutionQueue} &rarr;
+            </a>
+          ) : null}
+        </div>
       </div>
-      {firstIntent ? (
-        <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2">
-          <div className="min-w-0 break-words">
-            {firstIntent.symbol} ·{' '}
-            {formatPublicStatus(firstIntent.side, locale)}
-          </div>
-          <div className="font-mono tabular-nums">
-            {labels.tradingPlanQuantity}: {firstIntent.estimated_quantity}
-          </div>
-          <div className="font-mono tabular-nums">
-            {labels.targetWeight}: {formatPercent(firstIntent.target_weight)}
-          </div>
-          <div className="font-mono tabular-nums">
-            {labels.price}: {formatPrice(firstIntent.estimated_price)}
-          </div>
-          <div className="font-mono tabular-nums">
-            {labels.tradingPlanFee}:{' '}
-            {formatCurrency(firstIntent.estimated_total_fee)}
-          </div>
-          <div className="font-mono tabular-nums">
-            {labels.tradingPlanNetCash}:{' '}
-            {formatCurrency(firstIntent.estimated_net_cash_impact)}
-          </div>
-          {firstIntent.cash_shortfall > 0 ? (
-            <div className="font-mono tabular-nums text-[var(--app-warning-text)]">
-              {labels.tradingPlanCashShortfallAmount}:{' '}
-              {formatCurrency(firstIntent.cash_shortfall)}
-            </div>
-          ) : null}
-          {constraintChecks.length > 0 ? (
-            <div className="sm:col-span-2">
-              <div className="app-muted app-type-overline mb-2">
-                {labels.tradingPlanConstraintChecks}
+      {intents.length > 0 ? (
+        <div className="mt-3 space-y-4">
+          {intents.map((intent, index) => {
+            const constraintChecks = intent.constraint_checks ?? [];
+            const pos = intent.position_effect;
+            const currentQty = pos?.current_quantity ?? 0;
+            const targetQty =
+              pos?.estimated_quantity_after ?? intent.estimated_quantity;
+            const qtyDelta =
+              intent.side === 'sell'
+                ? -intent.estimated_quantity
+                : intent.estimated_quantity;
+            const currentVal =
+              pos?.current_market_value ?? currentQty * intent.estimated_price;
+            const targetVal = targetQty * intent.estimated_price;
+            const valDelta = targetVal - currentVal;
+            const totalEq = plan.total_equity > 0 ? plan.total_equity : null;
+            const currentWeight = totalEq ? currentVal / totalEq : null;
+            const targetWeight = intent.target_weight;
+            const weightDelta =
+              currentWeight !== null ? targetWeight - currentWeight : null;
+
+            return (
+              <div
+                key={`${intent.symbol ?? 'intent'}-${intent.action_id ?? index}`}
+                className="min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3"
+              >
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-[var(--app-text)]">
+                      {intent.symbol}
+                    </span>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        intent.side === 'buy'
+                          ? 'border border-[color-mix(in_srgb,var(--app-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_12%,transparent)] text-[var(--app-success-text)]'
+                          : 'border border-[color-mix(in_srgb,var(--app-danger)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_12%,transparent)] text-[var(--app-danger-text)]'
+                      }`}
+                    >
+                      {formatPublicStatus(intent.side, locale)}
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs tabular-nums text-[var(--app-text-secondary)]">
+                    {labels.price}: {formatPrice(intent.estimated_price)}
+                  </div>
+                </div>
+
+                {/* Current vs Target Allocation Delta */}
+                <div className="mt-2.5">
+                  <div className="app-muted app-type-overline mb-1.5 text-xs">
+                    {labels.tradingPlanCurrentVsTarget}
+                  </div>
+                  <div className="grid min-w-0 grid-cols-3 gap-2 rounded-[var(--app-radius-control)] bg-[color-mix(in_srgb,var(--app-surface-muted)_50%,transparent)] p-2 text-xs">
+                    <div>
+                      <div className="app-muted">
+                        {labels.tradingPlanCurrentQuantity} /{' '}
+                        {labels.tradingPlanTargetQuantity}
+                      </div>
+                      <div className="mt-0.5 font-mono tabular-nums text-[var(--app-text)]">
+                        {currentQty} &rarr; {targetQty}
+                      </div>
+                      <div
+                        className={`font-mono text-[11px] tabular-nums font-medium ${
+                          qtyDelta > 0
+                            ? 'text-[var(--app-success-text)]'
+                            : qtyDelta < 0
+                              ? 'text-[var(--app-danger-text)]'
+                              : 'text-[var(--app-text-secondary)]'
+                        }`}
+                      >
+                        {labels.tradingPlanQuantityDelta}:{' '}
+                        {qtyDelta > 0 ? `+${qtyDelta}` : qtyDelta}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="app-muted">
+                        {labels.tradingPlanCurrentWeight} /{' '}
+                        {labels.tradingPlanTargetWeight}
+                      </div>
+                      <div className="mt-0.5 font-mono tabular-nums text-[var(--app-text)]">
+                        {currentWeight !== null
+                          ? formatPercent(currentWeight)
+                          : '--'}{' '}
+                        &rarr; {formatPercent(targetWeight)}
+                      </div>
+                      {weightDelta !== null ? (
+                        <div
+                          className={`font-mono text-[11px] tabular-nums font-medium ${
+                            weightDelta > 0
+                              ? 'text-[var(--app-success-text)]'
+                              : weightDelta < 0
+                                ? 'text-[var(--app-danger-text)]'
+                                : 'text-[var(--app-text-secondary)]'
+                          }`}
+                        >
+                          {weightDelta > 0
+                            ? `+${formatPercent(weightDelta)}`
+                            : formatPercent(weightDelta)}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div>
+                      <div className="app-muted">
+                        {labels.tradingPlanCurrentMarketValue} /{' '}
+                        {labels.tradingPlanTargetMarketValue}
+                      </div>
+                      <div className="mt-0.5 font-mono tabular-nums text-[var(--app-text)]">
+                        {formatCurrency(currentVal)} &rarr;{' '}
+                        {formatCurrency(targetVal)}
+                      </div>
+                      <div
+                        className={`font-mono text-[11px] tabular-nums font-medium ${
+                          valDelta > 0
+                            ? 'text-[var(--app-success-text)]'
+                            : valDelta < 0
+                              ? 'text-[var(--app-danger-text)]'
+                              : 'text-[var(--app-text-secondary)]'
+                        }`}
+                      >
+                        {valDelta > 0
+                          ? `+${formatCurrency(valDelta)}`
+                          : formatCurrency(valDelta)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-2.5 grid min-w-0 gap-2 text-sm sm:grid-cols-2">
+                  <div className="font-mono tabular-nums">
+                    {labels.tradingPlanQuantity}: {intent.estimated_quantity}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {labels.targetWeight}: {formatPercent(intent.target_weight)}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {labels.tradingPlanFee}:{' '}
+                    {formatCurrency(intent.estimated_total_fee)}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {labels.tradingPlanNetCash}:{' '}
+                    {formatCurrency(intent.estimated_net_cash_impact)}
+                  </div>
+                  {intent.cash_shortfall > 0 ? (
+                    <div className="font-mono tabular-nums text-[var(--app-warning-text)]">
+                      {labels.tradingPlanCashShortfallAmount}:{' '}
+                      {formatCurrency(intent.cash_shortfall)}
+                    </div>
+                  ) : null}
+                  {pos ? (
+                    <>
+                      <div className="font-mono tabular-nums">
+                        {labels.tradingPlanPositionAfter}:{' '}
+                        {pos.estimated_quantity_after}
+                      </div>
+                      <div className="font-mono tabular-nums">
+                        {labels.tradingPlanCostBasis}:{' '}
+                        {pos.estimated_avg_cost_after === null
+                          ? pos.cost_basis_method
+                          : `${formatPrice(
+                              pos.estimated_avg_cost_after,
+                            )} · ${pos.cost_basis_method}`}
+                      </div>
+                    </>
+                  ) : null}
+                  {constraintChecks.length > 0 ? (
+                    <div className="sm:col-span-2">
+                      <div className="app-muted app-type-overline mb-2">
+                        {labels.tradingPlanConstraintChecks}
+                      </div>
+                      <div className="flex min-w-0 flex-wrap gap-2">
+                        {constraintChecks.map((check) => (
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                              check.status === 'blocked'
+                                ? 'border-[color-mix(in_srgb,var(--app-danger)_40%,transparent)] text-[var(--app-danger-text)]'
+                                : 'border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] text-[var(--app-success-text)]'
+                            }`}
+                            key={check.id}
+                          >
+                            {tradingPlanConstraintLabel(check.id, locale)} ·{' '}
+                            {formatPublicStatus(check.status, locale)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="app-muted sm:col-span-2">
+                    {labels.tradingPlanDoesNotSubmit}
+                  </div>
+                </div>
               </div>
-              <div className="flex min-w-0 flex-wrap gap-2">
-                {constraintChecks.map((check) => (
-                  <span
-                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                      check.status === 'blocked'
-                        ? 'border-[color-mix(in_srgb,var(--app-danger)_40%,transparent)] text-[var(--app-danger-text)]'
-                        : 'border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] text-[var(--app-success-text)]'
-                    }`}
-                    key={check.id}
-                  >
-                    {tradingPlanConstraintLabel(check.id, locale)} ·{' '}
-                    {formatPublicStatus(check.status, locale)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {firstIntent.position_effect ? (
-            <>
-              <div className="font-mono tabular-nums">
-                {labels.tradingPlanPositionAfter}:{' '}
-                {firstIntent.position_effect.estimated_quantity_after}
-              </div>
-              <div className="font-mono tabular-nums">
-                {labels.tradingPlanCostBasis}:{' '}
-                {firstIntent.position_effect.estimated_avg_cost_after === null
-                  ? firstIntent.position_effect.cost_basis_method
-                  : `${formatPrice(
-                      firstIntent.position_effect.estimated_avg_cost_after,
-                    )} · ${firstIntent.position_effect.cost_basis_method}`}
-              </div>
-            </>
-          ) : null}
-          <div className="app-muted sm:col-span-2">
-            {labels.tradingPlanDoesNotSubmit}
-          </div>
+            );
+          })}
         </div>
       ) : (
         <div className="app-muted mt-3 text-sm">
