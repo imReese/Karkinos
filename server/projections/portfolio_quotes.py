@@ -25,7 +25,10 @@ from server.projections.portfolio_quote_assets import (
     optional_float_attr,
     optional_float_value,
 )
-from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotRejected
+from server.projections.portfolio_read_snapshot import (
+    PortfolioReadSnapshotRejected,
+    unfreeze_mapping,
+)
 from server.projections.portfolio_read_snapshot_persistence import (
     portfolio_read_snapshot_for_state,
 )
@@ -257,7 +260,7 @@ def current_valuation_snapshot(
     except PortfolioReadSnapshotRejected as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if read_snapshot is not None:
-        return dict(read_snapshot.published_valuation)
+        return unfreeze_mapping(read_snapshot.published_valuation)
     snapshot = build_current_valuation_projection(state.db, persist=False, now=now)
     publication_reader = getattr(state.db, "get_runtime_control_sync", None)
     publication = (

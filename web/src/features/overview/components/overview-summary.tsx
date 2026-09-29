@@ -22,9 +22,7 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
   const { locale } = usePreferences();
   const labels = overviewPresentation[locale];
   const showIndicativeTotal =
-    summary.total_equity == null &&
-    summary.indicative_total_equity != null &&
-    Boolean(summary.indicative_fund_nav_date);
+    summary.total_equity == null && summary.indicative_total_equity != null;
 
   const headlineMetrics = [
     {
@@ -112,8 +110,9 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
                   data-testid="overview-total-value-note"
                   className="app-type-micro text-[var(--app-warning-text)]"
                 >
-                  {labels.indicativeValue} · {labels.fundNavAsOf}{' '}
-                  {summary.indicative_fund_nav_date}
+                  {summary.indicative_fund_nav_date
+                    ? `${labels.indicativeValue} · ${labels.fundNavAsOf} ${summary.indicative_fund_nav_date}`
+                    : `${labels.indicativeValue} · ${labels.referenceQuotePending}`}
                 </span>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">

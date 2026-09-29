@@ -480,6 +480,22 @@ def _freeze_value(value: Any) -> Any:
     )
 
 
+def unfreeze_value(value: Any) -> Any:
+    """Recursively convert MappingProxyType, tuples, and frozensets to standard dicts and lists."""
+    if isinstance(value, Mapping):
+        return {key: unfreeze_value(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [unfreeze_value(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return {unfreeze_value(item) for item in value}
+    return value
+
+
+def unfreeze_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Recursively convert a frozen mapping to a standard serializable dict."""
+    return {key: unfreeze_value(item) for key, item in value.items()}
+
+
 __all__ = (
     "PortfolioReadIdentityMismatch",
     "PortfolioReadPortResult",
@@ -490,4 +506,6 @@ __all__ = (
     "PortfolioReadSnapshotPorts",
     "PortfolioReadSnapshotRejected",
     "PortfolioReadSnapshotService",
+    "unfreeze_mapping",
+    "unfreeze_value",
 )
