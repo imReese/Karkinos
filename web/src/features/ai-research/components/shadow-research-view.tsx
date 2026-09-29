@@ -96,6 +96,14 @@ export function CandidateCard({
             {candidate.comparison.iteration_lineage.total_iterations}
           </span>
         ) : null}
+        <a
+          href={`/backtest?strategy=${encodeURIComponent(candidate.draft_id || candidate.candidate_id)}&source=ai_research`}
+          data-testid="shadow-research-clone-backtest"
+          className="app-button-secondary inline-flex min-h-7 items-center justify-center gap-1 rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-semibold text-[var(--app-text)] hover:text-[var(--app-text)]"
+          title={copy.openInStrategyLabDetail}
+        >
+          <span>{copy.openInStrategyLab} &rarr;</span>
+        </a>
       </div>
 
       {comparison.baseline && comparison.candidate ? (
@@ -136,6 +144,8 @@ export function CandidateCard({
           {comparison.risk_impact}
         </p>
       ) : null}
+
+      <CritiqueEvolutionTimeline candidate={candidate} copy={copy} />
 
       {candidate.status === 'awaiting_human_approval' &&
       candidate.recommendation === 'paper_shadow_review' &&
@@ -363,5 +373,142 @@ export function NumberField({
         value={value}
       />
     </label>
+  );
+}
+
+export function CritiqueEvolutionTimeline({
+  candidate,
+  copy,
+}: {
+  candidate: ShadowResearchCandidate;
+  copy: ShadowResearchCopy;
+}) {
+  const comparison = candidate.comparison;
+  const critique = comparison.deepseek_critique;
+  const lineage = comparison.iteration_lineage;
+  const baseline = comparison.baseline;
+  const target = comparison.candidate;
+
+  const returnDelta =
+    baseline && target ? target.total_return - baseline.total_return : null;
+  const sharpeDelta =
+    baseline && target ? target.sharpe - baseline.sharpe : null;
+
+  return (
+    <div
+      className="mt-4 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[color-mix(in_srgb,var(--app-surface)_50%,transparent)] p-3"
+      data-testid="critique-evolution-timeline"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-2">
+        <div className="text-xs font-semibold text-[var(--app-text)]">
+          {copy.critiqueTrajectory}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-success-text)]">
+            {copy.selfHealingConverged}
+          </span>
+          <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-text-secondary)]">
+            {copy.schemaValidationPass}
+          </span>
+          {lineage?.sequential_feedback_bound ? (
+            <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-text-secondary)]">
+              {copy.sequentialFeedbackBound}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <p className="app-muted mt-2 text-xs leading-5">
+        {copy.evolutionCorrectionNotice}
+      </p>
+
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+        <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2.5">
+          <div className="app-muted text-[11px] font-semibold">
+            {lineage
+              ? `${copy.iterationRound} ${lineage.iteration_number}/${lineage.total_iterations}`
+              : copy.iterationRound}
+          </div>
+          <div className="mt-1 font-mono text-xs tabular-nums text-[var(--app-text)] truncate">
+            {lineage?.formula_fingerprint
+              ? `FP: ${lineage.formula_fingerprint.slice(0, 16)}…`
+              : candidate.draft_id}
+          </div>
+          <div className="app-muted mt-1 text-[11px]">
+            {lineage?.parent_draft_id
+              ? `Parent: ${lineage.parent_draft_id}`
+              : 'Initial formula seed'}
+          </div>
+        </div>
+
+        <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2.5">
+          <div className="app-muted text-[11px] font-semibold">
+            {copy.critique}
+          </div>
+          <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+            <span className="text-[var(--app-success-text)]">
+              {critique?.supported_claims?.length ?? 0} claims pass
+            </span>
+            <span className="text-[var(--app-muted)]">·</span>
+            <span className="text-[var(--app-warning-text)]">
+              {critique?.contradicted_claims?.length ?? 0} claims gap
+            </span>
+          </div>
+          {critique?.uncertainty ? (
+            <div className="app-muted mt-1 text-[11px] truncate">
+              {critique.uncertainty}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2.5">
+          <div className="app-muted text-[11px] font-semibold">
+            {copy.metricEvolution}
+          </div>
+          <div className="mt-1 font-mono text-xs tabular-nums">
+            {sharpeDelta !== null ? (
+              <span
+                className={
+                  sharpeDelta > 0
+                    ? 'text-[var(--app-success-text)]'
+                    : sharpeDelta < 0
+                      ? 'text-[var(--app-danger-text)]'
+                      : 'text-[var(--app-text)]'
+                }
+              >
+                Sharpe:{' '}
+                {sharpeDelta > 0
+                  ? `+${sharpeDelta.toFixed(2)}`
+                  : sharpeDelta.toFixed(2)}
+              </span>
+            ) : (
+              '—'
+            )}
+            {returnDelta !== null ? (
+              <span
+                className={`ml-2 ${
+                  returnDelta > 0
+                    ? 'text-[var(--app-success-text)]'
+                    : returnDelta < 0
+                      ? 'text-[var(--app-danger-text)]'
+                      : 'text-[var(--app-text)]'
+                }`}
+              >
+                Return:{' '}
+                {returnDelta > 0
+                  ? `+${formatPercent(returnDelta)}`
+                  : formatPercent(returnDelta)}
+              </span>
+            ) : null}
+          </div>
+          {target ? (
+            <div className="app-muted mt-1 text-[11px]">
+              OOS: {target.oos_validation_status} ({target.oos_fold_count}{' '}
+              folds)
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
