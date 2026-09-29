@@ -50,6 +50,7 @@ export type ToolbarStatusModel = {
 type ToolbarStatusModelInput = {
   accountOverview: QueryStatus<AccountOverviewStatusSource>;
   copy: AppCopy;
+  isRefreshingQuotes?: boolean;
   locale: Locale;
   marketHealth: QueryStatus<MarketHealthStatusSource>;
   now?: Date;
@@ -58,6 +59,7 @@ type ToolbarStatusModelInput = {
 export function deriveToolbarStatusModel({
   accountOverview,
   copy,
+  isRefreshingQuotes,
   locale,
   marketHealth,
   now,
@@ -98,24 +100,26 @@ export function deriveToolbarStatusModel({
           ? status(copy.shell.valuationMode, 'success')
           : status(copy.shell.statusUnknown, 'warning');
 
-  const marketStatus = marketHealth.isLoading
-    ? status(copy.shell.checking, 'warning', 'syncing')
-    : marketHealth.isError
-      ? status(copy.shell.marketError, 'danger')
-      : isQuoteStale || marketQuotesUnconfirmed
-        ? status(copy.shell.cachedQuotes, 'warning')
-        : marketHealth.data?.refresh_policy === 'cache_only'
-          ? status(
-              marketHealth.data.market_open
-                ? copy.shell.marketCacheOnly
-                : copy.shell.marketClosed,
-              !marketHealth.data.market_open && marketQuotesHealthy
-                ? 'success'
-                : 'warning',
-            )
-          : marketHealth.data
-            ? status(copy.shell.marketLive, 'success')
-            : status(copy.shell.statusUnknown, 'warning');
+  const marketStatus = isRefreshingQuotes
+    ? status(copy.market.refreshingQuotes, 'warning', 'syncing')
+    : marketHealth.isLoading
+      ? status(copy.shell.checking, 'warning', 'syncing')
+      : marketHealth.isError
+        ? status(copy.shell.marketError, 'danger')
+        : isQuoteStale || marketQuotesUnconfirmed
+          ? status(copy.shell.cachedQuotes, 'warning')
+          : marketHealth.data?.refresh_policy === 'cache_only'
+            ? status(
+                marketHealth.data.market_open
+                  ? copy.shell.marketCacheOnly
+                  : copy.shell.marketClosed,
+                !marketHealth.data.market_open && marketQuotesHealthy
+                  ? 'success'
+                  : 'warning',
+              )
+            : marketHealth.data
+              ? status(copy.shell.marketLive, 'success')
+              : status(copy.shell.statusUnknown, 'warning');
 
   const executionMode = accountOverview.isLoading
     ? copy.shell.checking

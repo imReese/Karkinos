@@ -9,6 +9,7 @@ import {
   StatusChip,
   StatusPopover,
   TOOLBAR_STATUS_COLORS,
+  ToolbarRefreshButton,
 } from './app-shell-status';
 import type {
   ToolbarPopoverKey,
@@ -16,7 +17,9 @@ import type {
 } from './app-shell-status-model';
 
 type ToolbarStatusState = ToolbarStatusModel & {
+  isRefreshingQuotes: boolean;
   openStatusPanel: ToolbarPopoverKey;
+  refreshQuotes: () => Promise<void>;
   statusRailRef: RefObject<HTMLDivElement | null>;
   statusRailVisible: boolean;
   toggleStatusPanel: (panel: Exclude<ToolbarPopoverKey, null>) => void;
@@ -121,6 +124,19 @@ export function AppShellToolbar({
           <kbd aria-hidden="true">⌘K</kbd>
         </button>
 
+        <ToolbarRefreshButton
+          isRefreshing={status.isRefreshingQuotes}
+          label={copy.market.refreshQuotes}
+          variant="mobile"
+          onClick={async () => {
+            try {
+              await status.refreshQuotes();
+            } catch {
+              // handled
+            }
+          }}
+        />
+
         <AppShellPreferences
           copy={copy}
           locale={locale}
@@ -204,6 +220,25 @@ function ToolbarStatusRail({
                     value: status.marketTimestamp ?? copy.shell.statusUnknown,
                   },
                 ]}
+                action={
+                  <ToolbarRefreshButton
+                    isRefreshing={status.isRefreshingQuotes}
+                    label={
+                      status.isRefreshingQuotes
+                        ? copy.market.refreshingQuotes
+                        : copy.market.refreshQuotes
+                    }
+                    variant="popover"
+                    testId="compact-popover-refresh-market-button"
+                    onClick={async () => {
+                      try {
+                        await status.refreshQuotes();
+                      } catch {
+                        // handled
+                      }
+                    }}
+                  />
+                }
               />
             </div>
           ) : null}
@@ -254,6 +289,21 @@ function ToolbarStatusRail({
           title={`${copy.shell.marketStatus}: ${status.marketStatus.value}${
             status.marketTimestamp ? ` · ${status.marketTimestamp}` : ''
           }`}
+          addon={
+            <ToolbarRefreshButton
+              isRefreshing={status.isRefreshingQuotes}
+              label={copy.market.refreshQuotes}
+              variant="addon"
+              onClick={async (event) => {
+                event.stopPropagation();
+                try {
+                  await status.refreshQuotes();
+                } catch {
+                  // handled
+                }
+              }}
+            />
+          }
           popup={
             <StatusPopover
               title={copy.shell.marketStatus}
@@ -275,6 +325,24 @@ function ToolbarStatusRail({
                   value: status.quoteStatus,
                 },
               ]}
+              action={
+                <ToolbarRefreshButton
+                  isRefreshing={status.isRefreshingQuotes}
+                  label={
+                    status.isRefreshingQuotes
+                      ? copy.market.refreshingQuotes
+                      : copy.market.refreshQuotes
+                  }
+                  variant="popover"
+                  onClick={async () => {
+                    try {
+                      await status.refreshQuotes();
+                    } catch {
+                      // handled
+                    }
+                  }}
+                />
+              }
             />
           }
           onClick={() => status.toggleStatusPanel('market')}

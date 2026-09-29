@@ -5,6 +5,7 @@ import type { AppCopy } from '../copy';
 import {
   useAccountOverviewQuery,
   useMarketDataHealthQuery,
+  useRefreshMarketQuotesMutation,
 } from './app-shell-feature-boundary';
 import {
   deriveToolbarStatusModel,
@@ -29,7 +30,13 @@ export function useToolbarStatusController(
     enabled && (statusRailVisible || openStatusPanel !== null);
   const accountOverview = useAccountOverviewQuery(statusQueriesEnabled);
   const marketHealth = useMarketDataHealthQuery(statusQueriesEnabled);
+  const refreshQuotesMutation = useRefreshMarketQuotesMutation();
+  const isRefreshingQuotes = refreshQuotesMutation.isPending;
   const statusRailRef = useRef<HTMLDivElement | null>(null);
+
+  const refreshQuotes = async () => {
+    await refreshQuotesMutation.mutateAsync({ force: true });
+  };
 
   const toggleStatusPanel = (panel: Exclude<ToolbarPopoverKey, null>) => {
     setOpenStatusPanel((current) => (current === panel ? null : panel));
@@ -76,10 +83,13 @@ export function useToolbarStatusController(
     ...deriveToolbarStatusModel({
       accountOverview,
       copy,
+      isRefreshingQuotes,
       locale,
       marketHealth,
     }),
+    isRefreshingQuotes,
     openStatusPanel,
+    refreshQuotes,
     statusRailRef,
     statusRailVisible,
     toggleStatusPanel,

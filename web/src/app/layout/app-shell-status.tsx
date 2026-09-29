@@ -17,6 +17,7 @@ export const TOOLBAR_STATUS_COLORS: Readonly<
 
 type StatusChipProps = {
   actionLabel?: string;
+  addon?: ReactNode;
   expanded?: boolean;
   hoverHint?: string;
   indicator: ToolbarStatusIndicator;
@@ -43,11 +44,12 @@ export function StatusChip({
   popup,
   expanded = false,
   testId,
+  addon,
 }: StatusChipProps) {
   const popupPresence = useMotionPresence(Boolean(popup && expanded));
 
   return (
-    <div className="app-status-chip group relative inline-flex h-7 min-w-0 shrink-0 border-r border-[var(--app-divider)] pr-1">
+    <div className="app-status-chip group relative inline-flex h-7 min-w-0 shrink-0 items-center border-r border-[var(--app-divider)] pr-1">
       <button
         type="button"
         data-testid={testId}
@@ -107,6 +109,7 @@ export function StatusChip({
           />
         </span>
       </button>
+      {addon}
       {hoverHint && !expanded ? (
         <div className="app-status-tooltip pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-[75] -translate-x-1/2 rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[var(--app-shadow-overlay)] group-hover:opacity-100 group-focus-within:opacity-100">
           {hoverHint}
@@ -130,9 +133,11 @@ export function StatusChip({
 export function StatusPopover({
   title,
   rows,
+  action,
 }: {
   title: string;
   rows: Array<{ label: string; value: string }>;
+  action?: ReactNode;
 }) {
   return (
     <div
@@ -158,6 +163,84 @@ export function StatusPopover({
           </div>
         ))}
       </div>
+      {action ? (
+        <div className="mt-3 border-t border-[var(--app-divider)] pt-2.5">
+          {action}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+type ToolbarRefreshButtonProps = {
+  isRefreshing: boolean;
+  label: string;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
+  testId?: string;
+  variant?: 'addon' | 'popover' | 'mobile';
+};
+
+export function ToolbarRefreshButton({
+  isRefreshing,
+  onClick,
+  label,
+  variant = 'addon',
+  testId,
+}: ToolbarRefreshButtonProps) {
+  if (variant === 'addon') {
+    return (
+      <button
+        type="button"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-[var(--app-radius-control)] text-[var(--app-text-tertiary)] hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] disabled:cursor-not-allowed disabled:opacity-50"
+        data-testid={testId ?? 'toolbar-refresh-market-button'}
+        aria-label={label}
+        title={label}
+        disabled={isRefreshing}
+        aria-busy={isRefreshing}
+        onClick={onClick}
+      >
+        <RotateCwIcon
+          className={`h-3 w-3 shrink-0 ${isRefreshing ? 'animate-spin text-[var(--app-warning-indicator)]' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
+    );
+  }
+
+  if (variant === 'popover') {
+    return (
+      <button
+        type="button"
+        className="app-button-secondary app-control-compact app-type-micro inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] py-1.5 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+        data-testid={testId ?? 'popover-refresh-market-button'}
+        disabled={isRefreshing}
+        aria-busy={isRefreshing}
+        onClick={onClick}
+      >
+        <RotateCwIcon
+          className={`h-3 w-3 shrink-0 ${isRefreshing ? 'animate-spin text-[var(--app-warning-indicator)]' : ''}`}
+          aria-hidden="true"
+        />
+        <span>{label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="app-button-secondary inline-flex h-8 w-8 items-center justify-center rounded-[var(--app-radius-control)] p-0 text-[var(--app-text-secondary)] hover:text-[var(--app-text)] disabled:cursor-not-allowed disabled:opacity-50 xl:hidden"
+      data-testid={testId ?? 'mobile-refresh-market-button'}
+      aria-label={label}
+      title={label}
+      disabled={isRefreshing}
+      aria-busy={isRefreshing}
+      onClick={onClick}
+    >
+      <RotateCwIcon
+        className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-[var(--app-warning-indicator)]' : ''}`}
+        aria-hidden="true"
+      />
+    </button>
   );
 }
