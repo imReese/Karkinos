@@ -159,6 +159,8 @@ export function TradingReviewQueue({
             }))
           }
           instrumentNames={instrumentNames}
+          currentStatus={status}
+          onResetStatus={() => setStatus('all')}
         />
 
         <ManualTicketExportPanel

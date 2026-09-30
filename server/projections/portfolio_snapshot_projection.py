@@ -106,6 +106,47 @@ def _overdue_published_session_close_price(
     return price if price.is_finite() and price > 0 else None
 
 
+def _indicative_position_price(
+    quote: dict | None, instrument_type: str, latest_price: float | None = None
+) -> Decimal | None:
+    if quote is None:
+        if latest_price is not None and latest_price > 0:
+            try:
+                p = Decimal(str(latest_price))
+                if p.is_finite() and p > 0:
+                    return p
+            except (InvalidOperation, TypeError, ValueError):
+                pass
+        return None
+
+    if instrument_type == InstrumentType.OPEN_END_FUND.value:
+        return _overdue_published_fund_price(quote, instrument_type)
+
+    close_price = _overdue_published_session_close_price(quote, instrument_type)
+    if close_price is not None:
+        return close_price
+
+    candidate_prices = [
+        latest_price,
+        quote.get("price"),
+        quote.get("observed_price"),
+        quote.get("previous_close"),
+    ]
+    latest_obs = quote.get("latest_observation")
+    if isinstance(latest_obs, dict):
+        candidate_prices.append(latest_obs.get("price"))
+
+    for raw_price in candidate_prices:
+        if raw_price is not None:
+            try:
+                p = Decimal(str(raw_price))
+                if p.is_finite() and p > 0:
+                    return p
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+    return None
+
+
 def build_portfolio_snapshot_sync(
     state,
     *,
@@ -243,6 +284,43 @@ def build_portfolio_snapshot_sync(
             quantity=quantity,
             avg_cost=avg_cost,
         )
+        indicative_price = (
+            Decimal(str(latest_price_value))
+            if valuation_available and latest_price_value is not None
+            else _indicative_position_price(
+                quote, instrument_type, latest_price=latest_price_value
+            )
+        )
+        indicative_market_value = (
+            float(pos.market_value)
+            if valuation_available
+            else (
+                float(
+                    value_position(
+                        Decimal(str(pos.quantity)),
+                        Decimal(str(pos.avg_cost)),
+                        indicative_price,
+                    ).market_value
+                )
+                if indicative_price is not None and quantity > 0
+                else None
+            )
+        )
+        indicative_unrealized_pnl = (
+            float(pos.unrealized_pnl)
+            if valuation_available
+            else (
+                float(
+                    value_position(
+                        Decimal(str(pos.quantity)),
+                        Decimal(str(pos.avg_cost)),
+                        indicative_price,
+                    ).unrealized_pnl
+                )
+                if indicative_price is not None and quantity > 0 and avg_cost > 0
+                else None
+            )
+        )
         response_position = PositionResponse(
             symbol=symbol,
             name=metadata.display_name,
@@ -256,7 +334,9 @@ def build_portfolio_snapshot_sync(
             **cost_basis_fields,
             latest_price=latest_price_value,
             market_value=float(pos.market_value) if valuation_available else None,
+            indicative_market_value=indicative_market_value,
             unrealized_pnl=(float(pos.unrealized_pnl) if valuation_available else None),
+            indicative_unrealized_pnl=indicative_unrealized_pnl,
             realized_pnl=float(pos.realized_pnl),
             commission_paid=float(pos.commission_paid),
             today_change=today_change,
@@ -307,13 +387,11 @@ def build_portfolio_snapshot_sync(
                     Decimal(str(pos.quantity)), Decimal(str(pos.avg_cost)), fund_price
                 ).market_value
                 indicative_nav_dates.append(str(quote["nav_date"]))
-            elif (
-                close_price := _overdue_published_session_close_price(
-                    quote, instrument_type
-                )
-            ) is not None:
+            elif indicative_price is not None:
                 indicative_total += value_position(
-                    Decimal(str(pos.quantity)), Decimal(str(pos.avg_cost)), close_price
+                    Decimal(str(pos.quantity)),
+                    Decimal(str(pos.avg_cost)),
+                    indicative_price,
                 ).market_value
             else:
                 indicative_available = False
@@ -346,7 +424,7 @@ def build_portfolio_snapshot_sync(
         float(indicative_total)
         if total_equity is None
         and indicative_available
-        and valuation_snapshot.get("status") == "degraded"
+        and (valuation_snapshot.get("status") != "complete" or missing_price_symbols)
         else None
     )
 

@@ -31,7 +31,9 @@ export type Position = {
     | 'unknown';
   latest_price?: number | null;
   market_value: number | null;
+  indicative_market_value?: number | null;
   unrealized_pnl: number | null;
+  indicative_unrealized_pnl?: number | null;
   realized_pnl: number;
   commission_paid: number;
   today_change?: number | null;

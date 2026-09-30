@@ -15,6 +15,7 @@ export { OverviewEquityCurve } from '../account/components/overview-equity-curve
 export { ReturnCalendarCard } from '../account/components/return-calendar-card';
 export type { PortfolioSnapshot } from '../portfolio/api';
 export { PositionsTable } from '../portfolio/components/positions-table';
+export { resolvePositionAssetClass } from '../portfolio/components/positions-table-model';
 export {
   useDailyTradingPlanQuery,
   useTodayDecisionQuery,

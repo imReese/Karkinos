@@ -192,10 +192,31 @@ export function buildPositionColumns({
     cell: ({ row }) => {
       const position = row.original;
       const subtext = resolvePositionMarketValueSubtext(position, locale);
+      const isIndicative =
+        position.market_value == null &&
+        (position.indicative_market_value != null ||
+          (position.latest_price != null &&
+            position.latest_price > 0 &&
+            position.quantity > 0));
+      const displayValue =
+        position.market_value ??
+        position.indicative_market_value ??
+        (position.latest_price != null && position.quantity > 0
+          ? position.quantity * position.latest_price
+          : null);
+
       return (
         <span data-testid={`position-market-value-${position.symbol}`}>
-          <PositionNumericCell value={formatCurrency(position.market_value)} />
-          {subtext ? (
+          <PositionNumericCell value={formatCurrency(displayValue)} />
+          {isIndicative ? (
+            <span
+              className="app-type-micro mt-0.5 block text-right font-medium font-mono tabular-nums text-[var(--app-warning-text)]"
+              title={`${locale === 'zh' ? '持仓数量' : 'Quantity'}: ${formatQuantity(position.quantity)}`}
+            >
+              {locale === 'zh' ? '参考估值' : 'Ref Value'}
+              {subtext ? ` · ${subtext}` : ''}
+            </span>
+          ) : subtext ? (
             <span
               className="app-type-micro mt-0.5 block text-right font-medium font-mono tabular-nums text-[var(--app-text-tertiary)]"
               title={`${locale === 'zh' ? '持仓数量' : 'Quantity'}: ${formatQuantity(position.quantity)}`}
@@ -239,20 +260,48 @@ export function buildPositionColumns({
     header: () => <span className="block text-right">{labels.unrealized}</span>,
     cell: ({ row }) => {
       const position = row.original;
-      const pnlPct = resolvePositionUnrealizedPct(position);
-      const tone = resolvePositionTone(position.unrealized_pnl);
-      const pctTone = resolvePositionTone(pnlPct ?? position.unrealized_pnl);
+      const isIndicative =
+        position.unrealized_pnl == null &&
+        (position.indicative_unrealized_pnl != null ||
+          (position.latest_price != null &&
+            position.latest_price > 0 &&
+            position.quantity > 0 &&
+            position.avg_cost > 0));
+      const fallbackIndicativePnl =
+        position.latest_price != null &&
+        position.quantity > 0 &&
+        position.avg_cost > 0
+          ? position.quantity * (position.latest_price - position.avg_cost)
+          : null;
+      const pnlValue =
+        position.unrealized_pnl ??
+        position.indicative_unrealized_pnl ??
+        fallbackIndicativePnl;
+      const changePct =
+        resolvePositionUnrealizedPct(position) ??
+        (isIndicative && position.avg_cost > 0 && position.latest_price != null
+          ? (position.latest_price - position.avg_cost) / position.avg_cost
+          : null);
+      const tone = resolvePositionTone(pnlValue);
+      const pctTone = resolvePositionTone(changePct ?? pnlValue);
+
       return (
         <span data-testid={`position-unrealized-${position.symbol}`}>
-          <PositionNumericCell
-            value={formatCurrency(position.unrealized_pnl)}
-            tone={tone}
-          />
-          {pnlPct != null ? (
+          <PositionNumericCell value={formatCurrency(pnlValue)} tone={tone} />
+          {changePct != null ? (
             <span
               className={`app-type-micro mt-0.5 block text-right font-medium font-mono tabular-nums ${pctTone}`}
             >
-              {formatSignedPercent(pnlPct)}
+              {formatSignedPercent(changePct)}
+              {isIndicative ? (
+                <span className="ml-1 text-[var(--app-text-tertiary)] font-normal">
+                  ({locale === 'zh' ? '参考' : 'Ref'})
+                </span>
+              ) : null}
+            </span>
+          ) : isIndicative ? (
+            <span className="app-type-micro mt-0.5 block text-right text-[var(--app-text-tertiary)]">
+              {locale === 'zh' ? '参考' : 'Ref'}
             </span>
           ) : null}
         </span>
