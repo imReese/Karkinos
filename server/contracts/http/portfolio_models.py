@@ -35,7 +35,9 @@ class PositionResponse(BaseModel):
     broker_cost_basis_status: str | None = None
     latest_price: float | None = None
     market_value: float | None
+    indicative_market_value: float | None = None
     unrealized_pnl: float | None
+    indicative_unrealized_pnl: float | None = None
     realized_pnl: float
     commission_paid: float
     today_change: float | None = None

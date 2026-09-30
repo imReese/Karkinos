@@ -1989,6 +1989,7 @@ test('renders loading error and empty states', async () => {
   expect(
     await screen.findByText('No orders are waiting for manual confirmation.'),
   ).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'View all orders' })).toBeTruthy();
   expect(
     await screen.findByText('No completed order decisions are available yet.'),
   ).toBeTruthy();

@@ -292,3 +292,34 @@ test('fails closed when a historical close timestamp is unavailable', () => {
     screen.getByTestId('position-mobile-row-600519').textContent,
   ).toContain('Closed on--');
 });
+
+test('displays indicative market value and unrealized pnl when authoritative valuation is null', () => {
+  renderTable(
+    <PositionsTable
+      positions={[
+        {
+          ...basePosition,
+          market_value: null,
+          unrealized_pnl: null,
+          latest_price: 1800.0,
+          avg_cost: 1600.0,
+          quantity: 10,
+        },
+      ]}
+      variant="dashboard"
+    />,
+  );
+
+  expect(
+    screen.getByTestId('position-market-value-600519').textContent,
+  ).toContain('¥18,000.00');
+  expect(
+    screen.getByTestId('position-market-value-600519').textContent,
+  ).toContain('Ref Value');
+  expect(
+    screen.getByTestId('position-unrealized-600519').textContent,
+  ).toContain('¥2,000.00');
+  expect(
+    screen.getByTestId('position-unrealized-600519').textContent,
+  ).toContain('Ref');
+});

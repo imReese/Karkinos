@@ -89,51 +89,98 @@ export function PositionsTableMobileList({
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div
-                    className={`text-sm font-semibold font-mono tabular-nums ${
-                      model.showHistoryColumns
-                        ? resolvePositionTone(position.realized_pnl)
-                        : 'text-[var(--app-text)]'
-                    }`}
-                  >
-                    {formatCurrency(
-                      model.showHistoryColumns
-                        ? position.realized_pnl
-                        : position.market_value,
-                    )}
-                    {model.variant === 'dashboard' ? (
-                      <span className="ml-1.5 font-medium text-[var(--app-text-tertiary)]">
-                        · {formatPercent(model.weightBySymbol[position.symbol])}
-                      </span>
-                    ) : null}
-                  </div>
-                  {model.variant === 'dashboard' ? null : (
-                    <div className="mt-0.5 text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
-                      {model.showHistoryColumns
-                        ? labels.realized
-                        : labels.marketValue}
-                    </div>
-                  )}
-                  {model.variant === 'dashboard' ? (
-                    <>
-                      <div
-                        className={`mt-0.5 text-[length:var(--app-font-size-micro)] font-mono tabular-nums ${resolvePositionTone(
-                          position.today_change,
-                        )}`}
-                      >
-                        {labels.todayChange}{' '}
-                        {formatCurrency(position.today_change)}
-                      </div>
-                      <div
-                        className={`mt-0.5 text-[length:var(--app-font-size-micro)] font-mono tabular-nums ${resolvePositionTone(
-                          position.unrealized_pnl,
-                        )}`}
-                      >
-                        {labels.unrealized}{' '}
-                        {formatCurrency(position.unrealized_pnl)}
-                      </div>
-                    </>
-                  ) : null}
+                  {(() => {
+                    const isIndicativeMarket =
+                      !model.showHistoryColumns &&
+                      position.market_value == null &&
+                      (position.indicative_market_value != null ||
+                        (position.latest_price != null &&
+                          position.latest_price > 0 &&
+                          position.quantity > 0));
+                    const displayMarket =
+                      position.market_value ??
+                      position.indicative_market_value ??
+                      (isIndicativeMarket && position.latest_price != null
+                        ? position.quantity * position.latest_price
+                        : null);
+                    const isIndicativeUnrealized =
+                      position.unrealized_pnl == null &&
+                      (position.indicative_unrealized_pnl != null ||
+                        (position.latest_price != null &&
+                          position.latest_price > 0 &&
+                          position.quantity > 0 &&
+                          position.avg_cost > 0));
+                    const displayUnrealized =
+                      position.unrealized_pnl ??
+                      position.indicative_unrealized_pnl ??
+                      (isIndicativeUnrealized && position.latest_price != null
+                        ? position.quantity *
+                          (position.latest_price - position.avg_cost)
+                        : null);
+
+                    return (
+                      <>
+                        <div
+                          className={`text-sm font-semibold font-mono tabular-nums ${
+                            model.showHistoryColumns
+                              ? resolvePositionTone(position.realized_pnl)
+                              : 'text-[var(--app-text)]'
+                          }`}
+                        >
+                          {formatCurrency(
+                            model.showHistoryColumns
+                              ? position.realized_pnl
+                              : displayMarket,
+                          )}
+                          {isIndicativeMarket ? (
+                            <span className="ml-1 text-xs font-normal text-[var(--app-warning-text)]">
+                              ({locale === 'zh' ? '参考' : 'Ref'})
+                            </span>
+                          ) : null}
+                          {model.variant === 'dashboard' ? (
+                            <span className="ml-1.5 font-medium text-[var(--app-text-tertiary)]">
+                              ·{' '}
+                              {formatPercent(
+                                model.weightBySymbol[position.symbol],
+                              )}
+                            </span>
+                          ) : null}
+                        </div>
+                        {model.variant === 'dashboard' ? null : (
+                          <div className="mt-0.5 text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
+                            {model.showHistoryColumns
+                              ? labels.realized
+                              : labels.marketValue}
+                          </div>
+                        )}
+                        {model.variant === 'dashboard' ? (
+                          <>
+                            <div
+                              className={`mt-0.5 text-[length:var(--app-font-size-micro)] font-mono tabular-nums ${resolvePositionTone(
+                                position.today_change,
+                              )}`}
+                            >
+                              {labels.todayChange}{' '}
+                              {formatCurrency(position.today_change)}
+                            </div>
+                            <div
+                              className={`mt-0.5 text-[length:var(--app-font-size-micro)] font-mono tabular-nums ${resolvePositionTone(
+                                displayUnrealized,
+                              )}`}
+                            >
+                              {labels.unrealized}{' '}
+                              {formatCurrency(displayUnrealized)}
+                              {isIndicativeUnrealized ? (
+                                <span className="ml-1 text-[var(--app-text-tertiary)] font-normal">
+                                  ({locale === 'zh' ? '参考' : 'Ref'})
+                                </span>
+                              ) : null}
+                            </div>
+                          </>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

@@ -319,6 +319,48 @@ async def test_missing_stock_price_blocks_fund_reference_total(tmp_path):
     assert account.summary.indicative_total_equity is None
 
 
+@pytest.mark.asyncio
+async def test_stock_with_observed_quote_produces_indicative_total(tmp_path):
+    db = _book(tmp_path)
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-09-22T10:00:00+08:00",
+        symbol="600001",
+        direction="buy",
+        quantity=10.0,
+        price=10.0,
+        asset_class="stock",
+    )
+    _save(db, _nav(nav_date="2026-09-21", quote_timestamp="2026-09-21T18:00:00+08:00"))
+    _save(
+        db,
+        {
+            "symbol": "600001",
+            "asset_type": "stock",
+            "price": 12.0,
+            "quote_timestamp": "2026-09-22T15:00:00+08:00",
+            "quote_source": "akshare_stock_bid_ask",
+            "quote_status": "stale",
+            "stale_reason": "quote_older_than_expected_session",
+            "provider_status": "live",
+        },
+    )
+    now = datetime(2026, 9, 23, 19, 30, tzinfo=SHANGHAI)
+    db.publish_current_valuation_snapshot_sync(now=now)
+    state = AppState()
+    state.db, state.config = db, ServerConfig()
+
+    account = await build_account_state_response(state, now=now)
+
+    assert account.summary.total_equity is None
+    # cash = 750.0, fund = 100 * 1.8 = 180.0, stock = 10 * 12.0 = 120.0, total = 1050.0
+    assert account.summary.indicative_total_equity == pytest.approx(1050.0)
+    pos = [p for p in account.snapshot.positions if p.symbol == "600001"][0]
+    assert pos.market_value is None
+    assert pos.indicative_market_value == pytest.approx(120.0)
+    assert pos.indicative_unrealized_pnl == pytest.approx(20.0)
+
+
 def test_conflicting_same_instant_published_mark_stays_fail_closed():
     with pytest.raises(ValueError, match="quote authority facts conflict"):
         select_authoritative_valuation_marks(

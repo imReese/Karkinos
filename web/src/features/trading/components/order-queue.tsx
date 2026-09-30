@@ -35,6 +35,8 @@ export function OrderQueue({
   exportingOrderId,
   onRejectReasonChange,
   instrumentNames,
+  currentStatus,
+  onResetStatus,
 }: {
   orders: ManualOrder[];
   loading: boolean;
@@ -48,10 +50,13 @@ export function OrderQueue({
   exportingOrderId: string | null;
   onRejectReasonChange: (orderId: string, value: string) => void;
   instrumentNames: InstrumentNameLookup;
+  currentStatus?: string;
+  onResetStatus?: () => void;
 }) {
   const copy = useCopy();
   const labels = copy.trading.orders;
   const pageLabels = copy.trading.page;
+  const { locale } = usePreferences();
 
   if (loading) {
     return (
@@ -74,6 +79,7 @@ export function OrderQueue({
     );
   }
   if (orders.length === 0) {
+    const isFiltered = currentStatus && currentStatus !== 'all';
     return (
       <EvidenceState
         className="mt-4"
@@ -81,6 +87,22 @@ export function OrderQueue({
         statusLabel={pageLabels.ordersTitle}
         title={labels.empty}
         description={labels.subtitle}
+        evidence={
+          locale === 'zh'
+            ? '当前没有待办事项。如需查看历史委托与执行事实，可切换状态筛选或查看下方审计事实。'
+            : 'No pending items. To view historical orders and execution facts, switch the status filter or review the logs below.'
+        }
+        action={
+          isFiltered && onResetStatus ? (
+            <button
+              type="button"
+              onClick={onResetStatus}
+              className="app-button-secondary shrink-0 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+            >
+              {locale === 'zh' ? '查看全部订单' : 'View all orders'}
+            </button>
+          ) : null
+        }
       />
     );
   }
