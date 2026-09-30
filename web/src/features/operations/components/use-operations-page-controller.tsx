@@ -8,6 +8,7 @@ import { formatPublicStatus } from '../../../shared/public-labels';
 import { StatusBadge } from '../../../shared/ui/workbench';
 import { type OperationsSubsystem, useOperationsTodayQuery } from '../api';
 import {
+  operationsLimitationLabel,
   operationsNextActionLabel,
   operationsSubsystemLabel,
   operationsTargetHref,
@@ -90,7 +91,9 @@ export function useOperationsPageController() {
             <span className="mt-1 block text-xs text-[var(--app-text-tertiary)]">
               {labels.limitations}:{' '}
               {row.original.limitations.length > 0
-                ? row.original.limitations.join(' · ')
+                ? row.original.limitations
+                    .map((item) => operationsLimitationLabel(item, locale))
+                    .join(' · ')
                 : labels.noLimitations}
             </span>
           </span>

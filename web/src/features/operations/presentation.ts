@@ -166,6 +166,10 @@ export function operationsNextActionLabel(
       en: 'Repair the local CITIC query-window review store',
       zh: '修复本地中信查询区间复核存储',
     },
+    await_explicit_real_broker_environment_confirmation: {
+      en: 'Await explicit real broker environment confirmation',
+      zh: '等待明确的实盘券商环境确认',
+    },
   };
   return labels[key]?.[locale] ?? formatPublicStatus(key, locale);
 }
@@ -240,7 +244,7 @@ export function operationsAttentionResolutionLabel(
     },
     complete_acceptance_audit_evidence_required: {
       en: 'the required acceptance audit is complete',
-      zh: '所需 acceptance audit 证据完整',
+      zh: '所需验收审计证据完整',
     },
     explicit_provider_authorization_and_new_release_evidence_required: {
       en: 'explicit provider authorization and new release evidence exist',
@@ -264,4 +268,51 @@ export function operationsAttentionResolutionLabel(
     },
   };
   return labels[condition]?.[locale] ?? formatPublicStatus(condition, locale);
+}
+
+export function operationsLimitationLabel(
+  value: string,
+  locale: Locale,
+): string {
+  if (locale !== 'zh') {
+    return value;
+  }
+  const text = value.trim();
+  if (
+    /^Account truth is degraded by stale account or market evidence/i.test(text)
+  ) {
+    return 'Account Truth 因账户或行情快照凭据过期而降级。';
+  }
+  if (
+    /^Account Truth is resolved from the current sanitized promotion evidence/i.test(
+      text,
+    )
+  ) {
+    return 'Account Truth 依赖合规准入凭证；过期、数据不全或未对账凭据已被阻断。';
+  }
+  if (
+    /^Unresolved reconciliation items require review before trusted use/i.test(
+      text,
+    )
+  ) {
+    return '存在未平账差异项，需复核后方可信任使用。';
+  }
+  if (/^Three fund NAV observations require confirmation/i.test(text)) {
+    return '有 3 笔基金 NAV 观测待确认。';
+  }
+  if (
+    /^Paper\/shadow results are simulated review evidence, not broker execution/i.test(
+      text,
+    )
+  ) {
+    return '模拟与影子检验仅为仿真复核证据，非券商真实执行。';
+  }
+  if (
+    /^Broker adapter evidence was not supplied to this read-only projection/i.test(
+      text,
+    )
+  ) {
+    return '本次只读投影未包含券商适配器凭据。';
+  }
+  return value;
 }
