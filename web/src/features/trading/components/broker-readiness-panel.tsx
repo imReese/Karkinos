@@ -253,7 +253,12 @@ export function BrokerAdapterReadinessPanel({
           ) : null}
         </section>
 
-        <p className="app-muted mt-3 text-xs leading-5">{copy.boundary}</p>
+        <div className="mt-3 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+          <span className="font-semibold text-[var(--app-text)]">
+            {locale === 'zh' ? '边界隔离说明：' : 'Boundary Isolation: '}
+          </span>
+          {copy.boundary}
+        </div>
       </div>
     </section>
   );

@@ -397,9 +397,12 @@ export function EvidenceReadinessChecklist({
             </p>
           </>
         ) : null}
-        <p className="mt-2 text-xs leading-5 text-[var(--app-text-secondary)]">
+        <div className="mt-3 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+          <span className="font-semibold text-[var(--app-text)]">
+            {locale === 'zh' ? '只读约束说明：' : 'Read-only Boundary: '}
+          </span>
           {text.readinessBoundary}
-        </p>
+        </div>
       </div>
     </section>
   );
@@ -496,9 +499,12 @@ function EvidenceScopeReviewControl({
           {scope.declared_coverage_window.start_date} –{' '}
           {scope.declared_coverage_window.end_date}
         </p>
-        <p className="mt-2 text-xs leading-5 text-[var(--app-text-tertiary)]">
+        <div className="mt-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+          <span className="font-semibold text-[var(--app-text)]">
+            {locale === 'zh' ? '操作边界：' : 'Operation Boundary: '}
+          </span>
           {text.scopeReviewBoundary}
-        </p>
+        </div>
         <button
           className="mt-3 min-h-10 rounded-[var(--app-radius-control)] border border-[var(--app-danger-border)] px-3 py-2 text-xs font-semibold text-[var(--app-danger)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] disabled:opacity-50"
           disabled={revokeMutation.isPending}

@@ -70,9 +70,12 @@ export function TradingSafetyRail({
           </span>
         </summary>
         <div className="space-y-5 py-4">
-          <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
+          <div className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+            <span className="font-semibold text-[var(--app-text)]">
+              {locale === 'zh' ? '只读审计凭证下钻：' : 'Audit Drill-down: '}
+            </span>
             {labels.brokerBoundaryEvidenceDetail}
-          </p>
+          </div>
           <BrokerAdapterReadinessPanel
             readiness={brokerAdapterReadiness}
             loading={operationsToday.isLoading}
