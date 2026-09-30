@@ -60,13 +60,36 @@ function resolvePositionSortValue(
           return (position.today_change / priorValue) * 100;
         }
       }
+      if (
+        position.latest_price != null &&
+        position.baseline_price != null &&
+        position.baseline_price > 0
+      ) {
+        return (
+          ((position.latest_price - position.baseline_price) /
+            position.baseline_price) *
+          100
+        );
+      }
       return Number.NEGATIVE_INFINITY;
     }
     case 'today_change': {
-      const val = position.today_change;
-      return typeof val === 'number' && Number.isFinite(val)
-        ? val
-        : Number.NEGATIVE_INFINITY;
+      if (
+        position.today_change != null &&
+        Number.isFinite(position.today_change)
+      ) {
+        return position.today_change;
+      }
+      if (
+        position.latest_price != null &&
+        position.baseline_price != null &&
+        position.quantity > 0
+      ) {
+        return (
+          (position.latest_price - position.baseline_price) * position.quantity
+        );
+      }
+      return Number.NEGATIVE_INFINITY;
     }
     case 'unrealized_pnl': {
       const val = position.unrealized_pnl;
@@ -144,6 +167,13 @@ export function OverviewHoldingsSection({
     return list.sort((left, right) => {
       const leftVal = resolvePositionSortValue(left, sortBy, weightBySymbol);
       const rightVal = resolvePositionSortValue(right, sortBy, weightBySymbol);
+      const leftMissing = !Number.isFinite(leftVal);
+      const rightMissing = !Number.isFinite(rightVal);
+      if (leftMissing && rightMissing) {
+        return left.symbol.localeCompare(right.symbol);
+      }
+      if (leftMissing) return 1;
+      if (rightMissing) return -1;
       if (sortDirection === 'desc') {
         if (rightVal !== leftVal) return rightVal - leftVal;
       } else {

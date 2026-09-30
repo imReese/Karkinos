@@ -12,34 +12,25 @@ import { formatPublicStatus } from '../../../shared/public-labels';
 import { EvidenceState } from '../../../shared/ui/workbench';
 import type { MarketHealthQuote, ResearchBoardItem } from '../api';
 
-export type MarketSortKey = 'default' | 'symbol' | 'price' | 'change';
+export type MarketSortKey =
+  'default' | 'symbol' | 'price' | 'change' | 'change_pct' | 'change_amount';
 export type SortDirection = 'asc' | 'desc';
 
 function formatAge(seconds: number | null | undefined, locale: Locale) {
-  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
-    return '--';
-  }
-  if (seconds < 60) {
-    const value = Math.max(0, Math.round(seconds));
-    return locale === 'zh' ? `${value}秒` : `${value}s`;
-  }
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return '--';
+  if (seconds < 60)
+    return `${Math.max(0, Math.round(seconds))}${locale === 'zh' ? '秒' : 's'}`;
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
-    return locale === 'zh' ? `${minutes}分钟` : `${minutes}m`;
-  }
+  if (minutes < 60) return `${minutes}${locale === 'zh' ? '分钟' : 'm'}`;
   const hours = Math.round(minutes / 60);
-  if (hours < 48) {
-    return locale === 'zh' ? `${hours}小时` : `${hours}h`;
-  }
-  const days = Math.round(hours / 24);
-  return locale === 'zh' ? `${days}天` : `${days}d`;
+  if (hours < 48) return `${hours}${locale === 'zh' ? '小时' : 'h'}`;
+  return `${Math.round(hours / 24)}${locale === 'zh' ? '天' : 'd'}`;
 }
 
 function formatResearchCount(count: number, locale: Locale) {
-  if (locale === 'zh') {
-    return `${count} 条研究记录`;
-  }
-  return `${count} research ${count === 1 ? 'record' : 'records'}`;
+  return locale === 'zh'
+    ? `${count} 条研究记录`
+    : `${count} research ${count === 1 ? 'record' : 'records'}`;
 }
 
 function moveTone(value: number | null | undefined) {
@@ -238,7 +229,8 @@ interface WatchlistSortHeaderProps {
   labels: ReturnType<typeof useCopy>['market'];
   onSortSymbol: () => void;
   onSortPrice: () => void;
-  onSortChange: () => void;
+  onSortChangePct: () => void;
+  onSortChangeAmount: () => void;
   onResetSort: () => void;
 }
 
@@ -248,9 +240,13 @@ function WatchlistSortHeader({
   labels,
   onSortSymbol,
   onSortPrice,
-  onSortChange,
+  onSortChangePct,
+  onSortChangeAmount,
   onResetSort,
 }: WatchlistSortHeaderProps) {
+  const isChangePctActive = sortKey === 'change_pct' || sortKey === 'change';
+  const isChangeAmountActive = sortKey === 'change_amount';
+
   return (
     <div
       role="row"
@@ -318,23 +314,42 @@ function WatchlistSortHeader({
         </button>
         <button
           type="button"
-          onClick={onSortChange}
+          onClick={onSortChangePct}
           className={`group/btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
-            sortKey === 'change'
+            isChangePctActive
               ? 'text-[var(--app-accent)] font-semibold'
               : 'hover:text-[var(--app-text)]'
           }`}
-          aria-label={`${labels.sortChange}: ${
-            sortKey === 'change'
+          aria-label={`${labels.sortChangePct ?? labels.sortChange}: ${
+            isChangePctActive
               ? sortDirection === 'asc'
                 ? labels.asc
                 : labels.desc
               : labels.sortDefault
           }`}
         >
-          <span>{labels.sortChange}</span>
+          <span>{labels.sortChangePct ?? labels.sortChange}</span>
+          <SortIndicator active={isChangePctActive} direction={sortDirection} />
+        </button>
+        <button
+          type="button"
+          onClick={onSortChangeAmount}
+          className={`group/btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
+            isChangeAmountActive
+              ? 'text-[var(--app-accent)] font-semibold'
+              : 'hover:text-[var(--app-text)]'
+          }`}
+          aria-label={`${labels.sortChangeAmount}: ${
+            isChangeAmountActive
+              ? sortDirection === 'asc'
+                ? labels.asc
+                : labels.desc
+              : labels.sortDefault
+          }`}
+        >
+          <span>{labels.sortChangeAmount}</span>
           <SortIndicator
-            active={sortKey === 'change'}
+            active={isChangeAmountActive}
             direction={sortDirection}
           />
         </button>
@@ -545,34 +560,54 @@ export function MarketWatchlistSidebar({
       return filteredItems;
     }
     return [...filteredItems].sort((left, right) => {
-      if (sortKey === 'change') {
+      if (sortKey === 'change_pct' || sortKey === 'change') {
         const quoteLeft = healthBySymbol.get(left.symbol);
         const quoteRight = healthBySymbol.get(right.symbol);
         const pctLeft = resolveDailyChangePct(quoteLeft, left.price);
         const pctRight = resolveDailyChangePct(quoteRight, right.price);
 
-        if (pctLeft !== null || pctRight !== null) {
-          if (sortDirection === 'desc') {
-            const valLeft = pctLeft ?? Number.NEGATIVE_INFINITY;
-            const valRight = pctRight ?? Number.NEGATIVE_INFINITY;
-            if (valRight !== valLeft) return valRight - valLeft;
-          } else {
-            const valLeft = pctLeft ?? Number.POSITIVE_INFINITY;
-            const valRight = pctRight ?? Number.POSITIVE_INFINITY;
-            if (valLeft !== valRight) return valLeft - valRight;
-          }
-        } else {
+        const leftMissing = pctLeft === null;
+        const rightMissing = pctRight === null;
+        if (leftMissing && rightMissing) {
           const moveLeft = quoteLeft?.daily_change;
           const moveRight = quoteRight?.daily_change;
-          if (sortDirection === 'desc') {
-            const valLeft = moveLeft ?? Number.NEGATIVE_INFINITY;
-            const valRight = moveRight ?? Number.NEGATIVE_INFINITY;
-            if (valRight !== valLeft) return valRight - valLeft;
-          } else {
-            const valLeft = moveLeft ?? Number.POSITIVE_INFINITY;
-            const valRight = moveRight ?? Number.POSITIVE_INFINITY;
-            if (valLeft !== valRight) return valLeft - valRight;
-          }
+          const mLeftMissing = moveLeft == null || !Number.isFinite(moveLeft);
+          const mRightMissing =
+            moveRight == null || !Number.isFinite(moveRight);
+          if (mLeftMissing && mRightMissing)
+            return left.symbol.localeCompare(right.symbol);
+          if (mLeftMissing) return 1;
+          if (mRightMissing) return -1;
+          return sortDirection === 'desc'
+            ? moveRight! - moveLeft!
+            : moveLeft! - moveRight!;
+        }
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        if (pctRight !== pctLeft) {
+          return sortDirection === 'desc'
+            ? pctRight! - pctLeft!
+            : pctLeft! - pctRight!;
+        }
+        return left.symbol.localeCompare(right.symbol);
+      }
+
+      if (sortKey === 'change_amount') {
+        const quoteLeft = healthBySymbol.get(left.symbol);
+        const quoteRight = healthBySymbol.get(right.symbol);
+        const moveLeft = quoteLeft?.daily_change ?? quoteLeft?.change;
+        const moveRight = quoteRight?.daily_change ?? quoteRight?.change;
+
+        const leftMissing = moveLeft == null || !Number.isFinite(moveLeft);
+        const rightMissing = moveRight == null || !Number.isFinite(moveRight);
+        if (leftMissing && rightMissing)
+          return left.symbol.localeCompare(right.symbol);
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        if (moveRight !== moveLeft) {
+          return sortDirection === 'desc'
+            ? moveRight! - moveLeft!
+            : moveLeft! - moveRight!;
         }
         return left.symbol.localeCompare(right.symbol);
       }
@@ -582,14 +617,16 @@ export function MarketWatchlistSidebar({
         const priceRight =
           right.price ?? healthBySymbol.get(right.symbol)?.price;
 
-        if (sortDirection === 'desc') {
-          const valLeft = priceLeft ?? Number.NEGATIVE_INFINITY;
-          const valRight = priceRight ?? Number.NEGATIVE_INFINITY;
-          if (valRight !== valLeft) return valRight - valLeft;
-        } else {
-          const valLeft = priceLeft ?? Number.POSITIVE_INFINITY;
-          const valRight = priceRight ?? Number.POSITIVE_INFINITY;
-          if (valLeft !== valRight) return valLeft - valRight;
+        const leftMissing = priceLeft == null || !Number.isFinite(priceLeft);
+        const rightMissing = priceRight == null || !Number.isFinite(priceRight);
+        if (leftMissing && rightMissing)
+          return left.symbol.localeCompare(right.symbol);
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        if (priceRight !== priceLeft) {
+          return sortDirection === 'desc'
+            ? priceRight! - priceLeft!
+            : priceLeft! - priceRight!;
         }
         return left.symbol.localeCompare(right.symbol);
       }
@@ -603,34 +640,15 @@ export function MarketWatchlistSidebar({
     });
   }, [filteredItems, sortKey, sortDirection, healthBySymbol]);
 
-  const handleSortChange = () => {
-    if (sortKey !== 'change') {
-      setSortKey('change');
-      setSortDirection('desc');
-    } else if (sortDirection === 'desc') {
-      setSortDirection('asc');
-    } else {
-      setSortKey('default');
-    }
-  };
-
-  const handleSortPrice = () => {
-    if (sortKey !== 'price') {
-      setSortKey('price');
-      setSortDirection('desc');
-    } else if (sortDirection === 'desc') {
-      setSortDirection('asc');
-    } else {
-      setSortKey('default');
-    }
-  };
-
-  const handleSortSymbol = () => {
-    if (sortKey !== 'symbol') {
-      setSortKey('symbol');
-      setSortDirection('asc');
-    } else if (sortDirection === 'asc') {
-      setSortDirection('desc');
+  const toggleSort = (
+    key: MarketSortKey,
+    initialDir: SortDirection = 'desc',
+  ) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDirection(initialDir);
+    } else if (sortDirection === initialDir) {
+      setSortDirection(initialDir === 'desc' ? 'asc' : 'desc');
     } else {
       setSortKey('default');
     }
@@ -691,9 +709,10 @@ export function MarketWatchlistSidebar({
           sortKey={sortKey}
           sortDirection={sortDirection}
           labels={labels}
-          onSortSymbol={handleSortSymbol}
-          onSortPrice={handleSortPrice}
-          onSortChange={handleSortChange}
+          onSortSymbol={() => toggleSort('symbol', 'asc')}
+          onSortPrice={() => toggleSort('price', 'desc')}
+          onSortChangePct={() => toggleSort('change_pct', 'desc')}
+          onSortChangeAmount={() => toggleSort('change_amount', 'desc')}
           onResetSort={() => setSortKey('default')}
         />
       ) : null}
