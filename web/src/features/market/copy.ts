@@ -327,7 +327,7 @@ export const marketCopy = {
     addSymbol: '新增标的',
     symbolPlaceholder: '代码',
     assetClass: '资产类别',
-    sortSymbol: '名称/代码',
+    sortSymbol: '名称代码',
     sortPrice: '最新价',
     sortChange: '涨跌幅',
     sortChangePct: '涨跌幅',

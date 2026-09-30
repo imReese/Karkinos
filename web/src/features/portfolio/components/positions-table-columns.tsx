@@ -482,15 +482,13 @@ function buildTodayColumn({
         activeKey={model.sortKey}
         direction={model.sortDirection}
         onSort={model.onSort}
-        pctLabel={locale === 'zh' ? '幅' : '%'}
-        amountLabel={locale === 'zh' ? '额' : '¥'}
+        pctLabel="%"
+        amountLabel="¥"
         pctTooltip={
-          locale === 'zh' ? '按今日涨跌幅排序 (%)' : 'Sort by today’s change %'
+          locale === 'zh' ? '按当日涨跌幅排序 (%)' : 'Sort by day’s change %'
         }
         amountTooltip={
-          locale === 'zh'
-            ? '按今日涨跌额 / 盈亏排序 (¥)'
-            : 'Sort by today’s change amount (¥)'
+          locale === 'zh' ? '按当日盈亏排序 (¥)' : 'Sort by day’s P&L (¥)'
         }
         pctTestId="positions-sort-today-pct"
         amountTestId="positions-sort-today-change"
@@ -536,15 +534,13 @@ function buildUnrealizedColumn({
         activeKey={model.sortKey}
         direction={model.sortDirection}
         onSort={model.onSort}
-        pctLabel={locale === 'zh' ? '率' : '%'}
-        amountLabel={locale === 'zh' ? '额' : '¥'}
+        pctLabel="%"
+        amountLabel="¥"
         pctTooltip={
-          locale === 'zh' ? '按持仓盈亏率排序 (%)' : 'Sort by unrealized P&L %'
+          locale === 'zh' ? '按浮动盈亏率排序 (%)' : 'Sort by floating P&L %'
         }
         amountTooltip={
-          locale === 'zh'
-            ? '按持仓盈亏金额排序 (¥)'
-            : 'Sort by unrealized P&L amount (¥)'
+          locale === 'zh' ? '按浮动盈亏排序 (¥)' : 'Sort by floating P&L (¥)'
         }
         pctTestId="positions-sort-unrealized-pct"
         amountTestId="positions-sort-unrealized-amount"

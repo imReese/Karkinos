@@ -446,7 +446,7 @@ test('renders holding detail with cached quote status and ledger trace', async (
     ),
   ).toBeTruthy();
   expect(await screen.findByText(/6\.67%/)).toBeTruthy();
-  expect(await screen.findByText('Today PnL')).toBeTruthy();
+  expect(await screen.findByText('Day’s P&L')).toBeTruthy();
   expect(await screen.findByText('¥240.00')).toBeTruthy();
   expect(await screen.findByText(/0\.25%/)).toBeTruthy();
   expect((await screen.findAllByText('1,600.0000')).length).toBeGreaterThan(0);
