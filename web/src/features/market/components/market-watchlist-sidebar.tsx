@@ -250,14 +250,14 @@ function WatchlistSortHeader({
   return (
     <div
       role="row"
-      className="flex items-center justify-between border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)]/60 px-3 py-1.5 text-xs text-[var(--app-text-tertiary)] select-none"
+      className="flex items-center justify-between border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)]/60 px-3 py-1.5 text-xs text-[var(--app-text-tertiary)] select-none overflow-x-auto"
       data-testid="market-watchlist-sort-header"
     >
-      <div className="flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         <button
           type="button"
           onClick={onSortSymbol}
-          className={`group/btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
+          className={`group/btn inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
             sortKey === 'symbol'
               ? 'text-[var(--app-accent)] font-semibold'
               : 'hover:text-[var(--app-text)]'
@@ -280,7 +280,7 @@ function WatchlistSortHeader({
           <button
             type="button"
             onClick={onResetSort}
-            className="app-type-micro inline-flex items-center gap-1 rounded border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-1.5 py-0.5 text-[var(--app-text-tertiary)] transition-all hover:bg-[var(--app-surface)] hover:text-[var(--app-text)] active:scale-[0.97]"
+            className="app-type-micro inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-1.5 py-0.5 text-[var(--app-text-tertiary)] transition-all hover:bg-[var(--app-surface)] hover:text-[var(--app-text)] active:scale-[0.97]"
             title={labels.resetSort}
           >
             <RotateCcw size={10} strokeWidth={2} aria-hidden="true" />
@@ -289,11 +289,11 @@ function WatchlistSortHeader({
         ) : null}
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-1.5 text-right">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-1.5 text-right">
         <button
           type="button"
           onClick={onSortPrice}
-          className={`group/btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
+          className={`group/btn inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
             sortKey === 'price'
               ? 'text-[var(--app-accent)] font-semibold'
               : 'hover:text-[var(--app-text)]'
@@ -315,7 +315,7 @@ function WatchlistSortHeader({
         <button
           type="button"
           onClick={onSortChangePct}
-          className={`group/btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
+          className={`group/btn inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
             isChangePctActive
               ? 'text-[var(--app-accent)] font-semibold'
               : 'hover:text-[var(--app-text)]'
@@ -334,7 +334,7 @@ function WatchlistSortHeader({
         <button
           type="button"
           onClick={onSortChangeAmount}
-          className={`group/btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
+          className={`group/btn inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded px-1.5 py-0.5 font-medium transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
             isChangeAmountActive
               ? 'text-[var(--app-accent)] font-semibold'
               : 'hover:text-[var(--app-text)]'

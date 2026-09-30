@@ -417,10 +417,10 @@ describe('remaining route workbench contract', () => {
       "'(prefers-reduced-motion: reduce)'",
     );
     expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
-      'md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)]',
+      'md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]',
     );
     expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
-      'xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]',
+      'xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]',
     );
     expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('rounded-2xl');
     expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('rounded-3xl');
