@@ -1,5 +1,5 @@
-import { useEffect, type ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Check, Copy } from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import {
@@ -28,6 +28,70 @@ import {
   PriceStructureChart,
   PriceStructureLoadingState,
 } from './price-structure-chart';
+import { MarketWatchlistSidebar } from './market-watchlist-sidebar';
+
+export {
+  MarketWatchlistSidebar,
+  type MarketSortKey,
+  type SortDirection,
+} from './market-watchlist-sidebar';
+
+function CopySymbolButton({
+  symbol,
+  copyLabel,
+  copiedLabel,
+}: {
+  symbol: string;
+  copyLabel: string;
+  copiedLabel: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(symbol);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="group/copy inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--app-focus-ring)] active:scale-[0.97]"
+      aria-label={`${copied ? copiedLabel : copyLabel}: ${symbol}`}
+      title={`${copied ? copiedLabel : copyLabel}: ${symbol}`}
+      data-testid="market-copy-symbol-btn"
+    >
+      <span className="font-semibold">{symbol}</span>
+      {copied ? (
+        <Check
+          size={12}
+          strokeWidth={2.2}
+          className="text-[var(--app-pnl-positive)]"
+          aria-hidden="true"
+        />
+      ) : (
+        <Copy
+          size={12}
+          strokeWidth={1.8}
+          className="opacity-50 transition-opacity group-hover/copy:opacity-100"
+          aria-hidden="true"
+        />
+      )}
+      {copied ? (
+        <span className="app-type-micro font-sans font-medium text-[var(--app-pnl-positive)]">
+          {copiedLabel}
+        </span>
+      ) : null}
+    </button>
+  );
+}
 
 function formatAge(seconds: number | null | undefined, locale: Locale) {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
@@ -47,13 +111,6 @@ function formatAge(seconds: number | null | undefined, locale: Locale) {
   }
   const days = Math.round(hours / 24);
   return locale === 'zh' ? `${days}天` : `${days}d`;
-}
-
-function formatResearchCount(count: number, locale: Locale) {
-  if (locale === 'zh') {
-    return `${count} 条研究记录`;
-  }
-  return `${count} research ${count === 1 ? 'record' : 'records'}`;
 }
 
 function quoteTone(status: string | null | undefined) {
@@ -141,73 +198,6 @@ export function MarketInstrumentWorkspaceLoading({
   );
 }
 
-function useWatchlistKeyboardNavigation({
-  items,
-  activeSymbol,
-  onSelect,
-}: {
-  items: ResearchBoardItem[];
-  activeSymbol: string;
-  onSelect: (symbol: string) => void;
-}) {
-  useEffect(() => {
-    if (items.length === 0) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (document.querySelector('[role="dialog"]')) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable ||
-          target.getAttribute('role') === 'textbox')
-      ) {
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-
-      if (event.key === 'ArrowDown' || event.key === 'j') {
-        event.preventDefault();
-        const currentIndex = items.findIndex((i) => i.symbol === activeSymbol);
-        const nextIndex =
-          currentIndex < 0 ? 0 : Math.min(items.length - 1, currentIndex + 1);
-        const nextItem = items[nextIndex];
-        if (nextItem && nextItem.symbol !== activeSymbol) {
-          onSelect(nextItem.symbol);
-          const row = document.querySelector<HTMLElement>(
-            `[data-market-instrument-row="${nextItem.symbol}"]`,
-          );
-          if (typeof row?.scrollIntoView === 'function') {
-            row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-          }
-        }
-      } else if (event.key === 'ArrowUp' || event.key === 'k') {
-        event.preventDefault();
-        const currentIndex = items.findIndex((i) => i.symbol === activeSymbol);
-        const prevIndex = currentIndex < 0 ? 0 : Math.max(0, currentIndex - 1);
-        const prevItem = items[prevIndex];
-        if (prevItem && prevItem.symbol !== activeSymbol) {
-          onSelect(prevItem.symbol);
-          const row = document.querySelector<HTMLElement>(
-            `[data-market-instrument-row="${prevItem.symbol}"]`,
-          );
-          if (typeof row?.scrollIntoView === 'function') {
-            row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [items, activeSymbol, onSelect]);
-}
-
 function resolveQuoteSourceLabel(
   source: string | null | undefined,
   locale: Locale,
@@ -264,160 +254,19 @@ export function MarketInstrumentWorkspace({
     selectedHealthQuote?.quote_source,
     locale,
   );
-
-  useWatchlistKeyboardNavigation({ items, activeSymbol, onSelect });
-
   return (
     <div
       className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)] xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]"
       data-testid="market-instrument-workspace"
     >
-      <aside className="min-w-0 border-y border-[var(--app-divider)] md:sticky md:top-3">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--app-divider)] px-3 py-2.5 md:items-start md:py-3">
-          <div className="min-w-0">
-            <div className="app-kicker app-type-overline hidden md:block">
-              {labels.personalUniverse}
-            </div>
-            <h2 className="app-type-section-title text-[var(--app-text)] md:mt-1">
-              {labels.watchlist}
-            </h2>
-            <p className="app-type-micro mt-1 hidden text-[var(--app-text-tertiary)] md:block">
-              {labels.scopeBoundary}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span
-              className="app-type-micro hidden items-center gap-0.5 rounded border border-[var(--app-divider)] px-1.5 py-0.5 font-mono text-[var(--app-text-tertiary)] md:inline-flex"
-              title="↑ / ↓ / j / k"
-            >
-              <span>↑↓</span>
-            </span>
-            <span className="text-xs tabular-nums text-[var(--app-text-secondary)]">
-              {items.length}
-            </span>
-          </div>
-        </div>
-
-        {watchlistEditor}
-
-        {items.length > 0 ? (
-          <ul
-            aria-label={labels.watchlist}
-            className="grid min-w-0 auto-cols-[minmax(15rem,85%)] snap-x snap-mandatory grid-flow-col divide-x divide-[var(--app-divider)] overflow-x-auto overscroll-x-contain scroll-px-3 sm:auto-cols-[minmax(15rem,48%)] md:block md:max-h-[calc(100dvh-39rem)] md:snap-none md:divide-x-0 md:divide-y md:overflow-x-visible md:overflow-y-auto md:overscroll-y-contain lg:max-h-[min(62vh,42rem)]"
-            data-mobile-layout="horizontal-rail"
-            data-testid="market-instrument-list"
-          >
-            {items.map((item) => {
-              const quote = healthBySymbol.get(item.symbol) ?? null;
-              const isActive = item.symbol === activeSymbol;
-              const statusLabel = quote?.quote_status
-                ? formatPublicStatus(quote.quote_status, locale)
-                : labels.unknown;
-              const statusId = `market-instrument-state-${encodeURIComponent(item.symbol)}`;
-              const ageLabel = formatAge(quote?.quote_age_seconds, locale);
-              const researchCountLabel = formatResearchCount(
-                item.research_count,
-                locale,
-              );
-              const dailyMove = quote?.daily_change ?? null;
-              return (
-                <li
-                  key={item.symbol}
-                  className={`group flex min-w-0 snap-start border-l-[3px] transition-colors motion-reduce:transition-none md:snap-none ${
-                    isActive
-                      ? 'border-l-[var(--app-accent)] bg-[var(--app-accent-bg)]'
-                      : 'border-l-transparent hover:bg-[var(--app-surface-raised)]'
-                  }`}
-                  data-market-instrument-row={item.symbol}
-                >
-                  <button
-                    type="button"
-                    aria-controls="market-instrument-detail"
-                    aria-describedby={statusId}
-                    aria-pressed={isActive}
-                    aria-label={`${item.name || item.symbol} ${item.symbol}`}
-                    className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--app-focus-ring)]"
-                    onClick={() => {
-                      onSelect(item.symbol);
-                      if (
-                        typeof window === 'undefined' ||
-                        !window.matchMedia('(max-width: 1279px)').matches
-                      ) {
-                        return;
-                      }
-                      window.requestAnimationFrame(() => {
-                        document
-                          .getElementById('market-instrument-detail')
-                          ?.scrollIntoView({
-                            block: 'start',
-                            behavior: window.matchMedia(
-                              '(prefers-reduced-motion: reduce)',
-                            ).matches
-                              ? 'auto'
-                              : 'smooth',
-                          });
-                      });
-                    }}
-                  >
-                    <span className="min-w-0">
-                      <span
-                        className="block whitespace-normal text-sm leading-5 font-semibold text-[var(--app-text)] [overflow-wrap:anywhere]"
-                        data-testid={`market-instrument-name-${item.symbol}`}
-                      >
-                        {item.name || item.symbol}
-                      </span>
-                      <span className="app-type-micro mt-0.5 block truncate font-mono tabular-nums text-[var(--app-text-tertiary)]">
-                        {item.symbol} ·{' '}
-                        {formatAssetClassLabel(item.asset_class, copy.common)}
-                      </span>
-                      <span
-                        className="app-type-micro mt-1 grid gap-0.5 leading-4 text-[var(--app-text-tertiary)]"
-                        data-testid={`market-instrument-status-${item.symbol}`}
-                        id={statusId}
-                      >
-                        <span className="block break-words">
-                          {statusLabel} · {ageLabel}
-                        </span>
-                        <span className="block break-words">
-                          {researchCountLabel}
-                        </span>
-                      </span>
-                    </span>
-                    <span className="text-right">
-                      <span
-                        className="block text-sm font-semibold tabular-nums text-[var(--app-text)]"
-                        data-testid={`market-instrument-price-${item.symbol}`}
-                      >
-                        {formatCurrency(item.price)}
-                      </span>
-                      <span
-                        className={`app-type-micro mt-1 block font-semibold tabular-nums ${moveTone(dailyMove)}`}
-                      >
-                        {dailyMove == null ? '--' : formatCurrency(dailyMove)}
-                      </span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`${labels.remove}: ${item.name || item.symbol} ${item.symbol}`}
-                    className="mr-1 grid h-10 w-10 shrink-0 place-items-center self-center rounded-[var(--app-radius-control)] text-[var(--app-text-tertiary)] opacity-70 transition-opacity hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] motion-reduce:transition-none xl:h-8 xl:w-8 xl:opacity-0 xl:group-hover:opacity-100"
-                    onClick={() => void onRemove(item.symbol)}
-                  >
-                    <X aria-hidden="true" size={14} strokeWidth={1.8} />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <EvidenceState
-            className="border-0"
-            kind="empty"
-            title={labels.noSelection}
-            description={labels.scopeBoundary}
-          />
-        )}
-      </aside>
+      <MarketWatchlistSidebar
+        items={items}
+        healthBySymbol={healthBySymbol}
+        activeSymbol={activeSymbol}
+        watchlistEditor={watchlistEditor}
+        onSelect={onSelect}
+        onRemove={onRemove}
+      />
 
       <section
         id="market-instrument-detail"
@@ -428,9 +277,27 @@ export function MarketInstrumentWorkspace({
           <>
             <header className="flex min-w-0 items-end justify-between gap-4 border-b border-[var(--app-divider)] pb-4">
               <div className="min-w-0">
-                <div className="app-kicker app-type-overline">
-                  {formatAssetClassLabel(selectedItem.asset_class, copy.common)}{' '}
-                  · {selectedItem.symbol}
+                <div className="app-kicker app-type-overline flex flex-wrap items-center gap-1.5">
+                  <span>
+                    {formatAssetClassLabel(
+                      selectedItem.asset_class,
+                      copy.common,
+                    )}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <CopySymbolButton
+                    symbol={selectedItem.symbol}
+                    copyLabel={labels.copySymbol}
+                    copiedLabel={labels.symbolCopied}
+                  />
+                  {selectedItem.is_holding ? (
+                    <span
+                      data-testid="market-selected-holding-badge"
+                      className="app-type-micro rounded px-1.5 py-0.2 font-sans font-medium bg-[color-mix(in_srgb,var(--app-accent)_15%,transparent)] text-[var(--app-accent)] border border-[color-mix(in_srgb,var(--app-accent)_30%,transparent)]"
+                    >
+                      {labels.holdingBadge}
+                    </span>
+                  ) : null}
                 </div>
                 <h2 className="app-page-title mt-1 truncate text-[var(--app-text)]">
                   {selectedItem.name || selectedItem.symbol}

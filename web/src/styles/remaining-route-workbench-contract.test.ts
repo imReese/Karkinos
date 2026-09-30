@@ -93,9 +93,10 @@ const PRICE_STRUCTURE_CHART = [
   source('features/market/components/price-structure-chart-view.tsx'),
   source('features/market/components/price-structure-loading-state.tsx'),
 ].join('\n');
-const MARKET_INSTRUMENT_WORKSPACE = source(
-  'features/market/components/market-instrument-workspace.tsx',
-);
+const MARKET_INSTRUMENT_WORKSPACE = [
+  source('features/market/components/market-instrument-workspace.tsx'),
+  source('features/market/components/market-watchlist-sidebar.tsx'),
+].join('\n');
 const MARKET_DATA_OPERATIONS = MARKET.slice(
   MARKET.indexOf('function MarketDataOperationsPanel'),
   MARKET.indexOf('function formatAge'),
