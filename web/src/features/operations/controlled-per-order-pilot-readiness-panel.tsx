@@ -80,20 +80,25 @@ export function ControlledPerOrderPilotReadinessPanel({
           />
         ) : (
           <>
-            <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
-              {locale === 'zh'
-                ? '这是可选真实试点的准入前置证据，不是 v1.8 发布完成证明，也不授予订单、券商或资本权限。'
-                : 'These are admission prerequisites for an optional real pilot, not proof of v1.8 completion and not order, broker, or capital authority.'}
-            </p>
-            <div className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">
-              <span className="font-semibold text-[var(--app-text)]">
+            <div className="space-y-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+              <div className="flex items-center gap-2 font-semibold text-[var(--app-text)]">
+                <span className="text-base leading-none">🛡️</span>
+                <span>
+                  {locale === 'zh'
+                    ? '实盘安全防护锁（Fail-Closed 机制）'
+                    : 'Capital Safety Guard (Fail-Closed)'}
+                </span>
+              </div>
+              <p>
                 {locale === 'zh'
-                  ? '实盘安全防护锁：'
-                  : 'Capital Safety Guard: '}
-              </span>
-              {locale === 'zh'
-                ? '以下 6 道门禁是接入真实券商实盘交易的前置条件。在离线研究模式下，保持阻断是系统的默认安全机制（防止任何代码擅自发起实盘操作）。若仅进行离线研究与回测，无需满足这些条件。'
-                : 'These 6 gates are admission prerequisites for live broker connectivity. In research mode, keeping them blocked is the system default fail-closed behavior to protect capital.'}
+                  ? '以下 6 道门禁是接入真实券商实盘交易的前置条件。在离线研究模式下，保持阻断是系统的默认安全机制（防止任何代码擅自发起实盘操作）。若仅进行离线研究与回测，无需满足这些条件。'
+                  : 'These 6 gates are admission prerequisites for live broker connectivity. In research mode, keeping them blocked is the system default fail-closed behavior to protect capital.'}
+              </p>
+              <p className="border-t border-[var(--app-divider)] pt-1.5 text-[var(--app-text-tertiary)]">
+                {locale === 'zh'
+                  ? '本模块是可选真实试点的准入前置证据，不是发布完成证明，也不授予订单、券商或资本权限。'
+                  : 'These are admission prerequisites for an optional real pilot, not proof of v1.8 completion and not order, broker, or capital authority.'}
+              </p>
             </div>
             <GateMatrix
               caption={
@@ -199,11 +204,14 @@ export function ControlledPerOrderPilotReadinessPanel({
                 </dd>
               </div>
             </dl>
-            <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
+            <div className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+              <span className="font-semibold text-[var(--app-text)]">
+                {locale === 'zh' ? '风控安全底线：' : 'Safety Baseline: '}
+              </span>
               {locale === 'zh'
-                ? '即使所有行通过，每一笔订单仍须重新通过账户事实、决策门禁、风控、模拟与影子检验、资本权限、执行网关、生命周期、对账、入账与短时效人工签名。'
+                ? '即使所有门禁均通过，每一笔订单在提交前仍须依次通过账户事实核验、决策复核、风控限额、模拟与影子检验、资本授权与人工确认，绝无自动穿透。'
                 : 'Even when every row passes, each order must separately re-pass Account Truth, Decision, risk, paper/shadow, capital, gateway, lifecycle, reconciliation, posting, and short-lived human-signature gates.'}
-            </p>
+            </div>
           </>
         )}
       </div>
