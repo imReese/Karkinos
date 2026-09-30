@@ -142,7 +142,7 @@ export function MarketInstrumentWorkspaceLoading({
   return (
     <div
       aria-busy="true"
-      className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)] xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]"
+      className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]"
       data-testid="market-instrument-loading-workspace"
     >
       <aside
@@ -256,7 +256,7 @@ export function MarketInstrumentWorkspace({
   );
   return (
     <div
-      className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)] xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]"
+      className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]"
       data-testid="market-instrument-workspace"
     >
       <MarketWatchlistSidebar

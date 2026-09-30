@@ -301,7 +301,7 @@ test('preserves the market master-detail composition while persisted evidence lo
   );
   expect(loadingWorkspace.getAttribute('aria-busy')).toBe('true');
   expect(loadingWorkspace.className).toContain(
-    'md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)]',
+    'md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]',
   );
   expect(screen.queryByTestId('market-instrument-workspace')).toBeNull();
   expect(screen.queryByText('测试标的')).toBeNull();
@@ -823,10 +823,10 @@ test('uses a compact master-detail instrument workspace with local list overflow
   expect(list.classList.contains('overflow-x-auto')).toBe(true);
   expect(list.classList.contains('md:overflow-y-auto')).toBe(true);
   expect(workspace.className).toContain(
-    'md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)]',
+    'md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]',
   );
   expect(workspace.className).toContain(
-    'xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]',
+    'xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]',
   );
   const remove = within(list).getByRole('button', {
     name: 'Remove: 测试标的 600519',
