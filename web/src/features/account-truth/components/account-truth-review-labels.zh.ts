@@ -9,7 +9,7 @@ export const accountTruthReviewLabelsZh = {
   gate: '对账门禁',
   unresolved: '未解决差异',
   resolved: '已复核',
-  freshness: '新鲜度',
+  freshness: '数据时效',
   components: '组件原因',
   blockingReasons: '阻断原因',
   requiredActions: '下一步动作',
@@ -17,7 +17,7 @@ export const accountTruthReviewLabelsZh = {
   reports: '对账报告',
   reviewWorkspace: '当前对账复核',
   reviewWorkspaceDetail:
-    '优先查看未解决差异与已失效复核；匹配明细默认保持安静。',
+    '优先查看未解决差异与已失效复核；匹配明细默认折叠收起。',
   reconciliationLanes: '分资产对账通道',
   reconciliationLanesDetail:
     '股票与基金证据分别呈现，现金由两类资产共享；执行仍只服从一个账户总门禁。',
@@ -42,7 +42,7 @@ export const accountTruthReviewLabelsZh = {
   attentionItems: '待复核明细',
   matchedItems: '已匹配明细',
   matchedItemsQuiet: (count: number) =>
-    `${count} 条明细未发现当前阻断，默认收起。`,
+    `${count} 条明细未发现当前阻断，默认折叠收起。`,
   showMatchedItems: (count: number) => `查看 ${count} 条已匹配明细`,
   hideMatchedItems: '收起已匹配明细',
   itemListLabel: '选择对账明细',
@@ -63,11 +63,11 @@ export const accountTruthReviewLabelsZh = {
   notReadyTitle: '账户事实尚未建立',
   notReadyBody:
     '还没有暂存券商交割单、持仓快照或现金快照，暂时无法计算账户事实分。',
-  workflowTitle: '这个页面怎么用',
+  workflowTitle: '操作指引',
   workflowSteps: [
     '先导入券商证据',
     '把券商证据与 Karkinos 账本和持仓做对账',
-    '回到这里逐条复核差异',
+    '在此逐条复核并确认差异',
   ],
   importWizardKicker: '券商 CSV',
   importWizardTitle: '上传券商流水',

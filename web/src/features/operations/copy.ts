@@ -48,6 +48,21 @@ export const operationsPageCopy = {
     skipped: 'Skipped',
     sourceBoundary:
       'This page reads recorded facts only. It cannot contact an external service, place or cancel an order, change the ledger or risk controls, or grant capital authority.',
+    modeResearch: 'Local-First · Strategy Research Mode',
+    modeResearchDesc:
+      'Operating in a local-first sandbox. Live broker trading is locked (no capital risk). Blockers below reflect live-connection admission gates and do not affect local research, factor exploration, or backtesting.',
+    safetyLockActive: 'Active (Locked)',
+    safetyPillCapital: 'Zero Capital Risk · Read-Only',
+    safetyPillResearch: 'Research & Backtest Fully Available',
+    safetyPillSnapshot: 'Local Data Snapshot',
+    filterAll: 'All',
+    filterAttention: 'Attention',
+    filterNormal: 'Normal',
+    attentionHint:
+      'The following subsystems currently lack complete evidence and are blocked according to safety rules. Click "Review details" for unblock conditions.',
+    impactAssessment: 'Impact Assessment',
+    impactDesc:
+      'This missing evidence only pauses automated live routines for this module. Local factor research, backtests, and parameter evaluations are unaffected.',
   },
   zh: {
     kicker: '运营',
@@ -60,7 +75,7 @@ export const operationsPageCopy = {
     projectionBlocked: '运行证据暂不可用',
     projectionBlockedDetail: '返回的证据未通过只读安全校验，因此暂不提供详情。',
     readOnly: '仅查看',
-    providerFree: '未联系外部服务',
+    providerFree: '未连接外部服务',
     noAuthority: '无执行权限',
     attentionQueue: '证据复核队列',
     attentionEmpty: '当前没有需要证据复核的子系统。',
@@ -93,7 +108,22 @@ export const operationsPageCopy = {
     manualReview: '人工复核',
     skipped: '跳过',
     sourceBoundary:
-      '本页只读取已记录事实；不会联系外部服务、提交或撤销订单，也不会改动账本、风控、紧急停止或资本授权。',
+      '本页只读取已记录事实；不会发起外部网络请求、提交或撤销订单，也不会改动账本、风控、紧急停止或资本授权。',
+    modeResearch: '本地离线 · 策略研究模式',
+    modeResearchDesc:
+      '当前运行于本地离线沙盒，实盘交易严格锁定（无资金风险）。下方标红的阻断项属于实盘接口前置门禁，不影响本地因子挖掘、策略研究与历史回测。',
+    safetyLockActive: '已启用 (已锁定)',
+    safetyPillCapital: '零资金风险 · 仅本地只读',
+    safetyPillResearch: '策略研究与回测完全可用',
+    safetyPillSnapshot: '本地数据快照',
+    filterAll: '全部',
+    filterAttention: '需关注',
+    filterNormal: '正常',
+    attentionHint:
+      '以下子系统目前缺少完整凭据，已按风控规则阻断相关在线计算。点击「查看详情」可了解原因及解除条件。',
+    impactAssessment: '影响评估',
+    impactDesc:
+      '此项缺少证据仅影响该模块的自动化实盘计算，不影响本地因子研究、历史回测及参数寻优。',
   },
 } satisfies Record<Locale, Record<string, unknown>>;
 

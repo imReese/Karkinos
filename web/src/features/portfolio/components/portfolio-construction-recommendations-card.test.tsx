@@ -73,7 +73,7 @@ test('renders blocked construction recommendations as review evidence in Chinese
   expect(within(recommendation).getByText('账户事实')).toBeTruthy();
   expect(within(recommendation).getByText('风控')).toBeTruthy();
   expect(screen.getByText('导入并对账券商证据')).toBeTruthy();
-  expect(screen.getByText('先解决账户事实再再平衡')).toBeTruthy();
+  expect(screen.getByText('先完成账户对账，再执行组合再平衡')).toBeTruthy();
   expect(screen.getByText('复核被风控阻断的原因')).toBeTruthy();
   expect(screen.queryByText('import_and_reconcile_broker_evidence')).toBeNull();
   expect(

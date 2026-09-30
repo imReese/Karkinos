@@ -406,7 +406,7 @@ export function omsOrderStatusLabel(status: string, locale: Locale) {
     },
     manual_ticket_created: {
       en: 'Manual ticket created',
-      zh: '已创建手工票据',
+      zh: '已创建手工委托单',
     },
     broker_submission_blocked: {
       en: 'Broker submission blocked',
@@ -463,7 +463,7 @@ export function executionReconciliationActionLabel(
     },
     create_manual_ticket_or_cancel: {
       en: 'Create manual ticket or cancel',
-      zh: '创建手工票据或取消订单',
+      zh: '创建手工委托单或取消订单',
     },
     confirm_or_cancel_order: {
       en: 'Confirm or cancel order',

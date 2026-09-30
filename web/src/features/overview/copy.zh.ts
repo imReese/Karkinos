@@ -346,7 +346,7 @@ export const overviewCopyZh = {
     dataSettings: '数据源设置',
     dataStatus: '数据状态',
     valuationTime: '估值时间',
-    quoteAge: '行情年龄',
+    quoteAge: '行情时效',
     staleReason: '缓存原因',
     refreshPolicy: '刷新策略',
     quoteSource: '行情来源',

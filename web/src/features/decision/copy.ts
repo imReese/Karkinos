@@ -200,7 +200,7 @@ export const decisionCopy = {
     simulationReviewRunFailed:
       '模拟复核未能运行，请重试；若仍然失败，请检查服务日志。',
     commandRegister: '决策证据登记',
-    commandRegisterTitle: '今日运行姿态',
+    commandRegisterTitle: '今日运作状态',
     commandRegisterDetail: '汇总日级与盘中候选池，先于任何人工审批路径。',
     workflowKicker: '决策工作流',
     workflowTitle: '证据优先的复核顺序',

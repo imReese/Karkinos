@@ -64,6 +64,7 @@ const SETTINGS = [
   source('features/settings/components/settings-page-view.tsx'),
   source('features/settings/components/settings-operations-workspace.tsx'),
   source('features/settings/components/settings-persisted-configuration.tsx'),
+  source('features/settings/components/settings-metadata-readiness.tsx'),
   source('features/settings/components/settings-preferences-workspace.tsx'),
   source('features/settings/components/settings-view-primitives.tsx'),
 ].join('\n');

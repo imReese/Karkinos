@@ -251,7 +251,7 @@ export const completionLabels: Record<string, { zh: string; en: string }> = {
     en: 'Quote is bound to the plan date and not after Decision time',
   },
   quote_age_at_decision_is_no_more_than_300_seconds: {
-    zh: 'Decision 时行情年龄不超过 300 秒',
+    zh: '决策时行情延迟不超过 300 秒',
     en: 'Quote age at Decision time is at most 300 seconds',
   },
   decision_and_plan_are_rebuilt_inside_reviewed_window: {

@@ -48,9 +48,9 @@ export const backtestPageZh = {
     time_series_momentum: '基于过去一段收益延续性的论文型趋势基准策略。',
     donchian_breakout: '基于前高/前低通道突破的经典趋势跟踪基准策略。',
     volatility_target_trend:
-      '先判断趋势，再按已实现波动率缩放长仓暴露的风险控制型趋势策略。',
+      '先判断趋势，再按已实现波动率缩放多头敞口的风险控制型趋势策略。',
     pairs_ratio_mean_reversion:
-      '用两只标的 A/B 比值 z-score 做长仓轮动的相对价值策略。',
+      '用两只标的 A/B 比值 z-score 做多头轮动的相对价值策略。',
   },
   benchmarkRoleNames: {
     trend_following: '趋势跟踪基准',
@@ -73,7 +73,7 @@ export const backtestPageZh = {
     'Inspired by time-series momentum literature; requires after-cost, out-of-sample validation before promotion.':
       '参考时间序列动量研究；进入复核前需要完成扣除成本后与样本外验证。',
     'Long-only implementation exits to cash instead of using leverage or short futures exposure.':
-      '当前实现是长仓版本，信号失效时退回现金，不使用杠杆或期货做空暴露。',
+      '当前实现为纯多头版本，信号平仓时退回现金，不使用杠杆或融券做空敞口。',
     'Common channel-breakout trend-following baseline; requires turnover, whipsaw, and after-cost review.':
       '经典通道突破趋势基准；需要重点复核换手、震荡假突破和扣费后表现。',
     'Uses prior high/low channels only and does not approve execution without risk gates.':
@@ -81,11 +81,11 @@ export const backtestPageZh = {
     'Trend-following baseline with realized-volatility sizing; requires volatility-regime and turnover review.':
       '带已实现波动率仓位缩放的趋势基准；需要复核波动率阶段和换手成本。',
     'Long-only volatility targeting caps weight at 1.0 and never implies leverage.':
-      '当前波动率目标是长仓上限 1.0 的版本，不隐含杠杆。',
+      '当前波动率目标为纯多头且上限 1.0 的版本，不使用杠杆。',
     'Inspired by pairs-trading literature but constrained to long-only target weights.':
-      '参考配对交易研究，但受 Karkinos 目标权重约束，当前是长仓轮动版本。',
+      '参考配对交易研究，但受 Karkinos 目标权重约束，当前是纯多头轮动版本。',
     'Requires pair-selection, liquidity, co-movement, and transaction-cost review before promotion.':
-      '进入复核前需要检查配对选择、流动性、共同运动关系和交易成本。',
+      '进入复核前需要检查配对选择、流动性、协同走势与联动性及交易成本。',
   },
   parameterLabels: {
     short_period: '短期均线周期',
@@ -120,17 +120,17 @@ export const backtestPageZh = {
     bb_period: '用于计算布林带上下轨的回看窗口。',
     num_std: '上下轨距离均线的标准差倍数。',
     rsi_period: 'Wilder 平滑 RSI 使用的回看窗口。',
-    oversold: 'RSI 从下方上穿该水平时发出长仓目标。',
+    oversold: 'RSI 从下方上穿该水平时发出多头买入信号。',
     overbought: 'RSI 从上方下穿该水平时发出退出目标。',
     lookback_period: '用于衡量收益、趋势或价差状态的历史窗口。',
     min_return: '入场前要求达到的最小历史收益。',
     exit_return: '历史收益低于或等于该阈值时退回现金。',
-    target_weight: '策略发出的长仓目标权重。',
+    target_weight: '策略发出的多头目标权重。',
     entry_window: '用于判断向上突破的历史前高通道窗口。',
     exit_window: '用于判断向下退出的历史前低通道窗口。',
     volatility_window: '估计已实现波动率的滚动收益窗口。',
     target_annual_volatility: '用于缩放仓位的目标年化波动率。',
-    max_weight: '长仓最大目标权重；当前不使用杠杆。',
+    max_weight: '多头最大目标权重；当前不使用杠杆。',
     min_momentum: '继续持有风险暴露所需的最小历史收益。',
     rebalance_threshold: '目标权重变化超过该阈值时才发出信号。',
     symbol_a: '第一只配对标的；留空时使用本次运行的第一个标的。',
@@ -170,15 +170,15 @@ export const backtestPageZh = {
   runReadinessDatasetPending: '运行回测时会冻结本次数据快照。',
   runReadinessParameterCount: (count: number) => `${count} 个已配置参数`,
   promotionRequirementsCount: (count: number) => `${count} 个闸门待满足`,
-  promotionEvidenceUnavailable: '该策略暂无推广证据',
+  promotionEvidenceUnavailable: '该策略暂无晋级证据',
   advancedToolsTitle: '高级实验工具',
   advancedToolsDetail: '参数扫描与同快照对比属于次级研究工具。',
   researchGovernanceTitle: '研究治理',
   researchGovernanceDetail:
     '账户/标的策略绑定与已复盘学习保持独立，不授予执行权限。',
-  promotionEvidenceTitle: '推广证据',
+  promotionEvidenceTitle: '晋级证据',
   promotionEvidenceDetail:
-    '复核扣费后、样本外、风控、模拟、账户事实与归因闸门。',
+    '复核扣费后表现、样本外验证、风控门禁、实盘模拟、账户一致性与归因准入。',
   researchArchiveTitle: 'AI 研究与已保存报告',
   researchArchiveDetail:
     'AI 任务只会在你明确发起后运行；已保存的实验仍仅作为研究证据。',

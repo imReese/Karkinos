@@ -252,7 +252,7 @@ export const tradingCopy = {
       rejectConfirm: '填写原因并拒绝',
       manualReviewDecision: '操作员复核决定',
       manualReviewDecisionDetail: '仅记录确认或拒绝；不会提交券商订单。',
-      manualTicketHandoff: '手工票据交接',
+      manualTicketHandoff: '手工委托单交接',
       executionAudit: '执行审计',
       executionAuditTitle: '订单事实、成交事实与模拟复核',
       executionAuditDetail:
@@ -278,10 +278,10 @@ export const tradingCopy = {
       recordingSimulationReview: '正在记录模拟复核',
       simulationReviewAccepted: '模拟复核已接受，可继续人工确认。',
       simulationReviewFailed: '模拟复核记录失败。',
-      manualTicketExportTitle: '手工票据导出',
+      manualTicketExportTitle: '手工委托单导出',
       manualTicketExportDetail:
         '将这份载荷手动录入券商客户端；Karkinos 不会提交券商订单。',
-      manualTicketExportCopyText: '券商录入文本',
+      manualTicketExportCopyText: '报单明细文本',
       manualTicketExportPayload: 'JSON 载荷',
       manualTicketExportSafety: 'submitted_to_broker=false',
       manualTicketAccountAlias: '账户别名',
