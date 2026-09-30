@@ -20,6 +20,37 @@ function sortValue(
       Number.NEGATIVE_INFINITY
     );
   }
+  if (sortBy === 'today_change_pct') {
+    if (
+      position.today_change_pct != null &&
+      Number.isFinite(position.today_change_pct)
+    ) {
+      return position.today_change_pct;
+    }
+    if (
+      position.today_change != null &&
+      Number.isFinite(position.today_change) &&
+      position.market_value != null &&
+      Number.isFinite(position.market_value)
+    ) {
+      const priorValue = position.market_value - position.today_change;
+      if (priorValue > 0) {
+        return (position.today_change / priorValue) * 100;
+      }
+    }
+    if (
+      position.latest_price != null &&
+      position.baseline_price != null &&
+      position.baseline_price > 0
+    ) {
+      return (
+        ((position.latest_price - position.baseline_price) /
+          position.baseline_price) *
+        100
+      );
+    }
+    return Number.NEGATIVE_INFINITY;
+  }
   const value = position[sortBy];
   return typeof value === 'number' && Number.isFinite(value)
     ? value

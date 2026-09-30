@@ -155,11 +155,13 @@ test('renders sort header and sorts by daily change descending, ascending, and r
   expect(sortHeader).toBeInTheDocument();
 
   // Find sort buttons
-  const changeSortBtn = screen.getByRole('button', { name: /涨跌幅/ });
+  const changePctSortBtn = screen.getByRole('button', { name: /涨跌幅/ });
+  const changeAmountSortBtn = screen.getByRole('button', { name: /涨跌额/ });
   const priceSortBtn = screen.getByRole('button', { name: /最新价/ });
   const symbolSortBtn = screen.getByRole('button', { name: /名称\/代码/ });
 
-  expect(changeSortBtn).toBeInTheDocument();
+  expect(changePctSortBtn).toBeInTheDocument();
+  expect(changeAmountSortBtn).toBeInTheDocument();
   expect(priceSortBtn).toBeInTheDocument();
   expect(symbolSortBtn).toBeInTheDocument();
 
@@ -173,16 +175,30 @@ test('renders sort header and sorts by daily change descending, ascending, and r
 
   expect(getRenderedSymbols()).toEqual(['600519', '000001', '000001.OF']);
 
-  // Click 1: Daily Change descending (涨幅榜: 000001.OF(+3.45%), 600519(+1.91%), 000001(-4.00%))
-  fireEvent.click(changeSortBtn);
+  // Test 1: Daily Change Percentage (涨跌幅 %)
+  // Click 1: Percentage descending (涨幅榜: 000001.OF(+3.45%), 600519(+1.91%), 000001(-4.00%))
+  fireEvent.click(changePctSortBtn);
   expect(getRenderedSymbols()).toEqual(['000001.OF', '600519', '000001']);
 
-  // Click 2: Daily Change ascending (跌幅榜: 000001(-4.00%), 600519(+1.91%), 000001.OF(+3.45%))
-  fireEvent.click(changeSortBtn);
+  // Click 2: Percentage ascending (跌幅榜: 000001(-4.00%), 600519(+1.91%), 000001.OF(+3.45%))
+  fireEvent.click(changePctSortBtn);
   expect(getRenderedSymbols()).toEqual(['000001', '600519', '000001.OF']);
 
   // Click 3: Resets to default
-  fireEvent.click(changeSortBtn);
+  fireEvent.click(changePctSortBtn);
+  expect(getRenderedSymbols()).toEqual(['600519', '000001', '000001.OF']);
+
+  // Test 2: Daily Change Amount (涨跌额 ¥)
+  // Click 1: Amount descending (+30: 600519, +0.05: 000001.OF, -0.5: 000001)
+  fireEvent.click(changeAmountSortBtn);
+  expect(getRenderedSymbols()).toEqual(['600519', '000001.OF', '000001']);
+
+  // Click 2: Amount ascending (-0.5: 000001, +0.05: 000001.OF, +30: 600519)
+  fireEvent.click(changeAmountSortBtn);
+  expect(getRenderedSymbols()).toEqual(['000001', '000001.OF', '600519']);
+
+  // Click 3: Resets to default
+  fireEvent.click(changeAmountSortBtn);
   expect(getRenderedSymbols()).toEqual(['600519', '000001', '000001.OF']);
 });
 

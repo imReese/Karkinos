@@ -227,3 +227,86 @@ test('renders sort control and allows sorting and direction toggle', () => {
   fireEvent.click(dirBtn);
   expect(screen.getByRole('button', { name: /升序/ })).toBeInTheDocument();
 });
+
+test('sorts positions by both today_change_pct and today_change (涨跌额/盈亏)', () => {
+  const positionsWithChanges: PortfolioSnapshot['positions'] = [
+    {
+      symbol: '600519',
+      display_name: '贵州茅台',
+      asset_class: 'stock',
+      quantity: 100,
+      available_qty: 100,
+      frozen_qty: 0,
+      avg_cost: 1500,
+      market_value: 160000,
+      latest_price: 1600,
+      today_change: 3000,
+      today_change_pct: 1.88,
+      unrealized_pnl: 10000,
+      realized_pnl: 0,
+      commission_paid: 5,
+      quote_status: 'confirmed',
+      pricing_kind: 'session_close',
+      pricing_authority: 'authoritative',
+      pricing_as_of: '2026-09-11',
+    },
+    {
+      symbol: '000001.OF',
+      display_name: '华夏成长',
+      asset_class: 'fund',
+      quantity: 1000,
+      available_qty: 1000,
+      frozen_qty: 0,
+      avg_cost: 1.2,
+      market_value: 1300,
+      latest_price: 1.3,
+      today_change: 50,
+      today_change_pct: 3.85,
+      unrealized_pnl: 100,
+      realized_pnl: 0,
+      commission_paid: 0,
+      quote_status: 'confirmed',
+      pricing_kind: 'published_nav',
+      pricing_authority: 'authoritative',
+      pricing_as_of: '2026-09-11',
+    },
+  ];
+
+  renderSection(
+    <OverviewHoldingsSection
+      positions={positionsWithChanges}
+      assetClassBySymbol={{ '600519': 'stock', '000001.OF': 'fund' }}
+    />,
+    'zh',
+  );
+
+  const select = screen.getByRole('combobox', { name: '排序' });
+  const dirBtn = screen.getByRole('button', { name: /降序/ });
+
+  const getVisibleSymbols = () => {
+    const rows = screen.getAllByTestId(/^position-row-/);
+    return rows.map((r) =>
+      r.getAttribute('data-testid')?.replace('position-row-', ''),
+    );
+  };
+
+  // 1. Sort by Today's Change % (按今日涨跌幅) descending:
+  // 000001.OF (+3.85%) > 600519 (+1.88%)
+  fireEvent.change(select, { target: { value: 'today_change_pct' } });
+  expect(getVisibleSymbols()).toEqual(['000001.OF', '600519']);
+
+  // Toggle to ascending: 600519 (+1.88%) < 000001.OF (+3.85%)
+  fireEvent.click(dirBtn);
+  expect(getVisibleSymbols()).toEqual(['600519', '000001.OF']);
+
+  // 2. Sort by Today's Change Amount / P&L (按今日涨跌额 / 盈亏):
+  // Reset direction to descending
+  fireEvent.click(screen.getByRole('button', { name: /升序/ }));
+  fireEvent.change(select, { target: { value: 'today_change' } });
+  // 600519 (+3000) > 000001.OF (+50)
+  expect(getVisibleSymbols()).toEqual(['600519', '000001.OF']);
+
+  // Toggle to ascending: 000001.OF (+50) < 600519 (+3000)
+  fireEvent.click(screen.getByRole('button', { name: /降序/ }));
+  expect(getVisibleSymbols()).toEqual(['000001.OF', '600519']);
+});

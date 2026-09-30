@@ -10,6 +10,7 @@ export type EvidenceFilter = 'all' | 'review' | 'clear';
 export type PositionSort =
   | 'market_value'
   | 'weight'
+  | 'today_change_pct'
   | 'today_change'
   | 'unrealized_pnl'
   | 'realized_pnl';
@@ -160,6 +161,7 @@ export function WorkspaceToolbar({
               options={[
                 { value: 'market_value', label: labels.sortMarketValue },
                 { value: 'weight', label: labels.sortWeight },
+                { value: 'today_change_pct', label: labels.sortTodayPct },
                 { value: 'today_change', label: labels.sortTodayPnl },
                 {
                   value: 'unrealized_pnl',
