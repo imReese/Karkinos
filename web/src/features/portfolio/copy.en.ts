@@ -83,7 +83,9 @@ export const portfolioEnCopy = {
     sortTodayPct: 'Today’s change %',
     sortTodayPnl: 'Today’s change amount / P&L',
     sortUnrealizedPnl: 'Unrealized PnL',
+    sortUnrealizedPnlPct: 'Unrealized PnL %',
     sortRealizedPnl: 'Realized PnL',
+    sortSymbol: 'Symbol',
   },
   table: {
     symbol: 'Symbol',

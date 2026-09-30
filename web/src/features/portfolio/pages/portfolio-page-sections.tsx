@@ -10,7 +10,10 @@ import { AllocationCard } from '../components/allocation-card';
 import { LiveHoldingsBoard } from '../components/live-holdings-board';
 import { PortfolioConstructionRecommendationsCard } from '../components/portfolio-construction-recommendations-card';
 import { PositionsTable } from '../components/positions-table';
-import { WorkspaceToolbar } from '../components/workspace-toolbar';
+import {
+  WorkspaceToolbar,
+  type PositionSort,
+} from '../components/workspace-toolbar';
 import { StrategyContributionGateCard } from '../portfolio-feature-boundary';
 import type {
   PortfolioPageActions,
@@ -99,6 +102,8 @@ export function PortfolioCurrentHoldingsSection({
           positions={model.filteredPositions}
           assetClassBySymbol={model.assetClassBySymbol}
           weightBySymbol={model.weightBySymbol}
+          sortKey={state.sortBy}
+          onSort={(key) => actions.onSortByChange(key as PositionSort)}
           onOpenPosition={actions.onOpenPosition}
         />
       )}

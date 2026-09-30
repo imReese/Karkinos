@@ -13,7 +13,9 @@ export type PositionSort =
   | 'today_change_pct'
   | 'today_change'
   | 'unrealized_pnl'
-  | 'realized_pnl';
+  | 'unrealized_pnl_pct'
+  | 'realized_pnl'
+  | 'symbol';
 
 const ToolbarSelect = WorkbenchSelect;
 
@@ -167,7 +169,12 @@ export function WorkspaceToolbar({
                   value: 'unrealized_pnl',
                   label: labels.sortUnrealizedPnl,
                 },
+                {
+                  value: 'unrealized_pnl_pct',
+                  label: labels.sortUnrealizedPnlPct,
+                },
                 { value: 'realized_pnl', label: labels.sortRealizedPnl },
+                { value: 'symbol', label: labels.sortSymbol },
               ]}
             />
           </div>
