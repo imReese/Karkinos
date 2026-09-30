@@ -417,7 +417,7 @@ function ManualOrderTicketCandidates({
             {ticket.estimated_total_fee} ·{' '}
             {locale === 'zh' ? '行情时间' : 'Quote time'}{' '}
             {ticket.market_quote.timestamp} ·{' '}
-            {locale === 'zh' ? '决策时行情年龄' : 'Quote age at decision'}{' '}
+            {locale === 'zh' ? '决策时行情延迟' : 'Quote age at decision'}{' '}
             {ticket.market_quote.age_seconds_at_decision}/
             {ticket.market_quote.max_age_seconds}s ·{' '}
             {locale === 'zh' ? '证据指纹' : 'Evidence fingerprint'}{' '}

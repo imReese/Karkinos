@@ -35,7 +35,7 @@ const accountTruthReadinessEvidenceLabels = {
     position_status: '持仓分项',
     fee_status: '费用与税费分项',
     cost_basis_status: '成本基础分项',
-    ledger_coverage: '新鲜度与账本覆盖',
+    ledger_coverage: '时效性与账本覆盖',
     latest: '整体门禁',
   },
 } as const;

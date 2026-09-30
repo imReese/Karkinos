@@ -231,7 +231,7 @@ export function PositionsTableMobileList({
                             : 'text-[var(--app-pnl-negative)]'
                         }`}
                       >
-                        {locale === 'zh' ? '安全垫' : 'Cushion'}{' '}
+                        {locale === 'zh' ? '收益率' : 'Return'}{' '}
                         {position.latest_price >= position.avg_cost ? '+' : ''}
                         {formatReturnPercent(
                           (position.latest_price - position.avg_cost) /

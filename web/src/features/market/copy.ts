@@ -330,13 +330,13 @@ export const marketCopy = {
     providerFundCoverageScope: '组合级基金覆盖',
     metadataConfiguredCount: '已配置元数据',
     latestQuote: '最近行情时间',
-    cacheAge: '缓存年龄',
+    cacheAge: '缓存时效',
     staleSymbols: '条行情需确认',
     lastRefreshAttempt: '最近刷新尝试',
     lastRefreshError: '最近刷新错误',
     quoteSource: '行情来源',
     staleReason: '缓存原因',
-    quoteAge: '行情年龄',
+    quoteAge: '行情时效',
     configured: '已配置',
     notConfigured: '未配置',
     fundSupported: '支持基金',
@@ -359,7 +359,7 @@ export const marketCopy = {
       '暂未取得当日确认净值，复核项继续保留。',
     confirmedFundNavRefreshInProgress: '同一审计采集批次仍在运行中。',
     confirmedFundNavIdempotentReplay:
-      '重复请求已复用原审计批次，未再次联系数据源。',
+      '重复请求已复用原审计批次，未重复请求外部数据源。',
     confirmedFundNavRefreshFailed: '确认净值采集失败',
     confirmedFundNavAuditRun: '审计批次',
     holdingEvidenceReview: '当前持仓证据复核',
@@ -402,7 +402,7 @@ export const marketCopy = {
       quote_status_not_confirmed: '已记录行情状态尚未被识别为已确认。',
     },
     holdingEvidenceExplicitRefresh:
-      '该按钮会显式采集行情：可能联系已配置的行情源并记录批次，但不会修改账本、订单状态、风控或任何权限。',
+      '该按钮会显式采集行情：将请求已配置的行情源接口并记录批次，但不会修改账本、订单状态、风控或任何权限。',
     holdingEvidenceConfirmedNavRefresh:
       '基金净值使用独立的仅确认采集批次；估算与前一日净值不能清除复核，每次尝试均留存审计且不会改变交易权限。',
     holdingEvidenceStockLane: '股票行情证据',

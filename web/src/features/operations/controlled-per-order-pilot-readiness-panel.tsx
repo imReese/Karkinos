@@ -85,6 +85,16 @@ export function ControlledPerOrderPilotReadinessPanel({
                 ? '这是可选真实试点的准入前置证据，不是 v1.8 发布完成证明，也不授予订单、券商或资本权限。'
                 : 'These are admission prerequisites for an optional real pilot, not proof of v1.8 completion and not order, broker, or capital authority.'}
             </p>
+            <div className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+              <span className="font-semibold text-[var(--app-text)]">
+                {locale === 'zh'
+                  ? '实盘安全防护锁：'
+                  : 'Capital Safety Guard: '}
+              </span>
+              {locale === 'zh'
+                ? '以下 6 道门禁是接入真实券商实盘交易的前置条件。在离线研究模式下，保持阻断是系统的默认安全机制（防止任何代码擅自发起实盘操作）。若仅进行离线研究与回测，无需满足这些条件。'
+                : 'These 6 gates are admission prerequisites for live broker connectivity. In research mode, keeping them blocked is the system default fail-closed behavior to protect capital.'}
+            </div>
             <GateMatrix
               caption={
                 locale === 'zh'

@@ -18,7 +18,7 @@ export function automationRecommendedActionLabel(
       en: 'review broker evidence match',
       zh: '复核券商证据匹配',
     },
-    create_manual_ticket: { en: 'create manual ticket', zh: '生成手工下单票' },
+    create_manual_ticket: { en: 'create manual ticket', zh: '生成手工委托单' },
     review_gateway_status: { en: 'review gateway status', zh: '复核网关状态' },
     import_broker_statement_or_update_order: {
       en: 'import broker statement or update order',
@@ -26,7 +26,7 @@ export function automationRecommendedActionLabel(
     },
     create_manual_ticket_or_cancel: {
       en: 'create manual ticket or cancel',
-      zh: '创建手工票据或取消订单',
+      zh: '创建手工委托单或取消订单',
     },
     confirm_or_cancel_order: {
       en: 'confirm or cancel order',

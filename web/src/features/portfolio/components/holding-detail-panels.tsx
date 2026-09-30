@@ -202,7 +202,7 @@ export function HoldingPnlCostsPanel({ activeTab, model }: HoldingPanelProps) {
           >
             <div className="flex items-center justify-between">
               <span className="app-type-micro font-semibold text-[var(--app-text)]">
-                {isZh ? '成本线与安全垫透视' : 'Cost Basis & Safety Cushion'}
+                {isZh ? '成本线与盈亏透视' : 'Cost Basis & Return Spread'}
               </span>
               <span
                 className={`app-type-micro font-mono font-semibold px-2 py-0.5 rounded-full ${
@@ -213,8 +213,8 @@ export function HoldingPnlCostsPanel({ activeTab, model }: HoldingPanelProps) {
               >
                 {cushionPct >= 0
                   ? isZh
-                    ? '处于安全垫内'
-                    : 'In safety cushion'
+                    ? '处于浮盈区间'
+                    : 'Above cost basis'
                   : isZh
                     ? '跌破成本线'
                     : 'Below cost basis'}{' '}

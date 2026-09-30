@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftRight,
   Briefcase,
@@ -124,6 +124,152 @@ export function ActivityFeedLoading() {
   );
 }
 
+function ActivityFiltersBar({
+  categoryCounts,
+  effectiveSubcategory,
+  labels,
+  query,
+  selectedCategory,
+  setQuery,
+  setSelectedCategory,
+  setSelectedSubcategory,
+  setVisibleEntryCount,
+  subcategoryOptions,
+}: {
+  categoryCounts: Map<LedgerEntryCategory, number>;
+  effectiveSubcategory: LedgerSubcategory;
+  labels: ReturnType<typeof useCopy>['activity']['feed'];
+  query: string;
+  selectedCategory: LedgerEntryCategory;
+  setQuery: (query: string) => void;
+  setSelectedCategory: (category: LedgerEntryCategory) => void;
+  setSelectedSubcategory: (subcategory: LedgerSubcategory) => void;
+  setVisibleEntryCount: (count: number) => void;
+  subcategoryOptions: Array<{
+    key: LedgerSubcategory;
+    label: string;
+    count: number;
+  }>;
+}) {
+  return (
+    <div className="border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-3 sm:px-5">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div
+          aria-label={labels.categoryFilter}
+          className="app-activity-filter-rail app-horizontal-scroll-cue flex min-w-0 max-w-full flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
+          role="group"
+        >
+          {LEDGER_ENTRY_CATEGORIES.map((category) => {
+            const count = categoryCounts.get(category) ?? 0;
+            const isSelected = selectedCategory === category;
+            const CategoryIcon = getCategoryIcon(category);
+            return (
+              <button
+                key={category}
+                aria-label={`${labels.categoryLabels[category]} ${labels.count(count)}`}
+                aria-pressed={isSelected}
+                className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-3 py-1.5 text-xs font-semibold transition-all ${
+                  isSelected
+                    ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-xs'
+                    : 'border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] hover:text-[var(--app-soft)]'
+                }`}
+                onClick={() => {
+                  setSelectedCategory(category);
+                  setSelectedSubcategory('all');
+                  setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
+                }}
+                type="button"
+              >
+                <CategoryIcon
+                  className="h-3.5 w-3.5 opacity-80"
+                  aria-hidden="true"
+                />
+                <span>{labels.categoryLabels[category]}</span>
+                <span
+                  aria-hidden="true"
+                  className={`app-type-micro font-mono tabular-nums rounded-full px-1.5 py-0.5 ${
+                    isSelected
+                      ? 'bg-[var(--app-accent-ghost)] text-[var(--app-accent-strong)]'
+                      : 'bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] text-[var(--app-muted)]'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="relative min-w-0 lg:w-[280px]">
+          <span className="sr-only">{labels.searchLabel}</span>
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-[var(--app-muted)]">
+            <Search className="h-3.5 w-3.5" aria-hidden="true" />
+          </div>
+          <input
+            aria-label={labels.searchLabel}
+            className="app-field h-9 w-full rounded-[var(--app-radius-control)] pl-8 pr-7 text-xs font-medium placeholder:text-[var(--app-muted)] focus:border-[var(--app-accent-border)] focus:ring-1 focus:ring-[var(--app-accent-border)]"
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
+            }}
+            placeholder={labels.searchPlaceholder}
+            type="search"
+            value={query}
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
+              }}
+              className="absolute inset-y-0 right-0 flex items-center pr-2 text-[var(--app-muted)] hover:text-[var(--app-text)]"
+              aria-label="Clear search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {subcategoryOptions.length > 1 ? (
+        <div
+          aria-label={labels.subcategoryFilter}
+          className="app-activity-filter-rail app-horizontal-scroll-cue mt-3 flex min-w-0 max-w-full flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
+          role="group"
+        >
+          {subcategoryOptions.map((option) => {
+            const isSelected = effectiveSubcategory === option.key;
+            return (
+              <button
+                key={option.key}
+                aria-label={`${option.label} ${labels.count(option.count)}`}
+                aria-pressed={isSelected}
+                className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 py-1 text-xs font-semibold transition-all ${
+                  isSelected
+                    ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-xs'
+                    : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
+                }`}
+                onClick={() => {
+                  setSelectedSubcategory(option.key);
+                  setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
+                }}
+                type="button"
+              >
+                <span>{option.label}</span>
+                <span
+                  aria-hidden="true"
+                  className="app-type-micro font-mono tabular-nums opacity-80"
+                >
+                  {option.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -223,6 +369,33 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
     0,
   );
 
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry?.isIntersecting) {
+          setVisibleEntryCount((count) =>
+            Math.min(count + ACTIVITY_PAGE_SIZE, filteredEntries.length),
+          );
+        }
+      },
+      {
+        root: scrollContainerRef.current,
+        rootMargin: '160px',
+      },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [filteredEntries.length]);
+
   if (entries.length === 0) {
     return (
       <div
@@ -248,121 +421,18 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           {labels.count(filteredEntries.length)}
         </span>
       </div>
-      <div className="border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-3 sm:px-5">
-        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div
-            aria-label={labels.categoryFilter}
-            className="app-activity-filter-rail app-horizontal-scroll-cue flex min-w-0 max-w-full flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
-            role="group"
-          >
-            {LEDGER_ENTRY_CATEGORIES.map((category) => {
-              const count = categoryCounts.get(category) ?? 0;
-              const isSelected = selectedCategory === category;
-              const CategoryIcon = getCategoryIcon(category);
-              return (
-                <button
-                  key={category}
-                  aria-label={`${labels.categoryLabels[category]} ${labels.count(count)}`}
-                  aria-pressed={isSelected}
-                  className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-3 py-1.5 text-xs font-semibold transition-all ${
-                    isSelected
-                      ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-xs'
-                      : 'border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] hover:text-[var(--app-soft)]'
-                  }`}
-                  onClick={() => {
-                    setSelectedCategory(category);
-                    setSelectedSubcategory('all');
-                    setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
-                  }}
-                  type="button"
-                >
-                  <CategoryIcon
-                    className="h-3.5 w-3.5 opacity-80"
-                    aria-hidden="true"
-                  />
-                  <span>{labels.categoryLabels[category]}</span>
-                  <span
-                    aria-hidden="true"
-                    className={`app-type-micro font-mono tabular-nums rounded-full px-1.5 py-0.5 ${
-                      isSelected
-                        ? 'bg-[var(--app-accent-ghost)] text-[var(--app-accent-strong)]'
-                        : 'bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] text-[var(--app-muted)]'
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="relative min-w-0 lg:w-[280px]">
-            <span className="sr-only">{labels.searchLabel}</span>
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-[var(--app-muted)]">
-              <Search className="h-3.5 w-3.5" aria-hidden="true" />
-            </div>
-            <input
-              aria-label={labels.searchLabel}
-              className="app-field h-9 w-full rounded-[var(--app-radius-control)] pl-8 pr-7 text-xs font-medium placeholder:text-[var(--app-muted)] focus:border-[var(--app-accent-border)] focus:ring-1 focus:ring-[var(--app-accent-border)]"
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
-              }}
-              placeholder={labels.searchPlaceholder}
-              type="search"
-              value={query}
-            />
-            {query ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery('');
-                  setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
-                }}
-                className="absolute inset-y-0 right-0 flex items-center pr-2 text-[var(--app-muted)] hover:text-[var(--app-text)]"
-                aria-label="Clear search"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {subcategoryOptions.length > 1 ? (
-          <div
-            aria-label={labels.subcategoryFilter}
-            className="app-activity-filter-rail app-horizontal-scroll-cue mt-3 flex min-w-0 max-w-full flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
-            role="group"
-          >
-            {subcategoryOptions.map((option) => {
-              const isSelected = effectiveSubcategory === option.key;
-              return (
-                <button
-                  key={option.key}
-                  aria-label={`${option.label} ${labels.count(option.count)}`}
-                  aria-pressed={isSelected}
-                  className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 py-1 text-xs font-semibold transition-all ${
-                    isSelected
-                      ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-xs'
-                      : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
-                  }`}
-                  onClick={() => {
-                    setSelectedSubcategory(option.key);
-                    setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
-                  }}
-                  type="button"
-                >
-                  <span>{option.label}</span>
-                  <span
-                    aria-hidden="true"
-                    className="app-type-micro font-mono tabular-nums opacity-80"
-                  >
-                    {option.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-      </div>
+      <ActivityFiltersBar
+        categoryCounts={categoryCounts}
+        effectiveSubcategory={effectiveSubcategory}
+        labels={labels}
+        query={query}
+        selectedCategory={selectedCategory}
+        setQuery={setQuery}
+        setSelectedCategory={setSelectedCategory}
+        setSelectedSubcategory={setSelectedSubcategory}
+        setVisibleEntryCount={setVisibleEntryCount}
+        subcategoryOptions={subcategoryOptions}
+      />
       <div
         aria-label={labels.title}
         className="min-w-0 max-w-full"
@@ -374,29 +444,30 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           </div>
         ) : (
           <div
-            className="min-w-0 max-w-full max-h-[34rem] overflow-y-auto overscroll-y-contain md:overflow-x-auto md:overscroll-x-contain"
+            className="min-w-0 max-w-full max-h-[min(70vh,46rem)] overflow-y-auto overscroll-y-contain md:overflow-x-auto md:overscroll-x-contain"
             data-testid="activity-history-table-scroll"
+            ref={scrollContainerRef}
           >
             <table
               aria-label={labels.tableScrollLabel}
               className="app-data-table block w-full min-w-0 text-left text-sm md:table md:min-w-[760px]"
               data-testid="activity-history-table"
             >
-              <thead className="hidden md:table-header-group sticky top-0 z-10 bg-[var(--app-surface-0)]">
-                <tr className="border-b border-[var(--app-divider)] bg-[var(--app-surface-0)]">
-                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
+              <thead className="hidden md:table-header-group sticky top-0 z-10 bg-[var(--app-surface-1)] shadow-xs">
+                <tr className="border-b border-[var(--app-divider)] bg-[var(--app-surface-1)]">
+                  <th className="w-36 bg-[var(--app-surface-1)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
                     {labels.columns.time}
                   </th>
-                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
+                  <th className="w-44 bg-[var(--app-surface-1)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
                     {labels.columns.activity}
                   </th>
-                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
+                  <th className="w-48 bg-[var(--app-surface-1)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
                     {labels.columns.instrument}
                   </th>
-                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-right text-xs font-semibold text-[var(--app-text-secondary)]">
+                  <th className="w-36 bg-[var(--app-surface-1)] px-4 py-2.5 text-right text-xs font-semibold text-[var(--app-text-secondary)]">
                     {labels.columns.amount}
                   </th>
-                  <th className="sticky top-0 bg-[var(--app-surface-0)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
+                  <th className="min-w-[14rem] bg-[var(--app-surface-1)] px-4 py-2.5 text-xs font-semibold text-[var(--app-text-secondary)]">
                     {labels.columns.detail}
                   </th>
                 </tr>
@@ -416,6 +487,13 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                 ))}
               </tbody>
             </table>
+            {remainingEntryCount > 0 ? (
+              <div
+                ref={loadMoreSentinelRef}
+                className="h-2 w-full pointer-events-none"
+                aria-hidden="true"
+              />
+            ) : null}
           </div>
         )}
         {visibleEntries.length > 0 ? (
@@ -461,7 +539,13 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     (locale === 'zh' ? '展开全部' : 'Show all')}
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <span className="app-type-micro font-medium text-[var(--app-muted)]">
+                {locale === 'zh'
+                  ? '✓ 已动态加载全部流水'
+                  : '✓ All activity loaded'}
+              </span>
+            )}
           </div>
         ) : null}
       </div>

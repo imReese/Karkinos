@@ -1,3 +1,5 @@
+import { useMemo, useState } from 'react';
+
 import {
   DataTable,
   EvidenceDrawer,
@@ -7,6 +9,7 @@ import {
   WorkspaceHeader,
   type ExceptionItem,
 } from '../../../shared/ui/workbench';
+import { OperationsModeBanner } from './operations-mode-banner';
 import type { Locale } from '../../../shared/preferences/context';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import {
@@ -127,6 +130,7 @@ function OperationsReadyWorkspace({
 }) {
   return (
     <>
+      <OperationsModeBanner labels={controller.labels} />
       <OperationsCommandGrid controller={controller} projection={projection} />
       <OperationsSubsystemRegister
         controller={controller}
@@ -172,6 +176,9 @@ function OperationsCommandGrid({
             {attentionItems.length}
           </span>
         </div>
+        <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
+          {labels.attentionHint}
+        </p>
         <ExceptionList
           ariaLabel={labels.attentionQueue}
           emptyState={labels.attentionEmpty}
@@ -299,25 +306,76 @@ function OperationsSubsystemRegister({
   projection: OperationsTodayResponse;
 }) {
   const { labels, subsystemColumns } = controller;
+  const [filter, setFilter] = useState<'all' | 'attention' | 'normal'>('all');
+
+  const filteredSubsystems = useMemo(() => {
+    if (filter === 'attention') {
+      return projection.subsystems.filter(
+        (s) =>
+          s.status === 'blocked' ||
+          s.status === 'degraded' ||
+          s.status === 'manual_action_required',
+      );
+    }
+    if (filter === 'normal') {
+      return projection.subsystems.filter(
+        (s) => s.status === 'pass' || s.status === 'healthy',
+      );
+    }
+    return projection.subsystems;
+  }, [projection.subsystems, filter]);
+
+  const attentionCount = projection.subsystems.filter(
+    (s) =>
+      s.status === 'blocked' ||
+      s.status === 'degraded' ||
+      s.status === 'manual_action_required',
+  ).length;
+  const normalCount = projection.subsystems.length - attentionCount;
+
   return (
     <section
       className="min-w-0 space-y-3 border-t border-[var(--app-divider)] pt-4"
       data-testid="operations-subsystem-register"
       aria-labelledby="operations-subsystem-register-heading"
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <h2
-          id="operations-subsystem-register-heading"
-          className="app-type-section-title text-[var(--app-text)]"
-        >
-          {labels.subsystemRegister}
-        </h2>
-        <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
-          {projection.subsystems.length}
-        </span>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+        <div className="flex items-baseline gap-3">
+          <h2
+            id="operations-subsystem-register-heading"
+            className="app-type-section-title text-[var(--app-text)]"
+          >
+            {labels.subsystemRegister}
+          </h2>
+          <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
+            {filteredSubsystems.length}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          {(
+            [
+              ['all', labels.filterAll, projection.subsystems.length],
+              ['attention', labels.filterAttention, attentionCount],
+              ['normal', labels.filterNormal, normalCount],
+            ] as const
+          ).map(([key, label, count]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={`rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-medium transition-colors ${
+                filter === key
+                  ? 'border border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] font-semibold text-[var(--app-accent-text)]'
+                  : 'border border-[var(--app-divider)] bg-[var(--app-surface)] text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+              }`}
+            >
+              {label} ({count})
+            </button>
+          ))}
+        </div>
       </div>
       <DataTable
-        data={projection.subsystems}
+        data={filteredSubsystems}
         columns={subsystemColumns}
         caption={labels.subsystemRegister}
         emptyState={labels.attentionEmpty}
@@ -493,6 +551,12 @@ function OperationsEvidenceDrawer({
               </div>
             ))}
           </dl>
+          <div className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+            <span className="font-semibold text-[var(--app-text)]">
+              {labels.impactAssessment}：
+            </span>
+            {labels.impactDesc}
+          </div>
           <section className="min-w-0 space-y-2">
             <h3 className="app-type-subsection-title text-[var(--app-text)]">
               {labels.technicalIdentity}

@@ -275,7 +275,7 @@ export const activityCopy = {
       openAction: '新增流水',
       closeAction: '关闭流水录入',
       boundaryTitle: '账本写入边界',
-      detail: '写入本地账本前，先预览公开账本影响，再刷新组合路径。',
+      detail: '写入本地账本前，先预览记账影响，再刷新组合快照。',
       boundary:
         '确认提交后才会写入账户账本；不会向券商下单，也不会授予交易权限。',
       ariaLabel: '流水录入工具选择',

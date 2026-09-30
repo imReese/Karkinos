@@ -85,15 +85,15 @@ export function LedgerExecutionDetails({
   );
 
   if (details.length === 0) {
-    return <div className="app-muted app-type-micro mt-1">--</div>;
+    return <div className="app-muted app-type-micro mt-1 md:mt-0">--</div>;
   }
 
   return (
-    <div className="app-muted app-type-label mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5">
+    <div className="app-muted app-type-label mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5 md:mt-0 md:ml-0 md:max-w-none md:justify-start md:gap-1.5">
       {details.map((item) => (
         <span
           key={item.label}
-          className="app-type-micro whitespace-nowrap rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-1.5 py-0.5"
+          className="app-type-micro whitespace-nowrap rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-1.5 py-0.5 font-mono"
         >
           {item.label} {item.value}
         </span>
@@ -129,7 +129,7 @@ export function ActivityLedgerRow({
       className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 px-3 py-3.5 transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] md:table-row md:p-0"
     >
       <td
-        className={`col-start-2 ${correction ? 'row-start-3' : 'row-start-2'} block p-0 text-right align-top md:table-cell md:px-4 md:py-3 md:text-left`}
+        className={`col-start-2 ${correction ? 'row-start-3' : 'row-start-2'} block p-0 text-right align-top md:table-cell md:w-36 md:px-4 md:py-3 md:text-left`}
       >
         <div className="font-mono text-xs font-semibold text-[var(--app-soft)]">
           <LedgerEntryTime entry={entry} locale={locale} />
@@ -139,7 +139,7 @@ export function ActivityLedgerRow({
         </div>
       </td>
       <td
-        className={`col-start-1 row-start-1 ${correction ? 'col-span-2' : ''} block p-0 align-top md:table-cell md:px-4 md:py-3`}
+        className={`col-start-1 row-start-1 ${correction ? 'col-span-2' : ''} block p-0 align-top md:table-cell md:w-44 md:px-4 md:py-3`}
       >
         <div className="flex items-center gap-2.5">
           <span
@@ -156,7 +156,7 @@ export function ActivityLedgerRow({
         </div>
       </td>
       <td
-        className={`col-start-1 ${correction ? 'row-start-3' : 'row-start-2'} block min-w-0 p-0 align-top md:table-cell md:px-4 md:py-3`}
+        className={`col-start-1 ${correction ? 'row-start-3' : 'row-start-2'} block min-w-0 p-0 align-top md:table-cell md:w-48 md:px-4 md:py-3`}
       >
         <ActivityInstrument
           copy={copy}
@@ -166,21 +166,27 @@ export function ActivityLedgerRow({
         />
       </td>
       <td
-        className={`${correction ? 'col-span-2 row-start-2' : 'col-start-2 row-start-1'} block p-0 text-right align-top font-mono text-sm font-semibold tabular-nums md:table-cell md:px-4 md:py-3 ${activityAmountClass(summary.tone)}`}
+        className={`${correction ? 'col-span-2 row-start-2' : 'col-start-2 row-start-1'} block p-0 text-right align-top font-mono text-sm font-semibold tabular-nums md:table-cell md:w-36 md:px-4 md:py-3 ${activityAmountClass(summary.tone)}`}
       >
         {summary.amount}
-        <LedgerExecutionDetails entry={entry} labels={labels} locale={locale} />
       </td>
       <td
-        className={`col-span-2 ${correction ? 'row-start-4' : 'row-start-3'} block min-w-0 max-w-none p-0 align-top text-[var(--app-muted)] md:table-cell md:max-w-[280px] md:px-4 md:py-3`}
+        className={`col-span-2 ${correction ? 'row-start-4' : 'row-start-3'} block min-w-0 max-w-none p-0 align-top text-[var(--app-muted)] md:table-cell md:px-4 md:py-3`}
       >
-        <span
-          className="block break-words [overflow-wrap:anywhere]"
-          data-testid="activity-note"
-        >
-          {publicNote}
-        </span>
-        <LedgerCorrectionDetails entry={entry} locale={locale} />
+        <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-x-3 md:gap-y-1">
+          <LedgerExecutionDetails
+            entry={entry}
+            labels={labels}
+            locale={locale}
+          />
+          <span
+            className="block break-words text-xs text-[var(--app-muted)] [overflow-wrap:anywhere]"
+            data-testid="activity-note"
+          >
+            {publicNote}
+          </span>
+          <LedgerCorrectionDetails entry={entry} locale={locale} />
+        </div>
       </td>
     </tr>
   );

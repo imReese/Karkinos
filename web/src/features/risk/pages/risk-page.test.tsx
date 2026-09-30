@@ -800,7 +800,9 @@ test('localizes decision risk handoff without asking users to inspect every risk
   expect(
     within(handoff).getByRole('button', { name: '运行批量风控' }),
   ).toBeTruthy();
-  expect(handoff.textContent).toContain('不要逐个翻候选，也不要直接下单。');
+  expect(handoff.textContent).toContain(
+    '操作禁忌：请勿手动逐一排查候选，亦禁止直接下单。',
+  );
   expect(
     within(handoff)
       .getByRole('link', { name: '回到决策平台' })
