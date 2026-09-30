@@ -222,7 +222,10 @@ export function AutomaticTradingPanel() {
           </button>
         </div>
 
-        <div className="grid gap-1 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-warning-text)]">
+        <div className="space-y-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+          <div className="font-semibold text-[var(--app-text)]">
+            {locale === 'zh' ? '安全约束：' : 'Safety Constraints: '}
+          </div>
           <p>{labels.noRestart}</p>
           <p>{labels.noCapitalAuthority}</p>
           <p>{labels.brokerSubmissionNotImplemented}</p>

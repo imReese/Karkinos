@@ -23,7 +23,7 @@ export function CiticDirectoryEvidence({
       <div className="text-sm font-semibold text-[var(--app-text)]">
         {text.citicDirectoryTitle}
       </div>
-      <p className="app-type-micro mt-1 text-[var(--app-text-secondary)]">
+      <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
         {text.citicDirectoryBody}
       </p>
       {directoryStatusQuery.isPending ? (
@@ -154,7 +154,7 @@ function CiticDirectoryBatchAssessment({
                   : text.citicQueryWindowBatchUnavailable}
           </StatusBadge>
         </div>
-        <p className="app-type-micro mt-2 text-[var(--app-text-secondary)]">
+        <p className="mt-2 text-xs leading-5 text-[var(--app-text-secondary)]">
           {text.citicQueryWindowBatchSummary(
             scan.query_window_batch_assessment.declared_window_start_date,
             scan.query_window_batch_assessment.declared_window_end_date,
@@ -163,9 +163,12 @@ function CiticDirectoryBatchAssessment({
             scan.query_window_batch_assessment.overlap_calendar_day_count,
           )}
         </p>
-        <p className="app-type-micro mt-1 text-[var(--app-text-tertiary)]">
+        <div className="mt-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+          <span className="font-semibold text-[var(--app-text)]">
+            {locale === 'zh' ? '区间声明边界：' : 'Query Window Boundary: '}
+          </span>
           {text.citicQueryWindowBatchBoundary}
-        </p>
+        </div>
       </div>
       <div
         className="mt-3 border-t border-[var(--app-border)] pt-3"
@@ -199,7 +202,7 @@ function CiticDirectoryBatchAssessment({
                   : text.citicSourceScopeBatchUnavailable}
           </StatusBadge>
         </div>
-        <p className="app-type-micro mt-2 text-[var(--app-text-secondary)]">
+        <p className="mt-2 text-xs leading-5 text-[var(--app-text-secondary)]">
           {text.citicSourceScopeBatchSummary(
             scan.source_scope_batch_assessment.reviewed_source_count,
             scan.source_scope_batch_assessment.source_count,
@@ -207,7 +210,7 @@ function CiticDirectoryBatchAssessment({
             scan.source_scope_batch_assessment.declared_scope_consistent,
           )}
         </p>
-        <p className="app-type-micro mt-1 text-[var(--app-text-secondary)]">
+        <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
           {text.citicSourceScopeBatchDeclared(
             scan.source_scope_batch_assessment.declared_account_type,
             scan.source_scope_batch_assessment.declared_market_scopes.join(
@@ -222,13 +225,23 @@ function CiticDirectoryBatchAssessment({
             ),
           )}
         </p>
-        <p className="app-type-micro mt-1 text-[var(--app-text-tertiary)]">
+        <div className="mt-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+          <span className="font-semibold text-[var(--app-text)]">
+            {locale === 'zh'
+              ? '范围声明边界：'
+              : 'Scope Declaration Boundary: '}
+          </span>
           {text.citicSourceScopeBatchBoundary}
-        </p>
+        </div>
       </div>
-      <p className="app-type-micro mt-2 text-[var(--app-text-tertiary)]">
+      <div className="mt-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+        <span className="font-semibold text-[var(--app-text)]">
+          {locale === 'zh'
+            ? '覆盖验证底线：'
+            : 'Coverage Verification Baseline: '}
+        </span>
         {text.citicBatchCoverageBoundary}
-      </p>
+      </div>
       <div
         className="mt-3 border-t border-[var(--app-border)] pt-3"
         data-testid="citic-canonical-lineage-assessment"
@@ -252,7 +265,7 @@ function CiticDirectoryBatchAssessment({
                 : text.citicCanonicalLineageUnavailable}
           </StatusBadge>
         </div>
-        <p className="app-type-micro mt-2 text-[var(--app-text-secondary)]">
+        <p className="mt-2 text-xs leading-5 text-[var(--app-text-secondary)]">
           {text.citicCanonicalLineageSummary(
             scan.canonical_lineage_assessment.semantically_matched_event_count,
             scan.canonical_lineage_assessment.source_supported_event_count,
@@ -266,7 +279,7 @@ function CiticDirectoryBatchAssessment({
           )}
         </p>
         <div
-          className="app-type-micro mt-1 grid gap-1 text-[var(--app-text-secondary)]"
+          className="mt-1 grid gap-1 text-xs leading-5 text-[var(--app-text-secondary)]"
           data-testid="citic-canonical-lineage-type-diagnostics"
         >
           <p>

@@ -207,7 +207,7 @@ export const accountTruthReviewLabelsZh = {
       ? `声明区间 ${startDate} — ${endDate} · 覆盖 ${coveredDays} 个自然日 · 缺口 ${gapDays} 天 · 重叠 ${overlapDays} 天`
       : '当前来源尚未记录显式复核的查询区间。',
   citicQueryWindowBatchBoundary:
-    '这里只检查 owner 声明的导出日期。日期连续不能证明账户或资产范围完整，也不能补足逐项结算、当前资金或当前持仓。',
+    '这里只检查账户所有者声明的导出日期。日期连续不能证明账户或资产范围完整，也不能补足逐项结算、当前资金或当前持仓。',
   citicSourceScopeBatchTitle: '声明来源范围完整性',
   citicSourceScopeBatchUnavailable: '尚无已复核来源范围',
   citicSourceScopeBatchPartial: '来源范围复核尚未完成',
@@ -229,10 +229,10 @@ export const accountTruthReviewLabelsZh = {
   ) =>
     `账户类型 ${accountType || '未证明'} · 市场 ${markets || '未证明'} · 资产 ${assets || '未证明'} · 账户规模区间 ${accountValueBand || '未证明'} · 业务类型 ${businesses || '未证明'}`,
   citicSourceScopeBatchBoundary:
-    '这是与精确文件和查询区间指纹绑定的 owner 声明；不能证明账户覆盖完整，也不能补足逐项结算、当前资金、当前持仓或交易授权。',
+    '这是与精确文件和查询区间指纹绑定的所有者声明；不能证明账户覆盖完整，也不能补足逐项结算、当前资金、当前持仓或交易授权。',
   citicBatchCoverageBoundary:
     '观察到事件的月份不能证明导出查询区间或月份覆盖完整。仍需逐份复核查询区间、逐项结算或资金流水、当前资金与持仓快照，以及账户绑定。',
-  citicCanonicalLineageTitle: 'Canonical 来源链',
+  citicCanonicalLineageTitle: '权威（Canonical）来源链',
   citicCanonicalLineageExact: '事件身份已精确保留',
   citicCanonicalLineagePartial: '来源链不完整；需要复核',
   citicCanonicalLineageUnavailable: '来源链暂不可用',
@@ -244,7 +244,7 @@ export const accountTruthReviewLabelsZh = {
     sourceBrokerIdentity: number,
     canonicalUnmatched: number,
   ) =>
-    `来源事件语义匹配 ${matched} / ${source} · 精确保留事件身份 ${exactIdentity} · 保留券商委托身份 ${brokerIdentity} / ${sourceBrokerIdentity} · 此批次之外的可比 canonical 事件 ${canonicalUnmatched}`,
+    `来源事件语义匹配 ${matched} / ${source} · 精确保留事件身份 ${exactIdentity} · 保留券商委托身份 ${brokerIdentity} / ${sourceBrokerIdentity} · 此批次之外的可比权威（Canonical）事件 ${canonicalUnmatched}`,
   citicCanonicalLineageObservedTypes: (
     sourceTypes: string,
     canonicalTypes: string,
