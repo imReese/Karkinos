@@ -205,3 +205,25 @@ test('sorts by indicative market value when market_value is null', () => {
   expect(screen.getAllByText('贵州茅台').length).toBeGreaterThan(0);
   expect(screen.getAllByText('万科A').length).toBeGreaterThan(0);
 });
+
+test('renders sort control and allows sorting and direction toggle', () => {
+  renderSection(
+    <OverviewHoldingsSection
+      positions={mockPositions}
+      assetClassBySymbol={{ '600519': 'stock', '000001.OF': 'fund' }}
+      weightBySymbol={{ '600519': 0.8, '000001.OF': 0.2 }}
+    />,
+    'zh',
+  );
+
+  const sortControl = screen.getByTestId('overview-holdings-sort-control');
+  expect(sortControl).toBeInTheDocument();
+
+  // Sort direction toggle button
+  const dirBtn = screen.getByRole('button', { name: /降序/ });
+  expect(dirBtn).toBeInTheDocument();
+
+  // Click to toggle direction to ascending
+  fireEvent.click(dirBtn);
+  expect(screen.getByRole('button', { name: /升序/ })).toBeInTheDocument();
+});
