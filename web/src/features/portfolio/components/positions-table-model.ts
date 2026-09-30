@@ -10,6 +10,9 @@ export type PositionsTableProps = {
   weightBySymbol?: Record<string, number | null | undefined>;
   variant?: PositionsTableVariant;
   onOpenPosition?: (symbol: string) => void;
+  sortKey?: string;
+  sortDirection?: 'asc' | 'desc';
+  onSort?: (key: string, direction?: 'asc' | 'desc') => void;
 };
 
 export type PositionsTableModel = {
@@ -20,6 +23,9 @@ export type PositionsTableModel = {
   onOpenPosition?: (symbol: string) => void;
   showFullColumns: boolean;
   showHistoryColumns: boolean;
+  sortKey?: string;
+  sortDirection?: 'asc' | 'desc';
+  onSort?: (key: string, direction?: 'asc' | 'desc') => void;
 };
 
 export function buildPositionsTableModel({
@@ -28,6 +34,9 @@ export function buildPositionsTableModel({
   weightBySymbol = {},
   variant = 'full',
   onOpenPosition,
+  sortKey,
+  sortDirection,
+  onSort,
 }: PositionsTableProps): PositionsTableModel {
   return {
     positions,
@@ -37,6 +46,9 @@ export function buildPositionsTableModel({
     onOpenPosition,
     showFullColumns: variant === 'full',
     showHistoryColumns: variant === 'history',
+    sortKey,
+    sortDirection,
+    onSort,
   };
 }
 

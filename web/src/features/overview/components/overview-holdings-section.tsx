@@ -28,7 +28,9 @@ export type OverviewHoldingSortKey =
   | 'today_change_pct'
   | 'today_change'
   | 'unrealized_pnl'
-  | 'weight';
+  | 'unrealized_pnl_pct'
+  | 'weight'
+  | 'symbol';
 
 function resolvePositionSortValue(
   position: PortfolioSnapshot['positions'][number],
@@ -96,6 +98,23 @@ function resolvePositionSortValue(
       return typeof val === 'number' && Number.isFinite(val)
         ? val
         : Number.NEGATIVE_INFINITY;
+    }
+    case 'unrealized_pnl_pct': {
+      const pnl = position.unrealized_pnl ?? position.indicative_unrealized_pnl;
+      if (typeof pnl !== 'number' || !Number.isFinite(pnl)) {
+        return Number.NEGATIVE_INFINITY;
+      }
+      const costBasis =
+        position.quantity > 0 && position.avg_cost > 0
+          ? position.quantity * position.avg_cost
+          : position.market_value != null &&
+              Number.isFinite(position.market_value)
+            ? position.market_value - pnl
+            : null;
+      if (costBasis != null && costBasis > 0) {
+        return (pnl / costBasis) * 100;
+      }
+      return Number.NEGATIVE_INFINITY;
     }
     case 'weight': {
       const val = weightBySymbol?.[position.symbol];
@@ -165,6 +184,10 @@ export function OverviewHoldingsSection({
           });
 
     return list.sort((left, right) => {
+      if (sortBy === 'symbol') {
+        const cmp = left.symbol.localeCompare(right.symbol);
+        return sortDirection === 'desc' ? -cmp : cmp;
+      }
       const leftVal = resolvePositionSortValue(left, sortBy, weightBySymbol);
       const rightVal = resolvePositionSortValue(right, sortBy, weightBySymbol);
       const leftMissing = !Number.isFinite(leftVal);
@@ -265,7 +288,12 @@ export function OverviewHoldingsSection({
                 { value: 'today_change_pct', label: labels.sortTodayPct },
                 { value: 'today_change', label: labels.sortTodayPnl },
                 { value: 'unrealized_pnl', label: labels.sortUnrealizedPnl },
+                {
+                  value: 'unrealized_pnl_pct',
+                  label: labels.sortUnrealizedPnlPct,
+                },
                 { value: 'weight', label: labels.sortWeight },
+                { value: 'symbol', label: labels.sortSymbol },
               ]}
               className="text-xs"
             />
@@ -307,6 +335,14 @@ export function OverviewHoldingsSection({
           assetClassBySymbol={assetClassBySymbol}
           weightBySymbol={weightBySymbol}
           variant="dashboard"
+          sortKey={sortBy}
+          sortDirection={sortDirection}
+          onSort={(key, dir) => {
+            setSortBy(key as OverviewHoldingSortKey);
+            if (dir) {
+              setSortDirection(dir);
+            }
+          }}
           onOpenPosition={(symbol) => {
             void navigate({
               to: '/portfolio/$symbol',

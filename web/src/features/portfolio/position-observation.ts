@@ -51,6 +51,26 @@ function sortValue(
     }
     return Number.NEGATIVE_INFINITY;
   }
+  if (sortBy === 'unrealized_pnl_pct') {
+    const pnl = position.unrealized_pnl ?? position.indicative_unrealized_pnl;
+    if (typeof pnl !== 'number' || !Number.isFinite(pnl)) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    const costBasis =
+      position.quantity > 0 && position.avg_cost > 0
+        ? position.quantity * position.avg_cost
+        : position.market_value != null &&
+            Number.isFinite(position.market_value)
+          ? position.market_value - pnl
+          : null;
+    if (costBasis != null && costBasis > 0) {
+      return (pnl / costBasis) * 100;
+    }
+    return Number.NEGATIVE_INFINITY;
+  }
+  if (sortBy === 'symbol') {
+    return 0;
+  }
   const value = position[sortBy];
   return typeof value === 'number' && Number.isFinite(value)
     ? value
@@ -118,10 +138,14 @@ export function filterAndSortPortfolioPositions({
         matchesEvidence
       );
     })
-    .sort(
-      (left, right) =>
+    .sort((left, right) => {
+      if (sortBy === 'symbol') {
+        return left.symbol.localeCompare(right.symbol);
+      }
+      return (
         sortValue(right, sortBy, allocationBySymbol) -
           sortValue(left, sortBy, allocationBySymbol) ||
-        left.symbol.localeCompare(right.symbol),
-    );
+        left.symbol.localeCompare(right.symbol)
+      );
+    });
 }

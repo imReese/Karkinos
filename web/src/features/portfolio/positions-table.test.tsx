@@ -323,3 +323,49 @@ test('displays indicative market value and unrealized pnl when authoritative val
     screen.getByTestId('position-unrealized-600519').textContent,
   ).toContain('Ref');
 });
+
+test('renders interactive sort buttons when onSort is provided and handles sort clicks', () => {
+  const onSort = vi.fn();
+  renderTable(
+    <PositionsTable
+      positions={[basePosition]}
+      weightBySymbol={{ '600519': 0.42 }}
+      variant="dashboard"
+      sortKey="today_change_pct"
+      sortDirection="desc"
+      onSort={onSort}
+    />,
+  );
+
+  const mvBtn = screen.getByTestId('positions-sort-market_value');
+  expect(mvBtn).toBeTruthy();
+  fireEvent.click(mvBtn);
+  expect(onSort).toHaveBeenCalledWith('market_value', 'desc');
+
+  const todayPctBtn = screen.getByTestId('positions-sort-today-pct');
+  expect(todayPctBtn).toBeTruthy();
+  fireEvent.click(todayPctBtn);
+  expect(onSort).toHaveBeenCalledWith('today_change_pct', 'asc');
+
+  const todayAmtBtn = screen.getByTestId('positions-sort-today-change');
+  expect(todayAmtBtn).toBeTruthy();
+  fireEvent.click(todayAmtBtn);
+  expect(onSort).toHaveBeenCalledWith('today_change', 'desc');
+
+  const unrealizedPctBtn = screen.getByTestId('positions-sort-unrealized-pct');
+  expect(unrealizedPctBtn).toBeTruthy();
+  fireEvent.click(unrealizedPctBtn);
+  expect(onSort).toHaveBeenCalledWith('unrealized_pnl_pct', 'desc');
+
+  const unrealizedAmtBtn = screen.getByTestId(
+    'positions-sort-unrealized-amount',
+  );
+  expect(unrealizedAmtBtn).toBeTruthy();
+  fireEvent.click(unrealizedAmtBtn);
+  expect(onSort).toHaveBeenCalledWith('unrealized_pnl', 'desc');
+
+  const symbolBtn = screen.getByTestId('positions-sort-symbol');
+  expect(symbolBtn).toBeTruthy();
+  fireEvent.click(symbolBtn);
+  expect(onSort).toHaveBeenCalledWith('symbol', 'asc');
+});

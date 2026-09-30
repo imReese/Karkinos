@@ -77,7 +77,9 @@ export const portfolioZhCopy = {
     sortTodayPct: '按今日涨跌幅',
     sortTodayPnl: '按今日涨跌额 / 盈亏',
     sortUnrealizedPnl: '按未实现盈亏',
+    sortUnrealizedPnlPct: '按未实现盈亏率',
     sortRealizedPnl: '按已实现盈亏',
+    sortSymbol: '按标的代码',
   },
   table: {
     symbol: '代码',
