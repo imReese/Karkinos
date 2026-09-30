@@ -65,8 +65,8 @@ test('renders the compact canonical holdings table with direct detail drill-down
     'Symbol',
     'Market Value',
     'Weight',
-    'Today PnL',
-    'Unrealized',
+    'Day’s P&L',
+    'Floating P&L',
     'Realized PnL',
     'Quote State',
   ]);
@@ -126,8 +126,8 @@ test('keeps the overview dashboard table compact', () => {
     'Holding',
     'Market Value',
     'Weight',
-    'Today PnL',
-    'Unrealized',
+    'Day’s P&L',
+    'Floating P&L',
   ]);
   const dashboardWeightCell = screen.getByTestId('position-weight-600519');
   expect(dashboardWeightCell.textContent).toBe('42.0%');
@@ -152,8 +152,8 @@ test('uses a watchlist-density mobile row for the overview dashboard', () => {
   expect(row.textContent).toContain('42.0%');
   expect(row.textContent).not.toContain('Session close · 09/11');
   expect(row.textContent).not.toContain('1,600.0000');
-  expect(row.textContent).toContain('Today PnL ¥30.00');
-  expect(row.textContent).toContain('Unrealized ¥6,000.00');
+  expect(row.textContent).toContain('Day’s P&L ¥30.00');
+  expect(row.textContent).toContain('Floating P&L ¥6,000.00');
   expect(within(row).queryByText('Weight')).toBeNull();
 });
 

@@ -158,7 +158,7 @@ test('renders sort header and sorts by daily change descending, ascending, and r
   const changePctSortBtn = screen.getByRole('button', { name: /涨跌幅/ });
   const changeAmountSortBtn = screen.getByRole('button', { name: /涨跌额/ });
   const priceSortBtn = screen.getByRole('button', { name: /最新价/ });
-  const symbolSortBtn = screen.getByRole('button', { name: /名称\/代码/ });
+  const symbolSortBtn = screen.getByRole('button', { name: /名称代码/ });
 
   expect(changePctSortBtn).toBeInTheDocument();
   expect(changeAmountSortBtn).toBeInTheDocument();

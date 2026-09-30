@@ -753,7 +753,7 @@ test('renders risk boundaries and blocking register without order approval contr
   expect(concentrationIdentityHeader.className).toContain('sticky');
   expect(within(concentrationTable).getByText('Weight')).toBeTruthy();
   expect(within(concentrationTable).getByText('Market Value')).toBeTruthy();
-  expect(within(concentrationTable).getByText('Unrealized')).toBeTruthy();
+  expect(within(concentrationTable).getByText('Floating P&L')).toBeTruthy();
   expect(
     within(concentrationTable).getByText(
       'No active positions available for concentration analysis.',
