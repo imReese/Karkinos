@@ -1,3 +1,7 @@
+import type { CorporateActionEvidence } from './corporate-action-contracts';
+
+export type { CorporateActionEvidence } from './corporate-action-contracts';
+
 export type BacktestMetrics = {
   initial_cash: number;
   final_equity: number;
@@ -57,6 +61,7 @@ export type DatasetSnapshot = {
   point_in_time_verified?: boolean;
   research_use?: string;
   research_limitations?: DatasetQualityIssue[];
+  corporate_action_evidence?: CorporateActionEvidence | null;
   schema_version?: string;
   snapshot_id: string;
   provider: {

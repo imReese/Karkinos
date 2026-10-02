@@ -11,6 +11,7 @@ import {
 } from '../../../shared/market-data-status';
 import type { BacktestReport, DatasetSnapshot } from '../api';
 import { DecisionAvailabilityPanel } from './decision-availability-panel';
+import { CorporateActionEvidencePanel } from './corporate-action-evidence-panel';
 
 function boolLabel(
   value: boolean,
@@ -46,7 +47,7 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
   const snapshot = snapshotFromReport(report);
 
   if (!snapshot) {
-    return null;
+    return <CorporateActionEvidencePanel locale={locale} />;
   }
 
   const firstIssue = snapshot.data_quality.issues[0];
@@ -78,6 +79,12 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
         </div>
       </div>
 
+      <div className="mt-4">
+        <CorporateActionEvidencePanel
+          evidence={snapshot.corporate_action_evidence}
+          locale={locale}
+        />
+      </div>
       {snapshot.immutable_dataset_id ? (
         <div
           className="mt-4 break-all text-xs"

@@ -26,7 +26,7 @@ SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
 SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v4"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v14"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v15"
 SHADOW_RESEARCH_REQUIRED_MARKET_UNIVERSE_TRUTH_SCHEMA = (
     "karkinos.market_universe_truth.v2"
 )

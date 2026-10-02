@@ -54,6 +54,12 @@ class PublishVerifiedIntervalRequest(VerifiedDatasetRangeRequest):
     job_ids: list[str] = Field(min_length=1, max_length=366)
 
 
+class CollectCorporateActionsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    refresh: StrictBool = False
+
+
 def create_router() -> APIRouter:
     router = APIRouter(prefix="/api/backtest/datasets", tags=["backtest"])
 
@@ -139,6 +145,35 @@ def create_router() -> APIRouter:
                 for job in jobs
             ]
         }
+
+    @router.post("/{dataset_id}/corporate-actions")
+    async def collect_corporate_actions(
+        dataset_id: str, payload: CollectCorporateActionsRequest
+    ):
+        state = get_app_state()
+        service = state.research_datasets
+        if service is None:
+            raise HTTPException(503, "research_dataset_service_unavailable")
+        try:
+            return await asyncio.to_thread(
+                service.collect_corporate_actions,
+                dataset_id,
+                config=state.config,
+                refresh=payload.refresh,
+            )
+        except ResearchDatasetError as exc:
+            code = str(exc)
+            status = (
+                422
+                if code
+                in {"dataset_corporate_actions_stock_only", "tushare_token_missing"}
+                else 409
+            )
+            raise HTTPException(status, code) from None
+        except Exception:
+            raise HTTPException(
+                409, "dataset_corporate_actions_collection_failed"
+            ) from None
 
     @router.post("/verified-interval")
     async def publish_verified_interval(payload: PublishVerifiedIntervalRequest):

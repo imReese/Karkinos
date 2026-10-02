@@ -48,6 +48,7 @@ BODY_OPERATIONS = {
     ("post", "/api/backtest/risk-preview"),
     ("post", "/api/backtest/run"),
     ("post", "/api/backtest/datasets"),
+    ("post", "/api/backtest/datasets/{dataset_id}/corporate-actions"),
     ("post", "/api/backtest/datasets/verified-interval"),
     ("post", "/api/backtest/datasets/verified-jobs"),
     ("post", "/api/backtest/signal-preview"),

@@ -10,6 +10,10 @@ const FEATURES_ROOT = resolve(BACKTEST_ROOT, '..');
 const APP_ROOT = resolve(BACKTEST_ROOT, '../../app');
 const API_FACADE = resolve(BACKTEST_ROOT, 'api.ts');
 const API_CONTRACTS = resolve(BACKTEST_ROOT, 'api-contracts.ts');
+const CORPORATE_ACTION_CONTRACTS = resolve(
+  BACKTEST_ROOT,
+  'corporate-action-contracts.ts',
+);
 const API_GOVERNANCE_CONTRACTS = resolve(
   BACKTEST_ROOT,
   'api-governance-contracts.ts',
@@ -138,6 +142,7 @@ BacktestRunRequest
 BacktestStrategyInfo
 BacktestSummary
 BacktestSweepRequest
+CorporateActionEvidence
 BacktestSweepResponse
 BacktestSweepResult
 CostSummary
@@ -269,7 +274,15 @@ test('backtest API facade preserves its public export surface', () => {
     "export * from './api-hooks';",
   ]);
   const exportPattern = /^export (?:type|function) ([A-Za-z0-9_]+)/gm;
-  const actualExports = [API_CONTRACTS, API_GOVERNANCE_CONTRACTS, API_HOOKS]
+  expect(readFileSync(API_CONTRACTS, 'utf8')).toContain(
+    "export type { CorporateActionEvidence } from './corporate-action-contracts';",
+  );
+  const actualExports = [
+    API_CONTRACTS,
+    CORPORATE_ACTION_CONTRACTS,
+    API_GOVERNANCE_CONTRACTS,
+    API_HOOKS,
+  ]
     .flatMap((path) =>
       Array.from(
         readFileSync(path, 'utf8').matchAll(exportPattern),
@@ -302,6 +315,7 @@ test('backtest request URLs stay at the reviewed contract', () => {
       '/api/backtest/compare',
       '/api/backtest/datasets',
       '/api/backtest/datasets',
+      '/api/backtest/datasets/${encodeURIComponent(datasetId)}/corporate-actions',
       '/api/backtest/datasets/verified-interval',
       '/api/backtest/datasets/verified-jobs',
       '/api/backtest/datasets/verified-jobs/${encodeURIComponent(jobId)}',

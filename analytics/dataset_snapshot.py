@@ -17,6 +17,18 @@ from data.store import build_bar_diagnostics
 logger = logging.getLogger(__name__)
 
 
+def dataset_research_use(snapshot: Mapping[str, Any]) -> str | None:
+    """Apply current admission semantics without rewriting historical reports.
+
+    Daily ingestion receipts bind raw bars, not corporate-action returns or
+    historical information availability. Older receipt snapshots omitted this
+    label; their exact data can still replay, but a new review is exploratory.
+    """
+    if snapshot.get("market_data_binding") is not None:
+        return "exploratory_backtest"
+    return snapshot.get("research_use")
+
+
 def _enum_value(raw: Any) -> str | None:
     if raw is None:
         return None
@@ -350,6 +362,21 @@ def build_backtest_dataset_snapshot(
     }
     if market_data_binding is not None:
         snapshot["market_data_binding"] = dict(market_data_binding)
+        snapshot.update(
+            price_basis="unadjusted",
+            point_in_time_verified=False,
+            research_use="exploratory_backtest",
+            research_limitations=[
+                {
+                    "code": "historical_availability_unverified",
+                    "message": "Ingestion receipts freeze observed bars, not their availability at historical decisions.",
+                },
+                {
+                    "code": "unadjusted_corporate_actions_unmodeled",
+                    "message": "Unadjusted prices do not model corporate-action cash flows or total returns.",
+                },
+            ],
+        )
     if research_dataset_binding is not None:
         snapshot.update(
             immutable_dataset_id=research_dataset_binding["dataset_id"],
@@ -369,6 +396,10 @@ def build_backtest_dataset_snapshot(
                 "message": research_dataset_binding["limitations"][1],
             },
         ]
+        if research_dataset_binding.get("corporate_action_evidence") is not None:
+            snapshot["corporate_action_evidence"] = research_dataset_binding[
+                "corporate_action_evidence"
+            ]
     snapshot["snapshot_id"] = _dataset_snapshot_id(snapshot)
     return snapshot
 
@@ -612,6 +643,8 @@ def _verify_immutable_dataset_replay(
         or content_identity.get("row_contract") != "timestamp_ohlcv.v1"
         or snapshot.get("adjustment_mode") != "none"
         or snapshot.get("row_count") != restored.row_count
+        or snapshot.get("corporate_action_evidence")
+        != restored.corporate_action_evidence
         or not {
             "historical_availability_unverified",
             "unadjusted_corporate_actions_unmodeled",

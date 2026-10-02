@@ -141,6 +141,24 @@ def test_strategy_promotion_readiness_blocks_legacy_result_without_research_gate
     assert row.missing_requirements == ["research_evidence_gate_pass"]
 
 
+def test_legacy_receipt_cannot_reuse_a_previously_passing_research_gate():
+    result = _passed_backtest_row("dual_ma")
+    metrics = json.loads(result["metrics_json"])
+    metrics["dataset_snapshot"] = {
+        "market_data_binding": {"schema_version": "karkinos.market_data_binding.v1"}
+    }
+    result["metrics_json"] = json.dumps(metrics)
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [result],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+    )
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+    assert row.is_promotable is False
+    assert row.missing_requirements == ["research_evidence_gate_pass"]
+
+
 def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_blocks():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),

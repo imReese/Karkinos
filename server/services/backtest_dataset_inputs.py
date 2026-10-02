@@ -120,6 +120,11 @@ def load_dataset_backtest_inputs(root: Path, request):
             "Historical backfill is a frozen research snapshot, not proof of historical availability.",
             "Unadjusted prices do not model corporate-action cash flows or total returns.",
         ],
+        **(
+            {"corporate_action_evidence": restored.corporate_action_evidence}
+            if restored.corporate_action_evidence is not None
+            else {}
+        ),
     }
     return instruments, handlers, binding
 

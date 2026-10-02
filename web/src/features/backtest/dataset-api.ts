@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient, postJson } from '../../shared/api/client';
+import type { CorporateActionEvidence } from './api-contracts';
 
 export type PublishedDataset = {
   dataset_id: string;
@@ -12,6 +13,7 @@ export type PublishedDataset = {
   price_basis: string;
   point_in_time_verified: boolean;
   cross_source_verified?: boolean;
+  corporate_action_evidence?: CorporateActionEvidence | null;
 };
 
 export type VerifiedDatasetJob = {
@@ -64,6 +66,44 @@ export function usePrepareDataset() {
   });
 }
 
+export function useCollectDatasetCorporateActions() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      datasetId,
+      refresh,
+    }: {
+      datasetId: string;
+      refresh: boolean;
+    }) =>
+      postJson<PublishedDataset>(
+        `/api/backtest/datasets/${encodeURIComponent(datasetId)}/corporate-actions`,
+        { refresh },
+      ),
+    retry: false,
+    onSuccess: (dataset) => {
+      client.setQueryData<DatasetStatus>(
+        ['published-research-datasets'],
+        (current) =>
+          current
+            ? {
+                ...current,
+                datasets: [
+                  dataset,
+                  ...current.datasets.filter(
+                    (item) => item.dataset_id !== dataset.dataset_id,
+                  ),
+                ],
+              }
+            : current,
+      );
+      void client.invalidateQueries({
+        queryKey: ['published-research-datasets'],
+      });
+    },
+  });
+}
+
 export function usePrepareVerifiedDatasetJobs() {
   return useMutation({
     mutationFn: (payload: VerifiedDatasetRange & { reobserve?: boolean }) =>
@@ -104,6 +144,22 @@ export function datasetErrorMessage(error: unknown, zh: boolean): string {
       : `The ${year} exchange calendar is not verified. Sync and verify it on the Market page before preparing this range.`;
   }
   const messages: Record<string, [string, string]> = {
+    dataset_corporate_actions_stock_only: [
+      '分红送转证据目前仅支持股票数据集，ETF 等品种尚不支持。',
+      'Dividend and bonus-share evidence currently supports stock datasets only; ETFs and other instruments are not supported.',
+    ],
+    tushare_token_missing: [
+      '尚未配置 Tushare Token。请完成数据服务配置后重新采集。',
+      'A Tushare token is required. Configure the data service before trying again.',
+    ],
+    dataset_corporate_actions_collection_failed: [
+      '分红送转证据采集失败。请检查 Tushare 权限与连接后重试；当前数据集仍保留。',
+      'Could not collect dividend and bonus-share evidence. Check Tushare access and connectivity before retrying. The selected dataset is preserved.',
+    ],
+    dataset_corporate_actions_dataset_unreadable: [
+      '无法读取所选数据集，请重新选择可用数据集后采集。',
+      'The selected dataset cannot be read. Select an available dataset before collecting evidence.',
+    ],
     verified_daily_market_trading_dates_unavailable: [
       '所选区间没有已核验且已收盘的交易日，请检查交易日历与日期。',
       'No verified closed trading sessions are available in this range.',

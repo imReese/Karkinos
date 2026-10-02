@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from decimal import Decimal
 
@@ -122,6 +124,46 @@ def _receipt_inputs(tmp_path, *, missing_day=None):
         initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
     )
     return store, selection, snapshot
+
+
+def test_receipt_history_still_replays_but_new_results_declare_price_return_limits(
+    tmp_path,
+):
+    store, _, snapshot = _receipt_inputs(tmp_path)
+    assert snapshot["research_use"] == "exploratory_backtest"
+    assert snapshot["price_basis"] == "unadjusted"
+    assert snapshot["point_in_time_verified"] is False
+    assert "unadjusted_corporate_actions_unmodeled" in {
+        item["code"] for item in snapshot["research_limitations"]
+    }
+    # Persisted v1 receipt reports predate these annotations. Their original
+    # content address remains replayable; current admission is checked separately.
+    legacy = {
+        key: value
+        for key, value in snapshot.items()
+        if key
+        not in {
+            "snapshot_id",
+            "research_use",
+            "price_basis",
+            "point_in_time_verified",
+            "research_limitations",
+        }
+    }
+    legacy["snapshot_id"] = (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(legacy, sort_keys=True, default=str, ensure_ascii=False).encode()
+        ).hexdigest()
+    )
+    assert legacy["snapshot_id"] != snapshot["snapshot_id"]
+    for value in (legacy, snapshot):
+        assert (
+            verify_backtest_dataset_snapshot_replay(value, store_root=store._root)[
+                "status"
+            ]
+            == "pass"
+        )
 
 
 def test_sealed_replay_binds_complete_input_without_rewriting_research_prefix(tmp_path):

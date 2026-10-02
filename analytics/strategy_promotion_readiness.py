@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from analytics.dataset_snapshot import dataset_research_use
 from analytics.strategy_validation_matrix import build_strategy_validation_matrix
 
 _DIVERGENCE_PASS_STATUSES = {
@@ -258,7 +259,11 @@ def _research_evidence_gate_statuses(
     for strategy_id, row in latest.items():
         metrics = _json_object(row.get("metrics_json"))
         snapshot = _json_object(metrics.get("dataset_snapshot"))
-        if "research_use" in snapshot or snapshot.get("immutable_dataset_id"):
+        if (
+            "research_use" in snapshot
+            or snapshot.get("immutable_dataset_id")
+            or dataset_research_use(snapshot) is not None
+        ):
             statuses[strategy_id] = "blocked"
             continue
         bundle = _json_object(metrics.get("research_evidence_bundle"))

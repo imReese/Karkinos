@@ -11,6 +11,7 @@ import {
   type VerifiedDatasetRange,
 } from '../dataset-api';
 import { useBacktestPage } from './backtest-page-context';
+import { DatasetCorporateActions } from './dataset-corporate-actions';
 
 export function ResearchDatasetPanel() {
   const {
@@ -32,6 +33,7 @@ export function ResearchDatasetPanel() {
     jobs: VerifiedDatasetJob[];
   } | null>(null);
   const [refreshingJobs, setRefreshingJobs] = useState(false);
+  const [collectingActions, setCollectingActions] = useState(false);
   const datasets = usePublishedDatasets(open);
   const prepare = usePrepareDataset();
   const prepareVerified = usePrepareVerifiedDatasetJobs();
@@ -64,6 +66,7 @@ export function ResearchDatasetPanel() {
     prepare.isPending ||
     prepareVerified.isPending ||
     publishVerified.isPending ||
+    collectingActions ||
     refreshingJobs;
   useEffect(() => {
     setDatasetPreparing(busy);
@@ -188,6 +191,13 @@ export function ResearchDatasetPanel() {
             Dataset: {selectedDataset.dataset_id}
           </p>
         ) : null}
+        <DatasetCorporateActions
+          dataset={selectedDataset}
+          locale={locale}
+          busy={busy}
+          onSelect={selectDataset}
+          onPendingChange={setCollectingActions}
+        />
         <label className="flex items-start gap-2 text-xs leading-5">
           <input
             type="checkbox"
