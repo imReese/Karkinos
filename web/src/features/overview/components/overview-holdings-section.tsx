@@ -24,6 +24,7 @@ const PREFERRED_ASSET_CLASS_ORDER = [
 ];
 
 export type OverviewHoldingSortKey =
+  | 'default'
   | 'market_value'
   | 'today_change_pct'
   | 'today_change'
@@ -143,7 +144,7 @@ export function OverviewHoldingsSection({
   const { locale } = usePreferences();
   const labels = overviewPresentation[locale];
   const [selectedAssetClass, setSelectedAssetClass] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<OverviewHoldingSortKey>('market_value');
+  const [sortBy, setSortBy] = useState<OverviewHoldingSortKey>('default');
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
 
   const assetClassCounts = useMemo(() => {
@@ -183,13 +184,23 @@ export function OverviewHoldingsSection({
             return (raw || 'unknown').trim().toLowerCase() === activeCategory;
           });
 
+    const effectiveSortBy = sortBy === 'default' ? 'market_value' : sortBy;
+    const effectiveDirection = sortBy === 'default' ? 'desc' : sortDirection;
     return list.sort((left, right) => {
-      if (sortBy === 'symbol') {
+      if (effectiveSortBy === 'symbol') {
         const cmp = left.symbol.localeCompare(right.symbol);
-        return sortDirection === 'desc' ? -cmp : cmp;
+        return effectiveDirection === 'desc' ? -cmp : cmp;
       }
-      const leftVal = resolvePositionSortValue(left, sortBy, weightBySymbol);
-      const rightVal = resolvePositionSortValue(right, sortBy, weightBySymbol);
+      const leftVal = resolvePositionSortValue(
+        left,
+        effectiveSortBy,
+        weightBySymbol,
+      );
+      const rightVal = resolvePositionSortValue(
+        right,
+        effectiveSortBy,
+        weightBySymbol,
+      );
       const leftMissing = !Number.isFinite(leftVal);
       const rightMissing = !Number.isFinite(rightVal);
       if (leftMissing && rightMissing) {
@@ -197,7 +208,7 @@ export function OverviewHoldingsSection({
       }
       if (leftMissing) return 1;
       if (rightMissing) return -1;
-      if (sortDirection === 'desc') {
+      if (effectiveDirection === 'desc') {
         if (rightVal !== leftVal) return rightVal - leftVal;
       } else {
         if (leftVal !== rightVal) return leftVal - rightVal;
@@ -274,7 +285,7 @@ export function OverviewHoldingsSection({
 
           <div
             data-testid="overview-holdings-sort-control"
-            className="flex items-center gap-1.5"
+            className="flex items-center gap-1.5 md:hidden"
           >
             <span className="app-type-micro font-medium text-[var(--app-text-tertiary)]">
               {labels.sortBy}:
@@ -282,8 +293,12 @@ export function OverviewHoldingsSection({
             <WorkbenchSelect
               aria-label={labels.sortBy}
               value={sortBy}
-              onChange={(value) => setSortBy(value as OverviewHoldingSortKey)}
+              onChange={(value) => {
+                setSortBy(value as OverviewHoldingSortKey);
+                setSortDirection(value === 'symbol' ? 'asc' : 'desc');
+              }}
               options={[
+                { value: 'default', label: labels.sortDefault },
                 { value: 'market_value', label: labels.sortMarketValue },
                 { value: 'today_change_pct', label: labels.sortTodayPct },
                 { value: 'today_change', label: labels.sortTodayPnl },
@@ -299,6 +314,7 @@ export function OverviewHoldingsSection({
             />
             <button
               type="button"
+              disabled={sortBy === 'default'}
               onClick={() =>
                 setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))
               }
@@ -335,10 +351,10 @@ export function OverviewHoldingsSection({
           assetClassBySymbol={assetClassBySymbol}
           weightBySymbol={weightBySymbol}
           variant="dashboard"
-          sortKey={sortBy}
+          sortKey={sortBy === 'default' ? undefined : sortBy}
           sortDirection={sortDirection}
           onSort={(key, dir) => {
-            setSortBy(key as OverviewHoldingSortKey);
+            setSortBy((key ?? 'default') as OverviewHoldingSortKey);
             if (dir) {
               setSortDirection(dir);
             }

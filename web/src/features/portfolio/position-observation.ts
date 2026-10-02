@@ -11,7 +11,7 @@ export function quoteNeedsReview(status: string | null | undefined) {
 
 function sortValue(
   position: Position,
-  sortBy: PositionSort,
+  sortBy: Exclude<PositionSort, 'default'>,
   allocationBySymbol: Map<string, AllocationItem>,
 ) {
   if (sortBy === 'weight') {
@@ -87,6 +87,7 @@ export function filterAndSortPortfolioPositions({
   evidenceFilter,
   evidenceReviewSymbols,
   sortBy,
+  sortDirection = sortBy === 'symbol' ? 'asc' : 'desc',
 }: {
   positions: Position[];
   allocation: AllocationItem[];
@@ -97,11 +98,15 @@ export function filterAndSortPortfolioPositions({
   evidenceFilter: EvidenceFilter;
   evidenceReviewSymbols: Set<string>;
   sortBy: PositionSort;
+  sortDirection?: 'asc' | 'desc';
 }) {
   const allocationBySymbol = new Map(
     allocation.map((item) => [item.symbol, item]),
   );
   const normalizedSearch = search.trim().toLowerCase();
+  // Cancelling an explicit sort restores the page's original market-value order.
+  const effectiveSortBy = sortBy === 'default' ? 'market_value' : sortBy;
+  const effectiveDirection = sortBy === 'default' ? 'desc' : sortDirection;
 
   return positions
     .filter((position) => {
@@ -139,13 +144,21 @@ export function filterAndSortPortfolioPositions({
       );
     })
     .sort((left, right) => {
-      if (sortBy === 'symbol') {
+      if (effectiveSortBy === 'symbol') {
+        const comparison = left.symbol.localeCompare(right.symbol);
+        return effectiveDirection === 'asc' ? comparison : -comparison;
+      }
+      const leftValue = sortValue(left, effectiveSortBy, allocationBySymbol);
+      const rightValue = sortValue(right, effectiveSortBy, allocationBySymbol);
+      if (
+        leftValue === rightValue ||
+        (!Number.isFinite(leftValue) && !Number.isFinite(rightValue))
+      ) {
         return left.symbol.localeCompare(right.symbol);
       }
-      return (
-        sortValue(right, sortBy, allocationBySymbol) -
-          sortValue(left, sortBy, allocationBySymbol) ||
-        left.symbol.localeCompare(right.symbol)
-      );
+      if (!Number.isFinite(leftValue)) return 1;
+      if (!Number.isFinite(rightValue)) return -1;
+      const comparison = leftValue - rightValue;
+      return effectiveDirection === 'asc' ? comparison : -comparison;
     });
 }

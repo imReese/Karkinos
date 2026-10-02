@@ -34,7 +34,8 @@ export function PortfolioPageController() {
   const [mode, setMode] = useState<PortfolioMode>('account');
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
   const [evidenceFilter, setEvidenceFilter] = useState<EvidenceFilter>('all');
-  const [sortBy, setSortBy] = useState<PositionSort>('market_value');
+  const [sortBy, setSortBy] = useState<PositionSort>('default');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const snapshot = usePortfolioSnapshotQuery();
   const primaryPortfolioQueriesSettled = snapshot.data !== undefined;
   const accountAnalysisEnabled =
@@ -53,7 +54,7 @@ export function PortfolioPageController() {
     search: searchState.q,
     assetClassFilter: searchState.assetClass,
     pnlFilter: searchState.pnl as 'all' | 'winners' | 'losers',
-    state: { mode, quoteFilter, evidenceFilter, sortBy },
+    state: { mode, quoteFilter, evidenceFilter, sortBy, sortDirection },
     snapshot,
     cockpit,
     liveHoldings,
@@ -101,7 +102,19 @@ export function PortfolioPageController() {
     onModeChange: setMode,
     onQuoteFilterChange: setQuoteFilter,
     onEvidenceFilterChange: setEvidenceFilter,
-    onSortByChange: setSortBy,
+    onClearFilters: () => {
+      setQuoteFilter('all');
+      setEvidenceFilter('all');
+      void navigate({
+        to: '/portfolio',
+        search: { q: '', assetClass: 'all', pnl: 'all' },
+        replace: true,
+      });
+    },
+    onSortByChange: (key, direction = key === 'symbol' ? 'asc' : 'desc') => {
+      setSortBy(key);
+      setSortDirection(direction);
+    },
     onRetryCockpit: () => void cockpit.refetch(),
     onRetryLiveHoldings: () => void liveHoldings.refetch(),
     onRetrySnapshot: () => void snapshot.refetch(),

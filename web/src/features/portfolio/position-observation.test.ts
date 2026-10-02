@@ -129,3 +129,20 @@ test('uses explicit evidence-review symbols and preserves nonzero short position
   expect(review).toHaveLength(1);
   expect(review[0]?.quantity).toBe(-20);
 });
+
+test.each(['asc', 'desc'] as const)(
+  'keeps missing values last when sorting %s',
+  (sortDirection) => {
+    const missing = { ...positions[0]!, symbol: '600000', market_value: null };
+    const result = select({
+      positions: [...positions, missing],
+      sortDirection,
+    });
+    expect(result[result.length - 1]?.symbol).toBe('600000');
+    expect(result.slice(0, -1).map((position) => position.symbol)).toEqual(
+      sortDirection === 'asc'
+        ? ['600002', '600001', '018125']
+        : ['018125', '600001', '600002'],
+    );
+  },
+);

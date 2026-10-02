@@ -222,6 +222,10 @@ test('renders sort control and allows sorting and direction toggle', () => {
   // Sort direction toggle button
   const dirBtn = screen.getByRole('button', { name: /降序/ });
   expect(dirBtn).toBeInTheDocument();
+  expect(dirBtn).toBeDisabled();
+  fireEvent.change(screen.getByRole('combobox', { name: '排序' }), {
+    target: { value: 'market_value' },
+  });
 
   // Click to toggle direction to ascending
   fireEvent.click(dirBtn);
@@ -382,6 +386,15 @@ test('sorts positions when clicking table column headers directly', () => {
   // Click [幅] again to toggle to ascending: 600519 (+1.88%) < 000001.OF (+3.85%)
   fireEvent.click(screen.getByTestId('positions-sort-today-pct'));
   expect(getVisibleSymbols()).toEqual(['600519', '000001.OF']);
+
+  // Third click cancels the explicit sort and restores the default order.
+  fireEvent.click(screen.getByTestId('positions-sort-today-pct'));
+  expect(getVisibleSymbols()).toEqual(['600519', '000001.OF']);
+  expect(screen.getByRole('combobox', { name: '排序' })).toHaveValue('default');
+  expect(screen.getByTestId('positions-sort-today-pct')).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
 
   // Click [额] button in 今日涨跌 column header:
   // 600519 (+3000) > 000001.OF (+50)

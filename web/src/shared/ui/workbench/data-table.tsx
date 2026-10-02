@@ -1,9 +1,4 @@
-import {
-  useMemo,
-  type KeyboardEvent,
-  type MouseEvent,
-  type ReactNode,
-} from 'react';
+import { useMemo, type MouseEvent, type ReactNode } from 'react';
 
 import {
   flexRender,
@@ -11,6 +6,7 @@ import {
   useReactTable,
   type ColumnDef,
   type RowData,
+  type SortingState,
 } from '@tanstack/react-table';
 
 import { cn } from '../../utils/cn';
@@ -23,6 +19,7 @@ export function DataTable<TData extends RowData>({
   getRowId,
   rowLabel,
   rowHref,
+  sorting = [],
   rowTestId,
   scrollTestId,
   tableTestId,
@@ -35,6 +32,7 @@ export function DataTable<TData extends RowData>({
   getRowId?: (row: TData, index: number) => string;
   rowLabel?: (row: TData) => string;
   rowHref?: (row: TData) => string;
+  sorting?: SortingState;
   rowTestId?: (row: TData) => string;
   scrollTestId?: string;
   tableTestId?: string;
@@ -47,6 +45,8 @@ export function DataTable<TData extends RowData>({
     columns: stableColumns,
     getCoreRowModel: getCoreRowModel(),
     getRowId,
+    state: { sorting },
+    manualSorting: true,
   });
 
   return (
@@ -78,6 +78,13 @@ export function DataTable<TData extends RowData>({
                     <th
                       key={header.id}
                       scope="col"
+                      aria-sort={
+                        header.column.getIsSorted() === 'asc'
+                          ? 'ascending'
+                          : header.column.getIsSorted() === 'desc'
+                            ? 'descending'
+                            : undefined
+                      }
                       className="h-8 whitespace-nowrap border-b border-[var(--app-divider)] px-3 font-semibold"
                     >
                       {header.isPlaceholder
@@ -94,29 +101,35 @@ export function DataTable<TData extends RowData>({
             <tbody className="divide-y divide-[var(--app-divider)] tabular-nums">
               {table.getRowModel().rows.map((row) => {
                 const href = rowHref?.(row.original);
-                const openRow = () => {
-                  if (href) {
-                    window.location.assign(href);
-                  }
-                };
                 const handleClick = (
                   event: MouseEvent<HTMLTableRowElement>,
                 ) => {
                   if (
                     href &&
+                    !event.defaultPrevented &&
+                    !window.getSelection()?.toString() &&
+                    (event.button === 0 || event.button === 1) &&
                     !(event.target as HTMLElement).closest(
-                      'a,button,input,select,textarea',
+                      'a,button,input,select,textarea,[role="button"],[contenteditable="true"]',
                     )
                   ) {
-                    openRow();
-                  }
-                };
-                const handleKeyDown = (
-                  event: KeyboardEvent<HTMLTableRowElement>,
-                ) => {
-                  if (href && (event.key === 'Enter' || event.key === ' ')) {
-                    event.preventDefault();
-                    openRow();
+                    if (
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.button === 1
+                    ) {
+                      window.open(href, '_blank', 'noopener,noreferrer');
+                      return;
+                    }
+                    if (event.altKey) return;
+                    // Reuse the cell link's router handler for ordinary row clicks.
+                    const link = Array.from(
+                      event.currentTarget.querySelectorAll<HTMLAnchorElement>(
+                        'a[href]',
+                      ),
+                    ).find((anchor) => anchor.getAttribute('href') === href);
+                    link?.click();
                   }
                 };
                 return (
@@ -124,9 +137,8 @@ export function DataTable<TData extends RowData>({
                     key={row.id}
                     data-testid={rowTestId?.(row.original)}
                     aria-label={rowLabel?.(row.original)}
-                    tabIndex={href ? 0 : undefined}
                     onClick={handleClick}
-                    onKeyDown={handleKeyDown}
+                    onAuxClick={handleClick}
                     className={cn(
                       'h-9 text-[var(--app-text)] hover:bg-[var(--app-accent-bg)]',
                       href && 'cursor-pointer',

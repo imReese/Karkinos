@@ -12,7 +12,7 @@ export type PositionsTableProps = {
   onOpenPosition?: (symbol: string) => void;
   sortKey?: string;
   sortDirection?: 'asc' | 'desc';
-  onSort?: (key: string, direction?: 'asc' | 'desc') => void;
+  onSort?: (key: string | undefined, direction?: 'asc' | 'desc') => void;
 };
 
 export type PositionsTableModel = {
@@ -25,7 +25,7 @@ export type PositionsTableModel = {
   showHistoryColumns: boolean;
   sortKey?: string;
   sortDirection?: 'asc' | 'desc';
-  onSort?: (key: string, direction?: 'asc' | 'desc') => void;
+  onSort?: (key: string | undefined, direction?: 'asc' | 'desc') => void;
 };
 
 export function buildPositionsTableModel({
