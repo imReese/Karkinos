@@ -2,12 +2,27 @@ from __future__ import annotations
 
 import pytest
 
+from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    ShadowResearchPolicy,
+)
 from server.services.ai_shadow_research_automation import (
     qualification_allows_new_research,
 )
 from server.services.ai_shadow_research_qualification_support import (
     qualification_selection,
 )
+
+
+def _account_bound_policy() -> ShadowResearchPolicy:
+    return ShadowResearchPolicy(
+        enabled=True,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        require_complete_account_evidence=True,
+        authorization=SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
+    )
 
 
 def _blocked_candidate(*blockers: str) -> dict:
@@ -63,13 +78,16 @@ def test_quality_only_qualification_failure_allows_another_paid_research_batch()
                 "research_retry": retry,
             },
         },
+        policy=_account_bound_policy(),
         has_promoted_strategy=False,
     )
 
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
-def test_systemic_qualification_failure_pauses_paid_research_until_fixed() -> None:
+def test_systemic_qualification_failure_pauses_account_bound_research_until_fixed() -> (
+    None
+):
     terminal = qualification_selection(
         qualification_run_id="qualification-run-1",
         source_run_id="source-run-1",
@@ -99,13 +117,14 @@ def test_systemic_qualification_failure_pauses_paid_research_until_fixed() -> No
                 "research_retry": retry,
             },
         },
+        policy=_account_bound_policy(),
         has_promoted_strategy=False,
     )
 
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
-def test_unknown_or_operational_qualification_blockers_do_not_spend_provider_budget() -> (
+def test_unknown_or_operational_qualification_blockers_pause_account_bound_research() -> (
     None
 ):
     assert qualification_allows_new_research(
@@ -114,6 +133,7 @@ def test_unknown_or_operational_qualification_blockers_do_not_spend_provider_bud
             "failure_code": "qualification_verified_source_backlog_empty",
             "blockers": ["qualification_verified_source_backlog_empty"],
         },
+        policy=_account_bound_policy(),
         has_promoted_strategy=False,
     )
     assert not qualification_allows_new_research(
@@ -122,6 +142,7 @@ def test_unknown_or_operational_qualification_blockers_do_not_spend_provider_bud
             "failure_code": "qualification_reviewed_fee_schedule_drift",
             "blockers": ["qualification_reviewed_fee_schedule_drift"],
         },
+        policy=_account_bound_policy(),
         has_promoted_strategy=False,
     )
     assert not qualification_allows_new_research(
@@ -132,19 +153,65 @@ def test_unknown_or_operational_qualification_blockers_do_not_spend_provider_bud
                 "blockers": ["no_candidate_passed_account_qualification"],
             },
         },
+        policy=_account_bound_policy(),
         has_promoted_strategy=False,
     )
 
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
-def test_completed_qualification_pauses_research_until_winner_is_promoted() -> None:
+def test_completed_qualification_pauses_account_bound_research_until_promotion() -> (
+    None
+):
     result = {"status": "completed", "run": {"status": "completed"}}
     assert not qualification_allows_new_research(
         result,
+        policy=_account_bound_policy(),
         has_promoted_strategy=False,
     )
     assert qualification_allows_new_research(
         result,
+        policy=_account_bound_policy(),
+        has_promoted_strategy=True,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.parametrize(
+    "result",
+    [
+        None,
+        {"status": "completed"},
+        {"status": "deferred"},
+        {"status": "failed"},
+        {
+            "status": "blocked",
+            "blockers": ["qualification_account_truth_unavailable"],
+        },
+        {
+            "status": "blocked",
+            "blockers": ["qualification_reviewed_fee_schedule_drift"],
+        },
+    ],
+)
+def test_authorized_normalized_research_is_independent_of_account_qualification(
+    result,
+) -> None:
+    policy = ShadowResearchPolicy(
+        enabled=True,
+        authorization=SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    )
+    assert qualification_allows_new_research(
+        result, policy=policy, has_promoted_strategy=False
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_disabled_policy_cannot_enqueue_research_after_qualification() -> None:
+    assert not qualification_allows_new_research(
+        {"status": "completed"},
+        policy=ShadowResearchPolicy(),
         has_promoted_strategy=True,
     )

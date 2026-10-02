@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
@@ -12,7 +14,13 @@ from server.composition.ai_application_services import (
 from server.composition.ai_shadow_research_automation import (
     initialize_ai_shadow_research_qualification_persistence,
 )
-from server.contracts.ai_shadow_research_automation import ShadowResearchPolicy
+from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    SHADOW_RESEARCH_POLICY_ID,
+    ShadowResearchPolicy,
+)
 from server.db import AppDatabase
 from server.dependencies import AppState
 from server.http.ai_shadow_research_qualification import create_router
@@ -36,6 +44,27 @@ async def _stop_loop(_: float) -> None:
 
 async def _activation_ready() -> None:
     return None
+
+
+def _loop_state(tmp_path, policy: ShadowResearchPolicy) -> AppState:
+    state = AppState()
+    state.db = AppDatabase(tmp_path / "loop.db")
+    state.db.init_sync()
+    state.db.upsert_automation_policy_sync(
+        policy_id=SHADOW_RESEARCH_POLICY_ID,
+        payload=policy.to_dict(),
+        updated_by=policy.updated_by,
+    )
+    return state
+
+
+def _account_bound_policy() -> ShadowResearchPolicy:
+    return ShadowResearchPolicy(
+        enabled=True,
+        research_capital_mode=SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        require_complete_account_evidence=True,
+        authorization=SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
+    )
 
 
 @pytest.mark.unit
@@ -361,9 +390,10 @@ def test_status_requires_exact_verified_current_pair_for_qualification_run(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_background_loop_checks_provider_free_qualification_before_enqueue(
+async def test_background_loop_blocks_account_bound_research_on_account_failure(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    tmp_path,
 ) -> None:
     from server.services import ai_shadow_research_automation as runtime
 
@@ -401,7 +431,7 @@ async def test_background_loop_checks_provider_free_qualification_before_enqueue
 
     with pytest.raises(_StopLoop):
         await runtime.run_ai_shadow_research_automation_loop(
-            state=AppState(),
+            state=_loop_state(tmp_path, _account_bound_policy()),
             qualification_service_builder=build_qualification,
             job_scheduler_builder=build_scheduler,
             interval_seconds=300,
@@ -419,6 +449,7 @@ async def test_background_loop_checks_provider_free_qualification_before_enqueue
 @pytest.mark.asyncio
 async def test_background_loop_enqueues_when_new_research_can_fix_qualification(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from server.services import ai_shadow_research_automation as runtime
 
@@ -448,7 +479,7 @@ async def test_background_loop_enqueues_when_new_research_can_fix_qualification(
 
     with pytest.raises(_StopLoop):
         await runtime.run_ai_shadow_research_automation_loop(
-            state=AppState(),
+            state=_loop_state(tmp_path, _account_bound_policy()),
             qualification_service_builder=lambda: QualificationService(),
             job_scheduler_builder=lambda: JobScheduler(),
             interval_seconds=300,
@@ -459,6 +490,84 @@ async def test_background_loop_enqueues_when_new_research_can_fix_qualification(
         "scheduler:enqueue",
         "sleep:300",
     ]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.trading_safety
+@pytest.mark.parametrize(
+    "qualification_status", ["blocked", "completed", "deferred", "raises"]
+)
+@pytest.mark.parametrize("policy_status", ["authorized", "disabled", "invalid"])
+async def test_normalized_background_admission_uses_policy_and_durable_scheduler(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    qualification_status: str,
+    policy_status: str,
+) -> None:
+    from server.config import AIProviderConfig, ServerConfig
+    from server.persistence.ai_shadow_research_worker_jobs import (
+        AiShadowResearchWorkerJobStore,
+    )
+    from server.services import ai_shadow_research_automation as runtime
+    from server.services.ai_shadow_research_job_scheduler import (
+        AiShadowResearchJobScheduler,
+    )
+    from server.services.trading_controls import TradingControlState
+
+    policy = ShadowResearchPolicy(
+        enabled=policy_status != "disabled",
+        authorization=SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    )
+    state = _loop_state(tmp_path, policy)
+    db = state.require_database()
+    if policy_status == "invalid":
+        db.upsert_automation_policy_sync(
+            policy_id=SHADOW_RESEARCH_POLICY_ID,
+            payload={**policy.to_dict(), "authorization": "unapproved"},
+        )
+    state.config = ServerConfig(
+        ai=AIProviderConfig(
+            enabled=True,
+            provider="deepseek",
+            model="deepseek-chat",
+            base_url="https://api.deepseek.com",
+        )
+    )
+    state.trading_controls = TradingControlState(db=db)
+    jobs = AiShadowResearchWorkerJobStore(db.path)
+    scheduler = AiShadowResearchJobScheduler(
+        state=state,
+        store=jobs,
+        now=lambda: datetime(2026, 9, 4, 18, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    class QualificationService:
+        async def run_once(self) -> dict[str, Any]:
+            if qualification_status == "raises":
+                raise RuntimeError("account evidence unavailable")
+            return {
+                "status": qualification_status,
+                "blockers": ["qualification_account_truth_unavailable"]
+                if qualification_status == "blocked"
+                else [],
+            }
+
+    monkeypatch.setattr(runtime, "wait_for_release_activation", _activation_ready)
+    monkeypatch.setattr(runtime.asyncio, "sleep", _stop_loop)
+    with pytest.raises(_StopLoop):
+        await runtime.run_ai_shadow_research_automation_loop(
+            state=state,
+            qualification_service_builder=QualificationService,
+            job_scheduler_builder=lambda: scheduler,
+        )
+    stored = jobs.list_recent(limit=10)
+    assert len(stored) == (1 if policy_status == "authorized" else 0)
+    if stored:
+        assert stored[0]["status"] == "pending"
+        assert stored[0]["payload"]["capital_authority_granted"] is False
+        assert stored[0]["payload"]["broker_submission_enabled"] is False
+    assert db.list_strategy_promotion_states_sync() == []
 
 
 @pytest.mark.unit

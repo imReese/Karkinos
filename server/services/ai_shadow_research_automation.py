@@ -200,16 +200,20 @@ _QUALIFICATION_BLOCKERS_THAT_JUSTIFY_NEW_RESEARCH = {
 def qualification_allows_new_research(
     result: Mapping[str, Any] | None,
     *,
+    policy: ShadowResearchPolicy,
     has_promoted_strategy: bool,
 ) -> bool:
-    """Allow provider work only when new research can resolve the current state.
+    """Keep account qualification outside normalized research admission.
 
-    Unknown, stale-account, fee, reconciliation, artifact, and other operational
-    blockers fail closed. A completed qualification pauses new provider work
-    until the human-reviewed winner is promoted; once an incumbent paper-shadow
-    strategy exists, daily improvement research may continue.
+    The scheduler and worker still enforce research policy, input evidence,
+    provider windows, and budgets. Legacy account-bound research retains its
+    qualification throttle because it consumes account and reviewed-fee facts.
     """
 
+    if not policy.enabled:
+        return False
+    if policy.research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL:
+        return True
     if not isinstance(result, Mapping):
         return False
     status = str(result.get("status") or "")
@@ -268,7 +272,7 @@ async def run_ai_shadow_research_automation_loop(
     qualification_service_builder: Callable[[], Any] | None = None,
     interval_seconds: float = 300.0,
 ) -> None:
-    """Run provider-free qualification before deciding whether AI work is useful."""
+    """Keep research policy admission separate from account qualification results."""
     qualification_service: Any | None = None
     job_scheduler: Any | None = None
     while True:
@@ -305,10 +309,27 @@ async def run_ai_shadow_research_automation_loop(
                     exc_info=True,
                 )
 
-        may_enqueue = not qualification_checked or qualification_allows_new_research(
-            qualification_result,
-            has_promoted_strategy=_has_promoted_paper_shadow_strategy(state),
-        )
+        try:
+            policy = ShadowResearchPolicy.from_mapping(
+                state.require_database().get_automation_policy_sync(
+                    SHADOW_RESEARCH_POLICY_ID
+                )
+            )
+            may_enqueue = policy.enabled and (
+                not qualification_checked
+                or qualification_allows_new_research(
+                    qualification_result,
+                    policy=policy,
+                    has_promoted_strategy=_has_promoted_paper_shadow_strategy(state),
+                )
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            may_enqueue = False
+            logger.warning(
+                "Shadow research policy admission failed closed", exc_info=True
+            )
         if may_enqueue:
             try:
                 if job_scheduler is None:

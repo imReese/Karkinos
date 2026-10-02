@@ -9,6 +9,13 @@
 | Fast research | [vectorbt](https://github.com/polakowo/vectorbt) | parameter exploration, comparison, analysis ergonomics |
 | Execution/accounting semantics | [NautilusTrader](https://github.com/nautechsystems/nautilus_trader) | Order/Fill lifecycle, adapters, positions, deterministic runtime semantics |
 
+Research/simulation authority design also consults
+[LEAN's Algorithm Framework overview](https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/overview)
+for the distinction between predictions, portfolio targets, risk and execution,
+and [scikit-learn's evaluation guidance](https://scikit-learn.org/stable/modules/cross_validation.html)
+for separation of iterative validation from final test data. Karkinos retains its
+own publication authority and independent Risk Decision semantics.
+
 ## Reference rules
 
 - Extract domain semantics and trade-offs, not project structure by default.
