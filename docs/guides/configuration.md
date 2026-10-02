@@ -105,6 +105,12 @@ KARKINOS_TUSHARE_TOKEN
 
 Token 写入 `.env`，不写入 `config.json`。
 
+全市场股票池同步会冻结适配器实际返回的当前存续股票列表，同时记录采集
+开始、完成和可用时间。股票池的 `trade_date` 只确定行情回补窗口，不能把
+今天获取的列表当作该历史日期的股票池。同步结果显示这些时间及历史成员
+资格未核验的限制。同一天的新观测保留为独立版本，研究重放读取原快照 ID；
+旧快照没有时间证据时，其可用时间保持未知，不从数据库写入时间推测。
+
 回测页选定股票 Dataset 后，可显式采集分红送转记录。该操作使用 TuShare
 `dividend` 接口和上述 Token；需要对应的数据访问权限。也可调用
 `POST /api/backtest/datasets/{dataset_id}/corporate-actions`，请求体为

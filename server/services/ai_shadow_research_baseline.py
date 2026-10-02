@@ -114,8 +114,11 @@ class AiShadowResearchBaselineMixin:
                 == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
                 else seed_initial_cash
             )
-        market_universe_snapshot = self._data_store.get_market_universe_snapshot(
-            trade_date=expected_market_date
+        market_universe_snapshot = _load_baseline_universe(
+            store=self._data_store,
+            seed=seed,
+            expected_dataset_snapshot_id=expected_dataset_snapshot_id,
+            expected_market_date=expected_market_date,
         )
         market_date = str((market_universe_snapshot or {}).get("trade_date") or "")
         if expected_market_date is not None and market_date != expected_market_date:
@@ -410,6 +413,39 @@ class AiShadowResearchBaselineMixin:
             cost_model_reference=cost_model_reference,
             fee_schedule_evidence=fee_schedule_evidence,
         )
+
+
+def _load_baseline_universe(
+    *,
+    store: Any,
+    seed: Mapping[str, Any],
+    expected_dataset_snapshot_id: str | None,
+    expected_market_date: str | None,
+) -> dict[str, Any] | None:
+    """Replay a bound universe by ID, independent of subsequent observations."""
+    snapshot_id = None
+    if expected_dataset_snapshot_id is not None:
+        metrics = shadow_research_json_object(seed.get("metrics_json"))
+        dataset = shadow_research_json_object(metrics.get("dataset_snapshot"))
+        if dataset.get("snapshot_id") != expected_dataset_snapshot_id:
+            raise ShadowResearchRejected("baseline_dataset_snapshot_replay_mismatch")
+        truth = shadow_research_json_object(metrics.get("market_universe_truth"))
+        snapshot_id = truth.get("market_universe_snapshot_id")
+        if not isinstance(snapshot_id, str) or not snapshot_id:
+            # Legacy reports remain readable; absent membership identity cannot
+            # silently bind a later list during qualification replay.
+            raise ShadowResearchRejected("baseline_universe_replay_binding_missing")
+    try:
+        if snapshot_id is None:
+            return store.get_market_universe_snapshot(trade_date=expected_market_date)
+        snapshot = store.get_market_universe_snapshot(
+            snapshot_id=snapshot_id, trade_date=expected_market_date
+        )
+    except ValueError as exc:
+        raise ShadowResearchRejected(str(exc)) from exc
+    if snapshot is None:
+        raise ShadowResearchRejected("baseline_universe_replay_missing")
+    return snapshot
 
 
 def _load_baseline_seed(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -25,6 +25,87 @@ from data.meta_store_connection import connect_meta_sqlite
 from data.meta_store_schema import prepare_meta_database
 
 build_bar_diagnostics = _build_bar_diagnostics
+
+
+def _market_universe_utc(value: datetime, *, field: str) -> str:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
+        raise ValueError(f"market_universe_{field}_timezone_required")
+    try:
+        return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"market_universe_{field}_invalid") from exc
+
+
+def _market_universe_capture_fields(
+    started_at: datetime | None, completed_at: datetime | None
+) -> dict[str, object]:
+    if started_at is None and completed_at is None:
+        return {}
+    if started_at is None or completed_at is None:
+        raise ValueError("market_universe_capture_times_incomplete")
+    started = _market_universe_utc(started_at, field="capture_started_at")
+    completed = _market_universe_utc(completed_at, field="capture_completed_at")
+    if completed < started:
+        raise ValueError("market_universe_capture_completed_before_started")
+    return {
+        "capture_started_at": started,
+        "capture_completed_at": completed,
+        "available_at": completed,
+        "availability_basis": "capture_completed_at",
+        "observation_basis": "adapter_response",
+        "membership_basis": "current_active_stock_master",
+        "trade_date_role": "daily_bar_window_end",
+        "historical_membership_verified": False,
+    }
+
+
+def _market_universe_snapshot_id(core: dict[str, object]) -> str:
+    canonical = json.dumps(
+        core, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _verified_market_universe_row(row: sqlite3.Row) -> dict[str, object]:
+    """Check content identity and denormalized lookup columns before using a row."""
+    try:
+        payload = json.loads(row["snapshot_json"])
+        if not isinstance(payload, dict):
+            raise ValueError("payload_not_object")
+        core = dict(payload)
+        snapshot_id = core.pop("snapshot_id")
+        if snapshot_id != row[
+            "snapshot_id"
+        ] or snapshot_id != _market_universe_snapshot_id(core):
+            raise ValueError("fingerprint_mismatch")
+        for field in ("trade_date", "provider_name", "member_count"):
+            if payload.get(field) != row[field]:
+                raise ValueError("index_binding_mismatch")
+        members = payload.get("members")
+        if not isinstance(members, list) or len(members) != payload["member_count"]:
+            raise ValueError("member_count_mismatch")
+        time_fields = ("capture_started_at", "capture_completed_at", "available_at")
+        if payload.get("schema_version") == "karkinos.market_universe_snapshot.v1":
+            if any(row[field] is not None or field in payload for field in time_fields):
+                raise ValueError("legacy_availability_unknown")
+        elif payload.get("schema_version") == "karkinos.market_universe_snapshot.v2":
+            expected = _market_universe_capture_fields(
+                datetime.fromisoformat(payload["capture_started_at"]),
+                datetime.fromisoformat(payload["capture_completed_at"]),
+            )
+            if any(payload.get(field) != value for field, value in expected.items()):
+                raise ValueError("capture_binding_mismatch")
+            if any(row[field] != payload[field] for field in time_fields):
+                raise ValueError("capture_index_binding_mismatch")
+        else:
+            raise ValueError("schema_unsupported")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("market_universe_snapshot_integrity_invalid") from exc
+    return payload
 
 
 class DataStore(MarketDailyIngestionMixin):
@@ -351,8 +432,15 @@ class DataStore(MarketDailyIngestionMixin):
         trade_date: str,
         provider_name: str,
         members: list[dict[str, object]],
+        capture_started_at: datetime | None = None,
+        capture_completed_at: datetime | None = None,
     ) -> dict[str, object]:
-        """Persist one immutable, content-addressed market-universe snapshot."""
+        """Append an adapter observation, or preserve a time-unknown legacy snapshot.
+
+        ``trade_date`` identifies the requested daily-bar window, not historical
+        membership. New captures bind both real aware instants. Omitting both
+        preserves the v1 bytes and per-date/provider legacy conflict behavior.
+        """
         normalized_date = str(trade_date).strip()
         normalized_provider = str(provider_name).strip()
         if not normalized_date or not normalized_provider or not members:
@@ -369,8 +457,13 @@ class DataStore(MarketDailyIngestionMixin):
             normalized_members
         ):
             raise ValueError("market_universe_member_duplicate")
+        capture = _market_universe_capture_fields(
+            capture_started_at, capture_completed_at
+        )
         core = {
-            "schema_version": "karkinos.market_universe_snapshot.v1",
+            "schema_version": "karkinos.market_universe_snapshot.v2"
+            if capture
+            else "karkinos.market_universe_snapshot.v1",
             "trade_date": normalized_date,
             "provider_name": normalized_provider,
             "asset_scope": ["stock"],
@@ -381,14 +474,9 @@ class DataStore(MarketDailyIngestionMixin):
             "authorizes_strategy_promotion": False,
             "authorizes_order_creation": False,
             "changes_capital_authority": False,
+            **capture,
         }
-        canonical = json.dumps(
-            core,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        snapshot_id = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        snapshot_id = _market_universe_snapshot_id(core)
         payload = {**core, "snapshot_id": snapshot_id}
         payload_json = json.dumps(
             payload,
@@ -399,23 +487,31 @@ class DataStore(MarketDailyIngestionMixin):
         now = datetime.now().isoformat()
         with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
-                """
-                SELECT * FROM market_universe_snapshots
-                WHERE trade_date = ? AND provider_name = ?
-                """,
-                (normalized_date, normalized_provider),
+                "SELECT * FROM market_universe_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
             ).fetchone()
+            if existing is None and not capture:
+                existing = conn.execute(
+                    """
+                    SELECT * FROM market_universe_snapshots
+                    WHERE trade_date = ? AND provider_name = ? AND available_at IS NULL
+                    """,
+                    (normalized_date, normalized_provider),
+                ).fetchone()
             if existing is not None:
+                verified = _verified_market_universe_row(existing)
                 if str(existing["snapshot_id"]) != snapshot_id:
                     raise ValueError("market_universe_snapshot_conflict")
-                return json.loads(str(existing["snapshot_json"]))
+                return verified
             conn.execute(
                 """
                 INSERT INTO market_universe_snapshots
                     (snapshot_id, trade_date, provider_name, member_count,
-                     snapshot_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                     snapshot_json, created_at, capture_started_at,
+                     capture_completed_at, available_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     snapshot_id,
@@ -424,6 +520,9 @@ class DataStore(MarketDailyIngestionMixin):
                     len(normalized_members),
                     payload_json,
                     now,
+                    capture.get("capture_started_at"),
+                    capture.get("capture_completed_at"),
+                    capture.get("available_at"),
                 ),
             )
         return payload
@@ -433,8 +532,14 @@ class DataStore(MarketDailyIngestionMixin):
         *,
         trade_date: str | None = None,
         provider_name: str | None = None,
+        snapshot_id: str | None = None,
+        as_of: datetime | None = None,
     ) -> dict[str, object] | None:
-        """Read a provider-bound exact-date or latest immutable universe snapshot."""
+        """Read exact identity or the latest known observation at a real cutoff.
+
+        Legacy rows remain readable by ID/date, but are never eligible for as-of
+        selection. A date-only query retains its daily-bar-window meaning.
+        """
         conditions: list[str] = []
         params: list[str] = []
         if trade_date is not None:
@@ -446,21 +551,56 @@ class DataStore(MarketDailyIngestionMixin):
                 raise ValueError("market_universe_provider_name_invalid")
             conditions.append("provider_name = ?")
             params.append(normalized_provider)
+        if snapshot_id is not None:
+            if not str(snapshot_id).strip():
+                raise ValueError("market_universe_snapshot_id_invalid")
+            conditions.append("snapshot_id = ?")
+            params.append(str(snapshot_id))
+        if as_of is not None:
+            conditions.extend(("available_at IS NOT NULL", "available_at <= ?"))
+            params.append(_market_universe_utc(as_of, field="as_of"))
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        ordering = "available_at DESC, capture_started_at DESC, snapshot_id DESC"
+        if as_of is None:
+            ordering = (
+                "trade_date DESC, available_at DESC, capture_started_at DESC, "
+                "CASE WHEN available_at IS NULL THEN created_at END DESC, snapshot_id DESC"
+            )
         query = """
-            SELECT snapshot_json FROM market_universe_snapshots
+            SELECT * FROM market_universe_snapshots
             {where_clause}
-            ORDER BY trade_date DESC, created_at DESC
+            ORDER BY {ordering}
             LIMIT 1
         """
         with connect_meta_sqlite(self._meta_path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN")
             row = conn.execute(
-                query.format(where_clause=where_clause), tuple(params)
+                query.format(where_clause=where_clause, ordering=ordering),
+                tuple(params),
             ).fetchone()
-        if row is None:
-            return None
-        payload = json.loads(str(row[0]))
-        return payload if isinstance(payload, dict) else None
+            if row is None:
+                return None
+            payload = _verified_market_universe_row(row)
+            if snapshot_id is None and row["available_at"] is not None:
+                peers = conn.execute(
+                    """SELECT * FROM market_universe_snapshots
+                       WHERE trade_date = ? AND provider_name = ?
+                       AND capture_started_at = ? AND capture_completed_at = ?""",
+                    (
+                        row["trade_date"],
+                        row["provider_name"],
+                        row["capture_started_at"],
+                        row["capture_completed_at"],
+                    ),
+                ).fetchall()
+                if len(peers) > 1:
+                    for peer in peers:
+                        _verified_market_universe_row(peer)
+                    # A content hash identifies a response; it cannot decide
+                    # which conflicting response at the same time was newer.
+                    raise ValueError("market_universe_observation_ambiguous")
+            return payload
 
     def _list_bar_frequencies(self) -> list[BarFrequency]:
         bars_root = self._root / "bars"
