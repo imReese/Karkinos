@@ -1,6 +1,14 @@
-import type { CorporateActionEvidence } from './corporate-action-contracts';
+import type {
+  CashDividendAccounting,
+  CorporateActionEvidence,
+  CorporateActionMode,
+} from './corporate-action-contracts';
 
 export type { CorporateActionEvidence } from './corporate-action-contracts';
+export type {
+  CashDividendAccounting,
+  CorporateActionMode,
+} from './corporate-action-contracts';
 
 export type BacktestMetrics = {
   initial_cash: number;
@@ -223,6 +231,7 @@ export type StrategyMetadataSnapshot = {
 
 export type BacktestRunRequest = {
   dataset_id?: string;
+  corporate_action_mode?: CorporateActionMode;
   start_date: string;
   end_date: string;
   initial_cash: number;
@@ -481,6 +490,7 @@ export type BacktestReport = {
   created_at: string;
   config: {
     dataset_id?: string | null;
+    corporate_action_mode?: CorporateActionMode;
     start_date: string;
     end_date: string;
     initial_cash: number;
@@ -492,6 +502,7 @@ export type BacktestReport = {
   };
   metrics: BacktestMetrics;
   metrics_json?: Partial<BacktestMetrics> & {
+    cash_dividend_accounting?: CashDividendAccounting | null;
     execution_timing?: {
       policy_id: string;
       signal_basis: string;

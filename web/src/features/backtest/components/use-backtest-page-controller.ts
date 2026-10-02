@@ -30,6 +30,8 @@ import {
   todayDate,
 } from './backtest-page-model';
 import type { PublishedDataset } from '../dataset-api';
+import type { CorporateActionMode } from '../corporate-action-contracts';
+import { cashDividendErrorMessage } from '../copy-cash-dividends';
 import { useBacktestPortfolioInstrumentsQuery } from './backtest-portfolio-query';
 
 export function useBacktestPageController() {
@@ -88,8 +90,11 @@ export function useBacktestPageController() {
   const [selectedDataset, setSelectedDataset] =
     useState<PublishedDataset | null>(null);
   const [datasetPreparing, setDatasetPreparing] = useState(false);
+  const [corporateActionMode, setCorporateActionMode] =
+    useState<CorporateActionMode>('price_only');
   const selectDataset = (dataset: PublishedDataset | null) => {
     setSelectedDataset(dataset);
+    setCorporateActionMode('price_only');
     if (dataset?.instruments.length === 1) {
       setSymbol(dataset.instruments[0].symbol);
       setAssetClass(dataset.instruments[0].instrument_type);
@@ -221,6 +226,7 @@ export function useBacktestPageController() {
         assetClass,
       });
       if (selectedDataset) payload.dataset_id = selectedDataset.dataset_id;
+      payload.corporate_action_mode = corporateActionMode;
       const report = await runBacktest.mutateAsync(payload);
       setLatestReport(report);
       setMobileWorkspaceTouched(true);
@@ -245,9 +251,10 @@ export function useBacktestPageController() {
       }
     } catch (error) {
       setFormError(
-        error instanceof Error && error.message
-          ? error.message
-          : common.genericSubmitError,
+        cashDividendErrorMessage(error, locale) ??
+          (error instanceof Error && error.message
+            ? error.message
+            : common.genericSubmitError),
       );
     }
   };
@@ -314,6 +321,8 @@ export function useBacktestPageController() {
     searchDefaults,
     selectedAssetClassLabel,
     selectedDataset,
+    corporateActionMode,
+    setCorporateActionMode,
     selectDataset,
     datasetPreparing,
     setDatasetPreparing,

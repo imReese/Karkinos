@@ -3,13 +3,17 @@ import type { Locale } from '../../../shared/locale';
 import { StatusBadge } from '../../../shared/ui/workbench';
 import type { CorporateActionEvidence } from '../api-contracts';
 import { corporateActionCopy } from '../copy-corporate-actions';
+import type { CorporateActionMode } from '../corporate-action-contracts';
+import { cashDividendCopy } from '../copy-cash-dividends';
 
 export function CorporateActionEvidencePanel({
   evidence,
   locale,
+  returnMode = 'price_only',
 }: {
   evidence?: CorporateActionEvidence | null;
   locale: Locale;
+  returnMode?: CorporateActionMode | 'evidence_only';
 }) {
   const labels = corporateActionCopy[locale];
   const observed =
@@ -70,7 +74,11 @@ export function CorporateActionEvidencePanel({
             {labels.availability}
           </p>
           <p className="mt-2 text-xs leading-5 text-[var(--app-warning-text)]">
-            {labels.returns}
+            {returnMode === 'cash_dividends_gross'
+              ? cashDividendCopy[locale].returns
+              : returnMode === 'evidence_only'
+                ? cashDividendCopy[locale].evidenceOnly
+                : labels.returns}
           </p>
           {evidence.events.length > 0 ? (
             <CorporateActionEvents events={evidence.events} locale={locale} />

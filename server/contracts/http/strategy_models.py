@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +35,7 @@ class ActionTaskStatusUpdate(BaseModel):
 class BacktestRequest(BaseModel):
     # 指定后只消费该数据集，不能失败后自动改用旧缓存或远程行情。
     dataset_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    corporate_action_mode: Literal["price_only", "cash_dividends_gross"] = "price_only"
     start_date: str = "2025-01-02"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
     initial_cash: float = 100_000

@@ -147,6 +147,7 @@ export function ParameterComparePanel({
   parameterSchema,
   assets,
   datasetId,
+  disabledReason,
 }: {
   startDate: string;
   endDate: string;
@@ -155,6 +156,7 @@ export function ParameterComparePanel({
   parameterSchema: StrategyParameterSchema[];
   assets?: BacktestRunRequest['assets'];
   datasetId?: string;
+  disabledReason?: string;
 }) {
   const copy = useCopy();
   const labels = copy.backtest.compare;
@@ -209,6 +211,7 @@ export function ParameterComparePanel({
 
   const submitCompare = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabledReason) return;
     if (
       !startDate ||
       !endDate ||
@@ -247,6 +250,11 @@ export function ParameterComparePanel({
       <div className="app-kicker app-type-overline">{labels.kicker}</div>
       <h3 className="app-card-title mt-1.5">{labels.title}</h3>
       <p className="app-muted mt-2 text-sm leading-6">{labels.subtitle}</p>
+      {disabledReason ? (
+        <p className="mt-2 text-xs leading-5 text-[var(--app-warning-text)]">
+          {disabledReason}
+        </p>
+      ) : null}
 
       <form className="mt-4 grid gap-3" onSubmit={submitCompare}>
         <label className="grid gap-2 text-sm font-medium">
@@ -273,7 +281,7 @@ export function ParameterComparePanel({
           <button
             type="submit"
             className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold"
-            disabled={compare.isPending}
+            disabled={compare.isPending || Boolean(disabledReason)}
           >
             {compare.isPending ? labels.running : labels.run}
           </button>
