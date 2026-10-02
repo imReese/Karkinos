@@ -4534,6 +4534,25 @@ h3 {
     word-spacing: 0.1em;
   }
 
+  .app-public-title-phrase {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .app-public-hero-pillars {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .app-public-pillar-card {
+    min-width: 0;
+    padding: 10px 12px;
+  }
+
+  .app-public-pillar-header strong {
+    white-space: normal;
+  }
+
   .app-public-preview-metrics > div {
     padding-inline: 10px;
   }
