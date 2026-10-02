@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import time
+from datetime import date, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -26,7 +26,7 @@ SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
 SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v4"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v13"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v14"
 SHADOW_RESEARCH_REQUIRED_MARKET_UNIVERSE_TRUTH_SCHEMA = (
     "karkinos.market_universe_truth.v2"
 )
@@ -133,6 +133,8 @@ class ShadowResearchPolicy:
     daily_token_budget: int | None = None
     max_candidates_per_run: int = SHADOW_RESEARCH_MAX_CANDIDATES
     baseline_backtest_result_id: int | None = None
+    research_end_date: str | None = None
+    sealed_end_date: str | None = None
     research_capital_mode: str = SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
     require_complete_account_evidence: bool = False
     research_question: str = (
@@ -143,6 +145,23 @@ class ShadowResearchPolicy:
     authorization: str = ""
 
     def __post_init__(self) -> None:
+        if (self.research_end_date is None) != (self.sealed_end_date is None):
+            raise ShadowResearchRejected("sealed_research_dates_must_be_paired")
+        if self.research_end_date is not None:
+            try:
+                cutoff = date.fromisoformat(self.research_end_date)
+                sealed_end = date.fromisoformat(str(self.sealed_end_date))
+            except ValueError as exc:
+                raise ShadowResearchRejected("sealed_research_dates_invalid") from exc
+            if cutoff >= sealed_end:
+                raise ShadowResearchRejected("sealed_end_must_follow_research_end")
+            if (
+                self.research_capital_mode
+                != SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            ):
+                raise ShadowResearchRejected(
+                    "sealed_research_requires_normalized_notional"
+                )
         try:
             parsed = time.fromisoformat(self.after_close_time)
         except ValueError as exc:
@@ -242,6 +261,8 @@ class ShadowResearchPolicy:
             "token_budget_mode": self.token_budget_mode,
             "max_candidates_per_run": self.max_candidates_per_run,
             "baseline_backtest_result_id": self.baseline_backtest_result_id,
+            "research_end_date": self.research_end_date,
+            "sealed_end_date": self.sealed_end_date,
             "research_capital_mode": self.research_capital_mode,
             "require_complete_account_evidence": self.require_complete_account_evidence,
             "promotion_requires_complete_account_evidence": True,
@@ -331,6 +352,8 @@ class ShadowResearchPolicy:
                 if value.get("baseline_backtest_result_id") is not None
                 else None
             ),
+            research_end_date=value.get("research_end_date"),
+            sealed_end_date=value.get("sealed_end_date"),
             research_capital_mode=research_capital_mode,
             require_complete_account_evidence=require_complete_account_evidence,
             research_question=str(

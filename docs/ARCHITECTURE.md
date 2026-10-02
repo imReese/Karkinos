@@ -147,6 +147,23 @@ Rebalance Plan
 
 Backtest and paper may use simulated Order/Fill semantics. Shadow may evaluate a target or plan without an Order/Fill lifecycle.
 
+The daily-bar backtest engine queues completed-bar targets for a strictly later
+bar of the same instrument and sizes them at that later close. A final-bar signal
+without a later price cannot fill. Baselines, Formula DSL candidates and parameter
+variants share this execution rule, including execution-time trading constraints.
+Each queued target gets one execution attempt; a blocked target is not a standing
+order. Same-time instruments are processed in deterministic symbol order rather
+than as a simultaneous portfolio rebalance.
+Saved results identify the timing policy; missing metadata on an older result
+does not establish its execution timing.
+
+Execution delay and information availability are separate constraints. The
+default historical-snapshot replay assumes information at the modeled bar close
+and does not establish historical PIT performance. The engine's strict observed
+mode rejects missing or later `available_at` values before initializing the
+strategy. Neither mode alone verifies historical universe membership or
+corporate-action returns.
+
 Cost semantics:
 
 | Stage | Cost |
@@ -321,6 +338,21 @@ reserved final holdout. Baseline and candidate share cost, market, sizing and
 timing rules. Minimum observation and performance thresholds are explicit policy,
 not invented universal constants. Being best among today's candidates is not
 evidence that a candidate passed admission.
+
+For the automated normalized-research path, explicit research and sealed end dates
+freeze one validation-selected champion before the sealed interval starts. The
+reservation binds the input snapshot, formula, baseline, costs and recorded trial
+family. The provider-free final evaluator checks the frozen research prefix and
+binds the observed holdout snapshot. Overlapping consumed/reserved intervals cannot
+be reused to choose another champion; retries retain the original evaluation.
+New qualification and publication read this persisted evidence. Existing research
+results without it remain available as exploratory results.
+
+Trial correction uses actual adjacent-period equity returns and distinct recorded
+formula/parameter trials. Its nominal-count DSR estimate assumes independent trials
+and estimates trial dispersion from the candidate's return moments; correlation
+and unrecorded searches remain limitations. It does not establish historical PIT
+validity or replace independent final evaluation.
 
 Health decisions distinguish unavailable evidence from measured deterioration.
 Missing data suspends the affected evaluation; deterministic policy may pause an

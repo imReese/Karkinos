@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -44,12 +45,26 @@ class ShadowResearchPolicyPayload(BaseModel):
         SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
     )
     require_complete_account_evidence: bool = False
+    research_end_date: str | None = Field(default=None, min_length=10, max_length=10)
+    sealed_end_date: str | None = Field(default=None, min_length=10, max_length=10)
     research_question: str = Field(min_length=1, max_length=4_000)
     updated_by: str = Field(min_length=1, max_length=128)
     confirmation: str = Field(min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def validate_sequential_iteration_budget(self) -> "ShadowResearchPolicyPayload":
+        if (self.research_end_date is None) != (self.sealed_end_date is None):
+            raise ValueError("sealed research dates must be paired")
+        if self.research_end_date is not None:
+            if date.fromisoformat(self.research_end_date) >= date.fromisoformat(
+                str(self.sealed_end_date)
+            ):
+                raise ValueError("sealed_end_date must follow research_end_date")
+            if (
+                self.research_capital_mode
+                != SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            ):
+                raise ValueError("sealed research requires normalized_notional")
         required_calls = self.max_candidates_per_run * 2
         if self.max_provider_calls_per_market_date < required_calls:
             raise ValueError(

@@ -3,11 +3,20 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from analytics.multiple_testing import build_return_series_trial_correction
+from analytics.sealed_holdout import (
+    build_sealed_holdout_evaluation,
+    build_sealed_partition,
+    final_research_evaluation_blocker,
+)
+from backtest.result import BacktestResult
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
@@ -156,6 +165,16 @@ class FakeResearchStore:
         self.drafts: dict[tuple[str, str], dict[str, Any]] = {}
         self.backtests: dict[str, dict[str, Any]] = {}
         self.critiques: dict[str, dict[str, Any]] = {}
+        self.reservations = {
+            "source-run": {
+                "evidence": {"reservation": {"candidate_id": "source-candidate-5"}}
+            }
+        }
+
+    def research_champion_reservation(self, source_run_id: str) -> dict[str, Any]:
+        if source_run_id not in self.reservations:
+            raise LookupError("independent_final_evaluation_missing")
+        return deepcopy(self.reservations[source_run_id])
 
     def get_session(self, session_id: str) -> dict[str, Any]:
         return deepcopy(self.sessions[session_id])
@@ -168,6 +187,32 @@ class FakeResearchStore:
 
     def get_critique(self, critique_id: str) -> dict[str, Any]:
         return deepcopy(self.critiques[critique_id])
+
+
+@pytest.fixture(autouse=True)
+def verified_final_evaluation_boundary(monkeypatch):
+    """Keep account qualification tests isolated from the final-test owner.
+
+    The final-evaluation service has separate SQLite/source-replay tests. This
+    fixture models its verified output; it does not manufacture sealed evidence
+    that could pass the real advancement or publication gate.
+    """
+    calls = []
+
+    async def evaluate_reserved_champion(*, research_store, source, **_):
+        reservation = research_store.research_champion_reservation(
+            source.source_candidate["run_id"]
+        )
+        binding = reservation["evidence"]["reservation"]
+        assert binding["candidate_id"] == source.source_candidate["candidate_id"]
+        calls.append(binding["candidate_id"])
+        return {"reservation": deepcopy(binding)}
+
+    monkeypatch.setattr(
+        "server.services.research_final_evaluation.evaluate_reserved_champion",
+        evaluate_reserved_champion,
+    )
+    return calls
 
 
 def _result_row(result_id: int, result: dict[str, Any]) -> dict[str, Any]:
@@ -779,6 +824,140 @@ async def test_provider_free_qualification_replays_all_five_and_is_idempotent():
     assert first["provider_call_performed"] is False
     assert first["broker_order_created"] is False
     assert first["capital_authority_granted"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.trading_safety
+async def test_missing_final_reservation_blocks_before_account_capture_or_replay(
+    verified_final_evaluation_boundary,
+):
+    service, store, capture, baseline, adapter, fee_calls = _harness()
+    service._research_store.reservations.clear()
+
+    result = await service.run_once(source_run_id="source-run")
+
+    assert result["status"] == "blocked"
+    assert result["failure_code"] == "independent_final_evaluation_missing"
+    assert verified_final_evaluation_boundary == []
+    assert store.run is None
+    assert store.candidates == []
+    assert capture.calls == 0
+    assert baseline.calls == 0
+    assert adapter.calls == []
+    assert fee_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.trading_safety
+async def test_qualification_only_admits_frozen_champion_with_valid_final_evidence(
+    monkeypatch,
+):
+    service, store, capture, baseline, adapter, fee_calls = _harness(
+        valuation_trade_date="2026-09-30",
+        latest_closed_market_date="2026-09-30",
+        now="2026-09-30T16:00:00+08:00",
+    )
+    partition = build_sealed_partition(
+        research_start="2026-01-02",
+        research_end=MARKET_DATE,
+        sealed_end="2026-09-30",
+    )
+    curve = []
+    equity = Decimal("100000")
+    for index in range(16):
+        if index:
+            equity *= 1 + Decimal("0.009") + Decimal(index % 3) / 1000
+        curve.append((datetime(2026, 8, 16) + timedelta(days=index), equity))
+    trials = [
+        content_fingerprint({"fixture_trial": ordinal}) for ordinal in range(1, 6)
+    ]
+    correction = build_return_series_trial_correction(curve, trials)
+    assert correction["status"] == "assessed"
+    assert correction["significant_at_0_95"] is True
+    formula_fingerprint = "sha256:" + content_fingerprint(_formula())
+    reservation = {
+        "candidate_id": "source-candidate-5",
+        "champion_formula_fingerprint": formula_fingerprint,
+        "partition": partition.to_json_dict(),
+        "trial_family": {
+            "research_family_id": "fixture-family",
+            "trial_fingerprints": correction["trial_fingerprints"],
+        },
+        "trial_correction": correction,
+    }
+    sealed_equity = equity * Decimal("1.03")
+    sealed_result = BacktestResult(
+        equity_curve=[*curve, (datetime(2026, 9, 30), sealed_equity)],
+        positions={},
+        initial_cash=curve[0][1],
+        final_equity=sealed_equity,
+    )
+    evaluation = build_sealed_holdout_evaluation(
+        strategy_id="ai_formula_research",
+        benchmark_role="frozen_dual_ma_baseline",
+        research_family_id="fixture-family",
+        formula_fingerprint=formula_fingerprint,
+        partition=partition,
+        result=sealed_result,
+        benchmark_return=Decimal("0.01"),
+    ).to_json_dict()
+    core = {
+        "schema_version": "karkinos.research_final_evaluation.v1",
+        "reservation": reservation,
+        "sealed_test_id": "fixture-sealed-test",
+        "sealed_evaluation": evaluation,
+        "evaluated_at": "2026-09-30T16:00:00+08:00",
+        "authority_effect": "none",
+    }
+    envelope = {**core, "evidence_fingerprint": content_fingerprint(core)}
+    assert final_research_evaluation_blocker(envelope) is None
+    service._research_store.reservations["source-run"] = {
+        "evidence": {"reservation": reservation}
+    }
+    final_calls = []
+
+    async def evaluated_champion(*, source, **_):
+        final_calls.append(source.source_candidate["candidate_id"])
+        return deepcopy(envelope)
+
+    monkeypatch.setattr(
+        "server.services.research_final_evaluation.evaluate_reserved_champion",
+        evaluated_champion,
+    )
+    blockers = []
+
+    def final_aware_gate(*, candidate, require_independent_evaluation, **_):
+        assert require_independent_evaluation is True
+        blocker = final_research_evaluation_blocker(
+            candidate.get("independent_evaluation")
+        )
+        blockers.append(blocker)
+        payload = _gate_builder(candidate=candidate).to_json_dict()
+        payload["status"] = "pass" if blocker is None else "blocked"
+        payload["blockers"] = [blocker] if blocker else []
+        return SimpleNamespace(
+            passed=blocker is None,
+            to_json_dict=lambda: deepcopy(payload),
+        )
+
+    service._advancement_gate_builder = final_aware_gate
+
+    result = await service.run_once(source_run_id="source-run")
+
+    assert result["status"] == "completed"
+    assert final_calls == ["source-candidate-5"]
+    assert blockers == ["independent_final_evaluation_missing"] * 4 + [None]
+    assert len(adapter.calls) == 5
+    assert capture.calls == baseline.calls == len(fee_calls) == 1
+    assert [item["status"] for item in store.candidates] == ["blocked"] * 4 + [
+        "qualified"
+    ]
+    assert store.candidates[-1]["source_candidate_id"] == "source-candidate-5"
+    assert result["run"]["winner_qualification_candidate_id"] == (
+        "qualified-source-candidate-5"
+    )
 
 
 @pytest.mark.asyncio

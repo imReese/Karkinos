@@ -23,7 +23,6 @@ from analytics.research_account_capital_evidence import (
     build_research_account_capital_evidence,
 )
 from analytics.strategy_advancement_gate import (
-    STRATEGY_ADVANCEMENT_OPTIONAL_CHECK_NAMES,
     STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
@@ -439,9 +438,10 @@ def test_backtest_projection_preserves_bound_dataset_admission_identity():
     assert bound["dataset_research_use"] == "exploratory_backtest"
 
 
-def test_strategy_advancement_gate_blocks_when_dsr_not_significant():
+@pytest.mark.parametrize("display_sharpe", [0.5, 10.0])
+def test_display_sharpe_cannot_replace_missing_final_trial_evidence(display_sharpe):
     candidate = deepcopy(_view(candidate=True))
-    candidate["sharpe"] = 0.5
+    candidate["sharpe"] = display_sharpe
     gate = build_strategy_advancement_gate(
         baseline=_view(candidate=False),
         candidate=candidate,
@@ -450,32 +450,14 @@ def test_strategy_advancement_gate_blocks_when_dsr_not_significant():
             "critique_id": "critique-reviewed",
             "artifact_fingerprint": "e" * 64,
         },
-        num_trials=100,
+        require_independent_evaluation=True,
     )
     names = [check["name"] for check in gate.checks]
     assert tuple(names) == (
-        STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES
-        + STRATEGY_ADVANCEMENT_OPTIONAL_CHECK_NAMES
+        STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES + ("independent_final_evaluation",)
     )
-    assert "multiple_testing_correction_not_significant" in gate.blockers
+    assert "independent_final_evaluation_missing" in gate.blockers
     assert gate.passed is False
-
-
-def test_strategy_advancement_gate_passes_dsr_with_strong_sharpe_and_one_trial():
-    candidate = deepcopy(_view(candidate=True))
-    candidate["sharpe"] = 10.0
-    gate = build_strategy_advancement_gate(
-        baseline=_view(candidate=False),
-        candidate=candidate,
-        critique_evidence={
-            "status": "completed",
-            "critique_id": "critique-reviewed",
-            "artifact_fingerprint": "e" * 64,
-        },
-        num_trials=1,
-    )
-    assert "multiple_testing_correction" not in gate.blockers
-    assert gate.passed is True
 
 
 def test_strategy_advancement_gate_fails_closed_for_every_named_evidence_gap():

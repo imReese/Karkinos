@@ -86,6 +86,10 @@ class AiShadowResearchBaselineMixin:
         An explicit research_start_date creates a new normalized experiment;
         it never edits the seed or changes a frozen qualification replay.
         """
+        if policy.research_end_date is not None:
+            if expected_market_date not in (None, policy.research_end_date):
+                raise ShadowResearchRejected("sealed_research_cutoff_conflict")
+            expected_market_date = policy.research_end_date
         seed, config, start_date = _load_baseline_seed(
             self._db,
             policy,
@@ -315,6 +319,7 @@ class AiShadowResearchBaselineMixin:
         )
         metrics = result.metrics
         metrics_json = metrics.to_json_dict()
+        metrics_json["execution_timing"] = result.execution_timing
         metrics_json.update(
             {
                 "evidence_bundle": evidence,
@@ -358,7 +363,8 @@ class AiShadowResearchBaselineMixin:
                 ),
                 "market_universe_truth": market_universe_truth,
                 "signal_execution_evidence": strategy.execution_evidence(
-                    fill_count=len(result.fills)
+                    fill_count=len(result.fills),
+                    execution_timing=result.execution_timing,
                 ),
                 "automatic_baseline_refresh": True,
                 "persisted_market_data_only": True,

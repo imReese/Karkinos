@@ -51,6 +51,12 @@ class DataHandler:
         if isinstance(ts, str):
             ts = pd.Timestamp(ts).to_pydatetime()
 
+        available_at = row.get("available_at")
+        if available_at is None or pd.isna(available_at):
+            available_at = None
+        else:
+            available_at = pd.Timestamp(available_at).to_pydatetime()
+
         return MarketEvent(
             timestamp=ts,
             symbol=self._symbol,
@@ -62,6 +68,7 @@ class DataHandler:
             frequency=self._frequency,
             asset_class=self._asset_class,
             instrument_type=self._instrument_type,
+            available_at=available_at,
         )
 
     def stream(self):

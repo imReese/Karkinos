@@ -22,6 +22,59 @@ import { Field, NumberField, StatusMetric } from './shadow-research-view';
 const MAX_PROVIDER_CALLS = 10;
 const MAX_CANDIDATES = 5;
 
+function hasValidResearchDates(policy: ShadowResearchPolicyInput) {
+  return (
+    (!policy.research_end_date && !policy.sealed_end_date) ||
+    Boolean(
+      policy.research_end_date &&
+      policy.sealed_end_date &&
+      policy.research_end_date < policy.sealed_end_date,
+    )
+  );
+}
+
+function FinalEvaluationDates({
+  policy,
+  onChange,
+  copy,
+}: {
+  policy: ShadowResearchPolicyInput;
+  onChange: (
+    dates: Pick<
+      ShadowResearchPolicyInput,
+      'research_end_date' | 'sealed_end_date'
+    >,
+  ) => void;
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+}) {
+  return (
+    <>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <Field
+          label={copy.researchEndDate}
+          type="date"
+          value={policy.research_end_date ?? ''}
+          onChange={(value) => onChange({ research_end_date: value || null })}
+        />
+        <Field
+          label={copy.sealedEndDate}
+          type="date"
+          value={policy.sealed_end_date ?? ''}
+          onChange={(value) => onChange({ sealed_end_date: value || null })}
+        />
+      </div>
+      <p className="app-muted mt-2 text-xs leading-5">
+        {copy.sealedDatesDetail}
+      </p>
+      {!hasValidResearchDates(policy) ? (
+        <p role="alert" className="mt-2 text-sm text-[var(--app-danger-text)]">
+          {copy.sealedDatesInvalid}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function isFiveRoundPolicy(policy: {
   max_provider_calls_per_market_date: number;
   daily_token_budget: number | null;
@@ -48,6 +101,8 @@ const EMPTY_POLICY: ShadowResearchPolicyInput = {
   token_budget_mode: 'unbounded_daily',
   max_candidates_per_run: MAX_CANDIDATES,
   baseline_backtest_result_id: null,
+  research_end_date: null,
+  sealed_end_date: null,
   research_capital_mode: 'normalized_notional',
   require_complete_account_evidence: false,
   research_question: '',
@@ -211,6 +266,8 @@ export function ShadowResearchPanel() {
         token_budget_mode: 'unbounded_daily',
         max_candidates_per_run: current.max_candidates_per_run,
         baseline_backtest_result_id: current.baseline_backtest_result_id,
+        research_end_date: current.research_end_date ?? null,
+        sealed_end_date: current.sealed_end_date ?? null,
         research_capital_mode: 'normalized_notional',
         require_complete_account_evidence: false,
         research_question: current.research_question,
@@ -220,8 +277,11 @@ export function ShadowResearchPanel() {
     }
   }, [initialized, query.data?.policy]);
 
+  const datesValid = hasValidResearchDates(policy);
+
   const savePolicy = async () => {
-    if (!policyConfirmed || !policy.research_question.trim()) return;
+    if (!policyConfirmed || !policy.research_question.trim() || !datesValid)
+      return;
     try {
       await updatePolicy.mutateAsync(policy);
       setPolicyConfirmed(false);
@@ -401,6 +461,15 @@ export function ShadowResearchPanel() {
         />
       </div>
 
+      <FinalEvaluationDates
+        policy={policy}
+        copy={copy}
+        onChange={(dates) => {
+          setPolicy((current) => ({ ...current, ...dates }));
+          setPolicyConfirmed(false);
+        }}
+      />
+
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <label className="flex min-h-11 items-center gap-2 text-sm font-semibold text-[var(--app-text)]">
           <input
@@ -430,6 +499,7 @@ export function ShadowResearchPanel() {
           disabled={
             updatePolicy.isPending ||
             !policyConfirmed ||
+            !datesValid ||
             !policy.research_question.trim() ||
             (policy.enabled && !draftPolicyReady)
           }

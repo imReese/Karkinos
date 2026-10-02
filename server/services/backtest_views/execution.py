@@ -266,6 +266,7 @@ def run_single_backtest(
         else {}
     )
     metrics_json = metrics.to_json_dict()
+    metrics_json["execution_timing"] = result.execution_timing
     metrics_json["evidence_bundle"] = evidence_json
     metrics_json["dataset_snapshot"] = dataset_snapshot_json
     if dataset_binding is not None:

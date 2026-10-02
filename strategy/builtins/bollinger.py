@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal
 
 from core.event_bus import EventBus
-from core.events import MarketEvent
-from core.types import Symbol
+from core.events import FillEvent, MarketEvent
+from core.types import OrderSide, Symbol
 from strategy.base import Strategy
 from strategy.registry import register_strategy
 
@@ -30,12 +31,20 @@ class BollingerStrategy(Strategy):
         self.bb_period = bb_period
         self.num_std = num_std
         self._prices: dict[Symbol, list[float]] = defaultdict(list)
-        self._holding: dict[Symbol, bool] = {}
+        self._filled_quantity: dict[Symbol, Decimal] = {}
+        self._signal_holding: dict[Symbol, bool] = {}
 
     def on_init(self, symbols: list[Symbol]) -> None:
         for symbol in symbols:
             self._prices[symbol] = []
-            self._holding[symbol] = False
+            self._filled_quantity[symbol] = Decimal("0")
+            self._signal_holding[symbol] = False
+
+    def on_fill(self, event: FillEvent) -> None:
+        change = (
+            event.fill_quantity if event.side is OrderSide.BUY else -event.fill_quantity
+        )
+        self._filled_quantity[event.symbol] += change
 
     def on_data(self, event: MarketEvent) -> None:
         self._last_timestamp = event.timestamp
@@ -54,13 +63,18 @@ class BollingerStrategy(Strategy):
         upper = ma + self.num_std * std
         lower = ma - self.num_std * std
 
-        holding = self._holding[symbol]
+        # Scans have no executions; their signal regime is not actual holdings.
+        holding = (
+            self._filled_quantity[symbol] > 0
+            if self.fill_tracking_enabled
+            else self._signal_holding[symbol]
+        )
 
         # 跌破下轨 → 买入
         if price <= lower and not holding:
             self.emit_signal(symbol, target_weight=1.0, price=price)
-            self._holding[symbol] = True
+            self._signal_holding[symbol] = True
         # 回升到中轨 → 卖出
         elif price >= ma and holding:
             self.emit_signal(symbol, target_weight=0.0, price=price)
-            self._holding[symbol] = False
+            self._signal_holding[symbol] = False

@@ -37,6 +37,7 @@ class MarketEvent(Event):
     frequency: BarFrequency = BarFrequency.DAILY
     asset_class: AssetClass | None = None
     instrument_type: InstrumentType | None = None
+    available_at: datetime | None = None
 
 
 @dataclass(frozen=True)

@@ -90,6 +90,13 @@ export function ValidationEvidencePanel({
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = copy.backtest.validationEvidence;
+  const timingLabels = copy.backtest.executionTiming;
+  const timing = report.metrics_json?.execution_timing;
+  const supportedTiming =
+    timing?.policy_id === 'karkinos.backtest.next_bar_close.v1' &&
+    timing.signal_basis === 'completed_bar' &&
+    timing.fill_basis === 'strictly_later_same_instrument_bar_close' &&
+    ['historical_snapshot', 'observed'].includes(timing.availability_mode);
   const pageLabels = copy.backtest.page;
   const afterCost = afterCostFromReport(report);
   const oos = oosFromReport(report);
@@ -97,10 +104,6 @@ export function ValidationEvidencePanel({
     oos?.strategy_id,
     pageLabels.strategyNames,
   );
-
-  if (!afterCost && !oos) {
-    return null;
-  }
 
   const assumptions = [
     ...(afterCost?.assumptions ?? []),
@@ -126,6 +129,26 @@ export function ValidationEvidencePanel({
             {labels.subtitle}
           </p>
         </div>
+      </div>
+
+      <div className="mt-4" data-testid="execution-timing-evidence">
+        <EvidenceBlock title={timingLabels.title}>
+          <p className="text-sm text-[var(--app-text)]">
+            {supportedTiming ? timingLabels.nextBar : timingLabels.unknown}
+          </p>
+          {supportedTiming ? (
+            <>
+              <p className="mt-2 text-sm leading-6 text-[var(--app-text-secondary)]">
+                {timingLabels.detail}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--app-warning-text)]">
+                {timing.availability_mode === 'observed'
+                  ? timingLabels.observed
+                  : timingLabels.snapshot}
+              </p>
+            </>
+          ) : null}
+        </EvidenceBlock>
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">

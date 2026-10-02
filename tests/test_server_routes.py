@@ -109,6 +109,15 @@ def _persisted_cash_entry(
 
 
 @pytest.fixture(autouse=True)
+def _fresh_route_quote_timestamp(monkeypatch):
+    """A long test suite must not age the module-import quote into stale evidence."""
+    monkeypatch.setattr(
+        f"{__name__}._ROUTE_TEST_QUOTE_TIMESTAMP",
+        datetime.now(ZoneInfo("Asia/Shanghai")).replace(microsecond=0).isoformat(),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _isolate_runtime_config_path(monkeypatch, tmp_path):
     """Route tests must never read or write the developer's real config.json."""
     monkeypatch.setenv("KARKINOS_CONFIG_PATH", str(tmp_path / "config-test.json"))
@@ -807,19 +816,19 @@ def test_run_single_backtest_attaches_oos_validation_for_benchmark_strategy(
         def get_bars(self, symbol, start, end, asset_class):
             prices = [
                 10,
-                9,
-                8,
-                7,
-                6,
-                7,
-                8,
-                9,
+                9.9,
+                9.8,
+                9.7,
+                9.6,
+                9.7,
+                9.8,
+                9.9,
                 10,
-                11,
-                12,
-                13,
-                14,
-                15,
+                10.1,
+                10.2,
+                10.3,
+                10.4,
+                10.5,
             ]
             dates = pd.bdate_range("2026-01-05", periods=len(prices))
             df = pd.DataFrame(

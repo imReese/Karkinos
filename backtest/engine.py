@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
+from typing import Literal
 
 import pandas as pd
 
@@ -23,11 +24,13 @@ from core.events import (
     MarketEvent,
     OrderEvent,
     OrderIntentEvent,
+    RiskAlertEvent,
     RiskDecisionEvent,
     SignalEvent,
 )
-from core.types import ZERO, AssetClass, OrderType, Symbol
+from core.types import ZERO, AssetClass, InstrumentType, OrderSide, OrderType, Symbol
 from data.handler import DataHandler
+from domain.a_share_limits import is_limit_down, is_limit_up, is_suspended
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from execution.commission import (
@@ -45,10 +48,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class BacktestExecutionConfig:
-    """Execution friction settings for backtests."""
+    """Friction and observation admission for backtests.
+
+    ``observed`` rejects any bar whose availability is missing or later than
+    its replay timestamp. It never shifts timestamps or assumes historical
+    availability. ``historical_snapshot`` permits explicitly exploratory replay.
+    """
 
     slippage_model: SlippageModel | None = None
     commission_calc: CommissionCalculator | None = None
+    availability_mode: Literal["historical_snapshot", "observed"] = (
+        "historical_snapshot"
+    )
 
 
 class BacktestEngine:
@@ -80,6 +91,17 @@ class BacktestEngine:
         self.initial_cash = initial_cash
         self.fills: list[FillEvent] = []
         self.db = db
+        self._availability_mode = (
+            execution_config.availability_mode
+            if execution_config is not None
+            else "historical_snapshot"
+        )
+        if self._availability_mode not in {"historical_snapshot", "observed"}:
+            raise ValueError("backtest_availability_mode_unsupported")
+        self._pending_signals: dict[Symbol, SignalEvent] = {}
+        self._current_market_event: MarketEvent | None = None
+        self._previous_close: dict[Symbol, Decimal] = {}
+        self._execution_blocked = {"limit": 0, "suspension": 0, "risk": 0}
         self.execution_tracker = (
             ExecutionOrderTracker(event_bus=self.event_bus, db=db)
             if db is not None
@@ -88,9 +110,14 @@ class BacktestEngine:
 
         # 将策略的 event_bus 指向引擎内部总线
         self.strategy.event_bus = self.event_bus
+        self.strategy.fill_tracking_enabled = True
 
         # 创建组件
         self.portfolio = Portfolio(self.event_bus, initial_cash=initial_cash)
+        # Portfolio sizes a target only when the later execution bar is known.
+        self.event_bus.unsubscribe(SignalEvent, self.portfolio.on_signal)
+        self.event_bus.subscribe(SignalEvent, self._on_signal)
+        self.event_bus.subscribe(FillEvent, self.strategy.on_fill)
         for inst in instruments.values():
             self.portfolio.add_instrument(inst)
 
@@ -118,6 +145,9 @@ class BacktestEngine:
             )
 
         self.risk_manager = RiskManager(self.event_bus)
+        # EventBus broadcasts to every subscriber; enforce risk before execution
+        # here so a rejected/modified order cannot also execute its original form.
+        self.event_bus.unsubscribe(OrderEvent, self.risk_manager.on_order)
 
         # 订阅 MarketEvent
         self.event_bus.subscribe(MarketEvent, self._on_market_event)
@@ -128,12 +158,11 @@ class BacktestEngine:
 
     def run(self) -> BacktestResult:
         """运行回测，返回 BacktestResult。"""
+        # Validate availability before any strategy state can observe the input.
+        all_events = self._merge_streams()
         # 初始化策略
         symbols = list(self.instruments.keys())
         self.strategy.on_init(symbols)
-
-        # 合并所有 data handler 的事件流，按时间排序
-        all_events = self._merge_streams()
 
         # 主循环
         prev_date = None
@@ -177,30 +206,82 @@ class BacktestEngine:
         return self._build_result()
 
     def _on_market_event(self, event: MarketEvent) -> None:
-        """转发给策略。"""
+        """Execute prior targets, then expose this completed bar to the strategy."""
+        self._current_market_event = event
+        pending = self._pending_signals.get(event.symbol)
+        if pending is not None and event.timestamp > pending.timestamp:
+            del self._pending_signals[event.symbol]
+            self.portfolio.on_signal(
+                replace(pending, timestamp=event.timestamp, price=event.close)
+            )
+            self.event_bus.drain()
         self.strategy.on_data(event)
+        self.event_bus.drain()
+        self._previous_close[event.symbol] = event.close
 
-    def _on_order_intent_event(self, event: OrderIntentEvent) -> None:
-        """回测中将交易意图转换为已批准订单。
+    def _on_signal(self, event: SignalEvent) -> None:
+        """Retain the latest target until a strictly later bar for that symbol."""
+        if self._current_market_event is None:
+            return
+        decision_at = max(event.timestamp, self._current_market_event.timestamp)
+        self._pending_signals[event.symbol] = replace(event, timestamp=decision_at)
 
-        实盘路径应由 PreTradeRiskManager 生成 OrderEvent；这里仅保持
-        当前回测引擎在阶段 1 改造期间的确定性行为。
-        """
-        decision_id = f"BACKTEST-RISK-{uuid.uuid4().hex[:8]}"
-        order_id = f"ORD-{uuid.uuid4().hex[:8]}"
-        self.event_bus.publish(
-            RiskDecisionEvent(
-                timestamp=event.timestamp,
-                decision_id=decision_id,
-                intent_id=event.intent_id,
-                passed=True,
-                symbol=event.symbol,
-                side=event.side,
-                reasons=["backtest_default_approved"],
-                resulting_order_id=order_id,
-                severity="info",
+    def _tradeable_order(self, event: OrderEvent) -> bool:
+        bar = self._current_market_event
+        instrument = self.instruments.get(event.symbol)
+        if bar is None or instrument is None or bar.symbol != event.symbol:
+            return True
+        if instrument.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}:
+            return True
+        if is_suspended(bar.volume):
+            self._execution_blocked["suspension"] += 1
+            return False
+        previous = self._previous_close.get(event.symbol)
+        if previous is None or instrument.limit_pct <= ZERO:
+            return True
+        blocked = (
+            is_limit_up(
+                bar.close, previous, instrument.limit_pct, tick=instrument.price_tick
+            )
+            if event.side is OrderSide.BUY
+            else is_limit_down(
+                bar.close, previous, instrument.limit_pct, tick=instrument.price_tick
             )
         )
+        if blocked:
+            self._execution_blocked["limit"] += 1
+        return not blocked
+
+    def _approved_order(self, event: OrderEvent) -> OrderEvent | None:
+        """Check the order at its execution time using current portfolio facts."""
+        values = {
+            "total": float(self._calculate_equity()),
+            "cash": float(self.portfolio.cash),
+        }
+        for rule in self.risk_manager.rules:
+            result = rule.check(event, self.portfolio.positions, values)
+            if not result.passed:
+                self._execution_blocked["risk"] += 1
+                self.event_bus.publish(
+                    RiskAlertEvent(
+                        timestamp=event.timestamp,
+                        alert_id=f"RISK-{event.order_id}",
+                        rule_name=rule.name,
+                        severity="warning",
+                        message=result.message or "Order rejected",
+                        symbol=event.symbol,
+                        order_id=event.order_id,
+                    )
+                )
+                return None
+            if result.modified_order is not None:
+                event = result.modified_order
+        return event
+
+    def _on_order_intent_event(self, event: OrderIntentEvent) -> None:
+        """Build an order; the execution boundary records the actual risk decision."""
+        decision_id = f"BACKTEST-RISK-{uuid.uuid4().hex[:8]}"
+        order_id = f"ORD-{uuid.uuid4().hex[:8]}"
         self.event_bus.publish(
             OrderEvent(
                 timestamp=event.timestamp,
@@ -217,7 +298,30 @@ class BacktestEngine:
         )
 
     def _on_order_event(self, event: OrderEvent) -> None:
-        """执行委托单。"""
+        """Execute an approved order at the current bar's modeled close."""
+        approved = self._approved_order(event)
+        if event.intent_id is not None and event.risk_decision_id is not None:
+            passed = approved is not None
+            self.event_bus.publish(
+                RiskDecisionEvent(
+                    timestamp=event.timestamp,
+                    decision_id=event.risk_decision_id,
+                    intent_id=event.intent_id,
+                    passed=passed,
+                    symbol=event.symbol,
+                    side=event.side,
+                    reasons=[
+                        "backtest_execution_rules_passed"
+                        if passed
+                        else "backtest_execution_rule_rejected"
+                    ],
+                    resulting_order_id=approved.order_id if approved else None,
+                    severity="info" if passed else "warning",
+                )
+            )
+        if approved is None or not self._tradeable_order(approved):
+            return
+        event = approved
         self._record_order_event(event)
         if self._multi_commission is not None:
             inst = self.instruments.get(event.symbol)
@@ -319,9 +423,22 @@ class BacktestEngine:
         all_events: list[MarketEvent] = []
         for symbol, handler in self.data_handlers.items():
             for event in handler:
+                if self._availability_mode == "observed":
+                    self._require_available_observation(event)
                 all_events.append(event)
-        all_events.sort(key=lambda e: e.timestamp)
+        all_events.sort(key=lambda e: (e.timestamp, str(e.symbol)))
         return all_events
+
+    @staticmethod
+    def _require_available_observation(event: MarketEvent) -> None:
+        if event.available_at is None:
+            raise ValueError("backtest_observation_availability_missing")
+        try:
+            late = event.available_at > event.timestamp
+        except TypeError as exc:
+            raise ValueError("backtest_observation_timezone_mismatch") from exc
+        if late:
+            raise ValueError("backtest_observation_unavailable_at_event_time")
 
     def _calculate_equity(self) -> Decimal:
         """计算总权益。"""
@@ -355,4 +472,16 @@ class BacktestEngine:
             fills=list(self.fills),
             cost_summary=cost_summary,
             evidence_bundle=evidence_bundle,
+            execution_timing={
+                "schema_version": "karkinos.backtest_execution_timing.v1",
+                "policy_id": "karkinos.backtest.next_bar_close.v1",
+                "signal_basis": "completed_bar",
+                "fill_basis": "strictly_later_same_instrument_bar_close",
+                "availability_mode": self._availability_mode,
+                "pending_signal_count": len(self._pending_signals),
+                "limit_blocked_count": self._execution_blocked["limit"],
+                "suspension_blocked_count": self._execution_blocked["suspension"],
+                "risk_blocked_count": self._execution_blocked["risk"],
+                "historical_pit_verified": False,
+            },
         )

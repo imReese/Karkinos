@@ -33,8 +33,8 @@ from server.ai_runtime.strategy_research_privacy import NORMALIZED_RESEARCH_NOTI
 
 
 def test_dual_ma_baseline_and_formula_share_sizing_delay_and_tradeability():
-    from core.event_bus import EventBus
-    from core.events import SignalEvent
+    from backtest.engine import BacktestEngine
+    from domain.instrument import make_stock
     from server.ai_runtime.strategy_research_backtest import (
         _FormulaSignalStrategy,
         build_dual_ma_research_strategy,
@@ -47,33 +47,33 @@ def test_dual_ma_baseline_and_formula_share_sizing_delay_and_tradeability():
     formula["exit"]["op"] = "lte"
     candidate = _FormulaSignalStrategy(formula, 40)
     outputs = []
+    symbol = Symbol("600000")
+    prices = [10, 9.9, 9.8, 10.1, 10.2, 10.3, 10, 9.9]
+    frame = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2026-01-05", periods=len(prices)),
+            "open": prices,
+            "high": prices,
+            "low": prices,
+            "close": prices,
+            "volume": [100000] * len(prices),
+        }
+    )
     for strategy in [baseline, candidate]:
-        bus = EventBus()
-        emitted = []
-        bus.subscribe(SignalEvent, emitted.append)
-        strategy.event_bus = bus
-        strategy.on_init([Symbol("600000")])
-        # Cross above on day 4, buy on day 5; day 5 itself isn't limit-up.
-        prices = [10, 9.9, 9.8, 10.1, 10.2, 10.3, 10, 9.9]
-        for index, close in enumerate(prices):
-            strategy.on_data(
-                MarketEvent(
-                    timestamp=datetime(2026, 1, 5) + timedelta(days=index),
-                    symbol=Symbol("600000"),
-                    open=Decimal(str(close)),
-                    high=Decimal(str(close)),
-                    low=Decimal(str(close)),
-                    close=Decimal(str(close)),
-                    volume=Decimal("100000"),
-                )
-            )
-            bus.drain()
+        result = BacktestEngine(
+            strategy=strategy,
+            instruments={symbol: make_stock(str(symbol), "fixture")},
+            data_handlers={symbol: DataHandler(frame, symbol)},
+        ).run()
         outputs.append(
-            [(event.timestamp, event.target_weight, event.price) for event in emitted]
+            [
+                (fill.timestamp, fill.side.value, fill.fill_price, fill.fill_quantity)
+                for fill in result.fills
+            ]
         )
     assert outputs[0] == outputs[1]
-    assert outputs[0][0] == (datetime(2026, 1, 9), Decimal("0.25"), Decimal("10.2"))
-    assert outputs[0][-1][1] == Decimal("0.0")
+    assert outputs[0][0][:3] == (datetime(2026, 1, 9), "buy", Decimal("10.2"))
+    assert outputs[0][-1][1] == "sell"
 
 
 def _bars() -> pd.DataFrame:
@@ -514,59 +514,6 @@ def test_restricted_formula_adapter_calculates_with_exact_reviewed_fee_binding(
     assert fee_evidence["account_specific"] is True
     assert fee_evidence["fee_rule_version"] == cost_model_reference
     assert fee_evidence["fee_schedule_binding"] == fee_schedule_binding
-
-
-def test_formula_signal_strategy_blocks_limit_up_and_suspension() -> None:
-    from server.ai_runtime.strategy_research_backtest import _FormulaSignalStrategy
-
-    strategy = _FormulaSignalStrategy(_formula(), universe_size=1, allocation_slots=1)
-    symbol = Symbol("600000")
-    strategy.on_init([symbol])
-    strategy._frames[symbol] = [
-        {
-            "timestamp": datetime(2025, 1, 2),
-            "open": 10.0,
-            "high": 10.0,
-            "low": 10.0,
-            "close": 10.0,
-            "volume": 100_000.0,
-        }
-    ]
-
-    limit_up = MarketEvent(
-        timestamp=datetime(2025, 1, 3),
-        symbol=symbol,
-        open=Decimal("11.0"),
-        high=Decimal("11.0"),
-        low=Decimal("11.0"),
-        close=Decimal("11.0"),
-        volume=Decimal("100000"),
-    )
-    assert strategy._is_tradeable(limit_up, target=1.0) is False
-    assert strategy._limit_blocked_count == 1
-
-    suspended = MarketEvent(
-        timestamp=datetime(2025, 1, 3),
-        symbol=symbol,
-        open=Decimal("10.0"),
-        high=Decimal("10.0"),
-        low=Decimal("10.0"),
-        close=Decimal("10.0"),
-        volume=Decimal("0"),
-    )
-    assert strategy._is_tradeable(suspended, target=1.0) is False
-    assert strategy._suspension_blocked_count == 1
-
-    normal = MarketEvent(
-        timestamp=datetime(2025, 1, 3),
-        symbol=symbol,
-        open=Decimal("10.5"),
-        high=Decimal("10.5"),
-        low=Decimal("10.5"),
-        close=Decimal("10.5"),
-        volume=Decimal("100000"),
-    )
-    assert strategy._is_tradeable(normal, target=1.0) is True
 
 
 def test_restricted_formula_adapter_run_sealed_reaches_future_window(tmp_path) -> None:

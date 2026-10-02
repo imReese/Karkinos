@@ -308,6 +308,26 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
       'Full-market ingestion receipts could not be verified',
     account_qualification_not_evaluated:
       'The current research batch has not completed account qualification',
+    independent_final_evaluation_missing:
+      'No independent final evaluation is bound to this research candidate',
+    independent_final_window_not_complete:
+      'The reserved final evaluation interval has not finished',
+    independent_final_evaluation_in_progress:
+      'The frozen candidate is undergoing its final evaluation',
+    independent_final_excess_not_positive:
+      'The final evaluation did not outperform the frozen baseline',
+    independent_final_dataset_replay_failed:
+      'The final evaluation dataset could not be replayed',
+    independent_final_reservation_drift:
+      'The candidate or research inputs differ from the frozen reservation',
+    independent_final_research_identity_mismatch:
+      'The final evaluation belongs to a different research experiment',
+    sealed_champion_not_frozen_before_holdout:
+      'The candidate was not frozen before the reserved interval began',
+    sealed_partition_overlap_already_reserved:
+      'This evaluation interval overlaps an existing reservation',
+    sealed_test_requires_frozen_automation_champion:
+      'A new final evaluation requires a candidate frozen before its interval begins',
     qualification_current_market_date_unavailable:
       'The latest officially verified closed trading date is unavailable',
     qualification_current_market_date_invalid:
@@ -597,6 +617,18 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
     verified_market_history_window_incomplete: '已验证行情历史窗口不完整',
     full_market_daily_receipt_replay_failed: '全市场数据采集回执校验失败',
     account_qualification_not_evaluated: '当前研究批次尚未完成账户资格复核',
+    independent_final_evaluation_missing: '该研究候选缺少绑定的独立最终检验',
+    independent_final_window_not_complete: '预留的最终检验区间尚未结束',
+    independent_final_evaluation_in_progress: '冻结候选正在进行最终检验',
+    independent_final_excess_not_positive: '最终检验未跑赢冻结的基准策略',
+    independent_final_dataset_replay_failed: '最终检验所绑定的数据无法重放',
+    independent_final_reservation_drift: '候选或研究输入与原冻结记录不一致',
+    independent_final_research_identity_mismatch:
+      '最终检验证据属于另一项研究实验',
+    sealed_champion_not_frozen_before_holdout: '候选未在预留检验区间开始前冻结',
+    sealed_partition_overlap_already_reserved: '该检验区间与已有预留区间重叠',
+    sealed_test_requires_frozen_automation_champion:
+      '新的最终检验要求候选在检验区间开始前冻结',
     qualification_current_market_date_unavailable:
       '缺少最新官方验证的已收盘交易日',
     qualification_current_market_date_invalid: '最新已验证交易日无效',

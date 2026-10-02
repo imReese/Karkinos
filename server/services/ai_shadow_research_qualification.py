@@ -143,6 +143,46 @@ class AiShadowResearchQualificationService:
             batch, frozen = await asyncio.to_thread(
                 self._freeze_batch,
                 source_run_id,
+                final_evaluation_as_of=admission.require_open(),
+            )
+            from server.services.research_final_evaluation import (
+                evaluate_reserved_champion,
+            )
+
+            try:
+                reservation = self._research_store.research_champion_reservation(
+                    str(batch["run_id"])
+                )
+            except LookupError as exc:
+                raise ShadowResearchQualificationRejected(
+                    "independent_final_evaluation_missing"
+                ) from exc
+            champion_id = (
+                (reservation.get("evidence") or {})
+                .get("reservation", {})
+                .get("candidate_id")
+            )
+            champion = next(
+                (
+                    item
+                    for item in frozen
+                    if item.source_candidate["candidate_id"] == champion_id
+                ),
+                None,
+            )
+            if champion is None:
+                raise ShadowResearchQualificationRejected(
+                    "independent_final_champion_not_in_batch"
+                )
+            current_time = self._now()
+            if isinstance(current_time, str):
+                current_time = datetime.fromisoformat(current_time)
+            final_evaluation = await evaluate_reserved_champion(
+                research_store=self._research_store,
+                source=champion,
+                adapter=self._backtest_adapter,
+                now=current_time,
+                calendar_db=self._db,
             )
             snapshot = await call_maybe_async(self._account_identity_reader)
             valuation = require_current_qualification_valuation(
@@ -229,6 +269,7 @@ class AiShadowResearchQualificationService:
                 run=run,
                 reused=reused,
                 admission=admission,
+                final_evaluation=final_evaluation,
             )
         except QualificationAdmissionDeferred:
             return deferred_result(QUALIFICATION_MARKET_OPEN_BLACKOUT_CODE)
@@ -259,6 +300,8 @@ class AiShadowResearchQualificationService:
     def _freeze_batch(
         self,
         source_run_id: str | None,
+        *,
+        final_evaluation_as_of: datetime | None = None,
     ) -> tuple[dict[str, Any], list[FrozenQualificationSource]]:
         selected_run_id = (
             require_qualification_source_run_id(source_run_id)
@@ -266,6 +309,8 @@ class AiShadowResearchQualificationService:
             else select_oldest_retryable_source_run_id(
                 self._daily_artifact_store,
                 self._store,
+                final_reservation_reader=self._research_store.research_champion_reservation,
+                final_evaluation_as_of=final_evaluation_as_of,
             )
         )
         batch = dict(
@@ -515,6 +560,7 @@ class AiShadowResearchQualificationService:
         run: Mapping[str, Any],
         reused: bool,
         admission: QualificationAdmission,
+        final_evaluation: Mapping[str, Any],
     ) -> dict[str, Any]:
         qualification_run_id = str(run["qualification_run_id"])
         persisted = await asyncio.to_thread(
@@ -539,6 +585,7 @@ class AiShadowResearchQualificationService:
                     baseline_result_id=baseline_result_id,
                     qualification_run_id=qualification_run_id,
                     admission=admission,
+                    final_evaluation=final_evaluation,
                 )
             except asyncio.CancelledError:
                 raise
@@ -620,6 +667,7 @@ class AiShadowResearchQualificationService:
         baseline_result_id: int,
         qualification_run_id: str,
         admission: QualificationAdmission,
+        final_evaluation: Mapping[str, Any],
     ) -> dict[str, Any]:
         selection = StrategyResearchSelection(
             saved_backtest_result_id=baseline_result_id,
@@ -654,6 +702,12 @@ class AiShadowResearchQualificationService:
             reviewed_fee_schedule_resolution=fee_resolution,
             account_capital_evidence=account_capital,
         )
+        result["metrics_json"]["independent_evaluation"] = (
+            dict(final_evaluation)
+            if final_evaluation["reservation"]["candidate_id"]
+            == source.source_candidate["candidate_id"]
+            else {}
+        )
         baseline_row = await self._db.get_backtest_result(baseline_result_id)
         if not isinstance(baseline_row, Mapping):
             raise ShadowResearchQualificationRejected(
@@ -666,6 +720,7 @@ class AiShadowResearchQualificationService:
             gate = self._advancement_gate_builder(
                 baseline=baseline_view,
                 candidate=candidate_view,
+                require_independent_evaluation=True,
                 critique_evidence={
                     "status": "completed",
                     "critique_id": source.source_critique["critique_id"],

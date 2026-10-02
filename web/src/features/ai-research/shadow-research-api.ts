@@ -212,6 +212,8 @@ export type ShadowResearchAutomationStatus = {
     token_budget_mode: 'unbounded_daily' | 'legacy_bounded_daily';
     max_candidates_per_run: number;
     baseline_backtest_result_id: number | null;
+    research_end_date?: string | null;
+    sealed_end_date?: string | null;
     research_capital_mode: 'normalized_notional' | 'account_bound';
     require_complete_account_evidence: boolean;
     promotion_requires_complete_account_evidence: true;
@@ -319,6 +321,8 @@ export type ShadowResearchPolicyInput = {
   token_budget_mode: 'unbounded_daily';
   max_candidates_per_run: number;
   baseline_backtest_result_id: number | null;
+  research_end_date?: string | null;
+  sealed_end_date?: string | null;
   research_capital_mode: 'normalized_notional' | 'account_bound';
   require_complete_account_evidence: boolean;
   research_question: string;

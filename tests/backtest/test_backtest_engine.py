@@ -8,10 +8,10 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from backtest.engine import BacktestEngine
+from backtest.engine import BacktestEngine, BacktestExecutionConfig
 from backtest.result import BacktestResult
 from core.event_bus import EventBus
-from core.events import MarketEvent, OrderEvent, SignalEvent
+from core.events import MarketEvent, OrderEvent, RiskDecisionEvent, SignalEvent
 from core.types import ZERO, BarFrequency, CommissionType, OrderSide, OrderType, Symbol
 from data.handler import DataHandler
 from domain.instrument import make_etf, make_stock
@@ -151,8 +151,8 @@ class TestBacktestEngine:
         assert pos is not None
         assert pos.quantity > ZERO
 
-    def test_final_equity_marks_last_bar_fill_to_market(self):
-        """最后一根 K 线成交后，指标终值应与资金曲线末值一致。"""
+    def test_final_bar_signal_has_no_future_fill(self):
+        """A final-bar signal cannot invent an execution opportunity."""
         symbol = Symbol("600519")
         inst = make_stock("600519", "贵州茅台")
         df = make_price_df(n=6)
@@ -165,7 +165,9 @@ class TestBacktestEngine:
         )
         result = engine.run()
 
-        assert result.fills
+        assert result.fills == []
+        assert result.execution_timing["pending_signal_count"] == 1
+        assert result.final_equity == result.initial_cash
         assert result.final_equity == result.equity_curve[-1][1]
         assert result.metrics.final_equity == pytest.approx(float(result.final_equity))
 
@@ -340,3 +342,240 @@ class TestBacktestResult:
         assert result.metrics.sharpe == 0.0
         assert result.fills == []
         assert result.cost_summary.total_commission == Decimal("0")
+        assert result.execution_timing is None
+
+
+class FirstBarTargetStrategy(Strategy):
+    def __init__(self, target_symbol=None, *, exit_on_second=False):
+        super().__init__("first_bar_target", EventBus())
+        self.target_symbol = target_symbol
+        self.exit_on_second = exit_on_second
+        self.observed = []
+        self.initialized = False
+
+    def on_init(self, symbols):
+        self.initialized = True
+        self.symbols = symbols
+
+    def on_data(self, event):
+        self._last_timestamp = event.timestamp
+        self.observed.append(event)
+        if len(self.observed) == 1:
+            self.emit_signal(
+                self.target_symbol or event.symbol, 1.0, float(event.close)
+            )
+        elif len(self.observed) == 2 and self.exit_on_second:
+            self.emit_signal(event.symbol, 0.0, float(event.close))
+
+
+def _timing_frame(closes, *, volume=None, available_at=None):
+    frame = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2026-01-05 15:00", periods=len(closes)),
+            "open": [value - 1 for value in closes],
+            "high": closes,
+            "low": [value - 1 for value in closes],
+            "close": closes,
+            "volume": volume or [100000] * len(closes),
+        }
+    )
+    if available_at is not None:
+        frame["available_at"] = available_at
+    return frame
+
+
+def _timing_engine(frame, *, strategy=None, execution_config=None):
+    symbol = Symbol("600000")
+    return BacktestEngine(
+        strategy=strategy or FirstBarTargetStrategy(),
+        instruments={symbol: make_stock(str(symbol), "fixture")},
+        data_handlers={symbol: DataHandler(frame, symbol)},
+        initial_cash=Decimal("10000"),
+        execution_config=execution_config,
+    )
+
+
+def test_pending_target_sizes_at_next_close_and_does_not_fill_at_next_open():
+    frame = _timing_frame([10, 10.5])
+    result = _timing_engine(frame).run()
+    assert len(result.fills) == 1
+    fill = result.fills[0]
+    assert fill.timestamp == frame.iloc[1]["timestamp"]
+    assert fill.fill_price == Decimal("10.5")
+    assert fill.fill_quantity == Decimal("900")
+    assert result.execution_timing["policy_id"] == "karkinos.backtest.next_bar_close.v1"
+    assert result.execution_timing["historical_pit_verified"] is False
+
+
+def test_another_symbol_at_same_timestamp_cannot_execute_new_signal():
+    left, right = Symbol("600000"), Symbol("600001")
+    frame = _timing_frame([10, 10.5])
+    engine = BacktestEngine(
+        strategy=FirstBarTargetStrategy(target_symbol=right),
+        instruments={
+            left: make_stock(str(left), "left"),
+            right: make_stock(str(right), "right"),
+        },
+        data_handlers={
+            right: DataHandler(frame, right),
+            left: DataHandler(frame, left),
+        },
+        initial_cash=Decimal("10000"),
+    )
+    result = engine.run()
+    assert [(fill.symbol, fill.timestamp) for fill in result.fills] == [
+        (right, frame.iloc[1]["timestamp"])
+    ]
+
+
+@pytest.mark.parametrize(
+    ("closes", "volumes", "reason"),
+    [([10, 11], [100000, 100000], "limit"), ([10, 10.5], [100000, 0], "suspension")],
+)
+def test_next_bar_constraints_apply_to_all_strategies(closes, volumes, reason):
+    result = _timing_engine(_timing_frame(closes, volume=volumes)).run()
+    assert result.fills == []
+    assert result.execution_timing[f"{reason}_blocked_count"] == 1
+
+
+def test_pending_exit_respects_limit_down_on_execution_bar():
+    strategy = FirstBarTargetStrategy(exit_on_second=True)
+    result = _timing_engine(_timing_frame([10, 10.5, 9.45]), strategy=strategy).run()
+    assert [fill.side for fill in result.fills] == [OrderSide.BUY]
+    assert result.execution_timing["limit_blocked_count"] == 1
+
+
+def test_pending_exit_fills_after_t_plus_one_settlement():
+    strategy = FirstBarTargetStrategy(exit_on_second=True)
+    result = _timing_engine(_timing_frame([10, 10.5, 10.6]), strategy=strategy).run()
+    assert [fill.side for fill in result.fills] == [OrderSide.BUY, OrderSide.SELL]
+    assert result.positions[Symbol("600000")].quantity == ZERO
+
+
+def test_execution_time_risk_rejection_prevents_fill():
+    engine = _timing_engine(_timing_frame([10, 10.5]))
+    engine.risk_manager.add_rule(PositionLimitRule(Decimal("100")))
+    decisions = []
+    engine.event_bus.subscribe(RiskDecisionEvent, decisions.append)
+    result = engine.run()
+    assert result.fills == []
+    assert result.execution_timing["risk_blocked_count"] == 1
+    assert len(decisions) == 1
+    assert decisions[0].passed is False
+    assert decisions[0].resulting_order_id is None
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_observed_mode_rejects_unavailable_input_before_strategy_observes_it(missing):
+    strategy = FirstBarTargetStrategy()
+    frame = _timing_frame([10, 10.5])
+    if not missing:
+        frame["available_at"] = frame["timestamp"] + pd.Timedelta(seconds=1)
+    engine = _timing_engine(
+        frame,
+        strategy=strategy,
+        execution_config=BacktestExecutionConfig(availability_mode="observed"),
+    )
+    with pytest.raises(ValueError, match="backtest_observation_"):
+        engine.run()
+    assert strategy.observed == []
+    assert strategy.initialized is False
+    assert engine.fills == []
+
+
+def test_observed_mode_preserves_availability_and_accepts_visible_bars():
+    frame = _timing_frame([10, 10.5])
+    frame["available_at"] = frame["timestamp"]
+    engine = _timing_engine(
+        frame, execution_config=BacktestExecutionConfig(availability_mode="observed")
+    )
+    result = engine.run()
+    assert engine.strategy.observed[0].available_at == frame.iloc[0]["available_at"]
+    assert result.fills[0].timestamp > engine.strategy.observed[0].available_at
+    assert result.execution_timing["availability_mode"] == "observed"
+
+
+def test_historical_snapshot_mode_keeps_late_availability_explicit():
+    frame = _timing_frame([10, 10.5])
+    frame["available_at"] = frame["timestamp"] + pd.Timedelta(days=30)
+    engine = _timing_engine(frame)
+    result = engine.run()
+    assert result.fills
+    assert engine.strategy.observed[0].available_at == frame.iloc[0]["available_at"]
+    assert result.execution_timing["availability_mode"] == "historical_snapshot"
+    assert result.execution_timing["historical_pit_verified"] is False
+
+
+@pytest.mark.parametrize("timezone", ["UTC", None])
+def test_observed_mode_checks_timezone_before_callbacks(timezone):
+    strategy = FirstBarTargetStrategy()
+    frame = _timing_frame([10, 10.5])
+    visible = frame["timestamp"].dt.tz_localize("Asia/Shanghai")
+    frame["available_at"] = visible
+    if timezone is not None:
+        frame["timestamp"] = visible.dt.tz_convert(timezone)
+    engine = _timing_engine(
+        frame,
+        strategy=strategy,
+        execution_config=BacktestExecutionConfig(availability_mode="observed"),
+    )
+    if timezone is None:
+        with pytest.raises(ValueError, match="backtest_observation_timezone_mismatch"):
+            engine.run()
+        assert strategy.initialized is False
+        assert strategy.observed == []
+    else:
+        result = engine.run()
+        assert len(result.fills) == 1
+        assert result.fills[0].timestamp > visible.iloc[0]
+
+
+def test_execution_time_risk_modification_does_not_also_fill_original_order():
+    from dataclasses import replace
+
+    from risk.rules import RiskCheckResult, RiskRule
+
+    class CapQuantity(RiskRule):
+        @property
+        def name(self):
+            return "cap_quantity"
+
+        def check(self, order, positions, portfolio_value):
+            return RiskCheckResult(
+                passed=True,
+                modified_order=replace(order, quantity=Decimal("100")),
+            )
+
+    engine = _timing_engine(_timing_frame([10, 10.5]))
+    engine.risk_manager.add_rule(CapQuantity())
+    result = engine.run()
+    assert len(result.fills) == 1
+    assert result.fills[0].fill_quantity == Decimal("100")
+
+
+def test_etf_execution_uses_instrument_tick_for_price_limit():
+    symbol = Symbol("510300")
+    frame = _timing_frame([1.005, 1.106])
+    engine = BacktestEngine(
+        strategy=FirstBarTargetStrategy(),
+        instruments={symbol: make_etf(str(symbol), "fixture")},
+        data_handlers={symbol: DataHandler(frame, symbol)},
+    )
+    result = engine.run()
+    assert result.fills == []
+    assert result.execution_timing["limit_blocked_count"] == 1
+
+
+def test_zero_price_limit_does_not_disable_suspension_admission():
+    from dataclasses import replace
+
+    symbol = Symbol("510300")
+    frame = _timing_frame([1.005, 1.106], volume=[10000, 0])
+    engine = BacktestEngine(
+        strategy=FirstBarTargetStrategy(),
+        instruments={symbol: replace(make_etf(str(symbol), "fixture"), limit_pct=ZERO)},
+        data_handlers={symbol: DataHandler(frame, symbol)},
+    )
+    result = engine.run()
+    assert result.fills == []
+    assert result.execution_timing["suspension_blocked_count"] == 1

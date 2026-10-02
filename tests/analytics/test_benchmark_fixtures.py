@@ -24,6 +24,11 @@ def test_fixture_backtests_generate_validation_evidence_for_all_benchmarks():
         cost_summary = json.loads(row["cost_summary_json"])
         evidence = metrics_json["evidence_bundle"]
         oos = metrics_json["oos_validation"]
+        timing = metrics_json["execution_timing"]
+
+        assert timing["policy_id"] == "karkinos.backtest.next_bar_close.v1"
+        assert timing["availability_mode"] == "historical_snapshot"
+        assert timing["historical_pit_verified"] is False
 
         assert cost_summary["total_trades"] > 0
         assert cost_summary["gross_turnover"] > 0

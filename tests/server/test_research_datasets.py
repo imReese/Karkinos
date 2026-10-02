@@ -361,6 +361,12 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
         assert result.status_code == 200, result.text
         result = result.json()
         assert result["config"]["dataset_id"] == dataset_id
+        timing = result["metrics_json"]["execution_timing"]
+        assert timing["policy_id"] == "karkinos.backtest.next_bar_close.v1"
+        assert timing["signal_basis"] == "completed_bar"
+        assert timing["fill_basis"] == "strictly_later_same_instrument_bar_close"
+        assert timing["availability_mode"] == "historical_snapshot"
+        assert timing["historical_pit_verified"] is False
         assert (
             result["metrics_json"]["dataset_binding"]["point_in_time_verified"] is False
         )
@@ -401,6 +407,7 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
         assert admission["details"]["decision_availability"] == availability
         saved = client.get(f"/api/backtest/results/{result['id']}").json()
         assert saved["config"]["dataset_id"] == dataset_id
+        assert saved["metrics_json"]["execution_timing"] == timing
         assert saved["metrics_json"]["dataset_binding"]["decision_availability"] == (
             availability
         )

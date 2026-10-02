@@ -22,6 +22,9 @@ class Strategy(ABC):
         self.strategy_id = strategy_id
         self.event_bus = event_bus
         self._last_timestamp: datetime | None = None
+        # Signal-only scans track research regimes; an execution host explicitly
+        # enables this only when it delivers real FillEvent callbacks.
+        self.fill_tracking_enabled = False
 
     @abstractmethod
     def on_init(self, symbols: list[Symbol]) -> None:

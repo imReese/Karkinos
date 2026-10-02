@@ -44,6 +44,8 @@ class PairsRatioMeanReversionStrategy(Strategy):
         self._seen_by_date: dict[date, set[Symbol]] = defaultdict(set)
         self._last_ratio_date: date | None = None
         self._ratios: list[float] = []
+        # Targets and mode track published research signals, not actual holdings.
+        # Each change gets one execution attempt, with no automatic standing order.
         self._current_targets: dict[Symbol, float | None] = defaultdict(lambda: None)
         self._mode = "neutral"
 

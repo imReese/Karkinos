@@ -95,6 +95,18 @@ class StrategyPromotionPipeline:
     ) -> dict[str, Any]:
         strategy_id = _strategy_id(readiness)
         _require_ai_shadow_readiness_binding(self._db, readiness)
+        if strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
+            from server.services.research_final_evaluation import (
+                require_new_publication_final_evaluation,
+            )
+
+            require_new_publication_final_evaluation(
+                self._db,
+                int(readiness.get("backtest_result_id") or 0),
+                expected_candidate_id=strategy_id.removeprefix(
+                    AI_SHADOW_STRATEGY_PREFIX
+                ),
+            )
         missing = _missing_requirements(readiness)
         promotable = _is_promotable(readiness)
         state = self._db.upsert_strategy_promotion_state_sync(
@@ -146,6 +158,18 @@ class StrategyPromotionPipeline:
         if strategy_id != _strategy_id(readiness):
             raise ValueError("readiness strategy_id does not match promotion target")
         _require_ai_shadow_readiness_binding(self._db, readiness)
+        if strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
+            from server.services.research_final_evaluation import (
+                require_new_publication_final_evaluation,
+            )
+
+            require_new_publication_final_evaluation(
+                self._db,
+                int(readiness.get("backtest_result_id") or 0),
+                expected_candidate_id=strategy_id.removeprefix(
+                    AI_SHADOW_STRATEGY_PREFIX
+                ),
+            )
         missing = _missing_requirements(readiness)
         if missing or not _is_promotable(readiness):
             raise ValueError(

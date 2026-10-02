@@ -8,12 +8,6 @@ from typing import Any
 
 import pandas as pd
 
-from analytics.a_share_limits import (
-    is_limit_down,
-    is_limit_up,
-    is_suspended,
-    limit_rate_for_symbol,
-)
 from analytics.backtest_capacity_evidence import build_backtest_capacity_evidence
 from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
 from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
@@ -32,8 +26,8 @@ from analytics.research_account_capital_evidence import (
 from analytics.sweep_robustness import build_sweep_robustness_evidence
 from backtest.engine import BacktestEngine
 from backtest.result import BacktestResult
-from core.events import MarketEvent
-from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
+from core.events import FillEvent, MarketEvent
+from core.types import AssetClass, BarFrequency, InstrumentType, OrderSide, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
 from data.research_market_data import load_research_market_frames
@@ -81,31 +75,18 @@ class _FormulaSignalStrategy(Strategy):
         self._canonical_target_weight = 1.0 / self._allocation_slots
         self._frames: dict[Symbol, list[dict[str, Any]]] = {}
         self._active: dict[Symbol, bool] = {}
-        self._pending_target: dict[Symbol, float | None] = {}
+        self._filled_quantity: dict[Symbol, Decimal] = {}
         self._entry_signal_count = 0
         self._exit_signal_count = 0
         self._entry_target_count = 0
-        self._limit_blocked_count = 0
-        self._suspension_blocked_count = 0
 
     def on_init(self, symbols: list[Symbol]) -> None:
         self._frames = {symbol: [] for symbol in symbols}
         self._active = {symbol: False for symbol in symbols}
-        self._pending_target = {symbol: None for symbol in symbols}
+        self._filled_quantity = {symbol: Decimal("0") for symbol in symbols}
 
     def on_data(self, event: MarketEvent) -> None:
         self._last_timestamp = event.timestamp
-        pending_target = self._pending_target[event.symbol]
-        if pending_target is not None:
-            if self._is_tradeable(event, pending_target):
-                self.emit_signal(
-                    event.symbol,
-                    pending_target,
-                    price=float(event.close),
-                )
-                self._active[event.symbol] = pending_target > 0.0
-            self._pending_target[event.symbol] = None
-
         rows = self._frames[event.symbol]
         rows.append(
             {
@@ -128,42 +109,34 @@ class _FormulaSignalStrategy(Strategy):
         active = self._active[event.symbol]
         if active and should_exit:
             self._exit_signal_count += 1
-            self._pending_target[event.symbol] = 0.0
+            self.emit_signal(event.symbol, 0.0, price=float(event.close))
         elif not active and should_enter and not should_exit:
             self._entry_signal_count += 1
             self._entry_target_count += 1
-            self._pending_target[event.symbol] = self._canonical_target_weight
+            self.emit_signal(
+                event.symbol, self._canonical_target_weight, price=float(event.close)
+            )
 
-    def _is_tradeable(self, event: MarketEvent, target: float) -> bool:
-        """Apply A-share limit-up/down and suspension constraints to a fill."""
+    def on_fill(self, event: FillEvent) -> None:
+        change = (
+            event.fill_quantity if event.side is OrderSide.BUY else -event.fill_quantity
+        )
+        self._filled_quantity[event.symbol] += change
+        self._active[event.symbol] = self._filled_quantity[event.symbol] > 0
 
-        if is_suspended(Decimal(str(event.volume))):
-            self._suspension_blocked_count += 1
-            return False
-        frames = self._frames[event.symbol]
-        if not frames:
-            return True
-        prev_close = Decimal(str(frames[-1]["close"]))
-        rate = limit_rate_for_symbol(str(event.symbol))
-        close = Decimal(str(event.close))
-        if target > 0.0 and is_limit_up(close, prev_close, rate):
-            self._limit_blocked_count += 1
-            return False
-        if target <= 0.0 and is_limit_down(close, prev_close, rate):
-            self._limit_blocked_count += 1
-            return False
-        return True
-
-    def execution_evidence(self, *, fill_count: int) -> JsonObject:
+    def execution_evidence(
+        self, *, fill_count: int, execution_timing: Mapping[str, Any] | None = None
+    ) -> JsonObject:
         """Return privacy-minimized signal-to-fill diagnostics for critique."""
+        timing = execution_timing or {}
         core = {
             "schema_version": "karkinos.ai.formula_signal_execution.v1",
             "entry_signal_count": self._entry_signal_count,
             "exit_signal_count": self._exit_signal_count,
             "entry_target_count": self._entry_target_count,
             "fill_count": int(fill_count),
-            "limit_blocked_count": self._limit_blocked_count,
-            "suspension_blocked_count": self._suspension_blocked_count,
+            "limit_blocked_count": timing.get("limit_blocked_count", 0),
+            "suspension_blocked_count": timing.get("suspension_blocked_count", 0),
             "zero_fill_after_entry_targets": bool(
                 self._entry_target_count and not fill_count
             ),
@@ -291,6 +264,7 @@ class RestrictedFormulaBacktestAdapter:
             else {}
         )
         metrics_json = metrics.to_json_dict()
+        metrics_json["execution_timing"] = result.execution_timing
         min_train_points, test_window_points, step_points = rolling_oos_parameters(
             len(result.equity_curve)
         )
@@ -355,7 +329,8 @@ class RestrictedFormulaBacktestAdapter:
                     data_handlers=handlers,
                 ),
                 "signal_execution_evidence": formula_strategy.execution_evidence(
-                    fill_count=len(result.fills)
+                    fill_count=len(result.fills),
+                    execution_timing=result.execution_timing,
                 ),
                 "lot_feasibility_evidence": _research_lot_feasibility_evidence(
                     handlers=handlers,
@@ -451,6 +426,8 @@ class RestrictedFormulaBacktestAdapter:
         draft: JsonObject,
         sealed_end_date: str,
         reviewed_fee_schedule_resolution: Any | None = None,
+        expected_dataset_snapshot: Mapping[str, Any] | None = None,
+        expected_trading_dates: list[str] | None = None,
     ) -> BacktestResult:
         """Run the frozen champion on [start, sealed_end] for one-time holdout.
 
@@ -462,12 +439,98 @@ class RestrictedFormulaBacktestAdapter:
         formula_ast = draft.get("formula_ast")
         if not isinstance(formula_ast, dict):
             raise StrategyResearchRejected("validated_formula_missing")
-        handlers, instruments, _ = _load_bound_inputs(
+        extended_snapshot = expected_dataset_snapshot
+        if expected_dataset_snapshot is not None and expected_dataset_snapshot.get(
+            "immutable_dataset_id"
+        ):
+            raise StrategyResearchRejected(
+                "sealed_immutable_dataset_extension_unsupported"
+            )
+        if expected_dataset_snapshot is not None:
+            # Verify the research prefix before admitting any newly observed bars.
+            prefix_handlers, _, _ = _load_bound_inputs(
+                self._data_store,
+                selection,
+                expected_dataset_snapshot=expected_dataset_snapshot,
+            )
+            old_binding = expected_dataset_snapshot.get("market_data_binding")
+            if old_binding is not None:
+                from data.research_market_data import research_market_binding
+
+                providers = {ref["provider_name"] for ref in old_binding["receipts"]}
+                receipts = [
+                    row
+                    for row in self._data_store.list_market_daily_ingestion_receipts(
+                        start_date=selection.start_date,
+                        end_date=sealed_end_date,
+                    )
+                    if row["provider_name"] in providers
+                ]
+                full_binding = research_market_binding(receipts)
+                prefix = [
+                    ref
+                    for ref in full_binding["receipts"]
+                    if ref["trade_date"] <= selection.end_date
+                ]
+                if prefix != old_binding["receipts"]:
+                    raise StrategyResearchRejected("sealed_research_prefix_drift")
+                extended_snapshot = {
+                    **expected_dataset_snapshot,
+                    "market_data_binding": full_binding,
+                }
+        handlers, instruments, snapshot = _load_bound_inputs(
             self._data_store,
             selection,
+            expected_dataset_snapshot=extended_snapshot,
             end_date=sealed_end_date,
             verify_snapshot=False,
+            allow_extended_binding=True,
         )
+        if expected_dataset_snapshot is not None and any(
+            handler._df["timestamp"].iloc[-1].date().isoformat()
+            != (
+                expected_trading_dates[-1]
+                if expected_trading_dates
+                else sealed_end_date
+            )
+            for handler in handlers.values()
+        ):
+            raise StrategyResearchRejected("sealed_window_not_complete")
+        if expected_trading_dates is not None and any(
+            handler._df["timestamp"]
+            .dt.date.map(lambda value: value.isoformat())
+            .tolist()
+            != expected_trading_dates
+            for handler in handlers.values()
+        ):
+            raise StrategyResearchRejected(
+                "sealed_trading_calendar_coverage_incomplete"
+            )
+        if expected_dataset_snapshot is not None:
+            for symbol, prefix_handler in prefix_handlers.items():
+                expected_frame = prefix_handler._df
+                actual_frame = _slice_frame(
+                    handlers[symbol]._df, selection.start_date, selection.end_date
+                )
+                columns = [
+                    name
+                    for name in (
+                        "timestamp",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "amount",
+                    )
+                    if name in expected_frame
+                ]
+                if (
+                    not expected_frame[columns]
+                    .reset_index(drop=True)
+                    .equals(actual_frame[columns].reset_index(drop=True))
+                ):
+                    raise StrategyResearchRejected("sealed_research_prefix_drift")
         commission_calc, _ = validated_fee_schedule_resolution(
             selection,
             reviewed_fee_schedule_resolution,
@@ -486,7 +549,9 @@ class RestrictedFormulaBacktestAdapter:
             commission_calc=commission_calc,
             db=None,
         )
-        return engine.run()
+        result = engine.run()
+        result.dataset_snapshot = snapshot
+        return result
 
 
 def _formula_parameter_robustness(
@@ -728,6 +793,7 @@ def _load_bound_inputs(
     expected_dataset_snapshot: Mapping[str, Any] | None = None,
     end_date: str | None = None,
     verify_snapshot: bool = True,
+    allow_extended_binding: bool = False,
 ) -> tuple[dict[Symbol, DataHandler], dict[Symbol, Any], JsonObject]:
     effective_end = end_date or selection.end_date
     handlers: dict[Symbol, DataHandler] = {}
@@ -735,7 +801,7 @@ def _load_bound_inputs(
     market_binding = (expected_dataset_snapshot or {}).get("market_data_binding")
     frozen_frames = None
     if market_binding is not None:
-        if effective_end > selection.end_date:
+        if effective_end > selection.end_date and not allow_extended_binding:
             raise StrategyResearchRejected(
                 "research_snapshot_extension_requires_new_binding"
             )
@@ -744,7 +810,7 @@ def _load_bound_inputs(
             binding=market_binding,
             symbols=selection.universe,
             start_date=selection.start_date,
-            end_date=selection.end_date,
+            end_date=effective_end,
         )
     for symbol_text, asset_class_text in zip(
         selection.universe, selection.asset_classes, strict=True

@@ -2691,7 +2691,9 @@ def test_candidate_approval_reads_full_evidence_after_status_projection(
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
-def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
+def test_historical_candidate_requires_independent_final_before_new_publication(
+    tmp_path,
+) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = ShadowResearchStore(tmp_path / "app.db")
@@ -2806,44 +2808,20 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
         data_store=DataStore(tmp_path / "market"),
         daily_artifact_store=daily_artifacts,
     )
-    canonical = service.approve_candidate(
-        candidate["candidate_id"],
-        approved_by="human:owner",
-        notes="Reviewed OOS, costs, drawdown, and DeepSeek critique.",
-        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
-    )
-    replay = service.approve_candidate(
-        candidate["candidate_id"],
-        approved_by="human:owner",
-        notes="Reviewed OOS, costs, drawdown, and DeepSeek critique.",
-        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
-    )
+    from server.contracts.strategy_research import StrategyResearchRejected
 
-    assert canonical["paper_shadow_stage_recorded"] is True
-    assert canonical["strategy_promotion"]["stage"] == "paper_shadow"
-    assert canonical["strategy_promotion"]["live_like_enabled"] is False
-    readiness = canonical["strategy_promotion"]["payload"]["readiness"]
-    daily_binding = readiness["daily_strategy_artifact_binding"]
-    assert daily_binding == build_daily_strategy_promotion_binding(
-        {
-            "selection": canonical["daily_selection"],
-            "backup": canonical["daily_backup"],
-            "operating_constraints": daily_binding["operating_constraints"],
-        }
-    )
-    assert "relative_path" not in daily_binding
-    assert daily_binding["contains_private_account_identifiers"] is False
-    assert daily_binding["contains_broker_export_rows"] is False
-    assert daily_binding["does_not_change_capital_authority"] is True
-    assert canonical["strategy_registry_mutated"] is False
-    assert replay["promotion_id"] == canonical["promotion_id"]
-    assert store.get_candidate(candidate["candidate_id"])["promotion_status"] == (
-        "paper_shadow_approved"
-    )
-    events = db.list_strategy_promotion_events_sync(canonical["strategy_id"])
-    assert [item["event_type"] for item in events].count(
-        "promoted_to_paper_shadow"
-    ) == 1
+    with pytest.raises(
+        StrategyResearchRejected, match="independent_final_evaluation_missing"
+    ):
+        service.approve_candidate(
+            candidate["candidate_id"],
+            approved_by="human:owner",
+            notes="Historical in-sample evidence cannot authorize a new publication.",
+            confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+        )
+    strategy_id = f"ai_formula_shadow:{candidate['candidate_id']}"
+    assert db.get_strategy_promotion_state_sync(strategy_id) is None
+    assert db.list_strategy_promotion_events_sync(strategy_id) == []
 
 
 @pytest.mark.unit
