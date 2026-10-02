@@ -19,7 +19,11 @@ export function SettingsPersistedConfiguration({
 }) {
   const { copy } = controller;
   return (
-    <div className="min-w-0" data-testid="settings-persisted-configuration">
+    <div
+      className="min-w-0"
+      id="settings-persisted-configuration"
+      data-testid="settings-persisted-configuration"
+    >
       <SettingsSection
         title={copy.settings.backendSettings}
         detail={copy.settings.persistedSettingsDetail}
