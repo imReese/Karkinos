@@ -10,8 +10,8 @@ from typing import Any, Iterable, Mapping
 
 import pandas as pd
 
-BACKTEST_CAPACITY_EVIDENCE_SCHEMA_VERSION = "karkinos.backtest_capacity.v1"
-CAPACITY_MODEL_REFERENCE = "karkinos.backtest.capacity.daily_bar_participation.v1"
+BACKTEST_CAPACITY_EVIDENCE_SCHEMA_VERSION = "karkinos.backtest_capacity.v2"
+CAPACITY_MODEL_REFERENCE = "karkinos.backtest.capacity.daily_bar_participation.v2"
 DEFAULT_MAX_DAILY_VOLUME_PARTICIPATION = Decimal("0.10")
 
 
@@ -24,14 +24,16 @@ def build_backtest_capacity_evidence(
 ) -> dict[str, Any]:
     """Compare exact fills with account capital and same-bar persisted liquidity."""
 
+    participation_limit = _decimal(max_daily_volume_participation)
+    if participation_limit is None or not 0 < participation_limit <= 1:
+        raise ValueError("daily_volume_participation_limit_invalid")
+    max_daily_volume_participation = participation_limit
     fill_list = list(fills)
     cash = _decimal(initial_cash)
     issues: list[str] = []
     observations: list[dict[str, Any]] = []
     if cash is None or cash <= 0:
         issues.append("initial_cash_invalid")
-    if max_daily_volume_participation <= 0 or max_daily_volume_participation > 1:
-        issues.append("daily_volume_participation_limit_invalid")
     if not fill_list:
         issues.append("capacity_fill_evidence_missing")
 
@@ -80,6 +82,8 @@ def build_backtest_capacity_evidence(
                 "symbol": symbol,
                 "timestamp": timestamp.isoformat(),
                 "fill_notional": format(fill_notional, "f"),
+                "fill_quantity": format(quantity, "f"),
+                "bar_volume": format(volume, "f"),
                 "bar_notional": format(volume * close, "f"),
                 "raw_volume_participation": format(raw_volume_participation, "f"),
                 "capacity_utilization_pct": format(capacity_utilization, "f"),
@@ -95,10 +99,13 @@ def build_backtest_capacity_evidence(
         ),
         default=Decimal("0"),
     )
+    bar_observations = _aggregate_observations(
+        observations, max_daily_volume_participation, exact_quantities=True
+    )
     max_liquidity = max(
         (
             _decimal(item["liquidity_utilization_pct"]) or Decimal("0")
-            for item in observations
+            for item in bar_observations
         ),
         default=Decimal("0"),
     )
@@ -120,13 +127,15 @@ def build_backtest_capacity_evidence(
         "fill_count": len(fill_list),
         "observation_count": len(observations),
         "observations": observations,
+        "bar_observations": bar_observations,
         "issues": issues,
         "assumptions": [
-            "Capacity is bounded by the frozen initial cash supplied to the canonical backtest.",
-            "Liquidity stress uses each fill quantity divided by exact same-bar persisted volume and a 10 percent participation ceiling.",
+            "Capital utilization compares each fill notional with frozen initial cash; it is not an estimate of maximum strategy capital.",
+            "Liquidity stress sums absolute fill quantities per symbol and execution bar, divided by that bar's persisted volume and the configured participation ceiling.",
         ],
         "limitations": [
             "Daily-bar volume is a conservative research proxy and does not prove executable intraday depth or market impact.",
+            "Bar notional is volume times close, a proxy rather than observed traded amount; buy and sell turnover never cancel.",
             "Capacity evidence grants no trading or capital authority and must be reviewed against live account limits before any manual ticket.",
         ],
         "persisted_market_data_only": True,
@@ -167,10 +176,20 @@ def is_valid_passed_backtest_capacity_evidence(
     reported_turnover = _decimal(payload.get("gross_turnover"))
     expected_cash = _decimal(expected_initial_cash)
     expected_turnover = _decimal(expected_gross_turnover)
+    legacy = payload.get("schema_version") == "karkinos.backtest_capacity.v1"
     if (
-        payload.get("schema_version") != BACKTEST_CAPACITY_EVIDENCE_SCHEMA_VERSION
+        payload.get("schema_version")
+        not in {
+            "karkinos.backtest_capacity.v1",
+            BACKTEST_CAPACITY_EVIDENCE_SCHEMA_VERSION,
+        }
         or payload.get("status") != "pass"
-        or payload.get("capacity_model_ref") != CAPACITY_MODEL_REFERENCE
+        or payload.get("capacity_model_ref")
+        != (
+            "karkinos.backtest.capacity.daily_bar_participation.v1"
+            if legacy
+            else CAPACITY_MODEL_REFERENCE
+        )
         or fill_count is None
         or fill_count <= 0
         or observation_count != fill_count
@@ -236,10 +255,23 @@ def is_valid_passed_backtest_capacity_evidence(
         capacities.append(capacity)
         liquidities.append(liquidity)
 
+    try:
+        groups = _aggregate_observations(
+            observations, max_participation, exact_quantities=not legacy
+        )
+    except (ValueError, TypeError, KeyError, ArithmeticError):
+        return False
+    grouped_liquidity = max(Decimal(row["liquidity_utilization_pct"]) for row in groups)
+    # Legacy report hashes and numbers remain untouched, but admission now checks
+    # their combined per-bar participation too. Reusing the old per-fill pass is unsafe.
+    if grouped_liquidity > 1 or (
+        not legacy and payload.get("bar_observations") != groups
+    ):
+        return False
     return (
         fill_indexes == list(range(fill_count))
         and max(capacities) == reported_capacity
-        and max(liquidities) == reported_liquidity
+        and (max(liquidities) if legacy else grouped_liquidity) == reported_liquidity
         and sum(
             (
                 _decimal(observation["fill_notional"]) or Decimal("0")
@@ -250,6 +282,60 @@ def is_valid_passed_backtest_capacity_evidence(
         == reported_turnover
         and (expected_turnover is None or reported_turnover == expected_turnover)
     )
+
+
+def _aggregate_observations(
+    observations: list[dict[str, Any]], limit: Decimal, *, exact_quantities: bool
+) -> list[dict[str, Any]]:
+    """One computation for new reports and validation of historical reports."""
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for observation in observations:
+        timestamp = pd.Timestamp(observation["timestamp"])
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.tz_convert("UTC")
+        key = (observation["symbol"], timestamp.isoformat())
+        notional = Decimal(observation["bar_notional"])
+        group = groups.setdefault(
+            key,
+            {
+                "symbol": key[0],
+                "timestamp": key[1],
+                "fill_indexes": [],
+                "bar_notional": notional,
+                "gross_fill_notional": Decimal("0"),
+                "raw_volume_participation": Decimal("0"),
+            },
+        )
+        if group["bar_notional"] != notional:
+            raise ValueError("capacity_bar_liquidity_conflict")
+        group["fill_indexes"].append(observation["fill_index"])
+        group["gross_fill_notional"] += Decimal(observation["fill_notional"])
+        if exact_quantities:
+            quantity = _decimal(observation.get("fill_quantity"))
+            volume = _decimal(observation.get("bar_volume"))
+            if quantity is None or volume is None or quantity <= 0 or volume <= 0:
+                raise ValueError("capacity_bar_liquidity_invalid")
+            if quantity / volume != Decimal(observation["raw_volume_participation"]):
+                raise ValueError("capacity_bar_participation_conflict")
+            if group.setdefault("bar_volume", volume) != volume:
+                raise ValueError("capacity_bar_liquidity_conflict")
+            group["gross_fill_quantity"] = (
+                group.get("gross_fill_quantity", 0) + quantity
+            )
+            group["raw_volume_participation"] = group["gross_fill_quantity"] / volume
+        else:
+            group["raw_volume_participation"] += Decimal(
+                observation["raw_volume_participation"]
+            )
+    for group in groups.values():
+        group["liquidity_utilization_pct"] = group["raw_volume_participation"] / limit
+    return [
+        {
+            key: format(value, "f") if isinstance(value, Decimal) else value
+            for key, value in group.items()
+        }
+        for group in groups.values()
+    ]
 
 
 def _decimal(value: Any) -> Decimal | None:
