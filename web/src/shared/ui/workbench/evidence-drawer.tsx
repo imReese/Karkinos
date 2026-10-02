@@ -1,4 +1,10 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 import { X } from 'lucide-react';
@@ -30,6 +36,7 @@ export function EvidenceDrawer({
   const drawerRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const presence = useMotionPresence(open);
+  const requestClose = useEffectEvent(onClose);
 
   useEffect(() => {
     if (!open) {
@@ -41,7 +48,7 @@ export function EvidenceDrawer({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        requestClose();
         return;
       }
       if (event.key !== 'Tab') {
@@ -72,7 +79,7 @@ export function EvidenceDrawer({
       document.removeEventListener('keydown', handleKeyDown);
       returnFocus?.focus();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!presence.mounted || typeof document === 'undefined') {
     return null;
