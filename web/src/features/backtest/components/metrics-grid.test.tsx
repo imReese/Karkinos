@@ -91,3 +91,37 @@ test('does not label unbound backtests as Dataset returns', () => {
 
   expect(screen.queryByText(/Simulated equity return/)).toBeNull();
 });
+
+test.each([
+  { price_basis: 'unadjusted' },
+  { adjustment_mode: 'none' },
+  {
+    research_limitations: [{ code: 'unadjusted_corporate_actions_unmodeled' }],
+  },
+])(
+  'qualifies receipt-bound raw returns from research semantics: %j',
+  (semantics) => {
+    window.localStorage.setItem('karkinos.locale', 'en');
+    const receiptBound = report();
+    receiptBound.metrics_json = {
+      dataset_snapshot: {
+        snapshot_id: 'sha256:receipt-bound-snapshot',
+        provider: {},
+        cache: { store_available: false, metadata_available: false },
+        date_range: { start: '2026-01-01', end: '2026-06-20' },
+        row_count: 100,
+        data_quality: { status: 'ok', issues: [] },
+        symbol_universe: [],
+        ...semantics,
+      },
+    };
+
+    render(
+      <PreferencesProvider>
+        <MetricsGrid report={receiptBound} />
+      </PreferencesProvider>,
+    );
+
+    expect(screen.getByText(/Simulated equity return/)).toBeTruthy();
+  },
+);

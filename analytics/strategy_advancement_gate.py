@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from analytics.backtest_capacity_evidence import (
     is_valid_passed_backtest_capacity_evidence,
 )
+from analytics.dataset_snapshot import dataset_research_use
 from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
@@ -221,8 +222,8 @@ def strategy_advancement_backtest_view(
         "dataset_quality_status": dataset_quality.get("status"),
         "dataset_issue_count": len(dataset_quality.get("issues") or []),
         **(
-            {"dataset_research_use": dataset["research_use"]}
-            if "research_use" in dataset
+            {"dataset_research_use": dataset_research_use(dataset)}
+            if "research_use" in dataset or "market_data_binding" in dataset
             else {}
         ),
         **(

@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from dataclasses import replace
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from threading import Lock
@@ -26,7 +27,11 @@ from data.dataset.manifest import (
     read_daily_bar_dataset_manifest,
 )
 from data.dataset.model import DailyBarDatasetSnapshot, DatasetRef
-from data.dataset.reader import read_daily_bar_dataset
+from data.dataset.reader import (
+    DatasetReaderError,
+    read_daily_bar_dataset,
+    read_dataset_corporate_action_evidence,
+)
 from data.dataset.resolver import (
     DailyBarDatasetResolverPolicy,
     DailyBarResolutionCandidate,
@@ -71,22 +76,22 @@ class ResearchDatasetError(RuntimeError):
 
 
 def require_supported_snapshot(snapshot: DailyBarDatasetSnapshot) -> None:
-    """Accept the legacy TDX lane and verification-bound v2 daily datasets."""
+    """Accept the legacy TDX lane and verification-bound daily datasets."""
     legacy_tdx = snapshot.resolver_policy_id == _POLICY.policy_id and all(
         partition.provider == "tdx" for partition in snapshot.partitions
     )
-    verified_v2 = snapshot.verification_bound and is_verified_daily_resolver_policy(
+    verified_bars = snapshot.verification_bound and is_verified_daily_resolver_policy(
         snapshot.resolver_policy_id
     )
-    if not legacy_tdx and not verified_v2:
+    if not legacy_tdx and not verified_bars:
         raise ResearchDatasetError("dataset_provider_or_policy_unsupported")
 
 
 def dataset_summary(root: Path, ref: DatasetRef) -> dict[str, Any]:
-    snapshot = read_daily_bar_dataset_manifest(
-        ContentAddressedObjectStore(root / "objects"), ref
-    )
+    store = ContentAddressedObjectStore(root / "objects")
+    snapshot = read_daily_bar_dataset_manifest(store, ref)
     require_supported_snapshot(snapshot)
+    corporate_actions = read_dataset_corporate_action_evidence(store, snapshot)
     return {
         "dataset_id": ref.dataset_id,
         "start_date": snapshot.start_date.isoformat(),
@@ -100,6 +105,11 @@ def dataset_summary(root: Path, ref: DatasetRef) -> dict[str, Any]:
         "price_basis": "unadjusted",
         "point_in_time_verified": False,
         "cross_source_verified": snapshot.verification_bound,
+        **(
+            {"corporate_action_evidence": corporate_actions}
+            if corporate_actions
+            else {}
+        ),
     }
 
 
@@ -219,7 +229,7 @@ def prepare_daily_dataset(
 
 
 class ResearchDatasetService:
-    """一个应用实例持有的运行时服务；SDK 的全局单例只进入子进程。"""
+    """一个应用实例持有的服务；TDX SDK 的全局单例只进入子进程。"""
 
     def __init__(self, root: Path, settings: TdxRuntimeSettings) -> None:
         self.root = root.resolve()
@@ -236,7 +246,12 @@ class ResearchDatasetService:
         for entry in entries:
             try:
                 datasets.append(dataset_summary(self.root, entry.ref))
-            except (DatasetManifestError, ResearchDatasetError, OSError):
+            except (
+                DatasetManifestError,
+                DatasetReaderError,
+                ResearchDatasetError,
+                OSError,
+            ):
                 unreadable_dataset_count += 1
         return {
             "tdx_configured": self._settings.configured,
@@ -245,6 +260,65 @@ class ResearchDatasetService:
             "datasets": datasets,
             "unreadable_dataset_count": unreadable_dataset_count,
         }
+
+    def collect_corporate_actions(
+        self, dataset_id: str, *, config: Any = None, refresh: bool = False
+    ) -> dict[str, Any]:
+        """Explicitly observe corporate actions and publish a new immutable binding."""
+        from data.market.corporate_actions import read_corporate_action_observation
+        from data.providers.tushare_corporate_actions import (
+            collect_tushare_dividend_observation,
+        )
+
+        if not self._lock.acquire(blocking=False):
+            raise ResearchDatasetError("dataset_preparation_busy")
+        try:
+            store = ContentAddressedObjectStore(self.root / "objects")
+            try:
+                original_ref = DatasetRef(store.resolve_ref(dataset_id))
+                original = read_daily_bar_dataset(store, original_ref).snapshot
+                require_supported_snapshot(original)
+            except Exception:
+                raise ResearchDatasetError(
+                    "dataset_corporate_actions_dataset_unreadable"
+                ) from None
+            if any(
+                item.instrument_type is not InstrumentType.STOCK
+                for item in original.instruments
+            ):
+                raise ResearchDatasetError("dataset_corporate_actions_stock_only")
+            if original.corporate_action_observation_ids and not refresh:
+                return {**dataset_summary(self.root, original_ref), "reused": True}
+            token = str(getattr(config, "tushare_token", "") or "").strip()
+            if not token:
+                raise ResearchDatasetError("tushare_token_missing")
+            observation_ids, cutoff = [], original.cutoff
+            try:
+                for instrument in original.instruments:
+                    ref = collect_tushare_dividend_observation(
+                        store, instrument=instrument, token=token
+                    )
+                    observation = read_corporate_action_observation(store, ref)
+                    cutoff = max(
+                        cutoff, datetime.fromisoformat(observation["available_at"])
+                    )
+                    observation_ids.append(ref.object_id)
+                snapshot = replace(
+                    original,
+                    cutoff=cutoff,
+                    corporate_action_observation_ids=tuple(observation_ids),
+                )
+                ref = publish_daily_bar_dataset_manifest(store, snapshot)
+                read_daily_bar_dataset(store, ref)
+                DatasetCatalog(self.root).register(store, ref)
+                return {**dataset_summary(self.root, ref), "reused": False}
+            except Exception:
+                # Never expose arbitrary SDK/credential-bearing exception messages.
+                raise ResearchDatasetError(
+                    "dataset_corporate_actions_collection_failed"
+                ) from None
+        finally:
+            self._lock.release()
 
     def prepare(
         self,

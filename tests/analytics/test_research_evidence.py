@@ -1,3 +1,5 @@
+import pytest
+
 from analytics.research_evidence import build_research_evidence_bundle
 
 
@@ -116,16 +118,26 @@ def test_research_evidence_bundle_summarizes_rolling_oos_details():
     }
 
 
-def test_immutable_dataset_keeps_bar_quality_distinct_from_research_admission():
+@pytest.mark.parametrize("legacy_receipt", [False, True])
+def test_immutable_dataset_keeps_bar_quality_distinct_from_research_admission(
+    legacy_receipt,
+):
+    admission = (
+        {"market_data_binding": {"schema_version": "karkinos.market_data_binding.v1"}}
+        if legacy_receipt
+        else {
+            "immutable_dataset_id": "sha256:dataset",
+            "research_use": "exploratory_backtest",
+        }
+    )
     bundle = build_research_evidence_bundle(
         metrics_json={
             "dataset_snapshot": {
                 "snapshot_id": "sha256:exploratory",
-                "immutable_dataset_id": "sha256:dataset",
+                **admission,
                 "row_count": 5,
                 "symbol_universe": [{"symbol": "600000", "row_count": 5}],
                 "data_quality": {"status": "ok", "issues": []},
-                "research_use": "exploratory_backtest",
                 "point_in_time_verified": False,
                 "price_basis": "unadjusted",
                 "cross_source_verified": False,

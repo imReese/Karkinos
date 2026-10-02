@@ -8,7 +8,10 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from analytics.dataset_snapshot import verify_backtest_dataset_snapshot_replay
+from analytics.dataset_snapshot import (
+    dataset_research_use,
+    verify_backtest_dataset_snapshot_replay,
+)
 from analytics.multiple_testing import build_return_series_trial_correction
 from analytics.sealed_holdout import (
     build_sealed_holdout_evaluation,
@@ -349,6 +352,12 @@ def require_new_publication_final_evaluation(
     store = StrategyResearchAuditStore(path)
     result = store.research_backtest_result(result_id)
     metrics = _object(result.get("metrics_json"))
+    snapshot = _object(metrics.get("dataset_snapshot"))
+    research_use = dataset_research_use(snapshot)
+    if research_use == "exploratory_backtest":
+        raise StrategyResearchRejected("candidate_dataset_exploratory_only")
+    if "research_use" in snapshot or "immutable_dataset_id" in snapshot:
+        raise StrategyResearchRejected("candidate_dataset_research_use_not_admitted")
     evidence = metrics.get("independent_evaluation")
     if not isinstance(evidence, Mapping):
         raise StrategyResearchRejected("independent_final_evaluation_missing")

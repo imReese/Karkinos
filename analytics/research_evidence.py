@@ -7,6 +7,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from analytics.dataset_snapshot import dataset_research_use
+
 AnalyzerStatus = str
 
 
@@ -214,8 +216,10 @@ def build_research_evidence_bundle(
         )
     ]
     dataset_snapshot = _json_object(metrics_json.get("dataset_snapshot"))
-    if "research_use" in dataset_snapshot or dataset_snapshot.get(
-        "immutable_dataset_id"
+    if (
+        "research_use" in dataset_snapshot
+        or dataset_snapshot.get("immutable_dataset_id")
+        or dataset_research_use(dataset_snapshot) is not None
     ):
         research_limitations = _list_of_dicts(
             dataset_snapshot.get("research_limitations")
@@ -235,7 +239,7 @@ def build_research_evidence_bundle(
                 status="blocked",
                 summary="This Dataset has no formal strategy promotion admission.",
                 details={
-                    "research_use": dataset_snapshot.get("research_use"),
+                    "research_use": dataset_research_use(dataset_snapshot),
                     "point_in_time_verified": dataset_snapshot.get(
                         "point_in_time_verified"
                     ),

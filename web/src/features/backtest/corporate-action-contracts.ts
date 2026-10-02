@@ -1,0 +1,37 @@
+export type CorporateActionEvidence = {
+  schema_version: 'karkinos.corporate_action_evidence.v1';
+  status: 'observed';
+  observation_ids: string[];
+  provider: 'tushare';
+  available_at: string;
+  availability_basis: 'capture_completed_at';
+  historical_availability_verified: false;
+  covered_action_types: string[];
+  coverage_status: 'provider_reported_only';
+  total_record_count: number;
+  matched_event_count: number;
+  undated_event_count: number;
+  events: Array<{
+    symbol: string;
+    instrument_type: string;
+    div_proc: string | null;
+    end_date: string | null;
+    ann_date: string | null;
+    imp_ann_date: string | null;
+    record_date: string | null;
+    ex_date: string | null;
+    pay_date: string | null;
+    div_listdate: string | null;
+    cash_div_tax: string | null;
+    cash_div: string | null;
+    stk_div: string | null;
+    stk_bo_rate: string | null;
+    stk_co_rate: string | null;
+    available_at: string;
+    captured_at: string;
+    source_revision_id: string;
+    observation_id: string;
+  }>;
+  returns_modeled: false;
+  limitations: string[];
+};

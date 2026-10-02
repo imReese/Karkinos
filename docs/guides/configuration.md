@@ -105,6 +105,23 @@ KARKINOS_TUSHARE_TOKEN
 
 Token 写入 `.env`，不写入 `config.json`。
 
+回测页选定股票 Dataset 后，可显式采集分红送转记录。该操作使用 TuShare
+`dividend` 接口和上述 Token；需要对应的数据访问权限。也可调用
+`POST /api/backtest/datasets/{dataset_id}/corporate-actions`，请求体为
+`{"refresh": false}`。已有绑定时复用原记录；`refresh: true` 才重新观察来源。
+采集成功返回新的 Dataset ID，原数据集和历史报告保留原始绑定。普通列表、
+报告读取和重放不会访问 Provider。当前这条流程只支持股票，不把 ETF 当股票查询。
+
+记录分别保留公告、实施公告、股权登记、除权除息、派息和红股上市日期。
+今天取得的整行数据不能根据旧公告日期回填为“当时已知”；可用时间按实际
+采集完成时间记录。接口返回空记录只表示此次查询未返回分红送转，不能证明
+整个区间没有公司行动。详见 [TuShare 分红送股接口](https://tushare.pro/document/2?doc_id=103)。
+
+回测报告显示本区间命中的记录及日期缺口，收益仍未计算股息应收、派息现金、
+送转股份和相应税费。绑定这些记录不会自动获得总收益或历史 PIT 准入。
+正式 Dataset 与自动研究日线回执的这项限制一致；旧回执报告仍可重放，新的
+资格和发布审核按当前口径阻断，探索研究本身仍可运行。
+
 新配置应分别使用 `market_data.source_policy` 与 `market_data.verification_source_policy`。显式核验任务的响应包含其 `source_policy_id`；已提交任务保留原策略身份。如果排队任务的策略与当前核验策略不同，worker 会在请求 Provider 前拒绝该任务，需按新策略重新提交。旧 Dataset 的 ID 和离线重放语义不变。历史 `data_source.provider` / `KARKINOS_DATA_SOURCE` 仅保留兼容读取，不作为新数据飞轮的配置方式。
 
 ## `ai`

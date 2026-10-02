@@ -603,6 +603,43 @@ def test_direct_publication_cannot_bypass_final_guard(harness, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_passing_final_test_does_not_admit_raw_receipt_returns(harness):
+    h = harness
+    await _reserve(h)
+    evidence = await _evaluate(h)
+    assert final_research_evaluation_blocker(evidence) is None
+    with sqlite3.connect(h.db._path) as conn:
+        source = conn.execute(
+            "SELECT metrics_json FROM backtest_results WHERE id=?",
+            (h.candidate["candidate_result_id"],),
+        ).fetchone()
+        metrics = json.loads(source[0])
+        metrics["independent_evaluation"] = evidence
+        # Historical receipt snapshots lack the newer research_use annotation.
+        metrics["dataset_snapshot"]["market_data_binding"] = {
+            "receipts": [{"receipt_id": "historical-daily-observation"}]
+        }
+        published_id = insert_backtest_result(
+            conn,
+            created_at=MATURE.isoformat(),
+            config_json="{}",
+            initial_cash=100000,
+            final_equity=120000,
+            total_return=0.2,
+            sharpe=3,
+            max_dd=0.01,
+            equity_curve_json="[]",
+            metrics_json=json.dumps(metrics),
+        )
+    with pytest.raises(
+        StrategyResearchRejected, match="candidate_dataset_exploratory_only"
+    ):
+        require_new_publication_final_evaluation(
+            h.db, published_id, expected_candidate_id="candidate-1"
+        )
+
+
+@pytest.mark.asyncio
 async def test_late_market_delivery_waits_then_evaluates_same_champion(harness):
     h = harness
     row = await _reserve(h)

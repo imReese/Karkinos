@@ -76,6 +76,28 @@ Rules:
 - Automatic capture, per-source quality, cross-source agreement, historical availability, and return basis are separate claims. Research consumers admit inputs according to their use; a verified source pair does not imply historical PIT or total return.
 - Trading calendars, historical universe membership, corporate actions, suspensions, price limits, and lot rules are shared market semantics.
 
+Stock dividend and bonus-share observations use the existing ProviderCapture and
+content-addressed object store. The source facts have an identity separate from
+the capture observation: a repeated response can share facts while retaining its
+new observation time. Announcement, implementation announcement, record, ex-date,
+payment and bonus-share listing dates remain distinct. A current provider response
+does not establish when all its fields became historically available; its admitted
+availability is the capture completion time.
+
+An explicit collection for an existing daily Dataset publishes a new DatasetRef
+with bound corporate-action observations; it retains the original daily-bar
+partitions. Dataset and report reads replay those exact objects offline. The
+observations cover provider-reported stock distributions only. An empty response
+does not prove that no corporate actions occurred. Neither attaching these facts
+nor finding zero matching events models dividend receivables, payment cash,
+bonus-share availability, taxes or total return.
+
+Both receipt-bound automated research and formal Dataset research retain this
+exploratory return boundary. Their reports can replay and research can continue,
+but a new qualification or publication cannot treat their raw-price return as
+complete economic-return evidence, including when a historical receipt report
+omitted the limitation label.
+
 ## 4. Research and forecasts
 
 ```text

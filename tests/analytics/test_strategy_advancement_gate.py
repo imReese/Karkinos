@@ -438,6 +438,28 @@ def test_backtest_projection_preserves_bound_dataset_admission_identity():
     assert bound["dataset_research_use"] == "exploratory_backtest"
 
 
+@pytest.mark.parametrize(
+    "build_gate",
+    [build_strategy_advancement_gate, build_normalized_research_advancement_gate],
+)
+def test_old_receipt_snapshot_cannot_omit_exploratory_admission(build_gate):
+    historical = {
+        "snapshot_id": "sha256:" + "a" * 64,
+        "market_data_binding": {"receipts": [{"receipt_id": "recorded-daily-bars"}]},
+    }
+    unchanged = deepcopy(historical)
+    projection = strategy_advancement_backtest_view(
+        {"metrics_json": {"dataset_snapshot": historical}}
+    )
+    baseline, candidate = _view(candidate=False), _view(candidate=True)
+    candidate["dataset_research_use"] = projection["dataset_research_use"]
+
+    gate = build_gate(baseline=baseline, candidate=candidate, critique_evidence={})
+
+    assert "candidate_dataset_exploratory_only" in gate.blockers
+    assert historical == unchanged
+
+
 @pytest.mark.parametrize("display_sharpe", [0.5, 10.0])
 def test_display_sharpe_cannot_replace_missing_final_trial_evidence(display_sharpe):
     candidate = deepcopy(_view(candidate=True))

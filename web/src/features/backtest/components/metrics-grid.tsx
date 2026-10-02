@@ -34,8 +34,14 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
   const labels = useCopy().backtest.metrics;
   const { locale } = usePreferences();
   const metrics = { ...report.metrics, ...report.metrics_json };
-  const boundDataset = Boolean(
-    report.metrics_json?.dataset_snapshot?.immutable_dataset_id,
+  const snapshot = report.metrics_json?.dataset_snapshot;
+  const unadjustedReturns = Boolean(
+    snapshot?.price_basis === 'unadjusted' ||
+    snapshot?.adjustment_mode === 'none' ||
+    snapshot?.research_limitations?.some(
+      (issue) => issue.code === 'unadjusted_corporate_actions_unmodeled',
+    ) ||
+    (snapshot?.immutable_dataset_id && snapshot.price_basis === undefined),
   );
   const costs = report.cost_summary_json ?? {};
   const totalCommission =
@@ -51,7 +57,7 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
         <>
           {formatCurrency(metrics.initial_cash)} -&gt;{' '}
           {formatCurrency(metrics.final_equity)}
-          {boundDataset ? (
+          {unadjustedReturns ? (
             <span className="mt-1 block text-[var(--app-warning-text)]">
               {locale === 'zh'
                 ? '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。'

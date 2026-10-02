@@ -3172,6 +3172,119 @@ test('keeps sweep and comparison available with one selected Dataset', async () 
   expect(previewPayload.dataset_snapshot).toBeUndefined();
 });
 
+test('collects corporate-action evidence explicitly and runs against the newly selected Dataset', async () => {
+  const original = {
+    dataset_id: `sha256:${'a'.repeat(64)}`,
+    start_date: '2025-01-02',
+    end_date: '2026-09-18',
+    cutoff: '2026-09-19T08:00:00Z',
+    instruments: [{ symbol: '600002', instrument_type: 'stock' }],
+    partition_count: 2,
+    price_basis: 'unadjusted',
+    point_in_time_verified: false,
+  };
+  const evidence = {
+    schema_version: 'karkinos.corporate_action_evidence.v1',
+    status: 'observed',
+    observation_ids: ['observation-1'],
+    provider: 'tushare',
+    available_at: '2026-10-02T08:00:00Z',
+    availability_basis: 'capture_completed_at',
+    historical_availability_verified: false,
+    covered_action_types: ['cash_dividend', 'bonus_share_distribution'],
+    coverage_status: 'provider_reported_only',
+    total_record_count: 3,
+    matched_event_count: 1,
+    undated_event_count: 0,
+    events: [],
+    returns_modeled: false,
+    limitations: [],
+  };
+  const next = {
+    ...original,
+    dataset_id: `sha256:${'b'.repeat(64)}`,
+    corporate_action_evidence: evidence,
+  };
+  const datasets = [original];
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    datasets,
+    locale: 'zh',
+  });
+  const defaultFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input, init) => {
+    if (
+      String(input).endsWith('/corporate-actions') &&
+      init?.method === 'POST'
+    ) {
+      datasets.push(next);
+      return jsonResponse(next);
+    }
+    if (String(input) === '/api/backtest/run') {
+      return jsonResponse({
+        ...runReport,
+        metrics_json: {
+          ...runReport.metrics_json,
+          dataset_snapshot: {
+            ...runReport.metrics_json.dataset_snapshot,
+            immutable_dataset_id: next.dataset_id,
+            price_basis: 'unadjusted',
+            corporate_action_evidence: evidence,
+          },
+        },
+      });
+    }
+    return defaultFetch(input, init);
+  });
+  await screen.findByText('策略回放');
+  const disclosure = screen
+    .getByText('研究 Dataset · 持久保存与离线回测')
+    .closest('details')!;
+  disclosure.open = true;
+  fireEvent(disclosure, new Event('toggle'));
+  await screen.findByRole('option', { name: /600002.*2025-01-02/ });
+  fireEvent.change(screen.getByLabelText('本次回测的数据输入'), {
+    target: { value: original.dataset_id },
+  });
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(
+    false,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '采集分红送转证据' }));
+  await screen.findByText(/分红送转证据已采集，已选中新数据集/);
+  expect(
+    (screen.getByLabelText('本次回测的数据输入') as HTMLSelectElement).value,
+  ).toBe(next.dataset_id);
+  expect(screen.getByTestId('selected-dataset-id').textContent).toContain(
+    next.dataset_id,
+  );
+  expect(datasets[0]).toEqual(original);
+  expect(
+    fetchMock.mock.calls.some(([url]) => String(url) === '/api/backtest/run'),
+  ).toBe(false);
+
+  const runButton = screen.getByRole('button', { name: '运行回测' });
+  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/run',
+      expect.objectContaining({ method: 'POST' }),
+    ),
+  );
+  const runCall = fetchMock.mock.calls.find(
+    ([url]) => String(url) === '/api/backtest/run',
+  );
+  expect(JSON.parse(String(runCall?.[1]?.body)).dataset_id).toBe(
+    next.dataset_id,
+  );
+  await waitFor(() => {
+    const panel = document.getElementById('backtest-dataset-evidence')!;
+    expect(within(panel).getByText('已采集 · 覆盖未核实')).toBeTruthy();
+    expect(
+      within(panel).getByText(/尚未计入现金派息、送转持仓或总收益/),
+    ).toBeTruthy();
+  });
+});
+
 test('accepts localized comparison parameter names while submitting API keys', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
