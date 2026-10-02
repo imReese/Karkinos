@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
@@ -102,13 +102,54 @@ def require_complete_market_universe_snapshot(
     *,
     policy: MarketUniversePolicy,
     expected_trade_date: str | None = None,
+    available_as_of: datetime | None = None,
 ) -> dict[str, Any]:
     """Validate one immutable provider-ingested full-market stock snapshot."""
     if not isinstance(snapshot, Mapping):
         raise MarketUniverseRejected("market_universe_snapshot_missing")
     payload = dict(snapshot)
-    if payload.get("schema_version") != "karkinos.market_universe_snapshot.v1":
+    version = payload.get("schema_version")
+    if version not in {
+        "karkinos.market_universe_snapshot.v1",
+        "karkinos.market_universe_snapshot.v2",
+    }:
         raise MarketUniverseRejected("market_universe_snapshot_contract_invalid")
+    if available_as_of is not None and available_as_of.utcoffset() is None:
+        raise MarketUniverseRejected("market_universe_as_of_timezone_required")
+    if version == "karkinos.market_universe_snapshot.v2":
+        try:
+            started, completed, available = (
+                datetime.fromisoformat(str(payload[key]))
+                for key in (
+                    "capture_started_at",
+                    "capture_completed_at",
+                    "available_at",
+                )
+            )
+            valid_time = (
+                all(
+                    value.utcoffset() == timedelta(0)
+                    for value in (started, completed, available)
+                )
+                and started <= completed == available
+            )
+        except (ValueError, TypeError, KeyError):
+            valid_time = False
+        if not valid_time or any(
+            payload.get(key) != value
+            for key, value in {
+                "availability_basis": "capture_completed_at",
+                "observation_basis": "adapter_response",
+                "membership_basis": "current_active_stock_master",
+                "trade_date_role": "daily_bar_window_end",
+                "historical_membership_verified": False,
+            }.items()
+        ):
+            raise MarketUniverseRejected("market_universe_observation_invalid")
+        if available_as_of is not None and available > available_as_of:
+            raise MarketUniverseRejected("market_universe_observation_unavailable")
+    elif available_as_of is not None:
+        raise MarketUniverseRejected("market_universe_observation_time_unknown")
     if expected_trade_date and payload.get("trade_date") != expected_trade_date:
         raise MarketUniverseRejected("market_universe_snapshot_date_mismatch")
     members = payload.get("members")
@@ -141,6 +182,23 @@ def require_complete_market_universe_snapshot(
     if snapshot_id != expected_id:
         raise MarketUniverseRejected("market_universe_snapshot_fingerprint_mismatch")
     return payload
+
+
+def market_universe_observation(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    """Describe observation timing without turning an active list into historical PIT."""
+    fields = (
+        "capture_started_at",
+        "capture_completed_at",
+        "available_at",
+        "availability_basis",
+        "observation_basis",
+        "membership_basis",
+        "trade_date_role",
+    )
+    return {
+        **{key: snapshot.get(key) for key in fields},
+        "historical_membership_verified": False,
+    }
 
 
 def preliminary_research_panel_symbols(
@@ -295,6 +353,10 @@ def build_market_universe_truth(
         "authorizes_order_creation": False,
         "changes_capital_authority": False,
     }
+    if verified["schema_version"] == "karkinos.market_universe_snapshot.v2":
+        truth_core["market_universe_observation"] = market_universe_observation(
+            verified
+        )
     return {
         **truth_core,
         "evidence_fingerprint": "sha256:" + content_fingerprint(truth_core),
@@ -441,6 +503,8 @@ def build_full_market_universe_truth(
         "authorizes_order_creation": False,
         "changes_capital_authority": False,
     }
+    if verified["schema_version"] == "karkinos.market_universe_snapshot.v2":
+        core["market_universe_observation"] = market_universe_observation(verified)
     return {**core, "evidence_fingerprint": "sha256:" + content_fingerprint(core)}
 
 

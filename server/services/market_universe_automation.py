@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Mapping, Sequence
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from time import sleep as default_sleep
 from typing import Any, Callable
 
@@ -26,13 +26,14 @@ from server.services.market_calendar_evidence import validate_verified_market_ca
 from server.services.market_hours import get_shanghai_now
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
+    market_universe_observation,
     normalize_a_share_members,
     require_complete_market_universe_snapshot,
 )
 
 logger = logging.getLogger(__name__)
 
-MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v3"
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v4"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
 
@@ -50,11 +51,13 @@ class MarketUniverseAutomationService:
         policy: MarketUniversePolicy | None = None,
         throttle_seconds: float | None = None,
         sleep_fn: Callable[[float], None] = default_sleep,
+        capture_clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
         self._config = config
         self._data_store = data_store or DataStore(resolve_data_dir())
         self._policy = policy or MarketUniversePolicy()
+        self._capture_clock = capture_clock or (lambda: datetime.now(timezone.utc))
 
         if source is not None:
             injected_name = _injected_provider_name(config, source)
@@ -134,7 +137,7 @@ class MarketUniverseAutomationService:
                 },
             )
         run_id = (
-            "market_universe_sync:v3:"
+            "market_universe_sync:v4:"
             f"{master_provider_name}:{daily_provider_name}:{trade_date}"
         )
         existing = self._db.get_automation_run_sync(run_id)
@@ -151,7 +154,12 @@ class MarketUniverseAutomationService:
                 provider_name=master_provider_name,
             )
             provider_contacted = False
-            if snapshot is None:
+            if (
+                snapshot is None
+                or snapshot.get("schema_version")
+                != "karkinos.market_universe_snapshot.v2"
+            ):
+                capture_started_at = self._capture_clock()
                 metadata_lister = getattr(
                     self._security_master_source, "list_symbol_metadata", None
                 )
@@ -166,6 +174,7 @@ class MarketUniverseAutomationService:
                         for item in symbol_metadata
                         if isinstance(item, Mapping)
                     ]
+                capture_completed_at = self._capture_clock()
                 provider_contacted = True
                 members = normalize_a_share_members(symbols)
                 if len(members) < self._policy.minimum_master_member_count:
@@ -175,7 +184,7 @@ class MarketUniverseAutomationService:
                         symbol_metadata or [],
                         members=members,
                         provider_name=master_provider_name,
-                        fetched_at=current.isoformat(),
+                        fetched_at=capture_completed_at.isoformat(),
                         trade_date=trade_date,
                     )
                     stock_master_useful_name_count = len(metadata_items)
@@ -198,6 +207,8 @@ class MarketUniverseAutomationService:
                     trade_date=trade_date,
                     provider_name=master_provider_name,
                     members=members,
+                    capture_started_at=capture_started_at,
+                    capture_completed_at=capture_completed_at,
                 )
             snapshot = require_complete_market_universe_snapshot(
                 snapshot,
@@ -368,6 +379,9 @@ class MarketUniverseAutomationService:
                     "trade_date": trade_date,
                     "market_universe_snapshot_id": snapshot["snapshot_id"],
                     "market_universe_member_count": snapshot["member_count"],
+                    "market_universe_observation": market_universe_observation(
+                        snapshot
+                    ),
                     "verified_history_start_date": start_date.isoformat(),
                     "verified_trading_date_count": len(trading_dates),
                     "full_market_daily_receipt_count": len(receipts),

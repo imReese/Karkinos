@@ -372,7 +372,7 @@ def test_market_universe_routes_security_master_and_daily_bars_separately(
     assert len(receipts) == 80
 
     payload = json.loads(result["payload_json"])
-    assert payload["schema_version"] == "karkinos.market_universe_automation.v3"
+    assert payload["schema_version"] == "karkinos.market_universe_automation.v4"
     assert payload["security_master_provider"] == "akshare"
     assert payload["daily_bar_provider"] == "tushare"
     assert payload["market_universe_snapshot_id"] == snapshot["snapshot_id"]

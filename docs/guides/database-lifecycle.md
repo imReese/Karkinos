@@ -29,6 +29,12 @@ immutable migration lineage, FULL/FK-aware authoritative writes, verified recove
 bundles, exact financial decimal persistence with provenance, and database-level
 financial fact invariants.
 
+The market metadata database has its own immutable migration registry. Its
+Format v1 now includes migration head 2, which retains old stock-universe JSON
+and IDs while permitting multiple timestamped observations per date/provider.
+Legacy rows keep unknown observation times. This changes no application-database
+migration number and does not relabel historical membership as point-in-time data.
+
 ## Startup
 
 The source launcher prepares state in the foreground, before the API health
