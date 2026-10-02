@@ -36,9 +36,7 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
   const { locale } = usePreferences();
   const metrics = { ...report.metrics, ...report.metrics_json };
   const snapshot = report.metrics_json?.dataset_snapshot;
-  const cashDividendsModeled =
-    report.metrics_json?.cash_dividend_accounting?.mode ===
-    'cash_dividends_gross';
+  const distributionMode = report.metrics_json?.cash_dividend_accounting?.mode;
   const unadjustedReturns = Boolean(
     snapshot?.price_basis === 'unadjusted' ||
     snapshot?.adjustment_mode === 'none' ||
@@ -61,13 +59,15 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
         <>
           {formatCurrency(metrics.initial_cash)} -&gt;{' '}
           {formatCurrency(metrics.final_equity)}
-          {cashDividendsModeled || unadjustedReturns ? (
+          {distributionMode || unadjustedReturns ? (
             <span className="mt-1 block text-[var(--app-warning-text)]">
-              {cashDividendsModeled
-                ? cashDividendCopy[locale].returns
-                : locale === 'zh'
-                  ? '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。'
-                  : 'Simulated equity return; excludes dividends and other corporate actions, so this is not total economic return.'}
+              {distributionMode === 'reported_distributions_gross'
+                ? cashDividendCopy[locale].reportedReturns
+                : distributionMode === 'cash_dividends_gross'
+                  ? cashDividendCopy[locale].returns
+                  : locale === 'zh'
+                    ? '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。'
+                    : 'Simulated equity return; excludes dividends and other corporate actions, so this is not total economic return.'}
             </span>
           ) : null}
         </>

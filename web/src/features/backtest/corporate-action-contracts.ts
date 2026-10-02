@@ -36,11 +36,10 @@ export type CorporateActionEvidence = {
   limitations: string[];
 };
 
-export type CorporateActionMode = 'price_only' | 'cash_dividends_gross';
+export type CorporateActionMode =
+  'price_only' | 'cash_dividends_gross' | 'reported_distributions_gross';
 
-export type CashDividendAccounting = {
-  schema_version: 'karkinos.backtest_cash_dividends.v1';
-  mode: 'cash_dividends_gross';
+type DistributionAccounting = {
   gross_income: string;
   cash_paid: string;
   receivable: string;
@@ -48,16 +47,41 @@ export type CashDividendAccounting = {
   coverage_verified: false;
   historical_availability_verified: false;
   ex_date_execution_blocked_count: number;
-  distributions: Array<{
-    action_id: string;
-    symbol: string;
-    record_date: string;
-    ex_date: string;
-    pay_date: string;
-    cash_per_share: string;
-    eligible_quantity: string;
-    gross_amount: string;
-    paid: boolean;
-  }>;
   limitations: string[];
 };
+
+type CashDistribution = {
+  action_id: string;
+  symbol: string;
+  record_date: string;
+  ex_date: string;
+  pay_date: string;
+  cash_per_share: string;
+  eligible_quantity: string;
+  gross_amount: string;
+  paid: boolean;
+};
+
+export type CashDividendAccounting = DistributionAccounting &
+  (
+    | {
+        schema_version: 'karkinos.backtest_cash_dividends.v1';
+        mode: 'cash_dividends_gross';
+        distributions: CashDistribution[];
+      }
+    | {
+        schema_version: 'karkinos.backtest_cash_dividends.v2';
+        mode: 'reported_distributions_gross';
+        share_quantity: string;
+        unlisted_quantity: string;
+        distributions: Array<
+          Omit<CashDistribution, 'pay_date'> & {
+            pay_date: string | null;
+            shares_per_share: string;
+            share_quantity: string;
+            listing_date: string | null;
+            shares_listed: boolean;
+          }
+        >;
+      }
+  );

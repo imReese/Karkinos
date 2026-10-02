@@ -26,8 +26,8 @@ from analytics.research_account_capital_evidence import (
 from analytics.sweep_robustness import build_sweep_robustness_evidence
 from backtest.engine import BacktestEngine
 from backtest.result import BacktestResult
-from core.events import FillEvent, MarketEvent
-from core.types import AssetClass, BarFrequency, InstrumentType, OrderSide, Symbol
+from core.events import MarketEvent
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
 from data.research_market_data import load_research_market_frames
@@ -75,7 +75,7 @@ class _FormulaSignalStrategy(Strategy):
         self._canonical_target_weight = 1.0 / self._allocation_slots
         self._frames: dict[Symbol, list[dict[str, Any]]] = {}
         self._active: dict[Symbol, bool] = {}
-        self._filled_quantity: dict[Symbol, Decimal] = {}
+        self._position_quantity: dict[Symbol, Decimal] = {}
         self._entry_signal_count = 0
         self._exit_signal_count = 0
         self._entry_target_count = 0
@@ -83,7 +83,7 @@ class _FormulaSignalStrategy(Strategy):
     def on_init(self, symbols: list[Symbol]) -> None:
         self._frames = {symbol: [] for symbol in symbols}
         self._active = {symbol: False for symbol in symbols}
-        self._filled_quantity = {symbol: Decimal("0") for symbol in symbols}
+        self._position_quantity = {symbol: Decimal("0") for symbol in symbols}
 
     def on_data(self, event: MarketEvent) -> None:
         self._last_timestamp = event.timestamp
@@ -117,12 +117,9 @@ class _FormulaSignalStrategy(Strategy):
                 event.symbol, self._canonical_target_weight, price=float(event.close)
             )
 
-    def on_fill(self, event: FillEvent) -> None:
-        change = (
-            event.fill_quantity if event.side is OrderSide.BUY else -event.fill_quantity
-        )
-        self._filled_quantity[event.symbol] += change
-        self._active[event.symbol] = self._filled_quantity[event.symbol] > 0
+    def on_position_update(self, symbol: Symbol, quantity: Decimal) -> None:
+        self._position_quantity[symbol] = quantity
+        self._active[symbol] = quantity > 0
 
     def execution_evidence(
         self, *, fill_count: int, execution_timing: Mapping[str, Any] | None = None

@@ -210,3 +210,148 @@ def test_cash_dividend_rejects_overflow_before_recording_entitlement() -> None:
     assert portfolio.dividend_income == portfolio.dividend_receivable == Decimal("0")
     with pytest.raises(ValueError, match="portfolio_cash_dividend_unknown"):
         portfolio.pay_cash_dividend("overflow")
+
+
+def test_share_distribution_is_idempotent_and_release_adds_no_equity() -> None:
+    portfolio = Portfolio(EventBus(), initial_cash=Decimal("1000"))
+    facts = {
+        "symbol": Symbol("600001"),
+        "eligible_quantity": Decimal("100"),
+        "shares_per_share": Decimal("0.3"),
+    }
+    assert portfolio.accrue_share_distribution("shares-1", **facts) == Decimal("30")
+    assert portfolio.accrue_share_distribution("shares-1", **facts) == Decimal("30")
+    position = portfolio.positions[facts["symbol"]]
+    portfolio.mark_to_market({facts["symbol"]: Decimal("10")})
+    assert position.quantity == position.unlisted_qty == Decimal("30")
+    assert position.available_qty == position.cost_basis == Decimal("0")
+    assert portfolio.cash == Decimal("1000")
+    assert portfolio.total_equity == Decimal("1300")
+    assert portfolio.dividend_income == Decimal("0")
+
+    assert portfolio.release_share_distribution("shares-1") == Decimal("30")
+    assert portfolio.release_share_distribution("shares-1") == Decimal("0")
+    assert portfolio.accrue_share_distribution("shares-1", **facts) == Decimal("30")
+    assert position.quantity == position.available_qty == Decimal("30")
+    assert position.unlisted_qty == Decimal("0")
+    assert portfolio.total_equity == Decimal("1300")
+    with pytest.raises(ValueError, match="portfolio_share_distribution_conflict"):
+        portfolio.accrue_share_distribution(
+            "shares-1", **{**facts, "eligible_quantity": Decimal("200")}
+        )
+    with pytest.raises(ValueError, match="portfolio_share_distribution_unknown"):
+        portfolio.release_share_distribution("unknown")
+
+
+def test_zero_share_award_binds_facts_without_creating_a_position() -> None:
+    portfolio = Portfolio(EventBus())
+    facts = {
+        "symbol": Symbol("600001"),
+        "eligible_quantity": Decimal("0"),
+        "shares_per_share": Decimal("0.3"),
+    }
+    assert portfolio.accrue_share_distribution("zero", **facts) == Decimal("0")
+    assert portfolio.release_share_distribution("zero") == Decimal("0")
+    assert portfolio.positions == {}
+    with pytest.raises(ValueError, match="portfolio_share_distribution_conflict"):
+        portfolio.accrue_share_distribution(
+            "zero", **{**facts, "eligible_quantity": Decimal("100")}
+        )
+
+
+@pytest.mark.parametrize("rate", ["0.301", "-1", "NaN", "Infinity", "1E1000000"])
+def test_invalid_share_award_never_records_partial_book_state(rate: str) -> None:
+    portfolio = Portfolio(EventBus())
+    with pytest.raises(ValueError, match="portfolio_share_distribution_"):
+        portfolio.accrue_share_distribution(
+            "invalid",
+            symbol=Symbol("600001"),
+            eligible_quantity=Decimal("100"),
+            shares_per_share=Decimal(rate),
+        )
+    assert portfolio.positions == {}
+    with pytest.raises(ValueError, match="portfolio_share_distribution_unknown"):
+        portfolio.release_share_distribution("invalid")
+
+
+def test_zero_target_sells_listed_odd_lot_even_below_weight_deadband() -> None:
+    bus = EventBus()
+    portfolio = Portfolio(bus, initial_cash=Decimal("100000"))
+    symbol = Symbol("600001")
+    instrument = make_stock(str(symbol), str(symbol))
+    portfolio.add_instrument(instrument)
+    intents: list[OrderIntentEvent] = []
+    bus.subscribe(OrderIntentEvent, intents.append)
+    portfolio.accrue_share_distribution(
+        "odd-lot",
+        symbol=symbol,
+        eligible_quantity=Decimal("100"),
+        shares_per_share=Decimal("0.3"),
+    )
+    portfolio.mark_to_market({symbol: Decimal("10")})
+    signal = SignalEvent(
+        timestamp=datetime(2026, 4, 14, 15),
+        strategy_id="exit",
+        symbol=symbol,
+        target_weight=Decimal("0"),
+        price=Decimal("10"),
+    )
+    bus.publish_and_process(signal)
+    bus.drain()
+    assert intents == []  # Daily settlement cannot substitute for the listing.
+    portfolio.advance_settlement_day()
+    bus.publish_and_process(signal)
+    bus.drain()
+    assert intents == []
+
+    portfolio.release_share_distribution("odd-lot")
+    bus.publish_and_process(signal)
+    bus.drain()
+    assert len(intents) == 1
+    assert intents[0].side is OrderSide.SELL
+    assert intents[0].quantity == Decimal("30")
+    # A non-liquidating rebalance still obeys the existing lot rule.
+    assert portfolio._calculate_sell_quantity(
+        instrument, Decimal("10"), Decimal("300")
+    ) == Decimal("0")
+    assert portfolio._calculate_buy_quantity(
+        instrument, Decimal("10"), Decimal("300")
+    ) == Decimal("0")
+
+
+def test_zero_target_liquidates_whole_lots_with_the_entire_odd_remainder() -> None:
+    bus = EventBus()
+    portfolio = Portfolio(bus, initial_cash=Decimal("10000"))
+    symbol = Symbol("600001")
+    instrument = make_stock(str(symbol), str(symbol))
+    portfolio.add_instrument(instrument)
+    portfolio.on_fill(
+        FillEvent(
+            timestamp=datetime(2026, 4, 9, 15),
+            fill_id="original-buy",
+            order_id="buy",
+            symbol=symbol,
+            side=OrderSide.BUY,
+            fill_price=Decimal("13"),
+            fill_quantity=Decimal("100"),
+            commission=Decimal("0"),
+            slippage=Decimal("0"),
+        )
+    )
+    portfolio.accrue_share_distribution(
+        "award",
+        symbol=symbol,
+        eligible_quantity=Decimal("100"),
+        shares_per_share=Decimal("0.3"),
+    )
+    portfolio.advance_settlement_day()
+    assert portfolio._calculate_sell_quantity(
+        instrument, Decimal("10"), Decimal("1300"), liquidate=True
+    ) == Decimal("100")
+    portfolio.release_share_distribution("award")
+    assert portfolio._calculate_sell_quantity(
+        instrument, Decimal("10"), Decimal("1300"), liquidate=True
+    ) == Decimal("130")
+    assert portfolio._calculate_sell_quantity(
+        instrument, Decimal("10"), Decimal("1300")
+    ) == Decimal("100")

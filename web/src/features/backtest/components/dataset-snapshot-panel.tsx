@@ -46,9 +46,7 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
   const labels = copy.backtest.datasetSnapshot;
   const common = copy.common;
   const snapshot = snapshotFromReport(report);
-  const cashDividendsModeled =
-    report.metrics_json?.cash_dividend_accounting?.mode ===
-    'cash_dividends_gross';
+  const distributionMode = report.metrics_json?.cash_dividend_accounting?.mode;
 
   if (!snapshot) {
     return <CorporateActionEvidencePanel locale={locale} />;
@@ -87,9 +85,7 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
         <CorporateActionEvidencePanel
           evidence={snapshot.corporate_action_evidence}
           locale={locale}
-          returnMode={
-            cashDividendsModeled ? 'cash_dividends_gross' : 'price_only'
-          }
+          returnMode={distributionMode ?? 'price_only'}
         />
       </div>
       {snapshot.immutable_dataset_id ? (
@@ -105,11 +101,13 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
             {snapshot.available_as_of}
           </div>
           <div>
-            {cashDividendsModeled
-              ? cashDividendCopy[locale].returns
-              : locale === 'zh'
-                ? '未复权价格 · 历史时点可用性未核实 · 公司行动收益未计入'
-                : 'Unadjusted prices · historical PIT unverified · corporate-action returns excluded'}
+            {distributionMode === 'reported_distributions_gross'
+              ? cashDividendCopy[locale].reportedReturns
+              : distributionMode === 'cash_dividends_gross'
+                ? cashDividendCopy[locale].returns
+                : locale === 'zh'
+                  ? '未复权价格 · 历史时点可用性未核实 · 公司行动收益未计入'
+                  : 'Unadjusted prices · historical PIT unverified · corporate-action returns excluded'}
           </div>
           {typeof snapshot.cross_source_verified === 'boolean' ? (
             <div>

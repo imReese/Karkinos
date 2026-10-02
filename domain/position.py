@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, DecimalException, Inexact, localcontext
 
 from core.types import ZERO, Money, Symbol
 from domain.portfolio_accounting import (
+    average_cost_after_share_distribution,
     moving_average_cost_after_buy,
     realized_pnl_after_sell,
+    share_distribution_quantity,
 )
 
 
@@ -25,6 +27,7 @@ class Position:
         self.symbol = symbol
         self.quantity: Decimal = ZERO  # 总持仓
         self.frozen_qty: Decimal = ZERO  # T+1 冻结数量（当日买入）
+        self.unlisted_qty: Decimal = ZERO  # 已确认送转权益，上市前不可卖
         self.avg_cost: Decimal = ZERO  # 持仓均价（含全部已记录交易费用）
         self.realized_pnl: Decimal = ZERO  # 已实现盈亏
         self.unrealized_pnl: Decimal = ZERO  # 未实现盈亏
@@ -34,8 +37,8 @@ class Position:
 
     @property
     def available_qty(self) -> Decimal:
-        """可卖数量 = 总持仓 - 冻结数量。"""
-        return self.quantity - self.frozen_qty
+        """可卖数量不包括当日买入及尚未上市的送转股份。"""
+        return self.quantity - self.frozen_qty - self.unlisted_qty
 
     @property
     def cost_basis(self) -> Decimal:
@@ -103,6 +106,33 @@ class Position:
         """结算日推进：将冻结数量解冻到可卖数量。"""
         self.frozen_qty = ZERO
 
+    def accrue_share_distribution(self, quantity: Decimal) -> None:
+        """Recognize an integer share entitlement without releasing it for sale."""
+        average_cost = average_cost_after_share_distribution(
+            current_quantity=self.quantity,
+            current_average_cost=self.avg_cost,
+            distribution_quantity=quantity,
+        )
+        try:
+            with localcontext() as context:
+                context.traps[Inexact] = True
+                new_quantity = self.quantity + quantity
+                new_unlisted = self.unlisted_qty + quantity
+        except DecimalException as exc:
+            raise ValueError("portfolio_share_distribution_quantity_invalid") from exc
+        self.quantity = new_quantity
+        self.unlisted_qty = new_unlisted
+        self.avg_cost = average_cost
+
+    def release_share_distribution(self, quantity: Decimal) -> None:
+        """Make already recognized shares sellable on their listing date."""
+        share_distribution_quantity(
+            eligible_quantity=quantity, shares_per_share=Decimal(1)
+        )
+        if quantity > self.unlisted_qty:
+            raise ValueError("portfolio_share_distribution_release_exceeds_unlisted")
+        self.unlisted_qty -= quantity
+
     def mark_to_market(self, current_price: Decimal) -> None:
         """盯市：按当前价格计算市值和未实现盈亏。"""
         self.market_value = self.quantity * current_price
@@ -112,5 +142,6 @@ class Position:
         return (
             f"Position(symbol={self.symbol}, qty={self.quantity}, "
             f"available={self.available_qty}, frozen={self.frozen_qty}, "
+            f"unlisted={self.unlisted_qty}, "
             f"avg_cost={self.avg_cost}, unrealized={self.unrealized_pnl})"
         )

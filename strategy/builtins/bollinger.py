@@ -6,8 +6,8 @@ from collections import defaultdict
 from decimal import Decimal
 
 from core.event_bus import EventBus
-from core.events import FillEvent, MarketEvent
-from core.types import OrderSide, Symbol
+from core.events import MarketEvent
+from core.types import Symbol
 from strategy.base import Strategy
 from strategy.registry import register_strategy
 
@@ -31,20 +31,17 @@ class BollingerStrategy(Strategy):
         self.bb_period = bb_period
         self.num_std = num_std
         self._prices: dict[Symbol, list[float]] = defaultdict(list)
-        self._filled_quantity: dict[Symbol, Decimal] = {}
+        self._position_quantity: dict[Symbol, Decimal] = {}
         self._signal_holding: dict[Symbol, bool] = {}
 
     def on_init(self, symbols: list[Symbol]) -> None:
         for symbol in symbols:
             self._prices[symbol] = []
-            self._filled_quantity[symbol] = Decimal("0")
+            self._position_quantity[symbol] = Decimal("0")
             self._signal_holding[symbol] = False
 
-    def on_fill(self, event: FillEvent) -> None:
-        change = (
-            event.fill_quantity if event.side is OrderSide.BUY else -event.fill_quantity
-        )
-        self._filled_quantity[event.symbol] += change
+    def on_position_update(self, symbol: Symbol, quantity: Decimal) -> None:
+        self._position_quantity[symbol] = quantity
 
     def on_data(self, event: MarketEvent) -> None:
         self._last_timestamp = event.timestamp
@@ -65,7 +62,7 @@ class BollingerStrategy(Strategy):
 
         # Scans have no executions; their signal regime is not actual holdings.
         holding = (
-            self._filled_quantity[symbol] > 0
+            self._position_quantity[symbol] > 0
             if self.fill_tracking_enabled
             else self._signal_holding[symbol]
         )

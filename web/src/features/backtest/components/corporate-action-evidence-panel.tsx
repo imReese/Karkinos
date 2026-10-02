@@ -74,11 +74,13 @@ export function CorporateActionEvidencePanel({
             {labels.availability}
           </p>
           <p className="mt-2 text-xs leading-5 text-[var(--app-warning-text)]">
-            {returnMode === 'cash_dividends_gross'
-              ? cashDividendCopy[locale].returns
-              : returnMode === 'evidence_only'
-                ? cashDividendCopy[locale].evidenceOnly
-                : labels.returns}
+            {returnMode === 'reported_distributions_gross'
+              ? cashDividendCopy[locale].reportedReturns
+              : returnMode === 'cash_dividends_gross'
+                ? cashDividendCopy[locale].returns
+                : returnMode === 'evidence_only'
+                  ? cashDividendCopy[locale].evidenceOnly
+                  : labels.returns}
           </p>
           {evidence.events.length > 0 ? (
             <CorporateActionEvents events={evidence.events} locale={locale} />

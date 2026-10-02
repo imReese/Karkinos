@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-from backtest.cash_dividends import CashDividend, cash_dividends_from_evidence
+from backtest.distributions import StockDistribution, distributions_from_evidence
 from backtest.engine import BacktestEngine, BacktestExecutionConfig
 from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
@@ -30,9 +30,9 @@ def _close(day: date) -> datetime:
     return datetime.combine(day, time(15), SHANGHAI)
 
 
-def _dividend(**changes) -> CashDividend:
+def _dividend(**changes) -> StockDistribution:
     return replace(
-        CashDividend(
+        StockDistribution(
             action_id="frozen-dividend-1",
             symbol=SYMBOL,
             record_date=date(2026, 4, 9),
@@ -312,7 +312,7 @@ def _evidence():
 def test_evidence_adapter_uses_before_tax_amount_without_claiming_tax_coverage():
     evidence = _evidence()
     event = evidence["events"][0]
-    distributions = cash_dividends_from_evidence(evidence)
+    distributions = distributions_from_evidence(evidence)
     assert distributions[0].cash_per_share == Decimal("0.5")
     result = _engine(
         targets={date(2026, 4, 8): Decimal("1")}, distributions=distributions
@@ -320,7 +320,7 @@ def test_evidence_adapter_uses_before_tax_amount_without_claiming_tax_coverage()
     assert Decimal(result.cash_dividend_accounting["gross_income"]) == Decimal("50")
     assert result.cash_dividend_accounting["taxes_modeled"] is False
     with pytest.raises(ValueError, match="cash_dividend_gross_amount_missing"):
-        cash_dividends_from_evidence(
+        distributions_from_evidence(
             {**evidence, "events": [{**event, "cash_div_tax": None}]}
         )
 
@@ -333,14 +333,14 @@ def test_evidence_adapter_rejects_conflicting_revisions_of_one_distribution():
     )
 
     with pytest.raises(ValueError, match="cash_dividend_conflicting_implementation"):
-        cash_dividends_from_evidence(evidence)
+        distributions_from_evidence(evidence)
 
 
 def test_explicit_zero_total_share_ratio_allows_missing_component_breakdown():
     evidence = _evidence()
     event = evidence["events"][0]
     event.update(stk_bo_rate=None, stk_co_rate=None)
-    distributions = cash_dividends_from_evidence(evidence)
+    distributions = distributions_from_evidence(evidence)
 
     result = _engine(
         targets={date(2026, 4, 8): Decimal("1")}, distributions=distributions
@@ -348,12 +348,12 @@ def test_explicit_zero_total_share_ratio_allows_missing_component_breakdown():
 
     assert Decimal(result.cash_dividend_accounting["gross_income"]) == Decimal("50")
     with pytest.raises(ValueError, match="cash_dividend_share_terms_missing"):
-        cash_dividends_from_evidence(
+        distributions_from_evidence(
             {**evidence, "events": [{**event, "stk_div": None}]}
         )
     with pytest.raises(
         ValueError, match="cash_dividend_share_distribution_unsupported"
     ):
-        cash_dividends_from_evidence(
+        distributions_from_evidence(
             {**evidence, "events": [{**event, "stk_bo_rate": "0.1"}]}
         )

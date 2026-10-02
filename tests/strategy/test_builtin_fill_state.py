@@ -1,4 +1,4 @@
-"""Built-in holding state follows fills across blocked and partial exits."""
+"""Built-in holding state follows positions across blocked and partial exits."""
 
 from dataclasses import replace
 from decimal import Decimal
@@ -93,7 +93,7 @@ def test_blocked_exit_reissues_when_condition_returns(kind, blocked):
     assert result.fills[0].timestamp == frame.iloc[3]["timestamp"]
     assert result.fills[1].timestamp > frame.iloc[5]["timestamp"]
     assert result.positions[symbol].quantity == 0
-    assert engine.strategy._filled_quantity[symbol] == 0
+    assert engine.strategy._position_quantity[symbol] == 0
     assert result.execution_timing[f"{blocked}_blocked_count"] == 1
 
 
@@ -111,7 +111,7 @@ def test_partial_exit_keeps_holding_until_remaining_quantity_fills(kind):
     assert result.fills[2].fill_quantity == result.fills[0].fill_quantity - 100
     assert result.fills[2].timestamp == frame.iloc[6]["timestamp"]
     assert result.positions[symbol].quantity == 0
-    assert engine.strategy._filled_quantity[symbol] == 0
+    assert engine.strategy._position_quantity[symbol] == 0
 
 
 @pytest.mark.parametrize(

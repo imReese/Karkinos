@@ -2702,70 +2702,91 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   expect(await screen.findByText('qfq')).toBeTruthy();
 });
 
-test('restores gross dividend income, paid cash and receivables from a saved report', async () => {
-  const { fetchMock } = renderBacktestPage({
-    savedBacktestReport: {
-      ...savedReport,
-      config: {
-        ...savedReport.config,
-        corporate_action_mode: 'cash_dividends_gross',
-      },
-      metrics_json: {
-        ...savedReport.metrics_json,
-        dataset_snapshot: {
-          ...savedReport.metrics_json.dataset_snapshot,
-          price_basis: 'unadjusted',
-          adjustment_mode: 'none',
+test.each(['cash_dividends_gross', 'reported_distributions_gross'] as const)(
+  'restores saved %s accounting without rerunning',
+  async (mode) => {
+    const sharesMode = mode === 'reported_distributions_gross';
+    const { fetchMock } = renderBacktestPage({
+      savedBacktestReport: {
+        ...savedReport,
+        config: {
+          ...savedReport.config,
+          corporate_action_mode: mode,
         },
-        cash_dividend_accounting: {
-          schema_version: 'karkinos.backtest_cash_dividends.v1',
-          mode: 'cash_dividends_gross',
-          gross_income: '150.25',
-          cash_paid: '125.00',
-          receivable: '25.25',
-          taxes_modeled: false,
-          coverage_verified: false,
-          historical_availability_verified: false,
-          ex_date_execution_blocked_count: 2,
-          distributions: [],
-          limitations: [],
+        metrics_json: {
+          ...savedReport.metrics_json,
+          dataset_snapshot: {
+            ...savedReport.metrics_json.dataset_snapshot,
+            price_basis: 'unadjusted',
+            adjustment_mode: 'none',
+          },
+          cash_dividend_accounting: {
+            schema_version: sharesMode
+              ? 'karkinos.backtest_cash_dividends.v2'
+              : 'karkinos.backtest_cash_dividends.v1',
+            ...(sharesMode
+              ? { share_quantity: '1000', unlisted_quantity: '1000' }
+              : {}),
+            mode,
+            gross_income: '150.25',
+            cash_paid: '125.00',
+            receivable: '25.25',
+            taxes_modeled: false,
+            coverage_verified: false,
+            historical_availability_verified: false,
+            ex_date_execution_blocked_count: 2,
+            distributions: [],
+            limitations: [],
+          },
         },
       },
-    },
-  });
-  const accounting = await screen.findByTestId('cash-dividend-accounting');
-  expect(
-    within(accounting).getByText('Recognized gross dividend income')
-      .nextElementSibling?.textContent,
-  ).toBe('¥ 150.25');
-  expect(
-    within(accounting).getByText('Paid into available cash').nextElementSibling
-      ?.textContent,
-  ).toBe('¥ 125.00');
-  expect(
-    within(accounting).getByText('Unpaid dividend receivable')
-      .nextElementSibling?.textContent,
-  ).toBe('¥ 25.25');
-  expect(
-    within(accounting).getByText(
-      /Receivables are included in equity but cannot fund purchases/,
-    ),
-  ).toBeTruthy();
-  expect(
-    within(accounting).getByText(
-      /Investor tax, payment rounding and bonus shares are omitted/,
-    ),
-  ).toBeTruthy();
-  expect(
-    screen.getByText(/Simulated equity includes gross cash dividends/),
-  ).toBeTruthy();
-  expect(
-    screen.queryByText(/Simulated equity return; excludes dividends/),
-  ).toBeNull();
-  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(
-    false,
-  );
-});
+    });
+    const accounting = await screen.findByTestId('cash-dividend-accounting');
+    expect(
+      within(accounting).getByText('Recognized gross dividend income')
+        .nextElementSibling?.textContent,
+    ).toBe('¥ 150.25');
+    expect(
+      within(accounting).getByText('Paid into available cash')
+        .nextElementSibling?.textContent,
+    ).toBe('¥ 125.00');
+    expect(
+      within(accounting).getByText('Unpaid dividend receivable')
+        .nextElementSibling?.textContent,
+    ).toBe('¥ 25.25');
+    expect(
+      within(accounting).getByText(
+        /Receivables are included in equity but cannot fund purchases/,
+      ),
+    ).toBeTruthy();
+    expect(
+      within(accounting).getByText(
+        sharesMode
+          ? /Investor tax, payment rounding and fractional-share allocation are omitted/
+          : /Investor tax, payment rounding and bonus shares are omitted/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Simulated equity includes gross cash/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/Simulated equity return; excludes dividends/),
+    ).toBeNull();
+    if (sharesMode) {
+      expect(
+        within(accounting).getByText('Total shares awarded (shares)')
+          .nextElementSibling?.textContent,
+      ).toBe('1000');
+      expect(
+        within(accounting).getByText('Of which awaiting listing (shares)')
+          .nextElementSibling?.textContent,
+      ).toBe('1000');
+    }
+    expect(
+      fetchMock.mock.calls.some(([, init]) => init?.method === 'POST'),
+    ).toBe(false);
+  },
+);
 
 test('separates bound Dataset quality from research admission', async () => {
   renderBacktestPage({
@@ -3237,9 +3258,14 @@ test('keeps sweep and comparison available with one selected Dataset', async () 
   expect(previewPayload.dataset_snapshot).toBeUndefined();
 });
 
-test.each(['price_only', 'cash_dividends_gross'] as const)(
+test.each([
+  'price_only',
+  'cash_dividends_gross',
+  'reported_distributions_gross',
+] as const)(
   'collects corporate-action evidence and runs the newly selected Dataset in %s mode',
   async (mode) => {
+    const sharesMode = mode === 'reported_distributions_gross';
     const original = {
       dataset_id: `sha256:${'a'.repeat(64)}`,
       start_date: '2025-01-02',
@@ -3274,11 +3300,11 @@ test.each(['price_only', 'cash_dividends_gross'] as const)(
           record_date: '2026-09-14',
           ex_date: '2026-09-15',
           pay_date: '2026-09-21',
-          div_listdate: null,
+          div_listdate: sharesMode ? '2026-09-23' : null,
           cash_div_tax: '0.125',
           cash_div: null,
-          stk_div: '0',
-          stk_bo_rate: '0',
+          stk_div: sharesMode ? '0.1' : '0',
+          stk_bo_rate: sharesMode ? '0.1' : '0',
           stk_co_rate: '0',
           available_at: '2026-10-02T08:00:00Z',
           captured_at: '2026-10-02T08:00:00Z',
@@ -3315,10 +3341,15 @@ test.each(['price_only', 'cash_dividends_gross'] as const)(
           ...runReport,
           metrics_json: {
             ...runReport.metrics_json,
-            ...(mode === 'cash_dividends_gross'
+            ...(mode !== 'price_only'
               ? {
                   cash_dividend_accounting: {
-                    schema_version: 'karkinos.backtest_cash_dividends.v1',
+                    schema_version: sharesMode
+                      ? 'karkinos.backtest_cash_dividends.v2'
+                      : 'karkinos.backtest_cash_dividends.v1',
+                    ...(sharesMode
+                      ? { share_quantity: '1000', unlisted_quantity: '1000' }
+                      : {}),
                     mode,
                     gross_income: '1250.00',
                     cash_paid: '0',
@@ -3338,6 +3369,14 @@ test.each(['price_only', 'cash_dividends_gross'] as const)(
                         eligible_quantity: '10000',
                         gross_amount: '1250.00',
                         paid: false,
+                        ...(sharesMode
+                          ? {
+                              shares_per_share: '0.1',
+                              share_quantity: '1000',
+                              listing_date: '2026-09-23',
+                              shares_listed: false,
+                            }
+                          : {}),
                       },
                     ],
                     limitations: [],
@@ -3385,7 +3424,7 @@ test.each(['price_only', 'cash_dividends_gross'] as const)(
     expect(modeSelector.disabled).toBe(false);
     expect(modeSelector.value).toBe('price_only');
     fireEvent.change(modeSelector, { target: { value: mode } });
-    if (mode === 'cash_dividends_gross') {
+    if (mode !== 'price_only') {
       openBacktestDisclosure('backtest-advanced-tools-disclosure');
       for (const name of ['运行参数扫描', '运行对比']) {
         const button = screen.getByRole('button', {
@@ -3436,11 +3475,11 @@ test.each(['price_only', 'cash_dividends_gross'] as const)(
           within(panel).queryByText(/尚未计入现金派息、送转持仓或总收益/),
         ).toBeNull();
         expect(
-          within(panel).getAllByText(/已计入税前现金分红/).length,
+          within(panel).getAllByText(/已计入税前现金/).length,
         ).toBeGreaterThan(0);
       }
     });
-    if (mode === 'cash_dividends_gross') {
+    if (mode !== 'price_only') {
       const accounting = screen.getByTestId('cash-dividend-accounting');
       expect(
         within(accounting).getByText('已确认税前分红收入').nextElementSibling
@@ -3463,11 +3502,45 @@ test.each(['price_only', 'cash_dividends_gross'] as const)(
           '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。',
         ),
       ).toBeNull();
+      if (sharesMode) {
+        expect(
+          within(accounting).getByText('新增股份合计（股）').nextElementSibling
+            ?.textContent,
+        ).toBe('1000');
+        expect(
+          within(accounting).getByText('其中待上市股份（股）')
+            .nextElementSibling?.textContent,
+        ).toBe('1000');
+        expect(
+          within(accounting).getByText(/新增股份是持仓数量变化，不是现金收入/),
+        ).toBeTruthy();
+        expect(
+          within(accounting).getByText(/策略特征仍使用未复权价格/),
+        ).toBeTruthy();
+        const details = within(accounting)
+          .getByText('送转股份明细', { selector: 'summary' })
+          .closest('details')!;
+        details.open = true;
+        fireEvent(details, new Event('toggle'));
+        expect(
+          within(accounting).getByRole('cell', { name: '2026-09-23' }),
+        ).toBeTruthy();
+        expect(
+          within(accounting).getByRole('cell', { name: '待上市 · 暂不可卖' }),
+        ).toBeTruthy();
+        expect(
+          within(accounting).queryByText(/个人税负、到账舍入和送转未建模/),
+        ).toBeNull();
+      }
       const successfulFetch = fetchMock.getMockImplementation()!;
       fetchMock.mockImplementation(async (input, init) =>
         String(input) === '/api/backtest/run'
           ? jsonResponse(
-              { detail: 'cash_dividend_event_dates_incomplete' },
+              {
+                detail: sharesMode
+                  ? 'portfolio_share_distribution_fractional_unsupported'
+                  : 'cash_dividend_event_dates_incomplete',
+              },
               { status: 422 },
             )
           : successfulFetch(input, init),
@@ -3475,7 +3548,9 @@ test.each(['price_only', 'cash_dividends_gross'] as const)(
       fireEvent.submit(runButton.closest('form')!);
       expect(
         await screen.findByText(
-          '分红记录缺少登记日、除息日或派息日，无法核算。',
+          sharesMode
+            ? '本次送转产生零碎股份，尚不支持其分配处理，回测已停止。'
+            : '分配记录缺少本模式所需的日期，请检查登记日、除权除息日及适用的派息或上市日。',
         ),
       ).toBeTruthy();
       expect(
