@@ -48,6 +48,7 @@ from data.storage.objects import (
 
 DATASET_MANIFEST_SCHEMA_VERSION = "karkinos.dataset_manifest.v1"
 DATASET_MANIFEST_SCHEMA_VERSION_V2 = "karkinos.dataset_manifest.v2"
+DATASET_MANIFEST_SCHEMA_VERSION_V3 = "karkinos.dataset_manifest.v3"
 
 
 class DatasetManifestError(RuntimeError):
@@ -135,7 +136,9 @@ def serialize_daily_bar_dataset_manifest(
         raise TypeError("dataset_manifest_snapshot_invalid")
 
     schema_version = (
-        DATASET_MANIFEST_SCHEMA_VERSION_V2
+        DATASET_MANIFEST_SCHEMA_VERSION_V3
+        if snapshot.corporate_action_observation_ids
+        else DATASET_MANIFEST_SCHEMA_VERSION_V2
         if snapshot.verification_bound
         else DATASET_MANIFEST_SCHEMA_VERSION
     )
@@ -155,6 +158,10 @@ def serialize_daily_bar_dataset_manifest(
             for partition in snapshot.partitions
         ],
     }
+    if snapshot.corporate_action_observation_ids:
+        payload["corporate_action_observation_ids"] = list(
+            snapshot.corporate_action_observation_ids
+        )
 
     return _canonical_json(payload)
 
@@ -188,30 +195,30 @@ def deserialize_daily_bar_dataset_manifest(
         field="root",
     )
 
+    schema_version = _require_text(root.get("schema_version"), field="schema_version")
+    expected_keys = {
+        "schema_version",
+        "kind",
+        "start_date",
+        "end_date",
+        "cutoff",
+        "resolver_policy_id",
+        "market_schema_version",
+        "instruments",
+        "partitions",
+    }
+    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V3:
+        expected_keys.add("corporate_action_observation_ids")
     _require_exact_keys(
         root,
-        {
-            "schema_version",
-            "kind",
-            "start_date",
-            "end_date",
-            "cutoff",
-            "resolver_policy_id",
-            "market_schema_version",
-            "instruments",
-            "partitions",
-        },
+        expected_keys,
         field="root",
-    )
-
-    schema_version = _require_text(
-        root["schema_version"],
-        field="schema_version",
     )
 
     if schema_version not in {
         DATASET_MANIFEST_SCHEMA_VERSION,
         DATASET_MANIFEST_SCHEMA_VERSION_V2,
+        DATASET_MANIFEST_SCHEMA_VERSION_V3,
     }:
         raise DatasetManifestIntegrityError("dataset_manifest_schema_unsupported")
 
@@ -268,6 +275,14 @@ def deserialize_daily_bar_dataset_manifest(
                 )
             ),
             partitions=partitions,
+            corporate_action_observation_ids=tuple(
+                _require_list(
+                    root["corporate_action_observation_ids"],
+                    field="corporate_action_observation_ids",
+                )
+            )
+            if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V3
+            else (),
         )
     except DatasetManifestIntegrityError:
         raise
@@ -300,7 +315,10 @@ def _partition_payload(
         "revision_id": partition.revision_id,
         "materialization_id": partition.materialization_id,
     }
-    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V2:
+    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V2 or (
+        schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V3
+        and partition.verification_id is not None
+    ):
         if partition.verification_id is None:
             raise DatasetManifestError("dataset_manifest_verification_id_missing")
         payload["verification_id"] = partition.verification_id
@@ -370,7 +388,10 @@ def _partition_from_payload(
         "revision_id",
         "materialization_id",
     }
-    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V2:
+    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V2 or (
+        schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V3
+        and "verification_id" in payload
+    ):
         expected.add("verification_id")
     _require_exact_keys(
         payload,
@@ -398,7 +419,7 @@ def _partition_from_payload(
             ),
             verification_id=(
                 None
-                if schema_version == DATASET_MANIFEST_SCHEMA_VERSION
+                if "verification_id" not in payload
                 else _require_text(
                     payload["verification_id"],
                     field="verification_id",
