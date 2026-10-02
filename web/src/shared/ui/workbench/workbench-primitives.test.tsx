@@ -27,6 +27,43 @@ import {
   WorkspaceHeader,
 } from './index';
 
+test('keeps draft input focus across drawer updates and returns it on close', async () => {
+  const user = userEvent.setup();
+  function DraftDrawer() {
+    const [open, setOpen] = useState(false);
+    const [draft, setDraft] = useState('');
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Open draft
+        </button>
+        <EvidenceDrawer
+          open={open}
+          onClose={() => setOpen(false)}
+          title="Draft"
+          closeLabel="Close draft"
+        >
+          <input
+            aria-label="Draft text"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </EvidenceDrawer>
+      </>
+    );
+  }
+  render(<DraftDrawer />);
+  const opener = screen.getByRole('button', { name: 'Open draft' });
+  await user.click(opener);
+  const input = screen.getByRole('textbox', { name: 'Draft text' });
+  await user.type(input, 'ABC');
+  expect((input as HTMLInputElement).value).toBe('ABC');
+  expect(document.activeElement).toBe(input);
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(document.activeElement).toBe(opener);
+});
+
 test('keeps full evidence identifiers behind an explicit disclosure', async () => {
   const user = userEvent.setup();
   const writeText = vi.fn();
