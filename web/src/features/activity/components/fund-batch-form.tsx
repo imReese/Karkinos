@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import { toDatetimeLocalInputValue } from '../datetime-local';
@@ -31,11 +31,15 @@ export function FundBatchForm({
   candidates = EMPTY_CANDIDATES,
   loadingCandidates = false,
   onSubmit,
+  initialDraft,
+  onDraftSave,
   pending = false,
 }: {
   candidates?: FundBatchCandidate[];
   loadingCandidates?: boolean;
   onSubmit: (values: FundBatchFormValues) => Promise<void>;
+  initialDraft?: FundBatchFormValues;
+  onDraftSave?: (values: FundBatchFormValues) => void;
   pending?: boolean;
 }) {
   const copy = useCopy();
@@ -45,10 +49,13 @@ export function FundBatchForm({
       candidates.map((fund) => `${fund.symbol}:${fund.display_name}`).join('|'),
     [candidates],
   );
-  const [values, setValues] = useState(() => defaultValues(candidates));
+  const [values, setValues] = useState(
+    () => initialDraft ?? defaultValues(candidates),
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (loadingCandidates) return;
     setValues((current) => ({
       ...current,
       orders: candidates.map((fund) => {
@@ -58,7 +65,7 @@ export function FundBatchForm({
         return { ...fund, amount: existing?.amount ?? null };
       }),
     }));
-  }, [candidateKey, candidates]);
+  }, [candidateKey, candidates, loadingCandidates]);
 
   const updateOrderAmount = (index: number, amount: number | null) => {
     setValues((current) => ({
@@ -75,6 +82,9 @@ export function FundBatchForm({
       Number.isFinite(order.amount) &&
       order.amount > 0,
   );
+
+  const saveDraft = useEffectEvent(() => onDraftSave?.(values));
+  useEffect(() => () => saveDraft(), []);
 
   return (
     <form

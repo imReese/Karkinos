@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { useCopy } from '../../../shared/i18n/context';
@@ -13,9 +13,13 @@ export type CashFlowFormValues = {
 
 export function CashFlowForm({
   onSubmit,
+  initialDraft,
+  onDraftSave,
   pending = false,
 }: {
   onSubmit: (values: CashFlowFormValues) => Promise<void>;
+  initialDraft?: CashFlowFormValues;
+  onDraftSave?: (values: CashFlowFormValues) => void;
   pending?: boolean;
 }) {
   const copy = useCopy();
@@ -32,10 +36,14 @@ export function CashFlowForm({
     register,
     handleSubmit,
     reset,
+    getValues,
     formState: { errors },
   } = useForm<CashFlowFormValues>({
-    defaultValues: createDefaultValues(),
+    defaultValues: initialDraft ?? createDefaultValues(),
   });
+
+  const saveDraft = useEffectEvent(() => onDraftSave?.(getValues()));
+  useEffect(() => () => saveDraft(), []);
 
   return (
     <form
