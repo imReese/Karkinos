@@ -188,6 +188,8 @@ class DailyBarDatasetSnapshot:
         DailyBarDatasetPartition,
         ...,
     ]
+    # Observations only: no adjusted prices or modeled corporate-action returns.
+    corporate_action_observation_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         start_date = _require_date(
@@ -230,6 +232,15 @@ class DailyBarDatasetSnapshot:
         }
         if len(verification_states) > 1:
             raise ValueError("dataset_partition_verification_mixed")
+        observation_ids = tuple(
+            _require_content_id(item, field="corporate_action_observation_id")
+            for item in self.corporate_action_observation_ids
+        )
+        if len(set(observation_ids)) != len(observation_ids):
+            raise ValueError("dataset_corporate_action_observation_duplicate")
+        object.__setattr__(
+            self, "corporate_action_observation_ids", tuple(sorted(observation_ids))
+        )
 
         object.__setattr__(
             self,

@@ -27,10 +27,12 @@ Reader 不重新执行 Resolver，也不会访问 Provider。
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 import pyarrow as pa
 
-from core.types import InstrumentKey
+from core.types import InstrumentKey, InstrumentType
 from data.dataset.manifest import (
     DatasetManifestError,
     read_daily_bar_dataset_manifest,
@@ -105,6 +107,7 @@ class DailyBarDatasetReadResult:
         DailyBarObservation,
         ...,
     ]
+    corporate_action_evidence: dict[str, Any] | None = None
 
     @property
     def row_count(self) -> int:
@@ -166,10 +169,78 @@ def read_daily_bar_dataset(
         ref=ref,
         snapshot=snapshot,
         bars=tuple(bars),
+        corporate_action_evidence=read_dataset_corporate_action_evidence(
+            store, snapshot
+        ),
     )
 
     _validate_dataset_result(result)
 
+    return result
+
+
+def read_dataset_corporate_action_evidence(
+    store: ContentAddressedObjectStore, snapshot: DailyBarDatasetSnapshot
+) -> dict[str, Any] | None:
+    """Replay the bound observations; an empty provider report is not full coverage."""
+    if not snapshot.corporate_action_observation_ids:
+        return None
+    from data.market.corporate_actions import (
+        CorporateActionObservationError,
+        read_corporate_action_observation,
+        summarize_corporate_action_observation,
+    )
+
+    summaries, seen = [], set()
+    try:
+        for observation_id in snapshot.corporate_action_observation_ids:
+            observation = read_corporate_action_observation(
+                store, store.resolve_ref(observation_id)
+            )
+            instrument = InstrumentKey(
+                observation["instrument"]["symbol"],
+                InstrumentType(observation["instrument"]["instrument_type"]),
+            )
+            if instrument in seen or instrument not in snapshot.instruments:
+                raise DatasetReaderIntegrityError(
+                    "dataset_corporate_action_instrument_mismatch"
+                )
+            seen.add(instrument)
+            if datetime.fromisoformat(observation["available_at"]) > snapshot.cutoff:
+                raise DatasetReaderIntegrityError(
+                    "dataset_corporate_action_after_cutoff"
+                )
+            summaries.append(
+                summarize_corporate_action_observation(
+                    observation,
+                    start_date=snapshot.start_date,
+                    end_date=snapshot.end_date,
+                )
+            )
+    except (
+        CorporateActionObservationError,
+        ObjectStoreError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise DatasetReaderIntegrityError(
+            "dataset_corporate_action_unreadable"
+        ) from exc
+    if seen != set(snapshot.instruments):
+        raise DatasetReaderIntegrityError("dataset_corporate_action_coverage_mismatch")
+    result = dict(summaries[0])
+    result.update(
+        observation_ids=list(snapshot.corporate_action_observation_ids),
+        available_at=max(item["available_at"] for item in summaries),
+        captured_at=max(item["captured_at"] for item in summaries),
+        events=[event for item in summaries for event in item["events"]],
+        limitations=sorted(
+            {limit for item in summaries for limit in item["limitations"]}
+        ),
+    )
+    for key in ("total_record_count", "matched_event_count", "undated_event_count"):
+        result[key] = sum(item[key] for item in summaries)
     return result
 
 
