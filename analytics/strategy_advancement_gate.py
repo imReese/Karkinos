@@ -13,7 +13,6 @@ from typing import Any, Mapping
 from analytics.backtest_capacity_evidence import (
     is_valid_passed_backtest_capacity_evidence,
 )
-from analytics.multiple_testing import build_deflated_sharpe
 from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
@@ -119,6 +118,8 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
     names_valid = check_names in {
         required_names,
         required_names + optional_names,
+        required_names + ("independent_final_evaluation",),
+        required_names + optional_names + ("independent_final_evaluation",),
     }
     return (
         len(normalized_checks) == len(checks)
@@ -232,6 +233,9 @@ def strategy_advancement_backtest_view(
         "parameter_robustness": _json_object(
             metrics.get("parameter_robustness") or metrics.get("sweep_robustness")
         ),
+        "formula_ast": _json_object(
+            _json_object(metrics.get("formula_binding")).get("formula_ast")
+        ),
         "formula_parameter_values": _json_object(
             _json_object(metrics.get("formula_binding")).get("parameter_values")
         ),
@@ -243,6 +247,11 @@ def strategy_advancement_backtest_view(
         ),
         "capacity_review": _json_object(metrics.get("capacity_review")),
         "fee_component_evidence": _json_object(metrics.get("fee_component_evidence")),
+        **(
+            {"independent_evaluation": metrics["independent_evaluation"]}
+            if "independent_evaluation" in metrics
+            else {}
+        ),
     }
 
 
@@ -251,7 +260,7 @@ def build_strategy_advancement_gate(
     baseline: Mapping[str, Any],
     candidate: Mapping[str, Any],
     critique_evidence: Mapping[str, Any],
-    num_trials: int | None = None,
+    require_independent_evaluation: bool = False,
 ) -> StrategyAdvancementGate:
     """Evaluate the complete evidence needed for paper/shadow advancement."""
 
@@ -555,56 +564,26 @@ def build_strategy_advancement_gate(
         },
     )
 
-    if num_trials is not None:
-        check = _multiple_testing_check(candidate, num_trials)
-        record(
-            "multiple_testing_correction",
-            passed=check["passed"],
-            blocker=check["blocker"],
-            evidence=check["evidence"],
-        )
+    if require_independent_evaluation or "independent_evaluation" in candidate:
+        from analytics.sealed_holdout import final_research_evaluation_blocker
 
+        independent = candidate.get("independent_evaluation")
+        independent_blocker = final_research_evaluation_blocker(independent)
+        if independent_blocker is None and (
+            not candidate.get("formula_ast")
+            or "sha256:" + _payload_fingerprint(candidate["formula_ast"])
+            != independent["reservation"]["champion_formula_fingerprint"]
+        ):
+            independent_blocker = "independent_final_formula_mismatch"
+        record(
+            "independent_final_evaluation",
+            passed=independent_blocker is None,
+            blocker=independent_blocker or "independent_final_evaluation_invalid",
+            evidence=independent if isinstance(independent, Mapping) else {},
+        )
     unique_blockers = tuple(dict.fromkeys(blockers))
     return StrategyAdvancementGate(
         status="pass" if not unique_blockers else "blocked",
         blockers=unique_blockers,
         checks=tuple(checks),
     )
-
-
-def _multiple_testing_check(
-    candidate: Mapping[str, Any],
-    num_trials: int,
-) -> dict[str, Any]:
-    """Deflated-Sharpe evidence for the multiple-testing correction check."""
-
-    candidate_sharpe = _number(candidate.get("sharpe"))
-    num_periods = len(_json_list(candidate.get("equity_curve")))
-    if candidate_sharpe is None or num_periods <= 1 or num_trials < 1:
-        return {
-            "passed": False,
-            "blocker": "multiple_testing_correction_insufficient_evidence",
-            "evidence": {
-                "candidate_sharpe": candidate_sharpe,
-                "num_periods": num_periods,
-                "num_trials": num_trials,
-            },
-        }
-    correction = build_deflated_sharpe(
-        observed_sharpe=candidate_sharpe,
-        num_periods=num_periods,
-        num_trials=num_trials,
-    )
-    return {
-        "passed": correction["significant_at_0.95"],
-        "blocker": "multiple_testing_correction_not_significant",
-        "evidence": {
-            "method": "deflated_sharpe",
-            "observed_sharpe": correction["observed_sharpe"],
-            "num_periods": num_periods,
-            "num_trials": num_trials,
-            "expected_max_sharpe": correction["expected_max_sharpe"],
-            "deflated_sharpe": correction["deflated_sharpe"],
-            "threshold": 0.95,
-        },
-    }

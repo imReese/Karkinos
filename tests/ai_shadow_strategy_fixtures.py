@@ -276,6 +276,13 @@ def seed_approved_ai_shadow_strategy(
         backtest_run_id=backtest_run_id,
         critique_id=critique_id,
     )
+    comparison = _seed_approved_final_evaluation(
+        db,
+        fixture_id=fixture_id,
+        baseline_result_id=baseline_result_id,
+        candidate_result_id=candidate_result_id,
+        comparison=comparison,
+    )
     comparison = {
         **comparison,
         "iteration_lineage": {
@@ -333,7 +340,7 @@ def seed_approved_ai_shadow_strategy(
                 "anti_lookahead_assumptions": [
                     "Signals use only closed persisted market bars."
                 ],
-                "formula_ast": {"schema_version": "fixture"},
+                "formula_ast": _approved_formula(),
                 "formula_fingerprint": "sha256:formula-fixture",
                 "validation": {"status": "valid", "errors": []},
             }
@@ -389,6 +396,296 @@ def seed_approved_ai_shadow_strategy(
         "daily_artifacts": daily_artifacts,
         "readiness": readiness,
         "state": state,
+    }
+
+
+def _approved_formula(*, long_period: int = 5) -> dict[str, Any]:
+    from server.ai_runtime.strategy_research_backtest import (
+        build_dual_ma_research_strategy,
+    )
+
+    return build_dual_ma_research_strategy(
+        {"short_period": 1, "long_period": long_period}, 1
+    )._formula_ast
+
+
+def _seed_approved_final_evaluation(
+    db: Any,
+    *,
+    fixture_id: str,
+    baseline_result_id: int,
+    candidate_result_id: int,
+    comparison: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist synthetic independent research before the existing account review.
+
+    These deterministic curves test evidence linkage, not investment performance.
+    The normalized scored source remains separate from the account replay row so
+    adding its final evidence cannot mutate or recursively sign its own inputs.
+    """
+    from analytics.multiple_testing import build_return_series_trial_correction
+    from analytics.sealed_holdout import (
+        build_sealed_holdout_evaluation,
+        build_sealed_partition,
+    )
+    from server.ai_runtime.formula_dsl import (
+        CANONICAL_COST_MODEL_REFERENCE,
+        FormulaBinding,
+    )
+    from server.ai_runtime.strategy_research_privacy import NORMALIZED_RESEARCH_NOTIONAL
+    from server.contracts.ai_shadow_research_automation import (
+        SHADOW_RESEARCH_RUNTIME_CONTRACT,
+    )
+    from server.contracts.strategy_research import StrategyResearchSelection
+    from server.persistence.backtest_results import insert_backtest_result
+    from server.services.research_final_evaluation import FINAL_EVALUATION_SCHEMA
+
+    run_id = f"run-{fixture_id}"
+    candidate_id = (
+        "ai-shadow-candidate-"
+        + content_fingerprint({"run_id": run_id, "draft_id": f"draft-{fixture_id}"})[
+            :24
+        ]
+    )
+    session_id = f"final-source-session-{fixture_id}"
+    draft_id = f"final-source-draft-{fixture_id}"
+    backtest_id = f"final-source-backtest-{fixture_id}"
+    frozen_at = "2026-01-31T12:00:00+00:00"
+    evaluated_at = "2026-02-04T08:00:00+00:00"
+    audit = StrategyResearchAuditStore(db._path)
+    baseline = audit.research_backtest_result(baseline_result_id)
+    candidate = audit.research_backtest_result(candidate_result_id)
+    metrics = json.loads(candidate["metrics_json"])
+    snapshot = metrics["dataset_snapshot"]
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=baseline_result_id,
+        universe=("510300.SH",),
+        asset_classes=("etf",),
+        dataset_snapshot_id=snapshot["snapshot_id"],
+        start_date="2026-01-01",
+        end_date="2026-01-31",
+        sealed_end_date="2026-02-04",
+        frequency="1d",
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+    )
+    draft = {
+        "formula_ast": _approved_formula(),
+        "parameter_values": {"window": 5},
+        "parameter_ranges": {"window": [3, 5, 7]},
+    }
+    formula = FormulaBinding(
+        formula_ast=draft["formula_ast"],
+        universe=selection.universe,
+        dataset_snapshot_id=selection.dataset_snapshot_id,
+        start_date=selection.start_date,
+        end_date=selection.end_date,
+        frequency=selection.frequency,
+        cost_model_reference=CANONICAL_COST_MODEL_REFERENCE,
+        anti_lookahead_assumptions=("Completed bars only.",),
+        parameter_values={"window": 5},
+        parameter_ranges={"window": [3, 5, 7]},
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+    )
+    data = DataStore(Path(db._path).parent)
+    symbol = Symbol("510300.SH")
+    frame = data.load_bars(
+        symbol, BarFrequency.DAILY, instrument_type=InstrumentType.ETF
+    )
+    assert frame is not None
+    full_snapshot = build_backtest_dataset_snapshot(
+        start_date=selection.start_date,
+        end_date=selection.sealed_end_date,
+        configured_source="fixture_market",
+        data_handlers={
+            symbol: DataHandler(
+                frame, symbol, BarFrequency.DAILY, AssetClass.FUND, InstrumentType.ETF
+            )
+        },
+        store=data,
+        source_names=["fixture_market"],
+    )
+    equity = Decimal(str(NORMALIZED_RESEARCH_NOTIONAL))
+    curve = []
+    for index, stamp in enumerate(frame["timestamp"]):
+        if index:
+            equity *= 1 + Decimal("0.006") + Decimal(index % 3) / 1000
+        curve.append((stamp.to_pydatetime(), equity))
+    research_curve = [
+        {"timestamp": stamp.isoformat(), "equity": float(value)}
+        for stamp, value in curve
+        if stamp.date().isoformat() <= selection.end_date
+    ]
+    source_metrics = {
+        "dataset_snapshot": snapshot,
+        "formula_binding": formula.to_dict(),
+    }
+    with sqlite3.connect(db._path) as conn:
+        original_result_id = insert_backtest_result(
+            conn,
+            created_at=frozen_at,
+            config_json='{"strategy":"ai_formula_research"}',
+            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+            final_equity=research_curve[-1]["equity"],
+            total_return=research_curve[-1]["equity"] / NORMALIZED_RESEARCH_NOTIONAL
+            - 1,
+            sharpe=0,
+            max_dd=0,
+            equity_curve_json=json.dumps(research_curve),
+            metrics_json=json.dumps(source_metrics),
+        )
+        conn.execute(
+            "INSERT INTO ai_strategy_research_sessions (session_id,idempotency_key,request_fingerprint,request_json,selection_fingerprint,status,prompt_version,created_at,updated_at) VALUES (?,?,?,?,?,'completed','deterministic-final-fixture',?,?)",
+            (
+                session_id,
+                session_id,
+                selection.fingerprint,
+                json.dumps({"selection": selection.to_dict()}),
+                selection.fingerprint,
+                frozen_at,
+                frozen_at,
+            ),
+        )
+        conn.execute(
+            "INSERT INTO ai_strategy_hypothesis_drafts (draft_id,session_id,ordinal,contract_json,artifact_fingerprint,validation_status,validation_errors_json,created_at) VALUES (?,?,1,?,?,'valid','[]',?)",
+            (
+                draft_id,
+                session_id,
+                json.dumps(draft),
+                content_fingerprint(draft),
+                frozen_at,
+            ),
+        )
+        conn.execute(
+            "INSERT INTO ai_strategy_formula_backtests (backtest_run_id,idempotency_key,request_fingerprint,session_id,draft_id,formula_fingerprint,dataset_snapshot_id,cost_model_reference,status,canonical_backtest_result_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'completed',?,?,?)",
+            (
+                backtest_id,
+                backtest_id,
+                formula.fingerprint,
+                session_id,
+                draft_id,
+                formula.fingerprint,
+                selection.dataset_snapshot_id,
+                selection.cost_model_reference,
+                original_result_id,
+                frozen_at,
+                frozen_at,
+            ),
+        )
+    family = audit.research_trial_family(selection)
+    correction = build_return_series_trial_correction(
+        research_curve, family["trial_fingerprints"]
+    )
+    assert correction["significant_at_0_95"] is True
+    partition = build_sealed_partition(
+        research_start=selection.start_date,
+        research_end=selection.end_date,
+        sealed_end=selection.sealed_end_date,
+    )
+    binding = {
+        "schema_version": FINAL_EVALUATION_SCHEMA,
+        "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
+        "source_run_id": run_id,
+        "candidate_id": candidate_id,
+        "session_id": session_id,
+        "draft_id": draft_id,
+        "backtest_run_id": backtest_id,
+        "candidate_result_id": original_result_id,
+        "champion_formula_fingerprint": "sha256:"
+        + content_fingerprint(draft["formula_ast"]),
+        # This preselected slow baseline remains in cash on the short fixture.
+        "baseline_formula_ast": _approved_formula(long_period=60),
+        "research_snapshot": snapshot,
+        "selection_fingerprint": selection.fingerprint,
+        "research_identity": {
+            key: selection.to_dict()[key]
+            for key in (
+                "universe",
+                "asset_classes",
+                "dataset_snapshot_id",
+                "start_date",
+                "end_date",
+                "frequency",
+            )
+        },
+        "universe": list(selection.universe),
+        "partition": partition.to_json_dict(),
+        "partition_fingerprint": partition.partition_fingerprint,
+        "trial_family": family,
+        "trial_correction": correction,
+        "selection_evidence_fingerprint": content_fingerprint(
+            {"candidate_id": candidate_id}
+        ),
+        "cost_model_reference": selection.cost_model_reference,
+        "frozen_at": frozen_at,
+        "authority_effect": "none",
+    }
+    reservation = audit.reserve_research_champion(binding=binding, created_at=frozen_at)
+    assert audit.claim_reserved_sealed_test(
+        reservation["sealed_test_id"], now=evaluated_at
+    )
+    sealed = build_sealed_holdout_evaluation(
+        strategy_id="ai_formula_research",
+        benchmark_role="frozen_dual_ma_baseline",
+        research_family_id=family["research_family_id"],
+        formula_fingerprint=binding["champion_formula_fingerprint"],
+        partition=partition,
+        result=BacktestResult(
+            equity_curve=curve,
+            positions={},
+            initial_cash=curve[0][1],
+            final_equity=curve[-1][1],
+        ),
+        benchmark_return=Decimal("0"),
+    ).to_json_dict()
+    core = {
+        "schema_version": FINAL_EVALUATION_SCHEMA,
+        "reservation": binding,
+        "sealed_test_id": reservation["sealed_test_id"],
+        "sealed_dataset_snapshot": full_snapshot,
+        "sealed_evaluation": sealed,
+        "evaluated_at": evaluated_at,
+        "authority_effect": "none",
+    }
+    evidence = {**core, "evidence_fingerprint": content_fingerprint(core)}
+    audit.finish_sealed_test(
+        reservation["sealed_test_id"],
+        status="completed",
+        evidence=evidence,
+        evidence_fingerprint=evidence["evidence_fingerprint"],
+        failure_code=None,
+        updated_at=evaluated_at,
+    )
+    metrics["formula_binding"] = {
+        **formula.to_dict(),
+        "initial_cash": float(candidate["initial_cash"]),
+        "cost_model_reference": metrics["fee_component_evidence"][
+            "cost_model_reference"
+        ],
+    }
+    metrics["independent_evaluation"] = evidence
+    candidate["metrics_json"] = json.dumps(metrics)
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE backtest_results SET metrics_json=? WHERE id=?",
+            (candidate["metrics_json"], candidate_result_id),
+        )
+    gate = build_strategy_advancement_gate(
+        baseline=strategy_advancement_backtest_view(baseline),
+        candidate=strategy_advancement_backtest_view(candidate),
+        require_independent_evaluation=True,
+        critique_evidence={
+            "status": "completed",
+            "critique_id": f"critique-{fixture_id}",
+            "artifact_fingerprint": content_fingerprint(
+                comparison["deepseek_critique"]
+            ),
+        },
+    ).to_json_dict()
+    assert gate["status"] == "pass", gate["blockers"]
+    return {
+        **comparison,
+        "candidate_source_fingerprint": _backtest_source_fingerprint(candidate),
+        "promotion_gate": gate,
     }
 
 
@@ -726,14 +1023,18 @@ def _strategy_advancement_metrics(
 
 def _seed_frozen_dataset(db: Any) -> dict[str, Any]:
     symbol = Symbol("510300.SH")
+    # A complete deterministic weekday panel gives the normalized research
+    # source enough returns and retains a distinct future sealed interval.
+    timestamps = pd.bdate_range("2026-01-02", "2026-02-04")
+    opens = [4.0 + index * 0.1 for index in range(len(timestamps))]
     frame = pd.DataFrame(
         {
-            "timestamp": pd.to_datetime(["2026-01-02", "2026-01-05", "2026-01-06"]),
-            "open": [4.0, 4.1, 4.2],
-            "high": [4.1, 4.2, 4.3],
-            "low": [3.9, 4.0, 4.1],
-            "close": [4.05, 4.15, 4.25],
-            "volume": [1000, 1100, 1200],
+            "timestamp": timestamps,
+            "open": opens,
+            "high": [value + 0.1 for value in opens],
+            "low": [value - 0.1 for value in opens],
+            "close": [value + 0.05 for value in opens],
+            "volume": [1000 + index * 100 for index in range(len(timestamps))],
         }
     )
     store = DataStore(db._path.parent)
@@ -752,7 +1053,7 @@ def _seed_frozen_dataset(db: Any) -> dict[str, Any]:
         configured_source="fixture_market",
         data_handlers={
             symbol: DataHandler(
-                frame,
+                frame[frame["timestamp"] <= "2026-01-31"],
                 symbol,
                 BarFrequency.DAILY,
                 AssetClass.FUND,

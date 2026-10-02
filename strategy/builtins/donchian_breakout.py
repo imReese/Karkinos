@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal
 
 from core.event_bus import EventBus
-from core.events import MarketEvent
-from core.types import Symbol
+from core.events import FillEvent, MarketEvent
+from core.types import OrderSide, Symbol
 from strategy.base import Strategy
 from strategy.registry import register_strategy
 
@@ -33,13 +34,21 @@ class DonchianBreakoutStrategy(Strategy):
         self.target_weight = target_weight
         self._highs: dict[Symbol, list[float]] = defaultdict(list)
         self._lows: dict[Symbol, list[float]] = defaultdict(list)
-        self._holding: dict[Symbol, bool] = defaultdict(bool)
+        self._filled_quantity: dict[Symbol, Decimal] = {}
+        self._signal_holding: dict[Symbol, bool] = {}
 
     def on_init(self, symbols: list[Symbol]) -> None:
         for symbol in symbols:
             self._highs[symbol] = []
             self._lows[symbol] = []
-            self._holding[symbol] = False
+            self._filled_quantity[symbol] = Decimal("0")
+            self._signal_holding[symbol] = False
+
+    def on_fill(self, event: FillEvent) -> None:
+        change = (
+            event.fill_quantity if event.side is OrderSide.BUY else -event.fill_quantity
+        )
+        self._filled_quantity[event.symbol] += change
 
     def on_data(self, event: MarketEvent) -> None:
         self._last_timestamp = event.timestamp
@@ -57,19 +66,17 @@ class DonchianBreakoutStrategy(Strategy):
             min(lows[-self.exit_window :]) if len(lows) >= self.exit_window else None
         )
 
-        if (
-            not self._holding[symbol]
-            and prior_entry_high is not None
-            and price > prior_entry_high
-        ):
-            self._holding[symbol] = True
+        # Scans have no executions; their signal regime is not actual holdings.
+        holding = (
+            self._filled_quantity[symbol] > 0
+            if self.fill_tracking_enabled
+            else self._signal_holding[symbol]
+        )
+        if not holding and prior_entry_high is not None and price > prior_entry_high:
+            self._signal_holding[symbol] = True
             self.emit_signal(symbol, target_weight=self.target_weight, price=price)
-        elif (
-            self._holding[symbol]
-            and prior_exit_low is not None
-            and price < prior_exit_low
-        ):
-            self._holding[symbol] = False
+        elif holding and prior_exit_low is not None and price < prior_exit_low:
+            self._signal_holding[symbol] = False
             self.emit_signal(symbol, target_weight=0.0, price=price)
 
         highs.append(float(event.high))

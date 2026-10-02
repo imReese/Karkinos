@@ -57,6 +57,7 @@ def build_benchmark_fixture_backtest_rows() -> list[dict[str, str | int]]:
         metrics_json = result.metrics.to_json_dict()
         metrics_json["evidence_bundle"] = evidence_json
         metrics_json["oos_validation"] = oos_validation
+        metrics_json["execution_timing"] = result.execution_timing
 
         rows.append(
             {
@@ -135,19 +136,19 @@ def _benchmark_fixture_specs() -> list[BenchmarkFixtureSpec]:
             price_series={
                 equity_etf: [
                     10,
-                    9,
-                    8,
-                    7,
-                    6,
-                    7,
-                    8,
-                    9,
+                    9.9,
+                    9.8,
+                    9.7,
+                    9.6,
+                    9.7,
+                    9.8,
+                    9.9,
                     10,
-                    11,
-                    12,
-                    13,
-                    14,
-                    15,
+                    10.1,
+                    10.2,
+                    10.3,
+                    10.4,
+                    10.5,
                 ]
             },
             strategy_kwargs={"short_period": 3, "long_period": 5},

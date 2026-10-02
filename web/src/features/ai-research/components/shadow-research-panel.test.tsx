@@ -441,7 +441,7 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
   });
 });
 
-test('records the exact five-round unbounded-daily-token authorization', async () => {
+test('preserves the research cutoff and requires paired final holdout dates when saving authorization', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
     addEventListener: vi.fn(),
@@ -449,7 +449,13 @@ test('records the exact five-round unbounded-daily-token authorization', async (
   });
   const disabledStatus = {
     ...status,
-    policy: { ...status.policy, enabled: false, authorization_recorded: false },
+    policy: {
+      ...status.policy,
+      enabled: false,
+      authorization_recorded: false,
+      research_end_date: '2026-10-02',
+      sealed_end_date: '2026-11-30',
+    },
   };
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -485,6 +491,22 @@ test('records the exact five-round unbounded-daily-token authorization', async (
   await screen.findByDisplayValue(
     'Improve the persisted baseline without increasing risk.',
   );
+  expect(
+    (screen.getByLabelText('Research cutoff (optional)') as HTMLInputElement)
+      .value,
+  ).toBe('2026-10-02');
+  const holdoutEnd = screen.getByLabelText(
+    'Final holdout end (optional)',
+  ) as HTMLInputElement;
+  expect(holdoutEnd.value).toBe('2026-11-30');
+  fireEvent.change(holdoutEnd, { target: { value: '' } });
+  expect(screen.getByRole('alert').textContent).toContain('Set both dates');
+  expect(
+    screen
+      .getByRole('button', { name: 'Save standing policy' })
+      .hasAttribute('disabled'),
+  ).toBe(true);
+  fireEvent.change(holdoutEnd, { target: { value: '2026-12-31' } });
   fireEvent.click(screen.getByLabelText('Paused'));
   fireEvent.click(
     await screen.findByText(
@@ -503,6 +525,8 @@ test('records the exact five-round unbounded-daily-token authorization', async (
     expect(policyCall).toBeTruthy();
     const body = JSON.parse(String(policyCall?.[1]?.body));
     expect(body.enabled).toBe(true);
+    expect(body.research_end_date).toBe('2026-10-02');
+    expect(body.sealed_end_date).toBe('2026-12-31');
     expect(body.max_candidates_per_run).toBe(5);
     expect(body.max_provider_calls_per_market_date).toBe(10);
     expect(body.daily_token_budget).toBeNull();

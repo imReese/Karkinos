@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from analytics.a_share_limits import (
+from domain.a_share_limits import (
     GROWTH_BOARD_RATE,
     MAIN_BOARD_RATE,
     is_limit_down,
@@ -46,3 +46,15 @@ def test_suspension_detection():
     assert is_suspended(Decimal("0"))
     assert is_suspended(Decimal("-1"))
     assert not is_suspended(Decimal("1"))
+
+
+def test_etf_limits_use_mill_tick_while_stock_default_remains_cent():
+    previous = Decimal("1.005")
+    tick = Decimal("0.001")
+    assert limit_up_price(previous, MAIN_BOARD_RATE, tick=tick) == Decimal("1.106")
+    assert limit_down_price(previous, MAIN_BOARD_RATE, tick=tick) == Decimal("0.905")
+    assert is_limit_up(Decimal("1.106"), previous, MAIN_BOARD_RATE, tick=tick)
+    assert not is_limit_up(Decimal("1.105"), previous, MAIN_BOARD_RATE, tick=tick)
+    assert is_limit_down(Decimal("0.905"), previous, MAIN_BOARD_RATE, tick=tick)
+    assert not is_limit_down(Decimal("0.906"), previous, MAIN_BOARD_RATE, tick=tick)
+    assert limit_up_price(previous, MAIN_BOARD_RATE) == Decimal("1.11")

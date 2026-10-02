@@ -771,8 +771,8 @@ test('backtest preserves result-first evidence and complete metrics across all a
         JSON.stringify(viewport),
       ).toBeLessThanOrEqual(1);
       expect(geometry.tabsVisible, JSON.stringify(viewport)).toBe(false);
-      expect(geometry.setupX, JSON.stringify(viewport)).toBeLessThan(
-        geometry.resultX,
+      expect(geometry.resultX, JSON.stringify(viewport)).toBeLessThan(
+        geometry.setupX,
       );
       expect(geometry.resultWidth, JSON.stringify(viewport)).toBeGreaterThan(
         geometry.setupWidth,

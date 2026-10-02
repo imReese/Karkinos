@@ -34,6 +34,8 @@ class VolatilityTargetTrendStrategy(Strategy):
         self.min_momentum = min_momentum
         self.rebalance_threshold = rebalance_threshold
         self._prices: dict[Symbol, list[float]] = defaultdict(list)
+        # Last published research target, not actual holdings. Each target gets
+        # one execution attempt; rejection does not create a standing order.
         self._current_target: dict[Symbol, float] = defaultdict(float)
 
     def on_init(self, symbols: list[Symbol]) -> None:

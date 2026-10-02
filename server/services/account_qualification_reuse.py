@@ -61,6 +61,9 @@ def require_qualification_source_run_id(value: Any) -> str:
 def select_oldest_retryable_source_run_id(
     daily_artifact_store: Any,
     qualification_store: Any,
+    *,
+    final_reservation_reader: Callable[[str], Mapping[str, Any]] | None = None,
+    final_evaluation_as_of: datetime | None = None,
 ) -> str:
     """Select the oldest retryable batch that still satisfies today's artifact contract.
 
@@ -88,6 +91,39 @@ def select_oldest_retryable_source_run_id(
                 loader(run_id=run_id)
             except DailyStrategyArtifactRejected:
                 continue
+        if final_reservation_reader is not None:
+            try:
+                reservation = final_reservation_reader(run_id)
+            except LookupError:
+                continue  # Exploration-only batches never become final-test eligible.
+            if reservation.get("status") in {"failed", "running"}:
+                continue
+            if (
+                reservation.get("status") == "reserved"
+                and final_evaluation_as_of is not None
+            ):
+                from zoneinfo import ZoneInfo
+
+                sealed_end = (
+                    reservation.get("evidence", {})
+                    .get("reservation", {})
+                    .get("partition", {})
+                    .get("sealed_end")
+                )
+                if not isinstance(sealed_end, str):
+                    continue
+                ready_at = datetime.fromisoformat(sealed_end + "T15:30:00+08:00")
+                if (
+                    final_evaluation_as_of.tzinfo is None
+                    or final_evaluation_as_of.astimezone(ZoneInfo("Asia/Shanghai"))
+                    < ready_at
+                ):
+                    continue
+            if reservation.get("status") == "completed":
+                from analytics.sealed_holdout import final_research_evaluation_blocker
+
+                if final_research_evaluation_blocker(reservation.get("evidence")):
+                    continue
         compatible_run_ids.append(run_id)
         runs = qualification_store.list_qualification_runs(
             limit=200,

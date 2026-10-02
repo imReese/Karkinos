@@ -74,6 +74,12 @@ export const SHADOW_RESEARCH_COPY = {
     notDailyWinner:
       'This candidate passed its own gate but is not the verified new-candidate winner, so public paper/shadow approval remains blocked.',
     closeTime: 'After-close time',
+    researchEndDate: 'Research cutoff (optional)',
+    sealedEndDate: 'Final holdout end (optional)',
+    sealedDatesDetail:
+      'Set both dates before the holdout starts. Research uses data through the cutoff; one champion must be frozen before midnight that day (Shanghai). The holdout must cover 5%–50% of the combined calendar interval and include verified trading days. Leave both blank for exploratory research, which cannot qualify for new account publication.',
+    sealedDatesInvalid:
+      'Set both dates, with the holdout end after the research cutoff, or leave both blank.',
     question: 'Standing research question',
     operator: 'Owner identity',
     save: 'Save standing policy',
@@ -203,6 +209,12 @@ export const SHADOW_RESEARCH_COPY = {
     notDailyWinner:
       '该候选虽通过自身门槛，但不是已校验的新候选优胜者，因此公开 paper/shadow 批准保持阻断。',
     closeTime: '收盘后时间',
+    researchEndDate: '研究截止日（可选）',
+    sealedEndDate: '最终检验结束日（可选）',
+    sealedDatesDetail:
+      '在检验区间开始前同时设置两项日期。研究只使用截止日及之前的数据，并须在截止日当晚北京时间零点前冻结一个优胜候选。检验区间须占研究与检验总日历天数的 5%～50%，且包含已验证交易日。两项留空时可继续探索研究，但不能据此取得新的账户发布资格。',
+    sealedDatesInvalid:
+      '请同时设置两项日期，且检验结束日须晚于研究截止日；或将两项同时留空。',
     question: '长期研究问题',
     operator: '所有者身份',
     save: '保存站立授权',

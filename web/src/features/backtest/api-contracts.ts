@@ -487,6 +487,12 @@ export type BacktestReport = {
   };
   metrics: BacktestMetrics;
   metrics_json?: Partial<BacktestMetrics> & {
+    execution_timing?: {
+      policy_id: string;
+      signal_basis: string;
+      fill_basis: string;
+      availability_mode: string;
+    } | null;
     dataset_snapshot?: DatasetSnapshot;
     dataset_binding?: {
       decision_availability?: DatasetDecisionAvailability | null;

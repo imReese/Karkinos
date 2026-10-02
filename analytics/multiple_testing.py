@@ -2,8 +2,7 @@
 
 These are pure, provider-free statistical primitives for AI strategy research.
 They never register a strategy, mutate authority, or grant execution; they only
-produce evidence that a candidate's apparent edge survives correction for the
-number of trials and the non-normality of its returns.
+produce inspectable statistical evidence under each method's assumptions.
 
 Implemented methods:
 
@@ -20,6 +19,7 @@ import itertools
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime, timezone
 from typing import Any
 
 MULTIPLE_TESTING_EVIDENCE_SCHEMA_VERSION = "karkinos.multiple_testing_correction.v1"
@@ -89,7 +89,7 @@ def _finite(value: Any) -> float | None:
         return None
     try:
         normalized = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return normalized if math.isfinite(normalized) else None
 
@@ -220,6 +220,178 @@ def build_deflated_sharpe(
     )
 
 
+def build_return_series_trial_correction(
+    equity_curve: Sequence[Any],
+    trial_fingerprints: Sequence[str],
+) -> dict[str, Any]:
+    """Estimate DSR from adjacent-period returns and a nominal trial family.
+
+    Accept engine ``(datetime, equity)`` points or persisted mappings containing
+    ``timestamp`` and ``equity``. Do not sort, drop invalid points, annualize, or
+    infer missing trials. Sample variance uses ``ddof=1``; skewness and excess
+    kurtosis use empirical central moments. Four returns are the computational
+    minimum, not a claim that the observation window is statistically sufficient.
+
+    Fingerprints identify distinct supplied trials, not independent trials. The
+    result is a nominal-count approximation using the existing DSR primitive;
+    trial correlation and the across-trial Sharpe variance are not supplied.
+    """
+
+    payload: dict[str, Any] = {
+        "schema_version": MULTIPLE_TESTING_EVIDENCE_SCHEMA_VERSION,
+        "method": "return_series_deflated_sharpe",
+        "status": "unavailable",
+        "blockers": [],
+        "trial_fingerprints": [],
+        "nominal_trial_count": 0,
+        "independent_trial_count": None,
+        "trial_count_model": "nominal_trials_treated_as_independent",
+        "trial_sharpe_dispersion_model": "candidate_return_moments_sampling_error",
+        "trial_family_completeness": "not_verified",
+        "equity_curve_fingerprint": None,
+        "return_series_fingerprint": None,
+        "return_moments": None,
+        "dsr": None,
+        "significant_at_0_95": None,
+        "limitations": [
+            "Distinct fingerprints count supplied nominal trials; they do not establish independence or a complete search history.",
+            "Trial correlation is unknown. The nominal count is used in the independent-trial DSR approximation; it is not an estimated effective trial count.",
+            "Expected maximum Sharpe uses this candidate's estimated sampling error, not the unobserved across-trial Sharpe dispersion.",
+            "Returns are adjacent observation-period simple returns with a zero risk-free return; no annualization or serial-dependence adjustment is applied.",
+            "The caller must supply a consistent observation grid and an equity series without external cash flows, or a cash-flow-adjusted NAV series.",
+            "Four returns permit moment calculation but do not establish a sufficient observation horizon or reliable tail estimates.",
+            "This correction does not repair reused holdouts, missing trials, look-ahead bias, or prove investment profitability.",
+        ],
+    }
+    if not isinstance(trial_fingerprints, Sequence) or isinstance(
+        trial_fingerprints, (str, bytes)
+    ):
+        payload["blockers"].append("trial_fingerprints_missing")
+    elif not trial_fingerprints:
+        payload["blockers"].append("trial_fingerprints_missing")
+    elif any(
+        not isinstance(item, str) or not item.strip() for item in trial_fingerprints
+    ):
+        payload["blockers"].append("trial_fingerprint_invalid")
+    else:
+        fingerprints = sorted({item.strip() for item in trial_fingerprints})
+        payload["trial_fingerprints"] = fingerprints
+        payload["nominal_trial_count"] = len(fingerprints)
+
+    try:
+        points = _validated_equity_points(equity_curve)
+    except ValueError as exc:
+        payload["blockers"].append(str(exc))
+        return _with_fingerprint(payload)
+    payload["equity_curve_fingerprint"] = _fingerprint({"points": points})
+    returns = [
+        current[1] / previous[1] - 1.0
+        for previous, current in itertools.pairwise(points)
+    ]
+    if any(not math.isfinite(value) for value in returns):
+        payload["blockers"].append("period_return_not_finite")
+        return _with_fingerprint(payload)
+    payload["return_series_fingerprint"] = _fingerprint({"returns": returns})
+    if len(returns) < 4:
+        payload["blockers"].append("insufficient_return_periods")
+        return _with_fingerprint(payload)
+    # Constant proportional growth can acquire roundoff noise during division.
+    if max(returns) - min(returns) <= 32 * math.ulp(
+        max(1.0, *(abs(value) for value in returns))
+    ):
+        payload["blockers"].append("constant_return_series")
+        return _with_fingerprint(payload)
+    try:
+        count = len(returns)
+        mean = math.fsum(returns) / count
+        centered = [value - mean for value in returns]
+        moment_2 = math.fsum(value**2 for value in centered) / count
+        variance = moment_2 * count / (count - 1)
+        stddev = math.sqrt(variance)
+        standardized = [value / math.sqrt(moment_2) for value in centered]
+        skewness = math.fsum(value**3 for value in standardized) / count
+        excess_kurtosis = math.fsum(value**4 for value in standardized) / count - 3.0
+        observed_sharpe = mean / stddev
+        if not all(
+            math.isfinite(value)
+            for value in (
+                mean,
+                variance,
+                stddev,
+                skewness,
+                excess_kurtosis,
+                observed_sharpe,
+            )
+        ):
+            raise ValueError("return_moments_not_finite")
+    except (ValueError, OverflowError, ZeroDivisionError):
+        payload["blockers"].append("return_moments_not_finite")
+        return _with_fingerprint(payload)
+    payload["return_moments"] = {
+        "num_periods": count,
+        "mean": mean,
+        "sample_variance": variance,
+        "sample_stddev": stddev,
+        "skewness": skewness,
+        "excess_kurtosis": excess_kurtosis,
+        "observed_sharpe_per_period": observed_sharpe,
+        "risk_free_return_per_period": 0.0,
+        "moment_estimator": "sample_variance_ddof_1_empirical_standardized_moments",
+    }
+    if payload["blockers"]:
+        return _with_fingerprint(payload)
+    correction = build_deflated_sharpe(
+        observed_sharpe=observed_sharpe,
+        num_periods=count,
+        num_trials=payload["nominal_trial_count"],
+        skewness=skewness,
+        excess_kurtosis=excess_kurtosis,
+    )
+    payload.update(
+        status="assessed",
+        dsr=correction,
+        significant_at_0_95=correction["significant_at_0.95"],
+    )
+    return _with_fingerprint(payload)
+
+
+def _validated_equity_points(equity_curve: Sequence[Any]) -> list[tuple[str, float]]:
+    if not isinstance(equity_curve, Sequence) or isinstance(equity_curve, (str, bytes)):
+        raise ValueError("equity_curve_missing")
+    if not equity_curve:
+        raise ValueError("equity_curve_missing")
+    points: list[tuple[str, float]] = []
+    previous: datetime | None = None
+    for point in equity_curve:
+        if isinstance(point, Mapping):
+            raw_timestamp, raw_equity = point.get("timestamp"), point.get("equity")
+        elif isinstance(point, (tuple, list)) and len(point) == 2:
+            raw_timestamp, raw_equity = point
+        else:
+            raise ValueError("equity_curve_point_invalid")
+        try:
+            timestamp = (
+                raw_timestamp
+                if isinstance(raw_timestamp, datetime)
+                else datetime.fromisoformat(raw_timestamp)
+            )
+        except (TypeError, ValueError):
+            raise ValueError("equity_curve_timestamp_invalid") from None
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.astimezone(timezone.utc)
+        if previous is not None:
+            if (timestamp.tzinfo is None) != (previous.tzinfo is None):
+                raise ValueError("equity_curve_mixed_timezone_awareness")
+            if timestamp <= previous:
+                raise ValueError("equity_curve_not_strictly_increasing")
+        equity = _finite(raw_equity)
+        if equity is None or equity <= 0:
+            raise ValueError("equity_curve_value_invalid")
+        points.append((timestamp.isoformat(), equity))
+        previous = timestamp
+    return points
+
+
 def _sharpe_performance(period_returns: Sequence[float]) -> float:
     values = [float(item) for item in period_returns]
     if len(values) < 2:
@@ -314,5 +486,6 @@ __all__ = [
     "MULTIPLE_TESTING_EVIDENCE_SCHEMA_VERSION",
     "build_holm_bonferroni",
     "build_deflated_sharpe",
+    "build_return_series_trial_correction",
     "build_probability_of_backtest_overfitting",
 ]

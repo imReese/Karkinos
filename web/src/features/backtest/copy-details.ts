@@ -138,11 +138,23 @@ export const backtestDetailsCopy = {
       missingEvidence:
         'This saved Dataset result has no supported decision-time availability check.',
       backtestBoundary:
-        'The current engine can read a bar close, create a signal, and fill on that same bar using the signal reference price. These returns cannot establish executable PIT performance.',
+        'A later simulated fill does not make late information available at the earlier decision time. This check alone cannot establish executable PIT performance.',
       previewBoundary:
-        'This preview creates no order or fill. Related backtests use same-bar fills and cannot establish executable PIT performance.',
+        'This preview creates no order or fill. Inspect the saved execution assumptions separately; this preview cannot establish executable PIT performance.',
       researchBoundary:
         'Research only: historical universe membership and corporate-action returns remain unverified; this check does not allow strategy promotion.',
+    },
+    executionTiming: {
+      title: 'Execution timing',
+      nextBar: 'Signal after a completed bar; fill at a later bar close',
+      detail:
+        'A target can fill only on a strictly later bar for the same instrument. The last bar cannot create a fill without a later price.',
+      unknown:
+        'Execution timing not evaluated: this saved result has no supported timing policy. Rerunning creates a new result.',
+      snapshot:
+        'Historical snapshot replay assumes bar-close information availability. Recorded publication and capture times remain separate evidence; this is not verified historical PIT performance.',
+      observed:
+        'Recorded bar availability is enforced before strategy evaluation. This does not verify historical universe membership, corporate-action returns, or real execution quality.',
     },
     strategySnapshot: {
       kicker: 'Strategy audit',
@@ -377,11 +389,23 @@ export const backtestDetailsCopy = {
       missingEvidence:
         '这份已保存 Dataset 结果没有可识别的决策时点可用性检查。',
       backtestBoundary:
-        '当前引擎可读取当根收盘价后生成信号，并使用信号参考价在同一根 K 线成交；这些收益不能证明历史时点可执行的表现。',
+        '延后模拟成交不会让迟到的信息在更早的决策时点变得可用。本项检查不能单独证明历史时点可执行的表现。',
       previewBoundary:
-        '本预览不创建订单或成交；关联回测在同一根 K 线成交，不能证明历史时点可执行的表现。',
+        '本预览不创建订单或成交。请另行查看已保存回测的成交假设；本预览不能证明历史时点可执行的表现。',
       researchBoundary:
         '仅供研究：历史标的池成员资格与公司行动收益仍未核实；本项检查不允许策略晋级。',
+    },
+    executionTiming: {
+      title: '成交时序',
+      nextBar: '完整 K 线后生成信号，后续 K 线收盘时模拟成交',
+      detail:
+        '目标只允许在同一标的时间严格更晚的 K 线上成交。最后一根 K 线没有后续价格时不会产生模拟成交。',
+      unknown:
+        '成交时序未评估：这份历史结果没有可识别的时序记录。重新运行会生成新结果。',
+      snapshot:
+        '历史快照回放假设收盘时已知当根行情。记录的发布时间和采集时间仍需单独核验，不能据此认定历史 PIT 表现已验证。',
+      observed:
+        '策略读取行情前会核验已记录的行情可用时间；这不代表历史标的池、公司行动收益或真实成交质量已经验证。',
     },
     strategySnapshot: {
       kicker: '策略审计',

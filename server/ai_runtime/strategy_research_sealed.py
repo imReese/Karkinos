@@ -2,27 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-from decimal import Decimal
-from typing import Any
-
 from analytics.sealed_holdout import (
-    build_consumption_receipt,
-    build_sealed_holdout_evaluation,
     build_sealed_partition,
-    sealed_return_from_result,
 )
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
-from server.ai_runtime.formula_challengers import (
-    build_challenger_comparison,
-    generate_deterministic_challenger_formulas,
-)
-from server.ai_runtime.strategy_research_backtest import (
-    RestrictedFormulaBacktestAdapter,
-)
 from server.ai_runtime.strategy_research_support import (
     selection_from_session,
-    strategy_research_failure_code,
 )
 from server.contracts.strategy_research import (
     STRATEGY_RESEARCH_API_CONTRACT,
@@ -64,117 +49,27 @@ class StrategyResearchSealedMixin:
             draft["formula_ast"]
         )
         research_family_id = session["session_id"]
-        sealed_test, reused = self._research_store.create_or_get_sealed_test(
-            request,
-            partition_fingerprint=partition.partition_fingerprint,
-            champion_formula_fingerprint=champion_formula_fingerprint,
-            research_family_id=research_family_id,
-            created_at=self._now(),
+        # Historical completed tests remain readable; new evaluations must freeze
+        # the champion before future bars exist through the automation reservation.
+        sealed_id = (
+            "ai-sealed-test-"
+            + content_fingerprint({"idempotency_key": request.idempotency_key})[:24]
         )
-        if reused and sealed_test["status"] == "completed":
-            return self._sealed_test_response(sealed_test, reused=True)
-        if reused and sealed_test["status"] == "failed":
-            raise StrategyResearchRejected(
-                sealed_test.get("failure_code") or "sealed_test_failed"
-            )
-
         try:
-            reviewed_fee_schedule_resolution = await asyncio.to_thread(
-                self._resolve_reviewed_fee_schedule, selection
-            )
-            result = await asyncio.to_thread(
-                RestrictedFormulaBacktestAdapter(
-                    data_store=self._data_store
-                ).run_sealed,
-                selection=selection,
-                draft=draft,
-                sealed_end_date=sealed_end_date,
-                reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
-            )
-            benchmark_return = (
-                Decimal(str(request.benchmark_return))
-                if request.benchmark_return is not None
-                else None
-            )
-            evidence = build_sealed_holdout_evaluation(
-                strategy_id="ai_formula_research",
-                benchmark_role="formula_champion",
-                research_family_id=research_family_id,
-                formula_fingerprint=champion_formula_fingerprint,
-                partition=partition,
-                result=result,
-                benchmark_return=benchmark_return,
-            )
-            receipt = build_consumption_receipt(
-                research_family_id=research_family_id,
-                partition=partition,
+            historical = self._research_store.get_sealed_test(sealed_id)
+        except LookupError:
+            historical = None
+        if historical is not None and historical["status"] == "completed":
+            row, _ = self._research_store.create_or_get_sealed_test(
+                request,
+                partition_fingerprint=partition.partition_fingerprint,
                 champion_formula_fingerprint=champion_formula_fingerprint,
-                consumed_at=self._now(),
-                evaluator_code_revision="strategy_research_sealed.v1",
-            )
-            challenger_comparison = await asyncio.to_thread(
-                self._run_challenger_comparison,
-                selection=selection,
-                partition=partition,
-                sealed_end_date=sealed_end_date,
-                reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
-                champion_return=evidence.sealed_return,
-            )
-            evidence_payload = evidence.to_json_dict()
-            self._research_store.finish_sealed_test(
-                sealed_test["sealed_test_id"],
-                status="completed",
-                evidence=evidence_payload,
-                evidence_fingerprint=evidence_payload["evidence_fingerprint"],
-                failure_code=None,
-                updated_at=self._now(),
-                challenger_comparison=challenger_comparison,
-            )
-            self._research_store.append_event(
-                sealed_test["sealed_test_id"],
-                "sealed_test.consumption_recorded",
-                {"receipt_fingerprint": receipt.receipt_fingerprint},
+                research_family_id=research_family_id,
                 created_at=self._now(),
             )
-        except Exception as exc:
-            self._research_store.finish_sealed_test(
-                sealed_test["sealed_test_id"],
-                status="failed",
-                evidence=None,
-                evidence_fingerprint=None,
-                failure_code=strategy_research_failure_code(exc),
-                updated_at=self._now(),
-            )
-            raise
-        return self._sealed_test_response(
-            self._research_store.get_sealed_test(sealed_test["sealed_test_id"]),
-            reused=False,
-        )
-
-    def _run_challenger_comparison(
-        self,
-        *,
-        selection: Any,
-        partition: Any,
-        sealed_end_date: str,
-        reviewed_fee_schedule_resolution: Any,
-        champion_return: Any,
-    ) -> JsonObject:
-        adapter = RestrictedFormulaBacktestAdapter(data_store=self._data_store)
-        challenger_returns: list[float] = []
-        for challenger in generate_deterministic_challenger_formulas():
-            result = adapter.run_sealed(
-                selection=selection,
-                draft={"formula_ast": challenger["formula_ast"]},
-                sealed_end_date=sealed_end_date,
-                reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
-            )
-            challenger_returns.append(
-                float(sealed_return_from_result(result, partition))
-            )
-        return build_challenger_comparison(
-            champion_return=float(champion_return),
-            challenger_returns=challenger_returns,
+            return self._sealed_test_response(row, reused=True)
+        raise StrategyResearchRejected(
+            "sealed_test_requires_frozen_automation_champion"
         )
 
     def _sealed_test_response(self, row: dict, *, reused: bool) -> JsonObject:

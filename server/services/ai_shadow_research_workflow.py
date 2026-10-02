@@ -55,6 +55,16 @@ class AiShadowResearchWorkflowMixin:
         if preflight is not None:
             return preflight
 
+        if policy.research_end_date is not None and (
+            self._now().astimezone(SHADOW_RESEARCH_TIMEZONE).date().isoformat()
+            > policy.research_end_date
+        ):
+            return {
+                **self.status(),
+                "run_status": "research_window_frozen",
+                "provider_call_performed": False,
+                "sealed_end_date": policy.sealed_end_date,
+            }
         self._require_deepseek_provider()
         provider_window_preflight, batch_deadline_at = (
             self._provider_batch_window_admission()
@@ -313,49 +323,15 @@ class AiShadowResearchWorkflowMixin:
                 }
                 self._require_provider_batch_deadline(batch_deadline_at)
             self._require_provider_batch_deadline(batch_deadline_at)
-            # Only complete local evaluations are appended above.
-            terminal_status = (
-                "completed"
-                if len(candidates) == policy.max_candidates_per_run
-                else "partial"
+            return await self._finish_research_run(
+                run=run,
+                candidates=candidates,
+                drafts=valid_drafts,
+                expected_candidate_count=policy.max_candidates_per_run,
+                selection=selection,
+                local_research=local_research,
+                market_date=prepared.market_date,
             )
-            daily_artifacts: dict[str, Any] | None = None
-            daily_artifact_failure: str | None = None
-            try:
-                self._require_execution_current()
-                daily_artifacts = self._daily_artifacts.record_daily_artifacts(
-                    run=run,
-                    candidates=candidates,
-                    drafts=valid_drafts,
-                    expected_candidate_count=policy.max_candidates_per_run,
-                    run_status=terminal_status,
-                    created_at=self._utc_now(),
-                )
-            except DailyStrategyArtifactRejected as exc:
-                daily_artifact_failure = shadow_research_failure_code(exc)
-                terminal_status = "partial"
-            self._require_execution_current()
-            self._store.update_run(
-                run["run_id"],
-                now=self._utc_now(),
-                status=terminal_status,
-                candidate_count=len(candidates),
-                failure_code=(
-                    daily_artifact_failure
-                    or (
-                        None
-                        if terminal_status == "completed"
-                        else "candidate_stage_partial"
-                    )
-                ),
-            )
-            await self._notify(prepared.market_date, candidates, daily_artifacts)
-            return {
-                **self.status(),
-                "run_status": terminal_status,
-                "run_id": run["run_id"],
-                "reused": False,
-            }
         except asyncio.CancelledError:
             raise
         except ProviderCallDeferred as exc:
@@ -396,6 +372,73 @@ class AiShadowResearchWorkflowMixin:
                 "run_id": run["run_id"],
                 "failure_code": shadow_research_failure_code(exc),
             }
+
+    async def _finish_research_run(
+        self,
+        *,
+        run: Mapping[str, Any],
+        candidates: list[dict[str, Any]],
+        drafts: list[dict[str, Any]],
+        expected_candidate_count: int,
+        selection: StrategyResearchSelection,
+        local_research: Any,
+        market_date: str,
+    ) -> dict[str, Any]:
+        # Only complete local evaluations are appended by the iteration loop.
+        terminal_status = (
+            "completed" if len(candidates) == expected_candidate_count else "partial"
+        )
+        daily_artifacts: dict[str, Any] | None = None
+        daily_artifact_failure: str | None = None
+        try:
+            self._require_execution_current()
+            daily_artifacts = self._daily_artifacts.record_daily_artifacts(
+                run=run,
+                candidates=candidates,
+                drafts=drafts,
+                expected_candidate_count=expected_candidate_count,
+                run_status=terminal_status,
+                created_at=self._utc_now(),
+            )
+            if selection.has_sealed_holdout:
+                from server.services.research_final_evaluation import (
+                    reserve_final_research_evaluation,
+                )
+
+                await reserve_final_research_evaluation(
+                    db=self._db,
+                    research_store=local_research._research_store,
+                    run=run,
+                    selection=selection,
+                    candidates=candidates,
+                    daily_selection=daily_artifacts["selection"],
+                    now=self._utc_now(),
+                )
+        except DailyStrategyArtifactRejected as exc:
+            daily_artifact_failure = shadow_research_failure_code(exc)
+            terminal_status = "partial"
+        self._require_execution_current()
+        self._store.update_run(
+            run["run_id"],
+            now=self._utc_now(),
+            status=terminal_status,
+            candidate_count=len(candidates),
+            failure_code=(
+                daily_artifact_failure
+                or (
+                    None
+                    if terminal_status == "completed"
+                    else "candidate_stage_partial"
+                )
+            ),
+        )
+        await self._notify(market_date, candidates, daily_artifacts)
+        return {
+            **self.status(),
+            "run_status": terminal_status,
+            "run_id": run["run_id"],
+            "reused": False,
+        }
 
     def _market_close_preflight(
         self,
@@ -457,6 +500,11 @@ class AiShadowResearchWorkflowMixin:
             "start_date": prepared.request.start_date,
             "end_date": prepared.request.end_date,
             "frequency": BarFrequency.DAILY.value,
+            **(
+                {"sealed_end_date": policy.sealed_end_date}
+                if policy.sealed_end_date
+                else {}
+            ),
             "initial_cash": prepared.request.initial_cash,
             "cost_model_reference": prepared.cost_model_reference,
             "account_truth_freshness_as_of": (

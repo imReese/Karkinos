@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Any
 
 from backtest.metrics import AfterCostEvidence, BacktestMetrics, CostSummary
 from core.events import FillEvent
@@ -23,6 +24,8 @@ class BacktestResult:
     fills: list[FillEvent] = field(default_factory=list)
     cost_summary: CostSummary = field(default_factory=CostSummary)
     evidence_bundle: AfterCostEvidence | None = None
+    execution_timing: dict[str, Any] | None = None
+    dataset_snapshot: dict[str, Any] | None = None
 
     @property
     def total_return(self) -> Decimal:

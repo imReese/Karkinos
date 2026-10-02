@@ -125,7 +125,11 @@ def load_dataset_backtest_inputs(root: Path, request):
 
 
 def _decision_availability_summary(store, restored) -> dict:
-    """Audit when the current same-bar engine exposes each bound observation."""
+    """Audit information at the snapshot's modeled bar-close decision time.
+
+    A later simulated fill does not make information available at this earlier
+    decision time. Keep this input audit separate from execution timing.
+    """
     verification_times = {}
     for partition in restored.snapshot.partitions:
         if partition.verification_id is not None:

@@ -127,7 +127,7 @@ test('saved Dataset report shows bound timing failures separately from data qual
   expect(
     panel.getByText('First late verification: 600000 · 2026-09-08'),
   ).toBeTruthy();
-  expect(panel.getByText(/fill on that same bar/i)).toBeTruthy();
+  expect(panel.getByText(/later simulated fill/i)).toBeTruthy();
   expect(
     panel.getByText(/cannot establish executable PIT performance/i),
   ).toBeTruthy();

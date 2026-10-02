@@ -37,24 +37,32 @@ def limit_rate_for_symbol(symbol: str) -> Decimal:
     return MAIN_BOARD_RATE
 
 
-def limit_up_price(prev_close: Decimal, rate: Decimal) -> Decimal:
+def limit_up_price(
+    prev_close: Decimal, rate: Decimal, *, tick: Decimal = _PRICE_TICK
+) -> Decimal:
     """Round the limit-up price to the exchange tick."""
 
-    return _round_tick(prev_close * (Decimal("1") + rate))
+    return _round_tick(prev_close * (Decimal("1") + rate), tick)
 
 
-def limit_down_price(prev_close: Decimal, rate: Decimal) -> Decimal:
+def limit_down_price(
+    prev_close: Decimal, rate: Decimal, *, tick: Decimal = _PRICE_TICK
+) -> Decimal:
     """Round the limit-down price to the exchange tick."""
 
-    return _round_tick(prev_close * (Decimal("1") - rate))
+    return _round_tick(prev_close * (Decimal("1") - rate), tick)
 
 
-def is_limit_up(close: Decimal, prev_close: Decimal, rate: Decimal) -> bool:
-    return close >= limit_up_price(prev_close, rate)
+def is_limit_up(
+    close: Decimal, prev_close: Decimal, rate: Decimal, *, tick: Decimal = _PRICE_TICK
+) -> bool:
+    return close >= limit_up_price(prev_close, rate, tick=tick)
 
 
-def is_limit_down(close: Decimal, prev_close: Decimal, rate: Decimal) -> bool:
-    return close <= limit_down_price(prev_close, rate)
+def is_limit_down(
+    close: Decimal, prev_close: Decimal, rate: Decimal, *, tick: Decimal = _PRICE_TICK
+) -> bool:
+    return close <= limit_down_price(prev_close, rate, tick=tick)
 
 
 def is_suspended(volume: Decimal) -> bool:
@@ -63,8 +71,8 @@ def is_suspended(volume: Decimal) -> bool:
     return volume <= Decimal("0")
 
 
-def _round_tick(value: Decimal) -> Decimal:
-    return value.quantize(_PRICE_TICK, rounding=ROUND_HALF_UP)
+def _round_tick(value: Decimal, tick: Decimal) -> Decimal:
+    return value.quantize(tick, rounding=ROUND_HALF_UP)
 
 
 __all__ = [

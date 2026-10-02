@@ -555,3 +555,39 @@ __all__ = [
     "build_sealed_holdout_evaluation",
     "is_valid_sealed_holdout_evaluation",
 ]
+
+
+def final_research_evaluation_blocker(value: Any) -> str | None:
+    """Validate independent-test evidence and the frozen nominal-trial correction."""
+    if not isinstance(value, Mapping) or not value:
+        return "independent_final_evaluation_missing"
+    try:
+        core = dict(value)
+        fingerprint = core.pop("evidence_fingerprint", None)
+        binding = core.get("reservation", {})
+        evaluation = core.get("sealed_evaluation", {})
+        correction = binding.get("trial_correction", {})
+        correction_core = dict(correction)
+        correction_fingerprint = correction_core.pop("evidence_fingerprint", None)
+        if (
+            fingerprint != _fingerprint(core)
+            or core.get("schema_version") != "karkinos.research_final_evaluation.v1"
+            or not is_valid_sealed_holdout_evaluation(evaluation)
+            or evaluation.get("formula_fingerprint")
+            != binding.get("champion_formula_fingerprint")
+            or evaluation.get("partition") != binding.get("partition")
+            or correction_fingerprint != _fingerprint(correction_core)
+            or correction.get("trial_fingerprints")
+            != binding.get("trial_family", {}).get("trial_fingerprints")
+        ):
+            return "independent_final_evaluation_invalid"
+        if evaluation.get("passed_benchmark") is not True:
+            return "independent_final_excess_not_positive"
+        if (
+            correction.get("status") != "assessed"
+            or correction.get("significant_at_0_95") is not True
+        ):
+            return "multiple_testing_correction_not_significant"
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return "independent_final_evaluation_invalid"
+    return None
