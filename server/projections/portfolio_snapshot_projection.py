@@ -147,6 +147,54 @@ def _indicative_position_price(
     return None
 
 
+def _build_allocation(
+    positions: list[PositionResponse],
+    *,
+    cash: Decimal | float,
+    total_equity: float | None,
+    scheduler: Any,
+    instruments: dict,
+) -> list[AllocationItem]:
+    allocation: list[AllocationItem] = []
+    if total_equity is not None and total_equity > 0:
+        allocation.append(
+            AllocationItem(
+                symbol="CASH",
+                name="现金",
+                weight=float(cash) / total_equity,
+                value=float(cash),
+                asset_class="cash",
+            )
+        )
+        for pos in positions:
+            ac = "stock"
+            if scheduler:
+                for sym, asset_class in scheduler.watchlist:
+                    if str(sym) == pos.symbol:
+                        ac = asset_class.value
+                        break
+            if pos.symbol in {
+                str(symbol)
+                for symbol, instrument in instruments.items()
+                if getattr(instrument, "asset_class", None) is not None
+            }:
+                instrument = instruments.get(Symbol(pos.symbol))
+                if instrument is not None:
+                    ac = instrument.asset_class.value
+            name = pos.display_name or pos.name or pos.symbol
+
+            allocation.append(
+                AllocationItem(
+                    symbol=pos.symbol,
+                    name=name,
+                    weight=float(pos.market_value or 0.0) / total_equity,
+                    value=float(pos.market_value or 0.0),
+                    asset_class=ac,
+                )
+            )
+    return allocation
+
+
 def build_portfolio_snapshot_sync(
     state,
     *,
@@ -428,43 +476,13 @@ def build_portfolio_snapshot_sync(
         else None
     )
 
-    allocation: list[AllocationItem] = []
-    if total_equity is not None and total_equity > 0:
-        allocation.append(
-            AllocationItem(
-                symbol="CASH",
-                name="现金",
-                weight=float(portfolio.cash) / total_equity,
-                value=float(portfolio.cash),
-                asset_class="cash",
-            )
-        )
-        for pos in positions:
-            ac = "stock"
-            if scheduler:
-                for sym, asset_class in scheduler.watchlist:
-                    if str(sym) == pos.symbol:
-                        ac = asset_class.value
-                        break
-            if pos.symbol in {
-                str(symbol)
-                for symbol, instrument in instruments.items()
-                if getattr(instrument, "asset_class", None) is not None
-            }:
-                instrument = instruments.get(Symbol(pos.symbol))
-                if instrument is not None:
-                    ac = instrument.asset_class.value
-            name = pos.display_name or pos.name or pos.symbol
-
-            allocation.append(
-                AllocationItem(
-                    symbol=pos.symbol,
-                    name=name,
-                    weight=float(pos.market_value or 0.0) / total_equity,
-                    value=float(pos.market_value or 0.0),
-                    asset_class=ac,
-                )
-            )
+    allocation = _build_allocation(
+        positions,
+        cash=portfolio.cash,
+        total_equity=total_equity,
+        scheduler=scheduler,
+        instruments=instruments,
+    )
 
     allocation_grouped = build_grouped_allocation(allocation, total_equity or 0.0)
 
