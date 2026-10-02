@@ -14,7 +14,7 @@ from core.types import Symbol
 class Strategy(ABC):
     """策略抽象基类。
 
-    子类实现 on_init/on_data/on_fill 三个生命周期方法。
+    子类实现 on_init/on_data，按需接收成交和实际持仓更新。
     持有 event_bus 引用，通过 event_bus.publish(SignalEvent(...)) 发射信号。
     """
 
@@ -23,7 +23,7 @@ class Strategy(ABC):
         self.event_bus = event_bus
         self._last_timestamp: datetime | None = None
         # Signal-only scans track research regimes; an execution host explicitly
-        # enables this only when it delivers real FillEvent callbacks.
+        # enables this only when it delivers actual position updates.
         self.fill_tracking_enabled = False
 
     @abstractmethod
@@ -36,6 +36,9 @@ class Strategy(ABC):
 
     def on_fill(self, event: FillEvent) -> None:
         """收到成交回报时触发（可选覆盖）。"""
+
+    def on_position_update(self, symbol: Symbol, quantity: Decimal) -> None:
+        """Receive the absolute position after fills or corporate actions."""
 
     def emit_signal(
         self,

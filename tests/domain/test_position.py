@@ -118,3 +118,48 @@ class TestMarkToMarket:
     def test_cost_basis(self, pos: Position):
         pos.update_on_fill("buy", Decimal("100"), Decimal("1800"))
         assert pos.cost_basis == Decimal("180000")
+
+
+def test_share_award_remains_locked_through_t_plus_one_settlement(pos: Position):
+    pos.update_on_fill("buy", Decimal("100"), Decimal("13"))
+    original_cost = pos.cost_basis
+    pos.accrue_share_distribution(Decimal("30"))
+
+    assert pos.quantity == Decimal("130")
+    assert pos.unlisted_qty == Decimal("30")
+    assert pos.frozen_qty == Decimal("100")
+    assert pos.available_qty == Decimal("0")
+    assert pos.cost_basis == original_cost
+    assert pos.realized_pnl == pos.commission_paid == Decimal("0")
+    pos.mark_to_market(Decimal("10"))
+    assert pos.market_value == original_cost
+    assert pos.unrealized_pnl == Decimal("0")
+
+    for _ in range(3):
+        pos.advance_settlement_day()
+        assert pos.available_qty == Decimal("100")
+        assert pos.unlisted_qty == Decimal("30")
+
+    pos.update_on_fill("sell", Decimal("100"), Decimal("11"))
+    pos.mark_to_market(Decimal("11"))
+    assert pos.quantity == pos.unlisted_qty == Decimal("30")
+    assert pos.available_qty == Decimal("0")
+    assert pos.cost_basis == Decimal("300")
+    assert pos.market_value == Decimal("330")
+    assert pos.realized_pnl == Decimal("100")
+    pos.release_share_distribution(Decimal("30"))
+    assert pos.available_qty == Decimal("30")
+    assert pos.market_value == Decimal("330")
+    assert pos.cost_basis == Decimal("300")
+
+
+def test_share_award_errors_do_not_change_position(pos: Position):
+    pos.update_on_fill("buy", Decimal("100"), Decimal("10"))
+    for invalid in (Decimal("0.5"), Decimal("-1"), Decimal("NaN")):
+        with pytest.raises(ValueError, match="portfolio_share_distribution_"):
+            pos.accrue_share_distribution(invalid)
+    with pytest.raises(ValueError, match="release_exceeds_unlisted"):
+        pos.release_share_distribution(Decimal("1"))
+    assert pos.quantity == pos.frozen_qty == Decimal("100")
+    assert pos.unlisted_qty == Decimal("0")
+    assert pos.avg_cost == Decimal("10")

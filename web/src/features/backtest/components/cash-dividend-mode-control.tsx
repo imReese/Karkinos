@@ -30,16 +30,25 @@ export function CashDividendModeControl() {
             setCorporateActionMode(
               event.target.value === 'cash_dividends_gross'
                 ? 'cash_dividends_gross'
-                : 'price_only',
+                : event.target.value === 'reported_distributions_gross'
+                  ? 'reported_distributions_gross'
+                  : 'price_only',
             )
           }
         >
           <option value="price_only">{labels.priceOnly}</option>
           <option value="cash_dividends_gross">{labels.gross}</option>
+          <option value="reported_distributions_gross">
+            {labels.reported}
+          </option>
         </select>
       </label>
       <p className="app-muted text-xs leading-5">
-        {supported ? labels.modeDetail : labels.requiresEvidence}
+        {supported
+          ? corporateActionMode === 'reported_distributions_gross'
+            ? labels.reportedDetail
+            : labels.modeDetail
+          : labels.requiresEvidence}
       </p>
     </div>
   );

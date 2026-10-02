@@ -14,8 +14,9 @@ from core.event_bus import EventBus
 from core.events import MarketEvent, OrderEvent, RiskDecisionEvent, SignalEvent
 from core.types import ZERO, BarFrequency, CommissionType, OrderSide, OrderType, Symbol
 from data.handler import DataHandler
-from domain.instrument import make_etf, make_stock
+from domain.instrument import make_etf, make_gold_spot, make_stock
 from domain.portfolio import Portfolio
+from domain.position import Position
 from execution.commission import ETFCommission, MultiAssetCommission, StockACommission
 from execution.slippage import PercentSlippage
 from risk.limits import PositionLimitRule
@@ -203,6 +204,10 @@ class TestBacktestEngine:
             data_handlers={symbol: DataHandler(df, symbol)},
             slippage_model=PercentSlippage(Decimal("0.01")),
         )
+        position = Position(symbol)
+        position.update_on_fill("buy", Decimal("100"), Decimal("100"))
+        position.advance_settlement_day()
+        engine.portfolio.positions[symbol] = position
         engine._on_order_event(
             OrderEvent(
                 timestamp=datetime(2024, 1, 1),
@@ -450,6 +455,59 @@ def test_pending_exit_fills_after_t_plus_one_settlement():
     result = _timing_engine(_timing_frame([10, 10.5, 10.6]), strategy=strategy).run()
     assert [fill.side for fill in result.fills] == [OrderSide.BUY, OrderSide.SELL]
     assert result.positions[Symbol("600000")].quantity == ZERO
+
+
+@pytest.mark.parametrize(
+    ("instrument", "expected_sides", "remaining_quantity", "blocked"),
+    [
+        (make_gold_spot(), [OrderSide.BUY, OrderSide.SELL], ZERO, 0),
+        (make_stock("600000", "fixture"), [OrderSide.BUY], Decimal("100"), 1),
+    ],
+    ids=["t_plus_zero_same_day_sale", "t_plus_one_same_day_sale_rejected"],
+)
+def test_direct_same_day_sell_respects_instrument_settlement(
+    instrument, expected_sides, remaining_quantity, blocked, caplog
+):
+    class IntradayDirectOrders(Strategy):
+        def on_init(self, symbols):
+            self.count = 0
+
+        def on_data(self, event):
+            self.count += 1
+            self.event_bus.publish(
+                OrderEvent(
+                    timestamp=event.timestamp,
+                    order_id=f"intraday-{self.count}",
+                    symbol=event.symbol,
+                    side=OrderSide.BUY if self.count == 1 else OrderSide.SELL,
+                    order_type=OrderType.MARKET,
+                    quantity=Decimal("100"),
+                    price=event.close,
+                )
+            )
+
+    frame = _timing_frame([400, 400])
+    frame["timestamp"] = pd.date_range("2026-04-09 10:00", periods=2, freq="min")
+    engine = BacktestEngine(
+        strategy=IntradayDirectOrders("direct", EventBus()),
+        instruments={instrument.symbol: instrument},
+        data_handlers={
+            instrument.symbol: DataHandler(
+                frame, instrument.symbol, frequency=BarFrequency.MIN_1
+            )
+        },
+        initial_cash=Decimal("100000"),
+    )
+
+    result = engine.run()
+
+    assert [fill.side for fill in result.fills] == expected_sides
+    assert (
+        result.fills[-1].timestamp == frame.iloc[len(expected_sides) - 1]["timestamp"]
+    )
+    assert result.positions[instrument.symbol].quantity == remaining_quantity
+    assert result.execution_timing["risk_blocked_count"] == blocked
+    assert "Handler" not in caplog.text
 
 
 def test_execution_time_risk_rejection_prevents_fill():

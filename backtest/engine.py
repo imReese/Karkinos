@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from backtest.cash_dividends import CashDividend, CashDividendReplay
+from backtest.distributions import DistributionReplay, StockDistribution
 from backtest.equity_curve import canonicalize_equity_curve
 from backtest.metrics import (
     build_after_cost_evidence,
@@ -86,7 +86,8 @@ class BacktestEngine:
         slippage_model: SlippageModel | None = None,
         execution_config: BacktestExecutionConfig | None = None,
         db=None,
-        cash_dividends: tuple[CashDividend, ...] | None = None,
+        cash_dividends: tuple[StockDistribution, ...] | None = None,
+        include_share_distributions: bool = False,
     ) -> None:
         self.event_bus = EventBus()
         self.clock = SimulatedClock()
@@ -97,7 +98,11 @@ class BacktestEngine:
         self.fills: list[FillEvent] = []
         self.db = db
         self._dividend_replay = (
-            CashDividendReplay(cash_dividends) if cash_dividends is not None else None
+            DistributionReplay(
+                cash_dividends, include_shares=include_share_distributions
+            )
+            if cash_dividends is not None
+            else None
         )
         if cash_dividends is not None and any(
             item.symbol not in instruments
@@ -132,6 +137,7 @@ class BacktestEngine:
         self.event_bus.unsubscribe(SignalEvent, self.portfolio.on_signal)
         self.event_bus.subscribe(SignalEvent, self._on_signal)
         self.event_bus.subscribe(FillEvent, self.strategy.on_fill)
+        self.event_bus.subscribe(FillEvent, self._on_position_fill)
         for inst in instruments.values():
             self.portfolio.add_instrument(inst)
 
@@ -159,6 +165,10 @@ class BacktestEngine:
             )
 
         self.risk_manager = RiskManager(self.event_bus)
+        # Portfolio owns this research book. Risk reads the same positions and
+        # must not reconstruct a second fill-only book that misses share awards.
+        self.event_bus.unsubscribe(FillEvent, self.risk_manager.on_fill)
+        self.risk_manager.positions = self.portfolio.positions
         # EventBus broadcasts to every subscriber; enforce risk before execution
         # here so a rejected/modified order cannot also execute its original form.
         self.event_bus.unsubscribe(OrderEvent, self.risk_manager.on_order)
@@ -195,6 +205,13 @@ class BacktestEngine:
                     {event.symbol: event.close for event in session_events}
                 )
                 self._dividend_replay.before_session(current_date, self.portfolio)
+                # Awards change quantities without fills. Revalue every holding
+                # before any symbol is sized, then sync strategy position state.
+                self.portfolio.mark_to_market(
+                    {event.symbol: event.close for event in session_events}
+                )
+                for symbol, position in self.portfolio.positions.items():
+                    self.strategy.on_position_update(symbol, position.quantity)
             for market_event in session_events:
                 self.clock.advance_to(market_event.timestamp)
                 prices = {market_event.symbol: market_event.close}
@@ -216,6 +233,10 @@ class BacktestEngine:
         if self._dividend_replay is not None:
             return event.timestamp.astimezone(ZoneInfo("Asia/Shanghai")).date()
         return event.timestamp.date()
+
+    def _on_position_fill(self, event: FillEvent) -> None:
+        position = self.portfolio.positions[event.symbol]
+        self.strategy.on_position_update(event.symbol, position.quantity)
 
     def _on_market_event(self, event: MarketEvent) -> None:
         """Execute prior targets, then expose this completed bar to the strategy."""
@@ -292,6 +313,19 @@ class BacktestEngine:
                 return None
             if result.modified_order is not None:
                 event = result.modified_order
+        if event.side is OrderSide.SELL:
+            position = self.portfolio.positions.get(event.symbol)
+            instrument = self.instruments.get(event.symbol)
+            available = ZERO
+            if position is not None:
+                available = position.available_qty
+                if instrument is not None and not instrument.is_t_plus_1:
+                    available = position.quantity - position.unlisted_qty
+            # Direct orders and risk-modified quantities must respect the same
+            # T+1 and unlisted-share locks as target sizing.
+            if event.quantity > available:
+                self._execution_blocked["risk"] += 1
+                return None
         return event
 
     def _on_order_intent_event(self, event: OrderIntentEvent) -> None:

@@ -164,7 +164,7 @@ def run_single_backtest(
     from datetime import datetime
 
     from analytics.dataset_snapshot import build_backtest_dataset_snapshot
-    from backtest.cash_dividends import cash_dividends_from_evidence
+    from backtest.distributions import distributions_from_evidence
     from backtest.engine import BacktestEngine
     from data.manager import DataManager
     from data.store import DataStore
@@ -172,7 +172,7 @@ def run_single_backtest(
 
     dataset_binding = None
     cash_dividend_mode = getattr(request, "corporate_action_mode", "price_only")
-    if cash_dividend_mode == "cash_dividends_gross" and not request.dataset_id:
+    if cash_dividend_mode != "price_only" and not request.dataset_id:
         raise ResearchDatasetError("cash_dividend_dataset_required")
     if getattr(request, "dataset_id", None) is not None:
         from server.runtime_paths import resolve_data_dir
@@ -251,10 +251,11 @@ def run_single_backtest(
     strategy = build_strategy(strategy_config, event_bus_placeholder)
 
     cash_dividends = None
-    if cash_dividend_mode == "cash_dividends_gross":
+    if cash_dividend_mode != "price_only":
         try:
-            cash_dividends = cash_dividends_from_evidence(
-                (dataset_binding or {}).get("corporate_action_evidence")
+            cash_dividends = distributions_from_evidence(
+                (dataset_binding or {}).get("corporate_action_evidence"),
+                include_shares=cash_dividend_mode == "reported_distributions_gross",
             )
         except ValueError as exc:
             raise ResearchDatasetError(str(exc)) from None
@@ -265,12 +266,16 @@ def run_single_backtest(
         initial_cash=Decimal(str(request.initial_cash)),
         db=db,
         cash_dividends=cash_dividends,
+        include_share_distributions=cash_dividend_mode
+        == "reported_distributions_gross",
     )
 
     try:
         result = engine.run()
     except ValueError as exc:
-        if str(exc).startswith("cash_dividend_"):
+        if str(exc).startswith(
+            ("cash_dividend_", "share_distribution_", "portfolio_share_distribution_")
+        ):
             raise ResearchDatasetError(str(exc)) from None
         raise
 

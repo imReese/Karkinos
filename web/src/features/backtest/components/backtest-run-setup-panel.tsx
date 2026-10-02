@@ -329,7 +329,7 @@ export function BacktestRunSetupPanel() {
             >
               <ParameterSweepPanel
                 disabledReason={
-                  corporateActionMode === 'cash_dividends_gross'
+                  corporateActionMode !== 'price_only'
                     ? cashDividendCopy[locale].advancedDisabled
                     : undefined
                 }
@@ -344,7 +344,7 @@ export function BacktestRunSetupPanel() {
               />
               <ParameterComparePanel
                 disabledReason={
-                  corporateActionMode === 'cash_dividends_gross'
+                  corporateActionMode !== 'price_only'
                     ? cashDividendCopy[locale].advancedDisabled
                     : undefined
                 }

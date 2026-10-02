@@ -92,12 +92,15 @@ does not prove that no corporate actions occurred. Neither attaching these facts
 nor finding zero matching events models dividend receivables, payment cash,
 bonus-share availability, taxes or total return.
 
-An explicit cash-only gross research replay may consume implemented distributions
-from that binding. Portfolio owns dividend receivables, recognized gross income
-and their transfer into cash; the backtest schedules record-date entitlements,
-ex-date recognition and payment without creating trade fills or real-account
-ledger entries. Account-specific withholding, payment rounding, share distributions
-and complete source coverage remain separate unverified claims. Ex-date orders
+Explicit gross research replay may consume implemented cash-only or cash-and-share
+distributions from that binding. Portfolio owns dividend receivables, recognized
+gross income, cash payment and idempotent share awards. Position keeps unlisted
+awards separate from T+1 purchases; the accounting functions spread existing cost
+over the additional shares. The backtest schedules record-date entitlements,
+ex-date recognition, payment and share listing without creating trade fills or
+real-account ledger entries. Fractional share allocations are rejected rather
+than rounded. Account-specific withholding, payment rounding, adjusted strategy
+features and complete source coverage remain unverified claims. Ex-date orders
 are blocked when their authoritative price-limit reference is unavailable.
 
 Both receipt-bound automated research and formal Dataset research retain this

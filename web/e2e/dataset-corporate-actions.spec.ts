@@ -232,10 +232,67 @@ const cashReport: BacktestReport = {
   ],
 };
 
-for (const width of [390, 1280]) {
-  test(`explicit gross cash mode distinguishes paid cash and receivables at ${width}px`, async ({
+const shareEvidence: CorporateActionEvidence = {
+  ...cashEvidence,
+  events: cashEvidence.events.map((event, index) =>
+    index === 1
+      ? {
+          ...event,
+          stk_div: '0.1',
+          stk_bo_rate: '0.1',
+          div_listdate: '2026-06-15',
+        }
+      : event,
+  ),
+};
+const shareDataset: PublishedDataset = {
+  ...cashDataset,
+  dataset_id: `sha256:${'d'.repeat(64)}`,
+  corporate_action_evidence: shareEvidence,
+};
+const shareAccounting: CashDividendAccounting = {
+  ...cashAccounting,
+  schema_version: 'karkinos.backtest_cash_dividends.v2',
+  mode: 'reported_distributions_gross',
+  share_quantity: '100',
+  unlisted_quantity: '100',
+  distributions: cashDistributions.map((item, index) => ({
+    ...item,
+    shares_per_share: index === 1 ? '0.1' : '0',
+    share_quantity: index === 1 ? '100' : '0',
+    listing_date: index === 1 ? '2026-06-15' : null,
+    shares_listed: false,
+  })),
+};
+const shareReport: BacktestReport = {
+  ...cashReport,
+  config: {
+    ...cashReport.config,
+    dataset_id: shareDataset.dataset_id,
+    corporate_action_mode: 'reported_distributions_gross',
+  },
+  metrics_json: {
+    ...cashReport.metrics_json,
+    cash_dividend_accounting: shareAccounting,
+    dataset_snapshot: {
+      ...cashReport.metrics_json!.dataset_snapshot!,
+      immutable_dataset_id: shareDataset.dataset_id,
+      corporate_action_evidence: shareEvidence,
+    },
+  },
+};
+
+for (const { width, sharesMode } of [390, 1280].flatMap((width) =>
+  [false, true].map((sharesMode) => ({ width, sharesMode })),
+)) {
+  test(`explicit ${sharesMode ? 'cash and shares' : 'gross cash'} mode reports distributions at ${width}px`, async ({
     page,
   }, testInfo) => {
+    const selectedDataset = sharesMode ? shareDataset : cashDataset;
+    const selectedReport = sharesMode ? shareReport : cashReport;
+    const selectedMode = sharesMode
+      ? 'reported_distributions_gross'
+      : 'cash_dividends_gross';
     await page.setViewportSize({ width, height: 844 });
     await page.addInitScript(() => {
       window.localStorage.setItem('karkinos.locale', 'zh');
@@ -253,7 +310,7 @@ for (const width of [390, 1280]) {
           tdx_configured: true,
           storage_path: '',
           busy: false,
-          datasets: [cashDataset],
+          datasets: [selectedDataset],
         };
       else if (path === '/api/backtest/strategies')
         payload = [
@@ -274,7 +331,7 @@ for (const width of [390, 1280]) {
         path === '/api/backtest/run' ||
         path === '/api/backtest/results/101'
       )
-        payload = cashReport;
+        payload = selectedReport;
       else if (path === '/api/backtest/signal-preview')
         payload = {
           schema_version: 'synthetic.preview',
@@ -302,10 +359,10 @@ for (const width of [390, 1280]) {
       .click();
     const datasetSelector = page.getByLabel('本次回测的数据输入');
     await expect(datasetSelector.locator('option')).toHaveCount(2);
-    await datasetSelector.selectOption(cashDataset.dataset_id);
+    await datasetSelector.selectOption(selectedDataset.dataset_id);
     const mode = page.getByLabel('公司行动收益处理');
     await expect(mode).toHaveValue('price_only');
-    await mode.selectOption('cash_dividends_gross');
+    await mode.selectOption(selectedMode);
     expect(posts).toEqual([]);
     await expectNoDocumentOverflow(page);
     await page.getByRole('button', { name: '运行回测', exact: true }).click();
@@ -314,8 +371,8 @@ for (const width of [390, 1280]) {
     expect(
       posts.find((item) => item.path === '/api/backtest/run')?.body,
     ).toMatchObject({
-      dataset_id: cashDataset.dataset_id,
-      corporate_action_mode: 'cash_dividends_gross',
+      dataset_id: selectedDataset.dataset_id,
+      corporate_action_mode: selectedMode,
     });
     for (const amount of ['¥ 150', '¥ 125', '¥ 25'])
       await expect(accounting.getByText(amount, { exact: true })).toBeVisible();
@@ -323,7 +380,11 @@ for (const width of [390, 1280]) {
       accounting.getByText(/应收分红已计入权益，但尚不能用于买入/),
     ).toBeVisible();
     await expect(
-      accounting.getByText(/个人税负、到账舍入和送转未建模/),
+      accounting.getByText(
+        sharesMode
+          ? /个人税负、到账舍入和零碎股份分配未建模/
+          : /个人税负、到账舍入和送转未建模/,
+      ),
     ).toBeVisible();
     await expect(
       accounting.getByText(/来源完整性与历史信息可得时间未核实/),
@@ -335,7 +396,7 @@ for (const width of [390, 1280]) {
       ),
     ).toHaveCount(0);
     const result = page.locator('#backtest-dataset-evidence');
-    await expect(result.getByText(/已计入税前现金分红/).first()).toBeVisible();
+    await expect(result.getByText(/已计入税前现金/).first()).toBeVisible();
     await expect(
       result.getByText(/尚未计入现金派息、送转持仓或总收益/),
     ).toHaveCount(0);
@@ -344,9 +405,42 @@ for (const width of [390, 1280]) {
       result.getByRole('cell', { name: '实施', exact: true }),
     ).toHaveCount(2);
     await expectNoDocumentOverflow(page);
+    if (sharesMode) {
+      await expect(
+        accounting.getByText('新增股份合计（股）').locator('..'),
+      ).toContainText('100');
+      await expect(
+        accounting.getByText('其中待上市股份（股）').locator('..'),
+      ).toContainText('100');
+      await expect(
+        accounting.getByText(/新增股份是持仓数量变化，不是现金收入/),
+      ).toBeVisible();
+      await accounting
+        .locator('summary')
+        .filter({ hasText: '送转股份明细' })
+        .click();
+      const sharesTable = accounting.getByRole('table', {
+        name: '送转股份明细',
+      });
+      await expect(
+        sharesTable.getByRole('cell', {
+          name: '待上市 · 暂不可卖',
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
+        sharesTable.getByRole('cell', { name: '2026-06-15', exact: true }),
+      ).toBeVisible();
+      await expect(
+        accounting.getByText(/策略特征仍使用未复权价格/),
+      ).toBeVisible();
+      await expectNoDocumentOverflow(page);
+    }
     await accounting.scrollIntoViewIfNeeded();
     await page.screenshot({
-      path: testInfo.outputPath(`cash-dividends-${width}.png`),
+      path: testInfo.outputPath(
+        `${sharesMode ? 'cash-and-shares' : 'cash-dividends'}-${width}.png`,
+      ),
       fullPage: true,
     });
   });

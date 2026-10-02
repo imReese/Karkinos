@@ -8,9 +8,9 @@ from decimal import Decimal, DecimalException, localcontext
 
 from core.event_bus import EventBus
 from core.events import FillEvent, OrderIntentEvent, SignalEvent
-from core.types import ZERO, OrderSide, Symbol
+from core.types import ZERO, InstrumentType, OrderSide, Symbol
 from domain.instrument import Instrument
-from domain.portfolio_accounting import total_trade_fee
+from domain.portfolio_accounting import share_distribution_quantity, total_trade_fee
 from domain.position import Position
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,10 @@ class Portfolio:
         self.equity_curve: list[tuple] = []  # (timestamp, equity)
         self._cash_dividends: dict[str, tuple[Symbol, Decimal, Decimal, Decimal]] = {}
         self._paid_cash_dividends: set[str] = set()
+        self._share_distributions: dict[
+            str, tuple[Symbol, Decimal, Decimal, Decimal]
+        ] = {}
+        self._released_share_distributions: set[str] = set()
 
         # 订阅 SignalEvent
         event_bus.subscribe(SignalEvent, self.on_signal)
@@ -68,8 +72,11 @@ class Portfolio:
         # 目标权重与当前权重的差
         target_weight = event.target_weight
         weight_diff = target_weight - current_weight
+        liquidate = (
+            target_weight == ZERO and instrument.instrument_type is InstrumentType.STOCK
+        )
 
-        if abs(weight_diff) < Decimal("0.01"):
+        if not liquidate and abs(weight_diff) < Decimal("0.01"):
             return  # 差异太小，不交易
 
         # 计算目标金额
@@ -93,7 +100,10 @@ class Portfolio:
         elif value_diff < ZERO:
             # 卖出
             quantity = self._calculate_sell_quantity(
-                instrument, current_price, abs(value_diff)
+                instrument,
+                current_price,
+                abs(value_diff),
+                liquidate=liquidate,
             )
             if quantity > ZERO:
                 self._publish_order_intent(
@@ -224,6 +234,51 @@ class Portfolio:
         self._paid_cash_dividends.add(action_id)
         return amount
 
+    def accrue_share_distribution(
+        self,
+        action_id: str,
+        *,
+        symbol: Symbol,
+        eligible_quantity: Decimal,
+        shares_per_share: Decimal,
+    ) -> Decimal:
+        """Recognize an integer award against a caller-frozen record-date holding."""
+        if (
+            not isinstance(action_id, str)
+            or not action_id.strip()
+            or not isinstance(symbol, str)
+            or not symbol.strip()
+        ):
+            raise ValueError("portfolio_share_distribution_identity_invalid")
+        quantity = share_distribution_quantity(
+            eligible_quantity=eligible_quantity, shares_per_share=shares_per_share
+        )
+        facts = (symbol, eligible_quantity, shares_per_share)
+        previous = self._share_distributions.get(action_id)
+        if previous is not None:
+            if previous[:3] != facts:
+                raise ValueError("portfolio_share_distribution_conflict")
+            return previous[3]
+        if quantity > ZERO:
+            position = self.positions.get(symbol) or Position(symbol)
+            position.accrue_share_distribution(quantity)
+            self.positions[symbol] = position
+        # A zero entitlement still binds its facts and may be released once.
+        self._share_distributions[action_id] = (*facts, quantity)
+        return quantity
+
+    def release_share_distribution(self, action_id: str) -> Decimal:
+        """Release one award for sale, without adding shares or cash again."""
+        if action_id not in self._share_distributions:
+            raise ValueError("portfolio_share_distribution_unknown")
+        if action_id in self._released_share_distributions:
+            return ZERO
+        symbol, _, _, quantity = self._share_distributions[action_id]
+        if quantity > ZERO:
+            self.positions[symbol].release_share_distribution(quantity)
+        self._released_share_distributions.add(action_id)
+        return quantity
+
     @property
     def dividend_receivable(self) -> Decimal:
         """Gross recognized dividends which have not reached the cash balance."""
@@ -323,11 +378,21 @@ class Portfolio:
         instrument: Instrument,
         price: Decimal,
         value_diff: Decimal,
+        *,
+        liquidate: bool = False,
     ) -> Decimal:
         """计算卖出股数（按手数取整，不超过可卖数量）。"""
         pos = self.positions.get(instrument.symbol)
         if pos is None:
             return ZERO
+
+        # A full exit may include the entire odd-lot remainder in one order.
+        # Never unlock new shares or change partial-rebalance lot rounding here.
+        if liquidate and instrument.instrument_type is InstrumentType.STOCK:
+            available = max(ZERO, pos.available_qty)
+            if available != available.to_integral_value():
+                raise ValueError("portfolio_liquidation_fractional_unsupported")
+            return available
 
         max_shares = value_diff / price
         lot_size = instrument.lot_size

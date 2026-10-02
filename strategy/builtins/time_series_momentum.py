@@ -6,8 +6,8 @@ from collections import defaultdict
 from decimal import Decimal
 
 from core.event_bus import EventBus
-from core.events import FillEvent, MarketEvent
-from core.types import OrderSide, Symbol
+from core.events import MarketEvent
+from core.types import Symbol
 from strategy.base import Strategy
 from strategy.registry import register_strategy
 
@@ -35,21 +35,18 @@ class TimeSeriesMomentumStrategy(Strategy):
         self.exit_return = exit_return
         self.target_weight = target_weight
         self._prices: dict[Symbol, list[float]] = defaultdict(list)
-        # The momentum regime is distinct from the quantity actually filled.
+        # The momentum regime is distinct from the actual position quantity.
         self._current_target: dict[Symbol, float] = defaultdict(float)
-        self._filled_quantity: dict[Symbol, Decimal] = {}
+        self._position_quantity: dict[Symbol, Decimal] = {}
 
     def on_init(self, symbols: list[Symbol]) -> None:
         for symbol in symbols:
             self._prices[symbol] = []
             self._current_target[symbol] = 0.0
-            self._filled_quantity[symbol] = Decimal("0")
+            self._position_quantity[symbol] = Decimal("0")
 
-    def on_fill(self, event: FillEvent) -> None:
-        change = (
-            event.fill_quantity if event.side is OrderSide.BUY else -event.fill_quantity
-        )
-        self._filled_quantity[event.symbol] += change
+    def on_position_update(self, symbol: Symbol, quantity: Decimal) -> None:
+        self._position_quantity[symbol] = quantity
 
     def on_data(self, event: MarketEvent) -> None:
         self._last_timestamp = event.timestamp
@@ -74,7 +71,7 @@ class TimeSeriesMomentumStrategy(Strategy):
             next_target = 0.0
 
         self._current_target[symbol] = next_target
-        holding = self._filled_quantity[symbol] > 0
+        holding = self._position_quantity[symbol] > 0
         should_signal = (
             (next_target > 0 and not holding) or (next_target == 0 and holding)
             if self.fill_tracking_enabled
