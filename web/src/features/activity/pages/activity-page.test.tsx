@@ -422,6 +422,52 @@ test('keeps immutable history as the primary surface and opens entry tools on de
   expect(screen.queryByLabelText('证券代码')).toBeNull();
 });
 
+test('retains each unfinished entry draft across tool changes and drawer dismissal', async () => {
+  const fetchMock = renderActivityPage('zh');
+  await screen.findByText('最近流水');
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  await screen.findByRole('dialog', { name: '新增流水' });
+  const tools = [
+    ['手工交易', '交易备注'],
+    ['资金流水', '资金流水备注'],
+    ['分红', '分红备注'],
+    ['手工调整', '调整备注'],
+    ['批量基金加仓', '批量基金备注'],
+  ];
+  for (const [tool, label] of tools) {
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: tool }),
+    );
+    fireEvent.change(screen.getByLabelText(label), {
+      target: { value: `synthetic draft ${tool}` },
+    });
+  }
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  await screen.findByRole('dialog', { name: '新增流水' });
+  for (const [tool, label] of tools) {
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: tool }),
+    );
+    expect(screen.getByLabelText(label)).toHaveValue(`synthetic draft ${tool}`);
+  }
+  fireEvent.click(
+    within(screen.getByRole('dialog')).getByRole('button', {
+      name: '关闭流水录入',
+    }),
+  );
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  expect(await screen.findByLabelText('批量基金备注')).toHaveValue(
+    'synthetic draft 批量基金加仓',
+  );
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST'),
+  ).toHaveLength(0);
+  expect(JSON.stringify(window.localStorage)).not.toContain('synthetic draft');
+});
+
 test('defers the portfolio positions projection until entry tools open', async () => {
   renderActivityPage('zh');
 
@@ -481,6 +527,11 @@ test('reuses an unknown cash-flow request identity and rotates it after success'
   expect(mutationBodies[1]?.operator_id).toBe(mutationBodies[0]?.operator_id);
 
   await screen.findByText('资金流水已保存');
+  await waitFor(() => expect(screen.getByLabelText('金额')).toHaveValue(0));
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  expect(await screen.findByLabelText('金额')).toHaveValue(0);
   fireEvent.change(screen.getByLabelText('资金流水发生时间'), {
     target: { value: '2026-08-26T10:00' },
   });
@@ -491,6 +542,39 @@ test('reuses an unknown cash-flow request identity and rotates it after success'
 
   await waitFor(() => expect(mutationBodies).toHaveLength(3));
   expect(mutationBodies[2]?.request_id).not.toBe(mutationBodies[1]?.request_id);
+});
+
+test('clears a completed entry after its pending form was closed and reopened', async () => {
+  const fetchMock = renderActivityPage('zh');
+  await screen.findByText('最近流水');
+  const defaultFetch = fetchMock.getMockImplementation();
+  let completeSubmission: (() => void) | undefined;
+  fetchMock.mockImplementation(async (input, init) => {
+    if (String(input).includes('/api/ledger/cash-flows')) {
+      return new Promise<Response>((resolve) => {
+        completeSubmission = () => resolve(jsonResponse({ id: 3 }));
+      });
+    }
+    return (
+      defaultFetch?.(input, init) ?? new Response('Not found', { status: 404 })
+    );
+  });
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  const dialog = await screen.findByRole('dialog', { name: '新增流水' });
+  fireEvent.click(within(dialog).getByRole('button', { name: '资金流水' }));
+  fireEvent.change(screen.getByLabelText('金额'), { target: { value: '100' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存资金流水' }));
+  await waitFor(() => expect(completeSubmission).toBeDefined());
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  expect(await screen.findByLabelText('金额')).toHaveValue(100);
+  completeSubmission?.();
+  await waitFor(() => expect(screen.getByLabelText('金额')).toHaveValue(0));
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  expect(await screen.findByLabelText('金额')).toHaveValue(0);
 });
 
 test('retains fund order identities independently after partial batch failure', async () => {

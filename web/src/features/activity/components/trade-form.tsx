@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { useCopy } from '../../../shared/i18n/context';
@@ -72,6 +72,8 @@ function assetClassOptions(copy: ReturnType<typeof useCopy>) {
 
 export function TradeForm({
   onSubmit,
+  initialDraft,
+  onDraftSave,
   pending = false,
   commissionSettings,
   tradePreview = null,
@@ -80,6 +82,8 @@ export function TradeForm({
   onPreviewChange,
 }: {
   onSubmit: (values: TradeFormValues) => Promise<void>;
+  initialDraft?: TradeFormValues;
+  onDraftSave?: (values: TradeFormValues) => void;
   pending?: boolean;
   commissionSettings?: CommissionSettings;
   tradePreview?: TradePreview | null;
@@ -93,7 +97,9 @@ export function TradeForm({
   const labels = copy.activity.forms.trade;
   const assetOptions = assetClassOptions(copy);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [feeWasEdited, setFeeWasEdited] = useState(false);
+  const [feeWasEdited, setFeeWasEdited] = useState(
+    initialDraft?.fee_is_manual ?? false,
+  );
   const createDefaultValues = (): TradeFormValues => ({
     occurred_at: toDatetimeLocalInputValue(),
     asset_class: 'stock',
@@ -112,10 +118,11 @@ export function TradeForm({
     handleSubmit,
     watch,
     reset,
+    getValues,
     setValue,
     formState: { errors },
   } = useForm<TradeFormValues>({
-    defaultValues: createDefaultValues(),
+    defaultValues: initialDraft ?? createDefaultValues(),
   });
   const assetClass = watch('asset_class');
   const direction = watch('direction');
@@ -170,6 +177,9 @@ export function TradeForm({
     quantity,
     symbol,
   ]);
+
+  const saveDraft = useEffectEvent(() => onDraftSave?.(getValues()));
+  useEffect(() => () => saveDraft(), []);
 
   return (
     <form

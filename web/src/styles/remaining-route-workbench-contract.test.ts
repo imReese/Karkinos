@@ -25,6 +25,9 @@ const PORTFOLIO = sourceTree('features/portfolio');
 const DECISION = sourceTree('features/decision');
 const RISK = sourceTree('features/risk');
 const ACTIVITY = source('features/activity/pages/activity-page.tsx');
+const ACTIVITY_ENTRY_TOOLS = source(
+  'features/activity/components/activity-entry-tools-panel.tsx',
+);
 const MARKET = [
   source('features/market/pages/market-page.tsx'),
   source('features/market/pages/market-page-view.tsx'),
@@ -226,7 +229,6 @@ describe('remaining route workbench contract', () => {
 
     const activityPage = ACTIVITY.slice(
       ACTIVITY.indexOf('export function ActivityPage'),
-      ACTIVITY.indexOf('type ActivityEntryTool'),
     );
     expect(activityPage).toContain('data-activity-surface="audit-history"');
     expect(activityPage).not.toContain(
@@ -238,8 +240,8 @@ describe('remaining route workbench contract', () => {
     expect(
       activityPage.indexOf('data-activity-surface="audit-history"'),
     ).toBeLessThan(activityPage.indexOf('<ActivityFeed'));
-    expect(ACTIVITY).toContain('<ControlledActionZone');
-    expect(ACTIVITY).toContain('copy.activity.entryTools.boundary');
+    expect(ACTIVITY_ENTRY_TOOLS).toContain('<ControlledActionZone');
+    expect(ACTIVITY_ENTRY_TOOLS).toContain('copy.activity.entryTools.boundary');
   });
 
   it('marks AI output as cited research rather than deterministic account fact', () => {
@@ -503,15 +505,10 @@ describe('remaining route workbench contract', () => {
   });
 
   it('keeps Activity ledger entry surfaces flat and token-shaped', () => {
-    const activityTools = ACTIVITY.slice(
-      ACTIVITY.indexOf('function ActivityEntryToolsPanel'),
-      ACTIVITY.indexOf('function formatPendingStatus'),
-    );
+    const activityTools = ACTIVITY_ENTRY_TOOLS;
 
     expect(activityTools).toContain('<ControlledActionZone');
-    expect(activityTools).toContain(
-      'data-ledger-register="pending-fund-orders"',
-    );
+    expect(ACTIVITY).toContain('data-ledger-register="pending-fund-orders"');
     expect(ACTIVITY_FEED).not.toContain('app-workbench-section');
     expect(activityTools).not.toContain('app-panel');
     expect(activityTools).not.toContain('rounded-2xl');

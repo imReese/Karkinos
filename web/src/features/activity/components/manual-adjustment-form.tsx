@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { useCopy } from '../../../shared/i18n/context';
@@ -26,9 +26,13 @@ function assetClassOptions(copy: ReturnType<typeof useCopy>) {
 
 export function ManualAdjustmentForm({
   onSubmit,
+  initialDraft,
+  onDraftSave,
   pending = false,
 }: {
   onSubmit: (values: ManualAdjustmentFormValues) => Promise<void>;
+  initialDraft?: ManualAdjustmentFormValues;
+  onDraftSave?: (values: ManualAdjustmentFormValues) => void;
   pending?: boolean;
 }) {
   const copy = useCopy();
@@ -49,10 +53,14 @@ export function ManualAdjustmentForm({
     register,
     handleSubmit,
     reset,
+    getValues,
     formState: { errors },
   } = useForm<ManualAdjustmentFormValues>({
-    defaultValues: createDefaultValues(),
+    defaultValues: initialDraft ?? createDefaultValues(),
   });
+
+  const saveDraft = useEffectEvent(() => onDraftSave?.(getValues()));
+  useEffect(() => () => saveDraft(), []);
 
   return (
     <form

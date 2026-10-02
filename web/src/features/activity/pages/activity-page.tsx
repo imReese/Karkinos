@@ -5,7 +5,6 @@ import { Plus } from 'lucide-react';
 import { useCopy, type AppCopy } from '../../../shared/i18n/context';
 import { ToastStack, type ToastItem } from '../../../shared/ui/toast-stack';
 import {
-  ControlledActionZone,
   EvidenceDrawer,
   EvidenceState,
   StatusBadge,
@@ -29,24 +28,19 @@ import {
   type TradePayload,
 } from '../api';
 import { ActivityFeed, ActivityFeedLoading } from '../components/activity-feed';
-import {
-  CashFlowForm,
-  type CashFlowFormValues,
-} from '../components/cash-flow-form';
-import {
-  DividendForm,
-  type DividendFormValues,
-} from '../components/dividend-form';
-import {
-  FundBatchForm,
-  type FundBatchCandidate,
-  type FundBatchFormValues,
+import type { CashFlowFormValues } from '../components/cash-flow-form';
+import type { DividendFormValues } from '../components/dividend-form';
+import type {
+  FundBatchCandidate,
+  FundBatchFormValues,
 } from '../components/fund-batch-form';
+import type { ManualAdjustmentFormValues } from '../components/manual-adjustment-form';
+import type { TradeFormValues } from '../components/trade-form';
 import {
-  ManualAdjustmentForm,
-  type ManualAdjustmentFormValues,
-} from '../components/manual-adjustment-form';
-import { TradeForm, type TradeFormValues } from '../components/trade-form';
+  ActivityEntryToolsPanel,
+  type ActivityEntryDrafts,
+  type ActivityEntryTool,
+} from '../components/activity-entry-tools-panel';
 import { usePositionsQuery } from '../activity-feature-boundary';
 import { useSettingsQuery } from '../activity-feature-boundary';
 import { getErrorMessage } from '../../../shared/error-message';
@@ -174,6 +168,18 @@ export function ActivityPage() {
   const copy = useCopy();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [entryDrawerOpen, setEntryDrawerOpen] = useState(false);
+  // Keep unfinished inputs only for this page visit, including tool switches.
+  const entryDrafts = useRef<ActivityEntryDrafts>({});
+  const [entryFormVersions, setEntryFormVersions] = useState<
+    Partial<Record<ActivityEntryTool, number>>
+  >({});
+  const clearEntryDraft = (tool: ActivityEntryTool) => {
+    delete entryDrafts.current[tool];
+    setEntryFormVersions((current) => ({
+      ...current,
+      [tool]: (current[tool] ?? 0) + 1,
+    }));
+  };
   const [activeEntryTool, setActiveEntryTool] =
     useState<ActivityEntryTool>('trade');
   const entries = useLedgerEntriesQuery();
@@ -235,6 +241,7 @@ export function ActivityPage() {
     tradeSubmissionRef.current = submission;
     try {
       await createTrade.mutateAsync(submission.payload);
+      clearEntryDraft('trade');
       if (tradeSubmissionRef.current === submission) {
         tradeSubmissionRef.current = null;
       }
@@ -298,6 +305,7 @@ export function ActivityPage() {
     fundBatchSubmissionRef.current = submissions;
     try {
       await submitRetainedFundBatch(inputs, submissions, submitTrade);
+      clearEntryDraft('fundBatch');
       if (fundBatchSubmissionRef.current === submissions) {
         fundBatchSubmissionRef.current = null;
       }
@@ -322,6 +330,7 @@ export function ActivityPage() {
     cashFlowSubmissionRef.current = submission;
     try {
       await createCashFlow.mutateAsync(submission.payload);
+      clearEntryDraft('cashFlow');
       if (cashFlowSubmissionRef.current === submission) {
         cashFlowSubmissionRef.current = null;
       }
@@ -346,6 +355,7 @@ export function ActivityPage() {
     dividendSubmissionRef.current = submission;
     try {
       await createDividend.mutateAsync(submission.payload);
+      clearEntryDraft('dividend');
       if (dividendSubmissionRef.current === submission) {
         dividendSubmissionRef.current = null;
       }
@@ -370,6 +380,7 @@ export function ActivityPage() {
     adjustmentSubmissionRef.current = submission;
     try {
       await createAdjustment.mutateAsync(submission.payload);
+      clearEntryDraft('adjustment');
       if (adjustmentSubmissionRef.current === submission) {
         adjustmentSubmissionRef.current = null;
       }
@@ -472,6 +483,8 @@ export function ActivityPage() {
       >
         <ActivityEntryToolsPanel
           activeEntryTool={activeEntryTool}
+          entryDrafts={entryDrafts}
+          entryFormVersions={entryFormVersions}
           candidates={fundBatchCandidates}
           commissionSettings={
             settings.data
@@ -499,137 +512,6 @@ export function ActivityPage() {
         />
       </EvidenceDrawer>
     </>
-  );
-}
-
-type ActivityEntryTool =
-  'trade' | 'fundBatch' | 'cashFlow' | 'dividend' | 'adjustment';
-
-function ActivityEntryToolsPanel({
-  activeEntryTool,
-  candidates,
-  commissionSettings,
-  createAdjustmentPending,
-  createCashFlowPending,
-  createDividendPending,
-  createTradePending,
-  loadingCandidates,
-  onAdjustmentSubmit,
-  onCashFlowSubmit,
-  onDividendSubmit,
-  onFundBatchSubmit,
-  onSelectEntryTool,
-  onTradePreviewChange,
-  onTradeSubmit,
-  previewError,
-  previewLoading,
-  tradePreview,
-}: {
-  activeEntryTool: ActivityEntryTool;
-  candidates: FundBatchCandidate[];
-  commissionSettings?: {
-    stock_rate: number;
-    stock_min_commission: number;
-  };
-  createAdjustmentPending: boolean;
-  createCashFlowPending: boolean;
-  createDividendPending: boolean;
-  createTradePending: boolean;
-  loadingCandidates: boolean;
-  onAdjustmentSubmit: (values: ManualAdjustmentFormValues) => Promise<void>;
-  onCashFlowSubmit: (values: CashFlowFormValues) => Promise<void>;
-  onDividendSubmit: (values: DividendFormValues) => Promise<void>;
-  onFundBatchSubmit: (values: FundBatchFormValues) => Promise<void>;
-  onSelectEntryTool: (tool: ActivityEntryTool) => void;
-  onTradePreviewChange: (values: TradeFormValues) => void;
-  onTradeSubmit: (values: TradeFormValues) => Promise<void>;
-  previewError: boolean;
-  previewLoading: boolean;
-  tradePreview: ReturnType<typeof useTradePreviewMutation>['data'] | null;
-}) {
-  const copy = useCopy();
-  const tools: Array<{ key: ActivityEntryTool; label: string }> = [
-    { key: 'trade', label: copy.activity.forms.trade.title },
-    { key: 'cashFlow', label: copy.activity.forms.cashFlow.title },
-    { key: 'dividend', label: copy.activity.forms.dividend.title },
-    { key: 'adjustment', label: copy.activity.forms.adjustment.title },
-    { key: 'fundBatch', label: copy.activity.forms.fundBatch.title },
-  ];
-
-  return (
-    <ControlledActionZone
-      title={copy.activity.entryTools.boundaryTitle}
-      description={copy.activity.entryTools.boundary}
-      layout="stack"
-      tone="info"
-      className="min-w-0"
-    >
-      <div className="min-w-0 w-full">
-        <div
-          aria-label={copy.activity.entryTools.ariaLabel}
-          className="grid min-w-0 grid-cols-2 gap-1"
-          role="group"
-        >
-          {tools.map((tool) => {
-            const isSelected = activeEntryTool === tool.key;
-            return (
-              <button
-                key={tool.key}
-                aria-pressed={isSelected}
-                className={`min-h-10 min-w-0 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-left text-xs font-semibold transition-colors xl:min-h-8 ${
-                  isSelected
-                    ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-hover)]'
-                    : 'border-transparent bg-transparent text-[var(--app-text-tertiary)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)]'
-                }`}
-                onClick={() => onSelectEntryTool(tool.key)}
-                type="button"
-              >
-                {tool.label}
-              </button>
-            );
-          })}
-        </div>
-        <div className="mt-4 min-w-0 border-t border-[var(--app-divider)] pt-4">
-          {activeEntryTool === 'trade' ? (
-            <TradeForm
-              onSubmit={onTradeSubmit}
-              pending={createTradePending}
-              tradePreview={tradePreview}
-              previewLoading={previewLoading}
-              previewError={previewError}
-              onPreviewChange={onTradePreviewChange}
-              commissionSettings={commissionSettings}
-            />
-          ) : null}
-          {activeEntryTool === 'fundBatch' ? (
-            <FundBatchForm
-              candidates={candidates}
-              loadingCandidates={loadingCandidates}
-              onSubmit={onFundBatchSubmit}
-              pending={createTradePending}
-            />
-          ) : null}
-          {activeEntryTool === 'cashFlow' ? (
-            <CashFlowForm
-              onSubmit={onCashFlowSubmit}
-              pending={createCashFlowPending}
-            />
-          ) : null}
-          {activeEntryTool === 'dividend' ? (
-            <DividendForm
-              onSubmit={onDividendSubmit}
-              pending={createDividendPending}
-            />
-          ) : null}
-          {activeEntryTool === 'adjustment' ? (
-            <ManualAdjustmentForm
-              onSubmit={onAdjustmentSubmit}
-              pending={createAdjustmentPending}
-            />
-          ) : null}
-        </div>
-      </div>
-    </ControlledActionZone>
   );
 }
 
