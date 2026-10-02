@@ -100,6 +100,8 @@ Rules:
 - Evidence does not become Portfolio input until explicitly published.
 - Canonical research metrics are produced by deterministic platform code.
 - Forecast is not Portfolio intent.
+- Publication binds the intended consumer and financial book. A forecast published
+  for research simulation is not eligible for actual-account recommendations.
 
 ## 5. Portfolio and risk
 
@@ -237,7 +239,8 @@ L4 Orchestrate Research
 
 There is deliberately no AI capital-execution level.
 
-The Research Intelligence lifecycle is:
+The Research Intelligence lifecycle separates simulation observation from
+actual-account publication:
 
 ```text
 Research Task
@@ -249,13 +252,106 @@ Research Task
    -> rejected
    -> needs revision
    -> selected for further research
--> Account Qualification (when applicable)
--> Human Promotion Review
--> Paper / Shadow
+   -> Simulation-scoped Forecast (under a standing simulation policy)
+      -> Simulated Portfolio Target / Risk Decision / Rebalance Plan
+      -> Independent Paper / Shadow Observation
+      -> Attribution / Alpha Health -> continue / pause / retire / research feedback
+   -> Final Qualification Evidence (independent holdout or forward observation)
+      -> Account Qualification
+      -> Human Account Publication Review
+      -> Account-scoped Forecast
+      -> Current Portfolio / Risk / Rebalance Plan
+      -> Human Trade Review
 ```
 
-Research selection, account qualification, and promotion are distinct decisions.
-An AI-generated candidate never promotes itself.
+Research selection, simulation admission, account qualification, account publication,
+and trade approval are distinct decisions. An AI-generated candidate never
+authorizes its own publication. Deterministic platform code may admit it to
+simulation under an explicit owner-authorized policy; this records an automated
+decision, not human confirmation.
+
+### Research, simulation, and account publication
+
+| Decision | Inputs and owner | Effect |
+| --- | --- | --- |
+| Research selection | Frozen datasets, formulas, costs, evaluation; Research | Selects an experiment for further work |
+| Simulation admission | Research evidence and standing simulation policy; Research / Simulation | Activates one frozen version for a specified hypothetical book |
+| Account qualification | Frozen strategy, current Account Truth, valuation, reviewed fees and account-sized replay; deterministic qualification | Establishes account applicability for those exact inputs |
+| Account publication | Qualification and observation evidence plus human review; Research publication | Allows the exact version to supply account recommendations |
+| Trade approval | Current account, market, portfolio and risk evidence plus human decision | Remains separate from research and simulation |
+
+Keep research disposition, observation lifecycle, account applicability, and
+account publication as separate decisions. A single strategy stage cannot stand
+in for all four. Their identities bind the frozen strategy version and applicable
+book/account, policy and evidence. A new experiment does not replace a published
+incumbent merely because it wins that day's ranking.
+
+Human account publication approves a specific version and bounded account use,
+with explicit validity and revocation conditions. Daily recommendation generation
+then runs deterministically inside that scope, checking current account, market
+and risk facts each time. Ordinary snapshot refresh is not a new strategy approval;
+changed formulas, cost rules or approved limits require a new applicable decision.
+Refreshing evidence does not widen an existing publication's scope.
+
+Research and simulation do not depend on actual-account completeness. Missing or
+stale account facts block qualification and account recommendations. Shared market
+data, replay, cost-model, or policy failures block the research or simulation that
+uses those inputs. Provider failure does not disable deterministic observation or
+account scans of previously published versions.
+
+Simulation policy is default-off and binds universe, permitted formulas, costs,
+allocation/risk limits, observation start, concurrent candidate limits, and compute
+budgets. Enabling research alone does not authorize simulation. Enabling simulation
+does not authorize account publication. Existing authorizations retain their
+original scope; migration must not silently add permissions.
+
+Paper observation uses its own cash, positions, fills, fees and equity history.
+Shadow observation may compare forecasts or targets with subsequent outcomes
+without inventing fills. Both bind a frozen strategy version, policy version,
+dataset/as-of boundaries and observation dates. Evaluating today's signal or
+rerunning its backtest is not forward observation. Replacing a candidate starts a
+new observation identity; it does not rewrite the incumbent's history or book.
+Actual-account movements are never imported into a simulation book as its fills.
+
+Selection feedback may use time-ordered validation and rolling OOS results.
+Once those results guide later iterations they are validation evidence, not an
+untouched final test. Final qualification requires an independent frozen holdout
+or subsequent forward observation. The AI iteration inputs must exclude the
+reserved final holdout. Baseline and candidate share cost, market, sizing and
+timing rules. Minimum observation and performance thresholds are explicit policy,
+not invented universal constants. Being best among today's candidates is not
+evidence that a candidate passed admission.
+
+Health decisions distinguish unavailable evidence from measured deterioration.
+Missing data suspends the affected evaluation; deterministic policy may pause an
+affected observation, but missing data alone does not establish alpha decay.
+Automatic pause or retirement binds the measured outcome, observation interval,
+policy rule and expected current version. Retirement is terminal for that version
+in the affected scope; an improvement is a new candidate. Restarting a worker or
+retrying admission never reactivates a paused or retired version. Any resume
+requires fresh evidence and an explicit decision under the applicable policy.
+No health action creates a real trade or closes actual holdings.
+
+If a configured rule also suspends account publication, it names the exact
+affected version/account scope; it neither replaces another published strategy
+nor disables unrelated recommendations.
+
+Admission and health writes must be atomic and idempotent against their frozen
+inputs and current state. Events identify human versus automated decisions and
+their evidence. Automated decisions never fill `human_review`,
+`human_approval_id`, or `manual_confirmation_recorded` with fabricated confirmation.
+
+The current legacy runtime has a narrower contract: `strategy_promotion_states`
+with `stage=paper_shadow` means a human-reviewed account-recommendation source.
+`promoted_strategy_universe_scan` consumes it through the existing qualification,
+artifact and human-review gates. Preserve those persisted records and readers;
+do not reinterpret this stage as automatic research-simulation admission.
+Normalized research already publishes a read-only operation preview, which is
+research evidence rather than a simulation run. The current paper/shadow runner
+consumes account trading plans and does not supply an independent research book.
+Implement independent observation before adding automatic simulation admission,
+and keep its inputs outside the account scan. Delivery sequence belongs to
+[PLAN.md](PLAN.md).
 
 New research contracts should prefer provider-neutral entities:
 

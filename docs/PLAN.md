@@ -29,6 +29,33 @@ Market Data
 - Keep core platform capabilities usable without AI providers or AI orchestration.
 - Keep runtime, CI, promotion, and release behavior predictable; engineering machinery should remain smaller than the product value it protects.
 
+## Research and simulation delivery sequence
+
+Apply the authority and book boundaries in
+[Architecture](ARCHITECTURE.md#research-simulation-and-account-publication) in this
+order:
+
+1. Keep normalized research admission independent of account qualification and
+   pending human publication review. Preserve research policy, provider budgets,
+   data validation and legacy account-bound admission. Extend the Formula DSL
+   through bounded deterministic operators with explicit units and timing.
+2. Build one useful forward-observation journey from a frozen research candidate
+   to an independent paper book or target-only shadow observation. Reuse the
+   existing simulation, market-rule, risk and accounting calculations. Persist the
+   book identity and observation evidence needed for replay; add storage only
+   where this real consumer requires it. Introduce separately authorized,
+   deterministic simulation admission only with that journey. The existing
+   normalized operation preview and account-plan paper runner are not substitutes.
+3. Feed observation outcomes into deterministic Alpha health, then qualification
+   and human account publication. Add automatic pause/retirement only with bound
+   evidence and configured rules. Keep the existing account scan's evidence gates
+   throughout migration; simulation admission alone never activates that scan.
+
+Independent research observation and automatic health monitoring are target
+capabilities, not currently implemented runtime guarantees. Do not expand this
+work into live trading, broker adapters, capital authorization or a general
+workflow framework.
+
 ## Frozen
 
 - new live-trading or broker integrations;
