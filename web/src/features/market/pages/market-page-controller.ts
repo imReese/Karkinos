@@ -141,15 +141,25 @@ export function useMarketPageController() {
         ) ??
         selectedProviderAction);
   const sourceHealthLabel = health?.source_health
-    ? formatPublicStatus(health.source_health, locale)
+    ? formatPublicStatus(
+        health.source_health === 'live' ? 'healthy' : health.source_health,
+        locale,
+      )
     : copy.market.unknown;
   const refreshPolicyLabel = health?.refresh_policy
-    ? formatPublicStatus(health.refresh_policy, locale)
+    ? health.refresh_policy === 'live'
+      ? copy.market.refreshPolicyLive
+      : formatPublicStatus(health.refresh_policy, locale)
     : '--';
   const cacheBound = isCacheLikeMarketDataStatus(health?.refresh_policy);
   const evidenceModeLabel = cacheBound ? refreshPolicyLabel : sourceHealthLabel;
   const providerStatusLabel = health?.provider_status
-    ? formatPublicStatus(health.provider_status, locale)
+    ? formatPublicStatus(
+        health.provider_status === 'live'
+          ? 'available'
+          : health.provider_status,
+        locale,
+      )
     : copy.market.unknown;
   const providerConfiguredLabel = health
     ? health.provider_configured

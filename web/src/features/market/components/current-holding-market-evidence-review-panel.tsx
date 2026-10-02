@@ -14,6 +14,10 @@ import {
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import type { CurrentHoldingMarketEvidenceReview } from '../market-feature-boundary';
+import {
+  formatMarketQuoteLabel,
+  marketQuoteCacheLabel,
+} from '../market-quote-presentation';
 import { ConfirmedFundNavRefreshButton } from './confirmed-fund-nav-refresh-button';
 import { CurrentHoldingMarketEvidenceLanes } from './current-holding-market-evidence-lanes';
 import { MarketRefreshButton } from './market-refresh-button';
@@ -111,7 +115,12 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
         ...report.items.map((item) => ({
           id: `${item.symbol}-${item.review_reason}`,
           severity: reviewItemSeverity(item.review_reason),
-          statusLabel: formatPublicStatus(item.quote_status, locale),
+          statusLabel: [
+            formatMarketQuoteLabel(item, locale),
+            marketQuoteCacheLabel(item, locale),
+          ]
+            .filter(Boolean)
+            .join(' · '),
           title: (
             <span className="min-w-0">
               <span className="block truncate">{item.name}</span>

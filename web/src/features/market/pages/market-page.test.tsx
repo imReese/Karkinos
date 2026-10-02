@@ -688,7 +688,13 @@ test('counts cache estimated and missing quotes as market data needing confirmat
 });
 
 test('states the personal-universe boundary and shows quote age separately from status', async () => {
-  renderMarketPage();
+  renderMarketPage({
+    health: {
+      source_health: 'live',
+      provider_status: 'live',
+      refresh_policy: 'live',
+    },
+  });
 
   expect(
     (await screen.findAllByText('Personal universe')).length,
@@ -700,6 +706,9 @@ test('states the personal-universe boundary and shows quote age separately from 
   ).toBeTruthy();
   expect((await screen.findAllByText('1m')).length).toBeGreaterThan(0);
   expect((await screen.findAllByText('Healthy')).length).toBeGreaterThan(0);
+  expect(screen.getByText('Refresh during market hours')).toBeTruthy();
+  expect(screen.getByText('Available')).toBeTruthy();
+  expect(screen.queryByText('Live')).toBeNull();
 });
 
 test('surfaces selected symbol next action without leaking raw data status codes', async () => {
@@ -842,7 +851,7 @@ test('uses a compact master-detail instrument workspace with local list overflow
     'market-instrument-status-600519',
   );
   expect(instrumentStatus.className).not.toContain('truncate');
-  expect(instrumentStatus.textContent).toContain('Live · 1m');
+  expect(instrumentStatus.textContent).toContain('Recorded quote · 1m');
   expect(instrumentStatus.textContent).toContain('1 research record');
   expect(selected.getAttribute('aria-describedby')).toBe(instrumentStatus.id);
   const instrumentName = screen.getByTestId('market-instrument-name-600519');
