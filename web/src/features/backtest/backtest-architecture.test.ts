@@ -143,6 +143,8 @@ BacktestStrategyInfo
 BacktestSummary
 BacktestSweepRequest
 CorporateActionEvidence
+CorporateActionMode
+CashDividendAccounting
 BacktestSweepResponse
 BacktestSweepResult
 CostSummary

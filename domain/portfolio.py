@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from decimal import Decimal
+from decimal import Decimal, DecimalException, localcontext
 
 from core.event_bus import EventBus
 from core.events import FillEvent, OrderIntentEvent, SignalEvent
@@ -37,6 +37,8 @@ class Portfolio:
         self.positions: dict[Symbol, Position] = {}
         self.instruments: dict[Symbol, Instrument] = {}
         self.equity_curve: list[tuple] = []  # (timestamp, equity)
+        self._cash_dividends: dict[str, tuple[Symbol, Decimal, Decimal, Decimal]] = {}
+        self._paid_cash_dividends: set[str] = set()
 
         # 订阅 SignalEvent
         event_bus.subscribe(SignalEvent, self.on_signal)
@@ -163,6 +165,90 @@ class Portfolio:
         for pos in self.positions.values():
             pos.advance_settlement_day()
 
+    def accrue_cash_dividend(
+        self,
+        action_id: str,
+        *,
+        symbol: Symbol,
+        eligible_quantity: Decimal,
+        cash_per_share: Decimal,
+    ) -> Decimal:
+        """Recognize gross dividend income without making the cash spendable.
+
+        The caller owns event timing and the entitled record-date quantity.
+        These are simulated book effects, not a deposit, trade or tax calculation.
+        """
+        if (
+            not isinstance(action_id, str)
+            or not action_id.strip()
+            or not isinstance(symbol, str)
+            or not symbol.strip()
+        ):
+            raise ValueError("portfolio_cash_dividend_identity_invalid")
+        for field, value in (
+            ("quantity", eligible_quantity),
+            ("rate", cash_per_share),
+        ):
+            if not isinstance(value, Decimal) or not value.is_finite() or value < ZERO:
+                raise ValueError(f"portfolio_cash_dividend_{field}_invalid")
+        facts = (symbol, eligible_quantity, cash_per_share)
+        previous = self._cash_dividends.get(action_id)
+        if previous is not None:
+            if previous[:3] != facts:
+                raise ValueError("portfolio_cash_dividend_conflict")
+            return previous[3]
+        try:
+            with localcontext() as context:
+                context.prec = max(
+                    context.prec,
+                    len(eligible_quantity.as_tuple().digits)
+                    + len(cash_per_share.as_tuple().digits),
+                )
+                amount = eligible_quantity * cash_per_share
+            if not amount.is_finite():
+                raise ValueError("nonfinite_amount")
+        except (DecimalException, ValueError) as exc:
+            raise ValueError("portfolio_cash_dividend_amount_invalid") from exc
+        # Preserve zero entitlements too: a later conflicting replay must fail.
+        self._cash_dividends[action_id] = (*facts, amount)
+        return amount
+
+    def pay_cash_dividend(self, action_id: str) -> Decimal:
+        """Transfer one previously recognized receivable into spendable cash."""
+        if action_id not in self._cash_dividends:
+            raise ValueError("portfolio_cash_dividend_unknown")
+        if action_id in self._paid_cash_dividends:
+            return ZERO
+        amount = self._cash_dividends[action_id][3]
+        self.cash += amount
+        self._paid_cash_dividends.add(action_id)
+        return amount
+
+    @property
+    def dividend_receivable(self) -> Decimal:
+        """Gross recognized dividends which have not reached the cash balance."""
+        return sum(
+            (
+                facts[3]
+                for action_id, facts in self._cash_dividends.items()
+                if action_id not in self._paid_cash_dividends
+            ),
+            ZERO,
+        )
+
+    @property
+    def dividend_income(self) -> Decimal:
+        """Cumulative gross dividend income, including outstanding receivables."""
+        return sum((facts[3] for facts in self._cash_dividends.values()), ZERO)
+
+    @property
+    def total_equity(self) -> Decimal:
+        """Cash, marked positions and unpaid dividend entitlements."""
+        positions_value = sum(
+            (pos.market_value for pos in self.positions.values()), ZERO
+        )
+        return self.cash + positions_value + self.dividend_receivable
+
     def deposit(self, amount: Decimal) -> None:
         """入金（Live 模式专用）。"""
         if amount <= ZERO:
@@ -190,18 +276,19 @@ class Portfolio:
 
     def _calculate_equity(self) -> Decimal:
         """使用每个持仓各自最近一次盯市价值计算总权益。"""
-        positions_value = sum(pos.market_value for pos in self.positions.values())
-        return self.cash + positions_value
+        return self.total_equity
 
     def _calculate_equity_with_prices(self, prices: dict[Symbol, Decimal]) -> Decimal:
         """用多价格计算总权益。"""
-        positions_value = ZERO
-        for symbol, pos in self.positions.items():
-            if symbol in prices:
-                positions_value += pos.quantity * prices[symbol]
-            else:
-                positions_value += pos.market_value
-        return self.cash + positions_value
+        revaluation = sum(
+            (
+                pos.quantity * prices[symbol] - pos.market_value
+                for symbol, pos in self.positions.items()
+                if symbol in prices
+            ),
+            ZERO,
+        )
+        return self.total_equity + revaluation
 
     def _position_value(self, symbol: Symbol, price: Decimal) -> Decimal:
         pos = self.positions.get(symbol)

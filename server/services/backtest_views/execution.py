@@ -164,11 +164,16 @@ def run_single_backtest(
     from datetime import datetime
 
     from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+    from backtest.cash_dividends import cash_dividends_from_evidence
     from backtest.engine import BacktestEngine
     from data.manager import DataManager
     from data.store import DataStore
+    from server.services.research_datasets import ResearchDatasetError
 
     dataset_binding = None
+    cash_dividend_mode = getattr(request, "corporate_action_mode", "price_only")
+    if cash_dividend_mode == "cash_dividends_gross" and not request.dataset_id:
+        raise ResearchDatasetError("cash_dividend_dataset_required")
     if getattr(request, "dataset_id", None) is not None:
         from server.runtime_paths import resolve_data_dir
         from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
@@ -245,15 +250,29 @@ def run_single_backtest(
     )
     strategy = build_strategy(strategy_config, event_bus_placeholder)
 
+    cash_dividends = None
+    if cash_dividend_mode == "cash_dividends_gross":
+        try:
+            cash_dividends = cash_dividends_from_evidence(
+                (dataset_binding or {}).get("corporate_action_evidence")
+            )
+        except ValueError as exc:
+            raise ResearchDatasetError(str(exc)) from None
     engine = BacktestEngine(
         strategy=strategy,
         instruments=instruments,
         data_handlers=data_handlers,
         initial_cash=Decimal(str(request.initial_cash)),
         db=db,
+        cash_dividends=cash_dividends,
     )
 
-    result = engine.run()
+    try:
+        result = engine.run()
+    except ValueError as exc:
+        if str(exc).startswith("cash_dividend_"):
+            raise ResearchDatasetError(str(exc)) from None
+        raise
 
     equity_curve = [
         {"timestamp": ts.isoformat(), "equity": float(eq)}
@@ -267,6 +286,8 @@ def run_single_backtest(
     )
     metrics_json = metrics.to_json_dict()
     metrics_json["execution_timing"] = result.execution_timing
+    if result.cash_dividend_accounting is not None:
+        metrics_json["cash_dividend_accounting"] = result.cash_dividend_accounting
     metrics_json["evidence_bundle"] = evidence_json
     metrics_json["dataset_snapshot"] = dataset_snapshot_json
     if dataset_binding is not None:

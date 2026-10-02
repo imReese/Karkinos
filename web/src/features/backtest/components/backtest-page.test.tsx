@@ -2702,6 +2702,71 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   expect(await screen.findByText('qfq')).toBeTruthy();
 });
 
+test('restores gross dividend income, paid cash and receivables from a saved report', async () => {
+  const { fetchMock } = renderBacktestPage({
+    savedBacktestReport: {
+      ...savedReport,
+      config: {
+        ...savedReport.config,
+        corporate_action_mode: 'cash_dividends_gross',
+      },
+      metrics_json: {
+        ...savedReport.metrics_json,
+        dataset_snapshot: {
+          ...savedReport.metrics_json.dataset_snapshot,
+          price_basis: 'unadjusted',
+          adjustment_mode: 'none',
+        },
+        cash_dividend_accounting: {
+          schema_version: 'karkinos.backtest_cash_dividends.v1',
+          mode: 'cash_dividends_gross',
+          gross_income: '150.25',
+          cash_paid: '125.00',
+          receivable: '25.25',
+          taxes_modeled: false,
+          coverage_verified: false,
+          historical_availability_verified: false,
+          ex_date_execution_blocked_count: 2,
+          distributions: [],
+          limitations: [],
+        },
+      },
+    },
+  });
+  const accounting = await screen.findByTestId('cash-dividend-accounting');
+  expect(
+    within(accounting).getByText('Recognized gross dividend income')
+      .nextElementSibling?.textContent,
+  ).toBe('¥ 150.25');
+  expect(
+    within(accounting).getByText('Paid into available cash').nextElementSibling
+      ?.textContent,
+  ).toBe('¥ 125.00');
+  expect(
+    within(accounting).getByText('Unpaid dividend receivable')
+      .nextElementSibling?.textContent,
+  ).toBe('¥ 25.25');
+  expect(
+    within(accounting).getByText(
+      /Receivables are included in equity but cannot fund purchases/,
+    ),
+  ).toBeTruthy();
+  expect(
+    within(accounting).getByText(
+      /Investor tax, payment rounding and bonus shares are omitted/,
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(/Simulated equity includes gross cash dividends/),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText(/Simulated equity return; excludes dividends/),
+  ).toBeNull();
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(
+    false,
+  );
+});
+
 test('separates bound Dataset quality from research admission', async () => {
   renderBacktestPage({
     savedBacktestReport: {
@@ -3172,118 +3237,259 @@ test('keeps sweep and comparison available with one selected Dataset', async () 
   expect(previewPayload.dataset_snapshot).toBeUndefined();
 });
 
-test('collects corporate-action evidence explicitly and runs against the newly selected Dataset', async () => {
-  const original = {
-    dataset_id: `sha256:${'a'.repeat(64)}`,
-    start_date: '2025-01-02',
-    end_date: '2026-09-18',
-    cutoff: '2026-09-19T08:00:00Z',
-    instruments: [{ symbol: '600002', instrument_type: 'stock' }],
-    partition_count: 2,
-    price_basis: 'unadjusted',
-    point_in_time_verified: false,
-  };
-  const evidence = {
-    schema_version: 'karkinos.corporate_action_evidence.v1',
-    status: 'observed',
-    observation_ids: ['observation-1'],
-    provider: 'tushare',
-    available_at: '2026-10-02T08:00:00Z',
-    availability_basis: 'capture_completed_at',
-    historical_availability_verified: false,
-    covered_action_types: ['cash_dividend', 'bonus_share_distribution'],
-    coverage_status: 'provider_reported_only',
-    total_record_count: 3,
-    matched_event_count: 1,
-    undated_event_count: 0,
-    events: [],
-    returns_modeled: false,
-    limitations: [],
-  };
-  const next = {
-    ...original,
-    dataset_id: `sha256:${'b'.repeat(64)}`,
-    corporate_action_evidence: evidence,
-  };
-  const datasets = [original];
-  const { fetchMock } = renderBacktestPage({
-    results: [],
-    datasets,
-    locale: 'zh',
-  });
-  const defaultFetch = fetchMock.getMockImplementation()!;
-  fetchMock.mockImplementation(async (input, init) => {
-    if (
-      String(input).endsWith('/corporate-actions') &&
-      init?.method === 'POST'
-    ) {
-      datasets.push(next);
-      return jsonResponse(next);
-    }
-    if (String(input) === '/api/backtest/run') {
-      return jsonResponse({
-        ...runReport,
-        metrics_json: {
-          ...runReport.metrics_json,
-          dataset_snapshot: {
-            ...runReport.metrics_json.dataset_snapshot,
-            immutable_dataset_id: next.dataset_id,
-            price_basis: 'unadjusted',
-            corporate_action_evidence: evidence,
-          },
+test.each(['price_only', 'cash_dividends_gross'] as const)(
+  'collects corporate-action evidence and runs the newly selected Dataset in %s mode',
+  async (mode) => {
+    const original = {
+      dataset_id: `sha256:${'a'.repeat(64)}`,
+      start_date: '2025-01-02',
+      end_date: '2026-09-18',
+      cutoff: '2026-09-19T08:00:00Z',
+      instruments: [{ symbol: '600002', instrument_type: 'stock' }],
+      partition_count: 2,
+      price_basis: 'unadjusted',
+      point_in_time_verified: false,
+    };
+    const evidence = {
+      schema_version: 'karkinos.corporate_action_evidence.v1',
+      status: 'observed',
+      observation_ids: ['observation-1'],
+      provider: 'tushare',
+      available_at: '2026-10-02T08:00:00Z',
+      availability_basis: 'capture_completed_at',
+      historical_availability_verified: false,
+      covered_action_types: ['cash_dividend', 'bonus_share_distribution'],
+      coverage_status: 'provider_reported_only',
+      total_record_count: 3,
+      matched_event_count: 1,
+      undated_event_count: 0,
+      events: [
+        {
+          symbol: '600002',
+          instrument_type: 'stock',
+          div_proc: '实施',
+          end_date: '2025-12-31',
+          ann_date: '2026-03-20',
+          imp_ann_date: '2026-09-01',
+          record_date: '2026-09-14',
+          ex_date: '2026-09-15',
+          pay_date: '2026-09-21',
+          div_listdate: null,
+          cash_div_tax: '0.125',
+          cash_div: null,
+          stk_div: '0',
+          stk_bo_rate: '0',
+          stk_co_rate: '0',
+          available_at: '2026-10-02T08:00:00Z',
+          captured_at: '2026-10-02T08:00:00Z',
+          source_revision_id: 'cash-revision',
+          observation_id: 'observation-1',
         },
-      });
-    }
-    return defaultFetch(input, init);
-  });
-  await screen.findByText('策略回放');
-  const disclosure = screen
-    .getByText('研究 Dataset · 持久保存与离线回测')
-    .closest('details')!;
-  disclosure.open = true;
-  fireEvent(disclosure, new Event('toggle'));
-  await screen.findByRole('option', { name: /600002.*2025-01-02/ });
-  fireEvent.change(screen.getByLabelText('本次回测的数据输入'), {
-    target: { value: original.dataset_id },
-  });
-  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(
-    false,
-  );
-  fireEvent.click(screen.getByRole('button', { name: '采集分红送转证据' }));
-  await screen.findByText(/分红送转证据已采集，已选中新数据集/);
-  expect(
-    (screen.getByLabelText('本次回测的数据输入') as HTMLSelectElement).value,
-  ).toBe(next.dataset_id);
-  expect(screen.getByTestId('selected-dataset-id').textContent).toContain(
-    next.dataset_id,
-  );
-  expect(datasets[0]).toEqual(original);
-  expect(
-    fetchMock.mock.calls.some(([url]) => String(url) === '/api/backtest/run'),
-  ).toBe(false);
-
-  const runButton = screen.getByRole('button', { name: '运行回测' });
-  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
-  await waitFor(() =>
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/backtest/run',
-      expect.objectContaining({ method: 'POST' }),
-    ),
-  );
-  const runCall = fetchMock.mock.calls.find(
-    ([url]) => String(url) === '/api/backtest/run',
-  );
-  expect(JSON.parse(String(runCall?.[1]?.body)).dataset_id).toBe(
-    next.dataset_id,
-  );
-  await waitFor(() => {
-    const panel = document.getElementById('backtest-dataset-evidence')!;
-    expect(within(panel).getByText('已采集 · 覆盖未核实')).toBeTruthy();
+      ],
+      returns_modeled: false,
+      limitations: [],
+    };
+    const next = {
+      ...original,
+      dataset_id: `sha256:${'b'.repeat(64)}`,
+      cutoff: evidence.available_at,
+      corporate_action_evidence: evidence,
+    };
+    const datasets = [original];
+    const { fetchMock } = renderBacktestPage({
+      results: [],
+      datasets,
+      locale: 'zh',
+    });
+    const defaultFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (
+        String(input).endsWith('/corporate-actions') &&
+        init?.method === 'POST'
+      ) {
+        datasets.push(next);
+        return jsonResponse(next);
+      }
+      if (String(input) === '/api/backtest/run') {
+        return jsonResponse({
+          ...runReport,
+          metrics_json: {
+            ...runReport.metrics_json,
+            ...(mode === 'cash_dividends_gross'
+              ? {
+                  cash_dividend_accounting: {
+                    schema_version: 'karkinos.backtest_cash_dividends.v1',
+                    mode,
+                    gross_income: '1250.00',
+                    cash_paid: '0',
+                    receivable: '1250.00',
+                    taxes_modeled: false,
+                    coverage_verified: false,
+                    historical_availability_verified: false,
+                    ex_date_execution_blocked_count: 1,
+                    distributions: [
+                      {
+                        action_id: 'cash-action',
+                        symbol: '600002',
+                        record_date: '2026-09-14',
+                        ex_date: '2026-09-15',
+                        pay_date: '2026-09-21',
+                        cash_per_share: '0.125',
+                        eligible_quantity: '10000',
+                        gross_amount: '1250.00',
+                        paid: false,
+                      },
+                    ],
+                    limitations: [],
+                  },
+                }
+              : {}),
+            dataset_snapshot: {
+              ...runReport.metrics_json.dataset_snapshot,
+              immutable_dataset_id: next.dataset_id,
+              price_basis: 'unadjusted',
+              corporate_action_evidence: evidence,
+            },
+          },
+        });
+      }
+      return defaultFetch(input, init);
+    });
+    await screen.findByText('策略回放');
+    const disclosure = screen
+      .getByText('研究 Dataset · 持久保存与离线回测')
+      .closest('details')!;
+    disclosure.open = true;
+    fireEvent(disclosure, new Event('toggle'));
+    await screen.findByRole('option', { name: /600002.*2025-01-02/ });
+    fireEvent.change(screen.getByLabelText('本次回测的数据输入'), {
+      target: { value: original.dataset_id },
+    });
+    const modeSelector = screen.getByLabelText(
+      '公司行动收益处理',
+    ) as HTMLSelectElement;
+    expect(modeSelector.disabled).toBe(true);
+    expect(modeSelector.value).toBe('price_only');
     expect(
-      within(panel).getByText(/尚未计入现金派息、送转持仓或总收益/),
-    ).toBeTruthy();
-  });
-});
+      fetchMock.mock.calls.some(([, init]) => init?.method === 'POST'),
+    ).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '采集分红送转证据' }));
+    await screen.findByText(/分红送转证据已采集，已选中新数据集/);
+    expect(
+      (screen.getByLabelText('本次回测的数据输入') as HTMLSelectElement).value,
+    ).toBe(next.dataset_id);
+    expect(screen.getByTestId('selected-dataset-id').textContent).toContain(
+      next.dataset_id,
+    );
+    expect(datasets[0]).toEqual(original);
+    expect(modeSelector.disabled).toBe(false);
+    expect(modeSelector.value).toBe('price_only');
+    fireEvent.change(modeSelector, { target: { value: mode } });
+    if (mode === 'cash_dividends_gross') {
+      openBacktestDisclosure('backtest-advanced-tools-disclosure');
+      for (const name of ['运行参数扫描', '运行对比']) {
+        const button = screen.getByRole('button', {
+          name,
+        }) as HTMLButtonElement;
+        expect(button.disabled).toBe(true);
+        fireEvent.submit(button.closest('form')!);
+      }
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          /\/api\/backtest\/(sweep|compare)$/.test(String(url)),
+        ),
+      ).toBe(false);
+      expect(
+        screen.getAllByText(/参数扫描与策略对比目前仅支持价格模式/).length,
+      ).toBe(2);
+    }
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url) === '/api/backtest/run'),
+    ).toBe(false);
+
+    const runButton = screen.getByRole('button', { name: '运行回测' });
+    fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/backtest/run',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    const runCall = fetchMock.mock.calls.find(
+      ([url]) => String(url) === '/api/backtest/run',
+    );
+    expect(JSON.parse(String(runCall?.[1]?.body)).dataset_id).toBe(
+      next.dataset_id,
+    );
+    expect(JSON.parse(String(runCall?.[1]?.body)).corporate_action_mode).toBe(
+      mode,
+    );
+    await waitFor(() => {
+      const panel = document.getElementById('backtest-dataset-evidence')!;
+      expect(within(panel).getByText('已采集 · 覆盖未核实')).toBeTruthy();
+      if (mode === 'price_only') {
+        expect(
+          within(panel).getByText(/尚未计入现金派息、送转持仓或总收益/),
+        ).toBeTruthy();
+      } else {
+        expect(
+          within(panel).queryByText(/尚未计入现金派息、送转持仓或总收益/),
+        ).toBeNull();
+        expect(
+          within(panel).getAllByText(/已计入税前现金分红/).length,
+        ).toBeGreaterThan(0);
+      }
+    });
+    if (mode === 'cash_dividends_gross') {
+      const accounting = screen.getByTestId('cash-dividend-accounting');
+      expect(
+        within(accounting).getByText('已确认税前分红收入').nextElementSibling
+          ?.textContent,
+      ).toBe('¥ 1250.00');
+      expect(
+        within(accounting).getByText('已转为可用现金').nextElementSibling
+          ?.textContent,
+      ).toBe('¥ 0');
+      expect(
+        within(accounting).getByText('尚未支付的应收分红').nextElementSibling
+          ?.textContent,
+      ).toBe('¥ 1250.00');
+      expect(
+        within(accounting).getByText(/应收分红已计入权益，但尚不能用于买入/),
+      ).toBeTruthy();
+      expect(within(accounting).getByText(/相关交易已阻止 1 次/)).toBeTruthy();
+      expect(
+        screen.queryByText(
+          '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。',
+        ),
+      ).toBeNull();
+      const successfulFetch = fetchMock.getMockImplementation()!;
+      fetchMock.mockImplementation(async (input, init) =>
+        String(input) === '/api/backtest/run'
+          ? jsonResponse(
+              { detail: 'cash_dividend_event_dates_incomplete' },
+              { status: 422 },
+            )
+          : successfulFetch(input, init),
+      );
+      fireEvent.submit(runButton.closest('form')!);
+      expect(
+        await screen.findByText(
+          '分红记录缺少登记日、除息日或派息日，无法核算。',
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.queryByText('cash_dividend_event_dates_incomplete'),
+      ).toBeNull();
+      expect(screen.getByTestId('cash-dividend-accounting')).toBe(accounting);
+      fireEvent.change(screen.getByLabelText('本次回测的数据输入'), {
+        target: { value: original.dataset_id },
+      });
+      expect(modeSelector.value).toBe('price_only');
+      expect(modeSelector.disabled).toBe(true);
+    }
+  },
+);
 
 test('accepts localized comparison parameter names while submitting API keys', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });

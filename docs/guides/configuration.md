@@ -122,6 +122,12 @@ Token 写入 `.env`，不写入 `config.json`。
 正式 Dataset 与自动研究日线回执的这项限制一致；旧回执报告仍可重放，新的
 资格和发布审核按当前口径阻断，探索研究本身仍可运行。
 
+对已绑定分红证据的股票 Dataset，单次回测可显式选择税前现金分红核算，
+请求字段为 `corporate_action_mode: "cash_dividends_gross"`；默认
+`"price_only"` 保留原有价格收益口径。应收与到账分别显示，完整语义见
+[收益与成本口径](return-accounting.md#研究回测的现金分红)。缺日期、未实施、
+记录冲突或含尚不支持的送转时，该模式拒绝运行，可继续选择原价格口径进行探索。
+
 新配置应分别使用 `market_data.source_policy` 与 `market_data.verification_source_policy`。显式核验任务的响应包含其 `source_policy_id`；已提交任务保留原策略身份。如果排队任务的策略与当前核验策略不同，worker 会在请求 Provider 前拒绝该任务，需按新策略重新提交。旧 Dataset 的 ID 和离线重放语义不变。历史 `data_source.provider` / `KARKINOS_DATA_SOURCE` 仅保留兼容读取，不作为新数据飞轮的配置方式。
 
 ## `ai`

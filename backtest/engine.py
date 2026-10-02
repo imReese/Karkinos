@@ -5,11 +5,15 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, replace
+from datetime import date
 from decimal import Decimal
+from itertools import groupby
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from backtest.cash_dividends import CashDividend, CashDividendReplay
 from backtest.equity_curve import canonicalize_equity_curve
 from backtest.metrics import (
     build_after_cost_evidence,
@@ -82,6 +86,7 @@ class BacktestEngine:
         slippage_model: SlippageModel | None = None,
         execution_config: BacktestExecutionConfig | None = None,
         db=None,
+        cash_dividends: tuple[CashDividend, ...] | None = None,
     ) -> None:
         self.event_bus = EventBus()
         self.clock = SimulatedClock()
@@ -91,6 +96,15 @@ class BacktestEngine:
         self.initial_cash = initial_cash
         self.fills: list[FillEvent] = []
         self.db = db
+        self._dividend_replay = (
+            CashDividendReplay(cash_dividends) if cash_dividends is not None else None
+        )
+        if cash_dividends is not None and any(
+            item.symbol not in instruments
+            or instruments[item.symbol].instrument_type is not InstrumentType.STOCK
+            for item in cash_dividends
+        ):
+            raise ValueError("cash_dividend_stock_required")
         self._availability_mode = (
             execution_config.availability_mode
             if execution_config is not None
@@ -160,50 +174,48 @@ class BacktestEngine:
         """运行回测，返回 BacktestResult。"""
         # Validate availability before any strategy state can observe the input.
         all_events = self._merge_streams()
+        if self._dividend_replay is not None:
+            self._dividend_replay.validate_events(
+                all_events, observed=self._availability_mode == "observed"
+            )
         # 初始化策略
         symbols = list(self.instruments.keys())
         self.strategy.on_init(symbols)
 
         # 主循环
-        prev_date = None
-        for market_event in all_events:
-            current_date = market_event.timestamp.date()
-
-            # 新的一天：结算 T+1
-            if prev_date is not None and current_date != prev_date:
+        for current_date, session in groupby(all_events, key=self._session_date):
+            session_events = list(session)
+            if self.portfolio.equity_curve:
                 self.portfolio.advance_settlement_day()
-
-            prev_date = current_date
-
-            # 推进时钟
-            self.clock.advance_to(market_event.timestamp)
-
-            # 更新风控组合价值
-            prices = {market_event.symbol: market_event.close}
-            self.portfolio.mark_to_market(prices)
-            equity = self._calculate_equity()
-            self.risk_manager.set_portfolio_value(
-                total=float(equity),
-                cash=float(self.portfolio.cash),
-            )
-
-            # 发布 MarketEvent
-            self.event_bus.publish_and_process(market_event)
-
-            # 处理后续事件（Signal → Order → Risk → Fill）
-            self.event_bus.drain()
-
-            # 同一根 K 线内可能成交并新建/改变持仓；成交后需再次盯市，
-            # 否则最后一根 K 线开仓时 final_equity 会只反映剩余现金。
-            self.portfolio.mark_to_market(prices)
-
-            # 记录资金曲线
-            self.portfolio.record_equity(
-                market_event.timestamp,
-                {market_event.symbol: market_event.close},
-            )
+            if self._dividend_replay is not None:
+                # This mode requires one simultaneous Shanghai close per symbol.
+                # Mark all prices before adding ex-date receivables, so ordering
+                # symbols cannot temporarily count both the old price and income.
+                self.portfolio.mark_to_market(
+                    {event.symbol: event.close for event in session_events}
+                )
+                self._dividend_replay.before_session(current_date, self.portfolio)
+            for market_event in session_events:
+                self.clock.advance_to(market_event.timestamp)
+                prices = {market_event.symbol: market_event.close}
+                self.portfolio.mark_to_market(prices)
+                self.risk_manager.set_portfolio_value(
+                    total=float(self._calculate_equity()),
+                    cash=float(self.portfolio.cash),
+                )
+                self.event_bus.publish_and_process(market_event)
+                self.event_bus.drain()
+                self.portfolio.mark_to_market(prices)
+                self.portfolio.record_equity(market_event.timestamp, prices)
+            if self._dividend_replay is not None:
+                self._dividend_replay.after_session(current_date, self.portfolio)
 
         return self._build_result()
+
+    def _session_date(self, event: MarketEvent) -> date:
+        if self._dividend_replay is not None:
+            return event.timestamp.astimezone(ZoneInfo("Asia/Shanghai")).date()
+        return event.timestamp.date()
 
     def _on_market_event(self, event: MarketEvent) -> None:
         """Execute prior targets, then expose this completed bar to the strategy."""
@@ -231,6 +243,10 @@ class BacktestEngine:
         instrument = self.instruments.get(event.symbol)
         if bar is None or instrument is None or bar.symbol != event.symbol:
             return True
+        if self._dividend_replay is not None and self._dividend_replay.blocks_execution(
+            event.symbol, self._session_date(bar)
+        ):
+            return False
         if instrument.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}:
             return True
         if is_suspended(bar.volume):
@@ -442,10 +458,7 @@ class BacktestEngine:
 
     def _calculate_equity(self) -> Decimal:
         """计算总权益。"""
-        positions_value = ZERO
-        for symbol, pos in self.portfolio.positions.items():
-            positions_value += pos.market_value
-        return self.portfolio.cash + positions_value
+        return self.portfolio.total_equity
 
     def _build_result(self) -> BacktestResult:
         """构建回测结果。"""
@@ -472,6 +485,11 @@ class BacktestEngine:
             fills=list(self.fills),
             cost_summary=cost_summary,
             evidence_bundle=evidence_bundle,
+            cash_dividend_accounting=(
+                self._dividend_replay.evidence(self.portfolio)
+                if self._dividend_replay is not None
+                else None
+            ),
             execution_timing={
                 "schema_version": "karkinos.backtest_execution_timing.v1",
                 "policy_id": "karkinos.backtest.next_bar_close.v1",

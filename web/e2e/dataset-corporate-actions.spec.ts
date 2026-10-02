@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import type {
   BacktestReport,
+  CashDividendAccounting,
   CorporateActionEvidence,
 } from '../src/features/backtest/api-contracts';
 import type { PublishedDataset } from '../src/features/backtest/dataset-api';
@@ -134,6 +135,221 @@ async function expectNoDocumentOverflow(page: Page) {
       ),
     )
     .toBeLessThanOrEqual(1);
+}
+
+// Separate implemented, cash-only distributions. The second payment is after
+// this dataset's final session, so it remains a receivable in the report.
+const cashDistributions: CashDividendAccounting['distributions'] = [
+  {
+    action_id: 'cash-june-a',
+    symbol: '600000',
+    record_date: '2026-06-05',
+    ex_date: '2026-06-08',
+    pay_date: '2026-06-09',
+    cash_per_share: '0.125',
+    eligible_quantity: '1000',
+    gross_amount: '125',
+    paid: true,
+  },
+  {
+    action_id: 'cash-june-b',
+    symbol: '600000',
+    record_date: '2026-06-10',
+    ex_date: '2026-06-11',
+    pay_date: '2026-06-15',
+    cash_per_share: '0.025',
+    eligible_quantity: '1000',
+    gross_amount: '25',
+    paid: false,
+  },
+];
+const cashEvidence: CorporateActionEvidence = {
+  ...evidence,
+  observation_ids: ['synthetic-cash-observation'],
+  total_record_count: 2,
+  matched_event_count: 2,
+  events: cashDistributions.map((distribution) => ({
+    symbol: distribution.symbol,
+    instrument_type: 'stock',
+    div_proc: '实施',
+    end_date: '2025-12-31',
+    ann_date: '2026-03-20',
+    imp_ann_date: '2026-05-28',
+    record_date: distribution.record_date,
+    ex_date: distribution.ex_date,
+    pay_date: distribution.pay_date,
+    div_listdate: null,
+    cash_div_tax: distribution.cash_per_share,
+    cash_div: null,
+    stk_div: '0',
+    stk_bo_rate: '0',
+    stk_co_rate: '0',
+    available_at: evidence.available_at,
+    captured_at: evidence.available_at,
+    source_revision_id: distribution.action_id,
+    observation_id: 'synthetic-cash-observation',
+  })),
+};
+const cashDataset: PublishedDataset = {
+  ...sourceDataset,
+  dataset_id: `sha256:${'c'.repeat(64)}`,
+  cutoff: cashEvidence.available_at,
+  corporate_action_evidence: cashEvidence,
+};
+const cashAccounting: CashDividendAccounting = {
+  schema_version: 'karkinos.backtest_cash_dividends.v1',
+  mode: 'cash_dividends_gross',
+  gross_income: '150',
+  cash_paid: '125',
+  receivable: '25',
+  taxes_modeled: false,
+  coverage_verified: false,
+  historical_availability_verified: false,
+  ex_date_execution_blocked_count: 2,
+  distributions: cashDistributions,
+  limitations: [],
+};
+const cashReport: BacktestReport = {
+  ...report,
+  config: {
+    ...report.config,
+    dataset_id: cashDataset.dataset_id,
+    corporate_action_mode: 'cash_dividends_gross',
+  },
+  metrics: { ...report.metrics, final_equity: 101150, total_return: 0.0115 },
+  metrics_json: {
+    ...report.metrics_json,
+    dataset_snapshot: {
+      ...report.metrics_json!.dataset_snapshot!,
+      immutable_dataset_id: cashDataset.dataset_id,
+      corporate_action_evidence: cashEvidence,
+    },
+    cash_dividend_accounting: cashAccounting,
+  },
+  equity_curve: [
+    report.equity_curve[0],
+    { timestamp: '2026-06-12T15:00:00+08:00', equity: 101150 },
+  ],
+};
+
+for (const width of [390, 1280]) {
+  test(`explicit gross cash mode distinguishes paid cash and receivables at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.addInitScript(() => {
+      window.localStorage.setItem('karkinos.locale', 'zh');
+      window.localStorage.setItem('karkinos.theme', 'light');
+    });
+    const posts: Array<{ path: string; body: Record<string, unknown> }> = [];
+    await page.route('**/api/**', async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'POST')
+        posts.push({ path, body: request.postDataJSON() });
+      let payload: unknown;
+      if (path === '/api/backtest/datasets')
+        payload = {
+          tdx_configured: true,
+          storage_path: '',
+          busy: false,
+          datasets: [cashDataset],
+        };
+      else if (path === '/api/backtest/strategies')
+        payload = [
+          {
+            strategy_id: 'dual_ma',
+            name: 'dual_ma',
+            display_name: 'Dual Moving Average',
+            params: [],
+            parameter_schema: [],
+            asset_universe: ['stock'],
+            supported_frequencies: ['1d'],
+          },
+        ];
+      else if (path === '/api/backtest/results') payload = [];
+      else if (path === '/api/backtest/strategy-promotion-readiness')
+        payload = { rows: [], limitations: [] };
+      else if (
+        path === '/api/backtest/run' ||
+        path === '/api/backtest/results/101'
+      )
+        payload = cashReport;
+      else if (path === '/api/backtest/signal-preview')
+        payload = {
+          schema_version: 'synthetic.preview',
+          strategy_id: 'dual_ma',
+          symbol: '600000',
+          params: {},
+          run_id: 'cash-preview',
+          record_count: 0,
+          outputs: [],
+          limitations: [],
+          does_not_enable_execution: true,
+        };
+      else {
+        await route.fulfill({
+          status: 503,
+          json: { detail: 'synthetic_fixture_not_available' },
+        });
+        return;
+      }
+      await route.fulfill({ status: 200, json: payload });
+    });
+    await page.goto('/backtest');
+    await page
+      .getByText('研究 Dataset · 持久保存与离线回测', { exact: true })
+      .click();
+    const datasetSelector = page.getByLabel('本次回测的数据输入');
+    await expect(datasetSelector.locator('option')).toHaveCount(2);
+    await datasetSelector.selectOption(cashDataset.dataset_id);
+    const mode = page.getByLabel('公司行动收益处理');
+    await expect(mode).toHaveValue('price_only');
+    await mode.selectOption('cash_dividends_gross');
+    expect(posts).toEqual([]);
+    await expectNoDocumentOverflow(page);
+    await page.getByRole('button', { name: '运行回测', exact: true }).click();
+    const accounting = page.getByTestId('cash-dividend-accounting');
+    await expect(accounting).toBeVisible();
+    expect(
+      posts.find((item) => item.path === '/api/backtest/run')?.body,
+    ).toMatchObject({
+      dataset_id: cashDataset.dataset_id,
+      corporate_action_mode: 'cash_dividends_gross',
+    });
+    for (const amount of ['¥ 150', '¥ 125', '¥ 25'])
+      await expect(accounting.getByText(amount, { exact: true })).toBeVisible();
+    await expect(
+      accounting.getByText(/应收分红已计入权益，但尚不能用于买入/),
+    ).toBeVisible();
+    await expect(
+      accounting.getByText(/个人税负、到账舍入和送转未建模/),
+    ).toBeVisible();
+    await expect(
+      accounting.getByText(/来源完整性与历史信息可得时间未核实/),
+    ).toBeVisible();
+    await expect(accounting.getByText(/相关交易已阻止 2 次/)).toBeVisible();
+    await expect(
+      page.getByText(
+        '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。',
+      ),
+    ).toHaveCount(0);
+    const result = page.locator('#backtest-dataset-evidence');
+    await expect(result.getByText(/已计入税前现金分红/).first()).toBeVisible();
+    await expect(
+      result.getByText(/尚未计入现金派息、送转持仓或总收益/),
+    ).toHaveCount(0);
+    await result.getByText('查看记录明细（2）', { exact: true }).click();
+    await expect(
+      result.getByRole('cell', { name: '实施', exact: true }),
+    ).toHaveCount(2);
+    await expectNoDocumentOverflow(page);
+    await accounting.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath(`cash-dividends-${width}.png`),
+      fullPage: true,
+    });
+  });
 }
 
 for (const width of [390, 1280]) {

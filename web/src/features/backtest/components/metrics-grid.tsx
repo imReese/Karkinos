@@ -10,6 +10,7 @@ import {
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import type { BacktestReport } from '../api';
+import { cashDividendCopy } from '../copy-cash-dividends';
 
 type MetricItem = {
   label: string;
@@ -35,6 +36,9 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
   const { locale } = usePreferences();
   const metrics = { ...report.metrics, ...report.metrics_json };
   const snapshot = report.metrics_json?.dataset_snapshot;
+  const cashDividendsModeled =
+    report.metrics_json?.cash_dividend_accounting?.mode ===
+    'cash_dividends_gross';
   const unadjustedReturns = Boolean(
     snapshot?.price_basis === 'unadjusted' ||
     snapshot?.adjustment_mode === 'none' ||
@@ -57,11 +61,13 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
         <>
           {formatCurrency(metrics.initial_cash)} -&gt;{' '}
           {formatCurrency(metrics.final_equity)}
-          {unadjustedReturns ? (
+          {cashDividendsModeled || unadjustedReturns ? (
             <span className="mt-1 block text-[var(--app-warning-text)]">
-              {locale === 'zh'
-                ? '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。'
-                : 'Simulated equity return; excludes dividends and other corporate actions, so this is not total economic return.'}
+              {cashDividendsModeled
+                ? cashDividendCopy[locale].returns
+                : locale === 'zh'
+                  ? '模拟权益收益；未计入分红等公司行动，不代表完整经济收益。'
+                  : 'Simulated equity return; excludes dividends and other corporate actions, so this is not total economic return.'}
             </span>
           ) : null}
         </>

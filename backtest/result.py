@@ -26,6 +26,7 @@ class BacktestResult:
     evidence_bundle: AfterCostEvidence | None = None
     execution_timing: dict[str, Any] | None = None
     dataset_snapshot: dict[str, Any] | None = None
+    cash_dividend_accounting: dict[str, Any] | None = None
 
     @property
     def total_return(self) -> Decimal:

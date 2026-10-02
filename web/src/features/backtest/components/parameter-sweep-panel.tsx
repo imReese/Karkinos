@@ -91,6 +91,7 @@ export function ParameterSweepPanel({
   parameterValues,
   assets,
   datasetId,
+  disabledReason,
 }: {
   startDate: string;
   endDate: string;
@@ -100,6 +101,7 @@ export function ParameterSweepPanel({
   parameterValues: Record<string, string>;
   assets?: BacktestRunRequest['assets'];
   datasetId?: string;
+  disabledReason?: string;
 }) {
   const copy = useCopy();
   const labels = copy.backtest.sweep;
@@ -131,6 +133,7 @@ export function ParameterSweepPanel({
 
   const submitSweep = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabledReason) return;
     const paramGrid = Object.fromEntries(
       parameterSchema.map((param) => [
         param.name,
@@ -184,6 +187,11 @@ export function ParameterSweepPanel({
       <div className="app-kicker app-type-overline">{labels.kicker}</div>
       <h3 className="app-card-title mt-1.5">{labels.title}</h3>
       <p className="app-muted mt-2 text-sm leading-6">{labels.subtitle}</p>
+      {disabledReason ? (
+        <p className="mt-2 text-xs leading-5 text-[var(--app-warning-text)]">
+          {disabledReason}
+        </p>
+      ) : null}
 
       <form className="mt-4 grid gap-3" onSubmit={submitSweep}>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -226,7 +234,7 @@ export function ParameterSweepPanel({
             <button
               type="submit"
               className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold"
-              disabled={sweep.isPending}
+              disabled={sweep.isPending || Boolean(disabledReason)}
             >
               {sweep.isPending ? labels.running : labels.run}
             </button>

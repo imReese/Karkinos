@@ -68,6 +68,7 @@ export function DatasetCorporateActions({
   return (
     <div className="grid min-w-0 gap-3" aria-busy={collect.isPending}>
       <CorporateActionEvidencePanel
+        returnMode="evidence_only"
         evidence={selected.corporate_action_evidence}
         locale={locale}
       />

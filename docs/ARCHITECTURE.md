@@ -92,6 +92,14 @@ does not prove that no corporate actions occurred. Neither attaching these facts
 nor finding zero matching events models dividend receivables, payment cash,
 bonus-share availability, taxes or total return.
 
+An explicit cash-only gross research replay may consume implemented distributions
+from that binding. Portfolio owns dividend receivables, recognized gross income
+and their transfer into cash; the backtest schedules record-date entitlements,
+ex-date recognition and payment without creating trade fills or real-account
+ledger entries. Account-specific withholding, payment rounding, share distributions
+and complete source coverage remain separate unverified claims. Ex-date orders
+are blocked when their authoritative price-limit reference is unavailable.
+
 Both receipt-bound automated research and formal Dataset research retain this
 exploratory return boundary. Their reports can replay and research can continue,
 but a new qualification or publication cannot treat their raw-price return as

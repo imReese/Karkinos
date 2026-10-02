@@ -14,6 +14,8 @@ import {
   RunReadinessSummary,
 } from './backtest-page-primitives';
 import { ResearchDatasetPanel } from './research-dataset-panel';
+import { CashDividendModeControl } from './cash-dividend-mode-control';
+import { cashDividendCopy } from '../copy-cash-dividends';
 import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { StrategyCatalogPanel } from './strategy-catalog-panel';
@@ -27,6 +29,8 @@ export function BacktestRunSetupPanel() {
     endDate,
     datasetPreparing,
     selectedDataset,
+    corporateActionMode,
+    locale,
     formError,
     handoffLabels,
     initialCash,
@@ -283,6 +287,7 @@ export function BacktestRunSetupPanel() {
               </div>
 
               <ResearchDatasetPanel />
+              <CashDividendModeControl />
 
               <RunReadinessSummary
                 assetClassLabel={selectedAssetClassLabel}
@@ -323,6 +328,11 @@ export function BacktestRunSetupPanel() {
               title={labels.advancedToolsTitle}
             >
               <ParameterSweepPanel
+                disabledReason={
+                  corporateActionMode === 'cash_dividends_gross'
+                    ? cashDividendCopy[locale].advancedDisabled
+                    : undefined
+                }
                 startDate={startDate}
                 endDate={endDate}
                 initialCash={initialCash}
@@ -333,6 +343,11 @@ export function BacktestRunSetupPanel() {
                 datasetId={selectedDataset?.dataset_id}
               />
               <ParameterComparePanel
+                disabledReason={
+                  corporateActionMode === 'cash_dividends_gross'
+                    ? cashDividendCopy[locale].advancedDisabled
+                    : undefined
+                }
                 startDate={startDate}
                 endDate={endDate}
                 initialCash={initialCash}
