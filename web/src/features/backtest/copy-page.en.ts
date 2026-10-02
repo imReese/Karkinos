@@ -5,6 +5,7 @@ export const backtestPageEn = {
     'Run a controlled historical simulation, then inspect risk, costs, equity path, and fill coverage.',
   formKicker: 'Run setup',
   formTitle: 'Backtest configuration',
+  nextRunConfiguration: 'Next run configuration',
   formDetail:
     'Choose an explicit asset list, or leave it blank to use the saved research universe.',
   decisionHandoffKicker: 'Decision handoff',

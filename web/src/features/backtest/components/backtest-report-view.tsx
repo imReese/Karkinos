@@ -2,6 +2,7 @@ import { ChevronDown } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
+import { formatStrategyDisplayName } from '../../../shared/strategy-display';
 import {
   EvidenceState,
   MetricStrip,
@@ -38,6 +39,10 @@ function ResultSelector({
   const labels = copy.backtest.selection;
   const pageLabels = copy.backtest.page;
   const metricLabels = copy.backtest.metrics;
+  const [focusedId, setFocusedId] = useState<number | null>(null);
+  const tabStopId = results.some((result) => result.id === focusedId)
+    ? focusedId
+    : (selectedId ?? results[0]?.id);
 
   return (
     <section className="min-w-0" data-testid="backtest-run-registry">
@@ -62,7 +67,13 @@ function ResultSelector({
       >
         <div
           aria-label={labels.ariaLabel}
+          aria-orientation="vertical"
           className="min-w-[760px]"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              setFocusedId(null);
+            }
+          }}
           role="listbox"
         >
           <div
@@ -77,7 +88,7 @@ function ResultSelector({
             <span className="text-right">{labels.created}</span>
           </div>
           <div className="divide-y divide-[var(--app-divider)]">
-            {results.map((result) => {
+            {results.map((result, index) => {
               const selected = result.id === selectedId;
               const returnClass =
                 result.total_return > 0
@@ -88,7 +99,7 @@ function ResultSelector({
               return (
                 <button
                   aria-selected={selected}
-                  className={`grid min-h-10 w-full grid-cols-[72px_minmax(160px,1fr)_96px_84px_96px_160px] items-center gap-3 px-2 text-left text-xs tabular-nums transition-colors ${
+                  className={`grid min-h-10 w-full grid-cols-[72px_minmax(160px,1fr)_96px_84px_96px_160px] items-center gap-3 px-2 text-left text-xs tabular-nums transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
                     selected
                       ? 'bg-[var(--app-accent-bg)]'
                       : 'hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_50%,transparent)]'
@@ -97,7 +108,26 @@ function ResultSelector({
                   data-testid="backtest-run-registry-row"
                   key={result.id}
                   onClick={() => onSelect(result.id)}
+                  onFocus={() => setFocusedId(result.id)}
+                  onKeyDown={(event) => {
+                    const targetIndex =
+                      event.key === 'ArrowDown'
+                        ? Math.min(index + 1, results.length - 1)
+                        : event.key === 'ArrowUp'
+                          ? Math.max(index - 1, 0)
+                          : event.key === 'Home'
+                            ? 0
+                            : event.key === 'End'
+                              ? results.length - 1
+                              : null;
+                    if (targetIndex === null) return;
+                    event.preventDefault();
+                    event.currentTarget.parentElement
+                      ?.querySelectorAll<HTMLButtonElement>('[role="option"]')
+                      [targetIndex]?.focus();
+                  }}
                   role="option"
+                  tabIndex={result.id === tabStopId ? 0 : -1}
                   type="button"
                 >
                   <span className="font-mono font-semibold text-[var(--app-text)]">
@@ -259,6 +289,50 @@ export function BacktestReportView() {
         selectedId={selectedId}
         onSelect={setSelectedId}
       />
+
+      {selectedSummary ? (
+        <section
+          aria-label={labels.selection.selectedReport}
+          className="border-b border-[var(--app-divider)] pb-3"
+          data-testid="backtest-selected-report-context"
+        >
+          <h3 className="text-sm font-semibold text-[var(--app-text)]">
+            {labels.selection.selectedReport} #{selectedSummary.id}
+          </h3>
+          <dl className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+            <div className="flex min-w-0 gap-2">
+              <dt className="shrink-0 text-[var(--app-text-tertiary)]">
+                {labels.page.strategy}
+              </dt>
+              <dd className="min-w-0 break-words text-[var(--app-text)]">
+                {formatStrategyDisplayName(
+                  {
+                    name:
+                      report.data?.config.strategy ?? selectedSummary.strategy,
+                  },
+                  labels.page.strategyNames,
+                )}
+              </dd>
+            </div>
+            {report.data ? (
+              <div className="flex min-w-0 gap-2">
+                <dt className="shrink-0 text-[var(--app-text-tertiary)]">
+                  {labels.page.runContextInstrument}
+                </dt>
+                <dd className="min-w-0 break-words font-mono text-[var(--app-text)]">
+                  {(report.data.config.assets?.length
+                    ? report.data.config.assets
+                    : report.data.metrics_json?.dataset_snapshot
+                        ?.symbol_universe
+                  )
+                    ?.map((asset) => asset.symbol)
+                    .join(', ') || labels.page.notDeclared}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        </section>
+      ) : null}
 
       {selectedSummary && !report.data ? (
         <MetricStrip

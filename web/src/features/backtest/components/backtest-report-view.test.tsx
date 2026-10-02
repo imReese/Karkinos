@@ -1,5 +1,7 @@
+import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
@@ -22,6 +24,16 @@ function jsonResponse(body: unknown) {
 }
 
 function renderReportView() {
+  window.localStorage.setItem('karkinos.locale', 'en');
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((query: string) => ({
+      addEventListener: vi.fn(),
+      matches: false,
+      media: query,
+      removeEventListener: vi.fn(),
+    })),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -40,16 +52,6 @@ afterEach(() => {
 });
 
 test('preserves the report structure while persisted evidence is loading', async () => {
-  window.localStorage.setItem('karkinos.locale', 'en');
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn().mockImplementation((query: string) => ({
-      addEventListener: vi.fn(),
-      matches: false,
-      media: query,
-      removeEventListener: vi.fn(),
-    })),
-  );
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
@@ -84,4 +86,57 @@ test('preserves the report structure while persisted evidence is loading', async
     screen.getByTestId('backtest-report-skeleton-disclosures').children,
   ).toHaveLength(4);
   expect(skeleton.className).not.toContain('animate-pulse');
+});
+
+test('moves listbox focus with arrows and selects a run with Enter or Space', async () => {
+  const user = userEvent.setup();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith('/api/backtest/results')) {
+        return jsonResponse([
+          summary,
+          { ...summary, id: 8 },
+          { ...summary, id: 9 },
+        ]);
+      }
+      return new Promise<Response>(() => undefined);
+    }),
+  );
+  renderReportView();
+  const options = await screen.findAllByRole('option');
+  const selectedContext = screen.getByTestId(
+    'backtest-selected-report-context',
+  );
+
+  await user.tab();
+  expect(options[0]).toHaveFocus();
+  await user.keyboard('{ArrowUp}');
+  expect(options[0]).toHaveFocus();
+  await user.keyboard('{ArrowDown}');
+  expect(options[1]).toHaveFocus();
+  expect(options[0]).toHaveAttribute('aria-selected', 'true');
+  expect(options.filter((option) => option.tabIndex === 0)).toEqual([
+    options[1],
+  ]);
+  expect(selectedContext).toHaveTextContent('Selected report #7');
+
+  await user.keyboard('{Enter}');
+  expect(options[1]).toHaveAttribute('aria-selected', 'true');
+  expect(selectedContext).toHaveTextContent('Selected report #8');
+  await user.keyboard('{End}{ArrowDown}');
+  expect(options[2]).toHaveFocus();
+  await user.keyboard(' ');
+  expect(options[2]).toHaveAttribute('aria-selected', 'true');
+  expect(selectedContext).toHaveTextContent('Selected report #9');
+
+  await user.keyboard('{Home}');
+  expect(options[0]).toHaveFocus();
+  await user.tab();
+  expect(options.every((option) => document.activeElement !== option)).toBe(
+    true,
+  );
+  await user.tab({ shift: true });
+  expect(options[2]).toHaveFocus();
 });

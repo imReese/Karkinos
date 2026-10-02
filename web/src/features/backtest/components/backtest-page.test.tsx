@@ -1348,6 +1348,36 @@ test('renders the backtest workspace and saved report history', async () => {
   );
 });
 
+test('keeps the saved report context separate from the next run configuration', async () => {
+  renderBacktestPage({
+    results: [{ ...savedSummary, strategy: 'bollinger' }],
+    savedBacktestReport: {
+      ...savedReport,
+      config: { ...savedReport.config, strategy: 'bollinger' },
+    },
+  });
+
+  const reportContext = await screen.findByTestId(
+    'backtest-selected-report-context',
+  );
+  expect(await within(reportContext).findByText('600519')).toBeTruthy();
+  expect(within(reportContext).getByText('Selected report #1')).toBeTruthy();
+  expect(
+    within(reportContext).getByText('Bollinger Mean Reversion'),
+  ).toBeTruthy();
+  const draftContext = screen.getByRole('region', {
+    name: 'Next run configuration',
+  });
+  expect(within(draftContext).getByText('Dual Moving Average')).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText('Symbol'), {
+    target: { value: '600000' },
+  });
+  expect(within(draftContext).getByText('600000')).toBeTruthy();
+  expect(within(reportContext).getByText('600519')).toBeTruthy();
+  expect(within(reportContext).queryByText('600000')).toBeNull();
+});
+
 test('keeps setup and current results in one primary workspace with mobile tabs', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
@@ -1358,7 +1388,7 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   const results = screen.getByTestId('backtest-result-panel');
   const tabs = screen.getByTestId('backtest-mobile-workspace-tabs');
   const contextMetrics = screen
-    .getAllByLabelText('Strategy replay')
+    .getAllByLabelText('Next run configuration')
     .find((element) => element.tagName === 'DL');
 
   expect(setup).toBeTruthy();
@@ -2663,7 +2693,11 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   const dateRange = await screen.findByText('2025-01-02 -> 2026-05-15');
   expect(dateRange.className).toContain('[overflow-wrap:anywhere]');
   expect(dateRange.className).not.toContain('truncate');
-  expect(await screen.findByText('600519')).toBeTruthy();
+  expect(
+    await within(screen.getByTestId('backtest-dataset-disclosure')).findByText(
+      '600519',
+    ),
+  ).toBeTruthy();
   expect(await screen.findByText('260 rows')).toBeTruthy();
   expect(await screen.findByText('qfq')).toBeTruthy();
 });

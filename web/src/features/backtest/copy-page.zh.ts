@@ -4,6 +4,7 @@ export const backtestPageZh = {
   subtitle: '运行受控历史模拟，并查看风险、成本、净值路径与成交覆盖。',
   formKicker: '运行设置',
   formTitle: '回测配置',
+  nextRunConfiguration: '下一次运行配置',
   formDetail: '可明确填写资产列表；留空时使用已保存的研究资产池。',
   decisionHandoffKicker: '决策交接',
   decisionHandoffTitle: '来自决策候选动作',

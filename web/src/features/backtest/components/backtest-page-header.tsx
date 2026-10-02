@@ -1,4 +1,3 @@
-import { formatCurrency, formatPercent } from '../../../shared/format';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import { formatStrategyDisplayName as strategyDisplayName } from '../../../shared/strategy-display';
 import { MetricStrip, WorkspaceHeader } from '../../../shared/ui/workbench';
@@ -18,7 +17,6 @@ export function BacktestPageHeader() {
     selectedStrategy,
     setMobileWorkspaceTouched,
     setMobileWorkspaceView,
-    summary,
     symbol,
   } = useBacktestPage();
   return (
@@ -30,59 +28,58 @@ export function BacktestPageHeader() {
         context={labels.decisionHandoffResearchOnly}
       />
 
-      <MetricStrip
-        ariaLabel={labels.title}
-        className="app-backtest-context-strip app-backtest-evidence-strip app-horizontal-scroll-cue"
-        items={[
-          {
-            id: 'strategy',
-            label: labels.strategy,
-            value: strategyDisplayName(selectedStrategy, labels.strategyNames),
-            detail: strategySourceDisplayName(selectedStrategy, labels),
-          },
-          {
-            id: 'instrument',
-            label: labels.symbol,
-            value: symbol || labels.notDeclared,
-            detail: selectedAssetClassLabel,
-          },
-          {
-            id: 'parameters',
-            label: labels.formKicker,
-            value: parameterSchema.length,
-            detail: labels.runReadinessDatasetPending,
-          },
-          {
-            id: 'latest-result',
-            label: labels.currentKicker,
-            value: summary
-              ? formatPercent(summary.returnValue)
-              : labels.notDeclared,
-            detail: summary
-              ? `${labels.totalCost}: ${formatCurrency(summary.cost)}`
-              : labels.emptyCurrent,
-          },
-          {
-            id: 'promotion-readiness',
-            label: labels.promotionReadiness,
-            value: readiness.isLoading
-              ? copy.shell.checking
-              : selectedReadiness
-                ? formatPublicStatus(selectedReadiness.promotion_status, locale)
-                : labels.notDeclared,
-            detail: selectedReadiness
-              ? labels.promotionRequirementsCount(
-                  selectedReadiness.missing_requirements.length,
-                )
-              : labels.promotionEvidenceUnavailable,
-            tone: selectedReadiness
-              ? selectedReadiness.is_promotable
-                ? 'neutral'
-                : 'warning'
-              : 'neutral',
-          },
-        ]}
-      />
+      <section aria-label={labels.nextRunConfiguration} className="min-w-0">
+        <h2 className="app-kicker mb-2">{labels.nextRunConfiguration}</h2>
+        <MetricStrip
+          ariaLabel={labels.nextRunConfiguration}
+          className="app-backtest-context-strip app-backtest-evidence-strip app-horizontal-scroll-cue"
+          items={[
+            {
+              id: 'strategy',
+              label: labels.strategy,
+              value: strategyDisplayName(
+                selectedStrategy,
+                labels.strategyNames,
+              ),
+              detail: strategySourceDisplayName(selectedStrategy, labels),
+            },
+            {
+              id: 'instrument',
+              label: labels.symbol,
+              value: symbol || labels.notDeclared,
+              detail: selectedAssetClassLabel,
+            },
+            {
+              id: 'parameters',
+              label: labels.formKicker,
+              value: parameterSchema.length,
+              detail: labels.runReadinessDatasetPending,
+            },
+            {
+              id: 'promotion-readiness',
+              label: labels.promotionReadiness,
+              value: readiness.isLoading
+                ? copy.shell.checking
+                : selectedReadiness
+                  ? formatPublicStatus(
+                      selectedReadiness.promotion_status,
+                      locale,
+                    )
+                  : labels.notDeclared,
+              detail: selectedReadiness
+                ? labels.promotionRequirementsCount(
+                    selectedReadiness.missing_requirements.length,
+                  )
+                : labels.promotionEvidenceUnavailable,
+              tone: selectedReadiness
+                ? selectedReadiness.is_promotable
+                  ? 'neutral'
+                  : 'warning'
+                : 'neutral',
+            },
+          ]}
+        />
+      </section>
 
       <div
         aria-label={labels.title}
