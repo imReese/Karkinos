@@ -194,3 +194,109 @@ def test_formula_evaluation_uses_only_current_and_prior_rows() -> None:
     assert entry.tolist() == [False, False, False, True, False]
     assert exit_signal.tolist() == [False, False, True, False, False]
     assert math.isclose(weight, 0.4)
+
+
+@pytest.mark.parametrize(
+    ("operator", "comparison", "expected"),
+    [
+        ("rolling_max", "gt", [False, False, False, True, False]),
+        ("rolling_min", "lt", [False, False, False, False, True]),
+    ],
+)
+def test_trailing_extrema_breakouts_use_a_complete_lagged_window(
+    operator: str, comparison: str, expected: list[bool]
+) -> None:
+    frame = pd.DataFrame({"close": [10.0, 12.0, 11.0, 15.0, 9.0]})
+    ast = _formula()
+    ast["entry"] = {
+        "op": comparison,
+        "left": {"op": "field", "name": "close"},
+        "right": {
+            "op": "lag",
+            "input": {
+                "op": operator,
+                "input": {"op": "field", "name": "close"},
+                "window": 2,
+            },
+            "period": 1,
+        },
+    }
+    entry, _, _ = evaluate_formula(ast, frame, universe_size=1)
+    assert entry.tolist() == expected
+    for end in range(1, len(frame)):
+        prefix, _, _ = evaluate_formula(ast, frame.iloc[:end], universe_size=1)
+        pd.testing.assert_series_equal(prefix, entry.iloc[:end])
+
+
+@pytest.mark.parametrize(
+    ("period", "expected"),
+    [
+        (1, [False, True, False, True, False]),
+        (2, [False, False, False, True, True]),
+    ],
+)
+def test_roc_uses_percentage_units_and_prior_rows(
+    period: int, expected: list[bool]
+) -> None:
+    frame = pd.DataFrame({"close": [10.0, 12.0, 11.0, 15.0, 13.0]})
+    ast = _formula()
+    ast["entry"] = {
+        "op": "gt",
+        "left": {
+            "op": "roc",
+            "input": {"op": "field", "name": "close"},
+            "period": period,
+        },
+        "right": {"op": "constant", "value": 15.0},
+    }
+    ast["exit"] = {"op": "constant", "value": 0}
+    entry, _, _ = evaluate_formula(ast, frame, universe_size=1)
+    assert entry.tolist() == expected
+    ast["entry"]["left"]["op"] = "return"
+    ast["entry"]["right"]["value"] = 0.15
+    fractional_entry, _, _ = evaluate_formula(ast, frame, universe_size=1)
+    pd.testing.assert_series_equal(entry, fractional_entry)
+    ast["entry"]["left"]["op"] = "roc"
+    ast["entry"]["right"]["value"] = 15.0
+    for end in range(1, len(frame)):
+        prefix, _, _ = evaluate_formula(ast, frame.iloc[:end], universe_size=1)
+        pd.testing.assert_series_equal(prefix, entry.iloc[:end])
+
+
+def test_roc_does_not_fill_gaps_or_emit_a_signal_for_undefined_changes() -> None:
+    frame = pd.DataFrame({"close": [10.0, float("nan"), 12.0, 0.0, 5.0, 10.0, 1e308]})
+    ast = _formula()
+    ast["entry"] = {
+        "op": "gt",
+        "left": {
+            "op": "roc",
+            "input": {"op": "field", "name": "close"},
+            "period": 1,
+        },
+        "right": {"op": "constant", "value": 15.0},
+    }
+    entry, _, _ = evaluate_formula(ast, frame, universe_size=1)
+    assert entry.tolist() == [False, False, False, False, False, True, False]
+
+
+@pytest.mark.parametrize(
+    ("operator", "bound", "value", "code"),
+    [
+        ("rolling_max", "window", 1, "window_out_of_bounds"),
+        ("rolling_min", "window", 253, "window_out_of_bounds"),
+        ("roc", "period", -1, "future_or_invalid_period"),
+        ("roc", "period", 253, "period_out_of_bounds"),
+    ],
+)
+def test_extended_operators_reject_unbounded_or_future_history(
+    operator: str, bound: str, value: int, code: str
+) -> None:
+    ast = _formula()
+    ast["entry"] = {
+        "op": operator,
+        "input": {"op": "field", "name": "close"},
+        bound: value,
+    }
+    with pytest.raises(FormulaValidationError) as exc_info:
+        validate_formula_ast(ast, universe_size=1)
+    assert exc_info.value.code == code

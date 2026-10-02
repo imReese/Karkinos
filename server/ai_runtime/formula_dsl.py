@@ -34,9 +34,18 @@ _REVIEWED_ACCOUNT_COST_MODEL_REFERENCE = re.compile(
 
 _FIELDS = frozenset({"open", "high", "low", "close", "volume"})
 _WINDOW_OPERATORS = frozenset(
-    {"rolling_mean", "rolling_std", "zscore", "ema", "rsi", "atr"}
+    {
+        "rolling_mean",
+        "rolling_std",
+        "rolling_max",
+        "rolling_min",
+        "zscore",
+        "ema",
+        "rsi",
+        "atr",
+    }
 )
-_PERIOD_OPERATORS = frozenset({"lag", "delta", "return"})
+_PERIOD_OPERATORS = frozenset({"lag", "delta", "return", "roc"})
 _BINARY_OPERATORS = frozenset(
     {
         "add",
@@ -54,7 +63,7 @@ _BINARY_OPERATORS = frozenset(
     }
 )
 _UNARY_OPERATORS = frozenset({"not"})
-_UNSUPPORTED_REVIEWED_OPERATORS = frozenset({"rank", "roc", "volatility_target"})
+_UNSUPPORTED_REVIEWED_OPERATORS = frozenset({"rank", "volatility_target"})
 _MAX_WINDOW = 252
 _MAX_DEPTH = 32
 
@@ -169,19 +178,18 @@ def formula_operator_catalog() -> JsonObject:
         ),
         "reviewed_but_unsupported": {
             "rank": "cross-sectional timestamp alignment is not yet exposed by the canonical engine adapter",
-            "roc": "no canonical feature implementation is registered",
             "volatility_target": "canonical portfolio sizing does not expose this as a research-only input",
         },
         "expression_shapes": {
             "field": {"op": "field", "name": "open|high|low|close|volume"},
             "constant": {"op": "constant", "value": "finite number"},
             "period_operator": {
-                "op": "lag|delta|return",
+                "op": "lag|delta|return|roc",
                 "input": "expression",
                 "period": "integer 1..252",
             },
             "window_operator": {
-                "op": "rolling_mean|rolling_std|zscore|ema|rsi",
+                "op": "rolling_mean|rolling_std|rolling_max|rolling_min|zscore|ema|rsi",
                 "input": "expression",
                 "window": "integer 2..252",
             },
@@ -200,6 +208,12 @@ def formula_operator_catalog() -> JsonObject:
             },
         },
         "window_bounds": {"minimum": 2, "maximum": _MAX_WINDOW},
+        "operator_semantics": {
+            "return": "fractional change: current / lagged - 1",
+            "roc": "percentage change: 100 * (current / lagged - 1); undefined changes are missing",
+            "rolling_max": "maximum of the complete trailing window, including the current bar",
+            "rolling_min": "minimum of the complete trailing window, including the current bar",
+        },
         "signal_timing": (
             "expressions observe completed bars; target changes execute on the next "
             "available persisted bar"
@@ -356,6 +370,10 @@ def _evaluate_expression(value: Mapping[str, Any], frame: pd.DataFrame) -> pd.Se
             return item.shift(period)
         if op == "delta":
             return item.diff(period)
+        if op == "roc":
+            return (item.pct_change(period, fill_method=None) * 100.0).replace(
+                [float("inf"), float("-inf")], float("nan")
+            )
         return item.pct_change(period, fill_method=None)
     if op in _WINDOW_OPERATORS:
         window = int(value["window"])
@@ -367,6 +385,10 @@ def _evaluate_expression(value: Mapping[str, Any], frame: pd.DataFrame) -> pd.Se
             return FeatureEngine.sma(scratch, column="value", period=window)
         if op == "rolling_std":
             return item.rolling(window=window).std()
+        if op == "rolling_max":
+            return item.rolling(window=window).max()
+        if op == "rolling_min":
+            return item.rolling(window=window).min()
         if op == "zscore":
             mean = item.rolling(window=window).mean()
             std = item.rolling(window=window).std()
