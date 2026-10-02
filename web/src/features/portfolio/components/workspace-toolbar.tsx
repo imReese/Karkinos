@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import { FilterBar, WorkbenchSelect } from '../../../shared/ui/workbench';
@@ -8,6 +9,7 @@ type PnlFilter = 'all' | 'winners' | 'losers';
 export type QuoteFilter = 'all' | 'healthy' | 'review';
 export type EvidenceFilter = 'all' | 'review' | 'clear';
 export type PositionSort =
+  | 'default'
   | 'market_value'
   | 'weight'
   | 'today_change_pct'
@@ -31,7 +33,8 @@ export function WorkspaceToolbar({
   onQuoteFilterChange,
   evidenceFilter = 'all',
   onEvidenceFilterChange,
-  sortBy = 'market_value',
+  sortBy = 'default',
+  sortDirection = 'desc',
   onSortByChange,
   summary,
 }: {
@@ -47,7 +50,8 @@ export function WorkspaceToolbar({
   evidenceFilter?: EvidenceFilter;
   onEvidenceFilterChange?: (value: EvidenceFilter) => void;
   sortBy?: PositionSort;
-  onSortByChange?: (value: PositionSort) => void;
+  sortDirection?: 'asc' | 'desc';
+  onSortByChange?: (value: PositionSort, direction?: 'asc' | 'desc') => void;
   summary?: string;
 }) {
   const copy = useCopy();
@@ -56,7 +60,7 @@ export function WorkspaceToolbar({
   const activeSecondaryFilterCount = [
     quoteFilter !== 'all',
     evidenceFilter !== 'all',
-    sortBy !== 'market_value',
+    sortBy !== 'default',
   ].filter(Boolean).length;
   const moreFiltersLabel = showMoreFilters
     ? labels.hideMoreFilters
@@ -156,27 +160,51 @@ export function WorkspaceToolbar({
               ]}
             />
 
-            <ToolbarSelect
-              aria-label={labels.sortBy}
-              value={sortBy}
-              onChange={(value) => onSortByChange?.(value as PositionSort)}
-              options={[
-                { value: 'market_value', label: labels.sortMarketValue },
-                { value: 'weight', label: labels.sortWeight },
-                { value: 'today_change_pct', label: labels.sortTodayPct },
-                { value: 'today_change', label: labels.sortTodayPnl },
-                {
-                  value: 'unrealized_pnl',
-                  label: labels.sortUnrealizedPnl,
-                },
-                {
-                  value: 'unrealized_pnl_pct',
-                  label: labels.sortUnrealizedPnlPct,
-                },
-                { value: 'realized_pnl', label: labels.sortRealizedPnl },
-                { value: 'symbol', label: labels.sortSymbol },
-              ]}
-            />
+            <div className="flex items-center gap-2 md:hidden">
+              <ToolbarSelect
+                aria-label={labels.sortBy}
+                value={sortBy}
+                onChange={(value) => onSortByChange?.(value as PositionSort)}
+                options={[
+                  { value: 'default', label: labels.sortDefault },
+                  { value: 'market_value', label: labels.sortMarketValue },
+                  { value: 'weight', label: labels.sortWeight },
+                  { value: 'today_change_pct', label: labels.sortTodayPct },
+                  { value: 'today_change', label: labels.sortTodayPnl },
+                  {
+                    value: 'unrealized_pnl',
+                    label: labels.sortUnrealizedPnl,
+                  },
+                  {
+                    value: 'unrealized_pnl_pct',
+                    label: labels.sortUnrealizedPnlPct,
+                  },
+                  { value: 'realized_pnl', label: labels.sortRealizedPnl },
+                  { value: 'symbol', label: labels.sortSymbol },
+                ]}
+              />
+              <button
+                type="button"
+                disabled={sortBy === 'default'}
+                aria-label={`${labels.sortBy}: ${sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}`}
+                onClick={() =>
+                  onSortByChange?.(
+                    sortBy,
+                    sortDirection === 'desc' ? 'asc' : 'desc',
+                  )
+                }
+                className="app-button-secondary inline-flex h-10 items-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 text-xs disabled:opacity-40 sm:h-8"
+              >
+                {sortDirection === 'asc' ? (
+                  <ArrowUp size={12} aria-hidden="true" />
+                ) : (
+                  <ArrowDown size={12} aria-hidden="true" />
+                )}
+                {sortDirection === 'asc'
+                  ? labels.sortAscending
+                  : labels.sortDescending}
+              </button>
+            </div>
           </div>
         </div>
       </div>

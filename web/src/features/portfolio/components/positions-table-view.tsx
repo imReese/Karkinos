@@ -13,6 +13,17 @@ import type { Locale } from '../../../shared/preferences/context';
 
 type PortfolioCopy = ReturnType<typeof useCopy>;
 
+const sortColumnIds: Record<string, string> = {
+  symbol: 'symbol',
+  market_value: 'market-value',
+  weight: 'weight',
+  today_change: 'today-change',
+  today_change_pct: 'today-change',
+  unrealized_pnl: 'unrealized',
+  unrealized_pnl_pct: 'unrealized',
+  realized_pnl: 'realized',
+};
+
 export function PositionsTableView({
   columns,
   copy,
@@ -45,6 +56,16 @@ export function PositionsTableView({
             }`
           }
           rowHref={(position) => holdingDetailHref(position.symbol)}
+          sorting={
+            model.sortKey && sortColumnIds[model.sortKey]
+              ? [
+                  {
+                    id: sortColumnIds[model.sortKey],
+                    desc: model.sortDirection === 'desc',
+                  },
+                ]
+              : []
+          }
           rowTestId={(position) => `position-row-${position.symbol}`}
           scrollTestId="positions-table-scroll"
           tableTestId="positions-table-desktop"

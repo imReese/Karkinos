@@ -7,6 +7,7 @@ export const portfolioEnCopy = {
   positionsError: 'Failed to load positions.',
   positionsEmpty: 'No holdings yet. Add trades from Activity first.',
   filterEmpty: 'No holdings match the current filters.',
+  clearFilters: 'Clear filters',
   currentHoldingsCount: (count: number) => `${count} open holdings`,
   filteredHoldingsCount: (count: number) => `${count} shown`,
   summary: {
@@ -78,6 +79,9 @@ export const portfolioEnCopy = {
     hideMoreFilters: 'Hide filters',
     activeFilters: (count: number) =>
       `${count} active filter${count === 1 ? '' : 's'}`,
+    sortDefault: 'Default order',
+    sortAscending: 'Ascending',
+    sortDescending: 'Descending',
     sortMarketValue: 'Market value',
     sortWeight: 'Portfolio weight',
     sortTodayPct: 'Day’s change %',

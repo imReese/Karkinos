@@ -27,6 +27,7 @@ export type PortfolioPageState = {
   quoteFilter: QuoteFilter;
   evidenceFilter: EvidenceFilter;
   sortBy: PositionSort;
+  sortDirection: 'asc' | 'desc';
 };
 
 export type PortfolioPageModelSource = {
@@ -65,6 +66,7 @@ export function buildPortfolioPageModel(source: PortfolioPageModelSource) {
     evidenceFilter: state.evidenceFilter,
     evidenceReviewSymbols,
     sortBy: state.sortBy,
+    sortDirection: state.sortDirection,
   });
   const assetClassBySymbol = Object.fromEntries(
     allocation.map((item) => [item.symbol, item.asset_class]),
@@ -142,6 +144,7 @@ export function buildPortfolioPageModel(source: PortfolioPageModelSource) {
 export type PortfolioPageModel = ReturnType<typeof buildPortfolioPageModel>;
 
 export type PortfolioPageActions = {
+  onClearFilters: () => void;
   onAssetClassFilterChange: (value: string) => void;
   onEvidenceFilterChange: (value: EvidenceFilter) => void;
   onModeChange: (value: PortfolioMode) => void;
@@ -153,5 +156,5 @@ export type PortfolioPageActions = {
   onRetrySnapshot: () => void;
   onRetryStrategyContribution: () => void;
   onSearchChange: (value: string) => void;
-  onSortByChange: (value: PositionSort) => void;
+  onSortByChange: (value: PositionSort, direction?: 'asc' | 'desc') => void;
 };

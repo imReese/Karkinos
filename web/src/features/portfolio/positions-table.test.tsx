@@ -369,3 +369,38 @@ test('renders interactive sort buttons when onSort is provided and handles sort 
   fireEvent.click(symbolBtn);
   expect(onSort).toHaveBeenCalledWith('symbol', 'asc');
 });
+
+test('uses the holding link for row clicks without intercepting child keyboard events', () => {
+  const onOpenPosition = vi.fn();
+  renderTable(
+    <PositionsTable
+      positions={[basePosition]}
+      onOpenPosition={onOpenPosition}
+    />,
+  );
+  const row = screen.getByTestId('position-row-600519');
+  const link = within(row).getByRole('link');
+  const value = screen.getByTestId('position-market-value-600519');
+  fireEvent.click(value);
+  expect(onOpenPosition).toHaveBeenCalledTimes(1);
+  expect(onOpenPosition).toHaveBeenLastCalledWith('600519');
+
+  const openWindow = vi.spyOn(window, 'open').mockReturnValue(null);
+  fireEvent.click(value, { metaKey: true });
+  expect(openWindow).toHaveBeenLastCalledWith(
+    '/portfolio/600519',
+    '_blank',
+    'noopener,noreferrer',
+  );
+  fireEvent(value, new MouseEvent('auxclick', { button: 1, bubbles: true }));
+  expect(openWindow).toHaveBeenCalledTimes(2);
+  expect(onOpenPosition).toHaveBeenCalledTimes(1);
+  openWindow.mockRestore();
+
+  expect(fireEvent.keyDown(link, { key: 'Enter' })).toBe(true);
+  expect(fireEvent.keyDown(link, { key: ' ' })).toBe(true);
+  expect(onOpenPosition).toHaveBeenCalledTimes(1);
+  expect(row.hasAttribute('tabindex')).toBe(false);
+  fireEvent.click(link);
+  expect(onOpenPosition).toHaveBeenCalledTimes(2);
+});

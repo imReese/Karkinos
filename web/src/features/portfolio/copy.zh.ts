@@ -6,6 +6,7 @@ export const portfolioZhCopy = {
   positionsError: '持仓明细加载失败。',
   positionsEmpty: '当前还没有持仓，可先前往【账本】录入交易记录。',
   filterEmpty: '当前筛选条件下没有匹配的持仓。',
+  clearFilters: '清除筛选',
   currentHoldingsCount: (count: number) => `当前持仓 ${count} 项`,
   filteredHoldingsCount: (count: number) => `筛选后展示 ${count} 项`,
   summary: {
@@ -72,6 +73,9 @@ export const portfolioZhCopy = {
     showMoreFilters: '更多筛选',
     hideMoreFilters: '收起筛选',
     activeFilters: (count: number) => `${count} 个筛选生效`,
+    sortDefault: '默认顺序',
+    sortAscending: '升序',
+    sortDescending: '降序',
     sortMarketValue: '按市值',
     sortWeight: '按持仓权重',
     sortTodayPct: '按当日涨跌幅',

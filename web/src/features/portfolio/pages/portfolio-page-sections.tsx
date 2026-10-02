@@ -58,6 +58,7 @@ export function PortfolioCurrentHoldingsSection({
         evidenceFilter={state.evidenceFilter}
         onEvidenceFilterChange={actions.onEvidenceFilterChange}
         sortBy={state.sortBy}
+        sortDirection={state.sortDirection}
         onSortByChange={actions.onSortByChange}
         summary={`${copy.portfolio.currentHoldingsCount(
           model.portfolioPositions.length,
@@ -96,14 +97,27 @@ export function PortfolioCurrentHoldingsSection({
               ? copy.portfolio.positionsEmpty
               : copy.portfolio.filterEmpty
           }
+          action={
+            model.portfolioPositions.length > 0 ? (
+              <Button variant="secondary" onClick={actions.onClearFilters}>
+                {copy.portfolio.clearFilters}
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <PositionsTable
           positions={model.filteredPositions}
           assetClassBySymbol={model.assetClassBySymbol}
           weightBySymbol={model.weightBySymbol}
-          sortKey={state.sortBy}
-          onSort={(key) => actions.onSortByChange(key as PositionSort)}
+          sortKey={state.sortBy === 'default' ? undefined : state.sortBy}
+          sortDirection={state.sortDirection}
+          onSort={(key, direction) =>
+            actions.onSortByChange(
+              (key ?? 'default') as PositionSort,
+              direction,
+            )
+          }
           onOpenPosition={actions.onOpenPosition}
         />
       )}

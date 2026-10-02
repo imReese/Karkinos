@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
+import type { MouseEvent } from 'react';
 
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
@@ -23,6 +24,36 @@ import {
 
 type PortfolioCopy = ReturnType<typeof useCopy>;
 
+function nextSortDirection(
+  isActive: boolean,
+  direction: 'asc' | 'desc' | undefined,
+  initialDirection: 'asc' | 'desc' = 'desc',
+) {
+  if (!isActive) return initialDirection;
+  if (direction === initialDirection) {
+    return initialDirection === 'desc' ? 'asc' : 'desc';
+  }
+  return undefined;
+}
+
+function requestSort(
+  event: MouseEvent<HTMLButtonElement>,
+  onSort: NonNullable<PositionsTableModel['onSort']>,
+  key: string,
+  direction: 'asc' | 'desc' | undefined,
+) {
+  const header = event.currentTarget.closest('th');
+  const controlKey = event.currentTarget.dataset.sortControl;
+  onSort(direction ? key : undefined, direction);
+  // Column renderers are replaced when the controlled table state changes.
+  // Keep keyboard focus on the same sorting control after that update.
+  requestAnimationFrame(() => {
+    header
+      ?.querySelector<HTMLButtonElement>(`[data-sort-control="${controlKey}"]`)
+      ?.focus({ preventScroll: true });
+  });
+}
+
 function TableSortHeader({
   label,
   columnKey,
@@ -36,7 +67,7 @@ function TableSortHeader({
   columnKey: string;
   activeKey?: string;
   direction?: 'asc' | 'desc';
-  onSort?: (key: string, direction?: 'asc' | 'desc') => void;
+  onSort?: PositionsTableModel['onSort'];
   align?: 'left' | 'right';
   locale?: Locale;
 }) {
@@ -51,11 +82,7 @@ function TableSortHeader({
   }
   const isActive = activeKey === columnKey;
   const initialDir = columnKey === 'symbol' ? 'asc' : 'desc';
-  const nextDir = isActive
-    ? direction === 'desc'
-      ? 'asc'
-      : 'desc'
-    : initialDir;
+  const nextDir = nextSortDirection(isActive, direction, initialDir);
 
   return (
     <div
@@ -65,10 +92,11 @@ function TableSortHeader({
     >
       <button
         type="button"
-        onClick={() => onSort(columnKey, nextDir)}
-        className={`group/col-hdr inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
+        onClick={(event) => requestSort(event, onSort, columnKey, nextDir)}
+        data-sort-control={columnKey}
+        className={`group/col-hdr inline-flex h-6 items-center gap-1 rounded px-1.5 text-xs font-semibold transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
           isActive
-            ? 'text-[var(--app-accent)] font-semibold'
+            ? 'text-[var(--app-accent)]'
             : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
         }`}
         title={`${label}: ${
@@ -132,7 +160,7 @@ function DualSortHeader({
   amountKey: string;
   activeKey?: string;
   direction?: 'asc' | 'desc';
-  onSort?: (key: string, direction?: 'asc' | 'desc') => void;
+  onSort?: PositionsTableModel['onSort'];
   pctLabel?: string;
   amountLabel?: string;
   pctTooltip?: string;
@@ -145,87 +173,86 @@ function DualSortHeader({
   }
   const isPctActive = activeKey === pctKey;
   const isAmountActive = activeKey === amountKey;
+  const isActive = isPctActive || isAmountActive;
+  const SortIcon = isActive
+    ? direction === 'asc'
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown;
 
   return (
-    <div className="flex items-center justify-end gap-1.5">
-      <button
-        type="button"
-        onClick={() => {
-          const targetKey = isAmountActive ? amountKey : pctKey;
-          const isCurrentActive = isPctActive || isAmountActive;
-          const nextDir =
-            isCurrentActive && direction === 'desc' ? 'asc' : 'desc';
-          onSort(targetKey, nextDir);
-        }}
-        className={`group/col-hdr inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-semibold transition-all hover:bg-[var(--app-surface-overlay)] active:scale-[0.98] ${
-          isPctActive || isAmountActive
-            ? 'text-[var(--app-accent)] font-semibold'
-            : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
-        }`}
-        title={title}
-      >
-        <span>{title}</span>
-        {!(isPctActive || isAmountActive) ? (
-          <ArrowUpDown
+    <div className="flex justify-end">
+      <div className="inline-flex items-center">
+        <button
+          type="button"
+          onClick={(event) => {
+            const targetKey = isAmountActive ? amountKey : pctKey;
+            const nextDir = nextSortDirection(isActive, direction);
+            requestSort(event, onSort, targetKey, nextDir);
+          }}
+          data-sort-control={`${pctKey}-title`}
+          className={`group/col-hdr inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 text-xs font-semibold transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
+            isActive
+              ? 'text-[var(--app-accent)]'
+              : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+          }`}
+          title={title}
+        >
+          <span>{title}</span>
+          <SortIcon
             size={11}
-            strokeWidth={1.8}
-            className="shrink-0 text-[var(--app-text-tertiary)] opacity-40 transition-opacity group-hover/col-hdr:opacity-80"
+            strokeWidth={isActive ? 2.2 : 1.8}
+            className={`shrink-0 ${
+              isActive
+                ? 'text-[var(--app-accent)]'
+                : 'text-[var(--app-text-tertiary)] opacity-40 transition-opacity group-hover/col-hdr:opacity-80'
+            }`}
           />
-        ) : null}
-      </button>
-      <div
-        role="group"
-        aria-label={title}
-        className="inline-flex items-center rounded border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] p-0.5"
-      >
-        <button
-          type="button"
-          onClick={() => {
-            const nextDir =
-              isPctActive && direction === 'desc' ? 'asc' : 'desc';
-            onSort(pctKey, nextDir);
-          }}
-          className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs font-medium transition-all ${
-            isPctActive
-              ? 'bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] text-[var(--app-accent)] font-semibold'
-              : 'text-[var(--app-text-tertiary)] hover:text-[var(--app-text)] hover:bg-[var(--app-surface)]'
-          }`}
-          title={pctTooltip}
-          data-testid={pctTestId}
-        >
-          <span>{pctLabel}</span>
-          {isPctActive ? (
-            direction === 'asc' ? (
-              <ArrowUp size={10} strokeWidth={2.2} />
-            ) : (
-              <ArrowDown size={10} strokeWidth={2.2} />
-            )
-          ) : null}
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            const nextDir =
-              isAmountActive && direction === 'desc' ? 'asc' : 'desc';
-            onSort(amountKey, nextDir);
-          }}
-          className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs font-medium transition-all ${
-            isAmountActive
-              ? 'bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] text-[var(--app-accent)] font-semibold'
-              : 'text-[var(--app-text-tertiary)] hover:text-[var(--app-text)] hover:bg-[var(--app-surface)]'
-          }`}
-          title={amountTooltip}
-          data-testid={amountTestId}
+        <div
+          role="group"
+          aria-label={title}
+          className="ml-0.5 inline-flex shrink-0 items-center"
         >
-          <span>{amountLabel}</span>
-          {isAmountActive ? (
-            direction === 'asc' ? (
-              <ArrowUp size={10} strokeWidth={2.2} />
-            ) : (
-              <ArrowDown size={10} strokeWidth={2.2} />
-            )
-          ) : null}
-        </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              const nextDir = nextSortDirection(isPctActive, direction);
+              requestSort(event, onSort, pctKey, nextDir);
+            }}
+            data-sort-control={pctKey}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs font-semibold underline-offset-4 transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
+              isPctActive
+                ? 'text-[var(--app-accent)] underline decoration-2'
+                : 'text-[var(--app-text-tertiary)] hover:text-[var(--app-text)]'
+            }`}
+            title={pctTooltip}
+            aria-label={pctTooltip}
+            aria-pressed={isPctActive}
+            data-testid={pctTestId}
+          >
+            <span>{pctLabel}</span>
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              const nextDir = nextSortDirection(isAmountActive, direction);
+              requestSort(event, onSort, amountKey, nextDir);
+            }}
+            data-sort-control={amountKey}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs font-semibold underline-offset-4 transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
+              isAmountActive
+                ? 'text-[var(--app-accent)] underline decoration-2'
+                : 'text-[var(--app-text-tertiary)] hover:text-[var(--app-text)]'
+            }`}
+            title={amountTooltip}
+            aria-label={amountTooltip}
+            aria-pressed={isAmountActive}
+            data-testid={amountTestId}
+          >
+            <span>{amountLabel}</span>
+          </button>
+        </div>
       </div>
     </div>
   );
