@@ -2,15 +2,18 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, RotateCcw, X } from 'lucide-react';
 
 import { formatAssetClassLabel } from '../../../shared/asset-class';
-import { formatCurrency } from '../../../shared/format';
+import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import {
   usePreferences,
   type Locale,
 } from '../../../shared/preferences/context';
-import { formatPublicStatus } from '../../../shared/public-labels';
 import { EvidenceState } from '../../../shared/ui/workbench';
 import type { MarketHealthQuote, ResearchBoardItem } from '../api';
+import {
+  formatMarketQuoteLabel,
+  marketQuoteCacheLabel,
+} from '../market-quote-presentation';
 
 export type MarketSortKey =
   'default' | 'symbol' | 'price' | 'change' | 'change_pct' | 'change_amount';
@@ -379,9 +382,8 @@ function WatchlistRow({
   onSelect,
   onRemove,
 }: WatchlistRowProps) {
-  const statusLabel = quote?.quote_status
-    ? formatPublicStatus(quote.quote_status, locale)
-    : labels.unknown;
+  const statusLabel = formatMarketQuoteLabel(quote, locale);
+  const cacheLabel = marketQuoteCacheLabel(quote, locale);
   const statusId = `market-instrument-state-${encodeURIComponent(item.symbol)}`;
   const ageLabel = formatAge(quote?.quote_age_seconds, locale);
   const researchCountLabel = formatResearchCount(item.research_count, locale);
@@ -449,9 +451,15 @@ function WatchlistRow({
             data-testid={`market-instrument-status-${item.symbol}`}
             id={statusId}
           >
-            <span className="block break-words">
+            <span
+              className="block break-words"
+              title={formatTimestamp(quote?.timestamp)}
+            >
               {statusLabel} · {ageLabel}
             </span>
+            {cacheLabel ? (
+              <span className="block break-words">{cacheLabel}</span>
+            ) : null}
             <span className="block break-words">{researchCountLabel}</span>
           </span>
         </span>

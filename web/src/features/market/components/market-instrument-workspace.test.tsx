@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
@@ -131,6 +131,85 @@ const mockHealthQuotes = new Map<string, MarketHealthQuote>([
     },
   ],
 ]);
+
+test.each([
+  {
+    name: 'a stored stock quote with a healthy status and cross-day timestamp',
+    item: mockItems[0],
+    patch: {
+      quote_status: 'live',
+      quote_age_seconds: 29 * 60 * 60,
+      using_persistent_cache: true,
+    } satisfies Partial<MarketHealthQuote>,
+    label: '行情记录',
+    cacheLabel: '缓存记录',
+  },
+  {
+    name: 'published NAV whose freshness status is live',
+    item: mockItems[2],
+    patch: {
+      quote_status: 'live',
+      quote_source: 'tushare_fund_nav',
+      nav_date: '2026-09-10',
+    } satisfies Partial<MarketHealthQuote>,
+    label: '已公布净值',
+    cacheLabel: null,
+  },
+  {
+    name: 'an unconfirmed fund estimate',
+    item: mockItems[2],
+    patch: {
+      quote_status: 'estimated',
+      quote_source: 'eastmoney_fund_estimate',
+    } satisfies Partial<MarketHealthQuote>,
+    label: '估算净值 · 非确认数据',
+    cacheLabel: null,
+  },
+  {
+    name: 'a stale daily quote',
+    item: mockItems[0],
+    patch: { quote_status: 'stale' } satisfies Partial<MarketHealthQuote>,
+    label: '行情记录 · 待更新',
+    cacheLabel: null,
+  },
+])(
+  'presents pricing and storage separately for $name',
+  ({ item, patch, label, cacheLabel }) => {
+    const quote = { ...mockHealthQuotes.get(item.symbol)!, ...patch };
+    renderWorkspace(
+      <MarketInstrumentWorkspace
+        items={[item]}
+        healthBySymbol={new Map([[item.symbol, quote]])}
+        activeSymbol={item.symbol}
+        selectedItem={item}
+        selectedHealthQuote={quote}
+        selectedQuoteNextAction={null}
+        bars={[]}
+        barsLoading={false}
+        barsError={false}
+        onRetryBars={vi.fn()}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    const detail = within(screen.getByTestId('market-selected-instrument'));
+    expect(detail.getByText(label)).toBeInTheDocument();
+    expect(
+      screen.getByTestId(`market-instrument-status-${item.symbol}`),
+    ).toHaveTextContent(label);
+    expect(screen.queryByText('实时行情')).not.toBeInTheDocument();
+    if (cacheLabel) {
+      expect(detail.getByText(cacheLabel)).toBeInTheDocument();
+      expect(detail.queryByText(/待更新|已过期/)).not.toBeInTheDocument();
+    }
+    if (quote.nav_date) {
+      expect(
+        detail.getByText(`净值日期 ${quote.nav_date}`),
+      ).toBeInTheDocument();
+    }
+  },
+);
 
 test('renders sort header and sorts by daily change descending, ascending, and resets to default', () => {
   renderWorkspace(

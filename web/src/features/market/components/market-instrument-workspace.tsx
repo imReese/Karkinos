@@ -17,13 +17,13 @@ import {
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
-import {
-  isConfirmedMarketDataStatus,
-  isUnconfirmedMarketDataStatus,
-} from '../../../shared/market-data-status';
-import { formatPublicStatus } from '../../../shared/public-labels';
+import { isUnconfirmedMarketDataStatus } from '../../../shared/market-data-status';
 import { formatStaleReason } from '../../../shared/stale-reason';
 import type { KlineBar, MarketHealthQuote, ResearchBoardItem } from '../api';
+import {
+  formatMarketQuoteLabel,
+  marketQuoteCacheLabel,
+} from '../market-quote-presentation';
 import {
   PriceStructureChart,
   PriceStructureLoadingState,
@@ -114,10 +114,7 @@ function formatAge(seconds: number | null | undefined, locale: Locale) {
 }
 
 function quoteTone(status: string | null | undefined) {
-  if (isConfirmedMarketDataStatus(status)) {
-    return 'success' as const;
-  }
-  if (isUnconfirmedMarketDataStatus(status)) {
+  if (status !== 'cache' && isUnconfirmedMarketDataStatus(status)) {
     return 'warning' as const;
   }
   return 'neutral' as const;
@@ -249,6 +246,7 @@ export function MarketInstrumentWorkspace({
   const { locale } = usePreferences();
   const labels = copy.market;
   const selectedQuoteStatus = selectedHealthQuote?.quote_status ?? null;
+  const selectedCacheLabel = marketQuoteCacheLabel(selectedHealthQuote, locale);
   const selectedDailyMove = selectedHealthQuote?.daily_change ?? null;
   const selectedQuoteSource = resolveQuoteSourceLabel(
     selectedHealthQuote?.quote_source,
@@ -304,13 +302,20 @@ export function MarketInstrumentWorkspace({
                 </h2>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--app-text-secondary)]">
                   <StatusBadge tone={quoteTone(selectedQuoteStatus)}>
-                    {selectedQuoteStatus
-                      ? formatPublicStatus(selectedQuoteStatus, locale)
-                      : labels.unknown}
+                    {formatMarketQuoteLabel(selectedHealthQuote, locale)}
                   </StatusBadge>
+                  {selectedCacheLabel ? (
+                    <span>{selectedCacheLabel}</span>
+                  ) : null}
                   <span className="tabular-nums">
                     {formatTimestamp(selectedHealthQuote?.timestamp)}
                   </span>
+                  {selectedHealthQuote?.nav_date ? (
+                    <span>
+                      {locale === 'zh' ? '净值日期' : 'NAV date'}{' '}
+                      {selectedHealthQuote.nav_date}
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="shrink-0 text-right">
@@ -391,9 +396,7 @@ export function MarketInstrumentWorkspace({
                     locale,
                   ),
                   detail: formatTimestamp(selectedHealthQuote?.timestamp),
-                  tone: isUnconfirmedMarketDataStatus(selectedQuoteStatus)
-                    ? 'warning'
-                    : 'neutral',
+                  tone: quoteTone(selectedQuoteStatus),
                 },
                 {
                   id: 'research-count',
