@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -23,12 +24,14 @@ from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.manifest import (
     DatasetManifestError,
+    DatasetManifestIntegrityError,
     publish_daily_bar_dataset_manifest,
     read_daily_bar_dataset_manifest,
 )
 from data.dataset.model import DailyBarDatasetSnapshot, DatasetRef
 from data.dataset.reader import (
     DatasetReaderError,
+    DatasetReaderIntegrityError,
     read_daily_bar_dataset,
     read_dataset_corporate_action_evidence,
 )
@@ -37,7 +40,7 @@ from data.dataset.resolver import (
     DailyBarResolutionCandidate,
     resolve_daily_bar_dataset,
 )
-from data.market.capture import read_provider_capture
+from data.market.capture import ProviderCaptureIntegrityError, read_provider_capture
 from data.market.contracts import DailyBarProvider, DailyBarRequest
 from data.market.ingestion import ingest_daily_bars
 from data.market.quality import (
@@ -46,6 +49,7 @@ from data.market.quality import (
     evaluate_daily_bar_revision,
 )
 from data.market.revision import (
+    MarketRevisionIntegrityError,
     MarketRevisionRef,
     read_market_revision,
     read_market_revision_materialization,
@@ -53,7 +57,11 @@ from data.market.revision import (
 from data.market.serving import MarketServingStore
 from data.market.verification_evidence import read_market_verification_evidence
 from data.providers.tdx import TdxRuntimeSettings, prepare_tdx_runtime
-from data.storage.objects import ContentAddressedObjectStore
+from data.storage.objects import (
+    ContentAddressedObjectStore,
+    ObjectIntegrityError,
+    ObjectNotFoundError,
+)
 from server.persistence.jobs import SQLiteJobStore
 from server.services.market_calendar_evidence import validate_verified_market_calendar
 from server.services.verified_daily_market_data import (
@@ -63,6 +71,17 @@ from server.services.verified_daily_market_data import (
     verified_daily_resolver_policy_id,
 )
 from server.services.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
+
+logger = logging.getLogger(__name__)
+
+_CACHE_INTEGRITY_ERRORS = (
+    DatasetManifestIntegrityError,
+    DatasetReaderIntegrityError,
+    MarketRevisionIntegrityError,
+    ProviderCaptureIntegrityError,
+    ObjectIntegrityError,
+    ObjectNotFoundError,
+)
 
 _POLICY = DailyBarDatasetResolverPolicy(
     policy_id="karkinos.dataset.pit.strict.v1",
@@ -122,6 +141,7 @@ def _candidate_from_checkpoint(
     if snapshot.instruments != instruments or len(snapshot.partitions) != 1:
         return None
     require_supported_snapshot(snapshot)
+    read_daily_bar_dataset(store, ref)
     partition = snapshot.partitions[0]
     revision = read_market_revision(
         store, MarketRevisionRef(store.resolve_ref(partition.revision_id))
@@ -137,7 +157,7 @@ def _candidate_from_checkpoint(
         expected_instruments=instruments,
     )
     if quality.status is not MarketQualityStatus.PASS:
-        raise ResearchDatasetError("dataset_checkpoint_invalid")
+        raise DatasetReaderIntegrityError("dataset_checkpoint_invalid")
     return DailyBarResolutionCandidate(revision, materialization, quality)
 
 
@@ -165,9 +185,17 @@ def prepare_daily_dataset(
             for entry in checkpoints.list_daily_bar_datasets(
                 start_date=day, end_date=day, resolver_policy_id=_POLICY.policy_id
             ):
-                candidate = _candidate_from_checkpoint(
-                    store, entry.ref, request.instruments
-                )
+                try:
+                    candidate = _candidate_from_checkpoint(
+                        store, entry.ref, request.instruments
+                    )
+                except _CACHE_INTEGRITY_ERRORS as exc:
+                    logger.warning(
+                        "Skipping unreadable dataset checkpoint dataset=%s error=%s",
+                        entry.ref.dataset_id,
+                        type(exc).__name__,
+                    )
+                    continue
                 if candidate is not None:
                     cached.append(candidate)
         if cached:
@@ -354,10 +382,20 @@ class ResearchDatasetService:
                         or entry.end_date != request.end_date
                     ):
                         continue
-                    snapshot = read_daily_bar_dataset_manifest(store, entry.ref)
-                    if snapshot.instruments == request.instruments:
-                        read_daily_bar_dataset(store, entry.ref)
-                        return {**dataset_summary(self.root, entry.ref), "reused": True}
+                    try:
+                        snapshot = read_daily_bar_dataset_manifest(store, entry.ref)
+                        if snapshot.instruments == request.instruments:
+                            read_daily_bar_dataset(store, entry.ref)
+                            return {
+                                **dataset_summary(self.root, entry.ref),
+                                "reused": True,
+                            }
+                    except _CACHE_INTEGRITY_ERRORS as exc:
+                        logger.warning(
+                            "Skipping unreadable cached dataset dataset=%s error=%s",
+                            entry.ref.dataset_id,
+                            type(exc).__name__,
+                        )
             self._settings.require_credentials()
             dates = _verified_dates(db, request.start_date, request.end_date, config)
             return self._prepare_in_child(request, dates, refresh)
