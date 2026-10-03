@@ -140,22 +140,32 @@ class SQLiteJobStore:
                 jobs.append(_job(row))
             return tuple(jobs)
 
-    def claim(self, kind, owner, *, now, lease_seconds=60):
+    def claim(self, kind, owner, *, now, lease_seconds=60, job_id=None):
         if not owner.strip() or lease_seconds <= 0:
             raise ValueError("job_lease_invalid")
+        if job_id is not None and (
+            not isinstance(job_id, str)
+            or len(job_id) != 64
+            or any(character not in "0123456789abcdef" for character in job_id)
+        ):
+            raise ValueError("job_id_invalid")
+        identity_filter = " AND job_id=?" if job_id is not None else ""
+        identity_values = (job_id,) if job_id is not None else ()
         at = job_time(now)
         with self._transaction() as conn:
             conn.execute(
                 "UPDATE job_runs SET status='failed', error='lease_expired_attempts_exhausted', "
                 "lease_owner=NULL, lease_expires_at=NULL, updated_at=? "
-                "WHERE kind=? AND status='running' AND lease_expires_at<=? AND attempt>=max_attempts",
-                (at, kind, at),
+                "WHERE kind=? AND status='running' AND lease_expires_at<=? AND attempt>=max_attempts"
+                + identity_filter,
+                (at, kind, at, *identity_values),
             )
             row = conn.execute(
                 "SELECT * FROM job_runs WHERE kind=? AND attempt<max_attempts AND "
                 "((status='queued' AND available_at<=?) OR (status='running' AND lease_expires_at<=?)) "
-                "ORDER BY created_at, job_id LIMIT 1",
-                (kind, at, at),
+                + identity_filter
+                + " ORDER BY created_at, job_id LIMIT 1",
+                (kind, at, at, *identity_values),
             ).fetchone()
             if row is None:
                 return None
@@ -211,8 +221,11 @@ class SQLiteJobStore:
         error,
         retry_seconds=60,
         failure_evidence_ref=None,
+        retryable=True,
     ):
         if retry_seconds < 0 or not error:
+            raise ValueError("job_retry_invalid")
+        if not isinstance(retryable, bool):
             raise ValueError("job_retry_invalid")
         if failure_evidence_ref is not None and (
             not isinstance(failure_evidence_ref, str)
@@ -222,10 +235,11 @@ class SQLiteJobStore:
         with self._transaction() as conn:
             require_job_lease(conn, lease, now=now)
             conn.execute(
-                "UPDATE job_runs SET status=CASE WHEN attempt>=max_attempts THEN 'failed' ELSE 'queued' END, "
+                "UPDATE job_runs SET status=CASE WHEN attempt>=max_attempts OR ?=0 THEN 'failed' ELSE 'queued' END, "
                 "error=?, failure_evidence_ref=COALESCE(?, failure_evidence_ref), "
                 "available_at=?, lease_owner=NULL, lease_expires_at=NULL, updated_at=? WHERE job_id=?",
                 (
+                    int(retryable),
                     error,
                     failure_evidence_ref,
                     job_time(now + timedelta(seconds=retry_seconds)),

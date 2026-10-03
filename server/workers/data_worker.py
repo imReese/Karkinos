@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
+import math
 import os
 import threading
 import uuid
@@ -57,6 +59,43 @@ from server.workers.presence import run_with_presence
 
 logger = logging.getLogger(__name__)
 CALENDAR_JOB = "market_calendar_sync"
+
+
+def enqueue_daily_market_calendar_job(store: JobStore, *, now: datetime) -> JobRun:
+    scheduled = get_shanghai_now(now).replace(hour=0, minute=0, second=0, microsecond=0)
+    return store.enqueue(
+        CALENDAR_JOB,
+        {"scheduled_at": scheduled.isoformat(), "cadence": "daily"},
+        now=now,
+    )
+
+
+def _calendar_failure_retry(results, *, now: datetime, attempt: int):
+    payloads = []
+    for row in results or []:
+        if row.get("status") == "completed":
+            continue
+        try:
+            payload = json.loads(row.get("payload_json") or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        payloads.append(payload if isinstance(payload, dict) else {})
+    default_delay = min(60 * 2 ** (attempt - 1), 3600)
+    retry_delays = []
+    for payload in payloads:
+        if payload.get("retryable") is False:
+            continue
+        delay = default_delay
+        try:
+            after = datetime.fromisoformat(payload.get("retry_after") or "")
+            if after.tzinfo is not None and after > now:
+                delay = math.ceil((after - now).total_seconds())
+        except (TypeError, ValueError):
+            pass
+        retry_delays.append(delay)
+    if retry_delays:
+        return min(retry_delays), True
+    return default_delay, not payloads
 
 
 class WorkerExecutionAborted(RuntimeError):
@@ -248,6 +287,26 @@ async def execute_calendar_job(
     timeout: float = 120,
     heartbeat_interval: float = 15,
 ) -> None:
+    execution_time = datetime.now(timezone.utc)
+    scheduled = datetime.fromisoformat(job.payload["scheduled_at"])
+    if job.payload.get("cadence") == "daily":
+        if (
+            scheduled.tzinfo is None
+            or get_shanghai_now(scheduled).date()
+            != get_shanghai_now(execution_time).date()
+        ):
+            store.fail(
+                job.lease,
+                now=execution_time,
+                error="calendar_job_day_expired",
+                retryable=False,
+            )
+            return
+    else:
+        # The normal worker never claims legacy hourly jobs. Keep direct replay
+        # of their already-published receipts compatible with their original day.
+        execution_time = scheduled
+
     async def renew():
         while True:
             await asyncio.sleep(heartbeat_interval)
@@ -268,9 +327,7 @@ async def execute_calendar_job(
     def run():
         try:
             result, error = (
-                service.run_due(
-                    now=datetime.fromisoformat(job.payload["scheduled_at"])
-                ),
+                service.run_due(now=execution_time),
                 None,
             )
         except Exception as exc:
@@ -290,7 +347,18 @@ async def execute_calendar_job(
             raise WorkerExecutionAborted("calendar_execution_deadline_or_lease_lost")
         results = work.result()
         if not results or any(row["status"] != "completed" for row in results):
-            raise RuntimeError("calendar_evidence_not_verified")
+            now = datetime.now(timezone.utc)
+            retry_seconds, retryable = _calendar_failure_retry(
+                results, now=now, attempt=job.attempt
+            )
+            store.fail(
+                job.lease,
+                now=now,
+                error="calendar_evidence_not_verified",
+                retry_seconds=retry_seconds,
+                retryable=retryable,
+            )
+            return
         store.finish(
             job.lease,
             now=datetime.now(timezone.utc),
@@ -545,11 +613,10 @@ async def run_data_worker(config) -> None:
             await wait_for_release_activation()
             now = datetime.now(timezone.utc)
             if config.market_calendar_auto_sync:
-                scheduled = now.replace(minute=0, second=0, microsecond=0)
-                store.enqueue(
-                    CALENDAR_JOB, {"scheduled_at": scheduled.isoformat()}, now=now
+                scheduled_job = enqueue_daily_market_calendar_job(store, now=now)
+                job = store.claim(
+                    CALENDAR_JOB, owner, now=now, job_id=scheduled_job.job_id
                 )
-                job = store.claim(CALENDAR_JOB, owner, now=now)
                 if job:
                     service = MarketCalendarAutomationService(
                         db=db, config=config, job_lease=job.lease
