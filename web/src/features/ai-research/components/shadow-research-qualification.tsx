@@ -4,16 +4,19 @@ import { formatPublicStatus } from '../../../shared/public-labels';
 import type { Locale } from '../../../shared/preferences/context';
 import type {
   ShadowResearchAutomationStatus,
+  ShadowResearchCandidate,
   ShadowResearchQualificationCandidate,
   ShadowResearchQualificationRun,
 } from '../api';
 import type { ShadowResearchCopy } from './shadow-research-copy';
+import { ShadowResearchObservations } from './shadow-research-observations';
 
 type QualificationView = {
   run: ShadowResearchQualificationRun | undefined;
   attempt: ShadowResearchAutomationStatus['latest_qualification_attempt'];
   winner: ShadowResearchQualificationCandidate | undefined;
   sourceCandidateBound: boolean;
+  sourceCandidate: ShadowResearchCandidate | undefined;
   approved: boolean;
   approvalEligible: boolean;
 };
@@ -95,6 +98,7 @@ function qualificationView(
     attempt,
     winner,
     sourceCandidateBound,
+    sourceCandidate,
     approved,
     approvalEligible,
   };
@@ -228,6 +232,8 @@ export function ShadowResearchQualificationReview({
           {copy.qualificationApproved}
         </p>
       ) : null}
+
+      <ShadowResearchObservations candidate={view.sourceCandidate} />
 
       {view.approvalEligible && view.winner ? (
         <div className="mt-5 border-t border-[var(--app-divider)] pt-4">
