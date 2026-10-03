@@ -59,9 +59,15 @@ does not simulate fills or account returns. An optional rule frozen at start
 monitors subsequent raw-price responses during explicit measurement, with a
 configured minimum sample count and threshold. It can report a breach or pause
 that observation; missing or unresolved evidence cannot trigger a performance
-pause. Automatic observation scheduling and the subsequent qualification linkage
-remain delivery work. Do not expand this work into live trading, broker adapters,
-capital authorization or a general workflow framework.
+pause. Per-observation scheduling is an explicit opt-in that consumes local
+verified Datasets within the next-opening publication deadline. Missing data waits
+for the existing preparation journey; scheduling does not request providers or
+backfill missed targets. Normalized candidates and human qualification review
+show observations from the exact source report as supplementary evidence. These
+price responses do not replace sealed independent evaluation, change account
+qualification, or bind the displayed observation version into an approval.
+Do not expand this work into live trading, broker adapters, capital authorization
+or a general workflow framework.
 
 ## Frozen
 

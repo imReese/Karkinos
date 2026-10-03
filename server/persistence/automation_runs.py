@@ -5,11 +5,48 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Callable
 from typing import Any
 
-from server.persistence.connection import SQLiteRepository
+from server.contracts.research_observation_automation import (
+    OBSERVATION_AUTOMATION_PREFIX,
+    observation_automation_policy_id,
+    observation_automation_policy_valid,
+)
+from server.persistence.connection import SQLiteRepository, connect_sqlite
 
 logger = logging.getLogger(__name__)
+
+
+def _observation_policy_payload(row, observation_id: str) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    try:
+        value = json.loads(row["payload_json"])
+    except (TypeError, ValueError):
+        value = None
+    if observation_automation_policy_valid(value, observation_id):
+        return value
+    # Preserve the row's identity while making corrupt configuration visibly
+    # invalid and explicitly replaceable with expected_generation=None.
+    return {"observation_id": observation_id, "generation": None, "enabled": False}
+
+
+def require_observation_automation_policy(
+    conn: sqlite3.Connection, observation_id: str, generation: str
+) -> None:
+    """Fence a scheduled observation write under its existing write lock."""
+    row = conn.execute(
+        "SELECT payload_json FROM automation_policies WHERE policy_id=?",
+        (observation_automation_policy_id(observation_id),),
+    ).fetchone()
+    value = _observation_policy_payload(row, observation_id)
+    if (
+        not observation_automation_policy_valid(value, observation_id)
+        or value["enabled"] is not True
+        or value["generation"] != generation
+    ):
+        raise ValueError("observation_automation_policy_conflict")
 
 
 def upsert_automation_run_in_transaction(
@@ -74,6 +111,91 @@ def upsert_automation_run_in_transaction(
 
 class AutomationRunRepository(SQLiteRepository):
     """Own automation policies, claims, and run records."""
+
+    def configure_observation_automation(
+        self, *, payload: dict[str, Any], expected_generation: str | None, now: str
+    ) -> dict[str, Any]:
+        observation_id = payload["observation_id"]
+        if not observation_automation_policy_valid(payload, observation_id):
+            raise ValueError("observation_automation_policy_invalid")
+        policy_id = observation_automation_policy_id(observation_id)
+        with connect_sqlite(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            observation = conn.execute(
+                "SELECT lifecycle FROM research_observations WHERE id=?",
+                (observation_id,),
+            ).fetchone()
+            if observation is None:
+                raise ValueError("observation_not_found")
+            row = conn.execute(
+                "SELECT payload_json FROM automation_policies WHERE policy_id=?",
+                (policy_id,),
+            ).fetchone()
+            previous = _observation_policy_payload(row, observation_id)
+            if (previous or {}).get("generation") != expected_generation:
+                raise ValueError("observation_automation_policy_conflict")
+            if payload["enabled"] and observation["lifecycle"] != "active":
+                raise ValueError("observation_automation_paused")
+            conn.execute(
+                "INSERT INTO automation_policies "
+                "(policy_id, payload_json, created_at, updated_at, updated_by) "
+                "VALUES (?, ?, ?, ?, 'human_command') "
+                "ON CONFLICT(policy_id) DO UPDATE SET payload_json=excluded.payload_json, "
+                "updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+                (policy_id, json.dumps(payload, sort_keys=True), now, now),
+            )
+        return payload
+
+    def list_observation_automation_policies(self) -> list[dict[str, Any]]:
+        """Read explicit opt-ins without truncating them to a UI history page."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT policy_id, payload_json FROM automation_policies WHERE policy_id LIKE ? "
+                "ORDER BY policy_id",
+                (OBSERVATION_AUTOMATION_PREFIX + "%",),
+            ).fetchall()
+        return [
+            _observation_policy_payload(
+                row, row["policy_id"][len(OBSERVATION_AUTOMATION_PREFIX) :]
+            )
+            for row in rows
+        ]
+
+    def get_observation_automation_policy(
+        self, observation_id: str
+    ) -> dict[str, Any] | None:
+        """Keep one malformed opt-in from breaking unrelated observation reads."""
+        with connect_sqlite(self._path, readonly=True) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT payload_json FROM automation_policies WHERE policy_id=?",
+                (observation_automation_policy_id(observation_id),),
+            ).fetchone()
+        return _observation_policy_payload(row, observation_id)
+
+    def record_observation_automation_status(
+        self,
+        run: dict[str, Any],
+        *,
+        observation_id: str,
+        generation: str,
+        stop_requested: Callable[[], bool],
+        now: str,
+    ) -> bool:
+        """Fence the rebuildable projection too when activation/disable races it."""
+        with connect_sqlite(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            if stop_requested():
+                return False
+            try:
+                require_observation_automation_policy(conn, observation_id, generation)
+            except ValueError:
+                return False
+            upsert_automation_run_in_transaction(conn, run, now=now)
+        return True
 
     def get_automation_policy_sync(self, policy_id: str) -> dict[str, Any] | None:
         """Read one persisted automation policy by ID."""

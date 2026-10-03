@@ -64,6 +64,8 @@ def observation_code_binding() -> dict[str, Any]:
         "server/services/market_calendar_evidence.py",
         "server/services/research_datasets.py",
         "server/persistence/research_observations.py",
+        "server/persistence/automation_runs.py",
+        "server/contracts/research_observation_automation.py",
         "server/ai_runtime/formula_dsl.py",
         "strategy/base.py",
         "strategy/builtins/dual_ma.py",
@@ -188,9 +190,27 @@ class ResearchObservationService:
         request_id: str,
         expected_version: int,
         dataset_id: str,
+        automation_generation: str | None = None,
+        automation_stop_requested: Callable[[], bool] | None = None,
+        automation_publication_deadline: datetime | None = None,
     ) -> dict[str, Any]:
         fingerprint = content_fingerprint(
-            {"expected_version": expected_version, "dataset_id": dataset_id}
+            {
+                "expected_version": expected_version,
+                "dataset_id": dataset_id,
+                **(
+                    {
+                        "automation_generation": automation_generation,
+                        "automation_publication_deadline": (
+                            automation_publication_deadline.isoformat()
+                            if automation_publication_deadline is not None
+                            else None
+                        ),
+                    }
+                    if automation_generation is not None
+                    else {}
+                ),
+            }
         )
         replay = self.repository.get_operation(
             observation_id=observation_id,
@@ -257,7 +277,7 @@ class ResearchObservationService:
                     if str(exc) != "observation_calendar_horizon_missing":
                         raise
                     next_year = self.db.get_market_calendar_snapshot_sync(
-                        exchange="SSE", year=now.year + 1
+                        exchange="SSE", year=now.astimezone(_SHANGHAI).year + 1
                     )
                     if next_year is None:
                         raise
@@ -278,6 +298,11 @@ class ResearchObservationService:
                     end_session,
                 )
                 publication["payload"]["calculation_started_at"] = now.isoformat()
+                if automation_generation is not None:
+                    publication["payload"]["publication_actor"] = "local_schedule"
+                    publication["payload"]["automation_generation"] = (
+                        automation_generation
+                    )
                 publication["payload"]["calendar_binding"] = [
                     {
                         key: row.get(key)
@@ -324,6 +349,18 @@ class ResearchObservationService:
                 publication = None
                 deadline = None
                 blocker = {"code": "observation_health_rule_paused"}
+        if (
+            automation_generation is not None
+            and publication is None
+            and not outcomes
+            and (health_decision or {}).get("action") != "pause_observation"
+        ):
+            # An automatic retry without new evidence belongs to operational
+            # waiting state, not another immutable observation version/receipt.
+            code = (blocker or {}).get("code")
+            if code == "observation_session_already_published":
+                code = "observation_automation_outcome_unavailable"
+            raise ValueError(code or "observation_automation_no_new_work")
         return self.repository.advance(
             observation_id=observation_id,
             request_id=request_id,
@@ -335,6 +372,9 @@ class ResearchObservationService:
             publication_deadline=deadline,
             computation_not_before=now,
             health_decision=health_decision,
+            automation_generation=automation_generation,
+            automation_stop_requested=automation_stop_requested,
+            automation_publication_deadline=automation_publication_deadline,
         )
 
     def pause(
@@ -350,10 +390,11 @@ class ResearchObservationService:
         )
 
     def _calendar(self, start: date, now: datetime) -> list[dict[str, Any]]:
-        if now.year - start.year > 10:
+        year_now = now.astimezone(_SHANGHAI).year
+        if year_now - start.year > 10:
             raise ValueError("observation_history_budget_exceeded")
         rows = []
-        for year in range(start.year, now.year + 1):
+        for year in range(start.year, year_now + 1):
             row = self.db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
             if row is not None:
                 rows.append(row)

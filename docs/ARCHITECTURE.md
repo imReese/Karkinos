@@ -390,7 +390,7 @@ and rebalance intent records target-weight differences. No quantities, orders,
 fills, cash or NAV are invented. Warmup decisions and skipped sessions are never
 backfilled as forecasts.
 
-Each explicit advance binds calculation time, frozen code and library versions,
+Each advance binds calculation time, frozen code and library versions,
 the complete fixed-start Dataset prefix, verified calendar information times,
 and the first session opening strictly after actual publication. Its outcome
 window compares that session's close with the close a configured number of
@@ -402,8 +402,20 @@ aborts publication. Stored request receipts, version checks and immutable histor
 protect retries and concurrent commands. Pausing stops new publications while
 allowing explicit measurement of previously published targets after restart.
 
+Local scheduling is a separate, default-off opt-in for an exact observation.
+It reuses these same commands and receipts, with a persisted configuration
+generation rechecked under the publication write lock. It consumes existing
+verified Datasets; it does not authorize provider requests or account actions.
+Automatic publication uses the just-closed session's window and cannot retarget
+a missed opening after a restart. Pause, configuration replacement, shutdown and
+release activation fence automatic writes. Missing inputs only update operational
+status; they do not create empty observation versions or performance evidence.
+An unidentified unreadable discovery candidate is reported separately; a selected
+matching Dataset that fails verification blocks instead of falling back to an
+older matching version.
+
 An optional price-monitoring rule is frozen when starting an observation; it has
-no default performance threshold. Explicit measurement evaluates stable,
+no default performance threshold. Measurement evaluates stable,
 chronologically selected non-overlapping intervals before checking eligibility.
 Missing, zero-exposure and known ex-date-confounded intervals keep their slots;
 the evaluator cannot replace them with more favorable samples. The rule compares
