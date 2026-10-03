@@ -124,12 +124,12 @@ def latest_indexed_signal_journal_event(
             return candidate[1]
 
     for prefix in ("manual_order", "order"):
-        candidate = _earliest_indexed_event(
+        earliest_candidate = _earliest_indexed_event(
             event_index[f"{prefix}_by_signal"].get(signal_id),
             event_index[f"{prefix}_by_action"].get(action_ref),
         )
-        if candidate is not None:
-            return candidate
+        if earliest_candidate is not None:
+            return earliest_candidate
 
     return _earliest_indexed_event(
         event_index["risk_by_ref"].get(risk_ref),

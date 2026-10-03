@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
 
 from server.contracts.quote_ingestion import (
     PUBLISHED_QUOTE_RUN_STATUSES,
 )
-from server.persistence.connection import connect_sqlite
+from server.persistence.connection import DateTimeNow, connect_sqlite
 from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
@@ -26,7 +27,25 @@ from server.persistence.valuation_publication_recovery import (
 )
 
 
+class _QuoteRunPublisher(Protocol):
+    def __call__(
+        self,
+        *,
+        run_id: str,
+        finished_at: str,
+        status: str,
+        success_count: int,
+        failure_count: int,
+        cache_hit_count: int,
+        error_message: str | None,
+        metadata: dict[str, Any] | str | None,
+    ) -> dict[str, Any]: ...
+
+
 class QuoteFetchRunRepositoryMixin:
+    publish_quote_fetch_run_sync: _QuoteRunPublisher
+    _path: Path
+
     def create_quote_fetch_run(
         self,
         *,

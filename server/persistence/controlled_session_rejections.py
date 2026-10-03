@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
+
+
+class ControlledSessionBudgetUsage(TypedDict):
+    overlapping_gross_units: int
+    overlapping_buy_units: int
+    overlapping_order_count: int
+    daily_turnover_units: int
+    overlapping_by_symbol_units: dict[str, int]
 
 
 def controlled_session_budget_rejection(
     reservation: dict[str, Any],
     blockers: list[str],
     *,
-    before: dict[str, int] | None = None,
-    after: dict[str, int] | None = None,
+    before: ControlledSessionBudgetUsage | None = None,
+    after: ControlledSessionBudgetUsage | None = None,
 ) -> dict[str, Any]:
     return {
         "status": "rejected",

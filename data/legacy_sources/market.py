@@ -620,8 +620,6 @@ class AKShareSource(OpenEndFundMixin, DataSource):
             )
             return None
 
-        return None
-
     @staticmethod
     def _normalize_latest_quote(
         symbol: Symbol,

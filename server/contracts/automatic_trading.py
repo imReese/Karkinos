@@ -200,6 +200,7 @@ def resolve_persisted_automatic_trading_control(
     if configured_enabled is True:
         structurally_valid = (
             structurally_valid
+            and isinstance(effective_at_epoch_ms, int)
             and isinstance(expires_at_epoch_ms, int)
             and not isinstance(expires_at_epoch_ms, bool)
             and _MINIMUM_TTL_MS
@@ -245,13 +246,21 @@ def resolve_persisted_automatic_trading_control(
         "grants_capital_authority": False,
         "automatic_broker_submission_implemented": False,
     }
-    if configured_enabled and now_epoch_ms < effective_at_epoch_ms:
+    if (
+        configured_enabled
+        and isinstance(effective_at_epoch_ms, int)
+        and now_epoch_ms < effective_at_epoch_ms
+    ):
         evidence.update(
             enabled=False,
             status="unavailable",
             blockers=["automatic_trading_control_not_yet_effective"],
         )
-    elif configured_enabled and now_epoch_ms >= expires_at_epoch_ms:
+    elif (
+        configured_enabled
+        and isinstance(expires_at_epoch_ms, int)
+        and now_epoch_ms >= expires_at_epoch_ms
+    ):
         evidence.update(
             enabled=False,
             status="expired",

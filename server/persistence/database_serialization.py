@@ -20,7 +20,9 @@ def normalize_timestamp(value: str) -> str:
     return timestamp.isoformat(timespec="seconds")
 
 
-def serialize_metadata_json(value: dict[str, Any] | str | None) -> str | None:
+def serialize_metadata_json(
+    value: dict[str, Any] | list[Any] | str | None,
+) -> str | None:
     """Serialize optional metadata to stable JSON text."""
 
     if value is None:

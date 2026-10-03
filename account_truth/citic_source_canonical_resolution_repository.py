@@ -3,10 +3,57 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import re
+    from pathlib import Path
+    from typing import Protocol
+
+    from account_truth.citic_source_canonical_resolution import (
+        CiticSourceCanonicalResolution,
+        CiticSourceCanonicalResolutionReadRejected,
+        CiticSourceCanonicalResolutionRejected,
+    )
+
+    class CiticSourceCanonicalResolutionRepositoryAccess(Protocol):
+        """Dependencies supplied by the concrete repository to its persistence mixins."""
+
+        def _ensure_schema(self) -> None: ...
+
+        _evidence_fingerprint: re.Pattern[str]
+
+        @staticmethod
+        def _latest_row(conn: sqlite3.Connection) -> sqlite3.Row | None: ...
+
+        _path: Path
+        _read_rejection_type: type[CiticSourceCanonicalResolutionReadRejected]
+        _rejection_type: type[CiticSourceCanonicalResolutionRejected]
+
+        def _resolution_fingerprint(self, payload: object) -> str: ...
+
+        def _resolution_from_row(
+            self, row: sqlite3.Row
+        ) -> CiticSourceCanonicalResolution: ...
+
+        def _resolution_json(self, value: object) -> str: ...
+
+        _resolution_type: type[CiticSourceCanonicalResolution]
+
+        @staticmethod
+        def _schema_state(conn: sqlite3.Connection) -> str: ...
+
+        def _source_set_fingerprint(
+            self, source_preview_fingerprints: list[str]
+        ) -> str: ...
+
+        def get_latest(self) -> CiticSourceCanonicalResolution | None: ...
 
 
 class CiticSourceCanonicalResolutionReadRepositoryMixin:
-    def get_latest(self) -> object | None:
+    def get_latest(
+        self: CiticSourceCanonicalResolutionRepositoryAccess,
+    ) -> CiticSourceCanonicalResolution | None:
         if not self._path.is_file():
             return None
         try:

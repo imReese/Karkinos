@@ -128,7 +128,7 @@ def _json_safe_value(value: Any) -> Any:
     return value
 
 
-def serialize_event_payload_json(value: dict[str, Any] | str | None) -> str:
+def serialize_event_payload_json(value: dict[str, Any] | list[Any] | str | None) -> str:
     """Serialize event payloads as stable, standards-compliant JSON."""
     if value is None:
         return "{}"

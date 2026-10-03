@@ -447,8 +447,8 @@ def _response_to_rows(
 
     keys: set[tuple[str, date]] = set()
 
-    for values in field_values.values():
-        keys.update(values)
+    for points in field_values.values():
+        keys.update(points)
 
     rows: list[ProviderDailyBarRow] = []
 
@@ -1078,7 +1078,14 @@ def _sdk_library_directory() -> Path:
         raise TdxRuntimeConfigurationError("tdx_sdk_not_installed") from None
     if distribution.version != "1.0.2":
         raise TdxRuntimeConfigurationError("tdx_sdk_runtime_version_unsupported")
-    return Path(distribution.locate_file("tdxaidata/lib")).resolve()
+    return Path(str(distribution.locate_file("tdxaidata/lib"))).resolve()
+
+
+class _CaseSensitiveConfigParser(configparser.ConfigParser):
+    """Preserve the vendor configuration keys exactly."""
+
+    def optionxform(self, optionstr: str) -> str:
+        return str(optionstr)
 
 
 @contextmanager
@@ -1093,6 +1100,7 @@ def prepare_tdx_runtime(
     """
     settings.require_credentials()
     source = _sdk_library_directory()
+    names: tuple[str, ...]
     if os.name == "nt":
         names = ("TdxAiData.dll", "mfc100.dll", "msvcp100.dll", "msvcr100.dll")
     elif sys.platform == "darwin":
@@ -1105,8 +1113,7 @@ def prepare_tdx_runtime(
     if not template.is_file() or any(not (source / name).is_file() for name in names):
         raise TdxRuntimeConfigurationError("tdx_sdk_runtime_files_missing")
 
-    config = configparser.ConfigParser(interpolation=None)
-    config.optionxform = str  # 保留供应商配置键的大小写，不假设原生解析器不区分大小写。
+    config = _CaseSensitiveConfigParser(interpolation=None)
     try:
         with template.open(encoding="utf-8-sig") as input_file:
             config.read_file(input_file)

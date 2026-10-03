@@ -6,6 +6,7 @@ import json
 import logging
 import sqlite3
 from datetime import timezone
+from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey
@@ -16,7 +17,7 @@ from server.contracts.quote_ingestion import (
     quote_authority_conflict_fields,
     validate_quote_authority_time,
 )
-from server.persistence.connection import connect_sqlite
+from server.persistence.connection import DateTimeNow, connect_sqlite
 from server.persistence.database_normalization import stable_json_fingerprint
 from server.persistence.database_serialization import (
     metadata_payload_value,
@@ -41,12 +42,17 @@ from server.persistence.valuation_publication_recovery import (
     complete_quote_publication,
     quote_run_scope,
 )
+from server.persistence.valuation_transaction import ValuationTransactionWriter
 
 logger = logging.getLogger("server.persistence.financial_facts")
 
 
 class QuoteIngestionUnitOfWorkMixin:
     """Stage provider results and publish all derived facts in one transaction."""
+
+    _path: Path
+    _now: DateTimeNow
+    _valuation_transaction_writer: ValuationTransactionWriter
 
     def persist_quote_ingestion_sync(
         self,
@@ -118,7 +124,7 @@ class QuoteIngestionUnitOfWorkMixin:
                         InstrumentKey.from_values(command.symbol, command.asset_type)
                     ]
                 }
-                if actual != {tuple(key) for key in expected}:
+                if expected is None or actual != {tuple(key) for key in expected}:
                     raise ValueError("quote publication requested scope mismatch")
                 close_binding = _daily_close_batch_binding(
                     conn, staged, run_id=run_id, scope=expected
@@ -540,6 +546,8 @@ def _existing_daily_close(conn: sqlite3.Connection, command: QuoteIngestionComma
 
 
 def _daily_close_conflicts(existing, command: QuoteIngestionCommand) -> bool:
+    if command.daily_close_price is None:
+        raise ValueError("daily close price is missing")
     return (
         float(existing["close_price"]) != float(command.daily_close_price)
         or not _same_instrument_identity(

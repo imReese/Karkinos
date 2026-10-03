@@ -6,15 +6,23 @@ import json
 import sqlite3
 import uuid
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from account_truth.citic_source_scope_review_contracts import (
     CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
+    CiticSourceScopeReviewDecision,
 )
+
+if TYPE_CHECKING:
+    from account_truth.citic_source_scope_review import CiticSourceScopeReview
+    from account_truth.citic_source_scope_review_repository import (
+        CiticSourceScopeReviewRepositoryAccess,
+    )
 
 
 class CiticSourceScopeReviewUnitOfWorkMixin:
     def record_review(
-        self,
+        self: CiticSourceScopeReviewRepositoryAccess,
         *,
         intake_id: str,
         expected_file_fingerprint: str,
@@ -32,7 +40,7 @@ class CiticSourceScopeReviewUnitOfWorkMixin:
         complete_returned_results_attested: bool,
         source_scope_attested: bool,
         reviewer: str = "local_owner",
-    ) -> object:
+    ) -> CiticSourceScopeReview:
         normalized = self._normalized_review_inputs(
             intake_id=intake_id,
             expected_file_fingerprint=expected_file_fingerprint,
@@ -85,13 +93,13 @@ class CiticSourceScopeReviewUnitOfWorkMixin:
             return saved
 
     def revoke_latest(
-        self,
+        self: CiticSourceScopeReviewRepositoryAccess,
         *,
         intake_id: str,
         expected_active_review_id: str,
         expected_active_review_fingerprint: str,
         reviewer: str = "local_owner",
-    ) -> object:
+    ) -> CiticSourceScopeReview:
         normalized_intake_id = intake_id.strip()
         normalized_review_id = expected_active_review_id.strip()
         normalized_fingerprint = expected_active_review_fingerprint.strip()
@@ -135,15 +143,15 @@ class CiticSourceScopeReviewUnitOfWorkMixin:
             return saved
 
     def _insert_review(
-        self,
+        self: CiticSourceScopeReviewRepositoryAccess,
         conn: sqlite3.Connection,
         *,
         normalized: dict[str, object],
-        decision: str,
+        decision: CiticSourceScopeReviewDecision,
         supersedes_review_id: str | None,
         created_at: str,
         schema_version: str = CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
-    ) -> object:
+    ) -> CiticSourceScopeReview:
         payload = self._fingerprint_payload(
             normalized,
             schema_version=schema_version,

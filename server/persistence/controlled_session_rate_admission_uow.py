@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
+from typing import Any, cast
 
 from server.contracts.automatic_trading import (
     resolve_persisted_automatic_trading_control,
@@ -218,8 +218,8 @@ class ControlledSessionRateAdmissionUnitOfWorkMixin(ControlledSessionRepositoryA
                             "runtime_automatic_trading_session_binding_lineage_mismatch"
                         )
                 last_disabled_revision = automatic_trading.get("last_disabled_revision")
-                last_disabled_at_epoch_ms = automatic_trading.get(
-                    "last_disabled_at_epoch_ms"
+                last_disabled_at = cast(
+                    int, automatic_trading.get("last_disabled_at_epoch_ms")
                 )
                 if last_disabled_revision is not None:
                     session_created_at_epoch_ms = timestamp_epoch_ms(
@@ -229,7 +229,7 @@ class ControlledSessionRateAdmissionUnitOfWorkMixin(ControlledSessionRepositoryA
                         automatic_blockers.append(
                             "runtime_session_created_at_invalid_for_automatic_trading"
                         )
-                    elif session_created_at_epoch_ms <= last_disabled_at_epoch_ms:
+                    elif session_created_at_epoch_ms <= last_disabled_at:
                         automatic_blockers.append(
                             "runtime_automatic_trading_session_predates_last_disable"
                         )

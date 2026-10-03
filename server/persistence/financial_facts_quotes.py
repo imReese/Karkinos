@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentType
 from server.contracts.quote_ingestion import quote_authority_conflict_fields
-from server.persistence.connection import connect_sqlite
+from server.persistence.connection import DateTimeNow, connect_sqlite
 from server.persistence.database_serialization import serialize_metadata_json
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_fact_event_payloads import (
@@ -178,6 +179,9 @@ def _advance_latest_quote_from_snapshot_on_connection(
 
 
 class QuoteFactsRepositoryMixin:
+    _path: Path
+    _now: DateTimeNow
+
     def upsert_latest_quote_sync(
         self,
         *,

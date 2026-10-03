@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 from server.contracts.financial_values import decimal_from_mapping
 from server.contracts.portfolio_cash_flows import (
@@ -246,8 +247,8 @@ def _replay_cash_flow_record(
     payload: dict[str, object],
 ) -> CashFlowWriteResult:
     try:
-        cash_flow_id = int(payload["cash_flow_id"])
-        ledger_entry_id = int(payload["ledger_entry_id"])
+        cash_flow_id = int(cast(int | float | str, payload["cash_flow_id"]))
+        ledger_entry_id = int(cast(int | float | str, payload["ledger_entry_id"]))
     except (KeyError, TypeError, ValueError):
         raise RuntimeError("cash-flow mutation result is invalid") from None
     cash_flow = load_cash_flow_projection(conn, cash_flow_id)
@@ -270,8 +271,10 @@ def _replay_cash_flow_correction(
     cash_flow_id: int,
 ) -> CashFlowCorrectionResult:
     try:
-        stored_cash_flow_id = int(payload["cash_flow_id"])
-        correction_id = int(payload["correction_ledger_entry_id"])
+        stored_cash_flow_id = int(cast(int | float | str, payload["cash_flow_id"]))
+        correction_id = int(
+            cast(int | float | str, payload["correction_ledger_entry_id"])
+        )
     except (KeyError, TypeError, ValueError):
         raise RuntimeError("cash-flow correction result is invalid") from None
     if stored_cash_flow_id != cash_flow_id:

@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from server.persistence.connection import connect_sqlite
+from server.persistence.connection import DateTimeNow, connect_sqlite
 from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
@@ -16,6 +17,7 @@ from server.persistence.valuation_publication_recovery import (
     preserve_publication_recovery,
     record_publication_recovery,
 )
+from server.persistence.valuation_transaction import ValuationTransactionWriter
 from server.valuation_snapshot_contract import validate_valuation_snapshot
 
 logger = logging.getLogger("server.persistence.financial_facts")
@@ -205,6 +207,10 @@ def publish_valuation_control_on_connection(
 
 
 class ValuationFactsRepositoryMixin:
+    _path: Path
+    _now: DateTimeNow
+    _valuation_transaction_writer: ValuationTransactionWriter
+
     def save_valuation_snapshot_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Persist one immutable, content-addressed valuation snapshot."""
         now = self._now(timezone.utc).isoformat()

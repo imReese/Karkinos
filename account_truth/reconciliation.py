@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
-from typing import Literal
+from typing import Iterable, Literal
 
 from account_truth.broker_evidence import StoredBrokerEvidenceEvent
 
@@ -120,10 +120,10 @@ def build_reconciliation_report(
     broker_cash = _latest_decimal(
         event.cash_balance for event in broker_events if event.cash_balance is not None
     )
-    broker_fee = sum(_decimal(event.fee) for event in broker_events)
-    broker_tax = sum(_decimal(event.tax) for event in broker_events)
-    ledger_fee = sum(fact.fee for fact in ledger_facts)
-    ledger_tax = sum(fact.tax for fact in ledger_facts)
+    broker_fee = sum((_decimal(event.fee) for event in broker_events), Decimal("0"))
+    broker_tax = sum((_decimal(event.tax) for event in broker_events), Decimal("0"))
+    ledger_fee = sum((fact.fee for fact in ledger_facts), Decimal("0"))
+    ledger_tax = sum((fact.tax for fact in ledger_facts), Decimal("0"))
     has_cash_snapshot = any(
         event.event_type == "cash_snapshot" for event in broker_events
     )
@@ -638,7 +638,10 @@ def _cost_basis_item(
         and karkinos_cost_basis_method.strip().lower() == "broker_remaining_cost"
     )
     if methods_match and broker_value is not None and karkinos_value is not None:
-        decimal_places = max(0, -broker_value.as_tuple().exponent)
+        exponent = broker_value.as_tuple().exponent
+        if not isinstance(exponent, int):
+            raise ValueError("broker cost basis must be finite")
+        decimal_places = max(0, -exponent)
         display_half_unit = Decimal("0.5") * (Decimal("0.1") ** decimal_places)
         tolerance = min(display_half_unit, MONEY_RECONCILIATION_TOLERANCE)
         detail_context.update(
@@ -777,7 +780,7 @@ def _optional_decimal(value: str | Decimal | None) -> Decimal | None:
     return _decimal(value)
 
 
-def _latest_decimal(values: object) -> Decimal | None:
+def _latest_decimal(values: Iterable[str | Decimal | None]) -> Decimal | None:
     latest: Decimal | None = None
     for value in values:
         latest = _decimal(value)

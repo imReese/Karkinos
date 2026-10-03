@@ -132,7 +132,9 @@ class RuntimeControlRepository:
                         else proposed_epoch_ms
                     ),
                 )
-                if structural_state.get("status") == "unavailable":
+                if structural_state.get("status") == "unavailable" or not isinstance(
+                    current_effective_epoch_ms, int
+                ):
                     conn.rollback()
                     raise RuntimeError(
                         "automatic trading control persisted state is unavailable"

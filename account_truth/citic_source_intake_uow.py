@@ -5,23 +5,30 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from account_truth.broker_statement import BrokerStatementPreview
 from account_truth.citic_source_intake_contracts import (
     CITIC_SOURCE_INTAKE_SCHEMA_VERSION,
+    CiticSourceReviewStatus,
 )
+
+if TYPE_CHECKING:
+    from account_truth.citic_source_intake import CiticSourceIntake
+    from account_truth.citic_source_intake_repository import (
+        CiticSourceIntakeRepositoryAccess,
+    )
 
 
 class CiticSourceIntakeUnitOfWorkMixin:
     def record_review(
-        self,
+        self: CiticSourceIntakeRepositoryAccess,
         preview: BrokerStatementPreview,
         *,
         expected_file_fingerprint: str,
-        review_status: str,
+        review_status: CiticSourceReviewStatus,
         reviewer: str = "local",
-    ) -> object:
+    ) -> CiticSourceIntake:
         if expected_file_fingerprint != preview.file_fingerprint:
             raise self._intake_rejection_type("citic_source_file_fingerprint_mismatch")
         if review_status not in {"follow_up_required", "rejected"}:

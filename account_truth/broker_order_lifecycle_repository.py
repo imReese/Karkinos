@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from account_truth.broker_order_lifecycle_projection import (
     broker_order_lifecycle_observation_from_row as _observation_from_row,
@@ -15,9 +15,47 @@ from account_truth.broker_order_lifecycle_projection import (
     resolve_broker_order_lifecycle_from_connection,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+    from typing import Protocol
+
+    from account_truth.broker_order_lifecycle import (
+        BrokerOrderLifecycleEvidenceRejected,
+    )
+
+    class BrokerOrderLifecycleEvidenceRepositoryAccess(Protocol):
+        """Collaborators used by the broker observation persistence mixins."""
+
+        _path: Path
+
+        def _insert_fills(
+            self, conn: sqlite3.Connection, preview: dict[str, Any], *, created_at: str
+        ) -> None: ...
+
+        def _insert_order(
+            self, conn: sqlite3.Connection, preview: dict[str, Any], *, created_at: str
+        ) -> None: ...
+
+        @staticmethod
+        def _lifecycle_rejection(
+            message: str, *, evidence: dict[str, Any]
+        ) -> BrokerOrderLifecycleEvidenceRejected: ...
+
+        def _observation_response(
+            self, conn: sqlite3.Connection, row: sqlite3.Row, *, reused: bool
+        ) -> dict[str, Any]: ...
+
+        def _table_exists(self, table: str) -> bool: ...
+
+        def _transaction_blockers(
+            self, conn: sqlite3.Connection, preview: dict[str, Any]
+        ) -> list[str]: ...
+
 
 class BrokerOrderLifecycleEvidenceReadRepositoryMixin:
-    def list_observations(self, *, limit: int = 100) -> list[dict[str, Any]]:
+    def list_observations(
+        self: BrokerOrderLifecycleEvidenceRepositoryAccess, *, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Read persisted observations only; return empty when not configured."""
 
         if not self._table_exists("broker_order_lifecycle_observations"):
@@ -34,7 +72,7 @@ class BrokerOrderLifecycleEvidenceReadRepositoryMixin:
             return [self._observation_response(conn, row, reused=False) for row in rows]
 
     def resolve_order(
-        self,
+        self: BrokerOrderLifecycleEvidenceRepositoryAccess,
         *,
         gateway_id: str,
         account_alias: str,
@@ -64,7 +102,7 @@ class BrokerOrderLifecycleEvidenceReadRepositoryMixin:
             )
 
     def _observation_response(
-        self,
+        self: BrokerOrderLifecycleEvidenceRepositoryAccess,
         conn: sqlite3.Connection,
         row: sqlite3.Row,
         *,
@@ -72,7 +110,9 @@ class BrokerOrderLifecycleEvidenceReadRepositoryMixin:
     ) -> dict[str, Any]:
         return _observation_from_row(row, reused=reused)
 
-    def _table_exists(self, table: str) -> bool:
+    def _table_exists(
+        self: BrokerOrderLifecycleEvidenceRepositoryAccess, table: str
+    ) -> bool:
         if not self._path.exists():
             return False
         with sqlite3.connect(self._path) as conn:

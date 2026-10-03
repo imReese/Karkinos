@@ -143,7 +143,8 @@ def _candidate_evidence_passed(
     row: dict[str, Any],
     account_truth_status: str,
 ) -> bool:
-    evidence = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
+    raw_evidence = row.get("evidence")
+    evidence = raw_evidence if isinstance(raw_evidence, dict) else {}
     return (
         _status(_nested(evidence, "data_freshness", "status")) in _TRUSTED_STATUSES
         and _status(_nested(evidence, "after_cost_oos_validation", "status"))
@@ -157,12 +158,10 @@ def _candidate_evidence_passed(
 
 
 def _paper_shadow_needs_review(row: dict[str, Any]) -> bool:
-    evidence = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
-    paper_shadow = (
-        evidence.get("paper_shadow")
-        if isinstance(evidence.get("paper_shadow"), dict)
-        else {}
-    )
+    raw_evidence = row.get("evidence")
+    evidence = raw_evidence if isinstance(raw_evidence, dict) else {}
+    raw_paper_shadow = evidence.get("paper_shadow")
+    paper_shadow = raw_paper_shadow if isinstance(raw_paper_shadow, dict) else {}
     return _status(paper_shadow.get("status")) in {
         "review_required",
         "not_evaluated",

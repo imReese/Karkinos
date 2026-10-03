@@ -86,6 +86,8 @@ class SignalJournalRepository(SQLiteRepository):
                 ),
             )
             conn.commit()
+            if cursor.lastrowid is None:
+                raise RuntimeError("signal insert did not return an identity")
             return int(cursor.lastrowid)
 
     def find_signal_id_sync(
@@ -286,22 +288,22 @@ class SignalJournalRepository(SQLiteRepository):
                     signal["display_name"] = name
                     signal["name"] = name
             signal_id = int(signal["id"])
-            action = actions_by_signal.get(signal_id)
-            risk = risks_by_signal.get(signal_id)
+            signal_action: dict[str, Any] | None = actions_by_signal.get(signal_id)
+            signal_risk: dict[str, Any] | None = risks_by_signal.get(signal_id)
             entries.append(
                 {
                     "signal": signal,
-                    "action_task": action,
+                    "action_task": signal_action,
                     "risk_decision": (
-                        risk_decision_journal_response(risk)
-                        if risk is not None
+                        risk_decision_journal_response(signal_risk)
+                        if signal_risk is not None
                         else None
                     ),
                     "review": reviews_by_signal.get(signal_id),
                     "latest_event": latest_signal_journal_event(
                         signal_id=signal_id,
-                        action_task=action,
-                        risk_decision=risk,
+                        action_task=signal_action,
+                        risk_decision=signal_risk,
                         events=latest_events,
                         event_index=latest_event_index,
                     ),
@@ -483,8 +485,8 @@ class SignalJournalRepository(SQLiteRepository):
                 latest_by_signal[signal_id] = risk
 
         for task in tasks:
-            risk = latest_by_signal.get(int(task["source_signal_id"]))
-            if risk is None:
+            task_risk = latest_by_signal.get(int(task["source_signal_id"]))
+            if task_risk is None:
                 task["risk_decision_id"] = None
                 task["risk_gate_passed"] = None
                 task["risk_gate_status"] = "not_checked"
@@ -495,11 +497,13 @@ class SignalJournalRepository(SQLiteRepository):
                     risk_gate_status="not_checked",
                 )
                 continue
-            task["risk_decision_id"] = risk["decision_id"]
-            task["risk_gate_passed"] = bool(risk["passed"])
-            task["risk_gate_status"] = "passed" if bool(risk["passed"]) else "blocked"
-            task["risk_gate_severity"] = risk["severity"]
-            task["risk_gate_reasons"] = json_list(risk.get("reasons_json"))
+            task["risk_decision_id"] = task_risk["decision_id"]
+            task["risk_gate_passed"] = bool(task_risk["passed"])
+            task["risk_gate_status"] = (
+                "passed" if bool(task_risk["passed"]) else "blocked"
+            )
+            task["risk_gate_severity"] = task_risk["severity"]
+            task["risk_gate_reasons"] = json_list(task_risk.get("reasons_json"))
             apply_manual_confirmation_readiness(
                 task,
                 risk_gate_status=task["risk_gate_status"],

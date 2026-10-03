@@ -79,11 +79,11 @@ def project_market_session(
                 if day["is_trading_day"]
             )
     latest = completed[-1] if completed else None
-    previous_completed = completed[-2] if len(completed) > 1 else None
+    previous_completed_date = completed[-2] if len(completed) > 1 else None
     result.update(
         status=status,
         latest_completed_trade_date=latest,
-        previous_completed_trade_date=previous_completed,
+        previous_completed_trade_date=previous_completed_date,
         expected_quote_date=today if trading_day and clock >= time(9, 30) else latest,
         next_trading_date=next_dates[0] if next_dates else None,
         calendar_evidence_refs=refs,

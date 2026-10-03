@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,11 +16,11 @@ class ManualTradeWrite:
     symbol: str
     display_name: str
     direction: str
-    quantity: float
-    price: float
-    commission: float
-    gross_amount: float
-    net_cash_impact: float
+    quantity: Decimal | int | float
+    price: Decimal | int | float
+    commission: Decimal | int | float
+    gross_amount: Decimal | int | float
+    net_cash_impact: Decimal | int | float
     fee_breakdown_json: str
     fee_rule_id: str
     fee_rule_version: str

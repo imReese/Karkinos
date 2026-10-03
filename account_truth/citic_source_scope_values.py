@@ -106,7 +106,7 @@ def normalize_citic_source_scope_review_inputs(
     rejection: Callable[[str], Exception],
     allow_missing_account_value_band: bool = False,
 ) -> dict[str, object]:
-    normalized = {
+    normalized: dict[str, object] = {
         "intake_id": intake_id.strip(),
         "file_fingerprint": expected_file_fingerprint.strip(),
         "source_preview_fingerprint": expected_source_preview_fingerprint.strip(),
@@ -150,8 +150,10 @@ def normalize_citic_source_scope_review_inputs(
         raise rejection("citic_source_scope_account_type_invalid")
     for key in ("market_scopes", "asset_classes", "business_types"):
         values = normalized[key]
-        if not values or any(
-            not _SAFE_SCOPE_CODE.fullmatch(str(value)) for value in values
+        if (
+            not isinstance(values, list)
+            or not values
+            or any(not _SAFE_SCOPE_CODE.fullmatch(str(value)) for value in values)
         ):
             raise rejection(f"citic_source_scope_{key}_invalid")
     if normalized["account_value_band"] is None:

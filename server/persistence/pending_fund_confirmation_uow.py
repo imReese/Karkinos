@@ -8,7 +8,7 @@ import sqlite3
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from core.types import InstrumentKey, InstrumentType
 from server.contracts.financial_values import (
@@ -209,7 +209,8 @@ class PendingFundConfirmationUnitOfWork:
                         int(replay.get("order_id") or 0) != command.order_id
                         or int(replay.get("ledger_entry_id") or 0)
                         != result.ledger_entry_id
-                        or int(replay.get("trade_id") or 0) != int(result.trade["id"])
+                        or int(replay.get("trade_id") or 0)
+                        != int(cast(int | float | str, result.trade["id"]))
                     ):
                         raise RuntimeError("pending fund confirmation result drifted")
                     validate_portfolio_mutation_valuation(conn, replay)

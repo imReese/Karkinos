@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal, cast, overload
 
 from server.contracts.financial_values import (
     LEGACY_REAL_BACKFILL_PROVENANCE,
@@ -62,20 +62,20 @@ class LedgerEntry:
     @classmethod
     def from_row(cls, row: dict[str, object]) -> "LedgerEntry":
         return cls(
-            id=row.get("id"),
+            id=cast(int | None, row.get("id")),
             entry_type=str(row["entry_type"]),
             timestamp=str(row["timestamp"]),
             amount=_as_float(row.get("amount")),
-            symbol=row.get("symbol"),
-            direction=row.get("direction"),
+            symbol=cast(str | None, row.get("symbol")),
+            direction=cast(str | None, row.get("direction")),
             quantity=_as_float(row.get("quantity")),
             price=_as_float(row.get("price")),
             commission=_as_float(row.get("commission")) or 0.0,
             gross_amount=_as_float(row.get("gross_amount")),
             net_cash_impact=_as_float(row.get("net_cash_impact")),
             fee_breakdown=_as_fee_breakdown(row.get("fee_breakdown_json")),
-            fee_rule_id=row.get("fee_rule_id"),
-            fee_rule_version=row.get("fee_rule_version"),
+            fee_rule_id=cast(str | None, row.get("fee_rule_id")),
+            fee_rule_version=cast(str | None, row.get("fee_rule_version")),
             estimated_commission=_as_float(row.get("estimated_commission")),
             estimated_net_cash_impact=_as_float(row.get("estimated_net_cash_impact")),
             amount_decimal=_as_text(row.get("amount_decimal")),
@@ -95,21 +95,29 @@ class LedgerEntry:
             estimated_fee_breakdown=_as_fee_breakdown(
                 row.get("estimated_fee_breakdown_json")
             ),
-            estimated_fee_rule_id=row.get("estimated_fee_rule_id"),
-            estimated_fee_rule_version=row.get("estimated_fee_rule_version"),
-            settlement_status=row.get("settlement_status"),
-            settled_at=row.get("settled_at"),
-            settlement_source=row.get("settlement_source"),
-            settlement_source_ref=row.get("settlement_source_ref"),
+            estimated_fee_rule_id=cast(str | None, row.get("estimated_fee_rule_id")),
+            estimated_fee_rule_version=cast(
+                str | None, row.get("estimated_fee_rule_version")
+            ),
+            settlement_status=cast(str | None, row.get("settlement_status")),
+            settled_at=cast(str | None, row.get("settled_at")),
+            settlement_source=cast(str | None, row.get("settlement_source")),
+            settlement_source_ref=cast(str | None, row.get("settlement_source_ref")),
             settlement_note=str(row.get("settlement_note") or ""),
-            cost_basis_method=row.get("cost_basis_method"),
+            cost_basis_method=cast(str | None, row.get("cost_basis_method")),
             correction_payload=_as_json_object(row.get("correction_payload_json")),
             asset_class=str(row.get("asset_class") or "").strip().lower(),
             note=str(row.get("note") or ""),
             source=str(row.get("source") or "manual"),
-            source_ref=row.get("source_ref"),
-            created_at=row.get("created_at"),
+            source_ref=cast(str | None, row.get("source_ref")),
+            created_at=cast(str | None, row.get("created_at")),
         )
+
+    @overload
+    def decimal(self, field: str, *, allow_none: Literal[False] = False) -> Decimal: ...
+
+    @overload
+    def decimal(self, field: str, *, allow_none: bool) -> Decimal | None: ...
 
     def decimal(self, field: str, *, allow_none: bool = False) -> Decimal | None:
         """Return the exact persisted financial value when v16 storage exists."""
@@ -134,7 +142,7 @@ def _as_text(value: object | None) -> str | None:
 def _as_float(value: object | None) -> float | None:
     if value is None:
         return None
-    return float(value)
+    return float(cast(float | int | str | Decimal, value))
 
 
 def _as_fee_breakdown(value: object | None) -> dict[str, Any] | None:

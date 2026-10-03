@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
+from typing import TYPE_CHECKING
 
 from account_truth.citic_history_xls import CITIC_HISTORY_XLS_SOURCE_TYPE
 from account_truth.citic_source_intake_contracts import (
@@ -17,13 +19,20 @@ from account_truth.citic_source_intake_contracts import (
 _FINGERPRINT_PATTERN = re.compile(CITIC_SOURCE_FILE_FINGERPRINT_PATTERN)
 
 
+if TYPE_CHECKING:
+    from account_truth.citic_source_intake import CiticSourceIntake
+    from account_truth.citic_source_intake_repository import (
+        CiticSourceIntakeRepositoryAccess,
+    )
+
+
 class CiticSourceIntakeProjectionMixin:
     def _intake_from_row(
-        self,
-        row: object,
+        self: CiticSourceIntakeRepositoryAccess,
+        row: sqlite3.Row | None,
         *,
         reused: bool,
-    ) -> object | None:
+    ) -> CiticSourceIntake | None:
         if row is None:
             return None
         counts = {
@@ -97,7 +106,7 @@ class CiticSourceIntakeProjectionMixin:
             reused=reused,
         )
 
-    def _json_list(self, value: object) -> list[str]:
+    def _json_list(self: CiticSourceIntakeRepositoryAccess, value: object) -> list[str]:
         try:
             loaded = json.loads(str(value))
         except (TypeError, ValueError):

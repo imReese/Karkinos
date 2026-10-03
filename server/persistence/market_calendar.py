@@ -86,7 +86,10 @@ def upsert_market_calendar_snapshot_in_transaction(
     exchange = str(payload.get("exchange") or "").strip().upper()
     source_fingerprint = str(payload.get("source_fingerprint") or "").strip()
     try:
-        year = int(payload.get("year"))
+        year_value = payload.get("year")
+        if year_value is None:
+            raise TypeError("market calendar year is missing")
+        year = int(year_value)
     except (TypeError, ValueError) as exc:
         raise ValueError("market calendar year is invalid") from exc
     if not exchange or not source_fingerprint:

@@ -10,6 +10,7 @@ from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
 from server.persistence.controlled_session_rejections import (
+    ControlledSessionBudgetUsage,
     controlled_session_budget_rejection,
 )
 from server.persistence.database_normalization import json_dict
@@ -169,7 +170,7 @@ class ControlledSessionBudgetRepositoryMixin(ControlledSessionRepositoryAccess):
                         """,
                     (*scope, requested["trading_day"]),
                 ).fetchone()
-                before = {
+                before: ControlledSessionBudgetUsage = {
                     "overlapping_gross_units": int(overlap["gross_units"] or 0),
                     "overlapping_buy_units": int(overlap["buy_units"] or 0),
                     "overlapping_order_count": int(overlap["order_count"] or 0),
@@ -213,7 +214,7 @@ class ControlledSessionBudgetRepositoryMixin(ControlledSessionRepositoryAccess):
                         or requested["order_count_capacity"]
                     ),
                 )
-                after = {
+                after: ControlledSessionBudgetUsage = {
                     "overlapping_gross_units": before["overlapping_gross_units"]
                     + int(requested["reserved_gross_units"]),
                     "overlapping_buy_units": before["overlapping_buy_units"]
