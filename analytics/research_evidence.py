@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Protocol
 
 from analytics.dataset_snapshot import dataset_research_use
@@ -157,6 +158,9 @@ class OosAnalyzer:
     name = "oos"
 
     def analyze(self, context: ResearchEvidenceContext) -> AnalyzerResult:
+        chronological = _chronological_oos_result(context.metrics_json)
+        if chronological is not None:
+            return chronological
         oos = _json_object(context.metrics_json.get("oos_validation"))
         if not oos:
             return AnalyzerResult(
@@ -185,6 +189,105 @@ class OosAnalyzer:
             },
             limitations=list(oos.get("limitations") or []),
         )
+
+
+def _chronological_oos_result(metrics: dict[str, Any]) -> AnalyzerResult | None:
+    if "chronological_validation" not in metrics and "execution_window" not in metrics:
+        return None
+    selection = _json_object(metrics.get("chronological_validation"))
+    window = _json_object(metrics.get("execution_window"))
+    snapshot = _json_object(metrics.get("dataset_snapshot"))
+    role = selection.get("role")
+    valid = (
+        selection.get("schema_version") == "karkinos.chronological_sweep.v1"
+        and window.get("schema_version") == "karkinos.backtest_execution_window.v1"
+        and role in ("training", "test")
+        and selection.get("selection_basis") == "training_only"
+        and selection.get("exploratory") is True
+        and selection.get("independent_final") is False
+        and window.get("exploratory") is True
+        and window.get("independent_final") is False
+        and window.get("independent_initial_cash") is True
+        and window.get("warmup_policy") == "strategy_state_only_no_orders_or_book_carry"
+    )
+    for key, snapshot_key in (
+        ("source_dataset_id", "immutable_dataset_id"),
+        ("source_snapshot_id", "snapshot_id"),
+    ):
+        identity = selection.get(key)
+        valid = (
+            valid
+            and isinstance(identity, str)
+            and bool(identity.strip())
+            and identity == window.get(key) == snapshot.get(snapshot_key)
+        )
+    try:
+        split = date.fromisoformat(selection["test_start_date"])
+        start, end, history_end, evaluate_from, evaluate_to, first, last = (
+            date.fromisoformat(window[field])
+            for field in (
+                "source_start_date",
+                "source_end_date",
+                "history_end_date",
+                "evaluation_start_date",
+                "evaluation_end_date",
+                "metric_start_date",
+                "metric_end_date",
+            )
+        )
+        valid = (
+            valid
+            and start < split <= end
+            and start <= evaluate_from <= first <= last <= evaluate_to <= end
+            and history_end == evaluate_to
+            and snapshot.get("date_range")
+            == {"start": start.isoformat(), "end": end.isoformat()}
+            and (
+                (role == "training" and evaluate_from == start and evaluate_to < split)
+                or (role == "test" and evaluate_from == split and evaluate_to == end)
+            )
+        )
+    except (KeyError, TypeError, ValueError):
+        valid = False
+    if not valid:
+        return AnalyzerResult(
+            name="oos",
+            status="blocked",
+            summary="Chronological evaluation evidence is incomplete or inconsistent.",
+            details={
+                "oos_available": False,
+                "required_for_current_run": True,
+                "validation_mode": "chronological_train_select_test",
+                "validation_status": "unavailable",
+                "role": role if role in ("training", "test") else "unknown",
+                "independent_final": False,
+            },
+            limitations=[
+                "Incomplete chronological provenance cannot establish heldout outcomes or support qualification."
+            ],
+        )
+    return AnalyzerResult(
+        name="oos",
+        status="degraded",
+        summary=(
+            "Training-only parameter selection; this report contains no heldout outcomes."
+            if role == "training"
+            else "An independent-book chronological test provides exploratory evaluation."
+        ),
+        details={
+            "oos_available": role == "test",
+            "required_for_current_run": True,
+            "validation_mode": "chronological_train_select_test",
+            "validation_status": "exploratory",
+            "role": role,
+            "split_timestamp": split.isoformat(),
+            "independent_final": False,
+        },
+        limitations=[
+            "A viewed or reused test is iterative evaluation, not a sealed independent final holdout.",
+            "Chronological evaluation alone does not establish qualification, historical PIT eligibility, or execution authority.",
+        ],
+    )
 
 
 def build_research_evidence_bundle(
@@ -285,8 +388,14 @@ def build_research_evidence_bundle(
             "after_cost_evidence_available": bool(
                 evidence_json or _json_object(metrics_json.get("evidence_bundle"))
             ),
-            "oos_evidence_available": bool(
-                _json_object(metrics_json.get("oos_validation"))
+            "oos_evidence_available": (
+                any(
+                    item.name == "oos" and item.details.get("oos_available") is True
+                    for item in analyzer_results
+                )
+                if "chronological_validation" in metrics_json
+                or "execution_window" in metrics_json
+                else bool(_json_object(metrics_json.get("oos_validation")))
             ),
             "cost_summary_available": bool(cost_summary_json),
             "fill_count": trade_statistics["fill_count"],

@@ -426,6 +426,18 @@ timing rules. Minimum observation and performance thresholds are explicit policy
 not invented universal constants. Being best among today's candidates is not
 evidence that a candidate passed admission.
 
+Ordinary dual-MA parameter sweeps can explicitly select on a training prefix and
+then evaluate the single chosen parameter set in a fresh test book. Normalized
+parameters are deduplicated and ties use their canonical ordering. Test prices
+never participate in ranking. The full immutable Dataset and its replay identity
+remain unchanged; an explicit execution window records the actual metric dates.
+Earlier bars warm the canonical crossover state and previous close only: orders,
+positions, cash, costs and distribution eligibility do not carry into the test.
+An already bullish warmup state does not manufacture an entry at the split.
+Training and test reports retain the same cost and corporate-action assumptions,
+plus the recorded choice and its provenance. This ordinary workflow is usable
+without AI and remains exploratory validation, not sealed final qualification.
+
 For the automated normalized-research path, explicit research and sealed end dates
 freeze one validation-selected champion before the sealed interval starts. The
 reservation binds the input snapshot, formula, baseline, costs and recorded trial

@@ -112,6 +112,8 @@ def build_backtest_report_metrics_json(
     from analytics.research_evidence import build_research_evidence_bundle
 
     metrics_json = dict(bt_result.get("metrics_json") or {})
+    if "fills" in bt_result:
+        metrics_json["fills"] = list(bt_result["fills"] or [])
     metrics_json["evidence_bundle"] = backtest_evidence_from_payload(bt_result)
     strategy_metadata = strategy_metadata_snapshot(request)
     metrics_json["strategy_metadata"] = strategy_metadata
