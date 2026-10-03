@@ -163,11 +163,13 @@ def run_single_backtest(
     """同步运行单次回测（在线程池中执行），供 run 和 compare 共用。"""
     from datetime import datetime
 
+    from analytics.backtest_capacity_evidence import build_backtest_capacity_evidence
     from analytics.dataset_snapshot import build_backtest_dataset_snapshot
     from backtest.distributions import distributions_from_evidence
     from backtest.engine import BacktestEngine
     from data.manager import DataManager
     from data.store import DataStore
+    from server.services.backtest_costs import resolve_backtest_costs
     from server.services.research_datasets import ResearchDatasetError
 
     dataset_binding = None
@@ -259,11 +261,15 @@ def run_single_backtest(
             )
         except ValueError as exc:
             raise ResearchDatasetError(str(exc)) from None
+    execution_config, cost_assumptions = resolve_backtest_costs(
+        request.cost_assumptions
+    )
     engine = BacktestEngine(
         strategy=strategy,
         instruments=instruments,
         data_handlers=data_handlers,
         initial_cash=Decimal(str(request.initial_cash)),
+        execution_config=execution_config,
         db=db,
         cash_dividends=cash_dividends,
         include_share_distributions=cash_dividend_mode
@@ -291,6 +297,12 @@ def run_single_backtest(
     )
     metrics_json = metrics.to_json_dict()
     metrics_json["execution_timing"] = result.execution_timing
+    metrics_json["cost_assumptions"] = cost_assumptions
+    metrics_json["capacity_review"] = build_backtest_capacity_evidence(
+        fills=result.fills,
+        data_handlers=data_handlers,
+        initial_cash=result.initial_cash,
+    )
     if result.cash_dividend_accounting is not None:
         metrics_json["cash_dividend_accounting"] = result.cash_dividend_accounting
     metrics_json["evidence_bundle"] = evidence_json

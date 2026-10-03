@@ -116,6 +116,7 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
                     start_date=request.start_date,
                     end_date=request.end_date,
                     initial_cash=request.initial_cash,
+                    cost_assumptions=request.cost_assumptions,
                     strategy=request.strategy,
                     assets=request.assets,
                     params=params,

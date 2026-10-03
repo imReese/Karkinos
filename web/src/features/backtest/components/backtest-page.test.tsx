@@ -3104,6 +3104,86 @@ test('runs a parameter sweep and renders ranked research warnings', async () => 
   ).toBeTruthy();
 });
 
+test.each(['custom', 'empty', 'default'] as const)(
+  'shares %s cost assumptions across run, sweep, and comparison',
+  async (mode) => {
+    const { fetchMock } = renderBacktestPage({ results: [] });
+    await screen.findByText('Strategy replay');
+    fireEvent.click(screen.getByText('Trading cost assumptions'));
+    fireEvent.change(screen.getByLabelText('Cost model'), {
+      target: { value: 'custom' },
+    });
+    if (mode !== 'empty') {
+      for (const [label, value] of [
+        ['Stock commission (bps)', '3.7'],
+        ['Stock minimum commission (CNY)', '0'],
+        ['ETF commission (bps)', '0'],
+        ['Slippage per fill (bps)', '12.5'],
+      ])
+        fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    }
+    if (mode === 'default')
+      fireEvent.change(screen.getByLabelText('Cost model'), {
+        target: { value: 'default' },
+      });
+    openBacktestDisclosure('backtest-advanced-tools-disclosure');
+    for (const [name, path] of [
+      ['Run parameter sweep', '/api/backtest/sweep'],
+      ['Run comparison', '/api/backtest/compare'],
+      ['Run backtest', '/api/backtest/run'],
+    ]) {
+      fireEvent.submit(
+        screen.getByRole('button', { name }).closest('form') as HTMLFormElement,
+      );
+      await waitFor(() =>
+        expect(fetchMock.mock.calls.some(([url]) => String(url) === path)).toBe(
+          true,
+        ),
+      );
+      const call = fetchMock.mock.calls.find(([url]) => String(url) === path);
+      const payload = JSON.parse(String(call?.[1]?.body));
+      if (mode === 'custom')
+        expect(payload.cost_assumptions).toEqual({
+          stock_commission_rate: 0.00037,
+          stock_min_commission: 0,
+          etf_commission_rate: 0,
+          slippage_bps: 12.5,
+        });
+      else expect(payload).not.toHaveProperty('cost_assumptions');
+    }
+  },
+);
+
+test('rejects invalid cost inputs before all three research submissions', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [] });
+  await screen.findByText('Strategy replay');
+  fireEvent.click(screen.getByText('Trading cost assumptions'));
+  fireEvent.change(screen.getByLabelText('Cost model'), {
+    target: { value: 'custom' },
+  });
+  fireEvent.change(screen.getByLabelText('Slippage per fill (bps)'), {
+    target: { value: '10000' },
+  });
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
+  for (const name of [
+    'Run parameter sweep',
+    'Run comparison',
+    'Run backtest',
+  ]) {
+    fireEvent.submit(
+      screen.getByRole('button', { name }).closest('form') as HTMLFormElement,
+    );
+  }
+  expect(
+    fetchMock.mock.calls.filter(([url]) =>
+      /\/api\/backtest\/(run|sweep|compare)$/.test(String(url)),
+    ),
+  ).toHaveLength(0);
+  expect(
+    screen.getAllByText(/slippage must be below 10,000 bps/).length,
+  ).toBeGreaterThan(0);
+});
+
 test('runs a same-dataset parameter comparison and renders saved result ids', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 

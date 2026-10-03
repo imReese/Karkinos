@@ -9,6 +9,7 @@ import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
 import { CashDividendAccountingPanel } from './cash-dividend-accounting-panel';
+import { BacktestCostEvidencePanel } from './backtest-cost-evidence-panel';
 import { SingleInstrumentLoopReadinessCard } from './single-instrument-loop-readiness-card';
 import { StrategySignalPreviewPanel } from './strategy-signal-preview-panel';
 import { SummaryValue } from './strategy-metadata-panel';
@@ -136,6 +137,7 @@ export function BacktestRunResultsPanel() {
                 id="backtest-after-cost-evidence"
               >
                 <MetricsGrid report={latestReport} />
+                <BacktestCostEvidencePanel report={latestReport} />
                 <CashDividendAccountingPanel
                   accounting={
                     latestReport.metrics_json?.cash_dividend_accounting

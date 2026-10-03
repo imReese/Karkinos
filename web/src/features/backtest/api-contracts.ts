@@ -3,6 +3,18 @@ import type {
   CorporateActionEvidence,
   CorporateActionMode,
 } from './corporate-action-contracts';
+import type {
+  BacktestCostAssumptions,
+  BacktestEffectiveCosts,
+  BacktestCapacityReview,
+  CostSummary,
+} from './cost-contracts';
+export type {
+  BacktestCostAssumptions,
+  BacktestEffectiveCosts,
+  BacktestCapacityReview,
+  CostSummary,
+} from './cost-contracts';
 
 export type { CorporateActionEvidence } from './corporate-action-contracts';
 export type {
@@ -22,13 +34,6 @@ export type BacktestMetrics = {
   volatility?: number;
   win_rate: number;
   duration_days: number;
-  total_commission?: number;
-  total_slippage?: number;
-  total_trades?: number;
-  gross_turnover?: number;
-};
-
-export type CostSummary = {
   total_commission?: number;
   total_slippage?: number;
   total_trades?: number;
@@ -230,6 +235,7 @@ export type StrategyMetadataSnapshot = {
 };
 
 export type BacktestRunRequest = {
+  cost_assumptions?: BacktestCostAssumptions;
   dataset_id?: string;
   corporate_action_mode?: CorporateActionMode;
   start_date: string;
@@ -422,6 +428,7 @@ export type BacktestAttributionPreviewResponse = {
 };
 
 export type BacktestSweepRequest = {
+  cost_assumptions?: BacktestCostAssumptions;
   dataset_id?: string;
   start_date: string;
   end_date: string;
@@ -457,6 +464,7 @@ export type BacktestCompareRunRequest = {
 };
 
 export type BacktestCompareRequest = {
+  cost_assumptions?: BacktestCostAssumptions;
   dataset_id?: string;
   start_date: string;
   end_date: string;
@@ -489,6 +497,7 @@ export type BacktestReport = {
   id: number;
   created_at: string;
   config: {
+    cost_assumptions?: BacktestCostAssumptions | null;
     dataset_id?: string | null;
     corporate_action_mode?: CorporateActionMode;
     start_date: string;
@@ -502,6 +511,8 @@ export type BacktestReport = {
   };
   metrics: BacktestMetrics;
   metrics_json?: Partial<BacktestMetrics> & {
+    cost_assumptions?: BacktestEffectiveCosts | null;
+    capacity_review?: BacktestCapacityReview | null;
     cash_dividend_accounting?: CashDividendAccounting | null;
     execution_timing?: {
       policy_id: string;
