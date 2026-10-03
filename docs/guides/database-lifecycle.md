@@ -152,6 +152,16 @@ the selected data root, non-secret configuration identity, hashes, database iden
 and migration lineage and restores only into a new candidate workspace before replay.
 Neither workflow automatically overwrites live state.
 
+Bundle verification replays published Dataset objects from the current
+`research/objects` and `research/catalog` layout and the legacy `objects` and
+`index/catalog` layout. It also checks daily ingestion checkpoints under
+`research/checkpoints`, without counting them as published interval datasets.
+Saved backtests, observation sources and outcomes, and successful Dataset jobs
+also supply replay identities independently of the rebuildable Catalog.
+An interrupted collection can be restored and resumed from its intact checkpoints;
+a referenced Dataset with unreadable immutable objects fails bundle verification,
+even when those damaged bytes were already present before the backup.
+
 ## Recovery boundaries
 
 Restore matching source first when a database has an unknown migration. A version

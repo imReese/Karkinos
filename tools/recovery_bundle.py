@@ -226,23 +226,90 @@ def _verify_sqlite_store(path: Path, *, foreign_keys: bool) -> None:
 
 
 def _verify_published_datasets(data_dir: Path) -> int:
-    objects = data_dir / "objects"
-    catalog_root = data_dir / "index"
-    catalog_path = catalog_root / "catalog/datasets.sqlite3"
-    if not objects.exists() and not catalog_path.exists():
-        return 0
-    if not objects.is_dir() or not catalog_path.is_file():
-        raise RuntimeError("recovery_dataset_store_incomplete")
     from data.dataset.catalog import DatasetCatalog
+    from data.dataset.model import DatasetRef
     from data.dataset.reader import read_daily_bar_dataset
     from data.storage.objects import ContentAddressedObjectStore
 
-    store = ContentAddressedObjectStore(objects)
-    catalog = DatasetCatalog(catalog_root)
-    entries = tuple(catalog.list_daily_bar_datasets())
-    for entry in entries:
-        read_daily_bar_dataset(store, entry.ref)
-    return len(entries)
+    research = data_dir / "research"
+    published_ids: set[str] = set()
+    replayed_research_ids: set[str] = set()
+    for objects, catalog_root, published in (
+        (data_dir / "objects", data_dir / "index", True),
+        (research / "objects", research, True),
+        (research / "objects", research / "checkpoints", False),
+    ):
+        catalog = DatasetCatalog(catalog_root)
+        if not catalog.path.exists():
+            # Research ingestion can stop after captures or daily checkpoints,
+            # before a complete interval has been published. Preserve the old
+            # complete-store requirement for the legacy layout only.
+            if catalog_root == data_dir / "index" and objects.exists():
+                raise RuntimeError("recovery_dataset_store_incomplete")
+            continue
+        if not objects.is_dir() or not catalog.path.is_file():
+            raise RuntimeError("recovery_dataset_store_incomplete")
+        _verify_sqlite_store(catalog.path, foreign_keys=False)
+        store = ContentAddressedObjectStore(objects)
+        entries = catalog.list_daily_bar_datasets()
+        for entry in entries:
+            read_daily_bar_dataset(store, entry.ref)
+            if objects == research / "objects":
+                replayed_research_ids.add(entry.ref.dataset_id)
+        if published:
+            published_ids.update(entry.ref.dataset_id for entry in entries)
+    # Catalogs are rebuildable discovery indexes. Saved consumers remain replay
+    # roots even when the index is absent or no longer contains their identity.
+    bound_ids = _referenced_research_datasets(data_dir / "app.db")
+    store = ContentAddressedObjectStore(research / "objects")
+    for dataset_id in sorted(bound_ids - replayed_research_ids):
+        read_daily_bar_dataset(store, DatasetRef(store.resolve_ref(dataset_id)))
+    return len(published_ids | bound_ids)
+
+
+def _referenced_research_datasets(database: Path) -> set[str]:
+    dataset_ids: set[str] = set()
+
+    def add(value: object) -> None:
+        if value is not None:
+            if not isinstance(value, str) or not value:
+                raise RuntimeError("recovery_dataset_reference_invalid")
+            dataset_ids.add(value)
+
+    with closing(
+        sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
+    ) as conn:
+        tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        for config_json, metrics_json in conn.execute(
+            "SELECT config_json, metrics_json FROM backtest_results"
+        ):
+            config = json.loads(config_json or "{}")
+            metrics = json.loads(metrics_json or "{}")
+            add(config.get("dataset_id"))
+            add((metrics.get("dataset_binding") or {}).get("dataset_id"))
+            add((metrics.get("dataset_snapshot") or {}).get("immutable_dataset_id"))
+        if "research_observations" in tables:
+            for (source_json,) in conn.execute(
+                "SELECT source_json FROM research_observations"
+            ):
+                source = json.loads(source_json)
+                if source.get("source_dataset_kind") == "immutable_dataset":
+                    add(source.get("dataset_id"))
+            for (dataset_id,) in conn.execute(
+                "SELECT dataset_id FROM research_observation_publications "
+                "UNION SELECT dataset_id FROM research_observation_outcomes"
+            ):
+                add(dataset_id)
+        if "job_runs" in tables:
+            for (result_ref,) in conn.execute(
+                "SELECT result_ref FROM job_runs WHERE status='succeeded' "
+                "AND result_ref LIKE 'dataset:%'"
+            ):
+                add(result_ref.removeprefix("dataset:"))
+    return dataset_ids
 
 
 def _load_non_secret_config(path: Path) -> dict[str, Any]:
