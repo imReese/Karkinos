@@ -143,6 +143,7 @@ export function ParameterComparePanel({
   startDate,
   endDate,
   initialCash,
+  costAssumptions,
   strategy,
   parameterSchema,
   assets,
@@ -152,6 +153,7 @@ export function ParameterComparePanel({
   startDate: string;
   endDate: string;
   initialCash: string;
+  costAssumptions?: BacktestRunRequest['cost_assumptions'];
   strategy: string;
   parameterSchema: StrategyParameterSchema[];
   assets?: BacktestRunRequest['assets'];
@@ -229,6 +231,7 @@ export function ParameterComparePanel({
     try {
       const result = await compare.mutateAsync({
         ...(datasetId ? { dataset_id: datasetId } : {}),
+        ...(costAssumptions ? { cost_assumptions: costAssumptions } : {}),
         start_date: startDate,
         end_date: endDate,
         initial_cash: Number(initialCash),

@@ -47,6 +47,7 @@ const REFACTORED_PRODUCTION_FAMILIES = {
     'features/backtest/api.ts',
     'features/backtest/api-contracts.ts',
     'features/backtest/corporate-action-contracts.ts',
+    'features/backtest/cost-contracts.ts',
     'features/backtest/api-governance-contracts.ts',
     'features/backtest/api-hooks.ts',
   ],

@@ -19,6 +19,7 @@ import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
 import { CashDividendAccountingPanel } from './cash-dividend-accounting-panel';
+import { BacktestCostEvidencePanel } from './backtest-cost-evidence-panel';
 import { StrategyMetadataSnapshotPanel } from './strategy-metadata-snapshot-panel';
 import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
@@ -371,6 +372,7 @@ export function BacktestReportView() {
             points={report.data.equity_curve}
           />
           <MetricsGrid report={report.data} />
+          <BacktestCostEvidencePanel report={report.data} />
           <CashDividendAccountingPanel
             accounting={report.data.metrics_json?.cash_dividend_accounting}
           />

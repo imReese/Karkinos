@@ -15,6 +15,8 @@ import {
 } from './backtest-page-primitives';
 import { ResearchDatasetPanel } from './research-dataset-panel';
 import { CashDividendModeControl } from './cash-dividend-mode-control';
+import { BacktestCostControls } from './backtest-cost-controls';
+import { backtestCostCopy } from '../copy-costs';
 import { cashDividendCopy } from '../copy-cash-dividends';
 import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
@@ -30,6 +32,7 @@ export function BacktestRunSetupPanel() {
     datasetPreparing,
     selectedDataset,
     corporateActionMode,
+    costInputs,
     locale,
     formError,
     handoffLabels,
@@ -59,6 +62,11 @@ export function BacktestRunSetupPanel() {
     submitRun,
     symbol,
   } = useBacktestPage();
+  const advancedDisabledReason = !costInputs.valid
+    ? backtestCostCopy[locale].invalid
+    : corporateActionMode !== 'price_only'
+      ? cashDividendCopy[locale].advancedDisabled
+      : undefined;
   return (
     <details
       className={`group min-w-0 xl:border-l xl:border-[var(--app-divider)] xl:pl-6 ${
@@ -288,6 +296,10 @@ export function BacktestRunSetupPanel() {
 
               <ResearchDatasetPanel />
               <CashDividendModeControl />
+              <BacktestCostControls
+                inputs={costInputs}
+                disabled={datasetPreparing || runBacktest.isPending}
+              />
 
               <RunReadinessSummary
                 assetClassLabel={selectedAssetClassLabel}
@@ -328,14 +340,11 @@ export function BacktestRunSetupPanel() {
               title={labels.advancedToolsTitle}
             >
               <ParameterSweepPanel
-                disabledReason={
-                  corporateActionMode !== 'price_only'
-                    ? cashDividendCopy[locale].advancedDisabled
-                    : undefined
-                }
+                disabledReason={advancedDisabledReason}
                 startDate={startDate}
                 endDate={endDate}
                 initialCash={initialCash}
+                costAssumptions={costInputs.assumptions}
                 strategy={strategy}
                 parameterSchema={parameterSchema}
                 parameterValues={parameterValues}
@@ -343,14 +352,11 @@ export function BacktestRunSetupPanel() {
                 datasetId={selectedDataset?.dataset_id}
               />
               <ParameterComparePanel
-                disabledReason={
-                  corporateActionMode !== 'price_only'
-                    ? cashDividendCopy[locale].advancedDisabled
-                    : undefined
-                }
+                disabledReason={advancedDisabledReason}
                 startDate={startDate}
                 endDate={endDate}
                 initialCash={initialCash}
+                costAssumptions={costInputs.assumptions}
                 strategy={strategy}
                 parameterSchema={parameterSchema}
                 assets={buildSingleAsset(symbol, assetClass)}

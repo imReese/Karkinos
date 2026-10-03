@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from server.contracts.http.ledger_models import EquityPoint
 
@@ -32,6 +32,22 @@ class ActionTaskStatusUpdate(BaseModel):
 # ---------- Backtest ----------
 
 
+class BacktestCostAssumptions(BaseModel):
+    """Research cost inputs; omitted overrides retain canonical model defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stock_commission_rate: float | None = Field(
+        default=None, ge=0, le=1, allow_inf_nan=False
+    )
+    stock_min_commission: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    etf_commission_rate: float | None = Field(
+        default=None, ge=0, le=1, allow_inf_nan=False
+    )
+    etf_min_commission: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    slippage_bps: float = Field(default=0, ge=0, lt=10000, allow_inf_nan=False)
+
+
 class BacktestRequest(BaseModel):
     # 指定后只消费该数据集，不能失败后自动改用旧缓存或远程行情。
     dataset_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
@@ -41,6 +57,7 @@ class BacktestRequest(BaseModel):
     start_date: str = "2025-01-02"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
     initial_cash: float = 100_000
+    cost_assumptions: BacktestCostAssumptions | None = None
     strategy: str = "dual_ma"
     short_period: int = 5
     long_period: int = 20
@@ -105,6 +122,7 @@ class BacktestSweepRequest(BaseModel):
     start_date: str = "2025-01-02"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
     initial_cash: float = 100_000
+    cost_assumptions: BacktestCostAssumptions | None = None
     strategy: str = "dual_ma"
     params: dict[str, Any] | None = None
     param_grid: dict[str, list[Any]]
@@ -142,6 +160,7 @@ class CompareRequest(BaseModel):
     start_date: str = "2011-06-01"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
     initial_cash: float = 100_000
+    cost_assumptions: BacktestCostAssumptions | None = None
     strategies: list[str] | None = None  # None = 全部策略
     runs: list[CompareRunRequest] | None = None
     assets: list[dict[str, str]] | None = None

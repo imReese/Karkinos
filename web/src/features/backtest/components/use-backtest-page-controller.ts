@@ -33,6 +33,8 @@ import type { PublishedDataset } from '../dataset-api';
 import type { CorporateActionMode } from '../corporate-action-contracts';
 import { cashDividendErrorMessage } from '../copy-cash-dividends';
 import { useBacktestPortfolioInstrumentsQuery } from './backtest-portfolio-query';
+import { useBacktestCostInputs } from './backtest-cost-inputs';
+import { backtestCostCopy } from '../copy-costs';
 
 export function useBacktestPageController() {
   const copy = useCopy();
@@ -75,6 +77,7 @@ export function useBacktestPageController() {
   const [startDate, setStartDate] = useState('2025-01-02');
   const [endDate, setEndDate] = useState(() => todayDate());
   const [initialCash, setInitialCash] = useState('100000');
+  const costInputs = useBacktestCostInputs();
   const [strategy, setStrategy] = useState(searchDefaults.strategy);
   const [parameterValues, setParameterValues] = useState<
     Record<string, string>
@@ -183,6 +186,10 @@ export function useBacktestPageController() {
   const submitRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (datasetPreparing) return;
+    if (!costInputs.valid) {
+      setFormError(backtestCostCopy[locale].invalid);
+      return;
+    }
     if (
       selectedDataset &&
       (selectedDataset.start_date !== startDate ||
@@ -226,6 +233,8 @@ export function useBacktestPageController() {
         assetClass,
       });
       if (selectedDataset) payload.dataset_id = selectedDataset.dataset_id;
+      if (costInputs.assumptions)
+        payload.cost_assumptions = costInputs.assumptions;
       payload.corporate_action_mode = corporateActionMode;
       const report = await runBacktest.mutateAsync(payload);
       setLatestReport(report);
@@ -295,6 +304,7 @@ export function useBacktestPageController() {
     assignSelectedStrategyToSymbol,
     attributionPreview,
     copy,
+    costInputs,
     endDate,
     formError,
     handoffLabels,
