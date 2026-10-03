@@ -20,7 +20,7 @@ from analytics.dataset_snapshot import verify_backtest_dataset_snapshot_replay
 from analytics.strategy_advancement_gate import strategy_advancement_backtest_view
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
-from data.dataset.reader import read_daily_bar_dataset
+from data.dataset.reader import DatasetReaderIntegrityError, read_daily_bar_dataset
 from data.market.contracts import DailyBarRequest
 from data.market.serving import MarketServingStore
 from data.providers.tdx import TdxDailyBarProvider, TdxRuntimeSettings
@@ -63,7 +63,9 @@ class _Provider:
         if self.correction:
             close += Decimal("0.1")
         response = {
-            field: pd.DataFrame([[value]], index=[day], columns=["600000.SH"])
+            field: pd.DataFrame(
+                [[value]], index=[day], columns=[f"{request.instruments[0].symbol}.SH"]
+            )
             for field, value in zip(
                 ("Open", "High", "Low", "Close", "Volume", "Amount"),
                 (10.4, 11, 10, close, 10000, 10.5),
@@ -147,6 +149,96 @@ def test_catalog_status_isolates_one_corrupt_dataset_manifest(tmp_path):
     assert status["unreadable_dataset_count"] == 1
 
 
+@pytest.mark.parametrize("symbol", ["600000", "600001"])
+@pytest.mark.parametrize("damaged_part", ["manifest", "materialization"])
+def test_prepare_skips_bad_newer_cache_without_replacing_bound_inputs(
+    tmp_path, caplog, symbol, damaged_part
+):
+    healthy = _publish(tmp_path)
+    other_request = DailyBarRequest(
+        (InstrumentKey(symbol, InstrumentType.STOCK),), _DAYS[0], _DAYS[-1]
+    )
+    broken = prepare_daily_dataset(
+        tmp_path,
+        request=other_request,
+        dates=_DAYS,
+        provider=_Provider(correction=True),
+        refresh=True,
+    )
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    snapshot = read_daily_bar_dataset(store, broken).snapshot
+    damaged = (
+        broken.manifest_ref
+        if damaged_part == "manifest"
+        else store.resolve_ref(snapshot.partitions[0].materialization_id)
+    )
+    path = tmp_path / "objects/sha256" / damaged.digest[:2] / damaged.digest[2:]
+    path.chmod(0o600)
+    path.write_bytes(b"broken")
+
+    # Cache discovery can keep using a healthy exact interval without credentials.
+    service = ResearchDatasetService(tmp_path, TdxRuntimeSettings())
+    result = service.prepare(_REQUEST, db=None)
+    assert result["dataset_id"] == healthy.dataset_id
+    assert result["reused"] is True
+    if symbol == "600000" or damaged_part == "manifest":
+        assert f"Skipping unreadable cached dataset dataset={broken.dataset_id}" in (
+            caplog.text
+        )
+
+    # Selecting the damaged immutable identity still fails, even with a healthy peer.
+    with pytest.raises(
+        ResearchDatasetError, match="dataset_unreadable_no_remote_fallback"
+    ):
+        load_dataset_backtest_inputs(
+            tmp_path,
+            _backtest_request(
+                broken, assets=[{"symbol": symbol, "asset_class": "stock"}]
+            ),
+        )
+
+
+def test_prepare_without_healthy_cache_enters_explicit_preparation(
+    tmp_path, monkeypatch
+):
+    broken = _publish(tmp_path)
+    path = (
+        tmp_path
+        / "objects/sha256"
+        / broken.manifest_ref.digest[:2]
+        / broken.manifest_ref.digest[2:]
+    )
+    path.chmod(0o600)
+    path.write_bytes(b"broken")
+    service = ResearchDatasetService(tmp_path, TdxRuntimeSettings("test-key"))
+    monkeypatch.setattr(
+        "server.services.research_datasets._verified_dates", lambda *_: _DAYS
+    )
+    calls = []
+
+    def prepare(request, dates, refresh):
+        calls.append((request, dates, refresh))
+        return {"dataset_id": "new-explicit-preparation", "reused": False}
+
+    monkeypatch.setattr(service, "_prepare_in_child", prepare)
+    assert service.prepare(_REQUEST, db=None)["reused"] is False
+    assert calls == [(_REQUEST, _DAYS, False)]
+
+
+def test_prepare_does_not_swallow_unexpected_reader_failure(tmp_path, monkeypatch):
+    _publish(tmp_path)
+    service = ResearchDatasetService(tmp_path, TdxRuntimeSettings())
+
+    def broken_reader(*_):
+        raise TypeError("unexpected reader defect")
+
+    monkeypatch.setattr(
+        "server.services.research_datasets.read_daily_bar_dataset", broken_reader
+    )
+    with pytest.raises(TypeError, match="unexpected reader defect"):
+        service.prepare(_REQUEST, db=None)
+
+
 def test_failed_preparation_resumes_only_missing_sessions(tmp_path):
     first = _Provider(fail_day=_DAYS[2])
     with pytest.raises(RuntimeError, match="controlled network failure"):
@@ -157,6 +249,80 @@ def test_failed_preparation_resumes_only_missing_sessions(tmp_path):
     ref = _publish(tmp_path, second)
     assert second.calls == list(_DAYS[2:])
     assert dataset_summary(tmp_path, ref)["partition_count"] == len(_DAYS)
+
+
+@pytest.mark.parametrize("damage", ["manifest_corrupt", "materialization_missing"])
+def test_interrupted_preparation_skips_bad_checkpoint_and_keeps_healthy_days(
+    tmp_path, caplog, damage
+):
+    with pytest.raises(RuntimeError, match="controlled network failure"):
+        _publish(tmp_path, _Provider(fail_day=_DAYS[2]))
+    checkpoint = (
+        DatasetCatalog(tmp_path / "checkpoints")
+        .list_daily_bar_datasets(start_date=_DAYS[0], end_date=_DAYS[0])[0]
+        .ref
+    )
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    snapshot = read_daily_bar_dataset(store, checkpoint).snapshot
+    damaged = (
+        checkpoint.manifest_ref
+        if damage == "manifest_corrupt"
+        else store.resolve_ref(snapshot.partitions[0].materialization_id)
+    )
+    path = tmp_path / "objects/sha256" / damaged.digest[:2] / damaged.digest[2:]
+    if damage == "manifest_corrupt":
+        path.chmod(0o600)
+        path.write_bytes(b"broken")
+    else:
+        path.unlink()
+
+    second = _Provider(correction=True)
+    ref = _publish(tmp_path, second)
+    assert second.calls == [_DAYS[0], *_DAYS[2:]]
+    assert read_daily_bar_dataset(store, ref).row_count == len(_DAYS)
+    assert (
+        f"Skipping unreadable dataset checkpoint dataset={checkpoint.dataset_id}"
+        in (caplog.text)
+    )
+    with pytest.raises(DatasetReaderIntegrityError):
+        read_daily_bar_dataset(store, checkpoint)
+
+
+@pytest.mark.parametrize("symbol", ["600000", "600001"])
+def test_bad_newer_checkpoint_does_not_block_healthy_same_day(tmp_path, caplog, symbol):
+    healthy = _publish(tmp_path)
+    prepare_daily_dataset(
+        tmp_path,
+        request=DailyBarRequest(
+            (InstrumentKey(symbol, InstrumentType.STOCK),), _DAYS[0], _DAYS[-1]
+        ),
+        dates=_DAYS,
+        provider=_Provider(correction=True),
+        refresh=True,
+    )
+    checkpoint = (
+        DatasetCatalog(tmp_path / "checkpoints")
+        .list_daily_bar_datasets(start_date=_DAYS[0], end_date=_DAYS[0])[0]
+        .ref
+    )
+    path = (
+        tmp_path
+        / "objects/sha256"
+        / checkpoint.manifest_ref.digest[:2]
+        / checkpoint.manifest_ref.digest[2:]
+    )
+    path.chmod(0o600)
+    path.write_bytes(b"broken")
+
+    provider = _Provider(fail_day=_DAYS[0])
+    prepared = _publish(tmp_path, provider)
+    assert provider.calls == []
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    assert (
+        read_daily_bar_dataset(store, prepared).bars[0]
+        == read_daily_bar_dataset(store, healthy).bars[0]
+    )
+    assert checkpoint.dataset_id in caplog.text
 
 
 def test_explicit_refresh_preserves_old_dataset_and_updates_serving(tmp_path):
