@@ -51,10 +51,14 @@ order:
    evidence and configured rules. Keep the existing account scan's evidence gates
    throughout migration; simulation admission alone never activates that scan.
 
-Independent research observation and automatic health monitoring are target
-capabilities, not currently implemented runtime guarantees. Do not expand this
-work into live trading, broker adapters, capital authorization or a general
-workflow framework.
+Independent target-only research observation supports explicit start, publish /
+measure, and pause commands. It freezes a saved dual-MA or Formula candidate,
+publishes only the latest closed session from a verified immutable Dataset, and
+measures exact future price endpoints in a separate observation history. It
+does not simulate fills or account returns. Automatic observation scheduling,
+deterministic health feedback, and the subsequent qualification linkage remain
+delivery work. Do not expand this work into live trading, broker adapters,
+capital authorization or a general workflow framework.
 
 ## Frozen
 

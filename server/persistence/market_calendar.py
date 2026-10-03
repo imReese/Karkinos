@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import timezone
 from typing import Any
 
 from server.contracts.market_calendar import MarketCalendarVerificationCommand
@@ -17,10 +18,10 @@ class MarketCalendarRepository(SQLiteRepository):
         """Ingest provider evidence without accepting self-asserted verification."""
 
         payload = _snapshot_payload(snapshot)
-        now = self._now().isoformat()
         with sqlite3.connect(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
+            now = self._now(timezone.utc).isoformat()
             row = upsert_market_calendar_snapshot_in_transaction(
                 conn,
                 _as_unverified_provider_payload(payload),
@@ -42,10 +43,10 @@ class MarketCalendarRepository(SQLiteRepository):
     ) -> dict[str, Any] | None:
         """Apply a review only when the exact provider evidence is still current."""
 
-        now = self._now().isoformat()
         with sqlite3.connect(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
+            now = self._now(timezone.utc).isoformat()
             current = _find_snapshot(
                 conn,
                 exchange=command.exchange,
@@ -107,8 +108,8 @@ def upsert_market_calendar_snapshot_in_transaction(
             verification_source_fingerprint, official_source_fingerprint,
             official_verified_at,
             official_verified_by, limitations_json, days_json,
-            created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_at, updated_at, fetched_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(exchange, year) DO UPDATE SET
             provider = excluded.provider,
             schema_version = excluded.schema_version,
@@ -124,7 +125,8 @@ def upsert_market_calendar_snapshot_in_transaction(
             official_verified_by = excluded.official_verified_by,
             limitations_json = excluded.limitations_json,
             days_json = excluded.days_json,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            fetched_at = excluded.fetched_at
         """,
         (
             exchange,
@@ -145,6 +147,7 @@ def upsert_market_calendar_snapshot_in_transaction(
             json.dumps(days, ensure_ascii=False, sort_keys=True),
             now,
             now,
+            normalized.get("fetched_at"),
         ),
     )
     row = _find_snapshot(conn, exchange=exchange, year=year)

@@ -474,7 +474,7 @@ def build_static_market_calendar_snapshot(
         provider=provider,
         days=tuple(days),
         source_fingerprint=fingerprint,
-        fetched_at=fetched_at or datetime.now().isoformat(),
+        fetched_at=fetched_at or datetime.now(_SHANGHAI_TZ).isoformat(),
         limitations=tuple(dict.fromkeys(combined_limitations)),
     )
 

@@ -13,7 +13,7 @@ or otherwise migrate that state deliberately first.
 
 Karkinos declares the completed financial persistence foundation as **Database
 Format v1**. The format version is intentionally separate from the append-only
-migration head: Format v1 currently ends at migration head 17. Migration numbers
+migration head: Format v1 currently ends at migration head 23. Migration numbers
 are historical lineage identifiers, not product/database major versions.
 
 Ordinary application work, refactors, UI changes, query rewrites, and data-flywheel
@@ -28,6 +28,13 @@ Format v1 guarantees the foundation established through migration head 17:
 immutable migration lineage, FULL/FK-aware authoritative writes, verified recovery
 bundles, exact financial decimal persistence with provenance, and database-level
 financial fact invariants.
+
+Migrations 22 and 23 add durable independent research target observations and
+preserve market-calendar capture times. Observation publications and measured
+outcomes are immutable; command receipts make retries safe after a restart.
+Existing calendar rows retain an unknown capture time rather than receiving a
+fabricated historical timestamp. Fresh calendar capture and verification are
+required before those rows can support forward publication.
 
 The market metadata database has its own immutable migration registry. Its
 Format v1 now includes migration head 2, which retains old stock-universe JSON

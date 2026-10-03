@@ -221,7 +221,8 @@ def _dataset_quality_payload(
     return {"status": "ok" if not issues else "warning", "issues": issues}
 
 
-def _dataset_snapshot_id(payload: dict[str, Any]) -> str:
+def backtest_dataset_snapshot_content_id(payload: dict[str, Any]) -> str:
+    """Hash a snapshot body, excluding its snapshot_id, with the frozen encoding."""
     frozen = json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False)
     return "sha256:" + hashlib.sha256(frozen.encode("utf-8")).hexdigest()
 
@@ -400,7 +401,7 @@ def build_backtest_dataset_snapshot(
             snapshot["corporate_action_evidence"] = research_dataset_binding[
                 "corporate_action_evidence"
             ]
-    snapshot["snapshot_id"] = _dataset_snapshot_id(snapshot)
+    snapshot["snapshot_id"] = backtest_dataset_snapshot_content_id(snapshot)
     return snapshot
 
 
@@ -424,7 +425,9 @@ def verify_backtest_dataset_snapshot_replay(
     snapshot_core.pop("snapshot_id", None)
     if value.get("schema_version") != "karkinos.dataset_snapshot.v1":
         blockers.append("dataset_snapshot_schema_invalid")
-    if not snapshot_id or snapshot_id != _dataset_snapshot_id(snapshot_core):
+    if not snapshot_id or snapshot_id != backtest_dataset_snapshot_content_id(
+        snapshot_core
+    ):
         blockers.append("dataset_snapshot_identity_mismatch")
     content_identity = value.get("content_identity")
     if (
