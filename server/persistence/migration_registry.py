@@ -19,6 +19,7 @@ from server.persistence.quote_schema_migrations import (
     build_quote_schema_migrations,
 )
 from server.persistence.research_observation_schema import V22_RESEARCH_OBSERVATIONS
+from server.persistence.research_paper_schema import V24_RESEARCH_PAPER_BOOKS
 
 
 @dataclass(frozen=True)
@@ -507,5 +508,10 @@ MIGRATIONS = (
         statements=(
             "ALTER TABLE market_calendar_snapshots ADD COLUMN fetched_at TEXT",
         ),
+    ),
+    SchemaMigration(
+        version=24,
+        name="persist_independent_research_paper_books",
+        statements=V24_RESEARCH_PAPER_BOOKS,
     ),
 )

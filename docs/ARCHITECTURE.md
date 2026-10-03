@@ -402,6 +402,26 @@ aborts publication. Stored request receipts, version checks and immutable histor
 protect retries and concurrent commands. Pausing stops new publications while
 allowing explicit measurement of previously published targets after restart.
 
+An observation can also explicitly start a separate stock paper book with initial
+cash, empty holdings and frozen instrument, cost and implementation assumptions.
+It accepts only targets actually published after that book started and before
+their designated session opened. Settlement models one attempt at that session's
+close, using the existing simulation, risk, Portfolio and distribution calculations;
+it never reruns the strategy to invent historical targets. Simulation fill time
+and actual settlement-record time remain distinct. This is a daily-close model,
+not proof of historical PIT availability, liquidity or actual execution.
+
+Each settled session binds its immutable Dataset and saved financial projection.
+Further settlement replays those original inputs and requires the already settled
+financial prefix to agree before appending any new sessions atomically. A newer
+Dataset cannot replace previously used prices. Late or conflicting corporate
+actions that change that prefix block settlement; source revisions cannot grant
+the same economic entitlement twice. The gross reported-distribution model retains
+its coverage, tax and rounding limitations. Pausing the book stops acceptance of
+newly published targets; it does not liquidate holdings or prevent their subsequent
+valuation and settlement. Paper facts stay outside actual-account ledgers and
+shared execution tables. Observation scheduling does not authorize paper settlement.
+
 Local scheduling is a separate, default-off opt-in for an exact observation.
 It reuses these same commands and receipts, with a persisted configuration
 generation rechecked under the publication write lock. It consumes existing

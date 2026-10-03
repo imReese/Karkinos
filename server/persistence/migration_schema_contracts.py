@@ -11,6 +11,7 @@ from typing import Any, Protocol
 from server.persistence.financial_canonical_migrations import V18_SCHEMA_OBJECTS
 from server.persistence.financial_invariant_migrations import V17_SCHEMA_OBJECTS
 from server.persistence.research_observation_schema import V22_SCHEMA_OBJECTS
+from server.persistence.research_paper_schema import V24_SCHEMA_OBJECTS
 from server.persistence.structured_fact_migrations import V19_SCHEMA_OBJECTS
 
 
@@ -27,6 +28,7 @@ LEGACY_V1_REPAIR_TABLE = "controlled_submission_ledger_postings"
 LEGACY_V1_REPAIR_COLUMN = "account_truth_review_fingerprint"
 
 _VERSIONED_SCHEMA_OBJECTS = (
+    *((24, object_type, name) for object_type, name in V24_SCHEMA_OBJECTS),
     *((22, object_type, name) for object_type, name in V22_SCHEMA_OBJECTS),
     *((19, object_type, name) for object_type, name in V19_SCHEMA_OBJECTS),
     *((18, object_type, name) for object_type, name in V18_SCHEMA_OBJECTS),
