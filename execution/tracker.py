@@ -55,8 +55,10 @@ class ExecutionOrderTracker:
         self.event_bus = event_bus
         self.db = db
 
-    def record_fill(self, report: BrokerFillReport) -> FillEvent:
-        """Record one connector fill report and publish its FillEvent."""
+    def record_fill(
+        self, report: BrokerFillReport, *, publish: bool = True
+    ) -> FillEvent:
+        """Record a fill, optionally leaving event dispatch to the caller."""
         if self.db is not None and hasattr(self.db, "record_fill_sync"):
             self.db.record_fill_sync(
                 fill_id=report.fill_id,
@@ -77,5 +79,6 @@ class ExecutionOrderTracker:
                 metadata=report.metadata,
             )
         event = report.to_fill_event()
-        self.event_bus.publish(event)
+        if publish:
+            self.event_bus.publish(event)
         return event

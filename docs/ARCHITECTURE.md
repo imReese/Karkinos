@@ -200,6 +200,13 @@ than as a simultaneous portfolio rebalance.
 Saved results identify the timing policy; missing metadata on an older result
 does not establish its execution timing.
 
+The `next_bar_close.v2` policy also checks each final buy fill against available
+cash, including its simulated price and complete fees. Quantity reductions use
+instrument lots and recompute costs; dividend receivables cannot fund purchases.
+Each accepted fill updates the canonical portfolio before another queued order
+is evaluated. Historical `v1` results retain their original identity and do not
+establish these buying-power guarantees.
+
 Execution delay and information availability are separate constraints. The
 default historical-snapshot replay assumes information at the modeled bar close
 and does not establish historical PIT performance. The engine's strict observed

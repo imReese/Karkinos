@@ -362,7 +362,7 @@ def test_project_http_preparation_and_existing_backtest_save_bound_dataset(
         result = result.json()
         assert result["config"]["dataset_id"] == dataset_id
         timing = result["metrics_json"]["execution_timing"]
-        assert timing["policy_id"] == "karkinos.backtest.next_bar_close.v1"
+        assert timing["policy_id"] == "karkinos.backtest.next_bar_close.v2"
         assert timing["signal_basis"] == "completed_bar"
         assert timing["fill_basis"] == "strictly_later_same_instrument_bar_close"
         assert timing["availability_mode"] == "historical_snapshot"

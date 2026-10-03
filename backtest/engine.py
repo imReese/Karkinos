@@ -37,6 +37,7 @@ from data.handler import DataHandler
 from domain.a_share_limits import is_limit_down, is_limit_up, is_suspended
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
+from domain.portfolio_accounting import total_trade_fee
 from execution.commission import (
     CommissionCalculator,
     MultiAssetCommission,
@@ -120,7 +121,8 @@ class BacktestEngine:
         self._pending_signals: dict[Symbol, SignalEvent] = {}
         self._current_market_event: MarketEvent | None = None
         self._previous_close: dict[Symbol, Decimal] = {}
-        self._execution_blocked = {"limit": 0, "suspension": 0, "risk": 0}
+        self._execution_blocked = {"limit": 0, "suspension": 0, "risk": 0, "cash": 0}
+        self._cash_resized_count = 0
         self.execution_tracker = (
             ExecutionOrderTracker(event_bus=self.event_bus, db=db)
             if db is not None
@@ -133,6 +135,10 @@ class BacktestEngine:
 
         # 创建组件
         self.portfolio = Portfolio(self.event_bus, initial_cash=initial_cash)
+        # Finish the research book's cash, quantities and marks before strategy
+        # callbacks can synchronously publish another order.
+        self.event_bus.unsubscribe(FillEvent, self.portfolio.on_fill)
+        self.event_bus.subscribe(FillEvent, self._on_portfolio_fill)
         # Portfolio sizes a target only when the later execution bar is known.
         self.event_bus.unsubscribe(SignalEvent, self.portfolio.on_signal)
         self.event_bus.subscribe(SignalEvent, self._on_signal)
@@ -234,6 +240,18 @@ class BacktestEngine:
             return event.timestamp.astimezone(ZoneInfo("Asia/Shanghai")).date()
         return event.timestamp.date()
 
+    def _on_portfolio_fill(self, event: FillEvent) -> None:
+        market_price = self._known_market_price(event.symbol)
+        if market_price is None:
+            raise ValueError("backtest_fill_market_price_missing")
+        self.portfolio.on_fill(event)
+        # Revalue at the observed market close, not the slipped execution price,
+        # before the next queued order can inspect equity or concentration.
+        self.portfolio.positions[event.symbol].mark_to_market(market_price)
+        self.risk_manager.set_portfolio_value(
+            total=float(self._calculate_equity()), cash=float(self.portfolio.cash)
+        )
+
     def _on_position_fill(self, event: FillEvent) -> None:
         position = self.portfolio.positions[event.symbol]
         self.strategy.on_position_update(event.symbol, position.quantity)
@@ -262,6 +280,10 @@ class BacktestEngine:
     def _tradeable_order(self, event: OrderEvent) -> bool:
         bar = self._current_market_event
         instrument = self.instruments.get(event.symbol)
+        market_price = self._known_market_price(event.symbol)
+        if market_price is None or not market_price.is_finite() or market_price <= ZERO:
+            self._execution_blocked["risk"] += 1
+            return False
         if bar is None or instrument is None or bar.symbol != event.symbol:
             return True
         if self._dividend_replay is not None and self._dividend_replay.blocks_execution(
@@ -288,6 +310,12 @@ class BacktestEngine:
         if blocked:
             self._execution_blocked["limit"] += 1
         return not blocked
+
+    def _known_market_price(self, symbol: Symbol) -> Decimal | None:
+        bar = self._current_market_event
+        if bar is not None and bar.symbol == symbol:
+            return bar.close
+        return self._previous_close.get(symbol)
 
     def _approved_order(self, event: OrderEvent) -> OrderEvent | None:
         """Check the order at its execution time using current portfolio facts."""
@@ -350,8 +378,11 @@ class BacktestEngine:
     def _on_order_event(self, event: OrderEvent) -> None:
         """Execute an approved order at the current bar's modeled close."""
         approved = self._approved_order(event)
+        execution = None
+        if approved is not None and self._tradeable_order(approved):
+            execution = self._cash_funded_fill(approved)
         if event.intent_id is not None and event.risk_decision_id is not None:
-            passed = approved is not None
+            passed = execution is not None
             self.event_bus.publish(
                 RiskDecisionEvent(
                     timestamp=event.timestamp,
@@ -365,47 +396,83 @@ class BacktestEngine:
                         if passed
                         else "backtest_execution_rule_rejected"
                     ],
-                    resulting_order_id=approved.order_id if approved else None,
+                    resulting_order_id=execution[0].order_id if execution else None,
                     severity="info" if passed else "warning",
                 )
             )
-        if approved is None or not self._tradeable_order(approved):
+        if execution is None:
             return
-        event = approved
+        event, fill = execution
         self._record_order_event(event)
-        if self._multi_commission is not None:
-            inst = self.instruments.get(event.symbol)
-            if inst is not None:
-                fill = self.execution.execute(event)
-                if fill is not None:
-                    # 覆盖佣金为按资产类型和最终成交价计算的值。
-                    fee_breakdown = self._multi_commission.breakdown_for(
-                        inst.commission_type,
-                        event.side,
-                        fill.fill_price,
-                        fill.fill_quantity,
-                        symbol=str(event.symbol),
-                    )
-                    fill = FillEvent(
-                        timestamp=fill.timestamp,
-                        fill_id=fill.fill_id,
-                        order_id=fill.order_id,
-                        symbol=fill.symbol,
-                        side=fill.side,
-                        fill_price=fill.fill_price,
-                        fill_quantity=fill.fill_quantity,
-                        commission=fee_breakdown.total_fee,
-                        slippage=fill.slippage,
-                        fee_breakdown=fee_breakdown.to_json_dict(),
-                        fee_rule_id=fee_breakdown.fee_rule_id,
-                        fee_rule_version=self._multi_commission.fee_rule_version,
-                    )
-                    self._record_fill_event(fill, event)
-                    return
+        self._record_fill_event(fill, event)
 
+    def _resolve_fill(self, event: OrderEvent) -> FillEvent | None:
+        """Resolve one price and complete fee; never re-execute an accepted fill."""
         fill = self.execution.execute(event)
-        if fill is not None:
-            self._record_fill_event(fill, event)
+        inst = self.instruments.get(event.symbol)
+        if fill is not None and self._multi_commission is not None and inst is not None:
+            breakdown = self._multi_commission.breakdown_for(
+                inst.commission_type,
+                fill.side,
+                fill.fill_price,
+                fill.fill_quantity,
+                symbol=str(fill.symbol),
+            )
+            fill = replace(
+                fill,
+                commission=breakdown.total_fee,
+                fee_breakdown=breakdown.to_json_dict(),
+                fee_rule_id=breakdown.fee_rule_id,
+                fee_rule_version=self._multi_commission.fee_rule_version,
+            )
+        return fill
+
+    def _cash_funded_fill(
+        self, order: OrderEvent
+    ) -> tuple[OrderEvent, FillEvent] | None:
+        """Shrink buys by legal lots, checking the actual candidate after each quote.
+
+        The next quantity is conservative at the quoted price and fee. Custom
+        models need not be monotonic: every new quantity is quoted again and only
+        the exact affordable fill is used, without promising a maximal fill.
+        """
+        inst = self.instruments.get(order.symbol)
+        if inst is None or not order.quantity.is_finite() or order.quantity <= ZERO:
+            return None
+        quantity = order.quantity
+        if order.side is OrderSide.BUY:
+            quantity = (quantity // inst.lot_size) * inst.lot_size
+        while quantity > ZERO:
+            candidate = replace(order, quantity=quantity)
+            fill = self._resolve_fill(candidate)
+            if fill is None:
+                return None
+            fee = total_trade_fee(
+                commission=fill.commission, fee_breakdown=fill.fee_breakdown
+            )
+            if (
+                not fill.fill_price.is_finite()
+                or fill.fill_price <= ZERO
+                or not fee.is_finite()
+            ):
+                raise ValueError("backtest_fill_cost_invalid")
+            notional = fill.fill_price * fill.fill_quantity
+            cash_debit = (
+                notional + fee if order.side is OrderSide.BUY else fee - notional
+            )
+            if cash_debit <= self.portfolio.cash:
+                if quantity != order.quantity:
+                    self._cash_resized_count += 1
+                return candidate, fill
+            if order.side is OrderSide.SELL:
+                break
+            quantity = min(
+                quantity - inst.lot_size,
+                ((self.portfolio.cash - fee) / fill.fill_price // inst.lot_size)
+                * inst.lot_size,
+            )
+        self._execution_blocked["cash"] += 1
+        return None
 
     def _record_order_event(self, event: OrderEvent) -> None:
         """Persist a shared backtest order fact when a DB sink is configured."""
@@ -433,10 +500,10 @@ class BacktestEngine:
         """Record a fill locally, optionally persist it, and publish it once."""
         if self.execution_tracker is None:
             self.fills.append(fill)
-            self.event_bus.publish(fill)
+            self.event_bus.publish_and_process(fill)
             return
 
-        recorded = self.execution_tracker.record_fill(
+        self.execution_tracker.record_fill(
             BrokerFillReport(
                 fill_id=fill.fill_id,
                 order_id=fill.order_id,
@@ -453,10 +520,17 @@ class BacktestEngine:
                 broker_order_id=order.order_id,
                 source="backtest_execution",
                 source_ref=fill.fill_id,
-                metadata={"order_execution_mode": order.execution_mode},
-            )
+                metadata={
+                    "order_execution_mode": order.execution_mode,
+                    "fee_breakdown": fill.fee_breakdown,
+                    "fee_rule_id": fill.fee_rule_id,
+                    "fee_rule_version": fill.fee_rule_version,
+                },
+            ),
+            publish=False,
         )
-        self.fills.append(recorded)
+        self.fills.append(fill)
+        self.event_bus.publish_and_process(fill)
         if self.db is not None and hasattr(self.db, "update_order_status_sync"):
             self.db.update_order_status_sync(
                 order_id=order.order_id,
@@ -526,7 +600,7 @@ class BacktestEngine:
             ),
             execution_timing={
                 "schema_version": "karkinos.backtest_execution_timing.v1",
-                "policy_id": "karkinos.backtest.next_bar_close.v1",
+                "policy_id": "karkinos.backtest.next_bar_close.v2",
                 "signal_basis": "completed_bar",
                 "fill_basis": "strictly_later_same_instrument_bar_close",
                 "availability_mode": self._availability_mode,
@@ -534,6 +608,8 @@ class BacktestEngine:
                 "limit_blocked_count": self._execution_blocked["limit"],
                 "suspension_blocked_count": self._execution_blocked["suspension"],
                 "risk_blocked_count": self._execution_blocked["risk"],
+                "cash_blocked_count": self._execution_blocked["cash"],
+                "cash_resized_count": self._cash_resized_count,
                 "historical_pit_verified": False,
             },
         )

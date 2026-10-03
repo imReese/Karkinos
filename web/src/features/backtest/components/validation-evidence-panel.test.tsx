@@ -99,35 +99,38 @@ test('localizes OOS evidence notes for Chinese report review', () => {
   ).toBeNull();
 });
 
-test('distinguishes recorded next-bar execution from historical PIT evidence', () => {
-  const report = reportWithOosStrategy('dual_ma');
-  report.metrics_json = {
-    execution_timing: {
-      policy_id: 'karkinos.backtest.next_bar_close.v1',
-      signal_basis: 'completed_bar',
-      fill_basis: 'strictly_later_same_instrument_bar_close',
-      availability_mode: 'historical_snapshot',
-    },
-  };
-  const { rerender } = render(
-    <PreferencesProvider>
-      <ValidationEvidencePanel report={report} />
-    </PreferencesProvider>,
-  );
-  expect(screen.getByText(/Signal after a completed bar/)).toBeTruthy();
-  expect(
-    screen.getByText(/not verified historical PIT performance/),
-  ).toBeTruthy();
+test.each(['v1', 'v2'])(
+  'distinguishes recorded next-bar %s execution from historical PIT evidence',
+  (version) => {
+    const report = reportWithOosStrategy('dual_ma');
+    report.metrics_json = {
+      execution_timing: {
+        policy_id: `karkinos.backtest.next_bar_close.${version}`,
+        signal_basis: 'completed_bar',
+        fill_basis: 'strictly_later_same_instrument_bar_close',
+        availability_mode: 'historical_snapshot',
+      },
+    };
+    const { rerender } = render(
+      <PreferencesProvider>
+        <ValidationEvidencePanel report={report} />
+      </PreferencesProvider>,
+    );
+    expect(screen.getByText(/Signal after a completed bar/)).toBeTruthy();
+    expect(
+      screen.getByText(/not verified historical PIT performance/),
+    ).toBeTruthy();
 
-  report.metrics_json.execution_timing = null;
-  rerender(
-    <PreferencesProvider>
-      <ValidationEvidencePanel report={report} />
-    </PreferencesProvider>,
-  );
-  expect(screen.getByText(/Execution timing not evaluated/)).toBeTruthy();
-  expect(screen.queryByText(/Signal after a completed bar/)).toBeNull();
-});
+    report.metrics_json.execution_timing = null;
+    rerender(
+      <PreferencesProvider>
+        <ValidationEvidencePanel report={report} />
+      </PreferencesProvider>,
+    );
+    expect(screen.getByText(/Execution timing not evaluated/)).toBeTruthy();
+    expect(screen.queryByText(/Signal after a completed bar/)).toBeNull();
+  },
+);
 
 test('does not label an unsupported saved policy as next-bar execution', () => {
   const report = reportWithOosStrategy('dual_ma');
