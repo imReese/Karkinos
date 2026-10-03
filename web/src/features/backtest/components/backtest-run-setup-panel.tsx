@@ -332,7 +332,10 @@ export function BacktestRunSetupPanel() {
               detail={labels.advancedToolsDetail}
               id="backtest-advanced-tools"
               open={advancedToolsOpen}
-              onToggle={() => setAdvancedToolsOpen((current) => !current)}
+              onToggle={() => {
+                setMobileWorkspaceTouched(true);
+                setAdvancedToolsOpen((current) => !current);
+              }}
               testId="backtest-advanced-tools-disclosure"
               title={labels.advancedToolsTitle}
             >

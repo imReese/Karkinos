@@ -11,6 +11,7 @@ import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import type { BacktestReport } from '../api';
 import { cashDividendCopy } from '../copy-cash-dividends';
+import { BacktestExecutionWindowPanel } from './backtest-execution-window';
 
 type MetricItem = {
   label: string;
@@ -31,7 +32,13 @@ function formatNumber(value: unknown) {
   return formatAmount(finiteNumber(value));
 }
 
-export function MetricsGrid({ report }: { report: BacktestReport }) {
+export function MetricsGrid({
+  report,
+  compact = false,
+}: {
+  report: BacktestReport;
+  compact?: boolean;
+}) {
   const labels = useCopy().backtest.metrics;
   const { locale } = usePreferences();
   const metrics = { ...report.metrics, ...report.metrics_json };
@@ -131,14 +138,15 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
       data-backtest-report-section="metrics"
       className="grid min-w-0 gap-2"
     >
+      <BacktestExecutionWindowPanel report={report} />
       <MetricStrip
         ariaLabel={`${labels.totalReturn} · ${labels.maxDrawdown}`}
-        className="app-backtest-evidence-strip"
+        className={`app-backtest-evidence-strip ${compact ? 'sm:grid-flow-row sm:grid-cols-2 [&>div:nth-child(even)]:border-r-0 [&>div:nth-child(-n+2)]:border-b [&>div]:border-[var(--app-divider)]' : ''}`}
         items={metricStripItems.slice(0, 4)}
       />
       <MetricStrip
         ariaLabel={`${labels.volatility} · ${labels.totalSlippage}`}
-        className="app-backtest-evidence-strip"
+        className={`app-backtest-evidence-strip ${compact ? 'sm:grid-flow-row sm:grid-cols-2 [&>div:nth-child(even)]:border-r-0 [&>div:nth-child(-n+2)]:border-b [&>div]:border-[var(--app-divider)]' : ''}`}
         items={metricStripItems.slice(4)}
       />
     </section>

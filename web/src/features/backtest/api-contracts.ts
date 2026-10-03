@@ -1,4 +1,8 @@
 import type {
+  BacktestExecutionWindow,
+  ChronologicalSweepValidation,
+} from './chronological-contracts';
+import type {
   CashDividendAccounting,
   CorporateActionEvidence,
   CorporateActionMode,
@@ -434,6 +438,7 @@ export type BacktestSweepRequest = Omit<
   param_grid: Record<string, Array<number | string | boolean | null>>;
   rank_by?: string;
   max_combinations?: number;
+  test_start_date?: string | null;
 };
 
 export type BacktestSweepResult = {
@@ -451,6 +456,8 @@ export type BacktestSweepResponse = {
   tested_count: number;
   results: BacktestSweepResult[];
   warnings: string[];
+  selected_test_result_id?: number | null;
+  chronological_validation?: ChronologicalSweepValidation | null;
 };
 
 export type BacktestCompareRunRequest = {
@@ -492,21 +499,18 @@ export type BacktestCompareResponse = {
 export type BacktestReport = {
   id: number;
   created_at: string;
-  config: {
+  config: Omit<
+    BacktestRunRequest,
+    'cost_assumptions' | 'dataset_id' | 'assets'
+  > & {
     cost_assumptions?: BacktestCostAssumptions | null;
     dataset_id?: string | null;
-    corporate_action_mode?: CorporateActionMode;
-    start_date: string;
-    end_date: string;
-    initial_cash: number;
-    strategy: string;
-    short_period?: number;
-    long_period?: number;
-    params?: Record<string, number | string | boolean | null>;
     assets?: Array<{ symbol: string; asset_class: string }> | null;
   };
   metrics: BacktestMetrics;
   metrics_json?: Partial<BacktestMetrics> & {
+    execution_window?: BacktestExecutionWindow | null;
+    chronological_validation?: ChronologicalSweepValidation;
     cost_assumptions?: BacktestEffectiveCosts | null;
     capacity_review?: BacktestCapacityReview | null;
     cash_dividend_accounting?: CashDividendAccounting | null;
