@@ -12,6 +12,27 @@ from core.events import Event, FillEvent, MarketEvent, OrderEvent, SignalEvent
 from core.types import BarFrequency, OrderSide, OrderType, Symbol
 
 
+@pytest.mark.parametrize("strict", [False, True])
+def test_handler_error_propagation_is_explicitly_opted_in(strict):
+    bus = EventBus(raise_handler_errors=strict)
+    later = []
+
+    def fail(event):
+        raise ValueError("accounting_failure")
+
+    bus.subscribe(Event, fail)
+    bus.subscribe(Event, later.append)
+    event = Event(timestamp=datetime(2026, 4, 7))
+    bus.publish(event)
+    if strict:
+        with pytest.raises(ValueError, match="accounting_failure"):
+            bus.drain()
+        assert later == []
+    else:
+        bus.drain()
+        assert later == [event]
+
+
 class TestEventBusSubscribe:
     """订阅相关测试。"""
 

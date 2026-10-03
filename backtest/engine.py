@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
@@ -33,7 +34,6 @@ from core.events import (
     SignalEvent,
 )
 from core.types import ZERO, AssetClass, InstrumentType, OrderSide, OrderType, Symbol
-from data.handler import DataHandler
 from domain.a_share_limits import is_limit_down, is_limit_up, is_suspended
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
@@ -81,7 +81,7 @@ class BacktestEngine:
         self,
         strategy: Strategy,
         instruments: dict[Symbol, Instrument],
-        data_handlers: dict[Symbol, DataHandler],
+        data_handlers: Mapping[Symbol, Iterable[MarketEvent]],
         initial_cash: Decimal = Decimal("100000"),
         commission_calc: CommissionCalculator | None = None,
         slippage_model: SlippageModel | None = None,
@@ -90,10 +90,13 @@ class BacktestEngine:
         cash_dividends: tuple[StockDistribution, ...] | None = None,
         include_share_distributions: bool = False,
         evaluation_start: date | None = None,
+        strict_event_errors: bool = False,
+        session_completed: Callable[[date], None] | None = None,
     ) -> None:
         if evaluation_start is not None and type(evaluation_start) is not date:
             raise ValueError("backtest_evaluation_start_invalid")
-        self.event_bus = EventBus()
+        self.event_bus = EventBus(raise_handler_errors=strict_event_errors)
+        self._session_completed = session_completed
         self.clock = SimulatedClock()
         self.strategy = strategy
         self.instruments = instruments
@@ -254,6 +257,8 @@ class BacktestEngine:
                 self.portfolio.record_equity(market_event.timestamp, prices)
             if self._dividend_replay is not None:
                 self._dividend_replay.after_session(current_date, self.portfolio)
+            if self._session_completed is not None:
+                self._session_completed(current_date)
 
         return self._build_result()
 
