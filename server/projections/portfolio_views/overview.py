@@ -68,6 +68,13 @@ def overview_position_pnl_update(daily_positions) -> dict[str, object]:
         )
 
     contributors.sort(key=lambda item: abs(item.today_change), reverse=True)
+    positive_contributors = [item for item in contributors if item.today_change > 0][:3]
+    negative_contributors = [item for item in contributors if item.today_change < 0][:3]
+    major_contributors = sorted(
+        [*positive_contributors, *negative_contributors],
+        key=lambda item: abs(item.today_change),
+        reverse=True,
+    )
     total = stocks + funds + others
     return {
         "today_pnl": total,
@@ -77,7 +84,7 @@ def overview_position_pnl_update(daily_positions) -> dict[str, object]:
             others=others,
             total=total,
         ),
-        "today_contributors": contributors[:3],
+        "today_contributors": major_contributors,
     }
 
 

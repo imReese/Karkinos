@@ -150,7 +150,12 @@ export const overviewCopyZh = {
     strategyDecisionUnavailable: '策略候选信号暂不可用',
     strategyCandidateEmptyDetail:
       '当前没有买入、卖出、持有或再平衡信号进入队列。',
-    strategyRecommendationTitle: '最新策略建议',
+    strategyRecommendationTitle: '交易操作建议',
+    strategyRecommendationMarketClosed: '今日休市，不生成交易操作推荐',
+    strategyRecommendationClosedResearch:
+      '休市期间可继续研究和验证策略，进展请查看研究记录。',
+    strategyRecommendationNextSession: (date: string) => `下一交易日：${date}`,
+    strategyRecommendationResearchAction: '查看策略研究',
     strategyRecommendationQuantity: '预计数量',
     strategyRecommendationCurrentWeight: '当前',
     strategyRecommendationTargetWeight: '目标',
@@ -247,8 +252,8 @@ export const overviewCopyZh = {
     accountRecommendationNoAction: '无操作',
     accountRecommendationNoActionDetail:
       '已完成当日晋级策略扫描，未产生账户操作信号。',
-    accountRecommendationBlocked: '策略建议暂不可用',
-    accountRecommendationUnavailable: '策略建议暂不可用',
+    accountRecommendationBlocked: '交易操作建议暂不可用',
+    accountRecommendationUnavailable: '交易操作建议暂不可用',
     accountRecommendationReason: (reasons: string) =>
       `当前原因：${reasons || '尚未形成可核验的账户建议'}。`,
     researchOperationCandidate:

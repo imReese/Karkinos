@@ -503,12 +503,16 @@ function RecommendationActionItem({
 }
 
 export function OverviewStrategyRecommendation({
+  marketClosed,
+  nextTradingDate,
   planQuery,
   todayQuery,
   positions,
   currentWeightBySymbol,
   className,
 }: {
+  marketClosed: boolean;
+  nextTradingDate?: string | null;
   planQuery: QueryState<DailyTradingPlanResponse>;
   todayQuery: QueryState<DecisionResponse>;
   positions: AccountStateResponse['snapshot']['positions'];
@@ -560,7 +564,11 @@ export function OverviewStrategyRecommendation({
       <div className="mb-4 flex h-9 shrink-0 items-center border-b border-[var(--app-divider)]">
         <SectionHeader
           title={dashboard.strategyRecommendationTitle}
-          meta={recommendationDate === '--' ? undefined : recommendationDate}
+          meta={
+            marketClosed || recommendationDate === '--'
+              ? undefined
+              : recommendationDate
+          }
           className="overview-spotlight-heading w-full flex-row items-center justify-between sm:items-center"
           actions={
             <div className="flex items-center gap-3">
@@ -575,13 +583,41 @@ export function OverviewStrategyRecommendation({
         />
       </div>
 
-      {planQuery.isLoading && !plan ? (
+      {marketClosed ? (
+        <div
+          data-testid="overview-recommendation-market-closed"
+          className="space-y-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-3"
+        >
+          <p
+            role="status"
+            className="app-type-body font-semibold text-[var(--app-text)]"
+          >
+            {dashboard.strategyRecommendationMarketClosed}
+          </p>
+          <p className="app-type-compact text-[var(--app-text-secondary)]">
+            {dashboard.strategyRecommendationClosedResearch}
+          </p>
+          {nextTradingDate ? (
+            <p className="app-type-compact text-[var(--app-text-secondary)]">
+              {dashboard.strategyRecommendationNextSession(
+                formatDate(nextTradingDate),
+              )}
+            </p>
+          ) : null}
+          <a
+            href="/ai-research"
+            className="app-type-compact inline-flex min-h-11 items-center font-semibold text-[var(--app-accent)] hover:underline"
+          >
+            {dashboard.strategyRecommendationResearchAction}
+          </a>
+        </div>
+      ) : planQuery.isLoading && !plan ? (
         <div className="flex items-center gap-2.5 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5 text-[var(--app-text-secondary)]">
           <span className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)] opacity-70" />
           <span className="app-type-compact font-medium">
             {locale === 'zh'
-              ? '正在同步全市场最新策略与决策建议...'
-              : 'Syncing latest strategy and decision recommendations...'}
+              ? '正在读取交易操作建议...'
+              : 'Loading trading recommendations...'}
           </span>
         </div>
       ) : planQuery.isError && !plan ? (
@@ -670,7 +706,8 @@ export function OverviewStrategyRecommendation({
         )
       ) : null}
 
-      {plan &&
+      {!marketClosed &&
+      plan &&
       (currentGeneration || !todayQuery.isLoading || quoteTooOldForReview) ? (
         <div
           data-testid="overview-recommendation-evidence"

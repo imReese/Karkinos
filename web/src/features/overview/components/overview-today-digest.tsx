@@ -1,57 +1,105 @@
-import { formatCurrency, formatPercent } from '../../../shared/format';
+import {
+  formatCurrency,
+  formatDate,
+  formatPercent,
+} from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import { SectionHeader } from '../../../shared/ui/workbench';
 import type { AccountStateResponse } from '../overview-feature-boundary';
 import {
   overviewPresentation,
   overviewSessionLabels,
+  pnlTone,
 } from '../model/overview-presentation';
 
 type Driver = NonNullable<
   AccountStateResponse['summary']['today_contributors']
 >[number];
 
-function DriverList({ title, items }: { title: string; items: Driver[] }) {
+function DriverList({
+  title,
+  items,
+  emptyLabel,
+  labels,
+  className,
+}: {
+  title: string;
+  items: Driver[];
+  emptyLabel: string;
+  labels: (typeof overviewPresentation)[keyof typeof overviewPresentation];
+  className?: string;
+}) {
   return (
-    <div className="min-w-0">
-      <h3 className="app-type-label font-semibold text-[var(--app-text-secondary)]">
+    <div className={('min-w-0 ' + (className ?? '')).trim()}>
+      <h3 className="app-type-body mb-3 font-semibold text-[var(--app-text)]">
         {title}
       </h3>
       {items.length ? (
-        <ul className="mt-1.5 space-y-1.5">
-          {items.map((item) => (
-            <li
-              key={item.symbol}
-              className="app-type-compact flex min-w-0 items-baseline justify-between gap-3"
-            >
-              <a
-                href={`/portfolio/${encodeURIComponent(item.symbol)}`}
-                className="min-w-0 truncate text-[var(--app-text-secondary)] hover:text-[var(--app-accent)]"
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_max-content_max-content] gap-x-4">
+          <span className="app-type-label text-[var(--app-text-tertiary)]">
+            {labels.driverHolding}
+          </span>
+          <span className="app-type-label text-right text-[var(--app-text-tertiary)]">
+            {labels.driverPnl}
+          </span>
+          <span className="app-type-label text-right text-[var(--app-text-tertiary)]">
+            {labels.driverReturn}
+          </span>
+          <ol className="col-span-3 mt-2 grid grid-cols-subgrid">
+            {items.map((item, index) => (
+              <li
+                key={item.symbol}
+                className="col-span-3 grid min-w-0 grid-cols-subgrid items-center border-t border-[var(--app-divider)] py-3"
               >
-                {item.display_name || item.name || item.symbol}
-              </a>
-              <span
-                className={
-                  'shrink-0 tabular-nums font-medium ' +
-                  (item.today_change > 0
-                    ? 'text-[var(--app-pnl-positive)]'
-                    : 'text-[var(--app-pnl-negative)]')
-                }
-              >
-                {formatCurrency(item.today_change, {
-                  signDisplay: 'exceptZero',
-                })}
-                {item.today_change_pct == null
-                  ? null
-                  : ` · ${formatPercent(item.today_change_pct)}`}
-              </span>
-            </li>
-          ))}
-        </ul>
+                <div className="flex min-w-0 items-center gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="app-type-label shrink-0 tabular-nums text-[var(--app-text-tertiary)]"
+                  >
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <a
+                    href={`/portfolio/${encodeURIComponent(item.symbol)}`}
+                    title={item.display_name || item.name || item.symbol}
+                    className="group flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+                  >
+                    <span className="app-type-compact w-full truncate font-medium text-[var(--app-text)] group-hover:text-[var(--app-accent)]">
+                      {item.display_name || item.name || item.symbol}
+                    </span>
+                    <span className="app-type-label w-full truncate text-[var(--app-text-tertiary)]">
+                      {item.symbol}
+                    </span>
+                  </a>
+                </div>
+                <span
+                  className={`app-type-body whitespace-nowrap text-right font-semibold tabular-nums ${pnlTone(item.today_change)}`}
+                >
+                  {formatCurrency(item.today_change, {
+                    signDisplay: 'exceptZero',
+                  })}
+                </span>
+                <span
+                  aria-label={
+                    item.today_change_pct == null
+                      ? labels.returnUnavailable
+                      : undefined
+                  }
+                  className={`app-type-compact whitespace-nowrap text-right tabular-nums ${pnlTone(item.today_change_pct)}`}
+                >
+                  {item.today_change_pct == null
+                    ? '—'
+                    : formatPercent(item.today_change_pct, {
+                        signDisplay: 'exceptZero',
+                      })}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
       ) : (
-        <span className="app-type-compact mt-1.5 block text-[var(--app-text-tertiary)]">
-          —
-        </span>
+        <p className="app-type-compact border-t border-[var(--app-divider)] py-5 text-[var(--app-text-secondary)]">
+          {emptyLabel}
+        </p>
       )}
     </div>
   );
@@ -81,13 +129,32 @@ export function OverviewTodayDigest({
       className={('min-w-0 ' + (className ?? '')).trim()}
       data-testid="overview-today-digest"
     >
-      <SectionHeader title={overviewSessionLabels(state, locale).drivers} />
+      <SectionHeader
+        title={overviewSessionLabels(state, locale).drivers}
+        meta={
+          state.summary.latest_session_date
+            ? formatDate(state.summary.latest_session_date)
+            : undefined
+        }
+        description={labels.driverScope}
+      />
       <div
-        className="mt-3 grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2"
+        className="mt-5 grid min-w-0 gap-5 md:grid-cols-2 md:gap-6"
         data-testid="overview-performance-drivers"
       >
-        <DriverList title={labels.contributors} items={gains} />
-        <DriverList title={labels.detractors} items={drags} />
+        <DriverList
+          title={labels.contributors}
+          items={gains}
+          emptyLabel={labels.noPositiveMainDrivers}
+          labels={labels}
+        />
+        <DriverList
+          title={labels.detractors}
+          items={drags}
+          emptyLabel={labels.noNegativeMainDrivers}
+          labels={labels}
+          className="border-t border-[var(--app-divider)] pt-4 md:border-t-0 md:border-l md:pt-0 md:pl-6"
+        />
       </div>
     </aside>
   );

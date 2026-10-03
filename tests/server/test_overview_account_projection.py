@@ -18,6 +18,7 @@ from server.projections.account_state import (
 from server.projections.portfolio_application import (
     build_account_state_response as build_base_account_state,
 )
+from server.projections.portfolio_views.overview import overview_position_pnl_update
 from server.services.account_state import (
     build_account_state_projection,
     build_overview_state,
@@ -179,6 +180,69 @@ async def test_daily_pnl_includes_canonical_closed_position_attribution(
     ]
     response = await build_account_state_response(state, now=NOW)
     assert response.summary.today_pnl == -3
+
+
+@pytest.mark.asyncio
+async def test_smaller_negative_contributors_remain_visible_when_top_three_are_positive(
+    projection_sources,
+):
+    state, snapshot, _ = projection_sources
+    base = snapshot.positions[0]
+    snapshot.positions = [
+        base.model_copy(
+            update={
+                "symbol": f"fixture-{index}",
+                "today_change": change,
+                "today_change_pct": change / 1000,
+            }
+        )
+        for index, change in enumerate([72, 7.89, 5, -2, -1.5])
+    ]
+
+    response = await build_account_state_response(state, now=NOW)
+
+    assert response.summary.latest_session_date == "2026-09-11"
+    assert response.summary.today_pnl == pytest.approx(81.39)
+    assert [item.today_change for item in response.summary.today_contributors] == [
+        72,
+        7.89,
+        5,
+        -2,
+        -1.5,
+    ]
+    assert response.summary.today_contributors[-1].today_change_pct == -0.0015
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_major_contributors_limit_each_direction_without_truncating_account_pnl(
+    direction,
+):
+    base = portfolio_snapshot().positions[0]
+    positions = [
+        base.model_copy(
+            update={
+                "symbol": f"fixture-{index}",
+                "today_change": direction * change,
+            }
+        )
+        for index, change in enumerate([100, 90, 80, 70, -10, -9, -8, -7, 0])
+    ]
+
+    result = overview_position_pnl_update(positions)
+    contributors = result["today_contributors"]
+
+    assert [item.symbol for item in contributors] == [
+        "fixture-0",
+        "fixture-1",
+        "fixture-2",
+        "fixture-4",
+        "fixture-5",
+        "fixture-6",
+    ]
+    assert sum(item.today_change > 0 for item in contributors) == 3
+    assert sum(item.today_change < 0 for item in contributors) == 3
+    assert result["today_pnl"] == direction * 306
+    assert result["today_pnl_breakdown"].total == direction * 306
 
 
 @pytest.mark.asyncio

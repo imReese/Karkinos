@@ -74,7 +74,7 @@ function accountFixture(): AccountStateResponse {
     next_step: 'Continue observation',
     overview: {
       market_session: {
-        status: 'non_trading_day',
+        status: 'pre_open',
         market_date: '2026-09-14',
         calendar_verified: true,
         latest_completed_trade_date: '2026-09-11',
@@ -300,11 +300,140 @@ test('shows the canonical daily strategy recommendation separately from operatio
   const recommendation = await screen.findByTestId(
     'overview-strategy-recommendation',
   );
-  expect(within(recommendation).getByText('最新策略建议')).toBeVisible();
+  expect(within(recommendation).getByText('交易操作建议')).toBeVisible();
   expect(await within(recommendation).findByText('无操作')).toBeVisible();
   expect(
     within(recommendation).getByRole('link', { name: '查看全部' }),
   ).toHaveAttribute('href', '/decision');
+});
+
+test.each(['zh', 'en'] as const)(
+  'shows a verified market closure without requesting trading recommendations (%s)',
+  async (locale) => {
+    const state = accountFixture();
+    state.overview.market_session.status = 'non_trading_day';
+    state.overview.market_session.market_date = '2026-10-03';
+    state.overview.market_session.next_trading_date = '2026-10-09';
+    const fetch = installFetch(state);
+    renderPage(locale);
+
+    const recommendation = await screen.findByTestId(
+      'overview-strategy-recommendation',
+    );
+    expect(recommendation).toHaveTextContent(
+      locale === 'zh'
+        ? '今日休市，不生成交易操作推荐'
+        : 'Market closed; no trading recommendations today',
+    );
+    expect(recommendation).toHaveTextContent(
+      locale === 'zh' ? '2026/10/09' : '10/09/2026',
+    );
+    expect(
+      within(recommendation).getByRole('link', {
+        name: locale === 'zh' ? '查看策略研究' : 'View strategy research',
+      }),
+    ).toHaveAttribute('href', '/ai-research');
+    expect(recommendation).not.toHaveTextContent('暂不可用');
+    expect(recommendation).not.toHaveTextContent('生成中');
+    expect(recommendation).not.toHaveTextContent('running');
+    expect(
+      within(recommendation).queryByTestId('overview-recommendation-evidence'),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual(
+      [
+        '/api/portfolio/state',
+        '/api/portfolio/equity-curve/series?range=ytd',
+      ].sort(),
+    );
+  },
+);
+
+test('does not surface cached trading actions or stale quote warnings during a verified closure', async () => {
+  const state = accountFixture();
+  state.overview.market_session.status = 'non_trading_day';
+  installFetch(state);
+  const { client } = renderPage('zh');
+  await screen.findByTestId('overview-recommendation-market-closed');
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.status = 'manual_review_required';
+  plan.account_action_recommendation!.reason_codes = [
+    'market_quote_too_old_for_decision',
+  ];
+  plan.account_action_recommendation!.actions = [
+    {
+      action_id: 'cached-action',
+      symbol: 'cached-symbol',
+      display_name: '缓存买入建议',
+      asset_class: 'stock',
+      side: 'buy',
+      target_weight: 0.1,
+      estimated_quantity: 100,
+      submission_status: 'manual_confirmation_required',
+    },
+  ];
+  await act(async () => {
+    client.setQueryData(['decision', 'trading-plan'], plan);
+    client.setQueryData(['decision', 'today'], decisionFixture());
+  });
+
+  const recommendation = screen.getByTestId('overview-strategy-recommendation');
+  expect(recommendation).toHaveTextContent('今日休市，不生成交易操作推荐');
+  expect(recommendation).not.toHaveTextContent('缓存买入建议');
+  expect(recommendation).not.toHaveTextContent('5 分钟');
+  expect(recommendation).not.toHaveTextContent('当日生成记录');
+  expect(
+    within(recommendation).queryByRole('link', { name: '复核交易队列' }),
+  ).not.toBeInTheDocument();
+});
+
+test.each(['non_trading_day', 'unknown', 'after_close'] as const)(
+  'preserves recommendation safety checks when closure is unverified or the session is %s',
+  async (status) => {
+    const state = accountFixture();
+    state.overview.market_session.status = status;
+    state.overview.market_session.calendar_verified = status === 'after_close';
+    const plan = tradingPlanFixture();
+    plan.account_action_recommendation!.status = 'unavailable';
+    plan.account_action_recommendation!.reason_codes = [
+      'market_quote_too_old_for_decision',
+    ];
+    const fetch = installFetch(state, false, plan);
+    renderPage('zh');
+
+    const recommendation = await screen.findByTestId(
+      'overview-strategy-recommendation',
+    );
+    await waitFor(() =>
+      expect(recommendation).toHaveTextContent('报价距本次决策超过 5 分钟'),
+    );
+    expect(recommendation).toHaveTextContent('交易操作建议暂不可用');
+    expect(recommendation).not.toHaveTextContent('今日休市');
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+  },
+);
+
+test('resumes reading recommendations when the verified session changes to a trading day', async () => {
+  const state = accountFixture();
+  state.overview.market_session.status = 'non_trading_day';
+  const fetch = installFetch(state);
+  const { client } = renderPage('zh');
+  await screen.findByTestId('overview-recommendation-market-closed');
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+  state.overview.market_session.status = 'pre_open';
+  await act(async () => {
+    await client.refetchQueries({ queryKey: ['account-state'] });
+  });
+  const recommendation = screen.getByTestId('overview-strategy-recommendation');
+  expect(await within(recommendation).findByText('无操作')).toBeVisible();
+  expect(recommendation).not.toHaveTextContent('今日休市');
+  expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(
+    expect.arrayContaining([
+      '/api/decision/today',
+      '/api/decision/trading-plan',
+    ]),
+  );
 });
 
 test('separates failed daily generation from a stale quote for current manual review', async () => {
@@ -339,7 +468,7 @@ test('separates failed daily generation from a stale quote for current manual re
   expect(recommendation).toHaveTextContent(
     '当前人工复核：报价距本次决策超过 5 分钟，不能据此准备手工订单。',
   );
-  expect(recommendation).toHaveTextContent('策略建议暂不可用');
+  expect(recommendation).toHaveTextContent('交易操作建议暂不可用');
 });
 
 test('does not show a prior day generation result as the current report', async () => {
@@ -411,9 +540,9 @@ test('explains why today has no actionable recommendation when evidence gates bl
     'overview-strategy-recommendation',
   );
   await waitFor(() =>
-    expect(recommendation).toHaveTextContent('策略建议暂不可用'),
+    expect(recommendation).toHaveTextContent('交易操作建议暂不可用'),
   );
-  expect(recommendation).toHaveTextContent('策略建议暂不可用');
+  expect(recommendation).toHaveTextContent('交易操作建议暂不可用');
   expect(
     within(recommendation).queryByTestId('overview-decision-actions'),
   ).not.toBeInTheDocument();
@@ -539,7 +668,7 @@ test('labels missing strategy promotion as configuration readiness rather than a
       '尚未配置可用于账户建议的晋级策略',
     ),
   );
-  expect(recommendation).not.toHaveTextContent('策略建议暂不可用');
+  expect(recommendation).not.toHaveTextContent('交易操作建议暂不可用');
 });
 
 test('labels scan with promoted_daily_candidate_strategy_missing as configuration readiness without green indicator', async () => {
@@ -575,7 +704,7 @@ test('labels scan with promoted_daily_candidate_strategy_missing as configuratio
       '尚未配置可用于账户建议的晋级策略',
     ),
   );
-  expect(recommendation).not.toHaveTextContent('策略建议暂不可用');
+  expect(recommendation).not.toHaveTextContent('交易操作建议暂不可用');
   expect(
     recommendation.querySelector('.bg-\\[var\\(--app-success-indicator\\)\\]'),
   ).toBeNull();
@@ -604,7 +733,7 @@ test('shows a manual-review strategy action without implying automatic execution
     'overview-strategy-recommendation',
   );
   await waitFor(() => expect(recommendation).toHaveTextContent('待人工复核'));
-  expect(recommendation).toHaveTextContent('最新策略建议');
+  expect(recommendation).toHaveTextContent('交易操作建议');
   expect(recommendation).toHaveTextContent('2026/09/14');
   expect(recommendation).toHaveTextContent('买入');
   expect(recommendation).toHaveTextContent('合成基金');
@@ -805,7 +934,7 @@ test('never surfaces blocked recommendation actions as buy or sell operations', 
     'overview-strategy-recommendation',
   );
   await waitFor(() =>
-    expect(recommendation).toHaveTextContent('策略建议暂不可用'),
+    expect(recommendation).toHaveTextContent('交易操作建议暂不可用'),
   );
   expect(
     within(recommendation).queryByTestId('overview-decision-actions'),
@@ -814,7 +943,9 @@ test('never surfaces blocked recommendation actions as buy or sell operations', 
 });
 
 test('verified non-trading-day state stays compact when there is nothing to do', async () => {
-  installFetch();
+  const state = accountFixture();
+  state.overview.market_session.status = 'non_trading_day';
+  installFetch(state);
   renderPage();
   await screen.findByTestId('overview-summary');
   expect(screen.queryByTestId('overview-today-queue')).not.toBeInTheDocument();
@@ -1152,7 +1283,113 @@ test('shows previous-session performance contributors from canonical account sta
   const drivers = await screen.findByTestId('overview-performance-drivers');
   expect(drivers).toHaveTextContent('合成基金');
   expect(drivers).toHaveTextContent('-¥314.51');
+  expect(within(drivers).getByLabelText('收益率暂不可用')).toHaveTextContent(
+    '—',
+  );
+  expect(drivers).toHaveTextContent('该交易日暂无正向持仓收益贡献。');
+  expect(screen.getByTestId('overview-today-digest')).toHaveTextContent(
+    '2026/09/11',
+  );
 });
+
+test.each(['zh', 'en'] as const)(
+  'keeps position P&L and return paired in ranked contribution groups (%s)',
+  async (locale) => {
+    const state = accountFixture();
+    state.summary.today_contributors = [
+      {
+        symbol: 'gain-small',
+        display_name: 'Small gain',
+        asset_class: 'fund',
+        today_change: 7.89,
+        today_change_pct: 0.009,
+      },
+      {
+        symbol: 'loss',
+        display_name: 'Loss',
+        asset_class: 'stock',
+        today_change: -2,
+        today_change_pct: -0.015,
+      },
+      {
+        symbol: 'gain-large',
+        display_name: 'Large gain',
+        asset_class: 'stock',
+        today_change: 72,
+        today_change_pct: 0.008,
+      },
+      {
+        symbol: 'gain-third',
+        display_name: 'Third gain',
+        asset_class: 'stock',
+        today_change: 5,
+        today_change_pct: 0.006,
+      },
+      {
+        symbol: 'loss-small',
+        display_name: 'Small loss',
+        asset_class: 'fund',
+        today_change: -1.5,
+        today_change_pct: -0.001,
+      },
+    ];
+    installFetch(state);
+    renderPage(locale);
+    const digest = await screen.findByTestId('overview-today-digest');
+    const [gains, drags] = within(digest).getAllByRole('list');
+    const rows = within(gains).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Large gain');
+    expect(rows[0]).toHaveTextContent('+¥72.00');
+    expect(rows[0]).toHaveTextContent('+0.8%');
+    expect(rows[1]).toHaveTextContent('Small gain');
+    expect(rows[1]).toHaveTextContent('+¥7.89');
+    expect(rows[1]).toHaveTextContent('+0.9%');
+    expect(rows).toHaveLength(3);
+    expect(rows[2]).toHaveTextContent('Third gain');
+    expect(within(drags).getAllByRole('listitem')).toHaveLength(2);
+    expect(drags).toHaveTextContent('-¥2.00');
+    expect(drags).toHaveTextContent('-1.5%');
+    expect(drags).toHaveTextContent('Small loss');
+    expect(drags).toHaveTextContent('-¥1.50');
+    expect(within(rows[0]).getByRole('link')).toHaveAttribute(
+      'href',
+      '/portfolio/gain-large',
+    );
+    expect(digest).toHaveTextContent(
+      locale === 'zh' ? '持仓收益率' : 'Position return',
+    );
+  },
+);
+
+test.each(['zh', 'en'] as const)(
+  'explains when the session has no negative contribution (%s)',
+  async (locale) => {
+    const state = accountFixture();
+    state.summary.today_contributors = [
+      {
+        symbol: 'gain',
+        display_name: 'Positive driver',
+        asset_class: 'stock',
+        today_change: 72,
+        today_change_pct: 0.008,
+      },
+    ];
+    installFetch(state);
+    renderPage(locale);
+    const digest = await screen.findByTestId('overview-today-digest');
+    expect(digest).toHaveTextContent(
+      locale === 'zh'
+        ? '该交易日暂无负向持仓收益贡献。'
+        : 'No negative position contribution in this session.',
+    );
+    expect(digest).toHaveTextContent(
+      locale === 'zh'
+        ? '正向、负向各展示最多 3 项'
+        : 'Up to three positive and three negative contributions',
+    );
+    expect(within(digest).getAllByRole('list')).toHaveLength(1);
+  },
+);
 
 test('toggles between equity curve and return calendar views', async () => {
   const fetchMock = installFetch();
