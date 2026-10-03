@@ -66,6 +66,16 @@ backfill missed targets. Normalized candidates and human qualification review
 show observations from the exact source report as supplementary evidence. These
 price responses do not replace sealed independent evaluation, change account
 qualification, or bind the displayed observation version into an approval.
+
+An observation may separately start an independent stock paper book, with its own
+initial cash, positions, modeled fills, costs and equity history. Explicit
+settlement consumes only targets published after the book started, binds immutable
+daily inputs and preserves previously settled results across restart and replay.
+Reported distributions reuse the existing gross accounting model. Pausing target
+acceptance retains holdings and allows subsequent settlement. This book has no
+automatic settlement or actual-account authority; the target shadow health rule
+continues to monitor price responses rather than paper-account returns.
+
 Do not expand this work into live trading, broker adapters, capital authorization
 or a general workflow framework.
 
