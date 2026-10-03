@@ -119,6 +119,9 @@ class BacktestResponse(BaseModel):
 
 class BacktestSweepRequest(BaseModel):
     dataset_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    corporate_action_mode: Literal[
+        "price_only", "cash_dividends_gross", "reported_distributions_gross"
+    ] = "price_only"
     start_date: str = "2025-01-02"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
     initial_cash: float = 100_000
@@ -157,6 +160,9 @@ class CompareRunRequest(BaseModel):
 
 class CompareRequest(BaseModel):
     dataset_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    corporate_action_mode: Literal[
+        "price_only", "cash_dividends_gross", "reported_distributions_gross"
+    ] = "price_only"
     start_date: str = "2011-06-01"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
     initial_cash: float = 100_000

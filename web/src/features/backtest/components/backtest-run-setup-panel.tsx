@@ -17,7 +17,6 @@ import { ResearchDatasetPanel } from './research-dataset-panel';
 import { CashDividendModeControl } from './cash-dividend-mode-control';
 import { BacktestCostControls } from './backtest-cost-controls';
 import { backtestCostCopy } from '../copy-costs';
-import { cashDividendCopy } from '../copy-cash-dividends';
 import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { StrategyCatalogPanel } from './strategy-catalog-panel';
@@ -64,9 +63,7 @@ export function BacktestRunSetupPanel() {
   } = useBacktestPage();
   const advancedDisabledReason = !costInputs.valid
     ? backtestCostCopy[locale].invalid
-    : corporateActionMode !== 'price_only'
-      ? cashDividendCopy[locale].advancedDisabled
-      : undefined;
+    : undefined;
   return (
     <details
       className={`group min-w-0 xl:border-l xl:border-[var(--app-divider)] xl:pl-6 ${
@@ -345,6 +342,7 @@ export function BacktestRunSetupPanel() {
                 endDate={endDate}
                 initialCash={initialCash}
                 costAssumptions={costInputs.assumptions}
+                corporateActionMode={corporateActionMode}
                 strategy={strategy}
                 parameterSchema={parameterSchema}
                 parameterValues={parameterValues}
@@ -357,6 +355,7 @@ export function BacktestRunSetupPanel() {
                 endDate={endDate}
                 initialCash={initialCash}
                 costAssumptions={costInputs.assumptions}
+                corporateActionMode={corporateActionMode}
                 strategy={strategy}
                 parameterSchema={parameterSchema}
                 assets={buildSingleAsset(symbol, assetClass)}

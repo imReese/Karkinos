@@ -3504,23 +3504,29 @@ test.each([
     expect(modeSelector.disabled).toBe(false);
     expect(modeSelector.value).toBe('price_only');
     fireEvent.change(modeSelector, { target: { value: mode } });
-    if (mode !== 'price_only') {
-      openBacktestDisclosure('backtest-advanced-tools-disclosure');
-      for (const name of ['运行参数扫描', '运行对比']) {
-        const button = screen.getByRole('button', {
-          name,
-        }) as HTMLButtonElement;
-        expect(button.disabled).toBe(true);
-        fireEvent.submit(button.closest('form')!);
-      }
-      expect(
-        fetchMock.mock.calls.some(([url]) =>
-          /\/api\/backtest\/(sweep|compare)$/.test(String(url)),
+    openBacktestDisclosure('backtest-advanced-tools-disclosure');
+    for (const [name, endpoint] of [
+      ['运行参数扫描', 'sweep'],
+      ['运行对比', 'compare'],
+    ]) {
+      const button = screen.getByRole('button', {
+        name,
+      }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      fireEvent.submit(button.closest('form')!);
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          `/api/backtest/${endpoint}`,
+          expect.objectContaining({ method: 'POST' }),
         ),
-      ).toBe(false);
-      expect(
-        screen.getAllByText(/参数扫描与策略对比目前仅支持价格模式/).length,
-      ).toBe(2);
+      );
+      const call = fetchMock.mock.calls.find(
+        ([url]) => String(url) === `/api/backtest/${endpoint}`,
+      );
+      expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+        dataset_id: next.dataset_id,
+        corporate_action_mode: mode,
+      });
     }
     expect(
       fetchMock.mock.calls.some(([url]) => String(url) === '/api/backtest/run'),
