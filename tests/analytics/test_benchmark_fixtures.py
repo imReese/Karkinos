@@ -26,7 +26,7 @@ def test_fixture_backtests_generate_validation_evidence_for_all_benchmarks():
         oos = metrics_json["oos_validation"]
         timing = metrics_json["execution_timing"]
 
-        assert timing["policy_id"] == "karkinos.backtest.next_bar_close.v1"
+        assert timing["policy_id"] == "karkinos.backtest.next_bar_close.v2"
         assert timing["availability_mode"] == "historical_snapshot"
         assert timing["historical_pit_verified"] is False
 

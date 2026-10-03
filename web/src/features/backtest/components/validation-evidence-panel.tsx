@@ -93,7 +93,11 @@ export function ValidationEvidencePanel({
   const timingLabels = copy.backtest.executionTiming;
   const timing = report.metrics_json?.execution_timing;
   const supportedTiming =
-    timing?.policy_id === 'karkinos.backtest.next_bar_close.v1' &&
+    timing &&
+    [
+      'karkinos.backtest.next_bar_close.v1',
+      'karkinos.backtest.next_bar_close.v2',
+    ].includes(timing.policy_id) &&
     timing.signal_basis === 'completed_bar' &&
     timing.fill_basis === 'strictly_later_same_instrument_bar_close' &&
     ['historical_snapshot', 'observed'].includes(timing.availability_mode);

@@ -25,6 +25,18 @@ from server.db import AppDatabase
 from strategy.base import Strategy
 
 
+def _direct_order_market(symbol: Symbol) -> MarketEvent:
+    return MarketEvent(
+        timestamp=datetime(2024, 1, 1),
+        symbol=symbol,
+        open=Decimal("100"),
+        high=Decimal("100"),
+        low=Decimal("100"),
+        close=Decimal("100"),
+        volume=Decimal("100000"),
+    )
+
+
 class SimpleBuyStrategy(Strategy):
     """测试用简单策略：第 5 根 K 线全仓买入，之后不动。"""
 
@@ -208,6 +220,7 @@ class TestBacktestEngine:
         position.update_on_fill("buy", Decimal("100"), Decimal("100"))
         position.advance_settlement_day()
         engine.portfolio.positions[symbol] = position
+        engine._current_market_event = _direct_order_market(symbol)
         engine._on_order_event(
             OrderEvent(
                 timestamp=datetime(2024, 1, 1),
@@ -252,6 +265,7 @@ class TestBacktestEngine:
             commission_calc=calculator,
         )
 
+        engine._current_market_event = _direct_order_market(symbol)
         engine._on_order_event(
             OrderEvent(
                 timestamp=datetime(2024, 1, 1),
@@ -285,6 +299,7 @@ class TestBacktestEngine:
             db=db,
         )
 
+        engine._current_market_event = _direct_order_market(symbol)
         engine._on_order_event(
             OrderEvent(
                 timestamp=datetime(2024, 1, 1),
@@ -408,7 +423,7 @@ def test_pending_target_sizes_at_next_close_and_does_not_fill_at_next_open():
     assert fill.timestamp == frame.iloc[1]["timestamp"]
     assert fill.fill_price == Decimal("10.5")
     assert fill.fill_quantity == Decimal("900")
-    assert result.execution_timing["policy_id"] == "karkinos.backtest.next_bar_close.v1"
+    assert result.execution_timing["policy_id"] == "karkinos.backtest.next_bar_close.v2"
     assert result.execution_timing["historical_pit_verified"] is False
 
 
