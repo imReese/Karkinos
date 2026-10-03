@@ -23,9 +23,10 @@ class EventBus:
     - 回测用同步模式，保证确定性
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, raise_handler_errors: bool = False) -> None:
         self._handlers: dict[type[Event], list[tuple[int, Handler]]] = defaultdict(list)
         self._queue: list[Event] = []
+        self._raise_handler_errors = raise_handler_errors
 
     # ---------- 订阅 ----------
 
@@ -89,6 +90,8 @@ class EventBus:
                     try:
                         handler(event)
                     except Exception:
+                        if self._raise_handler_errors:
+                            raise
                         logger.exception(
                             "Handler %s failed for event %s",
                             handler.__name__,
