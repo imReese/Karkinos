@@ -89,13 +89,20 @@ class BacktestEngine:
         db=None,
         cash_dividends: tuple[StockDistribution, ...] | None = None,
         include_share_distributions: bool = False,
+        evaluation_start: date | None = None,
     ) -> None:
+        if evaluation_start is not None and type(evaluation_start) is not date:
+            raise ValueError("backtest_evaluation_start_invalid")
         self.event_bus = EventBus()
         self.clock = SimulatedClock()
         self.strategy = strategy
         self.instruments = instruments
         self.data_handlers = data_handlers
         self.initial_cash = initial_cash
+        self.evaluation_start = evaluation_start
+        # Earlier bars initialize strategy history, never a carried trading book.
+        # Initialization emissions are also discarded for an evaluation window.
+        self._warming_up = evaluation_start is not None
         self.fills: list[FillEvent] = []
         self.db = db
         self._dividend_replay = (
@@ -197,10 +204,25 @@ class BacktestEngine:
         # 初始化策略
         symbols = list(self.instruments.keys())
         self.strategy.on_init(symbols)
+        if self.evaluation_start is not None:
+            self.event_bus.drain()
 
         # 主循环
         for current_date, session in groupby(all_events, key=self._session_date):
             session_events = list(session)
+            self._warming_up = (
+                self.evaluation_start is not None
+                and current_date < self.evaluation_start
+            )
+            if self._warming_up:
+                # Retain crossover state and previous close for tradability. No
+                # valuation, settlement, cost or record-date entitlement exists
+                # before the fresh evaluation book starts.
+                for market_event in session_events:
+                    self.clock.advance_to(market_event.timestamp)
+                    self.event_bus.publish_and_process(market_event)
+                    self.event_bus.drain()
+                continue
             if self.portfolio.equity_curve:
                 self.portfolio.advance_settlement_day()
             if self._dividend_replay is not None:
@@ -260,7 +282,11 @@ class BacktestEngine:
         """Execute prior targets, then expose this completed bar to the strategy."""
         self._current_market_event = event
         pending = self._pending_signals.get(event.symbol)
-        if pending is not None and event.timestamp > pending.timestamp:
+        if (
+            not self._warming_up
+            and pending is not None
+            and event.timestamp > pending.timestamp
+        ):
             del self._pending_signals[event.symbol]
             self.portfolio.on_signal(
                 replace(pending, timestamp=event.timestamp, price=event.close)
@@ -272,7 +298,7 @@ class BacktestEngine:
 
     def _on_signal(self, event: SignalEvent) -> None:
         """Retain the latest target until a strictly later bar for that symbol."""
-        if self._current_market_event is None:
+        if self._warming_up or self._current_market_event is None:
             return
         decision_at = max(event.timestamp, self._current_market_event.timestamp)
         self._pending_signals[event.symbol] = replace(event, timestamp=decision_at)
@@ -358,6 +384,8 @@ class BacktestEngine:
 
     def _on_order_intent_event(self, event: OrderIntentEvent) -> None:
         """Build an order; the execution boundary records the actual risk decision."""
+        if self._warming_up:
+            return
         decision_id = f"BACKTEST-RISK-{uuid.uuid4().hex[:8]}"
         order_id = f"ORD-{uuid.uuid4().hex[:8]}"
         self.event_bus.publish(
@@ -377,6 +405,8 @@ class BacktestEngine:
 
     def _on_order_event(self, event: OrderEvent) -> None:
         """Execute an approved order at the current bar's modeled close."""
+        if self._warming_up:
+            return
         approved = self._approved_order(event)
         execution = None
         if approved is not None and self._tradeable_order(approved):
@@ -611,5 +641,13 @@ class BacktestEngine:
                 "cash_blocked_count": self._execution_blocked["cash"],
                 "cash_resized_count": self._cash_resized_count,
                 "historical_pit_verified": False,
+                **(
+                    {
+                        "evaluation_start": self.evaluation_start.isoformat(),
+                        "warmup_basis": "strategy_history_only_fresh_book",
+                    }
+                    if self.evaluation_start is not None
+                    else {}
+                ),
             },
         )
