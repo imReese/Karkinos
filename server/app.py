@@ -172,6 +172,9 @@ async def lifespan(app: FastAPI):
     from server.services.operations_projection import (
         current_decision_and_trading_plan,
     )
+    from server.services.research_observation_automation import (
+        run_research_observation_automation_loop,
+    )
 
     # create_app() loads the runtime config once and lifespan reuses the same
     # object so config.json remains a startup-only input.
@@ -364,12 +367,21 @@ async def lifespan(app: FastAPI):
         name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
     )
     state.daily_decision_evidence_task = decision_evidence_task
+    observation_automation_task = asyncio.create_task(
+        run_research_observation_automation_loop(db=db),
+        name="research-observation-automation",
+    )
 
     logger.info("Karkinos Server started")
 
     yield
 
     # ---- Shutdown ----
+    observation_automation_task.cancel()
+    try:
+        await observation_automation_task
+    except asyncio.CancelledError:
+        pass
     if shadow_research_task is not None:
         shadow_research_task.cancel()
         try:

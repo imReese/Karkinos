@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from server.contracts.content_identity import content_fingerprint
+from server.persistence.automation_runs import require_observation_automation_policy
 from server.persistence.connection import connect_sqlite
 
 
@@ -165,6 +166,9 @@ class ResearchObservationsRepository:
         health_decision: Mapping[str, Any] | None = None,
         publication_deadline: datetime | None = None,
         computation_not_before: datetime | None = None,
+        automation_generation: str | None = None,
+        automation_stop_requested: Callable[[], bool] | None = None,
+        automation_publication_deadline: datetime | None = None,
     ) -> dict[str, Any]:
         with self._connect(write=True) as conn:
             prior = self._receipt(
@@ -173,12 +177,28 @@ class ResearchObservationsRepository:
             if prior is not None:
                 return prior
             row = self._require_version(conn, observation_id, expected_version)
+            if automation_generation is not None:
+                if (
+                    automation_stop_requested is not None
+                    and automation_stop_requested()
+                ):
+                    raise ValueError("observation_automation_stopped")
+                require_observation_automation_policy(
+                    conn, observation_id, automation_generation
+                )
+                if row["lifecycle"] != "active":
+                    raise ValueError("observation_automation_paused")
             decision = self._validated_health_decision(
                 row, health_decision, expected_version, publication
             )
             if row["lifecycle"] != "active" and publication is not None:
                 raise ValueError("research_observation_paused")
             now = self._locked_clock(conn, row)
+            if automation_generation is not None and (
+                automation_publication_deadline is None
+                or now >= _instant(automation_publication_deadline)
+            ):
+                raise ValueError("observation_automation_publication_window_missed")
             if computation_not_before is not None and now < _instant(
                 computation_not_before
             ):

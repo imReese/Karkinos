@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 
 class StartResearchObservationRequest(BaseModel):
@@ -31,3 +31,10 @@ class PauseResearchObservationRequest(BaseModel):
 
     request_id: UUID
     expected_version: int = Field(ge=0)
+
+
+class ConfigureResearchObservationAutomationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool
+    expected_generation: UUID | None = None

@@ -9,8 +9,13 @@ from fastapi import APIRouter, HTTPException, Query
 
 from server.contracts.http.research_observations import (
     AdvanceResearchObservationRequest,
+    ConfigureResearchObservationAutomationRequest,
     PauseResearchObservationRequest,
     StartResearchObservationRequest,
+)
+from server.services.research_observation_automation import (
+    configure_observation_automation,
+    project_observation_automation,
 )
 from server.services.research_observations import ResearchObservationService
 
@@ -37,16 +42,40 @@ def create_router() -> APIRouter:
         limit: int = Query(default=50, ge=1, le=100),
         source_backtest_result_id: int | None = Query(default=None, gt=0),
     ) -> list[dict[str, Any]]:
-        return _service().repository.list(
+        service = _service()
+        observations = service.repository.list(
             limit=limit, source_backtest_result_id=source_backtest_result_id
         )
+        return [
+            {**item, "automation": project_observation_automation(service, item)}
+            for item in observations
+        ]
 
     @router.get("/{observation_id}")
     def get_observation(observation_id: UUID) -> dict[str, Any]:
-        result = _service().repository.get(str(observation_id))
+        service = _service()
+        result = service.repository.get(str(observation_id))
         if result is None:
             raise HTTPException(status_code=404, detail="observation_not_found")
-        return result
+        return {**result, "automation": project_observation_automation(service, result)}
+
+    @router.put("/{observation_id}/automation")
+    def configure_automation(
+        observation_id: UUID, request: ConfigureResearchObservationAutomationRequest
+    ) -> dict[str, Any]:
+        try:
+            return configure_observation_automation(
+                _service(),
+                str(observation_id),
+                enabled=request.enabled,
+                expected_generation=(
+                    str(request.expected_generation)
+                    if request.expected_generation is not None
+                    else None
+                ),
+            )
+        except ValueError as exc:
+            raise _error(exc) from exc
 
     @router.post("")
     async def start_observation(
