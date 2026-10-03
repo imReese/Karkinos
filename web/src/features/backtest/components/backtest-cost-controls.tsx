@@ -8,9 +8,15 @@ import {
 export function BacktestCostControls({
   inputs,
   disabled,
+  description,
+  defaultDescription,
+  fields = backtestCostFields,
 }: {
   inputs: ReturnType<typeof useBacktestCostInputs>;
   disabled?: boolean;
+  description?: string;
+  defaultDescription?: string;
+  fields?: readonly (typeof backtestCostFields)[number][];
 }) {
   const { locale } = usePreferences();
   const labels = backtestCostCopy[locale];
@@ -19,7 +25,9 @@ export function BacktestCostControls({
       <summary className="cursor-pointer text-sm font-semibold">
         {labels.settings}
       </summary>
-      <p className="app-muted mt-2 text-xs leading-5">{labels.shared}</p>
+      <p className="app-muted mt-2 text-xs leading-5">
+        {description ?? labels.shared}
+      </p>
       <label className="mt-3 grid gap-2 text-sm font-medium">
         {labels.mode}
         <select
@@ -38,7 +46,7 @@ export function BacktestCostControls({
         <>
           <p className="app-muted mt-2 text-xs leading-5">{labels.blank}</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {backtestCostFields.map((field) => (
+            {fields.map((field) => (
               <label
                 key={field}
                 className="grid min-w-0 gap-2 text-sm font-medium"
@@ -75,7 +83,7 @@ export function BacktestCostControls({
         </>
       ) : (
         <p className="app-muted mt-2 text-xs leading-5">
-          {labels.defaultDetail}
+          {defaultDescription ?? labels.defaultDetail}
         </p>
       )}
     </details>

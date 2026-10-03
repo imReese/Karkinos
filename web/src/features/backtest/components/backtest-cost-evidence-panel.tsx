@@ -28,13 +28,21 @@ export function BacktestCostEvidencePanel({
       aria-label={labels.report}
     >
       <h3 className="text-sm font-semibold">{labels.report}</h3>
-      <EffectiveCosts costs={report.metrics_json?.cost_assumptions} />
+      <BacktestEffectiveCostsView
+        costs={report.metrics_json?.cost_assumptions}
+      />
       <CapacityReview capacity={report.metrics_json?.capacity_review} />
     </section>
   );
 }
 
-function EffectiveCosts({ costs }: { costs?: BacktestEffectiveCosts | null }) {
+export function BacktestEffectiveCostsView({
+  costs,
+  recordedLabel,
+}: {
+  costs?: BacktestEffectiveCosts | null;
+  recordedLabel?: string;
+}) {
   const { locale } = usePreferences();
   const labels = backtestCostCopy[locale];
   if (
@@ -53,7 +61,7 @@ function EffectiveCosts({ costs }: { costs?: BacktestEffectiveCosts | null }) {
   );
   return (
     <div className="mt-3 min-w-0">
-      <p className="app-muted text-xs">{labels.recorded}</p>
+      <p className="app-muted text-xs">{recordedLabel ?? labels.recorded}</p>
       <dl className="mt-2 text-sm">
         <dt className="app-muted text-xs">{labels.slippage}</dt>
         <dd className="mt-1 font-mono tabular-nums">
@@ -63,11 +71,13 @@ function EffectiveCosts({ costs }: { costs?: BacktestEffectiveCosts | null }) {
       <div
         className="mt-3 min-w-0 overflow-x-auto"
         role="region"
-        aria-label={labels.recorded}
+        aria-label={recordedLabel ?? labels.recorded}
         tabIndex={0}
       >
         <table className="w-full min-w-[680px] text-left text-xs">
-          <caption className="sr-only">{labels.recorded}</caption>
+          <caption className="sr-only">
+            {recordedLabel ?? labels.recorded}
+          </caption>
           <thead className="app-muted">
             <tr>
               {[
