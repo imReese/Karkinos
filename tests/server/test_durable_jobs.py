@@ -61,6 +61,61 @@ def test_retry_backoff_and_attempt_budget_survive_restart(tmp_path):
     assert store.enqueue("calendar", {"year": 2026}, now=now).status == "failed"
 
 
+def test_exact_claim_preserves_legacy_backlog_and_unrelated_leases(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    old = datetime(2026, 9, 5, tzinfo=timezone.utc)
+    expired = store.enqueue("calendar", {"scheduled_at": old.isoformat()}, now=old)
+    leased = store.claim("calendar", "old-worker", now=old)
+    queued = store.enqueue("calendar", {"legacy": True}, now=old)
+    now = old + timedelta(hours=1)
+    daily = store.enqueue("calendar", {"cadence": "daily"}, now=now)
+    other = store.enqueue("other-kind", {"cadence": "daily"}, now=now)
+
+    restarted = SQLiteJobStore(db.path)
+    assert (
+        restarted.claim("calendar", "new-worker", now=now, job_id=other.job_id) is None
+    )
+    job = restarted.claim("calendar", "new-worker", now=now, job_id=daily.job_id)
+    assert job.job_id == daily.job_id
+    assert job.attempt == 1
+    assert restarted.get(expired.job_id) == leased
+    assert restarted.get(queued.job_id) == queued
+    assert restarted.get(other.job_id) == other
+    assert (
+        restarted.claim("calendar", "second-worker", now=now, job_id=daily.job_id)
+        is None
+    )
+
+
+def test_nonretryable_failure_is_terminal_after_restart_without_consuming_attempts(
+    tmp_path,
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    now = datetime(2026, 9, 5, tzinfo=timezone.utc)
+    payload = {"cadence": "daily", "date": "2026-09-05"}
+    store = SQLiteJobStore(db.path)
+    queued = store.enqueue("calendar", payload, now=now)
+    job = store.claim("calendar", "worker", now=now, job_id=queued.job_id)
+    store.fail(job.lease, now=now, error="provider_rate_limited", retryable=False)
+
+    restarted = SQLiteJobStore(db.path)
+    replay = restarted.enqueue("calendar", payload, now=now + timedelta(days=1))
+    assert replay.status == "failed"
+    assert replay.attempt == 1
+    assert replay.error == "provider_rate_limited"
+    assert (
+        restarted.claim(
+            "calendar", "worker", now=now + timedelta(days=1), job_id=job.job_id
+        )
+        is None
+    )
+    with pytest.raises(ValueError, match="job_lease_lost"):
+        restarted.finish(job.lease, now=now, result_ref="invalid-success")
+
+
 def test_list_recent_reads_only_requested_kind_in_update_order(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

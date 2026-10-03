@@ -51,7 +51,13 @@ class JobStore(Protocol):
         self, kind: str, payloads: Iterable[dict[str, Any]], *, now: datetime
     ) -> tuple[JobRun, ...]: ...
     def claim(
-        self, kind: str, owner: str, *, now: datetime, lease_seconds: int = 60
+        self,
+        kind: str,
+        owner: str,
+        *,
+        now: datetime,
+        lease_seconds: int = 60,
+        job_id: str | None = None,
     ) -> JobRun | None: ...
     def heartbeat(
         self, lease: JobLease, *, now: datetime, lease_seconds: int = 60
@@ -65,4 +71,5 @@ class JobStore(Protocol):
         error: str,
         retry_seconds: int = 60,
         failure_evidence_ref: str | None = None,
+        retryable: bool = True,
     ) -> None: ...
