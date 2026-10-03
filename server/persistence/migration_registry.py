@@ -18,6 +18,7 @@ from server.persistence.quote_schema_migrations import (
     build_legacy_mutated_v14,
     build_quote_schema_migrations,
 )
+from server.persistence.research_observation_schema import V22_RESEARCH_OBSERVATIONS
 
 
 @dataclass(frozen=True)
@@ -493,6 +494,18 @@ MIGRATIONS = (
             """,
             "CREATE INDEX market_daily_provider_call_budget_idx "
             "ON market_daily_provider_call_reservations(shanghai_date, upstream_group)",
+        ),
+    ),
+    SchemaMigration(
+        version=22,
+        name="persist_independent_research_observations",
+        statements=V22_RESEARCH_OBSERVATIONS,
+    ),
+    SchemaMigration(
+        version=23,
+        name="preserve_market_calendar_capture_time",
+        statements=(
+            "ALTER TABLE market_calendar_snapshots ADD COLUMN fetched_at TEXT",
         ),
     ),
 )

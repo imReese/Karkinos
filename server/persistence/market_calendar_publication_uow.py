@@ -25,11 +25,11 @@ class MarketCalendarPublicationUnitOfWork(SQLiteRepository):
         self,
         command: MarketCalendarAutomationPublication,
     ) -> dict[str, Any]:
-        now = self._now().isoformat()
         with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout=2000")
             conn.execute("BEGIN IMMEDIATE")
+            now = self._now(timezone.utc).isoformat()
             if command.job_lease is not None:
                 require_job_lease(conn, command.job_lease, now=self._now(timezone.utc))
                 if is_release_activation_guarded():

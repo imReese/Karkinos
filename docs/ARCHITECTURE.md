@@ -380,6 +380,28 @@ rerunning its backtest is not forward observation. Replacing a candidate starts 
 new observation identity; it does not rewrite the incumbent's history or book.
 Actual-account movements are never imported into a simulation book as its fills.
 
+The independent target shadow journey freezes an ordinary saved dual-MA strategy
+or validated Formula definition under an explicit observation policy. A Formula
+source retains its original analytics snapshot and canonical sizing evidence;
+new publications bind formal verified Datasets without upgrading the source's
+historical PIT or code-verification claims. Forecasts contain directional rule
+decisions; Portfolio constructs capped targets, Risk independently checks them,
+and rebalance intent records target-weight differences. No quantities, orders,
+fills, cash or NAV are invented. Warmup decisions and skipped sessions are never
+backfilled as forecasts.
+
+Each explicit advance binds calculation time, frozen code and library versions,
+the complete fixed-start Dataset prefix, verified calendar information times,
+and the first session opening strictly after actual publication. Its outcome
+window compares that session's close with the close a configured number of
+trading sessions later. These price responses exclude costs and corporate-action
+returns and are not paper-account performance. Missing exact endpoints remain
+unavailable. Publication and measurement timestamps are obtained after acquiring
+the database write lock; a clock reversal or crossing the selected opening
+aborts publication. Stored request receipts, version checks and immutable history
+protect retries and concurrent commands. Pausing stops new publications while
+allowing explicit measurement of previously published targets after restart.
+
 Selection feedback may use time-ordered validation and rolling OOS results.
 Once those results guide later iterations they are validation evidence, not an
 untouched final test. Final qualification requires an independent frozen holdout

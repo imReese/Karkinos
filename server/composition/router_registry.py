@@ -49,6 +49,7 @@ from server.routes import (
     operations,
     per_order_confirmation,
     portfolio,
+    research_observations,
     service_health,
     session_start_account_truth,
     settings,
@@ -142,6 +143,7 @@ def router_factories() -> tuple[RouterFactory, ...]:
         strategy_learning.create_router,
         strategy_promotion.create_router,
         backtest.create_router,
+        research_observations.create_router,
         settings.create_router,
         trading.create_router,
     )
