@@ -331,6 +331,7 @@ def write_registry_snapshot(
 ) -> dict[str, str]:
     """Persist the exact evaluated migration registry as recovery material."""
 
+    _private_directory(directory)
     path = directory / "migration-registry.json"
     write_record(path, {"format": 1, "migrations": list(definitions)})
     with path.open("rb") as saved:

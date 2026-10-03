@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -167,9 +168,38 @@ _V2_STATEMENTS = (
     """,
 )
 
+# A development runtime applied this exact v2 definition before ee46ddc0.
+# Keep its identity and original ledger entry; v3 closes its nullable CHECK gap.
+_LEGACY_V2_MIGRATION = MetaSchemaMigration(
+    2,
+    "market_universe_observation_times_v2",
+    tuple(
+        statement.replace("             AND available_at IS NOT NULL\n", "")
+        for statement in _V2_STATEMENTS
+    ),
+)
+
+_V3_STATEMENTS = (
+    "ALTER TABLE market_universe_snapshots RENAME TO market_universe_snapshots_v2",
+    _V2_STATEMENTS[1],
+    """
+    INSERT INTO market_universe_snapshots
+        (snapshot_id, trade_date, provider_name, member_count, snapshot_json,
+         created_at, capture_started_at, capture_completed_at, available_at)
+    SELECT snapshot_id, trade_date, provider_name, member_count, snapshot_json,
+           created_at, capture_started_at, capture_completed_at, available_at
+    FROM market_universe_snapshots_v2
+    """,
+    "DROP TABLE market_universe_snapshots_v2",
+    *_V2_STATEMENTS[4:],
+)
+
 _META_MIGRATIONS = (
     MetaSchemaMigration(1, "market_metadata_format_v1", _V1_STATEMENTS),
     MetaSchemaMigration(2, "market_universe_observation_times_v2", _V2_STATEMENTS),
+    MetaSchemaMigration(
+        3, "market_universe_observation_times_integrity_v3", _V3_STATEMENTS
+    ),
 )
 
 _MIGRATION_TABLE_SQL = """
@@ -186,8 +216,10 @@ def prepare_meta_database(database_path: str | Path) -> None:
     """Bootstrap or verify ``meta.db`` under one schema owner."""
 
     path = Path(database_path)
+    if not meta_database_requires_preparation(path):
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
-    with connect_meta_sqlite(path) as connection:
+    with closing(connect_meta_sqlite(path)) as connection:
         mode = str(connection.execute("PRAGMA journal_mode").fetchone()[0]).lower()
         if mode != "wal":
             connection.execute("PRAGMA journal_mode=WAL")
@@ -208,9 +240,56 @@ def require_meta_database_ready(database_path: str | Path) -> None:
     path = Path(database_path)
     if not path.is_file():
         raise MetaDatabaseSchemaError("meta_database_missing")
-    with connect_meta_sqlite(path, readonly=True) as connection:
+    with closing(connect_meta_sqlite(path, readonly=True)) as connection:
         applied_count = _assert_migration_history(connection)
         _assert_market_universe_schema(connection, applied_count)
+
+
+def meta_database_requires_preparation(database_path: str | Path) -> bool:
+    """Validate known history/structure before backup or DDL, without creating files."""
+    path = Path(database_path)
+    if path.is_symlink():
+        raise MetaDatabaseSchemaError("meta_database_path_invalid")
+    if not path.exists():
+        return True
+    if not path.is_file() or path.stat().st_nlink != 1:
+        raise MetaDatabaseSchemaError("meta_database_path_invalid")
+    with closing(connect_meta_sqlite(path, readonly=True)) as connection:
+        # History, table structure and rows must describe the same WAL snapshot
+        # even if another preparer commits while this process waits for ownership.
+        connection.execute("BEGIN")
+        if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+            raise MetaDatabaseSchemaError("meta_database_integrity_failed")
+        if (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='meta_schema_migrations'"
+            ).fetchone()
+            is None
+        ):
+            return True
+        applied_count = _assert_migration_history(connection, allow_prefix=True)
+        _assert_market_universe_schema(connection, applied_count)
+        if (
+            applied_count >= 2
+            and connection.execute(
+                """
+            SELECT 1 FROM market_universe_snapshots
+            WHERE NOT (
+                (capture_started_at IS NULL AND capture_completed_at IS NULL
+                 AND available_at IS NULL)
+                OR
+                (capture_started_at IS NOT NULL AND capture_completed_at IS NOT NULL
+                 AND available_at IS NOT NULL
+                 AND available_at = capture_completed_at
+                 AND capture_started_at <= capture_completed_at)
+            ) LIMIT 1
+            """
+            ).fetchone()
+            is not None
+        ):
+            raise MetaDatabaseSchemaError("meta_database_observation_times_incomplete")
+        journal_mode = str(connection.execute("PRAGMA journal_mode").fetchone()[0])
+        return applied_count < len(_META_MIGRATIONS) or journal_mode.lower() != "wal"
 
 
 def _prepare_on_connection(connection: sqlite3.Connection) -> None:
@@ -262,6 +341,12 @@ def _assert_market_universe_schema(
 ) -> None:
     """Never drop unknown columns or schema objects while upgrading this table."""
     statements = _V1_STATEMENTS if version == 1 else _V2_STATEMENTS
+    if version == 2:
+        identity = connection.execute(
+            "SELECT name, checksum FROM meta_schema_migrations WHERE version=2"
+        ).fetchone()
+        if identity == (_LEGACY_V2_MIGRATION.name, _LEGACY_V2_MIGRATION.checksum):
+            statements = _LEGACY_V2_MIGRATION.statements
     expected_table = next(
         statement
         for statement in statements
@@ -329,7 +414,18 @@ def _assert_migration_history(
         for migration in _META_MIGRATIONS
     ]
     expected_rows = expected[: len(rows)] if allow_prefix else expected
-    if not rows or rows != expected_rows:
+    normalized = [
+        expected[1]
+        if row
+        == (
+            _LEGACY_V2_MIGRATION.version,
+            _LEGACY_V2_MIGRATION.name,
+            _LEGACY_V2_MIGRATION.checksum,
+        )
+        else row
+        for row in rows
+    ]
+    if not rows or normalized != expected_rows:
         raise MetaDatabaseSchemaError("meta_database_migration_history_mismatch")
     return len(rows)
 
@@ -345,6 +441,7 @@ __all__ = [
     "META_DATABASE_FORMAT_VERSION",
     "MetaDatabaseSchemaError",
     "meta_migration_registry",
+    "meta_database_requires_preparation",
     "prepare_meta_database",
     "require_meta_database_ready",
 ]
