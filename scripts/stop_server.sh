@@ -64,7 +64,7 @@ signal_tree() {
 }
 
 if [[ ! -f "${PID_FILE}" ]]; then
-    echo "No managed Karkinos PID record; untracked processes may still be running."
+    echo "No managed Karkinos PID record; nothing to stop."
     clear_runtime_state
     exit 0
 fi
@@ -78,7 +78,7 @@ if [[ ! "${pid}" =~ ^[0-9]+$ ]]; then
 fi
 
 if ! kill -0 "${pid}" >/dev/null 2>&1; then
-    echo "Recorded Karkinos PID ${pid} has exited; untracked child processes may still be running."
+    echo "Recorded Karkinos PID ${pid} has exited; removing stale runtime state."
     clear_runtime_state
     exit 0
 fi
