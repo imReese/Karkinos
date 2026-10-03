@@ -1,3 +1,5 @@
+import { observationHealthCopy } from './copy-observation-health';
+
 export const observationCopy = {
   en: {
     title: 'Independent forward observation',
@@ -176,6 +178,10 @@ export function observationError(error: unknown, locale: 'en' | 'zh') {
         : '';
   if (code.includes('version_conflict') || code.includes('request_conflict'))
     return labels.stale;
+  if (code === 'observation_health_rule_paused')
+    return observationHealthCopy[locale].paused;
+  if (code === 'health_policy_invalid')
+    return observationHealthCopy[locale].invalid;
   if (code === 'observation_code_changed') return labels.codeChanged;
   if (code.includes('calendar')) return labels.calendar;
   if (code === 'observation_session_already_published')

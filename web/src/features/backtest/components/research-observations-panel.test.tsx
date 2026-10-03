@@ -198,6 +198,7 @@ test('starts, publishes, reloads persisted evidence, measures future data and pa
     horizon_sessions: 5,
     max_symbol_weight: '0.25',
     max_gross_weight: '1',
+    health_policy: null,
   });
   expect(
     screen.getByText(/original backtest did not bind its code/),
@@ -273,6 +274,7 @@ test('starts, publishes, reloads persisted evidence, measures future data and pa
     ),
   ).toBe(true);
   expect(saved!.publications).toHaveLength(1);
+  expect(screen.getByText('Health rule not configured')).toBeVisible();
   fireEvent.click(
     screen.getByRole('button', { name: 'Measure existing publications' }),
   );
@@ -287,6 +289,74 @@ test('starts, publishes, reloads persisted evidence, measures future data and pa
       screen.getByRole('button', { name: 'Measure existing publications' }),
     ).toBeEnabled(),
   );
+});
+
+test('health rules are opt-in and require explicit valid values before freezing the submitted rule', async () => {
+  let saved: ResearchObservation | null = null;
+  const requests: Record<string, unknown>[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        requests.push(body);
+        saved = {
+          ...initial,
+          policy: { ...initial.policy, health_policy: body.health_policy },
+        };
+        return json({ id: observationId });
+      }
+      if (path === `/api/research-observations/${observationId}`)
+        return json(saved);
+      if (path === '/api/backtest/datasets') return json({ datasets: [] });
+      return json(saved ? [saved] : []);
+    }),
+  );
+  mount();
+  const start = screen.getByRole('button', { name: 'Start observation' });
+  const enable = screen.getByRole('checkbox', {
+    name: 'Configure a forward health rule',
+  });
+  await waitFor(() => expect(start).toBeEnabled());
+  expect(enable).not.toBeChecked();
+  fireEvent.click(enable);
+  expect(start).toBeDisabled();
+  const window = screen.getByLabelText('Window of matured intervals');
+  const minimum = screen.getByLabelText('Minimum eligible intervals');
+  const threshold = screen.getByLabelText(
+    'Minimum mean relative price response (decimal)',
+  );
+  expect(window).toHaveValue(null);
+  expect(minimum).toHaveValue(null);
+  expect(threshold).toHaveValue('');
+  fireEvent.change(window, { target: { value: '4' } });
+  fireEvent.change(minimum, { target: { value: '5' } });
+  fireEvent.change(threshold, { target: { value: '-0.015' } });
+  expect(start).toBeDisabled();
+  fireEvent.change(minimum, { target: { value: '3' } });
+  fireEvent.change(threshold, { target: { value: 'Infinity' } });
+  expect(start).toBeDisabled();
+  fireEvent.change(threshold, { target: { value: '-0.015' } });
+  fireEvent.change(screen.getByLabelText('When the rule is breached'), {
+    target: { value: 'pause_on_breach' },
+  });
+  expect(start).toBeEnabled();
+  fireEvent.click(start);
+  await screen.findByText('Awaiting saved health evaluation');
+  expect(requests[0].health_policy).toEqual({
+    mode: 'pause_on_breach',
+    window_intervals: 4,
+    minimum_eligible_intervals: 3,
+    minimum_mean_relative_price_response: '-0.015',
+  });
+  const rule = screen.getByRole('region', { name: 'Forward health rule' });
+  expect(rule).toHaveTextContent('Minimum eligible intervals: 3');
+  expect(rule).toHaveTextContent('100% equal-weight allocation');
+  fireEvent.change(threshold, { target: { value: '0.1' } });
+  expect(rule).toHaveTextContent('response (decimal): -0.015');
+  expect(rule).not.toHaveTextContent('response (decimal): 0.1');
+  expect(requests).toHaveLength(1);
 });
 
 test('keeps the request identity after an ambiguous start failure and retries the same operation', async () => {
@@ -388,6 +458,81 @@ test('invalid settings and unsupported saved reports cannot start an observation
   expect(
     screen.getByRole('button', { name: 'Start observation' }),
   ).toBeDisabled();
+  expect(fetchMock.mock.calls.every((call) => call[1]?.method !== 'POST')).toBe(
+    true,
+  );
+});
+
+test('a saved health pause disables new publications while preserving measurement controls', async () => {
+  const paused: ResearchObservation = {
+    ...initial,
+    lifecycle: 'paused',
+    last_blocker: { code: 'observation_health_rule_paused' },
+    policy: {
+      ...initial.policy,
+      health_policy: {
+        mode: 'pause_on_breach',
+        window_intervals: 1,
+        minimum_eligible_intervals: 1,
+        minimum_mean_relative_price_response: '-0.01',
+      },
+    },
+    health_decision: {
+      policy_id: 'karkinos.research.forward_price_health.v1',
+      status: 'threshold_breached',
+      action: 'pause_observation',
+      evaluated_at: '2026-09-23T08:00:00Z',
+      market_as_of: '2026-09-23',
+      data_available: true,
+      counts: {
+        scheduled_matured: 1,
+        pending: 0,
+        missing_matured: 0,
+        zero_exposure: 0,
+        corporate_action_excluded: 0,
+        unresolved: 0,
+        eligible: 1,
+      },
+      mean_relative_price_response: '-0.075',
+      threshold: '-0.01',
+      selected_publication_ids: [publication.id],
+      input_fingerprint: 'sha256:health-inputs',
+      blockers: [],
+      limitations: [],
+      return_basis: 'unadjusted_price_only',
+    },
+  };
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, _init?: RequestInit) =>
+      String(input) === '/api/backtest/datasets'
+        ? json({ datasets: [dataset] })
+        : json([paused]),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  mount();
+  await screen.findByText('Configured threshold breached');
+  expect(
+    screen.getAllByText(/saved rule paused new publications/),
+  ).toHaveLength(1);
+  expect(
+    screen.getByRole('button', { name: 'Pause new publications' }),
+  ).toBeDisabled();
+  expect(
+    screen.queryByRole('button', {
+      name: 'Publish targets and measure outcomes',
+    }),
+  ).toBeNull();
+  await screen.findByRole('option', { name: /2026-09-15 · aaaaaaaaaa/ });
+  fireEvent.change(
+    screen.getByLabelText('Verified dataset for this observation'),
+    {
+      target: { value: datasetId },
+    },
+  );
+  expect(
+    screen.getByRole('button', { name: 'Measure existing publications' }),
+  ).toBeEnabled();
+  expect(screen.queryByText(/could not advance/)).toBeNull();
   expect(fetchMock.mock.calls.every((call) => call[1]?.method !== 'POST')).toBe(
     true,
   );
