@@ -113,5 +113,5 @@ def test_v23_preserves_old_calendar_bytes_and_leaves_capture_unknown(
         )
         assert (
             conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-            == 23
+            == migrations.migration_registry()[-1].version
         )
