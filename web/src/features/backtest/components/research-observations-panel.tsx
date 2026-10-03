@@ -15,6 +15,7 @@ import type {
 } from '../observation-contracts';
 import { ResearchObservationHistory } from './research-observation-history';
 import { ResearchObservationHealth } from './research-observation-health';
+import { ObservationAutomationControls } from './observation-automation';
 import {
   configuredHealthPolicy,
   ObservationHealthSettings,
@@ -155,6 +156,9 @@ export function ResearchObservationsPanel({
             key={observation.id}
             observation={observation}
             busy={mutation.isPending}
+            readBusy={query.isFetching}
+            readFailed={query.isError}
+            onRefresh={async () => !(await query.refetch()).isError}
             onCommand={(kind, datasetId) => {
               const payload = {
                 expected_version: observation.version,
@@ -311,10 +315,16 @@ function ObservationStartForm({
 function ObservationDetail({
   observation,
   busy,
+  readBusy,
+  readFailed,
+  onRefresh,
   onCommand,
 }: {
   observation: ResearchObservation;
   busy: boolean;
+  readBusy: boolean;
+  readFailed: boolean;
+  onRefresh: () => Promise<boolean>;
   onCommand: (kind: 'advance' | 'pause', datasetId?: string) => void;
 }) {
   const { locale } = usePreferences();
@@ -435,6 +445,13 @@ function ObservationDetail({
         </button>
       </div>
       <p className="app-muted text-xs leading-5">{labels.pauseDetail}</p>
+      <ObservationAutomationControls
+        observation={observation}
+        busy={busy}
+        readBusy={readBusy}
+        readFailed={readFailed}
+        onRefresh={onRefresh}
+      />
       <ResearchObservationHealth observation={observation} />
       <ResearchObservationHistory observation={observation} />
       <details className="min-w-0 text-xs">

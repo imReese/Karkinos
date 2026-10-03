@@ -6,6 +6,12 @@ import type { ResearchObservation } from '../src/features/backtest/observation-c
 const datasetId = `sha256:${'a'.repeat(64)}`;
 const futureId = `sha256:${'b'.repeat(64)}`;
 const identity = '11111111-1111-4111-8111-111111111111';
+const automationGenerations = [
+  '11111111-1111-4111-8111-111111111112',
+  '11111111-1111-4111-8111-111111111113',
+  '11111111-1111-4111-8111-111111111114',
+  '11111111-1111-4111-8111-111111111115',
+];
 const report: BacktestReport = {
   id: 201,
   created_at: '2026-09-18T08:00:00Z',
@@ -43,6 +49,7 @@ for (const width of [390, 1280]) {
     });
     let observation: ResearchObservation | null = null;
     const commands: string[] = [];
+    const automationWrites: boolean[] = [];
     await page.route('**/api/**', async (route) => {
       const url = new URL(route.request().url());
       const path = url.pathname;
@@ -114,11 +121,46 @@ for (const width of [390, 1280]) {
           },
           publications: [],
           outcomes: [],
+          automation: {
+            observation_id: identity,
+            enabled: false,
+            generation: null,
+            status: 'disabled',
+            last_checked_at: null,
+            last_attempt_at: null,
+            last_blocker: null,
+            dataset_id: null,
+            decision_session: null,
+          },
         };
         payload = { id: identity, version: 0 };
       } else if (path === `/api/research-observations/${identity}`)
         payload = observation;
       else if (
+        path === `/api/research-observations/${identity}/automation` &&
+        method === 'PUT' &&
+        observation?.automation
+      ) {
+        const request = route.request().postDataJSON();
+        expect(request.expected_generation).toBe(
+          observation.automation.generation,
+        );
+        if (observation.lifecycle === 'paused')
+          expect(request.enabled).toBe(false);
+        observation.automation = {
+          observation_id: identity,
+          enabled: request.enabled,
+          generation: automationGenerations[automationWrites.length],
+          status: request.enabled ? 'ready' : 'disabled',
+          last_checked_at: null,
+          last_attempt_at: null,
+          last_blocker: null,
+          dataset_id: null,
+          decision_session: null,
+        };
+        automationWrites.push(request.enabled);
+        payload = observation.automation;
+      } else if (
         path === `/api/research-observations/${identity}/pause` &&
         observation
       ) {
@@ -127,6 +169,8 @@ for (const width of [390, 1280]) {
           observation.version,
         );
         observation.lifecycle = 'paused';
+        if (observation.automation?.enabled)
+          observation.automation.status = 'paused';
         observation.version++;
         payload = { id: identity, version: observation.version };
       } else if (
@@ -270,6 +314,58 @@ for (const width of [390, 1280]) {
       exact: true,
     });
     await expect(select).toBeVisible();
+    const automation = panel.getByRole('region', {
+      name: 'Automatic advance',
+      exact: true,
+    });
+    await expect(automation).toContainText('Automatic advance off');
+    expect(automationWrites).toEqual([]);
+    await automation
+      .getByRole('button', { name: 'Enable automatic advance', exact: true })
+      .click();
+    await expect(automation).toContainText('Enabled · awaiting the next check');
+    const running = observation as ResearchObservation | null;
+    if (running?.automation)
+      running.automation = {
+        ...running.automation,
+        status: 'waiting',
+        last_checked_at: '2026-09-18T08:05:00Z',
+        decision_session: '2026-09-18',
+        last_blocker: { code: 'observation_automation_dataset_unreadable' },
+        dataset_discovery_complete: false,
+        unreadable_candidate_dataset_ids: [futureId],
+      };
+    await page.reload();
+    await openPanel();
+    await expect(automation).toContainText(
+      'Waiting for data or the publication window',
+    );
+    await automation
+      .getByText('Dataset discovery details', { exact: true })
+      .click();
+    await expect(automation).toContainText(futureId);
+    await automation
+      .getByRole('heading')
+      .evaluate((element) => element.scrollIntoView({ block: 'start' }));
+    await page.screenshot({
+      path: testInfo.outputPath(`observation-automation-${width}.png`),
+    });
+    await automation
+      .getByText('Last automatic check', { exact: true })
+      .evaluate((element) => element.scrollIntoView({ block: 'start' }));
+    await page.screenshot({
+      path: testInfo.outputPath(`observation-automation-status-${width}.png`),
+    });
+    await automation
+      .getByRole('button', { name: 'Disable automatic advance', exact: true })
+      .click();
+    await expect(automation).toContainText('Automatic advance off');
+    await expect(
+      panel.getByRole('button', {
+        name: 'Pause new publications',
+        exact: true,
+      }),
+    ).toBeEnabled();
     await select.selectOption(datasetId);
     await panel
       .getByRole('button', {
@@ -283,12 +379,28 @@ for (const width of [390, 1280]) {
     await openPanel();
     await expect(panel).toContainText('Awaiting future data');
     await expect(panel).toContainText('Waiting for intervals to mature');
+    await automation
+      .getByRole('button', { name: 'Enable automatic advance', exact: true })
+      .click();
+    await expect(automation).toContainText('Enabled · awaiting the next check');
     await panel
       .getByRole('button', { name: 'Pause new publications', exact: true })
       .click();
     await expect(
       panel.getByRole('button', {
         name: 'Pause new publications',
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await expect(automation).toContainText(
+      'Observation paused · automatic advance stopped',
+    );
+    await automation
+      .getByRole('button', { name: 'Disable automatic advance', exact: true })
+      .click();
+    await expect(
+      automation.getByRole('button', {
+        name: 'Enable automatic advance',
         exact: true,
       }),
     ).toBeDisabled();
@@ -320,6 +432,7 @@ for (const width of [390, 1280]) {
       .click();
     await expect(panel).toContainText('2026-09-21 → 2026-09-22');
     expect(commands).toEqual(['start', 'publish', 'pause', 'measure']);
+    expect(automationWrites).toEqual([true, false, true, false]);
     await expect
       .poll(() =>
         page.evaluate(
