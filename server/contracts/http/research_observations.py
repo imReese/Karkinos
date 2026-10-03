@@ -1,6 +1,7 @@
 """Explicit human commands for independent research target observations."""
 
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,6 +15,7 @@ class StartResearchObservationRequest(BaseModel):
     horizon_sessions: int = Field(default=5, ge=1, le=60)
     max_symbol_weight: Decimal = Field(default=Decimal("0.25"), gt=0, le=1)
     max_gross_weight: Decimal = Field(default=Decimal("1"), gt=0, le=1)
+    health_policy: dict[str, Any] | None = None
 
 
 class AdvanceResearchObservationRequest(BaseModel):

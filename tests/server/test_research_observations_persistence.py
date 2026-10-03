@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from server import db as db_module
+from server.contracts.content_identity import content_fingerprint
 from server.db import AppDatabase
 from server.persistence import migrations
 from server.persistence.research_observations import ResearchObservationsRepository
@@ -25,15 +26,18 @@ def database(tmp_path):
     return db
 
 
-def _start(repo, observation_id="obs"):
+def _start(repo, observation_id="obs", *, health_mode=None):
     return repo.start(
         observation_id=observation_id,
         request_id="start",
         request_fingerprint="start-request",
         source_backtest_result_id=17,
         source={"strategy": "dual_ma", "params": {"short_period": 5}},
-        code_binding={"sha256": "frozen"},
-        policy={"horizon_sessions": 1},
+        code_binding={"fingerprint": "frozen"},
+        policy={
+            "horizon_sessions": 1,
+            **({"health_policy": {"mode": health_mode}} if health_mode else {}),
+        },
         universe=[{"symbol": "600001", "instrument_type": "stock"}],
     )
 
@@ -78,6 +82,207 @@ def _advance(repo, **kwargs):
     }
     arguments.update(kwargs)
     return repo.advance(**arguments)
+
+
+def _health_decision(repo, **changes):
+    current = repo.get("obs")
+    return {
+        "observation_id": current["id"],
+        "input_version": current["version"],
+        "source_fingerprint": content_fingerprint(current["source"]),
+        "code_fingerprint": current["code_binding"]["fingerprint"],
+        "policy_fingerprint": content_fingerprint(current["policy"]),
+        "action": "pause_observation",
+        "status": "threshold_breached",
+        "data_available": True,
+        **changes,
+    }
+
+
+def _outcome(publication_id="pub", horizon=1):
+    return {
+        "publication_id": publication_id,
+        "horizon": horizon,
+        "dataset_id": "future",
+        "payload": {"weighted_price_response": "-0.01"},
+    }
+
+
+def test_health_pause_commits_outcome_and_receipt_and_replays_original_decision(
+    database,
+):
+    repo = ResearchObservationsRepository(database.path, clock=lambda: NOW)
+    _start(repo, health_mode="pause_on_breach")
+    _advance(repo)
+    decision_a = _health_decision(repo)
+    arguments = {
+        "request_id": "health-a",
+        "expected_version": 1,
+        "publication": None,
+        "outcomes": [_outcome()],
+        "health_decision": decision_a,
+    }
+    receipt_a = _advance(repo, **arguments)
+    assert receipt_a["lifecycle"] == "paused"
+    assert receipt_a["version"] == 2
+    assert receipt_a["publication_id"] is None
+    assert receipt_a["outcome_keys"] == [{"publication_id": "pub", "horizon": 1}]
+    assert receipt_a["health_decision"] == decision_a
+    detail = repo.get("obs")
+    assert detail["health_decision"] == decision_a
+    assert len(detail["outcomes"]) == 1
+    assert len(detail["publications"]) == 1
+
+    restarted = ResearchObservationsRepository(database.path, clock=lambda: NOW)
+    decision_b = _health_decision(restarted, action="none", status="within_rule")
+    receipt_b = _advance(
+        restarted,
+        request_id="health-b",
+        expected_version=2,
+        publication=None,
+        health_decision=decision_b,
+    )
+    assert receipt_b["lifecycle"] == "paused"
+    assert _advance(restarted, **arguments) == receipt_a
+    assert restarted.get("obs")["version"] == 3
+    assert restarted.get("obs")["health_decision"] == decision_b
+    assert restarted.list()[0]["health_decision"] == decision_b
+    with pytest.raises(ValueError, match="research_observation_paused"):
+        _advance(restarted, request_id="cannot-resume", expected_version=3)
+
+
+def test_latest_health_uses_integer_receipt_version_with_equal_clocks(database):
+    repo = ResearchObservationsRepository(database.path, clock=lambda: NOW)
+    _start(repo, health_mode="observe_only")
+    for version in range(11):
+        decision = _health_decision(repo, action="none", status="within_rule")
+        _advance(
+            repo,
+            request_id=f"health-{100 - version}",
+            expected_version=version,
+            publication=None,
+            health_decision=decision,
+        )
+    repo.pause(
+        observation_id="obs",
+        request_id="manual-pause",
+        request_fingerprint="pause",
+        expected_version=11,
+    )
+    reopened = ResearchObservationsRepository(database.path)
+    assert reopened.get("obs")["health_decision"] == decision
+    assert reopened.list()[0]["health_decision"]["input_version"] == 10
+    assert reopened.get("obs")["version"] == 12
+
+
+def test_legacy_receipts_retain_shape_and_show_no_health_decision(database):
+    repo = ResearchObservationsRepository(database.path, clock=lambda: NOW)
+    started = _start(repo)
+    assert "health_decision" not in started
+    assert repo.get("obs")["health_decision"] is None
+    receipt = _advance(repo)
+    assert "health_decision" not in receipt
+    assert repo.get("obs")["health_decision"] is None
+    assert repo.list()[0]["health_decision"] is None
+
+
+def test_unavailable_data_can_record_health_without_pausing(database):
+    repo = ResearchObservationsRepository(database.path, clock=lambda: NOW)
+    _start(repo, health_mode="pause_on_breach")
+    decision = _health_decision(
+        repo, action="none", status="unavailable", data_available=False
+    )
+    receipt = _advance(repo, publication=None, health_decision=decision)
+    assert receipt["lifecycle"] == "active"
+    assert repo.get("obs")["health_decision"] == decision
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"observation_id": "other"},
+        {"input_version": 2},
+        {"input_version": True},
+        {"source_fingerprint": "different-source"},
+        {"code_fingerprint": "different-code"},
+        {"policy_fingerprint": "different-policy"},
+        {"action": "resume"},
+        {"status": "within_rule"},
+        {"data_available": False},
+        {"data_available": 1},
+    ],
+)
+def test_invalid_health_binding_or_pause_evidence_rolls_back(database, changes):
+    repo = ResearchObservationsRepository(database.path, clock=lambda: NOW)
+    _start(repo, health_mode="pause_on_breach")
+    _advance(repo)
+    before = repo.get("obs")
+    with pytest.raises(
+        ValueError, match="^research_observation_health_decision_invalid$"
+    ):
+        _advance(
+            repo,
+            request_id="invalid-health",
+            expected_version=1,
+            publication=None,
+            outcomes=[_outcome()],
+            health_decision=_health_decision(repo, **changes),
+        )
+    assert repo.get("obs") == before
+    assert (
+        repo.get_operation(
+            observation_id="obs",
+            request_id="invalid-health",
+            kind="advance",
+            request_fingerprint="advance-request-a",
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("health_mode", [None, "observe_only"])
+def test_health_cannot_pause_without_frozen_authorization(database, health_mode):
+    repo = ResearchObservationsRepository(database.path, clock=lambda: NOW)
+    _start(repo, health_mode=health_mode)
+    with pytest.raises(
+        ValueError, match="research_observation_health_decision_invalid"
+    ):
+        _advance(repo, publication=None, health_decision=_health_decision(repo))
+    assert repo.get("obs")["lifecycle"] == "active"
+    assert repo.get("obs")["version"] == 0
+
+
+def test_health_pause_cannot_publish_and_outcome_failure_rolls_back_everything(
+    database,
+):
+    repo = ResearchObservationsRepository(database.path, clock=lambda: NOW)
+    _start(repo, health_mode="pause_on_breach")
+    with pytest.raises(
+        ValueError, match="research_observation_health_decision_invalid"
+    ):
+        _advance(repo, health_decision=_health_decision(repo))
+    assert repo.get("obs")["publications"] == []
+    _advance(repo)
+    before = repo.get("obs")
+    with pytest.raises(ValueError, match="outcome_publication_mismatch"):
+        _advance(
+            repo,
+            request_id="invalid-outcome",
+            expected_version=1,
+            publication=None,
+            outcomes=[_outcome(), _outcome("missing", 2)],
+            health_decision=_health_decision(repo),
+        )
+    assert repo.get("obs") == before
+    assert (
+        repo.get_operation(
+            observation_id="obs",
+            request_id="invalid-outcome",
+            kind="advance",
+            request_fingerprint="advance-request-a",
+        )
+        is None
+    )
 
 
 def test_retry_original_mutations_after_restart_and_later_pause(database):

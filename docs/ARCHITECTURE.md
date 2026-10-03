@@ -402,6 +402,21 @@ aborts publication. Stored request receipts, version checks and immutable histor
 protect retries and concurrent commands. Pausing stops new publications while
 allowing explicit measurement of previously published targets after restart.
 
+An optional price-monitoring rule is frozen when starting an observation; it has
+no default performance threshold. Explicit measurement evaluates stable,
+chronologically selected non-overlapping intervals before checking eligibility.
+Missing, zero-exposure and known ex-date-confounded intervals keep their slots;
+the evaluator cannot replace them with more favorable samples. The rule compares
+the arithmetic mean of target-weighted raw-price changes minus the fully invested
+equal-weight frozen universe with a configured threshold. Cash exposure affects
+this comparison; it is not risk-adjusted alpha, total return or a significance test.
+Provider-reported corporate-action evidence does not establish complete coverage.
+Unresolved or missing matured evidence prevents performance action. An explicitly
+configured pause commits the measured outcomes, bound decision, lifecycle change
+and retry receipt atomically. Reads return the saved decision without recomputing;
+old observations acquire no new rule. This scope cannot qualify or publish an
+actual-account recommendation or reactivate a paused observation.
+
 Selection feedback may use time-ordered validation and rolling OOS results.
 Once those results guide later iterations they are validation evidence, not an
 untouched final test. Final qualification requires an independent frozen holdout
