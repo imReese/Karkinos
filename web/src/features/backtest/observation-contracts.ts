@@ -38,6 +38,54 @@ export type ObservationOutcome = {
   };
 };
 
+export type ObservationHealthPolicy = {
+  mode: 'observe_only' | 'pause_on_breach';
+  window_intervals: number;
+  minimum_eligible_intervals: number;
+  minimum_mean_relative_price_response: string;
+  policy_id?: string;
+  metric?: string;
+  comparison?: string;
+  interval_selection?: string;
+};
+
+export type ObservationHealthDecision = {
+  policy_id: string;
+  status:
+    | 'not_configured'
+    | 'waiting'
+    | 'insufficient_evidence'
+    | 'within_rule'
+    | 'threshold_breached'
+    | 'unavailable';
+  action: 'none' | 'pause_observation';
+  evaluated_at: string | null;
+  market_as_of: string | null;
+  data_available: boolean;
+  counts: {
+    scheduled_matured: number;
+    pending: number;
+    missing_matured: number;
+    zero_exposure: number;
+    corporate_action_excluded: number;
+    unresolved: number;
+    eligible: number;
+  };
+  mean_relative_price_response: string | null;
+  threshold: string | null;
+  selected_publication_ids: string[];
+  input_fingerprint: string | null;
+  source_fingerprint?: string;
+  code_fingerprint?: string;
+  policy_fingerprint?: string;
+  observation_id?: string;
+  input_version?: number;
+  decision_actor?: 'configured_rule';
+  blockers: string[];
+  limitations: string[];
+  return_basis: 'unadjusted_price_only';
+};
+
 export type ResearchObservation = {
   id: string;
   source_backtest_result_id: number;
@@ -57,7 +105,9 @@ export type ResearchObservation = {
     horizon_sessions: number;
     max_symbol_weight: string;
     max_gross_weight: string;
+    health_policy?: ObservationHealthPolicy | null;
   };
+  health_decision?: ObservationHealthDecision | null;
   publications: ObservationPublication[];
   outcomes: ObservationOutcome[];
 };
@@ -68,6 +118,7 @@ export type StartObservation = {
   horizon_sessions: number;
   max_symbol_weight: string;
   max_gross_weight: string;
+  health_policy?: ObservationHealthPolicy | null;
 };
 
 export type ObservationCommand =

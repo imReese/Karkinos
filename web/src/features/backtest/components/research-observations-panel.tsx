@@ -14,6 +14,12 @@ import type {
   ResearchObservation,
 } from '../observation-contracts';
 import { ResearchObservationHistory } from './research-observation-history';
+import { ResearchObservationHealth } from './research-observation-health';
+import {
+  configuredHealthPolicy,
+  ObservationHealthSettings,
+  type ObservationHealthDraft,
+} from './observation-health-settings';
 
 const fieldClass = 'app-field min-h-11 w-full min-w-0 px-3 py-2';
 const buttonClass =
@@ -205,6 +211,14 @@ function ObservationStartForm({
   const [horizon, setHorizon] = useState('5');
   const [symbolLimit, setSymbolLimit] = useState('0.25');
   const [grossLimit, setGrossLimit] = useState('1');
+  const [health, setHealth] = useState<ObservationHealthDraft>({
+    enabled: false,
+    mode: 'observe_only',
+    window: '',
+    minimum: '',
+    threshold: '',
+  });
+  const healthPolicy = configuredHealthPolicy(health);
   const supported = ['dual_ma', 'ai_formula_research'].includes(
     report.config.strategy,
   );
@@ -223,12 +237,13 @@ function ObservationStartForm({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (valid && supported && !busy)
+        if (valid && healthPolicy !== undefined && supported && !busy)
           onStart({
             source_backtest_result_id: report.id,
             horizon_sessions: Number(horizon),
             max_symbol_weight: symbolLimit.trim(),
             max_gross_weight: grossLimit.trim(),
+            health_policy: healthPolicy,
           });
       }}
     >
@@ -272,6 +287,7 @@ function ObservationStartForm({
             />
           </label>
         </div>
+        <ObservationHealthSettings value={health} onChange={setHealth} />
         {!valid ? (
           <p className="text-xs" role="alert">
             {labels.invalid}
@@ -283,7 +299,7 @@ function ObservationStartForm({
         <button
           className={buttonClass}
           type="submit"
-          disabled={!valid || !supported}
+          disabled={!valid || healthPolicy === undefined || !supported}
         >
           {saving ? labels.busy : labels.start}
         </button>
@@ -348,7 +364,11 @@ function ObservationDetail({
       {!observation.source.source_historical_pit_verified ? (
         <p className="app-muted text-xs leading-5">{labels.pitUnknown}</p>
       ) : null}
-      {observation.last_blocker ? (
+      {observation.last_blocker &&
+      !(
+        observation.last_blocker.code === 'observation_health_rule_paused' &&
+        observation.health_decision?.action === 'pause_observation'
+      ) ? (
         <p role="status" className="text-xs leading-5">
           {observationError(observation.last_blocker.code, locale)}
         </p>
@@ -415,6 +435,7 @@ function ObservationDetail({
         </button>
       </div>
       <p className="app-muted text-xs leading-5">{labels.pauseDetail}</p>
+      <ResearchObservationHealth observation={observation} />
       <ResearchObservationHistory observation={observation} />
       <details className="min-w-0 text-xs">
         <summary className="cursor-pointer text-[var(--app-text-secondary)]">

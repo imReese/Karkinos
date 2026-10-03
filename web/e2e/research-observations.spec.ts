@@ -85,6 +85,12 @@ for (const width of [390, 1280]) {
         commands.push('start');
         expect(request.source_backtest_result_id).toBe(201);
         expect(request.horizon_sessions).toBe(1);
+        expect(request.health_policy).toEqual({
+          mode: 'observe_only',
+          window_intervals: 2,
+          minimum_eligible_intervals: 2,
+          minimum_mean_relative_price_response: '-0.015',
+        });
         observation = {
           id: identity,
           source_backtest_result_id: 201,
@@ -104,6 +110,7 @@ for (const width of [390, 1280]) {
             horizon_sessions: 1,
             max_symbol_weight: '0.25',
             max_gross_weight: '1',
+            health_policy: request.health_policy,
           },
           publications: [],
           outcomes: [],
@@ -173,6 +180,38 @@ for (const width of [390, 1280]) {
             },
           });
         }
+        observation.health_decision = {
+          policy_id: 'karkinos.research.forward_price_health.v1',
+          status: observation.outcomes.length
+            ? 'insufficient_evidence'
+            : 'waiting',
+          action: 'none',
+          evaluated_at: observation.outcomes.length
+            ? '2026-09-22T08:00:00Z'
+            : '2026-09-18T08:01:00Z',
+          market_as_of: observation.outcomes.length
+            ? '2026-09-22'
+            : '2026-09-18',
+          data_available: true,
+          counts: {
+            scheduled_matured: observation.outcomes.length,
+            pending: observation.outcomes.length ? 0 : 1,
+            missing_matured: 0,
+            zero_exposure: 0,
+            corporate_action_excluded: 0,
+            unresolved: 0,
+            eligible: observation.outcomes.length,
+          },
+          mean_relative_price_response: null,
+          threshold: '-0.015',
+          selected_publication_ids: observation.outcomes.length
+            ? ['publication-1']
+            : [],
+          input_fingerprint: 'sha256:synthetic-health-input',
+          blockers: [],
+          limitations: [],
+          return_basis: 'unadjusted_price_only',
+        };
         payload = { id: identity, version: observation.version };
       } else {
         await route.fulfill({
@@ -196,11 +235,32 @@ for (const width of [390, 1280]) {
     await panel
       .getByLabel('Outcome horizon (trading sessions)', { exact: true })
       .fill('1');
+    await panel.getByLabel('Configure a forward health rule').check();
+    await expect(
+      panel.getByRole('button', { name: 'Start observation', exact: true }),
+    ).toBeDisabled();
+    await panel
+      .getByLabel('Window of matured intervals', { exact: true })
+      .fill('2');
+    await panel
+      .getByLabel('Minimum eligible intervals', { exact: true })
+      .fill('2');
+    await panel
+      .getByLabel('Minimum mean relative price response (decimal)', {
+        exact: true,
+      })
+      .fill('-0.015');
     await panel
       .getByText('Independent forward observation', { exact: true })
       .scrollIntoViewIfNeeded();
     await page.screenshot({
       path: testInfo.outputPath(`observation-controls-${width}.png`),
+    });
+    await panel
+      .getByLabel('Configure a forward health rule')
+      .evaluate((element) => element.scrollIntoView({ block: 'start' }));
+    await page.screenshot({
+      path: testInfo.outputPath(`observation-health-settings-${width}.png`),
     });
     await panel
       .getByRole('button', { name: 'Start observation', exact: true })
@@ -218,9 +278,11 @@ for (const width of [390, 1280]) {
       })
       .click();
     await expect(panel).toContainText('Awaiting future data');
+    await expect(panel).toContainText('Waiting for intervals to mature');
     await page.reload();
     await openPanel();
     await expect(panel).toContainText('Awaiting future data');
+    await expect(panel).toContainText('Waiting for intervals to mature');
     await panel
       .getByRole('button', { name: 'Pause new publications', exact: true })
       .click();
@@ -239,6 +301,20 @@ for (const width of [390, 1280]) {
       .click();
     await expect(panel).toContainText('Measured price response');
     await expect(panel).toContainText('2.5%');
+    await expect(panel).toContainText('Too few eligible intervals');
+    await expect(panel).toContainText('not NAV or proof of alpha decay');
+    await expect(
+      panel.getByRole('button', {
+        name: 'Pause new publications',
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await panel
+      .getByRole('heading', { name: 'Forward health rule', exact: true })
+      .evaluate((element) => element.scrollIntoView({ block: 'start' }));
+    await page.screenshot({
+      path: testInfo.outputPath(`observation-health-${width}.png`),
+    });
     await panel
       .getByText('Decision session · 2026-09-18', { exact: true })
       .click();
