@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -159,6 +159,10 @@ def run_single_backtest(
     request: BacktestRequest,
     config: Any,
     db=None,
+    *,
+    history_end: date | None = None,
+    evaluation_start: date | None = None,
+    preloaded_dataset_inputs: tuple[dict, dict, dict, dict] | None = None,
 ) -> dict[str, Any]:
     """同步运行单次回测（在线程池中执行），供 run 和 compare 共用。"""
     from datetime import datetime
@@ -174,22 +178,20 @@ def run_single_backtest(
 
     dataset_binding = None
     cash_dividend_mode = getattr(request, "corporate_action_mode", "price_only")
+    if (
+        history_end is not None
+        or evaluation_start is not None
+        or preloaded_dataset_inputs is not None
+    ) and not request.dataset_id:
+        raise ResearchDatasetError("backtest_execution_window_dataset_required")
     if cash_dividend_mode != "price_only" and not request.dataset_id:
         raise ResearchDatasetError("cash_dividend_dataset_required")
     if getattr(request, "dataset_id", None) is not None:
-        from server.runtime_paths import resolve_data_dir
-        from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
-
-        root = (
-            db.path.resolve().parent
-            if db is not None
-            else Path(resolve_data_dir()).resolve()
-        ) / "research"
-        instruments, data_handlers, dataset_binding = load_dataset_backtest_inputs(
-            root, request
+        inputs = preloaded_dataset_inputs or prepare_dataset_backtest_inputs(
+            request, db
         )
-        store = None
-        sources = {}
+        instruments, data_handlers, dataset_binding, dataset_snapshot_json = inputs
+        _require_preloaded_dataset_request(request, inputs)
     else:
         assets = request.assets or config.assets
         store = None
@@ -225,20 +227,21 @@ def run_single_backtest(
             )
             data_handlers[sym] = handler
 
-    if dataset_binding is not None:
-        source_names = dataset_binding["source_names"]
-        configured_source = source_names[0] if len(source_names) == 1 else None
-    else:
         source_names = list(sources.keys())
-
-    dataset_snapshot_json = build_backtest_dataset_snapshot(
-        start_date=request.start_date,
-        end_date=request.end_date,
-        configured_source=configured_source,
-        data_handlers=data_handlers,
-        store=store,
-        source_names=source_names,
-        research_dataset_binding=dataset_binding,
+        dataset_snapshot_json = build_backtest_dataset_snapshot(
+            start_date=request.start_date,
+            end_date=request.end_date,
+            configured_source=configured_source,
+            data_handlers=data_handlers,
+            store=store,
+            source_names=source_names,
+        )
+    data_handlers, execution_window = _windowed_data_handlers(
+        request,
+        data_handlers,
+        dataset_snapshot_json,
+        history_end=history_end,
+        evaluation_start=evaluation_start,
     )
 
     event_bus_placeholder = type(
@@ -259,6 +262,10 @@ def run_single_backtest(
                 (dataset_binding or {}).get("corporate_action_evidence"),
                 include_shares=cash_dividend_mode == "reported_distributions_gross",
             )
+            if history_end is not None:
+                cash_dividends = tuple(
+                    item for item in cash_dividends if item.ex_date <= history_end
+                )
         except ValueError as exc:
             raise ResearchDatasetError(str(exc)) from None
     execution_config, cost_assumptions = resolve_backtest_costs(
@@ -274,6 +281,11 @@ def run_single_backtest(
         cash_dividends=cash_dividends,
         include_share_distributions=cash_dividend_mode
         == "reported_distributions_gross",
+        **(
+            {"evaluation_start": evaluation_start}
+            if evaluation_start is not None
+            else {}
+        ),
     )
 
     try:
@@ -307,6 +319,8 @@ def run_single_backtest(
         metrics_json["cash_dividend_accounting"] = result.cash_dividend_accounting
     metrics_json["evidence_bundle"] = evidence_json
     metrics_json["dataset_snapshot"] = dataset_snapshot_json
+    if execution_window is not None:
+        metrics_json["execution_window"] = execution_window
     if dataset_binding is not None:
         metrics_json["dataset_binding"] = dataset_binding
     metrics_json["strategy_metadata"] = _strategy_metadata_snapshot(request)
@@ -333,9 +347,124 @@ def run_single_backtest(
     }
 
 
+def prepare_dataset_backtest_inputs(
+    request: BacktestRequest, db=None
+) -> tuple[dict, dict, dict, dict]:
+    """Read and bind one full immutable source for repeated sequential runs."""
+    from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+    from server.runtime_paths import resolve_data_dir
+    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from server.services.research_datasets import ResearchDatasetError
+
+    if not request.dataset_id:
+        raise ResearchDatasetError("backtest_execution_window_dataset_required")
+    root = (
+        db.path.resolve().parent
+        if db is not None
+        else Path(resolve_data_dir()).resolve()
+    ) / "research"
+    instruments, handlers, binding = load_dataset_backtest_inputs(root, request)
+    sources = binding["source_names"]
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        configured_source=sources[0] if len(sources) == 1 else None,
+        data_handlers=handlers,
+        store=None,
+        source_names=sources,
+        research_dataset_binding=binding,
+    )
+    return instruments, handlers, binding, snapshot
+
+
+def _require_preloaded_dataset_request(request, inputs):
+    from server.services.research_datasets import ResearchDatasetError
+
+    instruments, _, binding, snapshot = inputs
+    matches = (
+        binding.get("dataset_id") == request.dataset_id
+        and snapshot.get("immutable_dataset_id") == request.dataset_id
+        and snapshot.get("date_range")
+        == {"start": request.start_date, "end": request.end_date}
+    )
+    if request.assets:
+        try:
+            matches = matches and sorted(
+                (item["symbol"], item.get("instrument_type") or item["asset_class"])
+                for item in request.assets
+            ) == sorted(
+                (str(symbol), instrument.instrument_type.value)
+                for symbol, instrument in instruments.items()
+            )
+        except (KeyError, TypeError, ValueError):
+            matches = False
+    if not matches:
+        raise ResearchDatasetError("backtest_preloaded_dataset_request_mismatch")
+
+
+def _windowed_data_handlers(
+    request, handlers, snapshot, *, history_end, evaluation_start
+):
+    from data.handler import DataHandler
+    from server.contracts.content_identity import content_fingerprint
+    from server.services.research_datasets import ResearchDatasetError
+
+    if history_end is None and evaluation_start is None:
+        return handlers, None
+    start, end = (
+        date.fromisoformat(request.start_date),
+        date.fromisoformat(request.end_date),
+    )
+    through = history_end if history_end is not None else end
+    evaluate_from = evaluation_start if evaluation_start is not None else start
+    if (
+        type(through) is not date
+        or type(evaluate_from) is not date
+        or not start <= evaluate_from <= through <= end
+    ):
+        raise ResearchDatasetError("backtest_execution_window_invalid")
+    sliced, metric_dates = {}, []
+    for symbol, handler in handlers.items():
+        timestamps = handler._df["timestamp"]
+        if timestamps.dt.tz is not None:
+            timestamps = timestamps.dt.tz_convert("Asia/Shanghai")
+        dates = timestamps.dt.date
+        evaluated = dates[(dates >= evaluate_from) & (dates <= through)]
+        if evaluated.empty:
+            raise ResearchDatasetError("backtest_execution_window_empty")
+        metric_dates.extend((evaluated.min(), evaluated.max()))
+        sliced[symbol] = DataHandler(
+            handler._df.loc[dates <= through].copy(),
+            symbol,
+            frequency=handler._frequency,
+            asset_class=handler._asset_class,
+            instrument_type=handler.instrument_type,
+        )
+    if not metric_dates:
+        raise ResearchDatasetError("backtest_execution_window_empty")
+    window = {
+        "schema_version": "karkinos.backtest_execution_window.v1",
+        "source_dataset_id": request.dataset_id,
+        "source_snapshot_id": snapshot["snapshot_id"],
+        "source_start_date": start.isoformat(),
+        "source_end_date": end.isoformat(),
+        "history_end_date": through.isoformat(),
+        "evaluation_start_date": evaluate_from.isoformat(),
+        "evaluation_end_date": through.isoformat(),
+        "metric_start_date": min(metric_dates).isoformat(),
+        "metric_end_date": max(metric_dates).isoformat(),
+        "warmup_policy": "strategy_state_only_no_orders_or_book_carry",
+        "independent_initial_cash": True,
+        "exploratory": True,
+        "independent_final": False,
+    }
+    return sliced, {**window, "fingerprint": content_fingerprint(window)}
+
+
 __all__ = (
     "backtest_report_dir",
     "normalize_backtest_payload_from_equity_curve",
+    "prepare_dataset_backtest_inputs",
     "run_single_backtest",
     "write_backtest_report_file",
 )
