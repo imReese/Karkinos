@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   formatAmount,
   formatCurrency,
@@ -12,6 +13,8 @@ import type {
   StrategyParameterSchema,
 } from '../api';
 import { useRunBacktestSweepMutation } from '../api';
+import { chronologicalCopy } from '../copy-chronological';
+import { ChronologicalSweepResult } from './chronological-sweep-result';
 
 type ParameterPrimitive = number | string | boolean | null;
 
@@ -111,11 +114,22 @@ export function ParameterSweepPanel({
   const labels = copy.backtest.sweep;
   const pageLabels = copy.backtest.page;
   const common = copy.common;
+  const { locale } = usePreferences();
+  const chronologicalLabels = chronologicalCopy[locale];
   const sweep = useRunBacktestSweepMutation();
   const [gridValues, setGridValues] = useState<Record<string, string>>(() =>
     defaultGridValues(parameterSchema, parameterValues),
   );
   const [rankBy, setRankBy] = useState('total_return');
+  const [chronological, setChronological] = useState(false);
+  const [testStartDate, setTestStartDate] = useState('');
+  const chronologicalSupported =
+    strategy === 'dual_ma' && /^sha256:[0-9a-f]{64}$/.test(datasetId ?? '');
+  const chronologicalValid =
+    !chronological ||
+    (chronologicalSupported &&
+      testStartDate > startDate &&
+      testStartDate <= endDate);
   const [error, setError] = useState('');
   const [response, setResponse] = useState<BacktestSweepResponse | null>(null);
 
@@ -137,7 +151,7 @@ export function ParameterSweepPanel({
 
   const submitSweep = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (disabledReason) return;
+    if (disabledReason || !chronologicalValid) return;
     const paramGrid = Object.fromEntries(
       parameterSchema.map((param) => [
         param.name,
@@ -162,6 +176,7 @@ export function ParameterSweepPanel({
       const result = await sweep.mutateAsync({
         ...(datasetId ? { dataset_id: datasetId } : {}),
         ...(costAssumptions ? { cost_assumptions: costAssumptions } : {}),
+        ...(chronological ? { test_start_date: testStartDate } : {}),
         corporate_action_mode: corporateActionMode,
         start_date: startDate,
         end_date: endDate,
@@ -180,16 +195,31 @@ export function ParameterSweepPanel({
       });
       setResponse(result);
     } catch (caught) {
+      const message = caught instanceof Error ? caught.message : '';
+      const chronologicalErrors: Record<string, string> = {
+        chronological_sweep_requires_dual_ma_dataset:
+          chronologicalLabels.requires,
+        backtest_execution_window_dataset_required:
+          chronologicalLabels.requires,
+        chronological_sweep_window_invalid: chronologicalLabels.invalidDate,
+        backtest_execution_window_invalid: chronologicalLabels.invalidDate,
+        chronological_sweep_insufficient_sessions:
+          chronologicalLabels.insufficientSessions,
+        backtest_execution_window_empty:
+          chronologicalLabels.insufficientSessions,
+        chronological_sweep_score_unavailable:
+          chronologicalLabels.scoreUnavailable,
+      };
       setError(
-        caught instanceof Error && caught.message
-          ? caught.message
-          : common.genericSubmitError,
+        (chronological && chronologicalErrors[message]) ||
+          message ||
+          common.genericSubmitError,
       );
     }
   };
 
   return (
-    <section className="mt-5 border-y border-[var(--app-divider)] py-4">
+    <section className="mt-5 min-w-0 border-y border-[var(--app-divider)] py-4">
       <div className="app-kicker app-type-overline">{labels.kicker}</div>
       <h3 className="app-card-title mt-1.5">{labels.title}</h3>
       <p className="app-muted mt-2 text-sm leading-6">{labels.subtitle}</p>
@@ -200,14 +230,60 @@ export function ParameterSweepPanel({
       ) : null}
 
       <form className="mt-4 grid gap-3" onSubmit={submitSweep}>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={chronological}
+            disabled={
+              sweep.isPending || (!chronologicalSupported && !chronological)
+            }
+            onChange={(event) => setChronological(event.target.checked)}
+          />
+          {chronologicalLabels.enable}
+        </label>
+        {!chronologicalSupported ? (
+          <p className="app-muted text-xs leading-5">
+            {chronologicalLabels.requires}
+          </p>
+        ) : null}
+        {chronological ? (
+          <>
+            <label className="grid min-w-0 gap-2 text-sm font-medium">
+              {chronologicalLabels.testStart}
+              <input
+                type="date"
+                className="app-field min-h-11 min-w-0 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
+                min={startDate}
+                max={endDate}
+                value={testStartDate}
+                disabled={sweep.isPending}
+                onChange={(event) => setTestStartDate(event.target.value)}
+              />
+            </label>
+            <p className="app-muted text-xs leading-5">
+              {chronologicalLabels.procedure}
+            </p>
+            <p className="app-muted text-xs leading-5">
+              {chronologicalLabels.boundary}
+            </p>
+            {!chronologicalValid ? (
+              <p role="alert" className="text-xs">
+                {chronologicalLabels.invalidDate}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+        <div className="grid min-w-0 gap-3">
           {parameterSchema.map((param) => (
-            <label key={param.name} className="grid gap-2 text-sm font-medium">
+            <label
+              key={param.name}
+              className="grid min-w-0 gap-2 text-sm font-medium"
+            >
               {labels.candidateLabel(
                 parameterLabel(pageLabels.parameterLabels, param.name),
               )}
               <input
-                className="app-field rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
+                className="app-field w-full min-w-0 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
                 value={gridValues[param.name] ?? ''}
                 onChange={(event) =>
                   setGridValues((current) => ({
@@ -222,11 +298,11 @@ export function ParameterSweepPanel({
             </label>
           ))}
         </div>
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <label className="grid gap-2 text-sm font-medium">
+        <div className="grid min-w-0 gap-3">
+          <label className="grid min-w-0 gap-2 text-sm font-medium">
             {labels.rankBy}
             <select
-              className="app-field rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
+              className="app-field w-full min-w-0 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
               value={rankBy}
               onChange={(event) => setRankBy(event.target.value)}
               aria-label={labels.rankBy}
@@ -240,9 +316,17 @@ export function ParameterSweepPanel({
             <button
               type="submit"
               className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold"
-              disabled={sweep.isPending || Boolean(disabledReason)}
+              disabled={
+                sweep.isPending ||
+                Boolean(disabledReason) ||
+                !chronologicalValid
+              }
             >
-              {sweep.isPending ? labels.running : labels.run}
+              {sweep.isPending
+                ? labels.running
+                : chronological
+                  ? chronologicalLabels.run
+                  : labels.run}
             </button>
           </div>
         </div>
@@ -266,6 +350,8 @@ export function ParameterSweepPanel({
 
 function SweepResults({ response }: { response: BacktestSweepResponse }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
+  const chronologicalLabels = chronologicalCopy[locale];
   const labels = copy.backtest.sweep;
   const pageLabels = copy.backtest.page;
   return (
@@ -275,12 +361,21 @@ function SweepResults({ response }: { response: BacktestSweepResponse }) {
           <div className="app-kicker app-type-overline">
             {labels.resultsKicker}
           </div>
-          <h4 className="text-base font-semibold">{labels.resultsTitle}</h4>
+          <h4 className="text-base font-semibold">
+            {response.chronological_validation
+              ? chronologicalLabels.trainingTitle
+              : labels.resultsTitle}
+          </h4>
         </div>
         <span className="app-muted text-sm tabular-nums">
           {labels.tested(response.tested_count)}
         </span>
       </div>
+      {response.chronological_validation ? (
+        <p className="app-muted text-xs leading-5">
+          {chronologicalLabels.trainingScores}
+        </p>
+      ) : null}
       <div className="overflow-x-auto border-y border-[var(--app-divider)]">
         <table className="min-w-[760px] w-full text-left text-sm">
           <thead className="app-type-overline bg-[color-mix(in_srgb,var(--app-surface-0)_35%,transparent)] text-[var(--app-muted)]">
@@ -329,6 +424,7 @@ function SweepResults({ response }: { response: BacktestSweepResponse }) {
           </tbody>
         </table>
       </div>
+      <ChronologicalSweepResult response={response} />
       {response.warnings.length ? (
         <div className="border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm leading-6 text-[var(--app-warning-text)]">
           {response.warnings.map((warning) => (
