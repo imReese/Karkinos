@@ -338,6 +338,7 @@ test('backtest request URLs stay at the reviewed contract', () => {
       '/api/backtest/sweep',
       '/api/portfolio',
       '/api/research-observations',
+      '/api/research-observations/${encodeURIComponent(observationId)}/paper-book',
       '/api/strategy-learning/review-queue',
     ].sort(),
   );
