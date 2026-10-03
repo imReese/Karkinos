@@ -172,7 +172,14 @@ export const overviewCopyEn = {
     strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
     strategyCandidateEmptyDetail:
       'No buy, sell, hold, or rebalance signals have entered the queue.',
-    strategyRecommendationTitle: 'Latest strategy recommendation',
+    strategyRecommendationTitle: 'Trading recommendations',
+    strategyRecommendationMarketClosed:
+      'Market closed; no trading recommendations today',
+    strategyRecommendationClosedResearch:
+      'Strategy research and validation remain available during market closure. See research records for progress.',
+    strategyRecommendationNextSession: (date: string) =>
+      `Next trading day: ${date}`,
+    strategyRecommendationResearchAction: 'View strategy research',
     strategyRecommendationQuantity: 'Est. qty',
     strategyRecommendationCurrentWeight: 'Current',
     strategyRecommendationTargetWeight: 'Target',
@@ -285,8 +292,8 @@ export const overviewCopyEn = {
     accountRecommendationNoAction: 'No action',
     accountRecommendationNoActionDetail:
       'The daily promoted-strategy scan completed without an account action signal.',
-    accountRecommendationBlocked: 'Strategy recommendation unavailable',
-    accountRecommendationUnavailable: 'Strategy recommendation unavailable',
+    accountRecommendationBlocked: 'Trading recommendations unavailable',
+    accountRecommendationUnavailable: 'Trading recommendations unavailable',
     accountRecommendationReason: (reasons: string) =>
       `Current reason: ${reasons || 'no verifiable account recommendation is available'}.`,
     researchOperationCandidate:

@@ -167,6 +167,8 @@ export function OverviewResolvedWorkspace({
           </div>
 
           <OverviewStrategyRecommendation
+            marketClosed={controller.marketClosed}
+            nextTradingDate={state.overview.market_session.next_trading_date}
             planQuery={controller.tradingPlan}
             todayQuery={controller.todayDecision}
             positions={state.snapshot.positions}

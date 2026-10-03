@@ -20,13 +20,17 @@ export function useOverviewPageController() {
     useState<EquityCurveRange>('ytd');
   const account = useAccountStateQuery();
   const accountReady = Boolean(account.data);
+  const marketSession = account.data?.overview.market_session;
+  const marketClosed =
+    marketSession?.calendar_verified === true &&
+    marketSession.status === 'non_trading_day';
   const equityCurve = useEquityCurveSeriesQuery(equityCurveRange, accountReady);
   const explainability = useExplainabilityQuery(
     undefined,
     accountReady && analysisView === 'calendar',
   );
-  const tradingPlan = useDailyTradingPlanQuery(accountReady);
-  const todayDecision = useTodayDecisionQuery(accountReady);
+  const tradingPlan = useDailyTradingPlanQuery(accountReady && !marketClosed);
+  const todayDecision = useTodayDecisionQuery(accountReady && !marketClosed);
   return {
     copy,
     account,
@@ -34,6 +38,7 @@ export function useOverviewPageController() {
     explainability,
     tradingPlan,
     todayDecision,
+    marketClosed,
     analysisView,
     setAnalysisView,
     equityCurveRange,
