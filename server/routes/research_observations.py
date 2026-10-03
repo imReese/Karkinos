@@ -35,8 +35,11 @@ def create_router() -> APIRouter:
     @router.get("")
     def list_observations(
         limit: int = Query(default=50, ge=1, le=100),
+        source_backtest_result_id: int | None = Query(default=None, gt=0),
     ) -> list[dict[str, Any]]:
-        return _service().repository.list(limit=limit)
+        return _service().repository.list(
+            limit=limit, source_backtest_result_id=source_backtest_result_id
+        )
 
     @router.get("/{observation_id}")
     def get_observation(observation_id: UUID) -> dict[str, Any]:

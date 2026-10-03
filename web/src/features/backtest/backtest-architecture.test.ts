@@ -337,6 +337,7 @@ test('backtest request URLs stay at the reviewed contract', () => {
       '/api/backtest/strategy-validation',
       '/api/backtest/sweep',
       '/api/portfolio',
+      '/api/research-observations',
       '/api/strategy-learning/review-queue',
     ].sort(),
   );

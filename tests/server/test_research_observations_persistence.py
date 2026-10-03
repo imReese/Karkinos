@@ -47,6 +47,26 @@ def _publication(publication_id="pub", session="2026-09-21"):
     }
 
 
+def test_report_filter_applies_before_history_limit(database):
+    current = [NOW]
+    repo = ResearchObservationsRepository(database.path, clock=lambda: current[0])
+    _start(repo, "older-report")
+    current[0] += timedelta(minutes=1)
+    repo.start(
+        observation_id="newer-report",
+        request_id="start",
+        request_fingerprint="second",
+        source_backtest_result_id=18,
+        source={"strategy": "dual_ma"},
+        code_binding={"hash": "frozen"},
+        policy={"horizon_sessions": 1},
+        universe=[],
+    )
+    assert repo.list(limit=1)[0]["id"] == "newer-report"
+    assert repo.list(limit=1, source_backtest_result_id=17)[0]["id"] == "older-report"
+    assert repo.list(source_backtest_result_id=19) == []
+
+
 def _advance(repo, **kwargs):
     arguments = {
         "observation_id": "obs",
