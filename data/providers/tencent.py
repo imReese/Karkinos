@@ -139,7 +139,12 @@ class AkshareTencentDailyBarProvider:
                 # bars into a long-running worker's stdout/stderr.
                 with contextlib.redirect_stdout(io.StringIO()):
                     with contextlib.redirect_stderr(io.StringIO()):
-                        frame = client.stock_zh_a_hist_tx(**kwargs)
+                        frame = client.stock_zh_a_hist_tx(
+                            symbol=kwargs["symbol"],
+                            start_date=kwargs["start_date"],
+                            end_date=kwargs["end_date"],
+                            adjust=kwargs["adjust"],
+                        )
             except Exception as exc:
                 raise AkshareTencentDailyBarUnavailableError(
                     f"akshare_tencent_history_failed:{symbol}"
@@ -619,8 +624,8 @@ class TencentSource(DataSource):
     def fetch_ticks(
         self,
         symbol: Symbol,
-        date: datetime,
-        asset_class: AssetClass = AssetClass.STOCK,
+        start: datetime,
+        end: datetime,
     ) -> pd.DataFrame:
         """TencentSource does not expose tick-level data."""
         raise NotImplementedError("TencentSource does not support tick-level data")

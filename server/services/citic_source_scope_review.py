@@ -156,47 +156,49 @@ def project_citic_source_scope_batch_assessment(
     invalid_scope_review_count = 0
     seen_intakes: set[str] = set()
     identity_rows: list[dict[str, object]] = []
-    for review in active_scope_reviews:
-        intake_id = str(getattr(review, "intake_id", ""))
+    for scope_review in active_scope_reviews:
+        intake_id = str(getattr(scope_review, "intake_id", ""))
         query_review = query_by_intake.get(intake_id)
         if (
-            getattr(review, "decision", None) != "accepted"
-            or getattr(review, "no_other_filters_attested", None) is not True
-            or getattr(review, "complete_returned_results_attested", None) is not True
-            or getattr(review, "source_scope_attested", None) is not True
+            getattr(scope_review, "decision", None) != "accepted"
+            or getattr(scope_review, "no_other_filters_attested", None) is not True
+            or getattr(scope_review, "complete_returned_results_attested", None)
+            is not True
+            or getattr(scope_review, "source_scope_attested", None) is not True
             or not intake_id.startswith("citic_intake_")
             or intake_id in seen_intakes
             or query_review is None
-            or review.query_window_review_id != query_review.review_id
-            or review.query_window_review_fingerprint != query_review.review_fingerprint
-            or review.file_fingerprint != query_review.file_fingerprint
-            or review.source_preview_fingerprint
+            or scope_review.query_window_review_id != query_review.review_id
+            or scope_review.query_window_review_fingerprint
+            != query_review.review_fingerprint
+            or scope_review.file_fingerprint != query_review.file_fingerprint
+            or scope_review.source_preview_fingerprint
             != query_review.source_preview_fingerprint
-            or not _sha256_fingerprint_is_valid(review.account_reference_hash)
-            or not _sha256_fingerprint_is_valid(review.review_fingerprint)
-            or not review.market_scopes
-            or not review.asset_classes
-            or not review.account_value_band
-            or not review.business_types
+            or not _sha256_fingerprint_is_valid(scope_review.account_reference_hash)
+            or not _sha256_fingerprint_is_valid(scope_review.review_fingerprint)
+            or not scope_review.market_scopes
+            or not scope_review.asset_classes
+            or not scope_review.account_value_band
+            or not scope_review.business_types
         ):
             invalid_scope_review_count += 1
             continue
         seen_intakes.add(intake_id)
-        valid_scope_reviews.append(review)
+        valid_scope_reviews.append(scope_review)
         identity_rows.append(
             {
                 "intake_id": intake_id,
                 "query_window_review_fingerprint": (
-                    review.query_window_review_fingerprint
+                    scope_review.query_window_review_fingerprint
                 ),
-                "source_scope_review_fingerprint": review.review_fingerprint,
-                "account_alias": review.account_alias,
-                "account_reference_hash": review.account_reference_hash,
-                "account_type": review.account_type,
-                "market_scopes": list(review.market_scopes),
-                "asset_classes": list(review.asset_classes),
-                "account_value_band": review.account_value_band,
-                "business_types": list(review.business_types),
+                "source_scope_review_fingerprint": scope_review.review_fingerprint,
+                "account_alias": scope_review.account_alias,
+                "account_reference_hash": scope_review.account_reference_hash,
+                "account_type": scope_review.account_type,
+                "market_scopes": list(scope_review.market_scopes),
+                "asset_classes": list(scope_review.asset_classes),
+                "account_value_band": scope_review.account_value_band,
+                "business_types": list(scope_review.business_types),
             }
         )
 

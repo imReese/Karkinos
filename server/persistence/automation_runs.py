@@ -42,7 +42,8 @@ def require_observation_automation_policy(
     ).fetchone()
     value = _observation_policy_payload(row, observation_id)
     if (
-        not observation_automation_policy_valid(value, observation_id)
+        value is None
+        or not observation_automation_policy_valid(value, observation_id)
         or value["enabled"] is not True
         or value["generation"] != generation
     ):
@@ -157,10 +158,14 @@ class AutomationRunRepository(SQLiteRepository):
                 (OBSERVATION_AUTOMATION_PREFIX + "%",),
             ).fetchall()
         return [
-            _observation_policy_payload(
-                row, row["policy_id"][len(OBSERVATION_AUTOMATION_PREFIX) :]
-            )
+            payload
             for row in rows
+            if (
+                payload := _observation_policy_payload(
+                    row, row["policy_id"][len(OBSERVATION_AUTOMATION_PREFIX) :]
+                )
+            )
+            is not None
         ]
 
     def get_observation_automation_policy(

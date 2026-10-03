@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from typing import TYPE_CHECKING, cast
 
 from account_truth.citic_source_scope_review_contracts import (
     CITIC_SOURCE_SCOPE_SUPPORTED_SCHEMA_VERSIONS,
     LEGACY_CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
+    CiticSourceScopeReviewDecision,
 )
 from account_truth.citic_source_scope_values import (
     EVIDENCE_FINGERPRINT,
@@ -16,9 +18,17 @@ from account_truth.citic_source_scope_values import (
     stored_true,
 )
 
+if TYPE_CHECKING:
+    from account_truth.citic_source_scope_review import CiticSourceScopeReview
+    from account_truth.citic_source_scope_review_repository import (
+        CiticSourceScopeReviewRepositoryAccess,
+    )
+
 
 class CiticSourceScopeReviewProjectionMixin:
-    def _review_from_row(self, row: sqlite3.Row) -> object:
+    def _review_from_row(
+        self: CiticSourceScopeReviewRepositoryAccess, row: sqlite3.Row
+    ) -> CiticSourceScopeReview:
         try:
             schema_version = str(row["schema_version"])
             if schema_version not in CITIC_SOURCE_SCOPE_SUPPORTED_SCHEMA_VERSIONS:
@@ -51,7 +61,7 @@ class CiticSourceScopeReviewProjectionMixin:
                     row["complete_returned_results_attested"]
                 ),
                 source_scope_attested=stored_true(row["source_scope_attested"]),
-                decision=str(row["decision"]),
+                decision=cast(CiticSourceScopeReviewDecision, str(row["decision"])),
                 supersedes_review_id=(
                     str(row["supersedes_review_id"])
                     if row["supersedes_review_id"] is not None

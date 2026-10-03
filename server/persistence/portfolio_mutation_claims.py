@@ -123,6 +123,8 @@ def validate_portfolio_mutation_valuation(
 def _command_payload(command: object) -> dict[str, Any]:
     if not is_dataclass(command):
         raise TypeError("portfolio mutation command must be a dataclass")
+    if isinstance(command, type):
+        raise TypeError("portfolio mutation command must be a dataclass instance")
     payload = asdict(command)
     if not isinstance(payload, dict):
         raise TypeError("portfolio mutation command payload is invalid")

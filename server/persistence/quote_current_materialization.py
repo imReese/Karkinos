@@ -44,8 +44,8 @@ def published_nav_rows_on_connection(
         return []
     # Exact-instant peers retain malformed/conflicting facts. Published peers
     # from the same economic NAV date must agree even when captured later.
-    instant_params = (symbol, row["quote_instant_utc"])
-    date_params = (symbol, row["pricing_date"])
+    instant_params: tuple[object, ...] = (symbol, row["quote_instant_utc"])
+    date_params: tuple[object, ...] = (symbol, row["pricing_date"])
     if snapshot_cutoff_id is not None:
         instant_params = (*instant_params, snapshot_cutoff_id)
         date_params = (*date_params, snapshot_cutoff_id)

@@ -465,10 +465,12 @@ def _build_provider_difference_diagnostics(
                 (record.metadata.source, _decimal_or_none(record.values.get(field)))
                 for record in group
             ]
-            values = [(source, value) for source, value in values if value is not None]
-            if len(values) < 2:
+            present_values = [
+                (source, value) for source, value in values if value is not None
+            ]
+            if len(present_values) < 2:
                 continue
-            numeric_values = [value for _source, value in values]
+            numeric_values = [value for _source, value in present_values]
             difference = max(numeric_values) - min(numeric_values)
             if difference <= tolerance_decimal:
                 continue

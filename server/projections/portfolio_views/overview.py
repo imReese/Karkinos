@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 
 from server.models import (
+    ClosedPositionResponse,
     DailyOperationsSummary,
+    LiveHoldingItemResponse,
     LiveHoldingsResponse,
     PortfolioCockpitPosition,
     PortfolioConstructionRecommendation,
@@ -23,7 +25,9 @@ def overview_today_pnl_update(
     live_holdings: LiveHoldingsResponse,
     snapshot: PortfolioSnapshot | None = None,
 ) -> dict[str, object]:
-    daily_positions = [item for group in live_holdings.groups for item in group.items]
+    daily_positions: list[LiveHoldingItemResponse | ClosedPositionResponse] = [
+        item for group in live_holdings.groups for item in group.items
+    ]
     if snapshot is not None:
         daily_positions.extend(snapshot.closed_positions)
     return overview_position_pnl_update(daily_positions)
@@ -158,7 +162,9 @@ def portfolio_account_truth_gate_status(state: object) -> str:
 
     from server.account_truth_gate import build_latest_account_truth_score_payload
 
-    payload = dict_payload(build_latest_account_truth_score_payload(state))
+    payload: dict[str, object] | None = dict_payload(
+        build_latest_account_truth_score_payload(state)
+    )
     if not payload:
         reader = getattr(db, "get_account_truth_score_sync", None)
         if callable(reader):

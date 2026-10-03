@@ -5,17 +5,30 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from typing import TYPE_CHECKING, cast
 
 from account_truth.citic_source_canonical_resolution_contracts import (
     CITIC_SOURCE_CANONICAL_EVIDENCE_FINGERPRINT_PATTERN,
     CITIC_SOURCE_CANONICAL_RESOLUTION_SCHEMA_VERSION,
+    CiticSourceCanonicalResolutionDecision,
 )
 
 _EVIDENCE_FINGERPRINT = re.compile(CITIC_SOURCE_CANONICAL_EVIDENCE_FINGERPRINT_PATTERN)
 
 
+if TYPE_CHECKING:
+    from account_truth.citic_source_canonical_resolution import (
+        CiticSourceCanonicalResolution,
+    )
+    from account_truth.citic_source_canonical_resolution_repository import (
+        CiticSourceCanonicalResolutionRepositoryAccess,
+    )
+
+
 class CiticSourceCanonicalResolutionProjectionMixin:
-    def _resolution_from_row(self, row: sqlite3.Row) -> object:
+    def _resolution_from_row(
+        self: CiticSourceCanonicalResolutionRepositoryAccess, row: sqlite3.Row
+    ) -> CiticSourceCanonicalResolution:
         try:
             sources = json.loads(str(row["source_preview_fingerprints_json"]))
             resolution = self._resolution_type(
@@ -26,7 +39,9 @@ class CiticSourceCanonicalResolutionProjectionMixin:
                 scope_review_id=str(row["scope_review_id"]),
                 scope_review_import_run_id=str(row["scope_review_import_run_id"]),
                 scope_review_fingerprint=str(row["scope_review_fingerprint"]),
-                decision=str(row["decision"]),
+                decision=cast(
+                    CiticSourceCanonicalResolutionDecision, str(row["decision"])
+                ),
                 reviewer=str(row["reviewer"]),
                 resolution_fingerprint=str(row["resolution_fingerprint"]),
                 created_at=str(row["created_at"]),

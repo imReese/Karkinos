@@ -5,16 +5,25 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from account_truth.broker_statement import BrokerStatementPreview
 from account_truth.citic_source_query_window_review_contracts import (
     CITIC_SOURCE_QUERY_WINDOW_REVIEW_SCHEMA_VERSION,
 )
 
+if TYPE_CHECKING:
+    from account_truth.citic_source_query_window_review import (
+        CiticSourceQueryWindowReview,
+    )
+    from account_truth.citic_source_query_window_review_repository import (
+        CiticSourceQueryWindowReviewRepositoryAccess,
+    )
+
 
 class CiticSourceQueryWindowReviewUnitOfWorkMixin:
     def record_review(
-        self,
+        self: CiticSourceQueryWindowReviewRepositoryAccess,
         preview: BrokerStatementPreview,
         *,
         expected_file_fingerprint: str,
@@ -23,7 +32,7 @@ class CiticSourceQueryWindowReviewUnitOfWorkMixin:
         query_end_date: str,
         query_window_attested: bool,
         reviewer: str = "local_owner",
-    ) -> object:
+    ) -> CiticSourceQueryWindowReview:
         now = self._aware_now(self._clock())
         normalized = self._normalized_review_inputs(
             preview=preview,
@@ -52,6 +61,8 @@ class CiticSourceQueryWindowReviewUnitOfWorkMixin:
                 source,
                 source_preview_fingerprint=normalized["source_preview_fingerprint"],
             )
+            if source is None:
+                raise self._rejection_type("citic_source_query_window_intake_missing")
             intake_id = str(source["intake_id"])
             latest_row = self._latest_review_row(conn, intake_id)
             supersedes_review_id: str | None = None
@@ -82,13 +93,13 @@ class CiticSourceQueryWindowReviewUnitOfWorkMixin:
             return saved
 
     def revoke_latest(
-        self,
+        self: CiticSourceQueryWindowReviewRepositoryAccess,
         *,
         intake_id: str,
         expected_active_review_id: str,
         expected_active_review_fingerprint: str,
         reviewer: str = "local_owner",
-    ) -> object:
+    ) -> CiticSourceQueryWindowReview:
         normalized_intake_id = intake_id.strip()
         normalized_review_id = expected_active_review_id.strip()
         normalized_fingerprint = expected_active_review_fingerprint.strip()
@@ -155,7 +166,7 @@ class CiticSourceQueryWindowReviewUnitOfWorkMixin:
             ) from exc
 
     def _insert_review(
-        self,
+        self: CiticSourceQueryWindowReviewRepositoryAccess,
         conn: sqlite3.Connection,
         *,
         intake_id: str,
@@ -167,7 +178,7 @@ class CiticSourceQueryWindowReviewUnitOfWorkMixin:
         supersedes_review_id: str | None,
         reviewer: str,
         created_at: str,
-    ) -> object:
+    ) -> CiticSourceQueryWindowReview:
         payload = {
             "schema_version": CITIC_SOURCE_QUERY_WINDOW_REVIEW_SCHEMA_VERSION,
             "intake_id": intake_id,

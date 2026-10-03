@@ -113,6 +113,7 @@ python_version = "3.12"
 files = [
     "core", "domain", "risk", "execution", "notification",
     "analytics/metrics.py", "backtest/metrics.py", "server/config_types.py",
+    "server/projections/portfolio_views/overview.py",
 ]
 check_untyped_defs = true
 ignore_missing_imports = true

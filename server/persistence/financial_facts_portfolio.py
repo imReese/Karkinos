@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from server.contracts.financial_values import (
@@ -27,7 +28,7 @@ from server.contracts.portfolio_trades import (
     PendingFundOrderWrite,
     PendingFundOrderWriteResult,
 )
-from server.persistence.connection import connect_sqlite
+from server.persistence.connection import DateTimeNow, connect_sqlite
 from server.persistence.database_serialization import metadata_payload_value
 from server.persistence.event_log import insert_event_sync
 from server.persistence.manual_trade_uow import ManualTradeUnitOfWork
@@ -43,9 +44,14 @@ from server.persistence.portfolio_trade_repository import (
     load_trade_ledger_entry,
     validate_trade_projection,
 )
+from server.persistence.valuation_transaction import ValuationTransactionWriter
 
 
 class PortfolioFactsRepositoryMixin:
+    _path: Path
+    _now: DateTimeNow
+    _valuation_transaction_writer: ValuationTransactionWriter
+
     def save_portfolio_snapshot_sync(
         self,
         cash: float,

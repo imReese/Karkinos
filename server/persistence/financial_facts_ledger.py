@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
 from server.contracts.content_identity import content_fingerprint
@@ -21,9 +22,10 @@ from server.contracts.ledger_mutations import (
     LedgerTradeSettlementCommand,
     ledger_entry_state_fingerprint,
 )
-from server.persistence.connection import connect_sqlite
+from server.persistence.connection import DateTimeNow, connect_sqlite
 from server.persistence.database_serialization import normalize_timestamp
 from server.persistence.event_log import insert_event_sync
+from server.persistence.valuation_transaction import ValuationTransactionWriter
 
 
 def insert_ledger_entry_on_connection(
@@ -158,6 +160,10 @@ def insert_ledger_entry_on_connection(
 
 
 class LedgerFactsRepositoryMixin:
+    _path: Path
+    _now: DateTimeNow
+    _valuation_transaction_writer: ValuationTransactionWriter
+
     def append_ledger_entry_sync(
         self,
         command: LedgerAppendCommand,
@@ -373,15 +379,20 @@ def _legacy_settlement_request_id(
 def _legacy_trade_defaults(
     *,
     entry_type: str,
-    amount: float | None,
+    amount: FinancialValueInput | None,
     direction: str | None,
-    quantity: float | None,
-    price: float | None,
-    commission: float,
-    gross_amount: float | None,
-    net_cash_impact: float | None,
+    quantity: FinancialValueInput | None,
+    price: FinancialValueInput | None,
+    commission: FinancialValueInput,
+    gross_amount: FinancialValueInput | None,
+    net_cash_impact: FinancialValueInput | None,
     fee_breakdown_json: str | None,
-) -> tuple[float | None, str | None, float | None, float | None]:
+) -> tuple[
+    FinancialValueInput | None,
+    str | None,
+    FinancialValueInput | None,
+    FinancialValueInput | None,
+]:
     if entry_type not in {"trade_buy", "trade_sell"}:
         return amount, direction, gross_amount, net_cash_impact
     expected_direction = entry_type.removeprefix("trade_")
@@ -400,7 +411,7 @@ def _legacy_trade_defaults(
     return amount, direction, gross_amount, net_cash_impact
 
 
-def _legacy_fee_total(value: str | None, *, commission: float) -> Decimal:
+def _legacy_fee_total(value: str | None, *, commission: FinancialValueInput) -> Decimal:
     fallback = Decimal(str(commission))
     if value is None:
         return fallback

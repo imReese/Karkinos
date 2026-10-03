@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypedDict
 
 from server.ledger.models import LedgerEntry
 from server.projections.legacy_fund_trade_duplicate_contract import (
@@ -15,6 +15,21 @@ from server.projections.legacy_fund_trade_duplicate_contract import (
 from server.projections.models import ZERO, PortfolioProjection, ProjectedPosition
 from server.projections.portfolio_projection_values import as_decimal as _as_decimal
 from server.projections.portfolio_projection_values import require_text as _require_text
+
+
+class _PositionAccountingState(TypedDict):
+    quantity: Decimal
+    available_qty: Decimal
+    frozen_qty: Decimal
+    avg_cost: Decimal
+    realized_pnl: Decimal
+    commission_paid: Decimal
+    broker_displayed_cost_basis: Decimal
+    broker_displayed_unit_cost: Decimal
+    broker_cost_basis_difference: Decimal
+    broker_cost_basis_method: str | None
+    broker_cost_basis_status: str | None
+
 
 _PROJECTION_CORRECTION_CONTRACTS = {
     "controlled_projection_correction": (
@@ -124,7 +139,7 @@ def apply_projection_correction(
 
 def _projected_position_accounting_state(
     position: ProjectedPosition,
-) -> dict[str, Decimal | str | None]:
+) -> _PositionAccountingState:
     return {
         "quantity": position.quantity,
         "available_qty": position.available_qty,
@@ -142,7 +157,7 @@ def _projected_position_accounting_state(
 
 def _normalized_position_state(
     raw: Mapping[str, Any],
-) -> dict[str, Decimal | str | None]:
+) -> _PositionAccountingState:
     decimal_fields = (
         "quantity",
         "available_qty",
@@ -158,7 +173,17 @@ def _normalized_position_state(
     if set(raw) != required:
         raise ValueError("Ledger correction position fields are invalid")
     return {
-        **{field: _as_decimal(raw[field]) for field in decimal_fields},
+        "quantity": _as_decimal(raw["quantity"]),
+        "available_qty": _as_decimal(raw["available_qty"]),
+        "frozen_qty": _as_decimal(raw["frozen_qty"]),
+        "avg_cost": _as_decimal(raw["avg_cost"]),
+        "realized_pnl": _as_decimal(raw["realized_pnl"]),
+        "commission_paid": _as_decimal(raw["commission_paid"]),
+        "broker_displayed_cost_basis": _as_decimal(raw["broker_displayed_cost_basis"]),
+        "broker_displayed_unit_cost": _as_decimal(raw["broker_displayed_unit_cost"]),
+        "broker_cost_basis_difference": _as_decimal(
+            raw["broker_cost_basis_difference"]
+        ),
         "broker_cost_basis_method": (
             None
             if raw["broker_cost_basis_method"] is None

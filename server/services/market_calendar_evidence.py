@@ -65,7 +65,10 @@ def validate_verified_market_calendar(
 
 def _calendar_day_blockers(row: dict[str, Any]) -> list[str]:
     try:
-        year = int(row.get("year"))
+        year_value = row.get("year")
+        if year_value is None:
+            raise TypeError("market calendar year is missing")
+        year = int(year_value)
     except (TypeError, ValueError):
         return ["market_calendar_year_invalid"]
     days = _days(row)

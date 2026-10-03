@@ -18,7 +18,7 @@ repos:
         entry: uv run --locked --extra dev mypy
         language: system
         pass_filenames: false
-        files: ^((core|domain|risk|execution|notification)/.*\.py|analytics/metrics\.py|backtest/metrics\.py|server/config_types\.py|pyproject\.toml)$
+        files: ^((core|domain|risk|execution|notification|account_truth|data|server)/.*\.py|analytics/metrics\.py|backtest/metrics\.py|server/config_types\.py|pyproject\.toml)$
         require_serial: true
       - id: python-dependency-boundaries
         name: Python dependency boundaries

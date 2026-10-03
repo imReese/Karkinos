@@ -92,7 +92,7 @@ def require_text(value: str | None, field_name: str) -> str:
     return value
 
 
-def as_decimal(value: float | Decimal | int | str) -> Decimal:
+def as_decimal(value: object) -> Decimal:
     if isinstance(value, Decimal):
         return value
     return Decimal(str(value))

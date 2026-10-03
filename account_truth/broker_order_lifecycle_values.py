@@ -71,7 +71,7 @@ def normalize_broker_order(
             blockers=blockers,
         ),
     }
-    if not _SYMBOL_PATTERN.fullmatch(order["symbol"]):
+    if not _SYMBOL_PATTERN.fullmatch(str(order["symbol"])):
         blockers.append("broker_order_lifecycle_order_symbol_invalid")
     if order["side"] not in {"buy", "sell"}:
         blockers.append("broker_order_lifecycle_order_side_invalid")

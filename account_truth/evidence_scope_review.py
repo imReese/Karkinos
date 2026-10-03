@@ -108,7 +108,7 @@ class EvidenceScopeReviewRepository:
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
-            latest = self._latest_review_row(conn, normalized["import_run_id"])
+            latest = self._latest_review_row(conn, str(normalized["import_run_id"]))
             if latest is not None:
                 existing = _review_from_row(latest)
                 if existing.review_fingerprint == review_fingerprint:

@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 from server.contracts.content_identity import content_fingerprint
+from server.contracts.financial_values import FinancialValueInput
 
 LEDGER_APPEND_SCHEMA_VERSION = "karkinos.ledger.append.v1"
 LEDGER_SETTLEMENT_SCHEMA_VERSION = "karkinos.ledger.trade_settlement.v1"
@@ -36,14 +37,14 @@ class LedgerEntryDraft:
 
     entry_type: str
     timestamp: str
-    amount: float | None = None
+    amount: FinancialValueInput | None = None
     symbol: str | None = None
     direction: str | None = None
-    quantity: float | None = None
-    price: float | None = None
-    commission: float = 0.0
-    gross_amount: float | None = None
-    net_cash_impact: float | None = None
+    quantity: FinancialValueInput | None = None
+    price: FinancialValueInput | None = None
+    commission: FinancialValueInput = 0.0
+    gross_amount: FinancialValueInput | None = None
+    net_cash_impact: FinancialValueInput | None = None
     fee_breakdown_json: str | None = None
     fee_rule_id: str | None = None
     fee_rule_version: str | None = None

@@ -75,9 +75,7 @@ def read_historical_price_observations(
 def read_historical_price_matrix(
     app_database_path: Path,
     *,
-    instrument_keys: (
-        Sequence[InstrumentKey | Mapping[str, object] | tuple[object, object]] | None
-    ) = None,
+    instrument_keys: (Sequence[object] | None) = None,
     symbols: list[str] | None = None,
     start_date: str,
     end_date: str,
@@ -115,17 +113,17 @@ def read_historical_price_matrix(
                 raise RuntimeError("historical price matrix identity escaped request")
             matrix.setdefault(key, []).append(_price_row(row))
 
-    for rows in matrix.values():
-        rows.sort(key=lambda row: (str(row["trade_date"]), str(row["timestamp"])))
+    for instrument_rows in matrix.values():
+        instrument_rows.sort(
+            key=lambda row: (str(row["trade_date"]), str(row["timestamp"]))
+        )
     if legacy_symbol_result:
         return {key.symbol: rows for key, rows in matrix.items()}
     return matrix
 
 
 def _normalize_requested_keys(
-    value: (
-        Sequence[InstrumentKey | Mapping[str, object] | tuple[object, object]] | None
-    ),
+    value: (Sequence[object] | None),
     *,
     symbols: list[str] | None,
 ) -> list[InstrumentKey]:

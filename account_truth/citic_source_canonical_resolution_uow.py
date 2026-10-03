@@ -6,15 +6,24 @@ import sqlite3
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from account_truth.citic_source_canonical_resolution_contracts import (
     CITIC_SOURCE_CANONICAL_RESOLUTION_SCHEMA_VERSION,
 )
 
+if TYPE_CHECKING:
+    from account_truth.citic_source_canonical_resolution import (
+        CiticSourceCanonicalResolution,
+    )
+    from account_truth.citic_source_canonical_resolution_repository import (
+        CiticSourceCanonicalResolutionRepositoryAccess,
+    )
+
 
 class CiticSourceCanonicalResolutionUnitOfWorkMixin:
     def record_resolution(
-        self,
+        self: CiticSourceCanonicalResolutionRepositoryAccess,
         *,
         source_preview_fingerprints: list[str],
         expected_source_set_fingerprint: str,
@@ -22,7 +31,7 @@ class CiticSourceCanonicalResolutionUnitOfWorkMixin:
         scope_review_import_run_id: str,
         scope_review_fingerprint: str,
         reviewer: str = "local_owner",
-    ) -> object:
+    ) -> CiticSourceCanonicalResolution:
         normalized_sources = sorted(
             {str(item).strip() for item in source_preview_fingerprints}
         )
@@ -102,12 +111,12 @@ class CiticSourceCanonicalResolutionUnitOfWorkMixin:
             return self._resolution_from_row(saved)
 
     def revoke_latest(
-        self,
+        self: CiticSourceCanonicalResolutionRepositoryAccess,
         *,
         expected_resolution_id: str,
         expected_resolution_fingerprint: str,
         reviewer: str = "local_owner",
-    ) -> object:
+    ) -> CiticSourceCanonicalResolution:
         latest = self.get_latest()
         if latest is None or latest.decision != "accepted":
             raise self._rejection_type(

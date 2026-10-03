@@ -16,9 +16,14 @@ from server.persistence.structured_fact_migrations import V19_SCHEMA_OBJECTS
 
 
 class MigrationSpec(Protocol):
-    version: int
-    name: str
-    statements: tuple[str, ...]
+    @property
+    def version(self) -> int: ...
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def statements(self) -> tuple[str, ...]: ...
 
     @property
     def checksum(self) -> str: ...

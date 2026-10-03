@@ -3,10 +3,61 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from typing import Protocol
+
+    from account_truth.broker_statement import BrokerStatementPreview
+    from account_truth.citic_source_intake import (
+        CiticSourceIntake,
+        CiticSourceIntakeReadRejected,
+        CiticSourceIntakeRejected,
+    )
+
+    class CiticSourceIntakeRepositoryAccess(Protocol):
+        """Dependencies supplied by the concrete repository to its persistence mixins."""
+
+        def _ensure_schema(self) -> None: ...
+
+        def _get_from_connection(
+            self, conn: sqlite3.Connection, intake_id: str, *, reused: bool
+        ) -> CiticSourceIntake | None: ...
+
+        def _intake_from_row(
+            self, row: sqlite3.Row | None, *, reused: bool
+        ) -> CiticSourceIntake | None: ...
+
+        _intake_read_rejection_type: type[CiticSourceIntakeReadRejected]
+        _intake_rejection_type: type[CiticSourceIntakeRejected]
+        _intake_type: type[CiticSourceIntake]
+
+        def _json(self, values: list[str]) -> str: ...
+
+        def _json_list(self, value: object) -> list[str]: ...
+
+        @staticmethod
+        def _latest_review_row(
+            conn: sqlite3.Connection, intake_id: str
+        ) -> sqlite3.Row | None: ...
+
+        _path: Path
+
+        def _preview_fingerprint(self, preview: BrokerStatementPreview) -> str: ...
+
+        def _preview_recordable(self, preview: BrokerStatementPreview) -> bool: ...
+
+        def _required_evidence(self, preview: BrokerStatementPreview) -> list[str]: ...
+
+        @staticmethod
+        def _schema_state(conn: sqlite3.Connection) -> str: ...
 
 
 class CiticSourceIntakeReadRepositoryMixin:
-    def list_intakes(self, *, limit: int = 50) -> list[object]:
+    def list_intakes(
+        self: CiticSourceIntakeRepositoryAccess, *, limit: int = 50
+    ) -> list[CiticSourceIntake]:
         effective_limit = max(1, min(int(limit), 200))
         if not self._path.is_file():
             return []
@@ -66,12 +117,12 @@ class CiticSourceIntakeReadRepositoryMixin:
         ).fetchone()
 
     def _get_from_connection(
-        self,
+        self: CiticSourceIntakeRepositoryAccess,
         conn: sqlite3.Connection,
         intake_id: str,
         *,
         reused: bool,
-    ) -> object | None:
+    ) -> CiticSourceIntake | None:
         row = conn.execute(
             """
             SELECT intake.*, review.review_id, review.review_status,

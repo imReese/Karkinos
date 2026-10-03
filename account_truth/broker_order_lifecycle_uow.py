@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from account_truth.broker_order_lifecycle_contracts import (
     BROKER_ORDER_LIFECYCLE_EVIDENCE_SCHEMA_VERSION,
@@ -23,10 +23,15 @@ from account_truth.broker_order_lifecycle_values import (
     broker_order_lifecycle_fingerprint as _fingerprint,
 )
 
+if TYPE_CHECKING:
+    from account_truth.broker_order_lifecycle_repository import (
+        BrokerOrderLifecycleEvidenceRepositoryAccess,
+    )
+
 
 class BrokerOrderLifecycleEvidenceUnitOfWorkMixin:
     def record(
-        self,
+        self: BrokerOrderLifecycleEvidenceRepositoryAccess,
         preview: dict[str, Any],
         *,
         acknowledgement: str,
@@ -140,7 +145,7 @@ class BrokerOrderLifecycleEvidenceUnitOfWorkMixin:
             return self._observation_response(conn, saved, reused=False)
 
     def _transaction_blockers(
-        self,
+        self: BrokerOrderLifecycleEvidenceRepositoryAccess,
         conn: sqlite3.Connection,
         preview: dict[str, Any],
     ) -> list[str]:
@@ -220,7 +225,7 @@ class BrokerOrderLifecycleEvidenceUnitOfWorkMixin:
         return blockers
 
     def _insert_order(
-        self,
+        self: BrokerOrderLifecycleEvidenceRepositoryAccess,
         conn: sqlite3.Connection,
         preview: dict[str, Any],
         *,
@@ -255,7 +260,7 @@ class BrokerOrderLifecycleEvidenceUnitOfWorkMixin:
         )
 
     def _insert_fills(
-        self,
+        self: BrokerOrderLifecycleEvidenceRepositoryAccess,
         conn: sqlite3.Connection,
         preview: dict[str, Any],
         *,
@@ -298,7 +303,7 @@ class BrokerOrderLifecycleEvidenceUnitOfWorkMixin:
 
 def _preview_integrity_blockers(preview: dict[str, Any]) -> list[str]:
     blockers: list[str] = []
-    core = {
+    core: dict[str, object] = {
         "schema_version": BROKER_ORDER_LIFECYCLE_EVIDENCE_SCHEMA_VERSION,
         "provider": str(preview.get("provider") or ""),
         "snapshot_kind": str(preview.get("snapshot_kind") or ""),

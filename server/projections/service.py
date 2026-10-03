@@ -107,12 +107,9 @@ class PortfolioReplayAccumulator:
                 missing_price_symbols=missing,
             )
 
-        total = (
-            self._projection.cash
-            + buckets["stocks"]
-            + buckets["funds"]
-            + buckets["others"]
-        )
+        stocks, funds, others = buckets["stocks"], buckets["funds"], buckets["others"]
+        assert stocks is not None and funds is not None and others is not None
+        total = self._projection.cash + stocks + funds + others
         self._projection.total_equity = total
         unrealized_pnl = sum(
             (
@@ -228,7 +225,13 @@ def build_equity_series_from_entries(
         if missing_price_symbols:
             total = None
         else:
-            total = cash + buckets["stocks"] + buckets["funds"] + buckets["others"]
+            stocks, funds, others = (
+                buckets["stocks"],
+                buckets["funds"],
+                buckets["others"],
+            )
+            assert stocks is not None and funds is not None and others is not None
+            total = cash + stocks + funds + others
         points.append(
             {
                 "timestamp": datetime.fromisoformat(entry.timestamp),
@@ -323,10 +326,10 @@ def _bucket_position_values_with_availability(
     projection: PortfolioProjection,
     asset_classes: Mapping[str, str],
 ) -> dict[str, Decimal | None]:
-    buckets: dict[str, Decimal | None] = _bucket_position_values(
-        projection,
-        asset_classes,
-    )
+    buckets: dict[str, Decimal | None] = {
+        key: value
+        for key, value in _bucket_position_values(projection, asset_classes).items()
+    }
     for symbol in projection.missing_price_symbols:
         bucket = _equity_bucket(asset_classes.get(symbol))
         if bucket is None:

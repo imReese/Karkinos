@@ -4,18 +4,136 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+    import re
+    from contextlib import AbstractContextManager
+    from datetime import datetime
+    from pathlib import Path
+    from typing import Callable, Protocol
+
+    from account_truth.citic_source_intake import (
+        CiticSourceIntakeReadRejected,
+        CiticSourceIntakeRepository,
+    )
+    from account_truth.citic_source_query_window_review import (
+        CiticSourceQueryWindowReviewReadRejected,
+        CiticSourceQueryWindowReviewRepository,
+    )
+    from account_truth.citic_source_scope_review import (
+        CiticSourceScopeReview,
+        CiticSourceScopeReviewReadRejected,
+        CiticSourceScopeReviewRejected,
+    )
+    from account_truth.citic_source_scope_review_contracts import (
+        CiticSourceScopeReviewDecision,
+    )
+
+    class CiticSourceScopeReviewRepositoryAccess(Protocol):
+        """Dependencies supplied by the concrete repository to its persistence mixins."""
+
+        def _aware_now(self, value: datetime) -> datetime: ...
+
+        _clock: Callable[[], datetime]
+
+        def _ensure_schema(self) -> None: ...
+
+        _evidence_fingerprint: re.Pattern[str]
+
+        def _fingerprint_payload(
+            self,
+            normalized: dict[str, object],
+            *,
+            schema_version: str,
+            decision: CiticSourceScopeReviewDecision,
+            supersedes_review_id: str | None,
+        ) -> dict[str, object]: ...
+
+        def _insert_review(
+            self,
+            conn: sqlite3.Connection,
+            *,
+            normalized: dict[str, object],
+            decision: CiticSourceScopeReviewDecision,
+            supersedes_review_id: str | None,
+            created_at: str,
+            schema_version: str = ...,
+        ) -> CiticSourceScopeReview: ...
+
+        @property
+        def _intake_read_rejection_type(
+            self,
+        ) -> type[CiticSourceIntakeReadRejected]: ...
+
+        def _intake_repository(self) -> CiticSourceIntakeRepository: ...
+
+        @staticmethod
+        def _latest_review_row(
+            conn: sqlite3.Connection, intake_id: str
+        ) -> sqlite3.Row | None: ...
+
+        def _normalized_review_inputs(self, **kwargs: object) -> dict[str, object]: ...
+
+        _path: Path
+
+        @property
+        def _query_window_read_rejection_type(
+            self,
+        ) -> type[CiticSourceQueryWindowReviewReadRejected]: ...
+
+        def _query_window_repository(
+            self,
+        ) -> CiticSourceQueryWindowReviewRepository: ...
+
+        def _read_connection(
+            self,
+        ) -> AbstractContextManager[sqlite3.Connection | None]: ...
+
+        _read_rejection_type: type[CiticSourceScopeReviewReadRejected]
+        _rejection_type: type[CiticSourceScopeReviewRejected]
+
+        def _require_current_source_and_query_window(
+            self, normalized: dict[str, object]
+        ) -> None: ...
+
+        def _review_fingerprint(self, payload: dict[str, object]) -> str: ...
+
+        def _review_from_row(self, row: sqlite3.Row) -> CiticSourceScopeReview: ...
+
+        def _review_payload(
+            self, review: CiticSourceScopeReview, *, reviewer: str
+        ) -> dict[str, object]: ...
+
+        _review_type: type[CiticSourceScopeReview]
+
+        def _safe_human_label(self, value: str) -> bool: ...
+
+        def _same_accepted_scope(
+            self, review: CiticSourceScopeReview, normalized: dict[str, object]
+        ) -> bool: ...
+
+        @staticmethod
+        def _schema_state(conn: sqlite3.Connection) -> str: ...
+
+        def get_latest_review(
+            self, intake_id: str
+        ) -> CiticSourceScopeReview | None: ...
 
 
 class CiticSourceScopeReviewReadRepositoryMixin:
-    def get_latest_review(self, intake_id: str) -> object | None:
+    def get_latest_review(
+        self: CiticSourceScopeReviewRepositoryAccess, intake_id: str
+    ) -> CiticSourceScopeReview | None:
         with self._read_connection() as conn:
             if conn is None:
                 return None
             row = self._latest_review_row(conn, intake_id.strip())
         return self._review_from_row(row) if row is not None else None
 
-    def list_latest_reviews(self, *, limit: int = 200) -> list[object]:
+    def list_latest_reviews(
+        self: CiticSourceScopeReviewRepositoryAccess, *, limit: int = 200
+    ) -> list[CiticSourceScopeReview]:
         effective_limit = max(1, min(int(limit), 500))
         with self._read_connection() as conn:
             if conn is None:
@@ -37,7 +155,9 @@ class CiticSourceScopeReviewReadRepositoryMixin:
         return [self._review_from_row(row) for row in rows]
 
     @contextmanager
-    def _read_connection(self) -> Iterator[sqlite3.Connection | None]:
+    def _read_connection(
+        self: CiticSourceScopeReviewRepositoryAccess,
+    ) -> Iterator[sqlite3.Connection | None]:
         if not self._path.is_file():
             yield None
             return
@@ -63,7 +183,7 @@ class CiticSourceScopeReviewReadRepositoryMixin:
             ) from exc
 
     def _require_current_source_and_query_window(
-        self,
+        self: CiticSourceScopeReviewRepositoryAccess,
         normalized: dict[str, object],
     ) -> None:
         try:

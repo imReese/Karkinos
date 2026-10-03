@@ -683,6 +683,7 @@ class DataStore(MarketDailyIngestionMixin):
         *,
         key: InstrumentKey | None,
     ) -> pd.DataFrame | None:
+        params: tuple[str, ...]
         with connect_meta_sqlite(self._meta_path) as conn:
             if key is None:
                 sql = """

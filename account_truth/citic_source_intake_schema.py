@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from account_truth.citic_source_intake_repository import (
+        CiticSourceIntakeRepositoryAccess,
+    )
 
 
 class CiticSourceIntakeSchemaMixin:
-    def _ensure_schema(self) -> None:
+    def _ensure_schema(self: CiticSourceIntakeRepositoryAccess) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self._path) as conn:
             conn.executescript("""

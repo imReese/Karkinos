@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from decimal import Decimal, InvalidOperation
-from typing import Any, Mapping, TypeAlias
+from typing import Any, Literal, Mapping, TypeAlias, overload
 
 MAX_SIGNIFICANT_DIGITS = 38
 MAX_FRACTIONAL_DIGITS = 18
@@ -12,6 +12,18 @@ EXACT_DECIMAL_WRITE_PROVENANCE = "exact_decimal_write_v1"
 LEGACY_REAL_BACKFILL_PROVENANCE = "legacy_real_backfill_v1"
 DEFAULT_CURRENCY_CODE = "CNY"
 FinancialValueInput: TypeAlias = Decimal | int | float | str
+
+
+@overload
+def decimal_value(
+    value: object | None, *, field: str, allow_none: Literal[False] = False
+) -> Decimal: ...
+
+
+@overload
+def decimal_value(
+    value: object | None, *, field: str, allow_none: bool
+) -> Decimal | None: ...
 
 
 def decimal_value(
@@ -38,6 +50,8 @@ def decimal_value(
         parsed = Decimal("0")
     sign, digits, exponent = parsed.as_tuple()
     del sign
+    if not isinstance(exponent, int):
+        raise ValueError(f"{field} must be a finite decimal")
     significant = len(digits) + max(exponent, 0)
     fractional = max(-exponent, 0)
     if significant > MAX_SIGNIFICANT_DIGITS or fractional > MAX_FRACTIONAL_DIGITS:
@@ -45,6 +59,18 @@ def decimal_value(
             f"{field} exceeds decimal({MAX_SIGNIFICANT_DIGITS},{MAX_FRACTIONAL_DIGITS})"
         )
     return parsed
+
+
+@overload
+def decimal_text(
+    value: object | None, *, field: str, allow_none: Literal[False] = False
+) -> str: ...
+
+
+@overload
+def decimal_text(
+    value: object | None, *, field: str, allow_none: bool
+) -> str | None: ...
 
 
 def decimal_text(
@@ -61,6 +87,18 @@ def decimal_text(
     return format(parsed.normalize(), "f")
 
 
+@overload
+def decimal_storage_pair(
+    value: object | None, *, field: str, allow_none: Literal[False] = False
+) -> tuple[float, str]: ...
+
+
+@overload
+def decimal_storage_pair(
+    value: object | None, *, field: str, allow_none: bool
+) -> tuple[float | None, str | None]: ...
+
+
 def decimal_storage_pair(
     value: object | None,
     *,
@@ -71,6 +109,18 @@ def decimal_storage_pair(
     if text is None:
         return None, None
     return real_projection(text, field=field), text
+
+
+@overload
+def real_projection(
+    value: object | None, *, field: str, allow_none: Literal[False] = False
+) -> float: ...
+
+
+@overload
+def real_projection(
+    value: object | None, *, field: str, allow_none: bool
+) -> float | None: ...
 
 
 def real_projection(
@@ -86,6 +136,21 @@ def real_projection(
     if not math.isfinite(projected):
         raise ValueError(f"{field} cannot be represented by the legacy REAL projection")
     return projected
+
+
+@overload
+def decimal_from_mapping(
+    row: Mapping[str, Any] | Any,
+    field: str,
+    *,
+    allow_none: Literal[False] = False,
+) -> Decimal: ...
+
+
+@overload
+def decimal_from_mapping(
+    row: Mapping[str, Any] | Any, field: str, *, allow_none: bool
+) -> Decimal | None: ...
 
 
 def decimal_from_mapping(

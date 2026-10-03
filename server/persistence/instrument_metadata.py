@@ -221,7 +221,7 @@ def read_instrument_metadata_rows(
     connection: sqlite3.Connection, *, symbols: Sequence[str]
 ) -> tuple[dict[str, Any], ...]:
     """Read exact stored rows on the caller's existing read-only transaction."""
-    rows = []
+    rows: list[dict[str, Any]] = []
     normalized = sorted(set(symbols))
     for offset in range(0, len(normalized), _MAX_METADATA_BATCH_READ):
         chunk = normalized[offset : offset + _MAX_METADATA_BATCH_READ]

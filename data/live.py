@@ -7,6 +7,7 @@ import threading
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from decimal import Decimal
+from functools import partial
 
 from core.event_bus import EventBus
 from core.events import MarketEvent
@@ -46,8 +47,8 @@ class LiveDataFeed:
         self._lifecycle_lock = threading.Lock()
         self._closed: bool = False
         self._inflight: dict[tuple[Symbol, AssetClass], Future] = {}
-        self._last_prices: dict[tuple[Symbol, AssetClass], float] = {}
-        self._last_snapshots: dict[tuple[Symbol, AssetClass], dict] = {}
+        self._last_prices: dict[tuple[Symbol, AssetClass | None], float] = {}
+        self._last_snapshots: dict[tuple[Symbol, AssetClass | None], dict] = {}
 
     @staticmethod
     def _snapshot_datetime(snapshot: dict) -> datetime | None:
@@ -250,12 +251,7 @@ class LiveDataFeed:
                 )
                 self._inflight[key] = future
                 futures[future] = key
-                future.add_done_callback(
-                    lambda completed, *, inflight_key=key: self._forget_inflight(
-                        inflight_key,
-                        completed,
-                    )
-                )
+                future.add_done_callback(partial(self._forget_inflight, key))
         if not futures:
             return []
         done, pending = wait(futures, timeout=self.poll_timeout_seconds)

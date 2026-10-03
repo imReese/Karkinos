@@ -525,10 +525,22 @@ def _nullable_float(value) -> float | None:
     return float(value)
 
 
+_MarketDailyRecord = tuple[
+    str,
+    str,
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+]
+
+
 def _normalized_market_daily_records(
     frame: pd.DataFrame,
-) -> list[tuple[object, ...]]:
-    records: list[tuple[object, ...]] = []
+) -> list[_MarketDailyRecord]:
+    records: list[_MarketDailyRecord] = []
     for _, row in frame.iterrows():
         records.append(
             (
@@ -549,7 +561,7 @@ def _market_daily_records_fingerprint(
     *,
     trade_date: str,
     provider_name: str,
-    records: list[tuple[object, ...]],
+    records: Sequence[tuple[object, ...]],
 ) -> str:
     payload = {
         "schema_version": "karkinos.market_daily_dataset.v1",

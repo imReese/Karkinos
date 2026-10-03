@@ -340,7 +340,7 @@ def _assert_market_universe_schema(
     connection: sqlite3.Connection, version: int
 ) -> None:
     """Never drop unknown columns or schema objects while upgrading this table."""
-    statements = _V1_STATEMENTS if version == 1 else _V2_STATEMENTS
+    statements: tuple[str, ...] = _V1_STATEMENTS if version == 1 else _V2_STATEMENTS
     if version == 2:
         identity = connection.execute(
             "SELECT name, checksum FROM meta_schema_migrations WHERE version=2"

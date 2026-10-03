@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from account_truth.citic_source_query_window_review_repository import (
+        CiticSourceQueryWindowReviewRepositoryAccess,
+    )
 
 
 class CiticSourceQueryWindowReviewSchemaMixin:
-    def _ensure_schema(self) -> None:
+    def _ensure_schema(self: CiticSourceQueryWindowReviewRepositoryAccess) -> None:
         if not self._path.is_file():
             raise self._rejection_type("citic_source_query_window_intake_missing")
         try:

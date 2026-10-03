@@ -5,12 +5,14 @@ from __future__ import annotations
 import re
 import sqlite3
 from datetime import datetime
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from account_truth.citic_source_query_window_review_contracts import (
     CITIC_SOURCE_QUERY_WINDOW_EVIDENCE_FINGERPRINT_PATTERN,
     CITIC_SOURCE_QUERY_WINDOW_FILE_FINGERPRINT_PATTERN,
     CITIC_SOURCE_QUERY_WINDOW_MAX_DAYS,
     CITIC_SOURCE_QUERY_WINDOW_REVIEW_SCHEMA_VERSION,
+    CiticSourceQueryWindowReviewDecision,
 )
 
 _FILE_FINGERPRINT = re.compile(CITIC_SOURCE_QUERY_WINDOW_FILE_FINGERPRINT_PATTERN)
@@ -19,9 +21,33 @@ _EVIDENCE_FINGERPRINT = re.compile(
 )
 
 
+if TYPE_CHECKING:
+    from account_truth.citic_source_query_window_review import (
+        CiticSourceQueryWindowReview,
+    )
+    from account_truth.citic_source_query_window_review_repository import (
+        CiticSourceQueryWindowReviewRepositoryAccess,
+    )
+
+
+class _StoredReviewValues(TypedDict):
+    schema_version: str
+    intake_id: str
+    file_fingerprint: str
+    source_preview_fingerprint: str
+    query_start_date: str
+    query_end_date: str
+    decision: str
+    reviewer: str
+    query_window_attested: bool
+    supersedes_review_id: str | None
+
+
 class CiticSourceQueryWindowReviewProjectionMixin:
-    def _review_from_row(self, row: sqlite3.Row) -> object:
-        values = {
+    def _review_from_row(
+        self: CiticSourceQueryWindowReviewRepositoryAccess, row: sqlite3.Row
+    ) -> CiticSourceQueryWindowReview:
+        values: _StoredReviewValues = {
             "schema_version": str(row["schema_version"]),
             "intake_id": str(row["intake_id"]),
             "file_fingerprint": str(row["file_fingerprint"]),
@@ -72,7 +98,7 @@ class CiticSourceQueryWindowReviewProjectionMixin:
             or created.tzinfo is None
             or created.utcoffset() is None
             or not _EVIDENCE_FINGERPRINT.fullmatch(review_fingerprint)
-            or review_fingerprint != self._review_fingerprint(values)
+            or review_fingerprint != self._review_fingerprint(dict(values))
         ):
             raise self._read_rejection_type(
                 "citic_source_query_window_review_record_invalid"
@@ -86,7 +112,7 @@ class CiticSourceQueryWindowReviewProjectionMixin:
             query_start_date=values["query_start_date"],
             query_end_date=values["query_end_date"],
             query_window_attested=True,
-            decision=values["decision"],
+            decision=cast(CiticSourceQueryWindowReviewDecision, values["decision"]),
             supersedes_review_id=values["supersedes_review_id"],
             reviewer=values["reviewer"],
             review_fingerprint=review_fingerprint,

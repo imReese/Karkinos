@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import cast
 
 from account_truth.citic_source_canonical_resolution import (
     CiticSourceCanonicalResolution,
@@ -175,9 +176,13 @@ def build_citic_source_follow_up(db_path: str | Path | None) -> dict[str, object
     try:
         scope_review_repository = CiticSourceScopeReviewRepository(db_path)
         source_scope_reviews = {
-            intake.intake_id: review
+            intake.intake_id: scope_review
             for intake in intakes
-            if (review := scope_review_repository.get_latest_review(intake.intake_id))
+            if (
+                scope_review := scope_review_repository.get_latest_review(
+                    intake.intake_id
+                )
+            )
             is not None
         }
     except CiticSourceScopeReviewReadRejected as exc:
@@ -278,10 +283,10 @@ def _projection(
         active_query_window_reviews
     )
     active_source_scope_reviews = {
-        source.intake_id: review
+        source.intake_id: scope_review
         for source in pending_sources
         if (
-            review := active_citic_source_scope_review(
+            scope_review := active_citic_source_scope_review(
                 source=source,
                 query_window_review=active_query_window_reviews.get(source.intake_id),
                 source_scope_review=effective_source_scope_reviews.get(
@@ -343,22 +348,28 @@ def _projection(
                 ),
                 "source_scope_review": (
                     {
-                        "review_id": review.review_id,
-                        "review_fingerprint": review.review_fingerprint,
+                        "review_id": scope_review.review_id,
+                        "review_fingerprint": scope_review.review_fingerprint,
                         "query_window_review_fingerprint": (
-                            review.query_window_review_fingerprint
+                            scope_review.query_window_review_fingerprint
                         ),
-                        "account_reference_hash": review.account_reference_hash,
-                        "account_type": review.account_type,
-                        "market_scopes": list(review.market_scopes),
-                        "asset_classes": list(review.asset_classes),
-                        "business_types": list(review.business_types),
-                        "no_other_filters_attested": (review.no_other_filters_attested),
+                        "account_reference_hash": scope_review.account_reference_hash,
+                        "account_type": scope_review.account_type,
+                        "market_scopes": list(scope_review.market_scopes),
+                        "asset_classes": list(scope_review.asset_classes),
+                        "business_types": list(scope_review.business_types),
+                        "no_other_filters_attested": (
+                            scope_review.no_other_filters_attested
+                        ),
                         "complete_returned_results_attested": (
-                            review.complete_returned_results_attested
+                            scope_review.complete_returned_results_attested
                         ),
                     }
-                    if (review := active_source_scope_reviews.get(source.intake_id))
+                    if (
+                        scope_review := active_source_scope_reviews.get(
+                            source.intake_id
+                        )
+                    )
                     else None
                 ),
             }
@@ -444,17 +455,17 @@ def _follow_up_projection(
     )
     assessment_blockers = [
         blocker
-        for blocker in assessment.get("blockers", [])
+        for blocker in cast(list[str], assessment.get("blockers", []))
         if blocker in _QUERY_WINDOW_INTEGRITY_BLOCKERS
     ]
     scope_assessment_blockers = [
         blocker
-        for blocker in scope_assessment.get("blockers", [])
+        for blocker in cast(list[str], scope_assessment.get("blockers", []))
         if blocker in _SOURCE_SCOPE_INTEGRITY_BLOCKERS
     ]
     resolution_blockers = [
         str(item)
-        for item in (canonical_resolution or {}).get("blockers", [])
+        for item in cast(list[str], (canonical_resolution or {}).get("blockers", []))
         if str(item)
     ]
     blockers = [
@@ -462,7 +473,7 @@ def _follow_up_projection(
         *scope_assessment_blockers,
         *resolution_blockers,
     ]
-    required_evidence = list(projection["required_evidence"])
+    required_evidence = list(cast(list[str], projection["required_evidence"]))
     if intake_scan_truncated:
         blockers.insert(0, "citic_source_intake_scan_truncated")
         required_evidence.append("complete_citic_source_intake_scan")

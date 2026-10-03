@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from account_truth.broker_evidence import (
     BrokerEvidenceRepository,
@@ -131,7 +131,7 @@ def build_latest_account_truth_score_payload(
         payload["blocking_reasons"] = list(
             dict.fromkeys(
                 [
-                    *list(payload.get("blocking_reasons") or []),
+                    *list(score.blocking_reasons),
                     (
                         "account_truth_evidence_predates_latest_ledger"
                         if coverage_is_stale
@@ -143,7 +143,7 @@ def build_latest_account_truth_score_payload(
         payload["required_actions"] = list(
             dict.fromkeys(
                 [
-                    *list(payload.get("required_actions") or []),
+                    *list(score.required_actions),
                     (
                         "reimport_broker_statement_after_latest_ledger_fact"
                         if coverage_is_stale
@@ -155,7 +155,7 @@ def build_latest_account_truth_score_payload(
         payload["limitations"] = list(
             dict.fromkeys(
                 [
-                    *list(payload.get("limitations") or []),
+                    *list(score.limitations),
                     (
                         "The latest broker evidence does not cover the latest "
                         "local ledger fact."
@@ -194,13 +194,15 @@ def build_latest_account_truth_promotion_evidence(
     snapshot_capture = _account_truth_snapshot_capture(events)
     captured_at = _parse_aware_timestamp(snapshot_capture.get("captured_at"))
     effective_max_age = max(60, min(int(max_age_seconds), 604800))
-    blockers: list[str] = list(snapshot_capture["blockers"])
+    blockers: list[str] = list(cast(list[str], snapshot_capture["blockers"]))
     citic_source_follow_up = _citic_source_follow_up_for_promotion(db_path)
     if citic_source_follow_up["count_complete"] is not True:
         blockers.append(str(citic_source_follow_up["status"]))
-    elif int(citic_source_follow_up["pending_source_count"]) > 0:
+    elif int(cast(int, citic_source_follow_up["pending_source_count"])) > 0:
         blockers.append("citic_source_follow_up_required")
-    blockers.extend(str(item) for item in citic_source_follow_up["blockers"])
+    blockers.extend(
+        str(item) for item in cast(list[str], citic_source_follow_up["blockers"])
+    )
     age_seconds: int | None = None
     freshness_status = "missing"
     if imported_at is None:
@@ -390,16 +392,18 @@ def _citic_source_follow_up_for_promotion(db_path: Path) -> dict[str, object]:
         "status": str(projection.get("status") or "unavailable"),
         "pending_source_count": max(
             0,
-            int(projection.get("pending_source_count") or 0),
+            int(cast(int, projection.get("pending_source_count") or 0)),
         ),
         "scanned_source_count": max(
             0,
-            int(projection.get("scanned_source_count") or 0),
+            int(cast(int, projection.get("scanned_source_count") or 0)),
         ),
         "count_complete": projection.get("count_complete") is True,
         "intake_scan_truncated": projection.get("intake_scan_truncated") is True,
         "evidence_fingerprint": str(projection.get("evidence_fingerprint") or ""),
-        "blockers": [str(item) for item in projection.get("blockers") or []],
+        "blockers": [
+            str(item) for item in cast(list[str], projection.get("blockers") or [])
+        ],
         "query_window_batch_integrity_status": str(
             projection.get("query_window_batch_integrity_status") or "not_available"
         ),
@@ -408,11 +412,15 @@ def _citic_source_follow_up_for_promotion(db_path: Path) -> dict[str, object]:
         ),
         "query_window_gap_calendar_day_count": max(
             0,
-            int(projection.get("query_window_gap_calendar_day_count") or 0),
+            int(cast(int, projection.get("query_window_gap_calendar_day_count") or 0)),
         ),
         "query_window_overlap_calendar_day_count": max(
             0,
-            int(projection.get("query_window_overlap_calendar_day_count") or 0),
+            int(
+                cast(
+                    int, projection.get("query_window_overlap_calendar_day_count") or 0
+                )
+            ),
         ),
         "query_window_integrity_clear": (
             projection.get("query_window_integrity_clear") is True

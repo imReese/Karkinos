@@ -7,6 +7,7 @@ import logging
 import re
 from datetime import datetime
 from functools import lru_cache
+from typing import Callable, Protocol
 
 import pandas as pd
 
@@ -24,8 +25,32 @@ from data.providers.akshare_sdk import (
 logger = logging.getLogger("data.legacy_sources.market")
 
 
+class _FundProviderCall(Protocol):
+    def __call__(
+        self,
+        func: Callable[..., pd.DataFrame],
+        *,
+        retry_delay_seconds: float | None = None,
+        max_retries: int | None = None,
+        **kwargs: object,
+    ) -> pd.DataFrame: ...
+
+
+class _FundQuoteNormalizer(Protocol):
+    def __call__(
+        self,
+        symbol: Symbol,
+        asset_class: AssetClass,
+        payload: dict | None,
+        provider_symbol: str | None = None,
+    ) -> dict | None: ...
+
+
 class OpenEndFundMixin:
     """Resolve and fetch exchange-unlisted open-end fund NAV evidence."""
+
+    _call_with_retry: _FundProviderCall
+    _normalize_latest_quote: _FundQuoteNormalizer
 
     @staticmethod
     @lru_cache(maxsize=1)

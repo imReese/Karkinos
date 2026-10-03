@@ -544,7 +544,7 @@ def valuation_lane_status(
 
 
 def is_asset_class_valuation_healthy(
-    valuation: Mapping[str, Any],
+    valuation: object,
     asset_class: str = "stock",
 ) -> bool:
     """Return whether a specific asset-class valuation lane is complete or not applicable."""
@@ -640,13 +640,13 @@ def _quotes_for_current_positions(
 
     scoped: list[dict[str, Any]] = []
     for symbol, instrument_type in sorted(position_scope.items()):
-        quote = candidates.get((symbol, instrument_type))
+        position_quote = candidates.get((symbol, instrument_type))
         # Legacy rows used ``fund`` for open-end funds.  An ETF must retain an
         # explicit ETF identity; otherwise a same-symbol fund observation could
         # silently satisfy the wrong valuation lane.
-        if quote is None and instrument_type == "open_end_fund":
-            quote = candidates.get((symbol, "fund"))
-        if quote is None:
+        if position_quote is None and instrument_type == "open_end_fund":
+            position_quote = candidates.get((symbol, "fund"))
+        if position_quote is None:
             scoped.append(
                 {
                     "symbol": symbol,
@@ -660,11 +660,11 @@ def _quotes_for_current_positions(
             continue
         scoped.append(
             {
-                **quote,
+                **position_quote,
                 "observation_instrument_type": _normalized_instrument_type(
-                    quote.get("instrument_type")
-                    or quote.get("asset_type")
-                    or quote.get("asset_class")
+                    position_quote.get("instrument_type")
+                    or position_quote.get("asset_type")
+                    or position_quote.get("asset_class")
                 ),
                 "asset_type": _valuation_asset_type(instrument_type),
             }

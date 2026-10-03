@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Sequence
 
 from account_truth.manual_review import ManualReviewDecision
 from account_truth.reconciliation import ReconciliationItem, ReconciliationReport
@@ -245,7 +245,7 @@ def _combined_status(items: list[ReconciliationItem], categories: list[str]) -> 
     return _worst_status(statuses)
 
 
-def _worst_status(statuses: list[str]) -> str:
+def _worst_status(statuses: Sequence[str]) -> str:
     priority = {"pass": 0, "warning": 1, "mismatch": 2, "blocked": 3}
     return max(statuses, key=lambda status: priority.get(status, 0))
 

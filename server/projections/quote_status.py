@@ -129,7 +129,7 @@ def quote_asset_class(quote: dict | None) -> str:
         return ""
     value = quote.get("asset_class") or quote.get("asset_type")
     if hasattr(value, "value"):
-        value = value.value
+        value = getattr(value, "value")
     return str(value or "").strip().lower()
 
 

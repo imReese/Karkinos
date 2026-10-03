@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from account_truth.broker_order_lifecycle_repository import (
+        BrokerOrderLifecycleEvidenceRepositoryAccess,
+    )
 
 
 class BrokerOrderLifecycleEvidenceSchemaMixin:
-    def _ensure_schema(self) -> None:
+    def _ensure_schema(self: BrokerOrderLifecycleEvidenceRepositoryAccess) -> None:
         with sqlite3.connect(self._path) as conn:
             conn.executescript("""
                     CREATE TABLE IF NOT EXISTS broker_order_lifecycle_observations (
