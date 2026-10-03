@@ -61,7 +61,9 @@ class ResearchObservationsRepository:
             row = self._row(conn, observation_id)
             return self._detail(conn, row) if row is not None else None
 
-    def list(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    def list(
+        self, *, limit: int = 50, source_backtest_result_id: int | None = None
+    ) -> list[dict[str, Any]]:
         if (
             isinstance(limit, bool)
             or not isinstance(limit, int)
@@ -70,11 +72,13 @@ class ResearchObservationsRepository:
             raise ValueError("research_observation_limit_invalid")
         with self._connect() as conn:
             conn.execute("BEGIN")
-            rows = conn.execute(
-                "SELECT * FROM research_observations ORDER BY started_at DESC, id "
-                "LIMIT ?",
-                (limit,),
-            ).fetchall()
+            query = "SELECT * FROM research_observations"
+            parameters = []
+            if source_backtest_result_id is not None:
+                query += " WHERE source_backtest_result_id = ?"
+                parameters.append(source_backtest_result_id)
+            query += " ORDER BY started_at DESC, id LIMIT ?"
+            rows = conn.execute(query, (*parameters, limit)).fetchall()
             return [self._detail(conn, row) for row in rows]
 
     def get_operation(

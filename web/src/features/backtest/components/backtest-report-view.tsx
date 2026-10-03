@@ -20,6 +20,7 @@ import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
 import { CashDividendAccountingPanel } from './cash-dividend-accounting-panel';
 import { BacktestCostEvidencePanel } from './backtest-cost-evidence-panel';
+import { ResearchObservationsPanel } from './research-observations-panel';
 import { StrategyMetadataSnapshotPanel } from './strategy-metadata-snapshot-panel';
 import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
@@ -373,6 +374,10 @@ export function BacktestReportView() {
           />
           <MetricsGrid report={report.data} />
           <BacktestCostEvidencePanel report={report.data} />
+          <ResearchObservationsPanel
+            key={report.data.id}
+            report={report.data}
+          />
           <CashDividendAccountingPanel
             accounting={report.data.metrics_json?.cash_dividend_accounting}
           />
