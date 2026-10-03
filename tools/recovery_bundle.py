@@ -303,6 +303,11 @@ def _referenced_research_datasets(database: Path) -> set[str]:
                 "UNION SELECT dataset_id FROM research_observation_outcomes"
             ):
                 add(dataset_id)
+        if "research_paper_steps" in tables:
+            for (dataset_id,) in conn.execute(
+                "SELECT DISTINCT dataset_id FROM research_paper_steps"
+            ):
+                add(dataset_id)
         if "job_runs" in tables:
             for (result_ref,) in conn.execute(
                 "SELECT result_ref FROM job_runs WHERE status='succeeded' "

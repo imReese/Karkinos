@@ -36,6 +36,12 @@ Existing calendar rows retain an unknown capture time rather than receiving a
 fabricated historical timestamp. Fresh calendar capture and verification are
 required before those rows can support forward publication.
 
+Migration 24 adds independent research paper books, immutable session settlements
+and command receipts. Decimal money and quantities remain exact in their saved
+projections. Existing observations acquire no paper book or settlement authority.
+Paper operations do not insert into actual-account ledgers or shared execution
+tables; an entire settlement commits or rolls back together.
+
 The market metadata database has its own immutable migration registry. Its
 Format v1 now includes migration head 2, which retains old stock-universe JSON
 and IDs while permitting multiple timestamped observations per date/provider.
@@ -156,8 +162,9 @@ Bundle verification replays published Dataset objects from the current
 `research/objects` and `research/catalog` layout and the legacy `objects` and
 `index/catalog` layout. It also checks daily ingestion checkpoints under
 `research/checkpoints`, without counting them as published interval datasets.
-Saved backtests, observation sources and outcomes, and successful Dataset jobs
-also supply replay identities independently of the rebuildable Catalog.
+Saved backtests, observation sources and outcomes, paper-book settlements, and
+successful Dataset jobs also supply replay identities independently of the
+rebuildable Catalog.
 An interrupted collection can be restored and resumed from its intact checkpoints;
 a referenced Dataset with unreadable immutable objects fails bundle verification,
 even when those damaged bytes were already present before the backup.
