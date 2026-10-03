@@ -13,7 +13,7 @@ or otherwise migrate that state deliberately first.
 
 Karkinos declares the completed financial persistence foundation as **Database
 Format v1**. The format version is intentionally separate from the append-only
-migration head: Format v1 currently ends at migration head 23. Migration numbers
+migration head: Format v1 currently ends at migration head 24. Migration numbers
 are historical lineage identifiers, not product/database major versions.
 
 Ordinary application work, refactors, UI changes, query rewrites, and data-flywheel
@@ -43,10 +43,15 @@ Paper operations do not insert into actual-account ledgers or shared execution
 tables; an entire settlement commits or rolls back together.
 
 The market metadata database has its own immutable migration registry. Its
-Format v1 now includes migration head 2, which retains old stock-universe JSON
+Format v1 now includes migration head 3, which retains old stock-universe JSON
 and IDs while permitting multiple timestamped observations per date/provider.
 Legacy rows keep unknown observation times. This changes no application-database
 migration number and does not relabel historical membership as point-in-time data.
+The exact pre-commit v2 variant with a nullable observation-time CHECK is recognized
+by its original checksum and structure. Migration v3 strengthens that constraint
+without rewriting either v2 ledger entry or filling unknown information times.
+Incomplete existing observation times block preparation and preserve the original
+data; unknown checksums or schema objects are still refused.
 
 ## Startup
 
@@ -56,7 +61,7 @@ own Python and registry, never by the launching checkout's registry. Older targe
 branches without the new CLI retain their own startup behavior. Frontend build
 failure does not first migrate the stable database.
 
-`python -m server` also prepares the application database before starting
+`python -m server` also prepares both `app.db` and `meta.db` before starting
 Uvicorn, its reloader, or managed workers. Managed processes hold shared database
 runtime locks; preparation needs exclusive ownership. Stop all older/unmanaged
 API, worker, CLI, and SQLite writers before migration. These advisory locks do
@@ -111,7 +116,7 @@ Diagnosis never creates a missing database or runs migrations. SQLite read-only
 WAL access can still use SQLite-managed sidecar/locking files; this is not a
 promise that every filesystem metadata byte remains unchanged.
 
-`--prepare-database` explicitly prepares the selected database without starting
+`--prepare-database` explicitly prepares both selected databases without starting
 HTTP or workers. Normal launch already invokes it; users do not need a separate
 migration command for ordinary startup. The historical `--check-state` command
 continues to **prepare/migrate** isolated release copies for compatibility with
@@ -127,6 +132,11 @@ backups/schema/app.db/<run-id>/
   migration-registry.json  # exact evaluated migration definitions
   app.db          # present only when a previous app.db existed
   meta.db         # present only when the sibling store existed
+
+backups/schema/meta.db/<run-id>/
+  migration.json
+  migration-registry.json
+  meta.db         # present only when a previous meta.db existed
 ```
 
 The private receipt includes the exact migration definitions and checksums,
@@ -137,6 +147,11 @@ It does not archive environment variables,
 credentials, `.env`, arbitrary working-tree diffs, or user financial data as
 provenance. Database backup files naturally contain private application data:
 keep the entire backup directory private and out of Git.
+
+Independent market-metadata preparation records its registry and backup hash in
+the `meta.db` directory above. Startup reports an incompatible metadata database
+with its path and reason before starting HTTP or workers. It preserves that
+database and its ledger rather than deleting history or creating a replacement.
 
 Backups use SQLite's backup API and include committed WAL data. Backup, registry
 snapshot, or integrity failure prevents migration. Legacy schema repair, pending

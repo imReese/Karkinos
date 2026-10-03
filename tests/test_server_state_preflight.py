@@ -67,7 +67,7 @@ print("FORBIDDEN_IMPORTS=" + json.dumps(forbidden))
     )
 
 
-def test_preflight_initializes_only_app_database_then_data_store(
+def test_preflight_initializes_app_database_then_market_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -80,13 +80,16 @@ def test_preflight_initializes_only_app_database_then_data_store(
         def init_sync(self) -> None:
             calls.append(("app-init", tmp_path / "data" / "app.db"))
 
-    class FakeDataStore:
-        def __init__(self, path: Path) -> None:
-            calls.append(("market-init", path))
+    def initialize_market_metadata(path: Path) -> None:
+        calls.append(("market-init", path))
 
     monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(state_preflight, "AppDatabase", FakeAppDatabase)
-    monkeypatch.setattr(state_preflight, "DataStore", FakeDataStore)
+    monkeypatch.setattr(
+        state_preflight,
+        "initialize_market_metadata_database",
+        initialize_market_metadata,
+    )
     monkeypatch.setattr(
         state_preflight,
         "_require_sqlite_integrity",
@@ -98,7 +101,7 @@ def test_preflight_initializes_only_app_database_then_data_store(
     assert calls == [
         ("app-construct", tmp_path / "data" / "app.db"),
         ("app-init", tmp_path / "data" / "app.db"),
-        ("market-init", tmp_path / "data"),
+        ("market-init", tmp_path / "data" / "app.db"),
         ("integrity", tmp_path / "data" / "app.db"),
         ("integrity", tmp_path / "data" / "meta.db"),
     ]
@@ -115,13 +118,16 @@ def test_preflight_fails_closed_before_market_store_when_app_database_fails(
         def init_sync(self) -> None:
             raise RuntimeError("incompatible application database")
 
-    class UnexpectedDataStore:
-        def __init__(self, _path: Path) -> None:
-            raise AssertionError("market store must not run after app DB failure")
+    def unexpected_market_metadata(_path: Path) -> None:
+        raise AssertionError("market store must not run after app DB failure")
 
     monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(state_preflight, "AppDatabase", IncompatibleAppDatabase)
-    monkeypatch.setattr(state_preflight, "DataStore", UnexpectedDataStore)
+    monkeypatch.setattr(
+        state_preflight,
+        "initialize_market_metadata_database",
+        unexpected_market_metadata,
+    )
 
     with pytest.raises(RuntimeError, match="incompatible application database"):
         state_preflight.preflight_persistent_state()

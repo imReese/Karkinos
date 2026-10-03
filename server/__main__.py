@@ -171,7 +171,11 @@ def main() -> None:
         return
 
     from server.persistence.database_identity import ensure_database_identity
-    from server.persistence.initializer import database_runtime, initialize_database
+    from server.persistence.initializer import (
+        database_runtime,
+        initialize_database,
+        initialize_market_metadata_database,
+    )
 
     ensure_database_identity(
         database_path.parent,
@@ -182,9 +186,26 @@ def main() -> None:
     # Ordinary uncommitted development code is allowed; the actual migration
     # definitions and source identity are archived when preparation is needed.
     try:
-        initialize_database(database_path)
+        from data.meta_store_schema import (
+            MetaDatabaseSchemaError,
+            meta_database_requires_preparation,
+        )
+
+        meta_path = database_path.parent / "meta.db"
+        try:
+            # Refuse unknown metadata history before changing either database.
+            meta_database_requires_preparation(meta_path)
+            initialize_database(database_path)
+            initialize_market_metadata_database(database_path)
+        except MetaDatabaseSchemaError as exc:
+            raise RuntimeError(
+                f"Market metadata database is incompatible: {meta_path}\n"
+                f"Reason: {exc}\n"
+                "Keep this database and its migration history. Restore matching "
+                "migration source or review a compatible backup before retrying."
+            ) from exc
         if args.prepare_database:
-            print(f"Karkinos database ready: {database_path}")
+            print(f"Karkinos databases ready:\n  {database_path}\n  {meta_path}")
             return
         with database_runtime(database_path):
             _run_runtime(args, config, overrides)

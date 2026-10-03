@@ -5,8 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from data.store import DataStore
 from server.db import AppDatabase
+from server.persistence.initializer import initialize_market_metadata_database
 from server.runtime_paths import resolve_data_dir
 
 
@@ -29,6 +29,6 @@ def preflight_persistent_state() -> None:
 
     data_dir = Path(resolve_data_dir())
     AppDatabase(data_dir / "app.db").init_sync()
-    DataStore(data_dir)
+    initialize_market_metadata_database(data_dir / "app.db")
     _require_sqlite_integrity(data_dir / "app.db")
     _require_sqlite_integrity(data_dir / "meta.db")

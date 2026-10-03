@@ -9,6 +9,7 @@ import os
 import sqlite3
 import stat
 import time
+import uuid
 from contextlib import ExitStack, closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,10 +28,14 @@ from server.persistence.market_identity_migrations import (
 from server.persistence.migration_lifecycle import (
     AtomicSchemaConnection,
     DatabasePreparationError,
+    backup_database,
     begin_preparation,
     finish_preparation,
+    history_directory,
     inspect_database,
     require_database_ready,
+    write_record,
+    write_registry_snapshot,
 )
 from server.persistence.migrations import (
     apply_schema_migrations,
@@ -217,6 +222,84 @@ def _assert_runtime_financial_storage(database_path: Path) -> None:
         return
     with closing(connect_sqlite(database_path, readonly=True)) as conn:
         assert_exact_financial_storage(conn)
+
+
+def initialize_market_metadata_database(
+    application_database_path: str | Path, *, lock_timeout_seconds: float = 30
+) -> None:
+    """Prepare the sibling market store before API/worker startup, with a WAL backup."""
+    from data.meta_store_schema import (
+        meta_database_requires_preparation,
+        meta_migration_registry,
+        prepare_meta_database,
+    )
+
+    app_path = Path(application_database_path).expanduser().absolute()
+    path = app_path.parent / "meta.db"
+    if not math.isfinite(lock_timeout_seconds) or lock_timeout_seconds < 0:
+        raise ValueError("database_initialization_timeout_invalid")
+    deadline = time.monotonic() + lock_timeout_seconds
+    with ExitStack() as ownership:
+        while meta_database_requires_preparation(path):
+            try:
+                ownership.enter_context(_initialization_lock(app_path, 0))
+                break
+            except TimeoutError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+        else:
+            return
+        if not meta_database_requires_preparation(path):
+            return
+        directory = history_directory(path) / uuid.uuid4().hex
+        definitions = tuple(
+            {
+                "version": item.version,
+                "name": item.name,
+                "checksum": item.checksum,
+                "statements": list(item.statements),
+            }
+            for item in meta_migration_registry()
+        )
+        registry = write_registry_snapshot(directory, definitions)
+        backup = (
+            {"file": path.name, "sha256": backup_database(path, directory / path.name)}
+            if path.exists()
+            else None
+        )
+        record_path = directory / "migration.json"
+        record = {
+            "format": 1,
+            "state": "preparing",
+            "database": str(path),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "registry": registry,
+            "backup": backup,
+        }
+        write_record(record_path, record)
+        logger.info(
+            "Preparing market metadata %s; recovery record: %s", path, record_path
+        )
+        try:
+            prepare_meta_database(path)
+        except BaseException:
+            record["state"] = "failed"
+            try:
+                write_record(record_path, record)
+            except OSError:
+                logger.exception("Could not record failed metadata preparation")
+            raise
+        record["state"] = "committed"
+        record["completed_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            write_record(record_path, record)
+        except OSError:
+            raise RuntimeError(
+                "Market metadata migration committed but recovery record write failed: "
+                f"{record_path}; inspect the migration ledger before retrying; "
+                "do not restore an older database automatically"
+            ) from None
 
 
 def _database_requires_maintenance(database_path: Path) -> bool:
