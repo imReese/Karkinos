@@ -16,6 +16,7 @@ import type {
 import { ResearchObservationHistory } from './research-observation-history';
 import { ResearchObservationHealth } from './research-observation-health';
 import { ObservationAutomationControls } from './observation-automation';
+import { ResearchPaperBookPanel } from './research-paper-book-panel';
 import {
   configuredHealthPolicy,
   ObservationHealthSettings,
@@ -462,6 +463,7 @@ function ObservationDetail({
           {observation.source.dataset_id}
         </p>
       </details>
+      <ResearchPaperBookPanel observation={observation} busy={busy} />
     </div>
   );
 }
