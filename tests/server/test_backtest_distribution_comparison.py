@@ -114,6 +114,8 @@ def test_every_saved_child_accounts_for_the_selected_return_basis(
         assert baseline_response.status_code == 200, baseline_response.text
         baseline = baseline_response.json()
         assert len(baseline["fills"]) == 1
+        reloaded = client.get(f"/api/backtest/results/{baseline['id']}").json()
+        assert reloaded["fills"] == baseline["fills"]
         eligible = Decimal(str(baseline["fills"][0]["fill_quantity"]))
         assert eligible > 0
         expected_extra_equity = Decimal(0)
@@ -152,6 +154,7 @@ def test_every_saved_child_accounts_for_the_selected_return_basis(
             ).read_text()
         )
         assert report["config"]["corporate_action_mode"] == (mode or "price_only")
+        assert report["fills"] == saved["fills"]
         assert report["metrics_json"].get("cash_dividend_accounting") == saved[
             "metrics_json"
         ].get("cash_dividend_accounting")

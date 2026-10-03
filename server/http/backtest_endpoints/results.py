@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.ledger_models import EquityPoint
 from server.contracts.http.strategy_models import (
+    BacktestFill,
     BacktestRequest,
     BacktestResponse,
     BacktestSummary,
@@ -109,7 +110,7 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
             ),
             cost_summary_json=cost_summary_json,
             evidence_json=evidence_json,
-            fills=[],
+            fills=[BacktestFill(**fill) for fill in metrics_json.get("fills", [])],
         )
 
     @r.post("/compare", response_model=CompareResponse)

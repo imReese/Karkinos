@@ -132,6 +132,7 @@ class BacktestSweepRequest(BaseModel):
     assets: list[dict[str, str]] | None = None
     rank_by: str = "total_return"
     max_combinations: int = Field(default=25, ge=1, le=100)
+    test_start_date: date | None = None
 
 
 class BacktestSweepResult(BaseModel):
@@ -151,6 +152,8 @@ class BacktestSweepResponse(BaseModel):
     results: list[BacktestSweepResult]
     robustness_evidence: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+    selected_test_result_id: int | None = None
+    chronological_validation: dict[str, Any] | None = None
 
 
 class CompareRunRequest(BaseModel):

@@ -116,6 +116,124 @@ def test_research_evidence_bundle_summarizes_rolling_oos_details():
             "total_oos_cost": 8.5,
         },
     }
+    assert bundle["evidence_references"]["oos_evidence_available"] is True
+
+
+def _chronological_metrics(role):
+    source = {
+        "source_dataset_id": "sha256:immutable-source",
+        "source_snapshot_id": "sha256:full-snapshot",
+        "exploratory": True,
+        "independent_final": False,
+    }
+    return {
+        "dataset_snapshot": {
+            "snapshot_id": source["source_snapshot_id"],
+            "immutable_dataset_id": source["source_dataset_id"],
+            "row_count": 10,
+            "data_quality": {"status": "ok", "issues": []},
+            "symbol_universe": [{"symbol": "600001", "row_count": 10}],
+            "date_range": {"start": "2026-09-01", "end": "2026-09-14"},
+        },
+        "chronological_validation": {
+            **source,
+            "schema_version": "karkinos.chronological_sweep.v1",
+            "role": role,
+            "selection_basis": "training_only",
+            "test_start_date": "2026-09-08",
+        },
+        "execution_window": {
+            **source,
+            "schema_version": "karkinos.backtest_execution_window.v1",
+            "source_start_date": "2026-09-01",
+            "source_end_date": "2026-09-14",
+            "evaluation_start_date": "2026-09-01"
+            if role == "training"
+            else "2026-09-08",
+            "metric_start_date": "2026-09-01" if role == "training" else "2026-09-08",
+            "evaluation_end_date": "2026-09-07" if role == "training" else "2026-09-14",
+            "metric_end_date": "2026-09-07" if role == "training" else "2026-09-14",
+            "history_end_date": "2026-09-07" if role == "training" else "2026-09-14",
+            "warmup_policy": "strategy_state_only_no_orders_or_book_carry",
+            "independent_initial_cash": True,
+        },
+    }
+
+
+def _chronological_bundle(metrics):
+    return build_research_evidence_bundle(
+        metrics_json=metrics,
+        cost_summary_json={"total_trades": 1},
+        evidence_json={"total_cost": 5, "fill_count": 1},
+        strategy_metadata={"strategy_id": "dual_ma"},
+    )
+
+
+@pytest.mark.parametrize("role", ["training", "test"])
+def test_chronological_evidence_reports_exploratory_role_without_upgrading_admission(
+    role,
+):
+    bundle = _chronological_bundle(_chronological_metrics(role))
+
+    oos = next(item for item in bundle["analyzers"] if item["name"] == "oos")
+    assert oos["status"] == "degraded"
+    assert oos["details"] == {
+        "oos_available": role == "test",
+        "required_for_current_run": True,
+        "validation_mode": "chronological_train_select_test",
+        "validation_status": "exploratory",
+        "role": role,
+        "split_timestamp": "2026-09-08",
+        "independent_final": False,
+    }
+    if role == "training":
+        assert "no heldout outcomes" in oos["summary"]
+    else:
+        assert "independent-book" in oos["summary"]
+    assert bundle["evidence_references"]["oos_evidence_available"] is (role == "test")
+    assert bundle["promotion_gate"]["status"] == "blocked"
+    assert bundle["promotion_gate"]["does_not_enable_execution"] is True
+    assert any("not a sealed" in item for item in oos["limitations"])
+
+
+@pytest.mark.parametrize(
+    "field, changes",
+    [
+        ("chronological_validation", None),
+        ("execution_window", None),
+        ("chronological_validation", {"schema_version": "unknown"}),
+        ("chronological_validation", {"role": "final"}),
+        ("chronological_validation", {"independent_final": True}),
+        ("chronological_validation", {"test_start_date": "not-a-date"}),
+        ("chronological_validation", {"role": "training"}),
+        ("execution_window", {"metric_start_date": "2026-09-07"}),
+        ("execution_window", {"source_snapshot_id": "sha256:different"}),
+        ("execution_window", {"independent_initial_cash": False}),
+        (
+            "dataset_snapshot",
+            {"date_range": {"start": "2026-09-08", "end": "2026-09-14"}},
+        ),
+    ],
+)
+def test_incomplete_chronological_metadata_is_unavailable_even_with_legacy_oos(
+    field, changes
+):
+    metrics = _chronological_metrics("test")
+    if changes is None:
+        del metrics[field]
+    else:
+        metrics[field].update(changes)
+    metrics["oos_validation"] = {"validation_status": "benchmark_passed"}
+
+    bundle = _chronological_bundle(metrics)
+
+    oos = next(item for item in bundle["analyzers"] if item["name"] == "oos")
+    assert oos["status"] == "blocked"
+    assert "incomplete or inconsistent" in oos["summary"]
+    assert oos["details"]["validation_status"] == "unavailable"
+    assert oos["details"]["oos_available"] is False
+    assert bundle["evidence_references"]["oos_evidence_available"] is False
+    assert bundle["promotion_gate"]["status"] == "blocked"
 
 
 @pytest.mark.parametrize("legacy_receipt", [False, True])

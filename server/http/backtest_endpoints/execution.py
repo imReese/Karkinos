@@ -34,35 +34,16 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
     json = dependencies.json_provider()
     logger = dependencies.logger_provider()
 
-    @r.post("/run", response_model=BacktestResponse)
-    async def run_backtest(request: BacktestRequest) -> BacktestResponse:
-        """运行回测（在线程池中执行，不阻塞事件循环）。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
-        config = state.config
-        request = _validate_backtest_strategy_params(request)
-
-        try:
-            bt_result = await asyncio.to_thread(
-                _run_backtest, request, config, state.db
-            )
-        except ResearchDatasetError as exc:
-            raise HTTPException(409, str(exc)) from None
+    async def save_result(db, request, bt_result):
         metrics_json = _backtest_report_metrics_json(request, bt_result)
-
-        # 保存到数据库
-        config_json = request.model_dump_json()
-        equity_curve_json = json.dumps(bt_result["equity_curve"])
-
-        result_id = await state.db.save_backtest_result(
-            config_json=config_json,
+        result_id = await db.save_backtest_result(
+            config_json=request.model_dump_json(),
             initial_cash=bt_result["initial_cash"],
             final_equity=bt_result["final_equity"],
             total_return=bt_result["total_return"],
             sharpe=bt_result["sharpe"],
             max_dd=bt_result["max_drawdown"],
-            equity_curve_json=equity_curve_json,
+            equity_curve_json=json.dumps(bt_result["equity_curve"]),
             annual_return=bt_result["annual_return"],
             sortino=bt_result["sortino"],
             win_rate=bt_result["win_rate"],
@@ -81,6 +62,24 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
             )
         except OSError:
             logger.warning("Failed to write local backtest report", exc_info=True)
+        return result_id, metrics_json
+
+    @r.post("/run", response_model=BacktestResponse)
+    async def run_backtest(request: BacktestRequest) -> BacktestResponse:
+        """运行回测（在线程池中执行，不阻塞事件循环）。"""
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        config = state.config
+        request = _validate_backtest_strategy_params(request)
+
+        try:
+            bt_result = await asyncio.to_thread(
+                _run_backtest, request, config, state.db
+            )
+        except ResearchDatasetError as exc:
+            raise HTTPException(409, str(exc)) from None
+        result_id, metrics_json = await save_result(state.db, request, bt_result)
 
         return BacktestResponse(
             id=result_id,
@@ -108,9 +107,8 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
         config = state.config
         parameter_payloads = _build_parameter_grid(request)
 
-        sweep_results: list[BacktestSweepResult] = []
-        for params in parameter_payloads:
-            bt_request = _validate_backtest_strategy_params(
+        def candidate_request(params):
+            return _validate_backtest_strategy_params(
                 BacktestRequest(
                     dataset_id=request.dataset_id,
                     corporate_action_mode=request.corporate_action_mode,
@@ -124,43 +122,39 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
                 )
             )
 
+        chronology = None
+        if request.test_start_date is not None:
+            from server.services.chronological_backtest import run_chronological_sweep
+
+            candidates = [candidate_request(params) for params in parameter_payloads]
             try:
-                bt_result = await asyncio.to_thread(
-                    _run_backtest,
-                    bt_request,
+                chronology = await asyncio.to_thread(
+                    run_chronological_sweep,
+                    request,
+                    candidates,
                     config,
                     state.db,
+                    rank_direction=_SWEEP_RANK_DIRECTIONS[request.rank_by],
                 )
             except ResearchDatasetError as exc:
                 raise HTTPException(409, str(exc)) from None
-            metrics_json = _backtest_report_metrics_json(bt_request, bt_result)
-            result_id = await state.db.save_backtest_result(
-                config_json=bt_request.model_dump_json(),
-                initial_cash=bt_result["initial_cash"],
-                final_equity=bt_result["final_equity"],
-                total_return=bt_result["total_return"],
-                sharpe=bt_result["sharpe"],
-                max_dd=bt_result["max_drawdown"],
-                equity_curve_json=json.dumps(bt_result["equity_curve"]),
-                annual_return=bt_result["annual_return"],
-                sortino=bt_result["sortino"],
-                win_rate=bt_result["win_rate"],
-                duration_days=bt_result["duration_days"],
-                metrics_json=json.dumps(metrics_json, ensure_ascii=False),
-                cost_summary_json=json.dumps(
-                    bt_result["cost_summary_json"],
-                    ensure_ascii=False,
-                ),
-            )
+            parameter_payloads = [item.params for item in chronology["requests"]]
+
+        sweep_results: list[BacktestSweepResult] = []
+        for index, params in enumerate(parameter_payloads):
+            bt_request = candidate_request(params)
+
             try:
-                _write_backtest_report_file(
-                    result_id=result_id,
-                    request=bt_request,
-                    bt_result=bt_result,
-                    metrics_json=metrics_json,
+                bt_result = (
+                    chronology["training"][index]
+                    if chronology is not None
+                    else await asyncio.to_thread(
+                        _run_backtest, bt_request, config, state.db
+                    )
                 )
-            except OSError:
-                logger.warning("Failed to write local backtest report", exc_info=True)
+            except ResearchDatasetError as exc:
+                raise HTTPException(409, str(exc)) from None
+            result_id, metrics_json = await save_result(state.db, bt_request, bt_result)
 
             metrics = _backtest_metrics_from_payload(bt_result)
             sweep_results.append(
@@ -178,10 +172,14 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
             )
 
         reverse = _SWEEP_RANK_DIRECTIONS[request.rank_by] == "desc"
-        ranked_results = sorted(
-            sweep_results,
-            key=lambda result: (result.score, -result.result_id),
-            reverse=reverse,
+        ranked_results = (
+            [sweep_results[index] for index in chronology["ranked_indices"]]
+            if chronology is not None
+            else sorted(
+                sweep_results,
+                key=lambda result: (result.score, -result.result_id),
+                reverse=reverse,
+            )
         )
         ranked_results = [
             result.model_copy(update={"rank": index})
@@ -200,13 +198,43 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
             rank_by=request.rank_by,
             rank_direction=_SWEEP_RANK_DIRECTIONS[request.rank_by],
         )
+        selected_test_result_id = None
+        selection = None
+        if chronology is not None:
+            from server.contracts.content_identity import content_fingerprint
+
+            selection = {
+                **chronology["selection"],
+                "selected_training_result_id": sweep_results[
+                    chronology["winner_index"]
+                ].result_id,
+                "training_result_ids": [item.result_id for item in sweep_results],
+            }
+            # Storage identities supplement the frozen selection; its original
+            # fingerprint still binds the choice made before test execution.
+            selection["storage_binding_fingerprint"] = content_fingerprint(selection)
+            chronology["test"]["metrics_json"]["chronological_validation"] = {
+                **selection,
+                "role": "test",
+            }
+            selected_test_result_id, _ = await save_result(
+                state.db,
+                chronology["requests"][chronology["winner_index"]],
+                chronology["test"],
+            )
         return BacktestSweepResponse(
             strategy=request.strategy,
             rank_by=request.rank_by,
             tested_count=len(ranked_results),
             results=ranked_results,
             robustness_evidence=robustness_evidence,
-            warnings=list(_SWEEP_WARNINGS),
+            warnings=(
+                selection["limitations"]
+                if selection is not None
+                else list(_SWEEP_WARNINGS)
+            ),
+            selected_test_result_id=selected_test_result_id,
+            chronological_validation=selection,
         )
 
     return r
