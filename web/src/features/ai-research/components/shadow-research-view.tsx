@@ -1,6 +1,7 @@
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import type { ShadowResearchCandidate, ShadowResearchMetricView } from '../api';
+import { ShadowResearchObservations } from './shadow-research-observations';
 import {
   SHADOW_RESEARCH_COPY,
   type ShadowResearchCopy,
@@ -146,6 +147,10 @@ export function CandidateCard({
       ) : null}
 
       <CritiqueEvolutionTimeline candidate={candidate} copy={copy} />
+
+      {comparison.research_capital_mode === 'normalized_notional' ? (
+        <ShadowResearchObservations candidate={candidate} />
+      ) : null}
 
       {candidate.status === 'awaiting_human_approval' &&
       candidate.recommendation === 'paper_shadow_review' &&
