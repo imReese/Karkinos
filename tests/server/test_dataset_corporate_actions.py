@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from analytics.dataset_snapshot import (
-    _dataset_snapshot_id,
+    backtest_dataset_snapshot_content_id,
     verify_backtest_dataset_snapshot_replay,
 )
 from core.types import InstrumentKey, InstrumentType
@@ -240,7 +240,7 @@ def test_explicit_capture_refresh_and_offline_backtest_product_flow(
             edited["corporate_action_evidence"]["matched_event_count"] += 1
         # A freshly signed report still cannot disagree with its frozen Dataset.
         edited.pop("snapshot_id")
-        edited["snapshot_id"] = _dataset_snapshot_id(edited)
+        edited["snapshot_id"] = backtest_dataset_snapshot_content_id(edited)
         rejected = verify_backtest_dataset_snapshot_replay(
             edited, store_root=state.db.path.parent
         )
