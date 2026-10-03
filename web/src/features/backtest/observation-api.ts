@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, postJson } from '../../shared/api/client';
+import { apiClient, postJson, putJson } from '../../shared/api/client';
 import type {
   ObservationCommand,
   ResearchObservation,
@@ -48,6 +48,43 @@ export function useObservationCommand() {
         observation,
         ...(current ?? []).filter((item) => item.id !== observation.id),
       ]);
+      void client.invalidateQueries({ queryKey: key });
+    },
+  });
+}
+
+export function useConfigureObservationAutomation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (command: {
+      observationId: string;
+      sourceResultId: number;
+      enabled: boolean;
+      expectedGeneration: string | null;
+    }) => {
+      const url = `${path}/${encodeURIComponent(command.observationId)}`;
+      await putJson(`${url}/automation`, {
+        enabled: command.enabled,
+        expected_generation: command.expectedGeneration,
+      });
+      const observation = await apiClient<ResearchObservation>(url);
+      if (
+        observation.id !== command.observationId ||
+        observation.source_backtest_result_id !== command.sourceResultId
+      )
+        throw new Error('observation_automation_response_mismatch');
+      return observation;
+    },
+    retry: false,
+    onSuccess: (observation) => {
+      const key = queryKey(observation.source_backtest_result_id);
+      client.setQueryData<ResearchObservation[]>(key, (current) =>
+        current
+          ? current.map((item) =>
+              item.id === observation.id ? observation : item,
+            )
+          : [observation],
+      );
       void client.invalidateQueries({ queryKey: key });
     },
   });

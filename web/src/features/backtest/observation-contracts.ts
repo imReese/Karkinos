@@ -108,8 +108,23 @@ export type ResearchObservation = {
     health_policy?: ObservationHealthPolicy | null;
   };
   health_decision?: ObservationHealthDecision | null;
+  automation?: ObservationAutomation | null;
   publications: ObservationPublication[];
   outcomes: ObservationOutcome[];
+};
+
+export type ObservationAutomation = {
+  observation_id: string;
+  enabled: boolean;
+  generation: string | null;
+  status: 'disabled' | 'paused' | 'waiting' | 'ready' | 'completed' | 'blocked';
+  last_checked_at: string | null;
+  last_attempt_at: string | null;
+  last_blocker: { code: string } | null;
+  dataset_id: string | null;
+  decision_session: string | null;
+  unreadable_candidate_dataset_ids?: string[];
+  dataset_discovery_complete?: boolean | null;
 };
 
 export type StartObservation = {
