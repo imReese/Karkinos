@@ -180,6 +180,7 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
             bt_request = _validate_backtest_strategy_params(
                 BacktestRequest(
                     dataset_id=request.dataset_id,
+                    corporate_action_mode=request.corporate_action_mode,
                     start_date=request.start_date,
                     end_date=request.end_date,
                     initial_cash=request.initial_cash,

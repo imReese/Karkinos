@@ -144,6 +144,7 @@ export function ParameterComparePanel({
   endDate,
   initialCash,
   costAssumptions,
+  corporateActionMode = 'price_only',
   strategy,
   parameterSchema,
   assets,
@@ -154,6 +155,7 @@ export function ParameterComparePanel({
   endDate: string;
   initialCash: string;
   costAssumptions?: BacktestRunRequest['cost_assumptions'];
+  corporateActionMode?: BacktestRunRequest['corporate_action_mode'];
   strategy: string;
   parameterSchema: StrategyParameterSchema[];
   assets?: BacktestRunRequest['assets'];
@@ -232,6 +234,7 @@ export function ParameterComparePanel({
       const result = await compare.mutateAsync({
         ...(datasetId ? { dataset_id: datasetId } : {}),
         ...(costAssumptions ? { cost_assumptions: costAssumptions } : {}),
+        corporate_action_mode: corporateActionMode,
         start_date: startDate,
         end_date: endDate,
         initial_cash: Number(initialCash),

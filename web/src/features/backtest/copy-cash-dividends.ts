@@ -12,8 +12,6 @@ export const cashDividendCopy = {
       '税前现金模式按登记日持仓确认分红，除息日计入应收与权益，派息日才增加可用现金。仅支持日期完整的已实施现金分红；送转、缺失日期或未实施记录会阻止运行。',
     reportedDetail:
       '按登记日持仓核算税前现金与整股送转；新增股份在除权日计入持仓，上市前不可卖。只支持条款完整的已实施分配，零碎股份会阻止运行。策略特征仍使用未复权价格，除权日缺少官方涨跌停参考价时阻止交易。',
-    advancedDisabled:
-      '参数扫描与策略对比目前仅支持价格模式。请切换为“仅价格”后使用，避免混用收益口径。',
     title: '本次税前现金分红核算',
     reportedTitle: '本次现金分红与送转核算',
     shares: '新增股份合计（股）',
@@ -60,8 +58,6 @@ export const cashDividendCopy = {
       'Gross cash mode uses record-date holdings, recognizes receivables and equity on the ex-date, and makes cash available on the pay date. Only implemented cash distributions with complete dates are supported; bonus shares, missing dates or unimplemented records block the run.',
     reportedDetail:
       'Record-date holdings determine gross cash and whole bonus shares. Shares enter holdings on the ex-date and cannot be sold before listing. Only implemented distributions with complete terms are supported; fractional awards block the run. Strategy features still use unadjusted prices, and ex-date trades are blocked without an official price-limit reference.',
-    advancedDisabled:
-      'Parameter sweeps and comparisons currently support price-only returns. Select “Price only” before using them.',
     title: 'Cash dividend accounting for this run',
     reportedTitle: 'Cash and bonus-share accounting for this run',
     shares: 'Total shares awarded (shares)',

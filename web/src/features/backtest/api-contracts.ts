@@ -427,16 +427,11 @@ export type BacktestAttributionPreviewResponse = {
   limitations: string[];
 };
 
-export type BacktestSweepRequest = {
-  cost_assumptions?: BacktestCostAssumptions;
-  dataset_id?: string;
-  start_date: string;
-  end_date: string;
-  initial_cash: number;
-  strategy: string;
-  params?: Record<string, number | string | boolean | null>;
+export type BacktestSweepRequest = Omit<
+  BacktestRunRequest,
+  'short_period' | 'long_period'
+> & {
   param_grid: Record<string, Array<number | string | boolean | null>>;
-  assets?: Array<{ symbol: string; asset_class: string }>;
   rank_by?: string;
   max_combinations?: number;
 };
@@ -466,6 +461,7 @@ export type BacktestCompareRunRequest = {
 export type BacktestCompareRequest = {
   cost_assumptions?: BacktestCostAssumptions;
   dataset_id?: string;
+  corporate_action_mode?: CorporateActionMode;
   start_date: string;
   end_date: string;
   initial_cash: number;

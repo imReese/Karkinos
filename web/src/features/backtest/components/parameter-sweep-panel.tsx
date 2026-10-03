@@ -87,6 +87,7 @@ export function ParameterSweepPanel({
   endDate,
   initialCash,
   costAssumptions,
+  corporateActionMode = 'price_only',
   strategy,
   parameterSchema,
   parameterValues,
@@ -98,6 +99,7 @@ export function ParameterSweepPanel({
   endDate: string;
   initialCash: string;
   costAssumptions?: BacktestRunRequest['cost_assumptions'];
+  corporateActionMode?: BacktestRunRequest['corporate_action_mode'];
   strategy: string;
   parameterSchema: StrategyParameterSchema[];
   parameterValues: Record<string, string>;
@@ -160,6 +162,7 @@ export function ParameterSweepPanel({
       const result = await sweep.mutateAsync({
         ...(datasetId ? { dataset_id: datasetId } : {}),
         ...(costAssumptions ? { cost_assumptions: costAssumptions } : {}),
+        corporate_action_mode: corporateActionMode,
         start_date: startDate,
         end_date: endDate,
         initial_cash: Number(initialCash),

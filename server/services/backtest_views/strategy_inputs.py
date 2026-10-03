@@ -29,7 +29,9 @@ def backtest_metrics_from_payload(payload: dict[str, Any]) -> BacktestMetrics:
         initial_cash=payload["initial_cash"],
         final_equity=payload["final_equity"],
         total_return=payload["total_return"],
-        annual_return=payload.get("annual_return", 0),
+        annual_return=payload.get(
+            "annual_return", metrics_json.get("annual_return", 0)
+        ),
         sharpe=payload["sharpe"],
         sortino=payload.get("sortino", 0),
         max_drawdown=payload.get("max_drawdown", payload.get("max_dd", 0)),
