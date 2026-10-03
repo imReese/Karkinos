@@ -55,9 +55,12 @@ Independent target-only research observation supports explicit start, publish /
 measure, and pause commands. It freezes a saved dual-MA or Formula candidate,
 publishes only the latest closed session from a verified immutable Dataset, and
 measures exact future price endpoints in a separate observation history. It
-does not simulate fills or account returns. Automatic observation scheduling,
-deterministic health feedback, and the subsequent qualification linkage remain
-delivery work. Do not expand this work into live trading, broker adapters,
+does not simulate fills or account returns. An optional rule frozen at start
+monitors subsequent raw-price responses during explicit measurement, with a
+configured minimum sample count and threshold. It can report a breach or pause
+that observation; missing or unresolved evidence cannot trigger a performance
+pause. Automatic observation scheduling and the subsequent qualification linkage
+remain delivery work. Do not expand this work into live trading, broker adapters,
 capital authorization or a general workflow framework.
 
 ## Frozen

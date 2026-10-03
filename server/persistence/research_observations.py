@@ -10,6 +10,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from server.contracts.content_identity import content_fingerprint
 from server.persistence.connection import connect_sqlite
 
 
@@ -161,6 +162,7 @@ class ResearchObservationsRepository:
         publication: Mapping[str, Any] | None = None,
         outcomes: Sequence[Mapping[str, Any]] = (),
         blocker: Mapping[str, Any] | None = None,
+        health_decision: Mapping[str, Any] | None = None,
         publication_deadline: datetime | None = None,
         computation_not_before: datetime | None = None,
     ) -> dict[str, Any]:
@@ -171,6 +173,9 @@ class ResearchObservationsRepository:
             if prior is not None:
                 return prior
             row = self._require_version(conn, observation_id, expected_version)
+            decision = self._validated_health_decision(
+                row, health_decision, expected_version, publication
+            )
             if row["lifecycle"] != "active" and publication is not None:
                 raise ValueError("research_observation_paused")
             now = self._locked_clock(conn, row)
@@ -192,8 +197,15 @@ class ResearchObservationsRepository:
                 self._insert_outcome(conn, observation_id, outcome, now)
             conn.execute(
                 """UPDATE research_observations
-                SET version=version+1, last_blocker_json=? WHERE id=?""",
-                (_json(dict(blocker)) if blocker is not None else None, observation_id),
+                SET version=version+1, last_blocker_json=?, lifecycle=? WHERE id=?""",
+                (
+                    _json(dict(blocker)) if blocker is not None else None,
+                    "paused"
+                    if decision is not None
+                    and decision["action"] == "pause_observation"
+                    else row["lifecycle"],
+                    observation_id,
+                ),
             )
             return self._record_result(
                 conn,
@@ -210,6 +222,7 @@ class ResearchObservationsRepository:
                     }
                     for item in outcomes
                 ],
+                health_decision=decision,
             )
 
     def pause(
@@ -274,6 +287,47 @@ class ResearchObservationsRepository:
         return row
 
     @staticmethod
+    def _validated_health_decision(
+        row: sqlite3.Row,
+        decision: Mapping[str, Any] | None,
+        expected_version: int,
+        publication: Mapping[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if decision is None:
+            return None
+        policy = json.loads(row["policy_json"])
+        code_fingerprint = json.loads(row["code_binding_json"]).get("fingerprint")
+        bindings = {
+            "observation_id": row["id"],
+            "input_version": expected_version,
+            "source_fingerprint": content_fingerprint(json.loads(row["source_json"])),
+            "code_fingerprint": code_fingerprint,
+            "policy_fingerprint": content_fingerprint(policy),
+        }
+        if (
+            not isinstance(decision, Mapping)
+            or type(decision.get("input_version")) is not int
+            or not isinstance(code_fingerprint, str)
+            or not code_fingerprint
+            or any(decision.get(key) != value for key, value in bindings.items())
+            or decision.get("action") not in ("none", "pause_observation")
+        ):
+            raise ValueError("research_observation_health_decision_invalid")
+        health_policy = policy.get("health_policy")
+        if decision["action"] == "pause_observation" and (
+            publication is not None
+            or not isinstance(health_policy, Mapping)
+            or health_policy.get("mode") != "pause_on_breach"
+            or decision.get("status") != "threshold_breached"
+            or decision.get("data_available") is not True
+        ):
+            raise ValueError("research_observation_health_decision_invalid")
+        try:
+            return json.loads(_json(dict(decision)))
+        except (TypeError, ValueError):
+            raise ValueError("research_observation_health_decision_invalid") from None
+
+    @staticmethod
     def _receipt(
         conn: sqlite3.Connection,
         observation_id: str,
@@ -305,7 +359,8 @@ class ResearchObservationsRepository:
         completed_at: str,
         *,
         publication_id: str | None = None,
-        outcome_keys: list[dict[str, Any]] | None = None,
+        outcome_keys: Sequence[dict[str, Any]] | None = None,
+        health_decision: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         row = self._row(conn, observation_id)
         assert row is not None
@@ -320,6 +375,8 @@ class ResearchObservationsRepository:
             "publication_id": publication_id,
             "outcome_keys": outcome_keys or [],
         }
+        if health_decision is not None:
+            result["health_decision"] = dict(health_decision)
         conn.execute(
             """INSERT INTO research_observation_operations
             (observation_id, request_id, kind, request_fingerprint, result_json,
@@ -341,6 +398,18 @@ class ResearchObservationsRepository:
         for field in ("source", "code_binding", "policy", "universe", "last_blocker"):
             value = result.pop(f"{field}_json")
             result[field] = json.loads(value) if value is not None else None
+        latest = conn.execute(
+            "SELECT result_json FROM research_observation_operations "
+            "WHERE observation_id=? AND kind='advance' "
+            "ORDER BY CAST(json_extract(result_json, '$.version') AS INTEGER) DESC "
+            "LIMIT 1",
+            (row["id"],),
+        ).fetchone()
+        result["health_decision"] = (
+            json.loads(latest["result_json"]).get("health_decision")
+            if latest is not None
+            else None
+        )
         for key, sql in (
             (
                 "publications",

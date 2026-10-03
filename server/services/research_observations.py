@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -22,6 +22,10 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 
+from analytics.forward_observation_health import (
+    evaluate_forward_observation_health,
+    validate_forward_observation_health_policy,
+)
 from analytics.forward_target_outcomes import (
     FORWARD_TARGET_OUTCOME_POLICY_ID,
     evaluate_forward_target_outcome,
@@ -33,7 +37,7 @@ from domain.research_targets import (
     build_research_target_weights,
 )
 from risk.target_limits import TARGET_LIMITS_POLICY_ID, evaluate_target_limits
-from server.ai_runtime.contracts import content_fingerprint
+from server.contracts.content_identity import content_fingerprint
 from server.persistence.research_observations import ResearchObservationsRepository
 from server.services.research_observation_forecasts import (
     FORECAST_POLICY_ID,
@@ -79,6 +83,7 @@ def observation_code_binding() -> dict[str, Any]:
         "domain/research_targets.py",
         "risk/target_limits.py",
         "analytics/forward_target_outcomes.py",
+        "analytics/forward_observation_health.py",
         "analytics/dataset_snapshot.py",
     )
     hashes = {
@@ -111,6 +116,7 @@ class ResearchObservationService:
         horizon_sessions: int,
         max_symbol_weight: Decimal,
         max_gross_weight: Decimal,
+        health_policy: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not 1 <= horizon_sessions <= 60 or any(
             not value.is_finite() or not 0 < value <= 1
@@ -123,6 +129,10 @@ class ResearchObservationService:
             "max_symbol_weight": str(max_symbol_weight),
             "max_gross_weight": str(max_gross_weight),
         }
+        if health_policy is not None:
+            request["health_policy"] = validate_forward_observation_health_policy(
+                health_policy
+            )
         identity = str(
             uuid5(NAMESPACE_URL, f"karkinos:research-observation:{request_id}")
         )
@@ -202,10 +212,13 @@ class ResearchObservationService:
         publication = None
         deadline = None
         blocker = None
+        market_as_of = None
+        data_available = False
         try:
             if observation["code_binding"] != observation_code_binding():
                 raise ValueError("observation_code_changed")
             calendar = self._calendar(date.fromisoformat(source["start_date"]), now)
+            market_as_of = latest_closed_session(calendar, now=now)
             result = read_research_observation_dataset(
                 self.objects,
                 dataset_id,
@@ -220,10 +233,11 @@ class ResearchObservationService:
             )
             if len(result.bars) > policy["max_dataset_rows"]:
                 raise ValueError("observation_dataset_budget_exceeded")
-            decision_session = latest_closed_session(calendar, now=now)
+            decision_session = market_as_of
             outcomes = self._outcomes(
                 observation, result, dataset_id, now, decision_session
             )
+            data_available = True
             if observation["lifecycle"] == "paused":
                 blocker = {"code": "observation_publication_paused"}
             elif any(
@@ -288,6 +302,28 @@ class ResearchObservationService:
                 ]
         except ValueError as exc:
             blocker = {"code": str(exc)}
+        health_decision = None
+        if policy.get("health_policy") is not None:
+            health_decision = evaluate_forward_observation_health(
+                publications=observation["publications"],
+                outcomes=[*observation["outcomes"], *outcomes],
+                policy=policy["health_policy"],
+                evaluated_at=now,
+                market_as_of=market_as_of,
+                data_available=data_available,
+            )
+            health_decision.update(
+                observation_id=observation_id,
+                input_version=expected_version,
+                source_fingerprint=content_fingerprint(source),
+                code_fingerprint=observation["code_binding"]["fingerprint"],
+                policy_fingerprint=content_fingerprint(policy),
+                decision_actor="configured_rule",
+            )
+            if health_decision["action"] == "pause_observation":
+                publication = None
+                deadline = None
+                blocker = {"code": "observation_health_rule_paused"}
         return self.repository.advance(
             observation_id=observation_id,
             request_id=request_id,
@@ -298,6 +334,7 @@ class ResearchObservationService:
             blocker=blocker,
             publication_deadline=deadline,
             computation_not_before=now,
+            health_decision=health_decision,
         )
 
     def pause(
