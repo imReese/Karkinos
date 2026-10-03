@@ -258,8 +258,17 @@ cleanup_failed_start() {
         echo "Error: failed startup cleanup was incomplete; runtime records retained." >&2
 }
 
+report_failed_start() {
+    local log="$1"
+    local previous_bytes="$2"
+
+    echo "Startup failed. Log: ${log}" >&2
+    # Keep the complete log, but report only output from this startup attempt.
+    tail -c "+$((previous_bytes + 1))" "${log}" | tail -n 40 >&2 || true
+}
+
 start_dev() {
-    local current_branch python log pid
+    local current_branch python log pid log_start
 
     current_branch="$(
         git -C "${REPO_ROOT}" symbolic-ref \
@@ -295,6 +304,10 @@ start_dev() {
     ) || die "development preflight failed; development server was not started"
 
     log="${REPO_ROOT}/logs/dev-server.log"
+    log_start=0
+    if [[ -f "${log}" ]]; then
+        log_start="$(wc -c <"${log}")"
+    fi
 
     (
         cd "${REPO_ROOT}"
@@ -321,8 +334,7 @@ start_dev() {
         "${pid}"; then
 
         cleanup_failed_start
-        echo "Startup failed. Log: ${log}" >&2
-        tail -n 40 "${log}" >&2 || true
+        report_failed_start "${log}" "${log_start}"
         exit 1
     fi
 
@@ -332,8 +344,7 @@ start_dev() {
         "${pid}"; then
 
         cleanup_failed_start
-        echo "Startup failed. Log: ${log}" >&2
-        tail -n 40 "${log}" >&2 || true
+        report_failed_start "${log}" "${log_start}"
         exit 1
     fi
 
@@ -358,7 +369,7 @@ EOF
 
 start_worktree_branch() {
     local branch="$1"
-    local python log pid mode supports_preparation
+    local python log pid mode supports_preparation log_start
 
     prepare_worktree "${branch}"
 
@@ -416,6 +427,11 @@ start_worktree_branch() {
         ) || die "database preparation failed; server was not started"
     fi
 
+    log_start=0
+    if [[ -f "${log}" ]]; then
+        log_start="$(wc -c <"${log}")"
+    fi
+
     (
         cd "${SOURCE_ROOT}"
         exec nohup env \
@@ -450,8 +466,7 @@ start_worktree_branch() {
         "${pid}"; then
 
         cleanup_failed_start
-        echo "Startup failed. Log: ${log}" >&2
-        tail -n 40 "${log}" >&2 || true
+        report_failed_start "${log}" "${log_start}"
         exit 1
     fi
 

@@ -586,8 +586,39 @@ def test_stop_reports_missing_manager_without_claiming_ports_are_free(
 ) -> None:
     result = launcher.run("stop_server.sh")
     assert result.returncode == 0
-    assert "No managed Karkinos PID record" in result.stdout
-    assert "untracked processes may still be running" in result.stdout
+    assert "No managed Karkinos PID record; nothing to stop." in result.stdout
+    assert "untracked processes" not in result.stdout
+
+
+def test_stop_removes_exited_manager_records_without_signaling_unrelated_processes(
+    launcher: SimpleNamespace,
+) -> None:
+    exited = subprocess.Popen([sys.executable, "-c", "pass"])
+    exited.wait(timeout=10)
+    unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    run_dir = launcher.repo / ".run"
+    run_dir.mkdir(parents=True)
+    records = {
+        "server.pid": str(exited.pid),
+        "server.start": "old identity",
+        "server.owner": "dev:run_dev.py",
+        "server.meta": "mode=development\n",
+    }
+    for name, value in records.items():
+        (run_dir / name).write_text(value, encoding="utf-8")
+    try:
+        result = launcher.run("stop_server.sh")
+        assert result.returncode == 0, result.stderr
+        assert (
+            f"Recorded Karkinos PID {exited.pid} has exited; removing stale runtime state."
+            in result.stdout
+        )
+        assert "untracked child processes" not in result.stdout
+        assert unrelated.poll() is None
+        assert not any((run_dir / name).exists() for name in records)
+    finally:
+        unrelated.terminate()
+        unrelated.wait(timeout=10)
 
 
 @pytest.mark.parametrize("branch", ["main", "dev"])
@@ -595,6 +626,11 @@ def test_failed_start_waits_for_runtime_cleanup(
     launcher: SimpleNamespace, branch: str
 ) -> None:
     marker = launcher.repo / "shutdown-complete"
+    log = launcher.repo / "logs" / f"{branch}-server.log"
+    log.parent.mkdir()
+    old_output = "previous startup error that must not describe this attempt"
+    # A partial final line also must not leak across the byte-offset boundary.
+    log.write_text(old_output, encoding="utf-8")
     result = launcher.run(
         "start_server.sh",
         branch,
@@ -607,6 +643,9 @@ def test_failed_start_waits_for_runtime_cleanup(
     )
     assert result.returncode == 1
     assert "Startup failed" in result.stderr
+    assert "fake runtime ready pid=" in result.stderr
+    assert old_output not in result.stderr
+    assert log.read_text(encoding="utf-8").startswith(old_output)
     assert marker.is_file(), "runtime was killed before its two-second cleanup finished"
     with pytest.raises(ProcessLookupError):
         os.kill(int(marker.read_text()), 0)
