@@ -97,14 +97,13 @@ export function DecisionCockpitContent({
   );
   return (
     <section
-      className="app-workbench-route min-w-0 space-y-4 sm:space-y-5"
+      className="app-workbench-route min-w-0 space-y-4 sm:space-y-5 pb-8"
       data-workbench-route="decision"
       data-workbench-width="wide"
     >
       <WorkspaceHeader
         eyebrow={labels.kicker}
         title={labels.title}
-        description={labels.subtitle}
         context={
           today.data
             ? `${today.data.decision_date} · ${formatPublicStatus(
@@ -166,26 +165,6 @@ export function DecisionCockpitContent({
         error={signalActions.isError || signalJournal.isError}
       />
 
-      <details
-        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
-        data-testid="decision-daily-reports-disclosure"
-      >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
-          <span>
-            {locale === 'zh'
-              ? '每日决策记录与复盘'
-              : 'Daily decision history and review'}
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-          />
-        </summary>
-        <div className="py-4">
-          <DailyDecisionReportPanel locale={locale} />
-        </div>
-      </details>
-
       <div
         className={
           Boolean(decisionNextActionGuide(lanes, labels, locale))
@@ -212,16 +191,33 @@ export function DecisionCockpitContent({
           <span>
             {locale === 'zh' ? '决策证据登记' : 'Decision evidence register'}
           </span>
-          <span className="flex shrink-0 items-center gap-2 text-xs font-normal text-[var(--app-text-secondary)]">
-            <span>{locale === 'zh' ? '按需展开' : 'Expand on demand'}</span>
-            <ChevronDown
-              aria-hidden="true"
-              className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-            />
-          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+          />
         </summary>
         <div className="border-t border-[var(--app-divider)] py-4">
           <DecisionQualityPanel />
+        </div>
+      </details>
+
+      <details
+        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
+        data-testid="decision-daily-reports-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+          <span>
+            {locale === 'zh'
+              ? '每日决策记录与复盘'
+              : 'Daily decision history and review'}
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+          />
+        </summary>
+        <div className="border-t border-[var(--app-divider)] py-4">
+          <DailyDecisionReportPanel locale={locale} />
         </div>
       </details>
 
@@ -232,10 +228,7 @@ export function DecisionCockpitContent({
         >
           <summary className="flex min-h-16 cursor-pointer list-none items-start justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
             <span className="min-w-0">
-              <span className="app-product-mark block">
-                {labels.tradingPlanKicker}
-              </span>
-              <span className="mt-1 block text-sm font-semibold text-[var(--app-text)]">
+              <span className="block text-sm font-semibold text-[var(--app-text)]">
                 {labels.tradingPlanTitle}
               </span>
               <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
@@ -382,15 +375,16 @@ function DecisionAutomationDisclosure({
       className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
       data-testid="decision-automation-disclosure"
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
         <span>
           {locale === 'zh'
             ? '自动化与受控执行证据'
             : 'Automation and controlled execution evidence'}
         </span>
-        <span className="text-xs font-normal text-[var(--app-text-secondary)]">
-          {locale === 'zh' ? '按需展开' : 'Expand on demand'}
-        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+        />
       </summary>
       <div className="py-4">
         <AutomationCockpitPanel

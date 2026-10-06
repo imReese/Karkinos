@@ -46,6 +46,8 @@ export function decisionWorkflowTarget(
   switch (taskId) {
     case 'data_refresh':
       return { href: '/market', label: labels.workflowOpenMarket };
+    case 'account_truth':
+      return { href: '/account-truth', label: labels.workflowOpenAccountTruth };
     case 'risk_review':
       return { href: '/risk', label: labels.workflowOpenRisk };
     case 'strategy_evidence':
@@ -134,21 +136,67 @@ export function decisionNextActionGuide(
     ? labels.nextActionRiskTitle
     : labels.nextActionDefaultTitle(taskLabel);
 
+  const blockingReasons = gateBlockingReasonLabels(
+    task.blocking_reasons,
+    locale,
+  );
+  const specificBlockingReasons = blockingReasons.filter(
+    (b) => b !== '待人工复核说明' && b !== 'Pending manual review notes',
+  );
+  const finalBlockingReasons =
+    specificBlockingReasons.length > 0
+      ? specificBlockingReasons
+      : blockingReasons;
+
+  const requiredActionLabels = gateRequirementLabels(
+    task.required_actions,
+    labels,
+  );
+  const specificActionLabels = requiredActionLabels.filter(
+    (a) => a !== '待人工复核项' && a !== 'Pending manual review items',
+  );
+  const finalActionLabels =
+    specificActionLabels.length > 0
+      ? specificActionLabels
+      : requiredActionLabels;
+
+  const reasonText = isRiskGateNext
+    ? labels.nextActionRiskDetail(
+        lane.summary.candidate_count,
+        lane.summary.ready_for_manual_confirmation_count,
+      )
+    : finalBlockingReasons.length > 0 && finalActionLabels.length > 0
+      ? finalBlockingReasons.join(' · ')
+      : labels.nextActionDefaultDetail(actionLabel);
+
+  const unblockConditionText =
+    finalActionLabels.length > 0 ? finalActionLabels.join(' · ') : actionLabel;
+
+  const isBlockedOrDegraded =
+    task.status === 'blocked' ||
+    task.status === 'degraded' ||
+    task.status === 'review_required';
+
+  const noteText =
+    lane.summary.candidate_count >
+    lane.summary.ready_for_manual_confirmation_count
+      ? labels.nextActionCandidatePoolNote
+      : lane.summary.ready_for_manual_confirmation_count > 0
+        ? labels.nextActionManualReadyNote
+        : isBlockedOrDegraded && task.blocking_reasons.length > 0
+          ? formatPublicNote(task.blocking_reasons[0], locale)
+          : isBlockedOrDegraded
+            ? locale === 'zh'
+              ? '存在待复核的阻断项，暂无就绪动作'
+              : 'Blockers present, no actions ready'
+            : labels.nextActionManualReadyNote;
+
   return {
     title,
-    reason: isRiskGateNext
-      ? labels.nextActionRiskDetail(
-          lane.summary.candidate_count,
-          lane.summary.ready_for_manual_confirmation_count,
-        )
-      : labels.nextActionDefaultDetail(actionLabel),
+    reason: reasonText,
     status: formatPublicStatus(task.status, locale),
-    unblockCondition: actionLabel,
-    note:
-      lane.summary.candidate_count >
-      lane.summary.ready_for_manual_confirmation_count
-        ? labels.nextActionCandidatePoolNote
-        : labels.nextActionManualReadyNote,
+    unblockCondition: unblockConditionText,
+    note: noteText,
     cta: target ? labels.workflowOpenSurfaceLabel(target.label, title) : null,
     href: target?.href ?? null,
   };

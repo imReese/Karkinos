@@ -397,3 +397,12 @@ test('formats strategy contribution blocker codes and parameterized items', () =
     '存在未记账成交凭证',
   );
 });
+
+test('localizes parameterized suffix codes and statuses in public labels', () => {
+  expect(formatPublicCode('account_truth_gate_not_pass: degraded', 'zh')).toBe(
+    '账户事实门禁未通过: 降级',
+  );
+  expect(formatPublicCode('account_truth_gate_not_pass: degraded', 'en')).toBe(
+    'Account Truth gate has not passed: Degraded',
+  );
+});

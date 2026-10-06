@@ -97,6 +97,7 @@ export const decisionCopy = {
     workflowTaskLabel: (code: string) => formatPublicCode(code, 'en'),
     workflowActionLabel: (code: string) => formatPublicCode(code, 'en'),
     workflowOpenMarket: 'Open Market data',
+    workflowOpenAccountTruth: 'Open Account Truth',
     workflowOpenBacktest: 'Open Strategy Backtest',
     workflowOpenRisk: 'Open Risk center',
     workflowOpenTrading: 'Open trading review',
@@ -108,7 +109,7 @@ export const decisionCopy = {
       `${candidates} candidates await risk checks; ${manualReady} are currently ready for manual confirmation. Only passed candidates can proceed to manual confirmation or simulation review.`,
     nextActionDefaultTitle: (task: string) => `Resolve ${task} first`,
     nextActionDefaultDetail: (action: string) =>
-      `Complete this action before reviewing the candidate pool: ${action}.`,
+      `Complete ${action} before reviewing the candidate pool.`,
     nextActionCandidatePoolNote: 'Candidate pool is not an order list',
     nextActionManualReadyNote: 'Manual confirmations are ready for review',
     readyCount: (count: number) => `${count} ready`,
@@ -277,6 +278,7 @@ export const decisionCopy = {
     workflowTaskLabel: (code: string) => formatPublicCode(code, 'zh'),
     workflowActionLabel: (code: string) => formatPublicCode(code, 'zh'),
     workflowOpenMarket: '打开行情中心',
+    workflowOpenAccountTruth: '打开账户事实',
     workflowOpenBacktest: '打开策略回测',
     workflowOpenRisk: '打开风控中心',
     workflowOpenTrading: '打开交易复核',
@@ -288,7 +290,7 @@ export const decisionCopy = {
       `${candidates} 个候选等待风控检查，当前 ${manualReady} 个可人工确认。通过风控后才可进入人工确认或模拟复核。`,
     nextActionDefaultTitle: (task: string) => `先处理${task}`,
     nextActionDefaultDetail: (action: string) =>
-      `先完成这个动作，再查看候选池：${action}。`,
+      `先完成【${action}】，解除阻断后再推进候选池复核。`,
     nextActionCandidatePoolNote: '候选池不是待下单清单',
     nextActionManualReadyNote: '人工确认已可复核',
     readyCount: (count: number) => `${count} 个就绪`,

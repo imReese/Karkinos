@@ -64,17 +64,29 @@ export function decisionGateMatrixItems(
         task.required_actions,
         labels,
       );
+      const specificBlockers = blockers.filter(
+        (b) => b !== '待人工复核说明' && b !== 'Pending manual review notes',
+      );
+      const finalBlockers =
+        specificBlockers.length > 0 ? specificBlockers : blockers;
+
+      const deduplicatedActions = requiredActions.filter(
+        (action) => !finalBlockers.includes(action),
+      );
+      const unblockCondition =
+        deduplicatedActions.length > 0
+          ? deduplicatedActions.join(' · ')
+          : requiredActions.length > 0 && finalBlockers.length === 0
+            ? requiredActions.join(' · ')
+            : undefined;
       return {
         id: gateId,
         gate: labels.workflowTaskLabel(gateId),
         state: decisionGateState(task.status),
         stateLabel,
-        reason: blockers.join(' · ') || stateLabel,
-        evidence: lane
-          ? `${locale === 'zh' ? '工作流投影' : 'Workflow projection'} · ${formatTimestamp(lane.generated_at)}`
-          : missingEvidence,
-        unblockCondition:
-          requiredActions.length > 0 ? requiredActions.join(' · ') : undefined,
+        reason: finalBlockers.join(' · ') || stateLabel,
+        evidence: lane ? formatTimestamp(lane.generated_at) : missingEvidence,
+        unblockCondition,
       };
     }
 
@@ -94,17 +106,29 @@ export function decisionGateMatrixItems(
         fallback.blocking_reasons ?? [],
         locale,
       );
+      const specificBlockers = blockers.filter(
+        (b) => b !== '待人工复核说明' && b !== 'Pending manual review notes',
+      );
+      const finalBlockers =
+        specificBlockers.length > 0 ? specificBlockers : blockers;
+
+      const deduplicatedActions = requiredActions.filter(
+        (action) => !finalBlockers.includes(action),
+      );
+      const unblockCondition =
+        deduplicatedActions.length > 0
+          ? deduplicatedActions.join(' · ')
+          : requiredActions.length > 0 && finalBlockers.length === 0
+            ? requiredActions.join(' · ')
+            : undefined;
       return {
         id: gateId,
         gate: labels.workflowTaskLabel(gateId),
         state: decisionGateState(fallback.gate_status),
         stateLabel,
-        reason: blockers.join(' · ') || stateLabel,
-        evidence: lane
-          ? `${locale === 'zh' ? '决策摘要' : 'Decision summary'} · ${formatTimestamp(lane.generated_at)}`
-          : missingEvidence,
-        unblockCondition:
-          requiredActions.length > 0 ? requiredActions.join(' · ') : undefined,
+        reason: finalBlockers.join(' · ') || stateLabel,
+        evidence: lane ? formatTimestamp(lane.generated_at) : missingEvidence,
+        unblockCondition,
       };
     }
 

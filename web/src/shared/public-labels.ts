@@ -93,12 +93,16 @@ export function formatPublicCode(
   }
   if (key.includes(':')) {
     const colonIndex = key.indexOf(':');
-    const prefix = key.slice(0, colonIndex);
-    const param = key.slice(colonIndex + 1);
+    const prefix = key.slice(0, colonIndex).trim();
+    const param = key.slice(colonIndex + 1).trim();
     const prefixMatch =
       CODE_LABELS[locale][prefix] ?? STATUS_LABELS[locale][prefix];
     if (prefixMatch) {
-      return `${prefixMatch}: ${param}`;
+      const translatedParam =
+        STATUS_LABELS[locale][param] ?? CODE_LABELS[locale][param];
+      return translatedParam
+        ? `${prefixMatch}: ${translatedParam}`
+        : `${prefixMatch}: ${param}`;
     }
   }
   return fallbackLabel(key, locale, 'code');
@@ -121,14 +125,20 @@ export function formatPublicNote(
   }
   if (key.includes(':')) {
     const colonIndex = key.indexOf(':');
-    const prefix = key.slice(0, colonIndex);
-    const param = key.slice(colonIndex + 1);
+    const prefix = key.slice(0, colonIndex).trim();
+    const param = key.slice(colonIndex + 1).trim();
     const prefixMatch =
       NOTE_LABELS[locale][prefix] ??
       CODE_LABELS[locale][prefix] ??
       STATUS_LABELS[locale][prefix];
     if (prefixMatch) {
-      return `${prefixMatch}: ${param}`;
+      const translatedParam =
+        STATUS_LABELS[locale][param] ??
+        CODE_LABELS[locale][param] ??
+        NOTE_LABELS[locale][param];
+      return translatedParam
+        ? `${prefixMatch}: ${translatedParam}`
+        : `${prefixMatch}: ${param}`;
     }
   }
   return fallbackLabel(key, locale, 'note');

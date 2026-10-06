@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { ExceptionList, StatusBadge } from '../../../shared/ui/workbench';
 import { useCopy } from '../../../shared/i18n/context';
 import {
@@ -35,9 +36,20 @@ export function DecisionNextActionGuidePanel({
       data-testid="decision-next-action-guide"
       className="min-w-0 space-y-2"
     >
-      <h2 className="app-type-section-title text-[var(--app-text)]">
-        {labels.nextActionKicker}
-      </h2>
+      <div className="flex min-h-11 items-center justify-between gap-3 border-y border-[var(--app-divider)] py-2.5">
+        <h2 className="text-sm font-semibold text-[var(--app-text)]">
+          {labels.nextActionKicker}
+        </h2>
+        <StatusBadge
+          tone={
+            guide.status === '通过' || guide.status === 'Passed'
+              ? 'success'
+              : 'warning'
+          }
+        >
+          {guide.status}
+        </StatusBadge>
+      </div>
       <ExceptionList
         ariaLabel={labels.nextActionKicker}
         density="compact"
@@ -61,6 +73,7 @@ export function DecisionNextActionGuidePanel({
                 <a
                   className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
                   href={guide.href}
+                  onClick={(e) => handleClientNavigation(e, guide.href!)}
                 >
                   {guide.cta}
                 </a>

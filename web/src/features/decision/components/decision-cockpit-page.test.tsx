@@ -6122,3 +6122,54 @@ test('keeps decision cockpit candidates accessible on narrow responsive layouts'
     expect(evidenceLine.textContent).toBeTruthy();
   }
 });
+
+test('directs to account-truth workspace when account-truth gate is blocked', async () => {
+  const blockedAccountTruthToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    requires_manual_confirmation: false,
+    summary: {
+      ...dailyDecision.summary,
+      candidate_count: 0,
+      ready_for_manual_confirmation_count: 0,
+      workflow_tasks: [
+        {
+          id: 'account_truth',
+          priority: 5,
+          status: 'blocked',
+          title: 'Account truth',
+          description: 'Account truth gate blocked by degraded snapshot.',
+          required_actions: [
+            'manual_review_items',
+            'account_truth_gate_not_pass: degraded',
+          ],
+          blocking_reasons: [
+            'manual_review_notes',
+            'account_truth_gate_not_pass: degraded',
+          ],
+          evidence: { gate_status: 'degraded' },
+        },
+      ],
+    },
+    candidates: [],
+  } as DecisionResponse;
+
+  renderDecisionCockpit({
+    todayResponse: blockedAccountTruthToday,
+    locale: 'zh',
+  });
+
+  const guide = await screen.findByTestId('decision-next-action-guide');
+  expect(guide.textContent).toContain('下一步');
+  expect(guide.textContent).toContain('先处理账户事实');
+  expect(guide.textContent).not.toContain('人工确认已可复核');
+
+  const accountTruthLink = within(guide).getByRole('link', {
+    name: '打开账户事实：先处理账户事实',
+  });
+  expect(accountTruthLink.getAttribute('href')).toBe('/account-truth');
+
+  const gateMatrix = await screen.findByTestId('decision-gate-matrix');
+  expect(gateMatrix.textContent).toContain('账户事实');
+  expect(gateMatrix.textContent).toContain('账户事实门禁未通过: 降级');
+});
