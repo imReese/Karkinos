@@ -1,9 +1,10 @@
-import { lazy } from 'react';
+import { lazy, useEffect } from 'react';
 import {
   createRoute,
   createRootRoute,
   createRouter,
   Outlet,
+  useNavigate,
   useRouterState,
 } from '@tanstack/react-router';
 
@@ -35,6 +36,27 @@ function RootLayout() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleCustomNavigate = (event: Event) => {
+      const customEvent = event as CustomEvent<{ to: string }>;
+      if (customEvent.detail?.to) {
+        void navigate({ to: customEvent.detail.to as any });
+      }
+    };
+    const globalWithNav = window as unknown as {
+      __karkinosNavigate?: (to: string) => void;
+    };
+    globalWithNav.__karkinosNavigate = (to: string) => {
+      void navigate({ to: to as any });
+    };
+    window.addEventListener('karkinos:navigate', handleCustomNavigate);
+    return () => {
+      delete globalWithNav.__karkinosNavigate;
+      window.removeEventListener('karkinos:navigate', handleCustomNavigate);
+    };
+  }, [navigate]);
 
   if (pathname === '/') {
     return <Outlet />;

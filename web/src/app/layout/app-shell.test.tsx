@@ -274,7 +274,7 @@ test('renders portfolio workspace navigation', async () => {
   ).toBeTruthy();
   expect(await within(navigation).findByText('Ledger')).toBeTruthy();
   expect(await within(navigation).findByText('Market')).toBeTruthy();
-  expect(await within(navigation).findByText('Strategy Lab')).toBeTruthy();
+  expect(await within(navigation).findByText('Strategy Backtest')).toBeTruthy();
   expect(await within(navigation).findByText('Evidence Research')).toBeTruthy();
   expect(await within(navigation).findByText('Risk')).toBeTruthy();
   expect(within(navigation).queryByText('Account Truth')).toBeNull();
@@ -417,7 +417,7 @@ test('switches interface language from english to chinese', async () => {
   expect(await within(navigation).findByText('组合')).toBeTruthy();
   expect(await within(navigation).findByText('账本')).toBeTruthy();
   expect(await within(navigation).findByText('行情')).toBeTruthy();
-  expect(await within(navigation).findByText('策略实验')).toBeTruthy();
+  expect(await within(navigation).findByText('策略回测')).toBeTruthy();
   expect(await within(navigation).findByText('证据研究')).toBeTruthy();
   expect(await within(navigation).findByText('风控')).toBeTruthy();
   expect(within(navigation).queryByText('账户事实')).toBeNull();

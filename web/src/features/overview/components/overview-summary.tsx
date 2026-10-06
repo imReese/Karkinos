@@ -147,9 +147,6 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
                 ))}
               </div>
             </div>
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              {copy.overview.modeHelper}
-            </div>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
 import { formatPublicCode } from '../../../shared/public-labels';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { ExceptionList } from '../../../shared/ui/workbench';
 import type { PositionEvidenceReview } from '../api';
 
@@ -51,6 +52,7 @@ export function PortfolioEvidenceReviewPanel({
           nextAction: (
             <a
               href="/account-truth"
+              onClick={(e) => handleClientNavigation(e, '/account-truth')}
               className="font-semibold text-[var(--app-accent)] hover:underline"
             >
               {locale === 'zh' ? '复核账户事实' : 'Review account truth'}

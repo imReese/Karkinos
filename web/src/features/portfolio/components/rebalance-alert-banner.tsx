@@ -1,4 +1,5 @@
 import { formatCurrency } from '../../../shared/format';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import type { PortfolioCopy } from '../copy';
 import type { DailyTradingPlanResponse } from '../portfolio-feature-boundary';
 
@@ -80,6 +81,7 @@ export function RebalanceAlertBanner({
       <div className="shrink-0">
         <a
           href="/decision"
+          onClick={(e) => handleClientNavigation(e, '/decision')}
           data-testid="rebalance-alert-decision-link"
           className="app-button-secondary inline-flex items-center gap-1 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] hover:text-[var(--app-text)]"
         >

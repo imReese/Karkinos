@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { formatCurrency } from '../../../shared/format';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   Button,
   EvidenceState,
@@ -36,7 +37,11 @@ export function PortfolioCurrentHoldingsSection({
     >
       <SectionHeader
         title={copy.portfolio.currentHoldings.title}
-        description={copy.portfolio.currentHoldings.detail}
+        description={
+          <span className="sr-only">
+            {copy.portfolio.currentHoldings.detail}
+          </span>
+        }
       />
       {model.hasQuotesNeedingReview ? (
         <EvidenceState
@@ -147,9 +152,7 @@ export function PortfolioAnalysisSection({
           <span className="app-type-section-title block text-[var(--app-text)]">
             {copy.portfolio.analysis.title}
           </span>
-          <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
-            {copy.portfolio.analysis.detail}
-          </span>
+          <span className="sr-only">{copy.portfolio.analysis.detail}</span>
         </span>
         <div className="flex shrink-0 items-center gap-2">
           <span className="hidden text-xs text-[var(--app-text-tertiary)] sm:inline">
@@ -361,6 +364,7 @@ export function PortfolioHistorySection({
         <div className="mb-3 flex justify-end">
           <a
             href="/activity"
+            onClick={(e) => handleClientNavigation(e, '/activity')}
             className="app-button app-button-secondary app-button-sm"
           >
             {copy.portfolio.detail.actionViewActivity}

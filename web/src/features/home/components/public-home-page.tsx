@@ -83,7 +83,7 @@ export function PublicHomePage() {
         setTheme={setTheme}
       />
 
-      <main className="app-public-main" id="public-home-main">
+      <main className="app-public-main" id="public-home-main" tabIndex={-1}>
         <section
           className="app-public-container app-public-hero app-public-panel"
           data-active={activePanel === 'home'}

@@ -1,4 +1,5 @@
 import { formatPublicStatus } from '../../../shared/public-labels';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { ExceptionList } from '../../../shared/ui/workbench';
 import type { RiskPageController } from '../model/use-risk-page-controller';
 import { riskExceptionLabels } from './risk-loading-workspace';
@@ -52,6 +53,7 @@ export function RiskDecisionHandoff({
         <a
           className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
           href="/decision"
+          onClick={(e) => handleClientNavigation(e, '/decision')}
         >
           {copy.riskPage.returnToDecision}
         </a>

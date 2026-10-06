@@ -1,5 +1,6 @@
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import type { ManualTicketExportResponse } from '../api';
 import {
   ControlledBridgeGateSummaryBlock,
@@ -181,12 +182,14 @@ export function ManualTicketSummary({
           <a
             className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold"
             href="/account-truth"
+            onClick={(e) => handleClientNavigation(e, '/account-truth')}
           >
             {handoffLabels.importEvidence}
           </a>
           <a
             className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold"
             href="/decision"
+            onClick={(e) => handleClientNavigation(e, '/decision')}
           >
             {handoffLabels.reviewReconciliation}
           </a>

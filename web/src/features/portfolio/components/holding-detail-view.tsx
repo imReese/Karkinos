@@ -1,4 +1,5 @@
 import { formatQuantity, formatTimestamp } from '../../../shared/format';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   EvidenceIdentityDisclosure,
   EvidenceState as WorkbenchEvidenceState,
@@ -60,6 +61,7 @@ export function HoldingDetailView({
             <>
               <a
                 href="/portfolio"
+                onClick={(e) => handleClientNavigation(e, '/portfolio')}
                 className="app-button-secondary inline-flex w-max rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
                 aria-label={labels.returnToPortfolio}
               >

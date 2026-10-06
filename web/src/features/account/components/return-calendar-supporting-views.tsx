@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { useCopy, type AppCopy } from '../../../shared/i18n/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   formatReturnCurrency,
   type ReturnCalendarPosition,
@@ -131,12 +132,14 @@ export function ReturnCalendarEmptyState({
         <div className="mt-3 flex flex-wrap gap-2">
           <a
             href="/activity"
+            onClick={(e) => handleClientNavigation(e, '/activity')}
             className="rounded-full border border-[var(--app-border)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[var(--app-accent-border)] hover:text-[var(--app-accent)]"
           >
             {copy.explainability.addActivity}
           </a>
           <a
             href="/market"
+            onClick={(e) => handleClientNavigation(e, '/market')}
             className="rounded-full border border-[var(--app-border)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[var(--app-accent-border)] hover:text-[var(--app-accent)]"
           >
             {copy.explainability.checkDataSource}

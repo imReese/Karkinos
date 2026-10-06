@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { SectionHeader, WorkbenchSelect } from '../../../shared/ui/workbench';
 import { overviewPresentation } from '../model/overview-presentation';
 import {
@@ -239,6 +240,7 @@ export function OverviewHoldingsSection({
         actions={
           <a
             href="/portfolio"
+            onClick={(e) => handleClientNavigation(e, '/portfolio')}
             className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
           >
             {labels.viewPortfolio}

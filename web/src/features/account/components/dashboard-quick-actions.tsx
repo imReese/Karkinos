@@ -1,5 +1,6 @@
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { formatDateTime, formatTimestamp } from '../../../shared/format';
 import {
   formatPublicCode,
@@ -273,24 +274,28 @@ export function DashboardQuickActions({
             </button>
             <a
               href="/activity"
+              onClick={(e) => handleClientNavigation(e, '/activity')}
               className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
             >
               {labels.addLedger}
             </a>
             <a
               href="/trading"
+              onClick={(e) => handleClientNavigation(e, '/trading')}
               className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
             >
               {labels.tradingDesk}
             </a>
             <a
               href="/market"
+              onClick={(e) => handleClientNavigation(e, '/market')}
               className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
             >
               {labels.checkDataSource}
             </a>
             <a
               href="/settings"
+              onClick={(e) => handleClientNavigation(e, '/settings')}
               className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
             >
               {labels.dataSettings}

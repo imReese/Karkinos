@@ -12,6 +12,7 @@ import {
 import { OperationsModeBanner } from './operations-mode-banner';
 import type { Locale } from '../../../shared/preferences/context';
 import { formatPublicStatus } from '../../../shared/public-labels';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   type OperationsAttentionItem,
   type OperationsTodayResponse,
@@ -221,6 +222,7 @@ function OperationsCommandGrid({
                     <a
                       className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
                       href={href}
+                      onClick={(e) => handleClientNavigation(e, href)}
                     >
                       {labels.openEvidence}
                     </a>
@@ -577,6 +579,12 @@ function OperationsEvidenceDrawer({
             <a
               className="app-button-primary inline-flex px-3 py-2 text-xs"
               href={operationsTargetHref(attention.target)}
+              onClick={(e) =>
+                handleClientNavigation(
+                  e,
+                  operationsTargetHref(attention.target),
+                )
+              }
             >
               {labels.openEvidence}
             </a>

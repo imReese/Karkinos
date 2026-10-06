@@ -11,6 +11,7 @@ import {
   SectionHeader,
   StatusBadge,
 } from '../../../shared/ui/workbench';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import type {
   AccountStateResponse,
   DailyTradingPlanResponse,
@@ -574,6 +575,7 @@ export function OverviewStrategyRecommendation({
             <div className="flex items-center gap-3">
               <a
                 href="/decision"
+                onClick={(e) => handleClientNavigation(e, '/decision')}
                 className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
               >
                 {dashboard.strategyRecommendationViewAll}
@@ -606,6 +608,7 @@ export function OverviewStrategyRecommendation({
           ) : null}
           <a
             href="/ai-research"
+            onClick={(e) => handleClientNavigation(e, '/ai-research')}
             className="app-type-compact inline-flex min-h-11 items-center font-semibold text-[var(--app-accent)] hover:underline"
           >
             {dashboard.strategyRecommendationResearchAction}
@@ -670,6 +673,7 @@ export function OverviewStrategyRecommendation({
               {presentationLevel === 'manual_review' ? (
                 <a
                   href="/trading"
+                  onClick={(e) => handleClientNavigation(e, '/trading')}
                   className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
                 >
                   {dashboard.viewTrading}
@@ -677,6 +681,7 @@ export function OverviewStrategyRecommendation({
               ) : null}
               <a
                 href="/decision"
+                onClick={(e) => handleClientNavigation(e, '/decision')}
                 className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
               >
                 {dashboard.viewDecision}
@@ -698,6 +703,7 @@ export function OverviewStrategyRecommendation({
             </div>
             <a
               href="/decision"
+              onClick={(e) => handleClientNavigation(e, '/decision')}
               className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline shrink-0"
             >
               {dashboard.viewDecision}

@@ -12,6 +12,7 @@ import {
   formatLedgerPublicNote,
 } from '../../../shared/ledger-format';
 import { usePreferences } from '../../../shared/preferences/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   EvidenceLoadingLayout as WorkbenchEvidenceLoadingLayout,
   EvidenceState as WorkbenchEvidenceState,
@@ -44,6 +45,7 @@ export function HoldingDetailStateView({
           actions={
             <a
               href="/portfolio"
+              onClick={(e) => handleClientNavigation(e, '/portfolio')}
               className="app-button-secondary app-type-compact inline-flex min-h-11 items-center rounded-[var(--app-radius-control)] px-3 py-2 font-semibold"
               aria-label={labels.returnToPortfolio}
             >
@@ -320,6 +322,7 @@ export function ActionLink({ href, label }: { href: string; label: string }) {
   return (
     <a
       href={href}
+      onClick={(e) => handleClientNavigation(e, href)}
       data-testid="holding-related-action-link"
       className="app-button-secondary inline-flex min-h-10 min-w-0 items-center break-words rounded-[var(--app-radius-control)] px-3 py-2 text-center text-sm font-semibold"
       aria-label={label}

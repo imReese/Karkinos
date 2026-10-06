@@ -1,5 +1,6 @@
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { SectionHeader, ExceptionBoundary } from '../../../shared/ui/workbench';
 import {
   operationsNextActionLabel,
@@ -47,6 +48,7 @@ export function DashboardTodayQueue({
           actions={
             <a
               href="/operations"
+              onClick={(e) => handleClientNavigation(e, '/operations')}
               className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
             >
               {copy.overview.dashboard.viewOperations}
@@ -67,6 +69,9 @@ export function DashboardTodayQueue({
               </div>
               <a
                 href={operationsTargetHref(item.target)}
+                onClick={(e) =>
+                  handleClientNavigation(e, operationsTargetHref(item.target))
+                }
                 className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
               >
                 {operationsNextActionLabel(item.next_action, locale)}
