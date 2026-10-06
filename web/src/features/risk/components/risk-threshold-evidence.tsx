@@ -25,7 +25,7 @@ export function RiskThresholdEvidence({
             ? '风险指标与阈值证据'
             : 'Risk metric and threshold evidence'}
         </h2>
-        <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
+        <p className="sr-only">
           {locale === 'zh'
             ? '仅展示风险服务已记录的数值、状态与说明；未提供的阈值不会在页面中推算。'
             : 'Shows recorded risk values, states, and explanations. Missing thresholds are not inferred on this page.'}

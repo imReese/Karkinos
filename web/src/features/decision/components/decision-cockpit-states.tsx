@@ -78,9 +78,6 @@ export function DecisionCockpitLoading() {
               >
                 {labels.workflowTitle}
               </h2>
-              <p className="mt-0.5 max-w-3xl text-xs leading-5 text-[var(--app-text-secondary)]">
-                {labels.workflowDetail}
-              </p>
             </div>
             <span className="shrink-0">
               <StatusBadge tone="neutral">{copy.states.loading}</StatusBadge>
@@ -117,9 +114,6 @@ export function DecisionCockpitLoading() {
           <h2 className="mt-1 app-type-section-title text-[var(--app-text)]">
             {labels.tradingPlanTitle}
           </h2>
-          <p className="mt-0.5 text-xs leading-5 text-[var(--app-text-secondary)]">
-            {labels.tradingPlanDetail}
-          </p>
         </section>
       </div>
     </section>

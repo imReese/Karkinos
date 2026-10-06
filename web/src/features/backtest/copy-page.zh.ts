@@ -1,6 +1,6 @@
 export const backtestPageZh = {
   kicker: '回测实验室',
-  title: '策略回放',
+  title: '策略回测',
   subtitle: '运行受控历史模拟，并查看风险、成本、净值路径与成交覆盖。',
   formKicker: '运行设置',
   formTitle: '回测配置',

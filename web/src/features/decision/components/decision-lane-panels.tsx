@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { EvidenceState, StatusBadge } from '../../../shared/ui/workbench';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
@@ -308,6 +309,7 @@ function DecisionCandidateCard({
           <a
             className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] px-4 text-center text-sm font-semibold whitespace-normal"
             href={backtestHref}
+            onClick={(e) => handleClientNavigation(e, backtestHref)}
             aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
           >
             {labels.openBacktestEvidence}
@@ -315,6 +317,7 @@ function DecisionCandidateCard({
           <a
             className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] px-4 text-center text-sm font-semibold whitespace-normal"
             href={holdingDetailHref}
+            onClick={(e) => handleClientNavigation(e, holdingDetailHref)}
             aria-label={`${labels.openHoldingDetail}: ${instrumentLabel}`}
           >
             {labels.openHoldingDetail}
@@ -322,6 +325,7 @@ function DecisionCandidateCard({
           <a
             className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] px-4 text-center text-sm font-semibold whitespace-normal"
             href={holdingAttributionHref}
+            onClick={(e) => handleClientNavigation(e, holdingAttributionHref)}
             aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
           >
             {labels.openAttributionReview}
@@ -330,6 +334,7 @@ function DecisionCandidateCard({
             <a
               className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] px-4 text-center text-sm font-semibold whitespace-normal"
               href="/trading"
+              onClick={(e) => handleClientNavigation(e, '/trading')}
               aria-label={`${labels.openTradingApprovals}: ${instrumentLabel}`}
             >
               {labels.openTradingApprovals}

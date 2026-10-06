@@ -1,4 +1,7 @@
+import { useState } from 'react';
+
 import { useCopy } from '../../../shared/i18n/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { MetricStrip, WorkspaceHeader } from '../../../shared/ui/workbench';
 import {
   ResearchTaskPanel,
@@ -8,6 +11,7 @@ import {
 import { ShadowResearchPanel } from './shadow-research-panel';
 
 export function AiResearchPage() {
+  const [activeTab, setActiveTab] = useState<'all' | 'shadow' | 'tasks'>('all');
   const copy = useCopy();
   const labels = copy.aiResearchPage;
   const savedBacktests = useBacktestResultsQuery();
@@ -25,13 +29,13 @@ export function AiResearchPage() {
         eyebrow={labels.kicker}
         title={labels.title}
         description={labels.subtitle}
-        context={labels.context}
         actions={
           <a
             className="app-button-secondary min-h-11 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             href="/backtest"
+            onClick={(e) => handleClientNavigation(e, '/backtest')}
           >
-            {labels.openStrategyLab}
+            {labels.openStrategyLab} &rarr;
           </a>
         }
       />
@@ -52,9 +56,6 @@ export function AiResearchPage() {
             >
               {labels.contextTitle}
             </h2>
-            <p className="app-muted mt-1 text-xs leading-5">
-              {labels.contextDetail}
-            </p>
           </div>
           <MetricStrip
             ariaLabel={labels.contextTitle}
@@ -110,13 +111,48 @@ export function AiResearchPage() {
           className="grid min-w-0 gap-5 xl:order-1"
           data-testid="ai-research-primary-canvas"
         >
-          <ResearchTaskPanel
-            backtestResultId={latestBacktest?.id ?? null}
-            defaultOpen
-            routePrimary
-            strategyId={accountStrategy.data?.strategy_id ?? null}
-          />
-          <ShadowResearchPanel />
+          <div
+            aria-label={labels.title}
+            className="flex items-center gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-1"
+            role="tablist"
+          >
+            {(['all', 'shadow', 'tasks'] as const).map((tab) => (
+              <button
+                aria-selected={activeTab === tab}
+                className={`flex-1 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold transition-all ${
+                  activeTab === tab
+                    ? 'bg-[var(--app-surface-raised)] text-[var(--app-text)] shadow-xs'
+                    : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                }`}
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                role="tab"
+                type="button"
+              >
+                {labels.tabs[tab]}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className={
+              activeTab === 'all' || activeTab === 'tasks' ? 'block' : 'hidden'
+            }
+          >
+            <ResearchTaskPanel
+              backtestResultId={latestBacktest?.id ?? null}
+              defaultOpen
+              routePrimary
+              strategyId={accountStrategy.data?.strategy_id ?? null}
+            />
+          </div>
+          <div
+            className={
+              activeTab === 'all' || activeTab === 'shadow' ? 'block' : 'hidden'
+            }
+          >
+            <ShadowResearchPanel />
+          </div>
         </div>
       </div>
     </section>

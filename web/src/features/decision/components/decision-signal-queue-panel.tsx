@@ -112,19 +112,6 @@ function OperatingPostureCard({
           </dd>
         </div>
       </dl>
-      <div className="border-t border-[var(--app-divider)] pt-2.5 text-xs text-[var(--app-text-secondary)]">
-        <div className="flex items-center gap-1.5 text-[var(--app-text)] font-medium">
-          <span className="inline-block size-1.5 rounded-full bg-[var(--app-success-indicator)]" />
-          <span>
-            {locale === 'zh' ? '安全边界已锁定' : 'Safety Boundaries Locked'}
-          </span>
-        </div>
-        <p className="app-type-micro mt-1 leading-5 text-[var(--app-text-secondary)]">
-          {locale === 'zh'
-            ? '所有策略信号均需经风控闸门与人工确认后方可落地，真实资金权限保持关闭。'
-            : 'All strategy signals require risk gates and manual confirmation; real-money authority remains off.'}
-        </p>
-      </div>
     </div>
   );
 }
@@ -320,9 +307,6 @@ export function SignalQueuePanel({
               {labels.signalQueueTitle}
             </h2>
           </div>
-          <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
-            {labels.signalQueueDetail}
-          </p>
         </div>
 
         {loading ? (
@@ -338,9 +322,6 @@ export function SignalQueuePanel({
               <div className="text-sm font-semibold text-[var(--app-text)]">
                 {labels.signalQueueCollapsedTitle(actions.length)}
               </div>
-              <p className="app-muted mt-1 break-words text-xs leading-5">
-                {labels.signalQueueCollapsedDetail}
-              </p>
             </div>
             <button
               className="app-button-secondary inline-flex min-h-9 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"

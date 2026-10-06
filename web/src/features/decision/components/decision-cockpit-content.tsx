@@ -282,11 +282,6 @@ export function DecisionCockpitContent({
                 ? '通道与状态明细'
                 : 'Channel and status details'}
             </span>
-            <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
-              {locale === 'zh'
-                ? '仅在需要核对日级、盘中、账户事实或归因差异时展开。'
-                : 'Expand only when reconciling daily, intraday, account-truth, or attribution differences.'}
-            </span>
           </span>
           <span className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
             <span>

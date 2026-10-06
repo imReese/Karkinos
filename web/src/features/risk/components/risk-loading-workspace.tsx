@@ -45,9 +45,7 @@ export function RiskLoadingWorkspace({
             <h2 className="app-type-section-title text-[var(--app-text)]">
               {copy.riskPage.blockingRegister}
             </h2>
-            <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
-              {copy.riskPage.blockingRegisterDetail}
-            </p>
+            <p className="sr-only">{copy.riskPage.blockingRegisterDetail}</p>
           </div>
           {state.data ? (
             <div className="min-w-0" data-testid="risk-loading-live-exceptions">

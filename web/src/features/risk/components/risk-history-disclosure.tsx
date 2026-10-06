@@ -25,11 +25,6 @@ export function RiskHistoryDisclosure({
               ? '净值与事件解释路径'
               : 'Equity and event explanation path'}
           </h2>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--app-text-secondary)]">
-            {locale === 'zh'
-              ? '按需查看净值桥、影响事件、持仓驱动和时间序列归因；当前风险与受控操作保持在上方。'
-              : 'Expand for the equity bridge, impact events, position drivers, and timeline attribution. Current risk and controlled actions stay above.'}
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
           {controller.explainability.isLoading ? (

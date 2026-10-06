@@ -108,10 +108,13 @@ export function ShadowResearchCandidateWorkspace({
 
   if (candidates.length === 0) {
     return (
-      <div className="mt-6 grid gap-4">
-        <div className="border-y border-dashed border-[var(--app-divider)] p-5 text-sm text-[var(--app-muted)]">
-          {loading ? copy.running : copy.noCandidates}
+      <div className="mt-6 rounded-[var(--app-radius-control)] border border-dashed border-[var(--app-divider)] bg-[color-mix(in_srgb,var(--app-surface-raised)_50%,transparent)] p-6 text-center">
+        <div className="text-sm font-semibold text-[var(--app-text)]">
+          {copy.candidateRegistry}
         </div>
+        <p className="app-muted mx-auto mt-1 max-w-md text-xs leading-5">
+          {loading ? copy.running : copy.noCandidates}
+        </p>
       </div>
     );
   }
@@ -119,15 +122,16 @@ export function ShadowResearchCandidateWorkspace({
   const renderRegistryRow = (candidate: ShadowResearchCandidate) => {
     const selected = candidate.candidate_id === selectedCandidate?.candidate_id;
     const lineage = candidate.comparison.iteration_lineage;
+    const candidateMetrics = candidate.comparison.candidate;
     const statusLabel =
       candidate.promotion_status === 'paper_shadow_approved'
         ? copy.approved
         : candidate.status.replace(/_/g, ' ');
     const rowClassName = [
-      'grid w-full min-w-0 gap-2 px-1 py-3 text-left transition-colors sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
+      'grid w-full min-w-0 gap-2 px-3 py-3 text-left transition-all rounded-[var(--app-radius-control)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
       selected
-        ? 'bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)]'
-        : 'hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_45%,transparent)]',
+        ? 'bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] border border-[var(--app-accent)] shadow-xs'
+        : 'hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_45%,transparent)] border border-transparent',
     ].join(' ');
 
     return (
@@ -150,6 +154,12 @@ export function ShadowResearchCandidateWorkspace({
               <span>
                 {copy.iterationRound} {lineage.iteration_number}/
                 {lineage.total_iterations}
+              </span>
+            ) : null}
+            {candidateMetrics ? (
+              <span className="font-mono text-[var(--app-text)]">
+                SR {candidateMetrics.sharpe.toFixed(2)} ·{' '}
+                {(candidateMetrics.total_return * 100).toFixed(1)}%
               </span>
             ) : null}
             <span>{formatTimestamp(candidate.updated_at)}</span>
@@ -229,9 +239,7 @@ export function ShadowResearchCandidateWorkspace({
         <h3 className="app-type-section-title text-[var(--app-text)]">
           {copy.candidateRegistry}
         </h3>
-        <p className="app-muted mt-1 text-xs leading-5">
-          {copy.candidateRegistryDetail}
-        </p>
+        <p className="sr-only">{copy.candidateRegistryDetail}</p>
       </div>
 
       <div className="mt-3 grid min-w-0 gap-5 2xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,1fr)] 2xl:items-start">

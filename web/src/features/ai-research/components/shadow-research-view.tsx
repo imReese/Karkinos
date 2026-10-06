@@ -276,7 +276,9 @@ export function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-[var(--app-muted)]">{label}</dt>
-      <dd className="mt-1 font-semibold text-[var(--app-text)]">{value}</dd>
+      <dd className="mt-1 font-mono font-semibold tabular-nums text-[var(--app-text)]">
+        {value}
+      </dd>
     </div>
   );
 }
@@ -289,7 +291,7 @@ export function EvidenceList({
   title: string;
 }) {
   return (
-    <div>
+    <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-3">
       <h4 className="text-xs font-semibold text-[var(--app-text)]">{title}</h4>
       {items.length ? (
         <ul className="app-muted mt-2 list-disc space-y-1 pl-4 text-xs leading-5">
@@ -314,11 +316,11 @@ export function StatusMetric({
   detail: string;
 }) {
   return (
-    <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] p-3">
+    <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-3">
       <div className="text-xs font-semibold text-[var(--app-muted)]">
         {label}
       </div>
-      <div className="mt-1 text-lg font-semibold text-[var(--app-text)]">
+      <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--app-text)] sm:text-lg">
         {value}
       </div>
       <div className="app-muted mt-1 truncate text-xs">{detail}</div>

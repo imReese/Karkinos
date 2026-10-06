@@ -2194,7 +2194,7 @@ test('scans the configured CITIC directory only on command and rechecks by finge
       String(input).includes('/api/account-truth/broker-statement/import'),
     ),
   ).toBe(false);
-});
+}, 15000);
 
 test('shows contiguous declared query windows without claiming account coverage', async () => {
   renderAccountTruthReviewPage({

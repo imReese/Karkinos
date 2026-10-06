@@ -5710,12 +5710,12 @@ test('renders localized decision workflow tasks before candidate actions', async
   ).toBe('/risk');
   expect(
     screen
-      .getByRole('link', { name: '打开回测实验室：策略证据' })
+      .getByRole('link', { name: '打开策略回测：策略证据' })
       .getAttribute('href'),
   ).toBe('/backtest');
   expect(
     screen
-      .getByRole('link', { name: '打开回测实验室：模拟复核' })
+      .getByRole('link', { name: '打开策略回测：模拟复核' })
       .getAttribute('href'),
   ).toBe('/backtest');
   expect(

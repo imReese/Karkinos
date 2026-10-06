@@ -5,6 +5,7 @@ import {
   StatusBadge,
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
+import { getErrorMessage } from '../../../shared/error-message';
 import { ToastStack } from '../../../shared/ui/toast-stack';
 import { CurrentHoldingMarketEvidenceReviewPanel } from '../components/current-holding-market-evidence-review-panel';
 import {
@@ -108,6 +109,7 @@ function MarketInstrumentSelection({
     kline,
     newAssetClass,
     newSymbol,
+    pushToast,
     removeWatchlistItem,
     selectedHealthQuote,
     selectedItem,
@@ -130,9 +132,14 @@ function MarketInstrumentSelection({
       onRetryBars={() => void kline.refetch()}
       onSelect={setSelectedSymbol}
       onRemove={async (symbol) => {
-        await removeWatchlistItem.mutateAsync(symbol);
-        if (activeSymbol === symbol) {
-          setSelectedSymbol('');
+        try {
+          await removeWatchlistItem.mutateAsync(symbol);
+          pushToast('success', copy.market.symbolRemoved, symbol);
+          if (activeSymbol === symbol) {
+            setSelectedSymbol('');
+          }
+        } catch (error) {
+          pushToast('error', copy.market.removeFailed, getErrorMessage(error));
         }
       }}
       watchlistEditor={
@@ -153,15 +160,25 @@ function MarketInstrumentSelection({
             className="grid gap-3 border-t border-[var(--app-divider)] px-3 py-3"
             onSubmit={async (event) => {
               event.preventDefault();
-              if (!newSymbol.trim()) {
+              const trimmed = newSymbol.trim();
+              if (!trimmed) {
                 return;
               }
-              await addWatchlistItem.mutateAsync({
-                symbol: newSymbol.trim(),
-                asset_class: newAssetClass,
-              });
-              setNewSymbol('');
-              setSelectedSymbol('');
+              try {
+                await addWatchlistItem.mutateAsync({
+                  symbol: trimmed,
+                  asset_class: newAssetClass,
+                });
+                pushToast('success', copy.market.symbolAdded, trimmed);
+                setNewSymbol('');
+                setSelectedSymbol('');
+              } catch (error) {
+                pushToast(
+                  'error',
+                  copy.market.addFailed,
+                  getErrorMessage(error),
+                );
+              }
             }}
           >
             <label className="grid gap-1.5">
@@ -171,10 +188,11 @@ function MarketInstrumentSelection({
               <input
                 name="watchlist_symbol"
                 autoComplete="off"
+                disabled={addWatchlistItem.isPending}
                 value={newSymbol}
                 onChange={(event) => setNewSymbol(event.target.value)}
                 placeholder={copy.market.symbolPlaceholder}
-                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm disabled:opacity-50"
               />
             </label>
             <label className="grid gap-1.5">
@@ -183,9 +201,10 @@ function MarketInstrumentSelection({
               </span>
               <select
                 name="watchlist_asset_class"
+                disabled={addWatchlistItem.isPending}
                 value={newAssetClass}
                 onChange={(event) => setNewAssetClass(event.target.value)}
-                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm disabled:opacity-50"
               >
                 {assetClassOptions.map(([value, label]) => (
                   <option key={value} value={value}>
@@ -196,9 +215,12 @@ function MarketInstrumentSelection({
             </label>
             <button
               type="submit"
-              className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm sm:min-h-8"
+              disabled={addWatchlistItem.isPending || !newSymbol.trim()}
+              className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-8"
             >
-              {copy.market.add}
+              {addWatchlistItem.isPending
+                ? copy.states.loading
+                : copy.market.add}
             </button>
           </form>
         </details>

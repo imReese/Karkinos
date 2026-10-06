@@ -25,7 +25,6 @@ export function BacktestPageHeader() {
         eyebrow={labels.kicker}
         title={labels.title}
         description={labels.subtitle}
-        context={labels.decisionHandoffResearchOnly}
       />
 
       <section aria-label={labels.nextRunConfiguration} className="min-w-0">
@@ -83,7 +82,7 @@ export function BacktestPageHeader() {
 
       <div
         aria-label={labels.title}
-        className="flex border-y border-[var(--app-divider)] xl:hidden"
+        className="flex items-center gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-1"
         data-workspace-view={mobileWorkspaceView}
         data-testid="backtest-mobile-workspace-tabs"
         role="tablist"
@@ -95,10 +94,10 @@ export function BacktestPageHeader() {
           <button
             aria-controls={`backtest-mobile-${item.id}`}
             aria-selected={mobileWorkspaceView === item.id}
-            className={`min-h-10 flex-1 border-b-2 px-3 text-xs font-semibold transition-colors ${
+            className={`min-h-9 flex-1 rounded-[calc(var(--app-radius-control)-2px)] px-4 text-xs font-semibold transition-all ${
               mobileWorkspaceView === item.id
-                ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
-                : 'border-transparent text-[var(--app-text-secondary)]'
+                ? 'bg-[var(--app-surface)] text-[var(--app-accent)] shadow-sm'
+                : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
             }`}
             key={item.id}
             onClick={() => {

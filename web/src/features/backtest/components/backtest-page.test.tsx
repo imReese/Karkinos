@@ -1269,7 +1269,7 @@ afterEach(() => {
 test('renders the backtest workspace and saved report history', async () => {
   renderBacktestPage();
 
-  expect(await screen.findByText('Strategy replay')).toBeTruthy();
+  expect(await screen.findByText('Strategy Backtest')).toBeTruthy();
   openBacktestDisclosure('backtest-promotion-evidence-disclosure');
   const evidenceGateTitle = await screen.findByText(
     'Strategy validation and review status',
@@ -1960,7 +1960,7 @@ test('keeps readiness-only strategies visible with display names before ids', as
 test('defaults strategy parameters to chinese for chinese browser locales', async () => {
   renderBacktestPage({ results: [], navigatorLanguage: 'zh-CN' });
 
-  expect(await screen.findByText('策略回放')).toBeTruthy();
+  expect(await screen.findByText('策略回测')).toBeTruthy();
   expect(await screen.findByLabelText('短期均线周期')).toBeTruthy();
   expect(
     await screen.findByText(
@@ -2061,7 +2061,7 @@ test('accepts ordinary whole-number initial cash values in browser validation', 
 test('localizes built-in strategy names without changing strategy ids', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
-  expect(await screen.findByText('策略回放')).toBeTruthy();
+  expect(await screen.findByText('策略回测')).toBeTruthy();
   openBacktestDisclosure('backtest-promotion-evidence-disclosure');
   expect(await screen.findByText('策略验证与复核状态')).toBeTruthy();
   expect(screen.getAllByText('复核状态').length).toBeGreaterThan(0);
@@ -2200,7 +2200,7 @@ test('localizes built-in parameter labels and descriptions without changing payl
 test('runs a backtest and displays metrics_json and cost_summary_json fields', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
   });
@@ -2253,7 +2253,7 @@ test('keeps portfolio handoff context visible beside the run evidence chain', as
   );
   renderBacktestPage({ results: [] });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   const runButton = screen.getByRole('button', { name: 'Run backtest' });
   fireEvent.submit(runButton.closest('form') as HTMLFormElement);
 
@@ -2282,7 +2282,7 @@ test('keeps portfolio handoff context visible beside the run evidence chain', as
 test('previews research-only strategy signal after a single-symbol backtest', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
   });
@@ -2386,7 +2386,7 @@ test('previews paper shadow simulation after a passed risk preview', async () =>
     riskPreview: passedRiskPreviewResponse,
   });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
   });
@@ -2461,7 +2461,7 @@ test('uses Chinese simulation-review wording instead of paper-shadow jargon', as
     locale: 'zh',
   });
 
-  await screen.findByText('策略回放');
+  await screen.findByText('策略回测');
   fireEvent.change(await screen.findByLabelText('标的代码'), {
     target: { value: '600002' },
   });
@@ -2504,7 +2504,7 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
     riskPreview: passedRiskPreviewResponse,
   });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
   });
@@ -3036,7 +3036,7 @@ test('renders after-cost and out-of-sample evidence for saved reports', async ()
 test('shows a clear error when the run endpoint fails', async () => {
   renderBacktestPage({ runFails: true, results: [] });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   const runButton = screen.getByRole('button', { name: 'Run backtest' });
   fireEvent.submit(runButton.closest('form') as HTMLFormElement);
 
@@ -3049,7 +3049,7 @@ test('shows a clear error when the run endpoint fails', async () => {
 test('runs a parameter sweep and renders ranked research warnings', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   openBacktestDisclosure('backtest-advanced-tools-disclosure');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
@@ -3108,7 +3108,7 @@ test.each(['custom', 'empty', 'default'] as const)(
   'shares %s cost assumptions across run, sweep, and comparison',
   async (mode) => {
     const { fetchMock } = renderBacktestPage({ results: [] });
-    await screen.findByText('Strategy replay');
+    await screen.findByText('Strategy Backtest');
     fireEvent.click(screen.getByText('Trading cost assumptions'));
     fireEvent.change(screen.getByLabelText('Cost model'), {
       target: { value: 'custom' },
@@ -3156,7 +3156,7 @@ test.each(['custom', 'empty', 'default'] as const)(
 
 test('rejects invalid cost inputs before all three research submissions', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   fireEvent.click(screen.getByText('Trading cost assumptions'));
   fireEvent.change(screen.getByLabelText('Cost model'), {
     target: { value: 'custom' },
@@ -3187,7 +3187,7 @@ test('rejects invalid cost inputs before all three research submissions', async 
 test('runs a same-dataset parameter comparison and renders saved result ids', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   openBacktestDisclosure('backtest-advanced-tools-disclosure');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
@@ -3259,7 +3259,7 @@ test('keeps sweep and comparison available with one selected Dataset', async () 
     ],
   });
 
-  await screen.findByText('Strategy replay');
+  await screen.findByText('Strategy Backtest');
   const datasetDisclosure = screen
     .getByText('Research datasets · persistent snapshots')
     .closest('details') as HTMLDetailsElement;
@@ -3474,7 +3474,7 @@ test.each([
       }
       return defaultFetch(input, init);
     });
-    await screen.findByText('策略回放');
+    await screen.findByText('策略回测');
     const disclosure = screen
       .getByText('研究 Dataset · 持久保存与离线回测')
       .closest('details')!;

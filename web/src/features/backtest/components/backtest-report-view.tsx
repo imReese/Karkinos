@@ -65,7 +65,7 @@ function ResultSelector({
       </div>
 
       <div
-        className="mt-3 min-w-0 max-h-[360px] max-w-full overflow-auto overscroll-contain border-y border-[var(--app-divider)]"
+        className="mt-3 min-w-0 max-h-[360px] max-w-full overflow-auto overscroll-contain rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)]"
         data-testid="backtest-run-registry-scroll"
       >
         <div
@@ -81,7 +81,7 @@ function ResultSelector({
         >
           <div
             aria-hidden="true"
-            className="sticky top-0 z-10 grid h-8 grid-cols-[72px_minmax(160px,1fr)_96px_84px_96px_160px] items-center gap-3 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-text-secondary)]"
+            className="sticky top-0 z-10 grid h-8 grid-cols-[72px_minmax(160px,1fr)_96px_84px_96px_160px] items-center gap-3 border-b border-[var(--app-divider)] bg-[var(--app-surface)] px-3 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-text-secondary)] shadow-sm"
           >
             <span>{labels.run}</span>
             <span>{pageLabels.strategy}</span>
@@ -102,9 +102,9 @@ function ResultSelector({
               return (
                 <button
                   aria-selected={selected}
-                  className={`grid min-h-10 w-full grid-cols-[72px_minmax(160px,1fr)_96px_84px_96px_160px] items-center gap-3 px-2 text-left text-xs tabular-nums transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
+                  className={`grid min-h-10 w-full grid-cols-[72px_minmax(160px,1fr)_96px_84px_96px_160px] items-center gap-3 px-3 text-left text-xs tabular-nums transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
                     selected
-                      ? 'bg-[var(--app-accent-bg)]'
+                      ? 'bg-[var(--app-accent-bg)] font-medium text-[var(--app-text)]'
                       : 'hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_50%,transparent)]'
                   }`}
                   data-result-id={result.id}

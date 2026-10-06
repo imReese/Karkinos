@@ -819,8 +819,7 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
     exact: true,
   });
   const openStrategyLab = page.getByRole('link', {
-    name: 'Open Strategy Lab',
-    exact: true,
+    name: /Open Strategy (Lab|Backtest)/,
   });
   await expect(queue).toBeVisible({ timeout: 15_000 });
   await expect(composer).toHaveCount(0);
@@ -2371,7 +2370,9 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
 
   await page.goto('/backtest');
   await expect(
-    page.getByRole('heading', { name: /Strategy replay|策略回放/ }),
+    page.getByRole('heading', {
+      name: /Strategy (replay|Backtest)|策略(回放|回测)/,
+    }),
   ).toBeVisible();
   await expect(
     page.getByTestId('backtest-strategy-detail-disclosure'),

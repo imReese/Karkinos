@@ -96,9 +96,6 @@ export function DecisionSummaryCollapsedPanel({
           <h2 className="app-card-title mt-1.5">
             {labels.summaryCollapsedTitle(candidateCount)}
           </h2>
-          <p className="app-muted mt-2 break-words text-sm leading-6">
-            {labels.summaryCollapsedDetail}
-          </p>
         </div>
         <button
           className="app-button-secondary inline-flex min-h-10 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold"
@@ -144,10 +141,8 @@ export function DecisionWorkflowPanel({
             <h2 className="app-card-title mt-1.5">
               {labels.workflowLaneTitle}
             </h2>
+            <p className="sr-only">{labels.workflowLaneDetail}</p>
           </div>
-          <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
-            {labels.workflowLaneDetail}
-          </p>
         </div>
 
         {!expanded ? (
@@ -156,9 +151,6 @@ export function DecisionWorkflowPanel({
               <div className="text-sm font-semibold text-[var(--app-text)]">
                 {labels.workflowCollapsedTitle(denseCandidateCount)}
               </div>
-              <p className="app-muted mt-1 break-words text-xs leading-5">
-                {labels.workflowCollapsedDetail}
-              </p>
             </div>
             <button
               className="app-button-secondary inline-flex min-h-9 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"

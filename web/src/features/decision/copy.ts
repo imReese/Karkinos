@@ -97,7 +97,7 @@ export const decisionCopy = {
     workflowTaskLabel: (code: string) => formatPublicCode(code, 'en'),
     workflowActionLabel: (code: string) => formatPublicCode(code, 'en'),
     workflowOpenMarket: 'Open Market data',
-    workflowOpenBacktest: 'Open Strategy Lab',
+    workflowOpenBacktest: 'Open Strategy Backtest',
     workflowOpenRisk: 'Open Risk center',
     workflowOpenTrading: 'Open trading review',
     workflowOpenSurfaceLabel: (surface: string, task: string) =>
@@ -277,7 +277,7 @@ export const decisionCopy = {
     workflowTaskLabel: (code: string) => formatPublicCode(code, 'zh'),
     workflowActionLabel: (code: string) => formatPublicCode(code, 'zh'),
     workflowOpenMarket: '打开行情中心',
-    workflowOpenBacktest: '打开回测实验室',
+    workflowOpenBacktest: '打开策略回测',
     workflowOpenRisk: '打开风控中心',
     workflowOpenTrading: '打开交易复核',
     workflowOpenSurfaceLabel: (surface: string, task: string) =>

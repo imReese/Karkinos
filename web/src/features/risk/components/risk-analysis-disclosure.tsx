@@ -34,11 +34,6 @@ export function RiskAnalysisDisclosure({
               ? '回撤、暴露与持仓集中度'
               : 'Drawdown, exposure, and position concentration'}
           </h2>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--app-text-secondary)]">
-            {locale === 'zh'
-              ? '按需查看图表与逐持仓结构；当前异常、指标、阈值和熔断状态保留在上方。'
-              : 'Expand for charts and position-level structure. Current exceptions, metrics, thresholds, and kill-switch state remain above.'}
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
           <StatusBadge tone="neutral">

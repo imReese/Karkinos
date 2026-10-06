@@ -17,12 +17,9 @@ export function RiskControlledActionDisclosure({
       <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
           <span className="app-type-section-title block text-[var(--app-text)]">
-            {locale === 'zh' ? '受控操作' : 'Controlled action'}
-          </span>
-          <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
             {locale === 'zh'
-              ? '熔断状态与风险事实分开；仅在明确需要人工干预时展开。'
-              : 'Kill-switch state stays separate from risk facts and expands only for deliberate operator intervention.'}
+              ? '受控操作与交易熔断'
+              : 'Controlled action & kill switches'}
           </span>
         </span>
         <ChevronDown

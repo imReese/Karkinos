@@ -140,12 +140,9 @@ export function SingleInstrumentLoopReadinessCard({
           <div className="app-kicker app-type-overline">
             {labels.singleInstrumentLoopKicker}
           </div>
-          <h3 className="app-type-subsection-title mt-1.5 text-[var(--app-text)]">
+          <h3 className="app-type-subsection-title mt-1 text-[var(--app-text)]">
             {labels.singleInstrumentLoopTitle}
           </h3>
-          <p className="app-muted mt-2 text-sm leading-6">
-            {labels.singleInstrumentLoopDetail}
-          </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <StatusBadge

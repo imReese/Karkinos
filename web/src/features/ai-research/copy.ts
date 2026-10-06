@@ -5,9 +5,9 @@ export const aiResearchPageCopy = {
     kicker: 'AI research',
     title: 'Research review',
     subtitle:
-      'Review cited research against saved account evidence, then record a human conclusion. Nothing here can place an order.',
-    context: 'Human-started · saved evidence · advisory only',
-    openStrategyLab: 'Open Strategy Lab',
+      'Review quantitative research hypotheses, shadow evolution, and model evidence.',
+    context: 'Advisory Research',
+    openStrategyLab: 'Open Strategy Backtest',
     contextTitle: 'Evidence available to new tasks',
     contextDetail: 'A task can bind only the saved account context shown here.',
     backtestContext: 'Backtest context',
@@ -20,14 +20,18 @@ export const aiResearchPageCopy = {
     persistedAssignment: 'Current account assignment',
     strategyLoadFailed: 'Strategy assignment could not be read',
     noStrategyAssignment: 'No account strategy is assigned',
+    tabs: {
+      all: 'All Workspaces',
+      shadow: 'Shadow Evolution',
+      tasks: 'Research Tasks',
+    },
   },
   zh: {
-    kicker: 'AI 研究',
+    kicker: 'AI 投研',
     title: '研究复核',
-    subtitle:
-      '依据已保存的账户证据复核研究结论，并记录人工判断；本页不能提交订单。',
-    context: '人工启动 · 已保存证据 · 仅供研究',
-    openStrategyLab: '打开策略实验',
+    subtitle: '复核量化研究假说、Shadow 策略演化与模型证据。',
+    context: '投研实验',
+    openStrategyLab: '打开策略回测',
     contextTitle: '新任务可用证据',
     contextDetail: '研究任务只能绑定此处展示的已保存账户上下文。',
     backtestContext: '回测上下文',
@@ -40,6 +44,11 @@ export const aiResearchPageCopy = {
     persistedAssignment: '当前账户策略绑定',
     strategyLoadFailed: '无法读取策略绑定',
     noStrategyAssignment: '尚未绑定账户策略',
+    tabs: {
+      all: '全部工作台',
+      shadow: 'Shadow 策略演化',
+      tasks: '人机投研任务',
+    },
   },
 } satisfies Record<Locale, Record<string, unknown>>;
 

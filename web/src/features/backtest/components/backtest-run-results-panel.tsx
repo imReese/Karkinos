@@ -32,7 +32,7 @@ export function BacktestRunResultsPanel() {
   } = useBacktestPage();
   return (
     <section
-      className={`min-w-0 border-y border-[var(--app-divider)] xl:border-y-0 ${
+      className={`min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] ${
         mobileWorkspaceView === 'results' ? '' : 'hidden xl:block'
       }`}
       data-testid="backtest-result-panel"
@@ -42,13 +42,13 @@ export function BacktestRunResultsPanel() {
       <div className="p-4 sm:p-5">
         {latestReport ? (
           <>
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="app-kicker">{labels.currentKicker}</div>
-                <h2 className="app-card-title mt-1.5">{labels.currentTitle}</h2>
+                <h2 className="app-card-title mt-1">{labels.currentTitle}</h2>
               </div>
               {summary ? (
-                <div className="grid grid-cols-2 gap-3 text-right text-xs tabular-nums sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-2.5 text-right text-xs tabular-nums sm:grid-cols-4 sm:gap-4 sm:px-4">
                   <SummaryValue
                     label={labels.totalReturn}
                     value={formatPercent(summary.returnValue)}
@@ -81,12 +81,9 @@ export function BacktestRunResultsPanel() {
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="app-kicker">{labels.runContextKicker}</div>
-                    <h3 className="app-type-subsection-title mt-1.5 text-[var(--app-text)]">
+                    <h3 className="app-type-subsection-title mt-1 text-[var(--app-text)]">
                       {labels.runContextTitle}
                     </h3>
-                    <p className="app-muted mt-2 text-sm leading-6">
-                      {labels.runContextDetail}
-                    </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     {reportSymbol ? (

@@ -142,9 +142,9 @@ export const SHADOW_RESEARCH_COPY = {
     noAuthority:
       'Normalized-notional discovery · Account Truth remains required for promotion/execution · no broker order',
     failure: 'The operation failed closed. No strategy or order was changed.',
-    openInStrategyLab: 'Open in Strategy Lab',
+    openInStrategyLab: 'Open in Strategy Backtest',
     openInStrategyLabDetail:
-      'Open this candidate in Strategy Lab for parameter sweeps and backtesting',
+      'Open this candidate in Strategy Backtest for parameter sweeps and backtesting',
     critiqueTrajectory: 'Critique self-healing & evolution timeline',
     selfHealingConverged: 'Self-healing converged',
     sequentialFeedbackBound: 'Sequential feedback bound',
@@ -290,8 +290,8 @@ export const SHADOW_RESEARCH_COPY = {
     noAuthority:
       '归一化名义资金研究 · Account Truth 仅用于后续晋级/执行 · 不会创建 broker 订单',
     failure: '操作已 fail closed；没有修改策略或订单。',
-    openInStrategyLab: '在策略实验室打开并调参',
-    openInStrategyLabDetail: '克隆该候选策略至策略实验室进行人工调参及回测',
+    openInStrategyLab: '在策略回测中打开',
+    openInStrategyLabDetail: '克隆该候选策略至策略回测进行人工调参及回测',
     critiqueTrajectory: 'Critique 自愈轨迹与演化时间线',
     selfHealingConverged: '自愈纠偏收敛',
     sequentialFeedbackBound: '已绑定前序轮次反馈',

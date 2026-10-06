@@ -529,7 +529,7 @@ for (const width of [390, 1280]) {
 
     await page.goto('/backtest');
     await expect(
-      page.getByRole('heading', { name: '策略回放', exact: true }),
+      page.getByRole('heading', { name: /策略(回放|回测)/, exact: true }),
     ).toBeVisible();
     await page
       .getByText('研究 Dataset · 持久保存与离线回测', { exact: true })

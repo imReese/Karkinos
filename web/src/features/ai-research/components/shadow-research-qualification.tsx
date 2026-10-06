@@ -157,9 +157,7 @@ export function ShadowResearchQualificationReview({
           >
             {copy.qualificationTitle}
           </h3>
-          <p className="app-muted mt-2 max-w-3xl text-xs leading-5">
-            {copy.qualificationDetail}
-          </p>
+          <p className="sr-only">{copy.qualificationDetail}</p>
         </div>
         <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1 text-xs font-semibold">
           {displayStatus}
@@ -203,9 +201,7 @@ export function ShadowResearchQualificationReview({
         </div>
       </dl>
 
-      <p className="app-muted mt-3 text-xs leading-5">
-        {copy.qualificationSourceLocked}
-      </p>
+      <p className="sr-only">{copy.qualificationSourceLocked}</p>
 
       {blockers.length ? (
         <div className="mt-4">

@@ -1,4 +1,5 @@
 import { usePreferences } from '../../../shared/preferences/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   formatPublicCode,
   formatPublicStatus,
@@ -133,8 +134,9 @@ export function CurrentPerOrderReviewSection({
             </div>
             {currentPerOrderHandoffEnabled ? (
               <a
-                className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                className="inline-flex min-h-9 max-w-full items-center justify-center rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 href="/trading"
+                onClick={(e) => handleClientNavigation(e, '/trading')}
               >
                 {locale === 'zh'
                   ? '打开非提交逐单复核'

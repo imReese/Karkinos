@@ -1,5 +1,6 @@
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   formatCurrency,
   formatPercent,
@@ -55,9 +56,6 @@ export function DailyTradingPlanPanel(props: DailyTradingPlanPanelProps) {
           <div className="app-product-mark">{labels.tradingPlanKicker}</div>
           <h2 className="app-card-title mt-1.5">{labels.tradingPlanTitle}</h2>
         </div>
-        <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
-          {labels.tradingPlanDetail}
-        </p>
       </div>
       {loading ? (
         <div className="app-muted mt-4 text-sm">
@@ -123,6 +121,7 @@ function TradingPlanSummary({ plan }: { plan: DailyTradingPlanResponse }) {
         <div className="mt-3">
           <a
             href="/trading"
+            onClick={(e) => handleClientNavigation(e, '/trading')}
             className="app-button-primary inline-flex min-h-8 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
           >
             {labels.tradingPlanGoToExecutionQueue} &rarr;
@@ -152,6 +151,7 @@ function TradingPlanOrderIntentPreview({
           {intents.length > 0 ? (
             <a
               href="/trading"
+              onClick={(e) => handleClientNavigation(e, '/trading')}
               className="app-button-primary inline-flex min-h-7 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-semibold"
               title={labels.tradingPlanGoToExecutionDetail}
             >
@@ -346,7 +346,7 @@ function TradingPlanOrderIntentPreview({
                       </div>
                     </div>
                   ) : null}
-                  <div className="app-muted sm:col-span-2">
+                  <div className="sr-only sm:col-span-2">
                     {labels.tradingPlanDoesNotSubmit}
                   </div>
                 </div>

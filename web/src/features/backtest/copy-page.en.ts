@@ -1,6 +1,6 @@
 export const backtestPageEn = {
   kicker: 'Backtest lab',
-  title: 'Strategy replay',
+  title: 'Strategy Backtest',
   subtitle:
     'Run a controlled historical simulation, then inspect risk, costs, equity path, and fill coverage.',
   formKicker: 'Run setup',

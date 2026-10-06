@@ -136,7 +136,7 @@ export function ResearchTaskPanel({
   return (
     <section
       aria-labelledby="ai-research-task-title"
-      className={`app-ai-research-boundary ${routePrimary ? 'p-0' : 'p-3 sm:p-5'}`}
+      className="app-ai-research-boundary p-4 sm:p-5"
       data-evidence-kind="cited-ai-research"
       data-testid="ai-research-task-panel"
     >
@@ -167,16 +167,13 @@ export function ResearchTaskPanel({
               }`}
             >
               <div className="min-w-0">
-                <div className="app-product-mark">{copy.queueKicker}</div>
                 <h3
-                  className="app-type-section-title mt-1.5 text-[var(--app-text)]"
+                  className="app-type-section-title text-[var(--app-text)]"
                   id="ai-research-queue-title"
                 >
                   {copy.queueTitle}
                 </h3>
-                <p className="app-muted mt-1 max-w-2xl text-xs leading-5">
-                  {copy.queueDetail}
-                </p>
+                <p className="sr-only">{copy.queueDetail}</p>
               </div>
               <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 <StatusBadge className="max-w-full truncate" tone="neutral">
@@ -244,23 +241,21 @@ export function ResearchTaskPanel({
                 />
                 <ol
                   aria-label={copy.emptyWorkflowLabel}
-                  className="mt-4 grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 xl:grid-cols-4 xl:gap-y-5"
+                  className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4"
                   data-testid="ai-research-empty-workflow"
                 >
                   {copy.emptyWorkflow.map((step, index) => (
                     <li
-                      className="min-w-0 border-t border-[var(--app-divider)] pt-3"
+                      className="flex items-center gap-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 py-2 text-xs"
                       key={step.title}
                     >
-                      <span className="app-type-micro font-mono font-semibold text-[var(--app-accent)]">
+                      <span className="font-mono font-semibold text-[var(--app-accent)] tabular-nums">
                         {String(index + 1).padStart(2, '0')}
                       </span>
-                      <strong className="mt-1 block text-xs font-semibold text-[var(--app-text)]">
+                      <strong className="font-medium text-[var(--app-text)]">
                         {step.title}
                       </strong>
-                      <span className="app-muted app-type-micro mt-1 block">
-                        {step.detail}
-                      </span>
+                      <span className="sr-only">{step.detail}</span>
                     </li>
                   ))}
                 </ol>
@@ -357,15 +352,21 @@ function ResearchTaskPanelHeader({
       }`}
     >
       {routePrimary ? (
-        <>
-          <h2 className="sr-only" id="ai-research-task-title">
-            {copy.title}
-          </h2>
-          <div className="app-ai-research-boundary-badges flex min-w-0 flex-1 flex-wrap gap-2">
-            <BoundaryBadge label={copy.noModel} />
-            <BoundaryBadge label={copy.noAuthority} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2
+              className="text-base font-semibold text-[var(--app-text)] sm:text-lg"
+              id="ai-research-task-title"
+            >
+              {copy.title}
+            </h2>
+            <div className="app-ai-research-boundary-badges flex min-w-0 flex-wrap gap-2">
+              <BoundaryBadge label={copy.noModel} />
+              <BoundaryBadge label={copy.noAuthority} />
+            </div>
           </div>
-        </>
+          <p className="sr-only">{open ? copy.detail : copy.closedDetail}</p>
+        </div>
       ) : (
         <div className="min-w-0">
           <div className="app-kicker app-type-overline hidden sm:block">
@@ -377,9 +378,7 @@ function ResearchTaskPanelHeader({
           >
             {copy.title}
           </h2>
-          <p className="app-muted mt-2 hidden max-w-3xl text-sm leading-6 sm:block">
-            {open ? copy.detail : copy.closedDetail}
-          </p>
+          <p className="sr-only">{open ? copy.detail : copy.closedDetail}</p>
         </div>
       )}
       <div className="flex shrink-0 items-center gap-2">

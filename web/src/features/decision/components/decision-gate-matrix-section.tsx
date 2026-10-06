@@ -34,9 +34,6 @@ export function DecisionGateMatrixSection({
         >
           <span className="min-w-0">
             <span className="block">{labels.workflowTitle}</span>
-            <span className="mt-0.5 hidden text-xs font-normal text-[var(--app-text-secondary)] sm:block">
-              {labels.workflowDetail}
-            </span>
           </span>
           <StatusBadge tone={allDecisionGatesPass ? 'success' : 'warning'}>
             {allDecisionGatesPass
