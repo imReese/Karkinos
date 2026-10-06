@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import { useCopy } from '../../../shared/i18n/context';
 import { type Locale } from '../../../shared/preferences/context';
 import { MetricStrip } from '../../../shared/ui/workbench';
@@ -56,17 +57,21 @@ export function TradingSafetyRail({
       <AutomaticTradingPanel />
 
       <details
-        className="min-w-0 border-y border-[var(--app-divider)] sm:col-span-2"
+        className="group min-w-0 border-y border-[var(--app-divider)] sm:col-span-2"
         data-testid="trading-broker-boundary-disclosure"
       >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
           <span className="min-w-0">
             <span className="block text-sm font-semibold text-[var(--app-text)]">
               {labels.brokerBoundaryEvidence}
             </span>
           </span>
-          <span className="shrink-0 text-xs text-[var(--app-text-secondary)]">
-            {labels.expandOnDemand}
+          <span className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--app-text-tertiary)]">
+            <span className="sr-only">{labels.expandOnDemand}</span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+            />
           </span>
         </summary>
         <div className="space-y-5 py-4">

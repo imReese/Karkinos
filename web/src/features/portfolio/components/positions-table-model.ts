@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 
 import type { Position } from '../api';
 
@@ -84,7 +85,6 @@ export function handlePositionLinkClick(
   onOpenPosition?: (symbol: string) => void,
 ) {
   if (
-    !onOpenPosition ||
     event.defaultPrevented ||
     event.button !== 0 ||
     event.metaKey ||
@@ -94,6 +94,10 @@ export function handlePositionLinkClick(
   ) {
     return;
   }
-  event.preventDefault();
-  onOpenPosition(symbol);
+  if (onOpenPosition) {
+    event.preventDefault();
+    onOpenPosition(symbol);
+    return;
+  }
+  handleClientNavigation(event, holdingDetailHref(symbol));
 }

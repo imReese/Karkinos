@@ -7,6 +7,7 @@ import {
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatTimestamp } from '../../../shared/format';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   formatPublicCode,
   formatPublicEvidenceReference,
@@ -238,6 +239,9 @@ function SignalJournalCard({
         <a
           className="app-button-secondary app-type-micro inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-center font-semibold whitespace-normal"
           href={signalBacktestHref(entry.signal)}
+          onClick={(e) =>
+            handleClientNavigation(e, signalBacktestHref(entry.signal))
+          }
           aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
         >
           {labels.openBacktestEvidence}
@@ -245,6 +249,12 @@ function SignalJournalCard({
         <a
           className="app-button-secondary app-type-micro inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-center font-semibold whitespace-normal"
           href={signalHoldingAttributionHref(entry.signal)}
+          onClick={(e) =>
+            handleClientNavigation(
+              e,
+              signalHoldingAttributionHref(entry.signal),
+            )
+          }
           aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
         >
           {labels.openAttributionReview}
@@ -416,6 +426,12 @@ export function SignalQueuePanel({
                           <a
                             className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-center text-xs font-semibold whitespace-normal"
                             href={signalActionBacktestHref(action)}
+                            onClick={(e) =>
+                              handleClientNavigation(
+                                e,
+                                signalActionBacktestHref(action),
+                              )
+                            }
                             aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
                           >
                             {labels.openBacktestEvidence}
@@ -423,6 +439,12 @@ export function SignalQueuePanel({
                           <a
                             className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-center text-xs font-semibold whitespace-normal"
                             href={signalActionHoldingAttributionHref(action)}
+                            onClick={(e) =>
+                              handleClientNavigation(
+                                e,
+                                signalActionHoldingAttributionHref(action),
+                              )
+                            }
                             aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
                           >
                             {labels.openAttributionReview}

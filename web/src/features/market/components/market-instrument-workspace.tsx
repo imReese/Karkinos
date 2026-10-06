@@ -7,6 +7,7 @@ import {
   MetricStrip,
   StatusBadge,
 } from '../../../shared/ui/workbench';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   usePreferences,
   type Locale,
@@ -320,6 +321,12 @@ export function MarketInstrumentWorkspace({
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
                   <a
                     href={`/backtest?symbol=${encodeURIComponent(selectedItem.symbol)}&assetClass=${encodeURIComponent(selectedItem.asset_class)}`}
+                    onClick={(e) =>
+                      handleClientNavigation(
+                        e,
+                        `/backtest?symbol=${encodeURIComponent(selectedItem.symbol)}&assetClass=${encodeURIComponent(selectedItem.asset_class)}`,
+                      )
+                    }
                     className="app-button-secondary inline-flex min-h-7 items-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-semibold hover:border-[var(--app-accent-border)] hover:bg-[var(--app-accent-bg)] transition-colors"
                     data-testid="market-open-backtest-link"
                     title={`${labels.openBacktest}: ${selectedItem.symbol}`}
@@ -339,6 +346,12 @@ export function MarketInstrumentWorkspace({
                   {selectedItem.is_holding ? (
                     <a
                       href={`/portfolio/${encodeURIComponent(selectedItem.symbol)}`}
+                      onClick={(e) =>
+                        handleClientNavigation(
+                          e,
+                          `/portfolio/${encodeURIComponent(selectedItem.symbol)}`,
+                        )
+                      }
                       className="app-button-secondary inline-flex min-h-7 items-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-semibold hover:border-[var(--app-accent-border)] hover:bg-[var(--app-accent-bg)] transition-colors"
                       data-testid="market-view-holding-link"
                       title={`${labels.viewHolding}: ${selectedItem.symbol}`}

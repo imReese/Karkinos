@@ -13,7 +13,7 @@ export function RiskPage() {
 
   return (
     <section
-      className="app-workbench-route space-y-4 sm:space-y-5"
+      className="app-workbench-route space-y-4 pb-8 sm:space-y-5"
       data-workbench-route="risk"
       data-workbench-width="wide"
     >

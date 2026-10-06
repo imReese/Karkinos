@@ -1,5 +1,6 @@
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatPublicCode } from '../../../shared/public-labels';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { type DailyCandidateFinancialPreflight } from '../decision-feature-boundary';
 import {
   actionLabels,
@@ -170,6 +171,12 @@ export function DailyCandidateFinancialPreflightPanel({
                     <a
                       className="app-link mt-1 inline-flex"
                       href={gateReviewPaths[item.gate] ?? '/operations'}
+                      onClick={(e) =>
+                        handleClientNavigation(
+                          e,
+                          gateReviewPaths[item.gate] ?? '/operations',
+                        )
+                      }
                     >
                       {locale === 'zh'
                         ? '前往对应复核页'

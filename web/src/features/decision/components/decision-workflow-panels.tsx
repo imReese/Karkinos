@@ -252,6 +252,7 @@ function DecisionWorkflowTaskCard({
           aria-label={labels.workflowOpenSurfaceLabel(target.label, taskLabel)}
           className="app-button-secondary mt-3 inline-flex min-h-8 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
           href={target.href}
+          onClick={(e) => handleClientNavigation(e, target.href)}
         >
           {target.label}
         </a>

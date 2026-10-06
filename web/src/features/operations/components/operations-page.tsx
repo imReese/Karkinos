@@ -39,7 +39,7 @@ export function OperationsPage() {
 
   return (
     <section
-      className="app-workbench-route min-w-0 space-y-4 sm:space-y-5"
+      className="app-workbench-route min-w-0 space-y-4 pb-8 sm:space-y-5"
       data-testid="operations-page"
       data-workbench-route="operations"
       data-workbench-width="wide"

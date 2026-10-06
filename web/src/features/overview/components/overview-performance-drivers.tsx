@@ -1,4 +1,5 @@
 import { formatCurrency } from '../../../shared/format';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { usePreferences } from '../../../shared/preferences/context';
 import type { AccountStateResponse } from '../overview-feature-boundary';
 import { overviewSessionLabels, pnlTone } from '../model/overview-presentation';
@@ -24,6 +25,12 @@ export function OverviewPerformanceDrivers({
           <li key={item.symbol} className="flex items-baseline gap-2">
             <a
               href={`/portfolio/${encodeURIComponent(item.symbol)}`}
+              onClick={(e) =>
+                handleClientNavigation(
+                  e,
+                  `/portfolio/${encodeURIComponent(item.symbol)}`,
+                )
+              }
               className="text-[var(--app-text-secondary)] hover:text-[var(--app-accent)]"
             >
               {item.display_name || item.name || item.symbol}

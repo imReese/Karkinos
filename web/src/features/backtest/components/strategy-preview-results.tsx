@@ -3,6 +3,7 @@ import { formatCurrency } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatPublicNote } from '../../../shared/public-labels';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import type {
   BacktestAttributionPreviewResponse,
   BacktestPaperShadowPreviewResponse,
@@ -273,6 +274,9 @@ export function AttributionPreviewResult({
               <a
                 className="mt-3 inline-flex items-center rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 href={holdingAttributionNextAction.href}
+                onClick={(e) =>
+                  handleClientNavigation(e, holdingAttributionNextAction.href)
+                }
               >
                 {holdingAttributionNextAction.label}
               </a>

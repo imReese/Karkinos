@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronDown, Plus } from 'lucide-react';
 
 import {
   EvidenceState,
@@ -36,7 +37,7 @@ export function MarketPageView({
     <>
       <ToastStack toasts={toasts} />
       <section
-        className="app-workbench-route space-y-4 sm:space-y-5"
+        className="app-workbench-route space-y-4 pb-8 sm:space-y-5"
         data-workbench-route="market"
         data-workbench-width="wide"
       >
@@ -149,12 +150,10 @@ function MarketInstrumentSelection({
         >
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-[var(--app-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--app-focus-ring)]">
             <span>{copy.market.addSymbol}</span>
-            <span
+            <Plus
               aria-hidden="true"
-              className="transition-transform group-open:rotate-45 motion-reduce:transition-none"
-            >
-              +
-            </span>
+              className="size-3.5 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-45 motion-reduce:transition-none"
+            />
           </summary>
           <form
             className="grid gap-3 border-t border-[var(--app-divider)] px-3 py-3"
@@ -254,12 +253,10 @@ function MarketGlobalDataEvidence({
         <span className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
           <span>{evidenceModeLabel}</span>
           <span className="font-mono tabular-nums">{staleCount}</span>
-          <span
+          <ChevronDown
             aria-hidden="true"
-            className="font-semibold transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-          >
-            ↓
-          </span>
+            className="size-4 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+          />
         </span>
       </summary>
       <div className="border-t border-[var(--app-divider)] pt-3">

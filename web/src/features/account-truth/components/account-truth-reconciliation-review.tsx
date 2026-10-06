@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import {
@@ -60,7 +61,7 @@ export function AccountTruthDisclosure({
       open={isOpen}
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 border-y border-[var(--app-divider)] py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+      <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 border-y border-[var(--app-divider)] py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
           <span className="block text-sm font-semibold text-[var(--app-text)]">
             {title}
@@ -69,12 +70,10 @@ export function AccountTruthDisclosure({
             {detail}
           </span>
         </span>
-        <span
+        <ChevronDown
           aria-hidden="true"
-          className="shrink-0 text-sm text-[var(--app-text-tertiary)] group-open:rotate-45"
-        >
-          +
-        </span>
+          className="size-4 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180 text-[var(--app-text-tertiary)]"
+        />
       </summary>
       <div className="min-w-0 pt-3">{children}</div>
     </details>

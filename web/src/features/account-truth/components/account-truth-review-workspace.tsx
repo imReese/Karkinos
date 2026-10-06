@@ -58,7 +58,7 @@ function AccountTruthPageFrame({
   const text = labels[locale];
   return (
     <section
-      className="app-account-truth-route app-workbench-route mx-auto grid w-full gap-5 sm:gap-6"
+      className="app-account-truth-route app-workbench-route mx-auto grid w-full gap-5 pb-8 sm:gap-6"
       data-workbench-route="account-truth"
       data-workbench-width="wide"
     >

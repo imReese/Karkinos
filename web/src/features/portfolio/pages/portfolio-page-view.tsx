@@ -39,7 +39,7 @@ export function PortfolioPageView({
   }
   return (
     <section
-      className="app-workbench-route space-y-3 sm:space-y-4"
+      className="app-workbench-route space-y-3 pb-8 sm:space-y-4"
       data-workbench-route="portfolio"
       data-workbench-width="wide"
     >

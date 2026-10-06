@@ -3,6 +3,7 @@ import {
   formatDate,
   formatPercent,
 } from '../../../shared/format';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { usePreferences } from '../../../shared/preferences/context';
 import { SectionHeader } from '../../../shared/ui/workbench';
 import type { AccountStateResponse } from '../overview-feature-boundary';
@@ -60,6 +61,12 @@ function DriverList({
                   </span>
                   <a
                     href={`/portfolio/${encodeURIComponent(item.symbol)}`}
+                    onClick={(e) =>
+                      handleClientNavigation(
+                        e,
+                        `/portfolio/${encodeURIComponent(item.symbol)}`,
+                      )
+                    }
                     title={item.display_name || item.name || item.symbol}
                     className="group flex min-w-0 flex-1 flex-col gap-0.5 text-left"
                   >

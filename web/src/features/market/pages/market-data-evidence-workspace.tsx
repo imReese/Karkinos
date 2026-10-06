@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import { getErrorMessage } from '../../../shared/error-message';
@@ -156,11 +157,12 @@ export function MarketDataEvidenceWorkspace({
           className="group mt-3 border-t border-[var(--app-divider)] pt-2"
           data-testid="market-provider-details"
         >
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-[var(--app-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-[var(--app-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
             <span>{copy.market.providerStatus}</span>
-            <span aria-hidden="true" className="group-open:rotate-180">
-              ▾
-            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-3.5 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+            />
           </summary>
           <dl className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] text-xs">
             {[
@@ -204,11 +206,12 @@ export function MarketDataEvidenceWorkspace({
         </details>
       </section>
       <details className="group border-y border-[var(--app-divider)] py-2">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
           <span>{copy.market.promptsTitle}</span>
-          <span aria-hidden="true" className="group-open:rotate-180">
-            ▾
-          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180 text-[var(--app-text-tertiary)]"
+          />
         </summary>
         <div className="mt-2 divide-y divide-[var(--app-divider)]">
           {copy.market.prompts.map((prompt) => (
@@ -225,13 +228,14 @@ export function MarketDataEvidenceWorkspace({
         className="group border-y border-[var(--app-divider)] py-2"
         data-testid="market-data-operations-disclosure"
       >
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
           <span>{copy.market.dataOperations}</span>
           <span className="flex items-center gap-2 font-mono text-xs font-normal tabular-nums text-[var(--app-text-tertiary)]">
             {quoteFetchRuns.data?.length ?? 0}
-            <span aria-hidden="true" className="group-open:rotate-180">
-              ▾
-            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180 text-[var(--app-text-tertiary)]"
+            />
           </span>
         </summary>
         <div className="mt-3">

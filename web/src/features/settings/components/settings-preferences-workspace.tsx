@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import type {
   Locale,
   ThemePreference,
@@ -137,15 +138,16 @@ export function SettingsPreferencesWorkspace({
               ) : null}
             </div>
             <details className="group rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-2.5 text-xs">
-              <summary className="flex cursor-pointer select-none items-center justify-between font-medium text-[var(--app-text)] outline-hidden">
+              <summary className="flex cursor-pointer select-none items-center justify-between font-medium text-[var(--app-text)] outline-hidden [&::-webkit-details-marker]:hidden">
                 <span>
                   {locale === 'zh'
                     ? '💡 如何配置消息推送密钥？'
                     : '💡 How to configure notification credentials?'}
                 </span>
-                <span className="app-muted app-type-micro transition-transform group-open:rotate-180">
-                  ▾
-                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180 text-[var(--app-text-tertiary)]"
+                />
               </summary>
               <p className="app-muted mt-2 border-t border-[var(--app-divider)] pt-2 leading-relaxed">
                 {locale === 'zh'

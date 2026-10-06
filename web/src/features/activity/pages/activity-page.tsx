@@ -403,7 +403,7 @@ export function ActivityPage() {
     <>
       <ToastStack toasts={toasts} />
       <section
-        className="app-workbench-route min-w-0 space-y-4 sm:space-y-5"
+        className="app-workbench-route min-w-0 space-y-4 pb-8 sm:space-y-5"
         data-workbench-route="activity"
         data-workbench-width="wide"
       >

@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import {
   EvidenceState,
   GateMatrix,
@@ -55,12 +56,10 @@ export function ControlledPerOrderPilotReadinessPanel({
                   ? '条件未满足'
                   : 'Prerequisites unmet'}
           </StatusBadge>
-          <span
+          <ChevronDown
             aria-hidden="true"
-            className="app-disclosure-chevron inline-flex h-5 w-5 shrink-0 items-center justify-center text-[var(--app-text-tertiary)] group-open:rotate-180"
-          >
-            ▾
-          </span>
+            className="size-4 shrink-0 text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+          />
         </span>
       </summary>
       <div className="min-w-0 space-y-4 pb-4 pt-2">
@@ -133,16 +132,14 @@ export function ControlledPerOrderPilotReadinessPanel({
                       className="group/evidence min-w-0"
                       data-testid={`pilot-gate-evidence-${gate.key}`}
                     >
-                      <summary className="cursor-pointer list-none font-medium text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                      <summary className="flex cursor-pointer list-none items-center gap-1 font-medium text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
                         {locale === 'zh'
                           ? `${gate.evidence_refs.length} 条已记录证据`
                           : `${gate.evidence_refs.length} recorded evidence ${gate.evidence_refs.length === 1 ? 'reference' : 'references'}`}
-                        <span
+                        <ChevronDown
                           aria-hidden="true"
-                          className="app-disclosure-chevron ml-1 inline-block text-[var(--app-text-tertiary)] group-open/evidence:rotate-180"
-                        >
-                          ▾
-                        </span>
+                          className="size-3.5 shrink-0 text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open/evidence:rotate-180"
+                        />
                       </summary>
                       <div className="mt-1 space-y-1">
                         {gate.evidence_refs.map((reference) => (
@@ -184,18 +181,16 @@ export function ControlledPerOrderPilotReadinessPanel({
                     className="group/identity min-w-0 border-y border-[var(--app-divider)] py-1.5"
                     data-testid="pilot-readiness-identity"
                   >
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
                       <span>
                         {locale === 'zh'
                           ? '技术证据标识'
                           : 'Technical evidence ID'}
                       </span>
-                      <span
+                      <ChevronDown
                         aria-hidden="true"
-                        className="app-disclosure-chevron text-[var(--app-text-tertiary)] group-open/identity:rotate-180"
-                      >
-                        ▾
-                      </span>
+                        className="size-3.5 shrink-0 text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open/identity:rotate-180"
+                      />
                     </summary>
                     <code className="app-type-micro mt-1.5 block break-all font-mono text-[var(--app-text-tertiary)]">
                       {readiness.readiness_fingerprint}

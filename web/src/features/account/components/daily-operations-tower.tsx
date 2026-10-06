@@ -1,4 +1,5 @@
 import { useCopy } from '../../../shared/i18n/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { usePreferences } from '../../../shared/preferences/context';
 import type { DailyOperationsSummary } from '../api';
 
@@ -118,6 +119,7 @@ export function DailyOperationsTower({
         </div>
         <a
           href={target.href}
+          onClick={(e) => handleClientNavigation(e, target.href)}
           className="app-button-secondary w-fit shrink-0 rounded-2xl px-3 py-2 text-xs font-semibold"
         >
           {target.label}

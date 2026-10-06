@@ -11,7 +11,7 @@ export function OverviewPage() {
   const { copy, account } = controller;
   return (
     <section
-      className="app-workbench-route overview-terminal-route min-w-0"
+      className="app-workbench-route overview-terminal-route min-w-0 pb-8"
       data-testid="overview-page"
       data-workbench-route="overview"
       data-workbench-width="wide"

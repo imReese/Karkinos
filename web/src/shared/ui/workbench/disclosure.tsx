@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 import { cn } from '../../utils/cn';
 
@@ -37,12 +38,10 @@ export function Disclosure({
               {meta}
             </span>
           ) : null}
-          <span
+          <ChevronDown
             aria-hidden="true"
-            className="app-disclosure-chevron text-[var(--app-text-tertiary)] group-open:rotate-180"
-          >
-            ▾
-          </span>
+            className="size-4 shrink-0 text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+          />
         </span>
       </summary>
       <div className="pb-3 pt-1">{children}</div>

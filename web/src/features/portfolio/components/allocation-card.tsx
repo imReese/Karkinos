@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
+import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import { DataTable } from '../../../shared/ui/workbench';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
@@ -172,12 +173,12 @@ export function AllocationCard({
                 );
               }
 
+              const targetHref = `/portfolio/${encodeURIComponent(row.original.symbol)}`;
               return (
                 <a
-                  href={`/portfolio/${encodeURIComponent(row.original.symbol)}`}
+                  href={targetHref}
                   onClick={(event) => {
                     if (
-                      !onOpenPosition ||
                       event.defaultPrevented ||
                       event.button !== 0 ||
                       event.metaKey ||
@@ -187,8 +188,12 @@ export function AllocationCard({
                     ) {
                       return;
                     }
-                    event.preventDefault();
-                    onOpenPosition(row.original.symbol);
+                    if (onOpenPosition) {
+                      event.preventDefault();
+                      onOpenPosition(row.original.symbol);
+                      return;
+                    }
+                    handleClientNavigation(event, targetHref);
                   }}
                   className="font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)]"
                 >
