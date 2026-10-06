@@ -33,6 +33,8 @@ export const sharedCopy = {
         'The latest refresh failed. This view uses the last published valuation. Related actions still require verified evidence.',
       publicationDegraded:
         'Valuation evidence is degraded or a relevant refresh failure remains unresolved. Related actions still require verified evidence.',
+      publicationMarketClosed:
+        'Market closed. Currently displaying the published closing valuation from the previous session.',
       valuationStatus: 'Valuation status',
       reviewFingerprint: 'Review fingerprint',
       captureIdentity: 'Capture reference',
@@ -211,6 +213,8 @@ export const sharedCopy = {
         '最新刷新失败，当前显示上一份已发布估值。相关操作仍需补齐证据。',
       publicationDegraded:
         '估值证据已降级，或仍有相关的刷新失败尚未解决。相关操作仍需补齐证据。',
+      publicationMarketClosed:
+        '市场休市中，当前显示上一交易日已发布的终盘估值。',
       valuationStatus: '估值状态',
       reviewFingerprint: '复核指纹',
       captureIdentity: '采集标识',

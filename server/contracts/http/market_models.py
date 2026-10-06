@@ -64,6 +64,7 @@ class MarketHealthQuote(BaseModel):
     display_name: str | None = None
     timestamp: str | None = None
     price: float | None = None
+    previous_close: float | None = None
     daily_change: float | None = None
     daily_change_pct: float | None = None
     change: float | None = None

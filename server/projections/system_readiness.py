@@ -66,6 +66,7 @@ def build_system_readiness(
     )
     valuation = None
     failure_codes = ["valuation_unavailable"]
+    market_session: dict[str, Any] = {"status": "unknown", "is_open": False}
     try:
         if database_path is None:
             raise ValueError("database_unavailable")
@@ -218,6 +219,15 @@ def build_system_readiness(
         "scope": "account_valuation_and_worker_heartbeats",
         "research_dataset_readiness": "not_evaluated",
         "valuation_snapshot_id": valuation["snapshot_id"] if valuation else None,
+        "market_session": {
+            "status": market_session.get("status"),
+            "market_date": market_session.get("market_date"),
+            "expected_quote_date": market_session.get("expected_quote_date"),
+            "latest_completed_trade_date": market_session.get(
+                "latest_completed_trade_date"
+            ),
+            "is_open": market_session.get("status") == "open",
+        },
         "subsystems": states,
         "authorizes_execution": False,
     }

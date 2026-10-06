@@ -228,6 +228,24 @@ def quote_metadata(
             or quote.get("pct_chg")
         )
     )
+    price_val = None if quote is None else optional_float(quote.get("price"))
+    prev_close = None if quote is None else optional_float(quote.get("previous_close"))
+    if daily_change is None and price_val is not None and prev_close is not None:
+        daily_change = round(price_val - prev_close, 4)
+
+    if daily_change_pct is None and quote is not None:
+        if prev_close and prev_close != 0:
+            if daily_change is not None:
+                daily_change_pct = round((daily_change / prev_close) * 100, 4)
+            elif price_val is not None:
+                daily_change_pct = round(
+                    ((price_val - prev_close) / prev_close) * 100, 4
+                )
+        elif daily_change is not None and price_val is not None:
+            implied_prev = price_val - daily_change
+            if implied_prev != 0:
+                daily_change_pct = round((daily_change / implied_prev) * 100, 4)
+
     quote_status = (
         "missing"
         if not quote or quote.get("price") in {None, ""}
@@ -247,6 +265,7 @@ def quote_metadata(
     return {
         "name": display_name,
         "display_name": display_name,
+        "previous_close": prev_close,
         "daily_change": daily_change,
         "daily_change_pct": daily_change_pct,
         "change": daily_change,

@@ -81,3 +81,27 @@ test('shows unavailable status when the readiness request fails', async () => {
     await screen.findByText(sharedCopy.en.common.publicationUnavailable),
   ).not.toBeNull();
 });
+
+test.each(['en', 'zh'] as const)(
+  'shows calm closed session status instead of alarming failure when market is closed in %s',
+  async (language) => {
+    const closedEvidence = {
+      ...evidence(),
+      market_session: {
+        status: 'non_trading_day',
+        is_open: false,
+      },
+    };
+    show(closedEvidence, language);
+    expect(
+      await screen.findByText(
+        sharedCopy[language].common.publicationMarketClosed,
+      ),
+    ).not.toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('09/04, 15:00');
+    // In closed session, alarming attempt failure timestamp is not displayed
+    expect(screen.getByRole('status').textContent).not.toContain(
+      sharedCopy[language].common.publicationAttempt,
+    );
+  },
+);

@@ -17,6 +17,7 @@ export type MarketHealthQuote = {
   display_name?: string | null;
   timestamp: string | null;
   price: number | null;
+  previous_close?: number | null;
   daily_change?: number | null;
   daily_change_pct?: number | null;
   change?: number | null;

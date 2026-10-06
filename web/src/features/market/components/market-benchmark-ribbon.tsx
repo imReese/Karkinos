@@ -74,12 +74,27 @@ export function MarketBenchmarkRibbon({
       );
 
       const price = matchedQuote?.price ?? matchedItem?.price ?? null;
-      const changePct =
+      let changePct =
         matchedQuote?.daily_change_pct ??
         matchedQuote?.pct_chg ??
         matchedQuote?.change_pct ??
         null;
-      const change = matchedQuote?.daily_change ?? matchedQuote?.change ?? null;
+      let change = matchedQuote?.daily_change ?? matchedQuote?.change ?? null;
+      const prevClose =
+        matchedQuote?.previous_close ??
+        (price !== null && change !== null ? price - change : null);
+
+      if (
+        changePct === null &&
+        price !== null &&
+        prevClose !== null &&
+        prevClose !== 0
+      ) {
+        changePct = ((price - prevClose) / prevClose) * 100;
+      }
+      if (change === null && price !== null && prevClose !== null) {
+        change = price - prevClose;
+      }
       const actualSymbol = matchedItem?.symbol ?? matchedQuote?.symbol;
 
       return {
@@ -152,6 +167,20 @@ export function MarketBenchmarkRibbon({
     >
       {/* Benchmark Indices */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        {health && !health.market_open ? (
+          <span
+            data-testid="market-closed-badge"
+            className="inline-flex items-center gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-2 py-0.5 text-[length:var(--app-font-size-micro)] font-medium text-[var(--app-text-tertiary)]"
+            title={
+              isZh
+                ? '市场休市中 · 显示最近交易日收盘数据'
+                : 'Market closed. Showing previous session closing data.'
+            }
+          >
+            <span className="inline-block size-1.5 rounded-full bg-[var(--app-text-tertiary)] opacity-60" />
+            {isZh ? '休市' : 'Closed'}
+          </span>
+        ) : null}
         {benchmarks.map((bm) => {
           const isPositive = (bm.changePct ?? 0) > 0;
           const isNegative = (bm.changePct ?? 0) < 0;
@@ -159,7 +188,7 @@ export function MarketBenchmarkRibbon({
             ? 'text-[var(--app-pnl-positive)]'
             : isNegative
               ? 'text-[var(--app-pnl-negative)]'
-              : 'text-[var(--app-muted)]';
+              : 'text-[var(--app-text-tertiary)]';
           const isSelected =
             bm.actualSymbol && bm.actualSymbol === selectedSymbol;
 
@@ -169,7 +198,7 @@ export function MarketBenchmarkRibbon({
                 <span className="app-type-micro font-medium text-[var(--app-text)]">
                   {bm.name}
                 </span>
-                <span className="app-type-micro font-mono text-[var(--app-muted)]">
+                <span className="app-type-micro font-mono text-[var(--app-text-tertiary)]">
                   {bm.code}
                 </span>
               </div>
@@ -186,7 +215,11 @@ export function MarketBenchmarkRibbon({
                           maximumFractionDigits: 2,
                         },
                       )}`
-                    : '--'}
+                    : health && !health.market_open
+                      ? isZh
+                        ? '-- (休市)'
+                        : '-- (Closed)'
+                      : '--'}
                 </span>
               </div>
             </div>

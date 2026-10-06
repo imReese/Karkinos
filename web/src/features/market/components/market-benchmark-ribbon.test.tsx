@@ -254,4 +254,48 @@ describe('MarketBenchmarkRibbon', () => {
     fireEvent.click(csi300Card);
     expect(setSelectedSymbol).toHaveBeenCalledWith('000300');
   });
+
+  test('derives change percentage from previous_close when daily_change_pct is missing', () => {
+    const controller = createMockController({
+      health: {
+        market_open: true,
+        quotes: [
+          {
+            symbol: '000001',
+            asset_class: 'index',
+            price: 3947.8,
+            previous_close: 3949.91,
+            daily_change_pct: null,
+            pct_chg: null,
+            change_pct: null,
+            daily_change: null,
+            quote_status: 'live',
+          },
+        ],
+      } as any,
+    });
+
+    render(<MarketBenchmarkRibbon controller={controller} />);
+    expect(screen.getByText('3,947.80')).toBeTruthy();
+    // (3947.8 - 3949.91) / 3949.91 * 100 = -0.053% -> -0.05%
+    expect(screen.getByText('-0.05%')).toBeTruthy();
+  });
+
+  test('displays closed badge and closed fallback when market is closed', () => {
+    const controller = createMockController({
+      locale: 'zh',
+      health: {
+        market_open: false,
+        quotes: [],
+      } as any,
+    });
+
+    render(<MarketBenchmarkRibbon controller={controller} />);
+    expect(screen.getByTestId('market-closed-badge')).toBeTruthy();
+    expect(screen.getByTestId('market-closed-badge').textContent).toContain(
+      '休市',
+    );
+    // When change is null in closed session, displays '-- (休市)'
+    expect(screen.getAllByText('-- (休市)').length).toBeGreaterThan(0);
+  });
 });
