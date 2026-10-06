@@ -12,16 +12,10 @@ from zoneinfo import ZoneInfo
 from core.types import AssetClass
 from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
-from server.contracts.http.market import (
-    QuoteRefreshSymbolResult,
-)
-from server.services.asset_metadata import (
-    resolve_asset_metadata,
-)
+from server.contracts.http.market import QuoteRefreshSymbolResult
+from server.services.asset_metadata import resolve_asset_metadata
 from server.services.market_hours import is_cn_trading_session
-from server.services.market_indices import (
-    market_index_display_name,
-)
+from server.services.market_indices import market_index_display_name
 from server.services.market_quote_ingestion import (
     build_quote_ingestion_command,
     persist_quote_ingestion,
@@ -57,8 +51,7 @@ PROVIDER_REFRESH_TIMEOUT_SECONDS = 3.0
 INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS = 7.0
 
 _BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(
-    max_workers=4,
-    thread_name_prefix="market-fetch",
+    max_workers=4, thread_name_prefix="market-fetch"
 )
 
 _SH_TZ = ZoneInfo("Asia/Shanghai")
@@ -118,8 +111,7 @@ def quote_source(state, quote: dict | None) -> str | None:
         return str(source)
     try:
         return preferred_legacy_provider(
-            state.config,
-            MarketDataUseCase.REALTIME_QUOTES,
+            state.config, MarketDataUseCase.REALTIME_QUOTES
         )
     except Exception:
         return None
@@ -209,42 +201,47 @@ def quote_metadata(
         or metadata.display_name
     )
     daily_change = (
-        None
-        if quote is None
-        else optional_float(
+        optional_float(
             quote.get("daily_change")
             or quote.get("day_change_value")
             or quote.get("change")
         )
+        if quote
+        else None
     )
     daily_change_pct = (
-        None
-        if quote is None
-        else optional_float(
+        optional_float(
             quote.get("daily_change_pct")
             or quote.get("day_change_pct")
             or quote.get("change_pct")
             or quote.get("change_percent")
             or quote.get("pct_chg")
         )
+        if quote
+        else None
     )
-    price_val = None if quote is None else optional_float(quote.get("price"))
-    prev_close = None if quote is None else optional_float(quote.get("previous_close"))
+    price_val = optional_float(quote.get("price")) if quote else None
+    prev_close = optional_float(quote.get("previous_close")) if quote else None
     if daily_change is None and price_val is not None and prev_close is not None:
         daily_change = round(price_val - prev_close, 4)
 
     if daily_change_pct is None and quote is not None:
         if prev_close and prev_close != 0:
-            if daily_change is not None:
-                daily_change_pct = round((daily_change / prev_close) * 100, 4)
-            elif price_val is not None:
-                daily_change_pct = round(
-                    ((price_val - prev_close) / prev_close) * 100, 4
-                )
-        elif daily_change is not None and price_val is not None:
-            implied_prev = price_val - daily_change
-            if implied_prev != 0:
-                daily_change_pct = round((daily_change / implied_prev) * 100, 4)
+            diff = (
+                daily_change
+                if daily_change is not None
+                else (price_val - prev_close if price_val is not None else None)
+            )
+            if diff is not None:
+                daily_change_pct = round((diff / prev_close) * 100, 4)
+        elif (
+            daily_change is not None
+            and price_val is not None
+            and (price_val - daily_change) != 0
+        ):
+            daily_change_pct = round(
+                (daily_change / (price_val - daily_change)) * 100, 4
+            )
 
     quote_status = (
         "missing"
@@ -289,13 +286,9 @@ def quote_metadata(
 
 
 def store_runtime_quote(state, symbol: str, quote: dict) -> None:
-    scheduler = state.scheduler
-    if scheduler is None:
-        return
-    publish = getattr(scheduler, "publish_runtime_quote", None)
-    if not callable(publish):
-        return
-    publish(symbol, quote)
+    publish = getattr(getattr(state, "scheduler", None), "publish_runtime_quote", None)
+    if callable(publish):
+        publish(symbol, quote)
 
 
 def publish_committed_runtime_quotes(state, results) -> None:
@@ -306,14 +299,9 @@ def publish_committed_runtime_quotes(state, results) -> None:
         raise RuntimeError("published quote database is unavailable")
     for result in results:
         instrument_type = _instrument_type_for_refresh(
-            state,
-            result.symbol,
-            result.asset_class,
+            state, result.symbol, result.asset_class
         )
-        row = database.get_latest_quote_sync(
-            result.symbol,
-            instrument_type.value,
-        )
+        row = database.get_latest_quote_sync(result.symbol, instrument_type.value)
         if not isinstance(row, dict) or row.get("fetch_run_id") is None:
             raise RuntimeError(f"published quote missing for {result.symbol}")
         quote = {
@@ -378,9 +366,7 @@ def persist_latest_snapshot(
     if database is None:
         raise RuntimeError("quote persistence database is unavailable")
     instrument_type = _instrument_type_for_refresh(
-        state,
-        symbol,
-        payload.get("instrument_type") or payload.get("asset_class"),
+        state, symbol, payload.get("instrument_type") or payload.get("asset_class")
     )
     payload = {**payload, "instrument_type": instrument_type.value}
     command = build_quote_ingestion_command(
@@ -424,10 +410,7 @@ async def refresh_one_quote(
     try:
         snapshot = await asyncio.wait_for(
             run_blocking_fetch(
-                load_latest_snapshot_from_provider,
-                state,
-                symbol,
-                asset_class,
+                load_latest_snapshot_from_provider, state, symbol, asset_class
             ),
             timeout=timeout,
         )
@@ -449,9 +432,9 @@ async def refresh_one_quote(
             symbol=symbol,
             asset_class=asset_class.value,
             status="failed",
-            quote_timestamp=(
-                None if cached_quote is None else cached_quote.get("timestamp")
-            ),
+            quote_timestamp=None
+            if cached_quote is None
+            else cached_quote.get("timestamp"),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error="provider_timeout",
@@ -485,16 +468,13 @@ async def refresh_one_quote(
             symbol=symbol,
             asset_class=asset_class.value,
             status="failed",
-            quote_timestamp=(
-                None if cached_quote is None else cached_quote.get("timestamp")
-            ),
+            quote_timestamp=None
+            if cached_quote is None
+            else cached_quote.get("timestamp"),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error=error_message,
-            reason=provider_error_reason(
-                error_message,
-                using_cache=bool(cached_quote),
-            ),
+            reason=provider_error_reason(error_message, using_cache=bool(cached_quote)),
             last_refresh_attempt=attempted_at.isoformat(),
             last_refresh_error=error_message,
             using_persistent_cache=bool(cached_quote),
@@ -519,9 +499,9 @@ async def refresh_one_quote(
             symbol=symbol,
             asset_class=asset_class.value,
             status="stale" if cached_quote else "failed",
-            quote_timestamp=(
-                None if cached_quote is None else cached_quote.get("timestamp")
-            ),
+            quote_timestamp=None
+            if cached_quote is None
+            else cached_quote.get("timestamp"),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error=error_message,
@@ -542,12 +522,7 @@ async def refresh_one_quote(
             "asset_class": _provider_asset_class(instrument_type).value,
             "instrument_type": instrument_type.value,
         }
-        persist_latest_snapshot(
-            state,
-            symbol,
-            snapshot,
-            fetch_run_id=fetch_run_id,
-        )
+        persist_latest_snapshot(state, symbol, snapshot, fetch_run_id=fetch_run_id)
     except Exception:
         logger.exception("Failed to persist refreshed quote for %s", symbol)
         error_message = "quote_persistence_failed"
