@@ -33,10 +33,10 @@ export function TradingHistory({
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-[var(--app-text-secondary)]">
-          <span>{labels.expandOnDemand}</span>
+          <span className="sr-only">{labels.expandOnDemand}</span>
           <ChevronDown
             aria-hidden="true"
-            className="size-4 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+            className="size-4 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
           />
         </span>
       </summary>

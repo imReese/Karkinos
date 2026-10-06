@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { MetricStrip } from '../../../shared/ui/workbench';
 import type { SettingsPageController } from './settings-page-controller';
 import { InlineNotice, SettingsDisclosure } from './settings-view-primitives';
@@ -72,13 +73,28 @@ function TrackedAssetPool({
             onClick={() => setExpanded((prev) => !prev)}
             className="app-link text-xs font-semibold"
           >
-            {expanded
-              ? locale === 'zh'
-                ? '收起标的列表 ▴'
-                : 'Collapse ▴'
-              : locale === 'zh'
-                ? `展开全部 (+${filteredAssets.length - INITIAL_LIMIT} 标的) ▾`
-                : `Show all (+${filteredAssets.length - INITIAL_LIMIT}) ▾`}
+            <span>
+              {expanded
+                ? locale === 'zh'
+                  ? '收起标的列表'
+                  : 'Collapse'
+                : locale === 'zh'
+                  ? `展开全部 (+${filteredAssets.length - INITIAL_LIMIT} 标的)`
+                  : `Show all (+${filteredAssets.length - INITIAL_LIMIT})`}
+            </span>
+            {expanded ? (
+              <ChevronUp
+                size={12}
+                className="shrink-0 opacity-70"
+                aria-hidden="true"
+              />
+            ) : (
+              <ChevronDown
+                size={12}
+                className="shrink-0 opacity-70"
+                aria-hidden="true"
+              />
+            )}
           </button>
         ) : null}
       </div>
@@ -211,13 +227,18 @@ function TrackedAssetPool({
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="app-button-secondary inline-flex items-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1 text-xs font-semibold"
+            className="app-button-secondary inline-flex items-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
           >
             <span>
               {locale === 'zh'
-                ? `展开更多标的（剩余 ${filteredAssets.length - INITIAL_LIMIT} 个）▾`
-                : `Show ${filteredAssets.length - INITIAL_LIMIT} more ▾`}
+                ? `展开更多标的（剩余 ${filteredAssets.length - INITIAL_LIMIT} 个）`
+                : `Show ${filteredAssets.length - INITIAL_LIMIT} more`}
             </span>
+            <ChevronDown
+              size={12}
+              className="shrink-0 opacity-70"
+              aria-hidden="true"
+            />
           </button>
         </div>
       ) : null}

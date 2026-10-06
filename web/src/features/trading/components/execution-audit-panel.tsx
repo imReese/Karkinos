@@ -121,12 +121,10 @@ export function ExecutionAuditPanel({
           <WorkbenchStatusBadge tone={disclosureTone}>
             {disclosureStatus}
           </WorkbenchStatusBadge>
-          <span className="hidden text-xs font-semibold text-[var(--app-text-secondary)] sm:inline">
-            {labels.expandOnDemand}
-          </span>
+          <span className="sr-only">{labels.expandOnDemand}</span>
           <ChevronDown
             aria-hidden="true"
-            className="size-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+            className="size-4 shrink-0 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
           />
         </span>
       </summary>

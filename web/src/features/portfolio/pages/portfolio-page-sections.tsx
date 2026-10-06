@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 import { formatCurrency } from '../../../shared/format';
 import { handleClientNavigation } from '../../../shared/routing/client-navigate';
@@ -155,21 +156,10 @@ export function PortfolioAnalysisSection({
           <span className="sr-only">{copy.portfolio.analysis.detail}</span>
         </span>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="hidden text-xs text-[var(--app-text-tertiary)] sm:inline">
-            {isOpen
-              ? model.source.locale === 'zh'
-                ? '收起'
-                : 'Collapse'
-              : model.source.locale === 'zh'
-                ? '展开'
-                : 'Expand'}
-          </span>
-          <span
+          <ChevronDown
             aria-hidden="true"
-            className="shrink-0 text-xs font-semibold text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-          >
-            ↓
-          </span>
+            className="size-4 shrink-0 text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+          />
         </div>
       </summary>
 
@@ -308,7 +298,7 @@ export function PortfolioHistorySection({
   model: PortfolioPageModel;
 }) {
   const [isOpen, setIsOpen] = useState(true);
-  const { copy, locale, snapshot } = model.source;
+  const { copy, snapshot } = model.source;
   const realizedTotal = snapshot.data?.realized_pnl_total;
   return (
     <details
@@ -343,21 +333,10 @@ export function PortfolioHistorySection({
               {model.closedPositions.length}
             </span>
           ) : null}
-          <span className="hidden text-xs text-[var(--app-text-tertiary)] sm:inline">
-            {isOpen
-              ? locale === 'zh'
-                ? '收起'
-                : 'Collapse'
-              : locale === 'zh'
-                ? '展开'
-                : 'Expand'}
-          </span>
-          <span
+          <ChevronDown
             aria-hidden="true"
-            className="shrink-0 text-xs font-semibold text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-          >
-            ↓
-          </span>
+            className="size-4 shrink-0 text-[var(--app-text-tertiary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+          />
         </div>
       </summary>
       <div className="border-t border-[var(--app-divider)] pt-3">

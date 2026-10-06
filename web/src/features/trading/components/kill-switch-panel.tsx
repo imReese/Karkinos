@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 import { ControlledActionZone } from '../../../shared/ui/workbench';
 import { useCopy } from '../../../shared/i18n/context';
@@ -150,8 +151,12 @@ export function KillSwitchPanel() {
               {formatTimestamp(snapshot?.updated_at) ?? labels.neverUpdated}
             </span>
           </span>
-          <span className="text-xs font-semibold text-[var(--app-text-secondary)]">
-            {pageLabels.expandOnDemand}
+          <span className="flex shrink-0 items-center gap-1">
+            <span className="sr-only">{pageLabels.expandOnDemand}</span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 shrink-0 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+            />
           </span>
         </span>
       </summary>

@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import { useCopy } from '../../../shared/i18n/context';
 import { formatStrategyDisplayName as strategyDisplayName } from '../../../shared/strategy-display';
 import type { BacktestStrategyInfo } from '../api';
@@ -84,12 +85,10 @@ export function StrategyCatalogPanel({
               {selectedStrategyDisplayName}
             </span>
           </span>
-          <span
+          <ChevronDown
             aria-hidden="true"
-            className="app-disclosure-chevron shrink-0 text-sm text-[var(--app-text-secondary)] group-open:rotate-180"
-          >
-            ▾
-          </span>
+            className="size-4 shrink-0 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+          />
         </summary>
         <div className="min-w-0 pb-2">
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
