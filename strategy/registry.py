@@ -123,6 +123,17 @@ _BENCHMARK_METADATA = {
             "Requires pair-selection, liquidity, co-movement, and transaction-cost review before promotion.",
         ],
     },
+    "etf_rotation": {
+        "asset_universe": ["etf", "fund", "bond", "gold"],
+        "benchmark_role": "cross_sectional_etf_rotation",
+        "benchmark_universe": ["etf", "bond", "gold"],
+        "requires_out_of_sample_validation": False,
+        "requires_after_cost_report": False,
+        "validation_notes": [
+            "Cross-sectional ETF momentum rotation with trend filters and defensive bond hedging.",
+            "Research strategy eligible for multi-asset backtest and paper allocation.",
+        ],
+    },
 }
 
 _EXTENSION_SCHEMA_VERSION = "karkinos.strategy.v1"

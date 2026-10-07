@@ -112,7 +112,10 @@ def test_formula_dsl_serialization_and_binding_fingerprint_are_deterministic() -
         ),
         (
             lambda ast: ast.update(
-                entry={"op": "rank", "input": {"op": "field", "name": "close"}}
+                entry={
+                    "op": "volatility_target",
+                    "input": {"op": "field", "name": "close"},
+                }
             ),
             "operator_not_canonically_supported",
         ),
@@ -300,3 +303,27 @@ def test_extended_operators_reject_unbounded_or_future_history(
     with pytest.raises(FormulaValidationError) as exc_info:
         validate_formula_ast(ast, universe_size=1)
     assert exc_info.value.code == code
+
+
+def test_rank_operator_evaluates_rolling_percentile() -> None:
+    frame = pd.DataFrame({"close": [10.0, 20.0, 30.0, 15.0, 5.0]})
+    ast = _formula()
+    ast["entry"] = {
+        "op": "gte",
+        "left": {
+            "op": "rank",
+            "input": {"op": "field", "name": "close"},
+            "window": 3,
+        },
+        "right": {"op": "constant", "value": 0.6},
+    }
+    ast["exit"] = {"op": "constant", "value": 0}
+    entry, _, _ = evaluate_formula(ast, frame, universe_size=1)
+    # Window 3:
+    # idx 0, 1: NaN (window not full)
+    # idx 2: [10, 20, 30], 30 is max -> rank 1.0 >= 0.6 -> True
+    # idx 3: [20, 30, 15], 15 is min -> rank 1/3 (0.33) < 0.6 -> False
+    # idx 4: [30, 15, 5], 5 is min -> rank 1/3 (0.33) < 0.6 -> False
+    assert entry.iloc[2]
+    assert not entry.iloc[3]
+    assert not entry.iloc[4]

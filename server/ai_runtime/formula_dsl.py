@@ -43,6 +43,7 @@ _WINDOW_OPERATORS = frozenset(
         "ema",
         "rsi",
         "atr",
+        "rank",
     }
 )
 _PERIOD_OPERATORS = frozenset({"lag", "delta", "return", "roc"})
@@ -63,7 +64,7 @@ _BINARY_OPERATORS = frozenset(
     }
 )
 _UNARY_OPERATORS = frozenset({"not"})
-_UNSUPPORTED_REVIEWED_OPERATORS = frozenset({"rank", "volatility_target"})
+_UNSUPPORTED_REVIEWED_OPERATORS = frozenset({"volatility_target"})
 _MAX_WINDOW = 252
 _MAX_DEPTH = 32
 
@@ -177,7 +178,6 @@ def formula_operator_catalog() -> JsonObject:
             }
         ),
         "reviewed_but_unsupported": {
-            "rank": "cross-sectional timestamp alignment is not yet exposed by the canonical engine adapter",
             "volatility_target": "canonical portfolio sizing does not expose this as a research-only input",
         },
         "expression_shapes": {
@@ -189,7 +189,7 @@ def formula_operator_catalog() -> JsonObject:
                 "period": "integer 1..252",
             },
             "window_operator": {
-                "op": "rolling_mean|rolling_std|rolling_max|rolling_min|zscore|ema|rsi",
+                "op": "rolling_mean|rolling_std|rolling_max|rolling_min|zscore|ema|rsi|rank",
                 "input": "expression",
                 "window": "integer 2..252",
             },
@@ -213,6 +213,7 @@ def formula_operator_catalog() -> JsonObject:
             "roc": "percentage change: 100 * (current / lagged - 1); undefined changes are missing",
             "rolling_max": "maximum of the complete trailing window, including the current bar",
             "rolling_min": "minimum of the complete trailing window, including the current bar",
+            "rank": "percentile rank (0.0 to 1.0) of the current value within the trailing window",
         },
         "signal_timing": (
             "expressions observe completed bars; target changes execute on the next "
@@ -397,6 +398,8 @@ def _evaluate_expression(value: Mapping[str, Any], frame: pd.DataFrame) -> pd.Se
             return FeatureEngine.ema(scratch, column="value", period=window)
         if op == "rsi":
             return FeatureEngine.rsi(scratch, column="value", period=window)
+        if op == "rank":
+            return FeatureEngine.rolling_percentile(item, window=window)
     if op in _BINARY_OPERATORS:
         left = _evaluate_expression(value["left"], frame)
         right = _evaluate_expression(value["right"], frame)

@@ -3,6 +3,7 @@
 from strategy.builtins.bollinger import BollingerStrategy
 from strategy.builtins.donchian_breakout import DonchianBreakoutStrategy
 from strategy.builtins.dual_ma import DualMAStrategy
+from strategy.builtins.etf_rotation import EtfRotationStrategy
 from strategy.builtins.monthly_rebalance import MonthlyRebalanceStrategy
 from strategy.builtins.pairs_ratio_mean_reversion import (
     PairsRatioMeanReversionStrategy,
@@ -20,4 +21,5 @@ __all__ = [
     "DonchianBreakoutStrategy",
     "VolatilityTargetTrendStrategy",
     "PairsRatioMeanReversionStrategy",
+    "EtfRotationStrategy",
 ]

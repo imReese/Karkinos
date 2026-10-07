@@ -58,6 +58,7 @@ STRATEGY_DISPLAY_NAMES = {
     "donchian_breakout": "Donchian Channel Breakout",
     "volatility_target_trend": "Volatility Target Trend",
     "pairs_ratio_mean_reversion": "Pairs Ratio Mean Reversion",
+    "etf_rotation": "Cross-Sectional ETF Rotation",
 }
 
 
@@ -294,6 +295,68 @@ STRATEGY_PARAMETER_SCHEMAS = {
             min=0.0,
             max=1.0,
             description="Target weight for each leg when the ratio normalizes.",
+        ),
+    ],
+    "etf_rotation": [
+        StrategyParameterSchema(
+            name="lookback_period",
+            type="int",
+            default=20,
+            min=2,
+            max=500,
+            description="Momentum return lookback window in trading bars.",
+        ),
+        StrategyParameterSchema(
+            name="volatility_window",
+            type="int",
+            default=20,
+            min=2,
+            max=250,
+            description="Rolling window used to calculate realized volatility for risk adjustment.",
+        ),
+        StrategyParameterSchema(
+            name="top_k",
+            type="int",
+            default=2,
+            min=1,
+            max=20,
+            description="Number of top ranked assets to allocate.",
+        ),
+        StrategyParameterSchema(
+            name="rebalance_interval",
+            type="int",
+            default=5,
+            min=1,
+            max=60,
+            description="Number of trading sessions between rebalancing reviews.",
+        ),
+        StrategyParameterSchema(
+            name="min_momentum",
+            type="float",
+            default=0.0,
+            min=-1.0,
+            max=5.0,
+            description="Minimum momentum return threshold required for active asset inclusion.",
+        ),
+        StrategyParameterSchema(
+            name="trend_filter_period",
+            type="int",
+            default=0,
+            min=0,
+            max=500,
+            description="Moving average trend filter period (0 disables filter).",
+        ),
+        StrategyParameterSchema(
+            name="use_risk_adjusted",
+            type="bool",
+            default=True,
+            description="Whether to divide momentum by realized volatility for risk-adjusted scoring.",
+        ),
+        StrategyParameterSchema(
+            name="cash_proxy",
+            type="str",
+            default="511010",
+            description="Symbol of defensive asset (e.g. Treasury ETF) to hold unallocated weight.",
         ),
     ],
 }

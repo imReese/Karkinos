@@ -94,3 +94,68 @@ class FeatureEngine:
         df["boll_lower"] = lower
 
         return df
+
+    @staticmethod
+    def cross_sectional_rank(
+        df: pd.DataFrame, ascending: bool = True, pct: bool = True
+    ) -> pd.DataFrame:
+        """计算截面排名（每一行各资产之间的相对排名）。
+
+        Args:
+            df: 行索引为时间，列为各个资产/标的的指标值矩阵。
+            ascending: 是否升序排列（True 则数值越小排名越靠前）。
+            pct: 是否返回百分比排名（0.0 ~ 1.0）。
+        """
+        return df.rank(axis=1, ascending=ascending, pct=pct)
+
+    @staticmethod
+    def cross_sectional_zscore(df: pd.DataFrame) -> pd.DataFrame:
+        """计算截面 Z-Score 标准化（每一行跨资产去均值并除以标准差）。"""
+        mean = df.mean(axis=1)
+        std = df.std(axis=1).replace(0, np.nan)
+        return df.sub(mean, axis=0).div(std, axis=0)
+
+    @staticmethod
+    def cross_sectional_top_k(
+        scores: pd.DataFrame, k: int, ascending: bool = False
+    ) -> pd.DataFrame:
+        """截面 Top-K 选股掩码。
+
+        Args:
+            scores: 资产评分矩阵（行=时间，列=资产）。
+            k: 选取资产数量。
+            ascending: False 为取分数最高的前 k 个，True 为取分数最低的前 k 个。
+
+        Returns:
+            布尔 DataFrame，选中的标的对应值为 True。
+        """
+        ranks = scores.rank(axis=1, ascending=ascending, method="min")
+        return ranks <= k
+
+    @staticmethod
+    def rolling_percentile(series: pd.Series, window: int = 20) -> pd.Series:
+        """计算序列在其滑动窗口内的百分位排名（0.0 ~ 1.0）。"""
+        if window < 2:
+            raise ValueError("rolling percentile window must be at least 2")
+
+        def _calc_rank(sub: np.ndarray) -> float:
+            current = sub[-1]
+            if np.isnan(current):
+                return np.nan
+            valid = sub[~np.isnan(sub)]
+            if len(valid) == 0:
+                return np.nan
+            return float(np.sum(valid <= current) / len(valid))
+
+        return series.rolling(window=window).apply(_calc_rank, raw=True)
+
+    @staticmethod
+    def risk_adjusted_momentum(
+        prices: pd.DataFrame, return_window: int = 20, vol_window: int = 20
+    ) -> pd.DataFrame:
+        """计算资产的风险调整后动量（区间收益率 / 年化已实现波动率）。"""
+        returns = prices.pct_change(return_window, fill_method=None)
+        daily_ret = prices.pct_change(1, fill_method=None)
+        realized_vol = daily_ret.rolling(window=vol_window).std() * np.sqrt(252)
+        realized_vol = realized_vol.replace(0, np.nan)
+        return returns / realized_vol

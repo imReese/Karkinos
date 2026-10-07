@@ -23,6 +23,8 @@ Market Data
 
 - Make data acquisition, normalization, PIT publication, freshness, revision handling, and replay reliable.
 - Strengthen strategy research with reproducible datasets, realistic costs, out-of-sample evaluation, and robustness evidence.
+- Deliver cross-sectional research and factor evaluation capabilities: curated multi-asset/ETF universes, cross-sectional ranking and transforms, factor IC/ICIR/quantile metrics, and cross-sectional ETF rotation strategies.
+- Liberate Formula DSL operators (including rank and rolling percentile) to support relative strength without governance lock-in.
 - Make Research -> Published Forecast -> Portfolio Target -> Risk Decision -> Rebalance Plan explicit and traceable end to end.
 - Connect backtest, paper, and shadow outcomes to accounting, attribution, and Alpha / Model health without mixing financial books.
 - Improve a small set of high-value local product journeys before adding new platform surface area.
