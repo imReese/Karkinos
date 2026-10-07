@@ -51,7 +51,8 @@ PROVIDER_REFRESH_TIMEOUT_SECONDS = 3.0
 INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS = 7.0
 
 _BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(
-    max_workers=4, thread_name_prefix="market-fetch"
+    max_workers=4,
+    thread_name_prefix="market-fetch",
 )
 
 _SH_TZ = ZoneInfo("Asia/Shanghai")
@@ -299,9 +300,14 @@ def publish_committed_runtime_quotes(state, results) -> None:
         raise RuntimeError("published quote database is unavailable")
     for result in results:
         instrument_type = _instrument_type_for_refresh(
-            state, result.symbol, result.asset_class
+            state,
+            result.symbol,
+            result.asset_class,
         )
-        row = database.get_latest_quote_sync(result.symbol, instrument_type.value)
+        row = database.get_latest_quote_sync(
+            result.symbol,
+            instrument_type.value,
+        )
         if not isinstance(row, dict) or row.get("fetch_run_id") is None:
             raise RuntimeError(f"published quote missing for {result.symbol}")
         quote = {
@@ -366,7 +372,9 @@ def persist_latest_snapshot(
     if database is None:
         raise RuntimeError("quote persistence database is unavailable")
     instrument_type = _instrument_type_for_refresh(
-        state, symbol, payload.get("instrument_type") or payload.get("asset_class")
+        state,
+        symbol,
+        payload.get("instrument_type") or payload.get("asset_class"),
     )
     payload = {**payload, "instrument_type": instrument_type.value}
     command = build_quote_ingestion_command(
@@ -410,7 +418,10 @@ async def refresh_one_quote(
     try:
         snapshot = await asyncio.wait_for(
             run_blocking_fetch(
-                load_latest_snapshot_from_provider, state, symbol, asset_class
+                load_latest_snapshot_from_provider,
+                state,
+                symbol,
+                asset_class,
             ),
             timeout=timeout,
         )
@@ -432,9 +443,9 @@ async def refresh_one_quote(
             symbol=symbol,
             asset_class=asset_class.value,
             status="failed",
-            quote_timestamp=None
-            if cached_quote is None
-            else cached_quote.get("timestamp"),
+            quote_timestamp=(
+                None if cached_quote is None else cached_quote.get("timestamp")
+            ),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error="provider_timeout",
@@ -468,13 +479,16 @@ async def refresh_one_quote(
             symbol=symbol,
             asset_class=asset_class.value,
             status="failed",
-            quote_timestamp=None
-            if cached_quote is None
-            else cached_quote.get("timestamp"),
+            quote_timestamp=(
+                None if cached_quote is None else cached_quote.get("timestamp")
+            ),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error=error_message,
-            reason=provider_error_reason(error_message, using_cache=bool(cached_quote)),
+            reason=provider_error_reason(
+                error_message,
+                using_cache=bool(cached_quote),
+            ),
             last_refresh_attempt=attempted_at.isoformat(),
             last_refresh_error=error_message,
             using_persistent_cache=bool(cached_quote),
@@ -499,9 +513,9 @@ async def refresh_one_quote(
             symbol=symbol,
             asset_class=asset_class.value,
             status="stale" if cached_quote else "failed",
-            quote_timestamp=None
-            if cached_quote is None
-            else cached_quote.get("timestamp"),
+            quote_timestamp=(
+                None if cached_quote is None else cached_quote.get("timestamp")
+            ),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error=error_message,
@@ -522,7 +536,12 @@ async def refresh_one_quote(
             "asset_class": _provider_asset_class(instrument_type).value,
             "instrument_type": instrument_type.value,
         }
-        persist_latest_snapshot(state, symbol, snapshot, fetch_run_id=fetch_run_id)
+        persist_latest_snapshot(
+            state,
+            symbol,
+            snapshot,
+            fetch_run_id=fetch_run_id,
+        )
     except Exception:
         logger.exception("Failed to persist refreshed quote for %s", symbol)
         error_message = "quote_persistence_failed"
