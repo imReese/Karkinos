@@ -416,3 +416,28 @@ test('renders holding badge for held instruments and copy symbol button in detai
     screen.getByTestId('market-selected-holding-badge'),
   ).toBeInTheDocument();
 });
+
+test('renders holding cost cushion lens when item is held', () => {
+  renderWorkspace(
+    <MarketInstrumentWorkspace
+      items={mockItems}
+      healthBySymbol={mockHealthQuotes}
+      activeSymbol="600519"
+      selectedItem={mockItems[0]}
+      selectedHealthQuote={mockHealthQuotes.get('600519')!}
+      selectedQuoteNextAction={null}
+      bars={[]}
+      barsLoading={false}
+      barsError={false}
+      onRetryBars={vi.fn()}
+      onSelect={vi.fn()}
+      onRemove={vi.fn()}
+    />,
+    'zh',
+  );
+
+  const cushion = screen.getByTestId('market-holding-cost-cushion');
+  expect(cushion).toBeInTheDocument();
+  expect(cushion).toHaveTextContent('持仓成本透视');
+  expect(cushion).toHaveTextContent('浮盈安全垫');
+});

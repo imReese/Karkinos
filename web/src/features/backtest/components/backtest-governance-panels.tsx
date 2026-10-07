@@ -1,8 +1,11 @@
+import { useState } from 'react';
+
 import { ResearchTaskPanel } from '../backtest-feature-boundary';
 import { AccountStrategyPanel } from './account-strategy-panel';
 import { BacktestReportView } from './backtest-report-view';
 import { useBacktestPage } from './backtest-page-context';
 import { BacktestResponsiveDisclosure } from './backtest-page-primitives';
+import { FactorEvaluationPanel } from './factor-evaluation-panel';
 import { StrategyEvidenceGatePanel } from './strategy-evidence-gate-panel';
 import { StrategyLearningReviewPanel } from './strategy-learning-review-panel';
 
@@ -32,6 +35,7 @@ export function BacktestGovernancePanels() {
     labels,
     locale,
   } = useBacktestPage();
+  const [factorTearSheetOpen, setFactorTearSheetOpen] = useState(false);
   const sectionTitle =
     locale === 'zh'
       ? '策略归属、样本外门禁与研究任务'
@@ -54,6 +58,25 @@ export function BacktestGovernancePanels() {
       </div>
 
       <div className="space-y-3">
+        <BacktestResponsiveDisclosure
+          detail={
+            locale === 'zh'
+              ? '多标的横截面因子 Rank IC、ICIR、分位数收益单调性与最新截面排序'
+              : 'Cross-sectional factor Rank IC, ICIR, quantile spread and ranking'
+          }
+          id="backtest-factor-evaluation"
+          open={factorTearSheetOpen}
+          onToggle={() => setFactorTearSheetOpen((current) => !current)}
+          testId="backtest-factor-evaluation-disclosure"
+          title={
+            locale === 'zh'
+              ? '因子体检仪与宏观 ETF 资产池'
+              : 'Factor Tear Sheet & Curated Universes'
+          }
+        >
+          <FactorEvaluationPanel />
+        </BacktestResponsiveDisclosure>
+
         <BacktestResponsiveDisclosure
           detail={labels.researchGovernanceDetail}
           id="backtest-research-governance"

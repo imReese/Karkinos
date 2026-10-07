@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ArrowUpRight, Check, Copy, LineChart, PieChart } from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
@@ -15,6 +15,7 @@ import {
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   formatCurrency,
+  formatPercent,
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
@@ -253,6 +254,26 @@ export function MarketInstrumentWorkspace({
     selectedHealthQuote?.quote_source,
     locale,
   );
+  const costReferenceLines = useMemo(() => {
+    if (
+      selectedItem?.is_holding &&
+      selectedItem.avg_cost !== null &&
+      selectedItem.avg_cost !== undefined &&
+      selectedItem.avg_cost > 0
+    ) {
+      return [
+        {
+          value: selectedItem.avg_cost,
+          label:
+            locale === 'zh'
+              ? `持仓成本: ${formatCurrency(selectedItem.avg_cost)}`
+              : `Cost basis: ${formatCurrency(selectedItem.avg_cost)}`,
+          tone: 'local' as const,
+        },
+      ];
+    }
+    return [];
+  }, [selectedItem, locale]);
   return (
     <div
       className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]"
@@ -389,6 +410,65 @@ export function MarketInstrumentWorkspace({
               </div>
             </header>
 
+            {selectedItem.is_holding &&
+            selectedItem.avg_cost !== null &&
+            selectedItem.avg_cost !== undefined &&
+            selectedItem.avg_cost > 0 &&
+            selectedItem.price !== null &&
+            selectedItem.price !== undefined ? (
+              <div
+                data-testid="market-holding-cost-cushion"
+                className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_65%,transparent)] px-3 py-1.5 text-xs font-mono tabular-nums"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="app-type-micro font-sans font-semibold text-[var(--app-text)]">
+                    {locale === 'zh' ? '持仓成本透视' : 'Cost Basis Lens'}
+                  </span>
+                  <span>
+                    <span className="app-muted mr-1 font-sans">
+                      {locale === 'zh' ? '成本价' : 'Cost'}:
+                    </span>
+                    <span className="font-semibold text-[var(--app-text)]">
+                      {formatCurrency(selectedItem.avg_cost)}
+                    </span>
+                  </span>
+                  <span>
+                    <span className="app-muted mr-1 font-sans">
+                      {locale === 'zh' ? '现价' : 'Price'}:
+                    </span>
+                    <span className="font-semibold text-[var(--app-text)]">
+                      {formatCurrency(selectedItem.price)}
+                    </span>
+                  </span>
+                </div>
+                {(() => {
+                  const cushionPct =
+                    (selectedItem.price - selectedItem.avg_cost) /
+                    selectedItem.avg_cost;
+                  const isPositive = cushionPct >= 0;
+                  return (
+                    <span
+                      className={`rounded-full px-2 py-0.5 font-semibold ${
+                        isPositive
+                          ? 'bg-[color-mix(in_srgb,var(--app-pnl-positive)_12%,transparent)] text-[var(--app-pnl-positive)]'
+                          : 'bg-[color-mix(in_srgb,var(--app-pnl-negative)_12%,transparent)] text-[var(--app-pnl-negative)]'
+                      }`}
+                    >
+                      {isPositive ? '+' : ''}
+                      {formatPercent(cushionPct)}{' '}
+                      {isPositive
+                        ? locale === 'zh'
+                          ? '浮盈安全垫'
+                          : 'Cushion'
+                        : locale === 'zh'
+                          ? '成本倒挂'
+                          : 'Below cost'}
+                    </span>
+                  );
+                })()}
+              </div>
+            ) : null}
+
             <div className="mt-3">
               {barsLoading ? (
                 <PriceStructureLoadingState
@@ -420,6 +500,7 @@ export function MarketInstrumentWorkspace({
                   axisLabels={labels.klineAxes}
                   rangeAriaLabel={labels.showKlineRange}
                   chartTypeLabels={labels.chartViews}
+                  referenceLines={costReferenceLines}
                 />
               )}
             </div>

@@ -31,6 +31,7 @@ import {
   tradingPlanConstraintLabel,
 } from './decision-trading-plan-model';
 import { StatusPill } from './decision-lane-panels';
+import { TradingPlanWhatIfSandbox } from './trading-plan-what-if-sandbox';
 
 type DailyTradingPlanPanelProps = {
   plan: DailyTradingPlanResponse | undefined;
@@ -79,6 +80,7 @@ function DailyTradingPlanContent(
     <div className="mt-4 grid min-w-0 gap-x-6 gap-y-4 xl:grid-cols-[0.9fr_1.1fr]">
       <TradingPlanSummary plan={props.plan} />
       <TradingPlanOrderIntentPreview plan={props.plan} />
+      <TradingPlanWhatIfSandbox plan={props.plan} />
       <TradingPlanCandidateSignals
         plan={props.plan}
         candidates={props.candidates}

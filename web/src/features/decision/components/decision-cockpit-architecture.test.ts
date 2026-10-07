@@ -31,6 +31,7 @@ const DECISION_COCKPIT_MODULES = [
   'decision-trading-plan-model.ts',
   'decision-workflow-model.ts',
   'decision-workflow-panels.tsx',
+  'trading-plan-what-if-sandbox.tsx',
   'use-decision-cockpit-workspace.ts',
 ] as const;
 

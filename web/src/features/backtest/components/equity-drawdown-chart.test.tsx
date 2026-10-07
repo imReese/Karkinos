@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
@@ -109,4 +109,36 @@ test('keeps drawdown gradient identities unique across coexisting reports', () =
   expect(gradientIds).toHaveLength(4);
   expect(new Set(gradientIds).size).toBe(4);
   expect(document.querySelectorAll('.recharts-wrapper')).toHaveLength(4);
+});
+
+test('allows filtering markers by side or hiding them', () => {
+  window.localStorage.clear();
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark'),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+
+  render(
+    <PreferencesProvider>
+      <EquityDrawdownChart fills={fills} points={points} />
+    </PreferencesProvider>,
+  );
+
+  const filterControls = screen.getByTestId('backtest-marker-filter-controls');
+  expect(filterControls).toBeTruthy();
+
+  // Click "买入 (1)"
+  const buyBtn = screen.getByRole('button', { name: /买入/ });
+  fireEvent.click(buyBtn);
+  expect(screen.getByText('买入 · SYN001')).toBeTruthy();
+  expect(screen.queryByText('卖出 · SYN001')).toBeNull();
+
+  // Click "隐藏"
+  const hideBtn = screen.getByRole('button', { name: /隐藏/ });
+  fireEvent.click(hideBtn);
+  expect(screen.queryByText('买入 · SYN001')).toBeNull();
+  expect(screen.queryByText('卖出 · SYN001')).toBeNull();
 });

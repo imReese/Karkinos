@@ -135,8 +135,9 @@ describe('DailyTradingPlanPanel', () => {
     expect(panel).toBeTruthy();
 
     // Verify both symbols are rendered
-    expect(within(panel).getByText(/600519/)).toBeTruthy();
-    expect(within(panel).getByText(/000858/)).toBeTruthy();
+    expect(within(panel).getAllByText(/600519/).length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText(/000858/).length).toBeGreaterThan(0);
+    expect(within(panel).getByTestId('decision-what-if-sandbox')).toBeTruthy();
 
     // Verify Allocation Delta section header
     expect(

@@ -318,6 +318,7 @@ test('backtest request URLs stay at the reviewed contract', () => {
       '/api/account-strategy/assignments',
       '/api/account-strategy/attribution',
       '/api/account-strategy/contribution',
+      '/api/analytics/factor-evaluation',
       '/api/backtest/attribution-preview',
       '/api/backtest/compare',
       '/api/backtest/datasets',
@@ -340,6 +341,7 @@ test('backtest request URLs stay at the reviewed contract', () => {
       '/api/research-observations',
       '/api/research-observations/${encodeURIComponent(observationId)}/paper-book',
       '/api/strategy-learning/review-queue',
+      '/api/universes',
     ].sort(),
   );
 });

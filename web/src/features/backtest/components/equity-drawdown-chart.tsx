@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useMemo, useState } from 'react';
 
 import {
   Area,
@@ -97,15 +97,21 @@ function toFillMarkers(
 function EquityTooltip({
   active,
   payload,
+  markers = [],
 }: {
   active?: boolean;
   payload?: Array<{ payload?: ChartPoint }>;
+  markers?: FillMarker[];
 }) {
   const labels = useCopy().backtest.chart;
   const point = payload?.[0]?.payload;
   if (!active || !point) {
     return null;
   }
+
+  const matchingFills = markers.filter(
+    (m) => Math.abs(m.timestampMs - point.timestampMs) < 86_400_000,
+  );
 
   return (
     <div className="rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-3 py-2 text-xs shadow-[var(--app-shadow-overlay)]">
@@ -116,6 +122,36 @@ function EquityTooltip({
           {labels.drawdown} {formatPercent(point.drawdown)}
         </div>
       </div>
+      {matchingFills.length > 0 ? (
+        <div className="mt-2 border-t border-[var(--app-divider)] pt-1.5 space-y-1">
+          <div className="app-type-micro font-semibold text-[var(--app-text-secondary)]">
+            {labels.markersTitle} ({matchingFills.length})
+          </div>
+          {matchingFills.slice(0, 3).map((marker, i) => (
+            <div
+              key={`${marker.fill_id ?? marker.order_id ?? marker.symbol}-${i}`}
+              className="flex items-center gap-1.5 font-mono app-type-micro tabular-nums"
+            >
+              <span
+                className={`rounded px-1 font-semibold ${
+                  marker.side === 'buy'
+                    ? 'bg-[color-mix(in_srgb,var(--app-chart-buy)_12%,transparent)] text-[var(--app-chart-buy)]'
+                    : 'bg-[color-mix(in_srgb,var(--app-chart-sell)_12%,transparent)] text-[var(--app-chart-sell)]'
+                }`}
+              >
+                {marker.sideLabel}
+              </span>
+              <span className="font-semibold text-[var(--app-text)]">
+                {marker.symbol}
+              </span>
+              <span>{formatPrice(marker.fill_price)}</span>
+              <span className="text-[var(--app-text-tertiary)]">
+                ({formatQuantity(marker.fill_quantity)})
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -134,6 +170,21 @@ export function EquityDrawdownChart({
   const chartId = useId().replace(/:/g, '');
   const equityGradientId = `backtest-equity-${chartId}`;
   const drawdownGradientId = `backtest-drawdown-${chartId}`;
+
+  const [markerFilter, setMarkerFilter] = useState<
+    'all' | 'buy' | 'sell' | 'none'
+  >('all');
+  const buyCount = fillMarkers.filter((m) => m.side === 'buy').length;
+  const sellCount = fillMarkers.filter((m) => m.side === 'sell').length;
+
+  const visibleMarkers = useMemo(() => {
+    if (markerFilter === 'none') return [];
+    if (markerFilter === 'buy')
+      return fillMarkers.filter((m) => m.side === 'buy');
+    if (markerFilter === 'sell')
+      return fillMarkers.filter((m) => m.side === 'sell');
+    return fillMarkers;
+  }, [fillMarkers, markerFilter]);
 
   if (data.length === 0) {
     return (
@@ -157,8 +208,61 @@ export function EquityDrawdownChart({
             {labels.title}
           </h3>
         </div>
-        <div className="app-muted text-xs tabular-nums">
-          {labels.points(data.length)}
+        <div className="flex flex-wrap items-center gap-3">
+          {fillMarkers.length > 0 ? (
+            <div
+              data-testid="backtest-marker-filter-controls"
+              className="flex items-center gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-0.5 text-xs"
+            >
+              <button
+                type="button"
+                onClick={() => setMarkerFilter('all')}
+                className={`rounded px-2 py-0.5 font-medium transition-colors ${
+                  markerFilter === 'all'
+                    ? 'bg-[var(--app-accent)] text-white'
+                    : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                }`}
+              >
+                {locale === 'zh' ? '全部' : 'All'} ({fillMarkers.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarkerFilter('buy')}
+                className={`rounded px-2 py-0.5 font-medium transition-colors ${
+                  markerFilter === 'buy'
+                    ? 'bg-[var(--app-chart-buy)] text-white'
+                    : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                }`}
+              >
+                {locale === 'zh' ? '买入' : 'Buy'} ({buyCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarkerFilter('sell')}
+                className={`rounded px-2 py-0.5 font-medium transition-colors ${
+                  markerFilter === 'sell'
+                    ? 'bg-[var(--app-chart-sell)] text-white'
+                    : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                }`}
+              >
+                {locale === 'zh' ? '卖出' : 'Sell'} ({sellCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarkerFilter('none')}
+                className={`rounded px-2 py-0.5 font-medium transition-colors ${
+                  markerFilter === 'none'
+                    ? 'bg-[var(--app-surface)] text-[var(--app-text)] font-semibold'
+                    : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                }`}
+              >
+                {locale === 'zh' ? '隐藏' : 'Hide'}
+              </button>
+            </div>
+          ) : null}
+          <div className="app-muted text-xs tabular-nums">
+            {labels.points(data.length)}
+          </div>
         </div>
       </div>
 
@@ -218,8 +322,8 @@ export function EquityDrawdownChart({
                 stroke="var(--app-chart-label)"
                 fontSize={12}
               />
-              <Tooltip content={<EquityTooltip />} />
-              {fillMarkers.map((marker, index) => (
+              <Tooltip content={<EquityTooltip markers={fillMarkers} />} />
+              {visibleMarkers.map((marker, index) => (
                 <ReferenceDot
                   fill={
                     marker.side === 'buy'
@@ -272,7 +376,7 @@ export function EquityDrawdownChart({
               </div>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {fillMarkers.slice(0, 6).map((marker, index) => (
+              {visibleMarkers.slice(0, 6).map((marker, index) => (
                 <div
                   className="min-w-0 border-l border-[var(--app-divider)] py-1 pl-3 text-xs"
                   key={`${marker.fill_id ?? marker.order_id ?? marker.symbol}-${index}-summary`}
