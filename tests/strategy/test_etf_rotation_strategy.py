@@ -5,9 +5,17 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
+import pandas as pd
+import pytest
+
+from backtest.engine import BacktestEngine
 from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
-from core.types import Symbol
+from core.types import ZERO, OrderSide, Symbol
+from data.handler import DataHandler
+from data.manager import DataManager
+from data.universe import CORE_ETF_UNIVERSE
+from execution.commission import ETFCommission
 from strategy.builtins.etf_rotation import EtfRotationStrategy
 from strategy.registry import StrategyRegistry
 
@@ -111,3 +119,127 @@ def test_etf_rotation_defensive_switch_when_all_drop() -> None:
     assert latest_targets.get(sym_cash) == 1.0
     assert latest_targets.get(sym_a) == 0.0
     assert latest_targets.get(sym_b) == 0.0
+
+
+def _rotation_engine(prices, *, cash_proxy=None, **strategy_params):
+    params = {
+        "lookback_period": 2,
+        "volatility_window": 2,
+        "top_k": 1,
+        "rebalance_interval": 1,
+        "min_momentum": 0.001,
+        "use_risk_adjusted": False,
+        "cash_proxy": cash_proxy,
+        **strategy_params,
+    }
+    strategy = EtfRotationStrategy(EventBus(), **params)
+    members = {str(m.symbol): m for m in CORE_ETF_UNIVERSE.members}
+    instruments = {
+        Symbol(s): DataManager.get_instrument_by_type(
+            Symbol(s), members[s].instrument_type, name=members[s].name
+        )
+        for s in prices
+    }
+    handlers = {}
+    for symbol, values in prices.items():
+        frame = pd.DataFrame(
+            {
+                "timestamp": pd.bdate_range("2026-01-05", periods=len(values)),
+                "open": values,
+                "high": values,
+                "low": values,
+                "close": values,
+                "volume": [1000000] * len(values),
+            }
+        )
+        handlers[Symbol(symbol)] = DataHandler(frame, Symbol(symbol))
+    return BacktestEngine(
+        strategy,
+        instruments,
+        handlers,
+        initial_cash=Decimal("10000"),
+        commission_calc=ETFCommission(commission_rate=ZERO, min_commission=ZERO),
+        strict_event_errors=True,
+    )
+
+
+def test_engine_rejects_unloaded_defensive_asset_before_running():
+    engine = _rotation_engine({"510300": [10, 11, 12]}, cash_proxy="511010")
+    with pytest.raises(ValueError, match="cash_proxy_input_missing:511010"):
+        engine.run()
+    assert engine.portfolio.cash == 10000
+    assert engine.portfolio.positions == {}
+    assert engine.fills == []
+
+
+def test_rotation_retries_after_buy_precedes_sale_and_uses_real_holdings():
+    engine = _rotation_engine(
+        {
+            "510300": [10, 10, 10, 11, 11.5, 12, 12.5, 13],
+            "510500": [10, 10.5, 11, 11, 11, 11, 11, 11],
+        }
+    )
+    books = {}
+
+    def record_book(day):
+        books[day] = {
+            s: position.quantity for s, position in engine.portfolio.positions.items()
+        }
+
+    engine._session_completed = record_book
+    result = engine.run()
+    # A's later bar arrives before B's sale frees cash. The unchanged A target
+    # must be reviewed again rather than falsely treated as already completed.
+    assert books[pd.Timestamp("2026-01-09").date()].get("510300", ZERO) == ZERO
+    assert books[pd.Timestamp("2026-01-09").date()]["510500"] == ZERO
+    assert result.positions[Symbol("510300")].quantity == Decimal("800")
+    assert result.positions[Symbol("510500")].quantity == ZERO
+    assert [(fill.symbol, fill.side) for fill in result.fills] == [
+        (Symbol("510500"), OrderSide.BUY),
+        (Symbol("510500"), OrderSide.SELL),
+        (Symbol("510300"), OrderSide.BUY),
+    ]
+    modeled_fees = sum((fill.commission for fill in result.fills), ZERO)
+    assert engine.portfolio.cash == Decimal("400") - modeled_fees
+    assert result.final_equity == Decimal("10800") - modeled_fees
+
+
+@pytest.mark.parametrize("symbol", ["518880", "511010"])
+def test_gold_and_bond_exposure_trade_as_etfs_through_real_engine(symbol):
+    # Both securities use the same ETF lot and cost owner; gold/bond exposure
+    # does not turn the exchange-traded fund into a spot metal or cash bond.
+    prices = {"510300": [10, 9.9, 9.8, 9.7], symbol: [10, 10.1, 10.2, 10.3]}
+    engine = _rotation_engine(prices, cash_proxy=symbol if symbol == "511010" else None)
+    engine.execution.commission_calc = ETFCommission()
+    result = engine.run()
+    position = result.positions[Symbol(symbol)]
+    assert position.quantity > ZERO
+    assert position.quantity % 100 == ZERO
+    assert all(fill.symbol == symbol for fill in result.fills)
+    assert all(fill.fee_rule_id == "cn_fund_etf_default_v1" for fill in result.fills)
+    assert result.final_equity == engine.portfolio.cash + position.market_value
+
+
+@pytest.mark.parametrize("top_k", [6, 7])
+def test_rebalance_targets_stay_within_gross_cap_after_precision_rounding(top_k):
+    from domain.research_targets import build_research_target_weights
+
+    symbols = [str(member.symbol) for member in CORE_ETF_UNIVERSE.members[:top_k]]
+    engine = _rotation_engine(
+        {symbol: [10, 10.1, 10.2, 10.3] for symbol in symbols}, top_k=top_k
+    )
+    signals = []
+    engine.event_bus.subscribe(SignalEvent, signals.append)
+    result = engine.run()
+    targets = {str(signal.symbol): signal.target_weight for signal in signals}
+    assert sum(targets.values(), ZERO) == 1
+    # The forward target cap must preserve the same strategy output, rather than
+    # silently rescale a different over-allocated version of this backtest.
+    assert (
+        build_research_target_weights(
+            targets, max_symbol_weight=Decimal(1), max_gross_weight=Decimal(1)
+        )
+        == targets
+    )
+    assert len(result.fills) == top_k
+    assert engine.portfolio.cash >= ZERO

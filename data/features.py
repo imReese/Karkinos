@@ -129,7 +129,14 @@ class FeatureEngine:
         Returns:
             布尔 DataFrame，选中的标的对应值为 True。
         """
-        ranks = scores.rank(axis=1, ascending=ascending, method="min")
+        if isinstance(k, bool) or not isinstance(k, int) or k < 1:
+            raise ValueError("cross_sectional_top_k_requires_positive_integer")
+        if not scores.columns.is_unique:
+            raise ValueError("cross_sectional_top_k_duplicate_assets")
+        # Column order breaks ties deterministically. Invalid values never win;
+        # a sparse row selects at most its finite asset count.
+        finite_scores = scores.where(np.isfinite(scores))
+        ranks = finite_scores.rank(axis=1, ascending=ascending, method="first")
         return ranks <= k
 
     @staticmethod

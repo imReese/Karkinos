@@ -14,6 +14,7 @@ class UniverseMember:
 
     symbol: Symbol
     name: str
+    # Investment exposure; instrument_type owns trading identity.
     asset_class: AssetClass
     instrument_type: InstrumentType
     benchmark: bool = False
@@ -94,14 +95,14 @@ CORE_ETF_UNIVERSE = UniverseDefinition(
             symbol=Symbol("518880"),
             name="黄金ETF",
             asset_class=AssetClass.GOLD,
-            instrument_type=InstrumentType.GOLD,
+            instrument_type=InstrumentType.ETF,
             description="Physical gold hedge against inflation and equity drawdown.",
         ),
         UniverseMember(
             symbol=Symbol("511010"),
             name="国债ETF",
             asset_class=AssetClass.BOND,
-            instrument_type=InstrumentType.BOND,
+            instrument_type=InstrumentType.ETF,
             cash_proxy=True,
             description="5-year Chinese treasury bond ETF, serving as defense and cash proxy.",
         ),
@@ -168,7 +169,7 @@ SECTOR_ETF_UNIVERSE = UniverseDefinition(
             symbol=Symbol("511010"),
             name="国债ETF",
             asset_class=AssetClass.BOND,
-            instrument_type=InstrumentType.BOND,
+            instrument_type=InstrumentType.ETF,
             cash_proxy=True,
             description="Treasury bond defense proxy.",
         ),
@@ -207,7 +208,7 @@ DIVIDEND_DEFENSIVE_UNIVERSE = UniverseDefinition(
             symbol=Symbol("511010"),
             name="国债ETF",
             asset_class=AssetClass.BOND,
-            instrument_type=InstrumentType.BOND,
+            instrument_type=InstrumentType.ETF,
             cash_proxy=True,
             description="5-year Treasury bond ETF.",
         ),

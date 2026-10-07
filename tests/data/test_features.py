@@ -27,6 +27,24 @@ def price_df() -> pd.DataFrame:
 
 
 class TestFeatureEngine:
+    def test_top_k_ties_select_exactly_k_finite_assets(self):
+        scores = pd.DataFrame({"A": [3.0, np.inf], "B": [3.0, np.nan], "C": [3.0, 4.0]})
+        selected = FeatureEngine.cross_sectional_top_k(scores, 2)
+        assert selected.sum(axis=1).tolist() == [2, 1]
+        assert selected.iloc[0].tolist() == [True, True, False]
+        assert selected.iloc[1].tolist() == [False, False, True]
+
+    @pytest.mark.parametrize("k", [0, -1, 1.5, True])
+    def test_top_k_rejects_invalid_selection_count(self, k):
+        with pytest.raises(ValueError, match="positive_integer"):
+            FeatureEngine.cross_sectional_top_k(pd.DataFrame({"A": [1.0]}), k)
+
+    def test_top_k_rejects_duplicate_asset_identity(self):
+        with pytest.raises(ValueError, match="duplicate_assets"):
+            FeatureEngine.cross_sectional_top_k(
+                pd.DataFrame([[1.0, 2.0]], columns=["A", "A"]), 1
+            )
+
     def test_sma(self, price_df: pd.DataFrame):
         engine = FeatureEngine()
         sma5 = engine.sma(price_df, period=5)

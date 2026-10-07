@@ -93,3 +93,51 @@ def test_empty_and_nan_handling():
     nan_r = pd.DataFrame({"A": [1.0], "B": [2.0]})
     ic_nan = calculate_ic(nan_f, nan_r)
     assert pd.isna(ic_nan.iloc[0])
+
+
+def test_spread_drawdown_includes_initial_unit_equity():
+    summary = summarize_quantile_spread(pd.DataFrame({"long_short": [-0.10, 0.0]}))
+    assert summary["spread_max_drawdown"] == 0.10
+
+
+def test_multiperiod_ic_uses_nonoverlapping_fixed_sample():
+    # Odd rows overlap the endpoints of the even rows and must not increase n.
+    ic = pd.Series([0.1, 0.9, 0.3, 0.9, np.nan, 0.9, 0.2, np.inf])
+    summary = summarize_ic(ic, holding_period=2)
+    assert summary["sample_count"] == 3
+    assert summary["mean_ic"] == 0.2
+    expected_icir = 0.2 / pd.Series([0.1, 0.3, 0.2]).std(ddof=1)
+    assert summary["annualized_icir"] == pytest.approx(
+        expected_icir * np.sqrt(126), abs=0.0001
+    )
+
+
+def test_multiperiod_spread_uses_matching_horizon_and_sample_spacing():
+    returns = pd.DataFrame({"long_short": [-0.1, 0.9, 0.0, 0.9]})
+    summary = summarize_quantile_spread(returns, holding_period=2)
+    assert summary["annualized_spread_return"] == -6.3
+    assert summary["spread_max_drawdown"] == 0.1
+    spaced = summarize_quantile_spread(
+        returns.iloc[::2], holding_period=2, sample_spacing=2
+    )
+    assert summary == spaced
+
+
+def test_factor_summaries_exclude_infinite_values():
+    assert summarize_ic(pd.Series([np.inf, -np.inf, 0.2]))["sample_count"] == 1
+    summary = summarize_quantile_spread(
+        pd.DataFrame({"long_short": [np.inf, -np.inf, -0.1]})
+    )
+    assert summary["annualized_spread_return"] == -25.2
+    assert summary["spread_max_drawdown"] == 0.1
+    assert all(np.isfinite(value) for value in summary.values())
+
+
+@pytest.mark.parametrize("holding_period", [0, -1, 1.5, True])
+def test_summaries_reject_ambiguous_horizon(holding_period):
+    with pytest.raises(ValueError, match="positive_integer"):
+        summarize_ic(pd.Series([0.1]), holding_period=holding_period)
+    with pytest.raises(ValueError, match="positive_integer"):
+        summarize_quantile_spread(
+            pd.DataFrame({"long_short": [0.1]}), holding_period=holding_period
+        )

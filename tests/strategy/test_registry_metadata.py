@@ -37,5 +37,15 @@ def test_unmapped_strategy_metadata_has_no_benchmark_role():
 
     assert info_by_name["rsi"]["benchmark_role"] is None
     assert info_by_name["rsi"]["benchmark_universe"] == []
-    assert info_by_name["rsi"]["requires_out_of_sample_validation"] is False
-    assert info_by_name["rsi"]["requires_after_cost_report"] is False
+    assert info_by_name["rsi"]["requires_out_of_sample_validation"] is True
+    assert info_by_name["rsi"]["requires_after_cost_report"] is True
+
+
+def test_etf_rotation_requires_after_cost_and_independent_validation():
+    from strategy.registry import StrategyRegistry
+
+    entry = StrategyRegistry.get("etf_rotation")
+    assert entry is not None
+    assert entry["requires_out_of_sample_validation"] is True
+    assert entry["requires_after_cost_report"] is True
+    assert "Exploratory" in entry["validation_notes"][1]

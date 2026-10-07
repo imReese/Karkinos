@@ -1,6 +1,7 @@
 """Cross-sectional quantitative factor evaluation engine.
 
-Provides canonical metrics for predictive alpha factor validation:
+Provides exploratory, gross metrics for predictive factor research. Quantile
+spreads are diagnostics, not an executable portfolio or after-cost return proof.
 - Information Coefficient (IC) & Rank IC (Spearman)
 - IC Information Ratio (ICIR), t-stat, hit rate
 - Quantile return distribution (Q1..Q5) & Long-Short spread
@@ -36,6 +37,8 @@ def calculate_ic(
     Returns:
         pd.Series: 每个日期的截面 IC 值，索引与输入对齐。
     """
+    if method not in {"spearman", "pearson"}:
+        raise ValueError("factor_ic_method_unsupported")
     common_idx = factor_df.index.intersection(forward_returns.index)
     common_cols = factor_df.columns.intersection(forward_returns.columns)
 
@@ -86,7 +89,27 @@ def calculate_rank_ic(
     return calculate_ic(factor_df, forward_returns, method="spearman")
 
 
-def summarize_ic(ic_series: pd.Series) -> dict[str, float]:
+def _nonoverlapping_sampling(
+    holding_period: int, sample_spacing: int, periods_per_year: int
+) -> tuple[int, float]:
+    for name, value in (
+        ("holding_period", holding_period),
+        ("sample_spacing", sample_spacing),
+        ("periods_per_year", periods_per_year),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"factor_{name}_requires_positive_integer")
+    stride = math.ceil(holding_period / sample_spacing)
+    return stride, periods_per_year / (stride * sample_spacing)
+
+
+def summarize_ic(
+    ic_series: pd.Series,
+    *,
+    holding_period: int = 1,
+    sample_spacing: int = 1,
+    periods_per_year: int = 252,
+) -> dict[str, float]:
     """计算 IC 序列的统计摘要。
 
     Returns:
@@ -95,16 +118,26 @@ def summarize_ic(ic_series: pd.Series) -> dict[str, float]:
         - mean_ic: IC 均值
         - std_ic: IC 标准差
         - icir: IC 均值 / IC 标准差 (IC 信息比率)
-        - annualized_icir: 年化 ICIR (ICIR * sqrt(252))
+        - annualized_icir: 按非重叠样本间隔年化的 ICIR
         - t_stat: 统计显著性 t 检验值
-        - p_value: 双尾显著性 p 值 (正态/t近拟)
+        - p_value: 双尾正态近似 p 值，非独立/小样本不构成显著性证明
         - positive_ratio: IC 大于 0 的期数比例
+
+    Holding period and row spacing are measured in trading sessions. Fixed
+    row-stride sampling precedes missing-value removal, so unavailable endpoints
+    cannot compress time and reintroduce overlapping returns. Remaining serial
+    dependence is not modeled by the approximate t-statistic or normal p-value.
     """
-    clean_ic = ic_series.dropna()
+    stride, annual_periods = _nonoverlapping_sampling(
+        holding_period, sample_spacing, periods_per_year
+    )
+    clean_ic = ic_series.iloc[::stride].replace([np.inf, -np.inf], np.nan).dropna()
     n = len(clean_ic)
     if n == 0:
         return {
             "sample_count": 0.0,
+            "sample_stride": float(stride),
+            "annual_periods": annual_periods,
             "mean_ic": 0.0,
             "std_ic": 0.0,
             "icir": 0.0,
@@ -120,7 +153,7 @@ def summarize_ic(ic_series: pd.Series) -> dict[str, float]:
 
     if std_ic > 0 and n > 1:
         icir = mean_ic / std_ic
-        annualized_icir = icir * math.sqrt(252)
+        annualized_icir = icir * math.sqrt(annual_periods)
         se = std_ic / math.sqrt(n)
         t_stat = mean_ic / se if se > 0 else 0.0
         # 双尾 p 值
@@ -133,6 +166,8 @@ def summarize_ic(ic_series: pd.Series) -> dict[str, float]:
 
     return {
         "sample_count": float(n),
+        "sample_stride": float(stride),
+        "annual_periods": annual_periods,
         "mean_ic": round(mean_ic, 4),
         "std_ic": round(std_ic, 4),
         "icir": round(icir, 4),
@@ -204,7 +239,7 @@ def calculate_quantile_returns(
             else:
                 row_dict["long_short"] = np.nan
             quantile_records.append(row_dict)
-        except Exception:
+        except ValueError:
             row_dict = {f"Q{i + 1}": np.nan for i in range(n_quantiles)}
             row_dict["long_short"] = np.nan
             quantile_records.append(row_dict)
@@ -213,14 +248,27 @@ def calculate_quantile_returns(
     return res_df
 
 
-def summarize_quantile_spread(quantile_returns: pd.DataFrame) -> dict[str, float]:
-    """汇总分层收益表现与单调性分析。
+def summarize_quantile_spread(
+    quantile_returns: pd.DataFrame,
+    *,
+    holding_period: int = 1,
+    sample_spacing: int = 1,
+    periods_per_year: int = 252,
+) -> dict[str, float]:
+    """汇总税费前分层利差与单调性，不能作为策略收益或准入证据。
 
     Returns:
         dict 包含多空利差的年化收益率、夏普比率、最大回撤，以及单调性得分。
+        只使用固定间隔的非重叠样本；多期收益不会被当成每日收益年化。
     """
+    stride, annual_periods = _nonoverlapping_sampling(
+        holding_period, sample_spacing, periods_per_year
+    )
+    sampled_returns = quantile_returns.iloc[::stride].replace([np.inf, -np.inf], np.nan)
     if "long_short" not in quantile_returns.columns or quantile_returns.empty:
         return {
+            "sample_count": 0.0,
+            "annual_periods": annual_periods,
             "annualized_spread_return": 0.0,
             "annualized_spread_volatility": 0.0,
             "spread_sharpe": 0.0,
@@ -228,9 +276,11 @@ def summarize_quantile_spread(quantile_returns: pd.DataFrame) -> dict[str, float
             "monotonicity_score": 0.0,
         }
 
-    ls = quantile_returns["long_short"].dropna()
+    ls = sampled_returns["long_short"].dropna()
     if len(ls) == 0:
         return {
+            "sample_count": 0.0,
+            "annual_periods": annual_periods,
             "annualized_spread_return": 0.0,
             "annualized_spread_volatility": 0.0,
             "spread_sharpe": 0.0,
@@ -238,12 +288,14 @@ def summarize_quantile_spread(quantile_returns: pd.DataFrame) -> dict[str, float
             "monotonicity_score": 0.0,
         }
 
-    ann_ret = float(ls.mean() * 252)
-    ann_vol = float(ls.std(ddof=1) * math.sqrt(252)) if len(ls) > 1 else 0.0
+    if (ls < -1).any():
+        raise ValueError("factor_spread_return_below_minus_one")
+    ann_ret = float(ls.mean() * annual_periods)
+    ann_vol = float(ls.std(ddof=1) * math.sqrt(annual_periods)) if len(ls) > 1 else 0.0
     sharpe = float(ann_ret / ann_vol) if ann_vol > 0 else 0.0
 
     # 最大回撤
-    cum = (1.0 + ls).cumprod()
+    cum = pd.Series(np.concatenate(([1.0], (1.0 + ls).cumprod().to_numpy())))
     peak = cum.cummax()
     dd = (cum - peak) / peak
     max_dd = float(abs(dd.min())) if len(dd) > 0 and not dd.isna().all() else 0.0
@@ -254,7 +306,7 @@ def summarize_quantile_spread(quantile_returns: pd.DataFrame) -> dict[str, float
     ]
     q_cols.sort(key=lambda x: int(x[1:]))
     if len(q_cols) >= 2:
-        q_means = pd.Series([float(quantile_returns[c].mean()) for c in q_cols])
+        q_means = pd.Series([float(sampled_returns[c].mean()) for c in q_cols])
         ranks = pd.Series(list(range(len(q_cols))))
         if q_means.dropna().nunique() > 1:
             mono_corr = float(q_means.rank().corr(ranks.rank()))
@@ -265,6 +317,8 @@ def summarize_quantile_spread(quantile_returns: pd.DataFrame) -> dict[str, float
         mono_score = 0.0
 
     return {
+        "sample_count": float(len(ls)),
+        "annual_periods": annual_periods,
         "annualized_spread_return": round(ann_ret, 4),
         "annualized_spread_volatility": round(ann_vol, 4),
         "spread_sharpe": round(sharpe, 4),

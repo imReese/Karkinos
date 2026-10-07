@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from core.event_bus import EventBus
 from core.events import MarketEvent
@@ -38,10 +38,21 @@ class EtfRotationStrategy(Strategy):
         strategy_id: str = "etf_rotation",
     ) -> None:
         super().__init__(strategy_id, event_bus)
+        for name, value, minimum in (
+            ("lookback_period", lookback_period, 1),
+            ("volatility_window", volatility_window, 2),
+            ("top_k", top_k, 1),
+            ("rebalance_interval", rebalance_interval, 1),
+            ("trend_filter_period", trend_filter_period, 0),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"etf_rotation_{name}_invalid")
+        if not math.isfinite(min_momentum):
+            raise ValueError("etf_rotation_min_momentum_invalid")
         self.lookback_period = lookback_period
         self.volatility_window = volatility_window
-        self.top_k = max(1, top_k)
-        self.rebalance_interval = max(1, rebalance_interval)
+        self.top_k = top_k
+        self.rebalance_interval = rebalance_interval
         self.min_momentum = min_momentum
         self.trend_filter_period = trend_filter_period
         self.use_risk_adjusted = use_risk_adjusted
@@ -50,26 +61,36 @@ class EtfRotationStrategy(Strategy):
         self._all_symbols: list[Symbol] = []
         self._prices: dict[Symbol, list[float]] = defaultdict(list)
         self._latest_prices: dict[Symbol, float] = {}
-        self._current_targets: dict[Symbol, float | None] = defaultdict(lambda: None)
         self._symbols_seen_today: set[Symbol] = set()
 
         self._current_date: date | None = None
         self._session_day_count: int = 0
 
     def on_init(self, symbols: list[Symbol]) -> None:
-        self._all_symbols = list(symbols)
-        if self.cash_proxy_symbol and self.cash_proxy_symbol not in self._all_symbols:
-            self._all_symbols.append(self.cash_proxy_symbol)
+        if not symbols or len(set(symbols)) != len(symbols):
+            raise ValueError("etf_rotation_universe_invalid")
+        if self.cash_proxy_symbol and self.cash_proxy_symbol not in symbols:
+            raise ValueError(
+                f"etf_rotation_cash_proxy_input_missing:{self.cash_proxy_symbol}"
+            )
+        self._all_symbols = sorted(symbols)
+        self._prices.clear()
+        self._latest_prices.clear()
+        self._current_date = None
+        self._session_day_count = 0
         for sym in self._all_symbols:
             self._prices[sym] = []
             self._latest_prices[sym] = 0.0
-            self._current_targets[sym] = None
         self._symbols_seen_today = set()
 
     def on_data(self, event: MarketEvent) -> None:
         self._last_timestamp = event.timestamp
         sym = event.symbol
+        if sym not in self._all_symbols:
+            return
         price = float(event.close)
+        if not math.isfinite(price) or price <= 0:
+            raise ValueError(f"etf_rotation_price_invalid:{sym}")
 
         self._prices[sym].append(price)
         self._latest_prices[sym] = price
@@ -151,30 +172,38 @@ class EtfRotationStrategy(Strategy):
             scores.append((sym, score))
 
         # 按得分从高到低排序
-        scores.sort(key=lambda x: x[1], reverse=True)
+        scores.sort(key=lambda x: (-x[1], x[0]))
         selected_symbols = [s for s, _ in scores[: self.top_k]]
 
-        next_targets: dict[Symbol, float] = {s: 0.0 for s in self._all_symbols}
-        unit_weight = 1.0 / self.top_k
+        next_targets = {s: Decimal(0) for s in self._all_symbols}
+        precision = Decimal("0.0001")
+        unit_weight = (Decimal(1) / self.top_k).quantize(precision, rounding=ROUND_DOWN)
 
         for sym in selected_symbols:
-            next_targets[sym] = round(unit_weight, 4)
+            next_targets[sym] = unit_weight
 
         # 未分配权重切换至避险资产 (cash_proxy)
-        allocated_weight = sum(next_targets[s] for s in selected_symbols)
-        unallocated = max(0.0, 1.0 - allocated_weight)
+        allocated_weight = (Decimal(len(selected_symbols)) / self.top_k).quantize(
+            precision, rounding=ROUND_DOWN
+        )
+        # Assign the rounding remainder deterministically, without increasing
+        # gross exposure above the exact selected-slot allocation.
+        if selected_symbols:
+            next_targets[selected_symbols[0]] += allocated_weight - sum(
+                (next_targets[s] for s in selected_symbols), Decimal(0)
+            )
+        unallocated = Decimal(1) - allocated_weight
 
         if self.cash_proxy_symbol and self.cash_proxy_symbol in self._all_symbols:
-            if unallocated > 0.01:
-                next_targets[self.cash_proxy_symbol] = round(unallocated, 4)
+            if unallocated > 0:
+                next_targets[self.cash_proxy_symbol] = unallocated
             else:
-                next_targets[self.cash_proxy_symbol] = 0.0
+                next_targets[self.cash_proxy_symbol] = Decimal(0)
 
-        # 发送目标权重发生变化的信号
+        # A published target is intent, not a fill. Each scheduled review sends
+        # fresh targets, and Portfolio sizes the differences from actual holdings.
+        # This retries a blocked/partial buy after another symbol releases cash.
         for sym in self._all_symbols:
             target = next_targets[sym]
-            current = self._current_targets[sym]
-            if current is None or abs(target - current) > 1e-4:
-                self._current_targets[sym] = target
-                px = self._latest_prices.get(sym)
-                self.emit_signal(sym, target_weight=target, price=px)
+            px = self._latest_prices.get(sym)
+            self.emit_signal(sym, target_weight=float(target), price=px)

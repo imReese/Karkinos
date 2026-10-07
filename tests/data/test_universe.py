@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.types import AssetClass, InstrumentType
 from data.universe import (
     CORE_ETF_UNIVERSE,
     DIVIDEND_DEFENSIVE_UNIVERSE,
@@ -55,3 +56,12 @@ def test_get_and_list_universes() -> None:
     assert retrieved.universe_id == "core_etf_universe"
 
     assert get_universe("non_existent_universe") is None
+
+
+def test_defensive_etfs_keep_instrument_identity_separate_from_exposure():
+    for universe in list_universes():
+        for member in universe.members:
+            assert member.instrument_type is InstrumentType.ETF
+    by_symbol = {member.symbol: member for member in CORE_ETF_UNIVERSE.members}
+    assert by_symbol["518880"].asset_class is AssetClass.GOLD
+    assert by_symbol["511010"].asset_class is AssetClass.BOND

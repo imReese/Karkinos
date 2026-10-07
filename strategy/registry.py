@@ -40,8 +40,8 @@ _DEFAULT_BENCHMARK_METADATA = {
     "supported_frequencies": ["1d"],
     "benchmark_role": None,
     "benchmark_universe": [],
-    "requires_out_of_sample_validation": False,
-    "requires_after_cost_report": False,
+    "requires_out_of_sample_validation": True,
+    "requires_after_cost_report": True,
     "validation_notes": [],
 }
 
@@ -127,11 +127,11 @@ _BENCHMARK_METADATA = {
         "asset_universe": ["etf", "fund", "bond", "gold"],
         "benchmark_role": "cross_sectional_etf_rotation",
         "benchmark_universe": ["etf", "bond", "gold"],
-        "requires_out_of_sample_validation": False,
-        "requires_after_cost_report": False,
+        "requires_out_of_sample_validation": True,
+        "requires_after_cost_report": True,
         "validation_notes": [
             "Cross-sectional ETF momentum rotation with trend filters and defensive bond hedging.",
-            "Research strategy eligible for multi-asset backtest and paper allocation.",
+            "Exploratory research only; after-cost and independent out-of-sample evidence are required before promotion.",
         ],
     },
 }
@@ -374,12 +374,8 @@ class StrategyRegistry:
             "supported_frequencies": list(raw.get("supported_frequencies", ["1d"])),
             "benchmark_role": raw.get("benchmark_role"),
             "benchmark_universe": list(raw.get("benchmark_universe", [])),
-            "requires_out_of_sample_validation": bool(
-                raw.get("requires_out_of_sample_validation", False)
-            ),
-            "requires_after_cost_report": bool(
-                raw.get("requires_after_cost_report", False)
-            ),
+            "requires_out_of_sample_validation": True,
+            "requires_after_cost_report": True,
             "validation_notes": list(raw.get("validation_notes", [])),
             "is_extension": True,
             "execution_boundary": dict(_RESEARCH_ONLY_EXECUTION_BOUNDARY),

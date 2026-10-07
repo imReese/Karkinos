@@ -116,3 +116,27 @@ def test_rejects_extension_manifest_that_requests_live_execution(tmp_path):
         }
     ]
     assert StrategyRegistry.get("unsafe_extension") is None
+
+
+@pytest.mark.parametrize("declared", [None, False])
+def test_extension_cannot_opt_out_of_research_evidence(tmp_path, declared):
+    from strategy.registry import StrategyRegistry
+
+    manifest = {
+        "schema_version": "karkinos.strategy.v1",
+        "strategy_id": "unreviewed_custom",
+        "display_name": "Unreviewed Custom",
+        "class_path": "strategy.builtins.rsi:RSIStrategy",
+    }
+    if declared is not None:
+        manifest["requires_out_of_sample_validation"] = declared
+        manifest["requires_after_cost_report"] = declared
+    (tmp_path / "unreviewed.strategy.json").write_text(json.dumps(manifest))
+    try:
+        StrategyRegistry.discover_extensions(tmp_path, force=True)
+        entry = StrategyRegistry.get("unreviewed_custom")
+        assert entry is not None
+        assert entry["requires_out_of_sample_validation"] is True
+        assert entry["requires_after_cost_report"] is True
+    finally:
+        StrategyRegistry.clear_extension_strategies_for_tests()
