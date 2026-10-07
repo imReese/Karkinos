@@ -139,17 +139,25 @@ function ReturnCalendarTable({
         <thead className="app-kicker app-type-overline">
           <tr>
             <th className="px-3 py-2">{copy.explainability.bucketLabel}</th>
-            <th className="px-3 py-2">{copy.explainability.netChange}</th>
-            <th className="px-3 py-2">{copy.explainability.externalFlow}</th>
-            <th className="px-3 py-2">{copy.explainability.marketPnl}</th>
+            <th className="px-3 py-2 text-right">
+              {copy.explainability.netChange}
+            </th>
+            <th className="px-3 py-2 text-right">
+              {copy.explainability.externalFlow}
+            </th>
+            <th className="px-3 py-2 text-right">
+              {copy.explainability.marketPnl}
+            </th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="tabular-nums font-mono">
           {rows
             .slice()
             .reverse()
             .map((row) => {
               const hasMissingValuation = row.valuationStatus === 'missing';
+              const returnNumericValue =
+                metric === 'amount' ? row.delta : row.percentChange;
               const returnValue = hasMissingValuation
                 ? copy.explainability.missingValuationShort
                 : metric === 'amount'
@@ -163,12 +171,30 @@ function ReturnCalendarTable({
                   key={row.label}
                   className="border-t border-[var(--app-border)]"
                 >
-                  <td className="px-3 py-3 font-medium">{row.label}</td>
-                  <td className="px-3 py-3">{returnValue}</td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 font-medium font-sans">
+                    {row.label}
+                  </td>
+                  <td
+                    className={`px-3 py-3 text-right ${
+                      hasMissingValuation
+                        ? 'text-[var(--app-text-tertiary)]'
+                        : returnTone(returnNumericValue)
+                    }`}
+                  >
+                    {returnValue}
+                  </td>
+                  <td className="px-3 py-3 text-right text-[var(--app-text-secondary)]">
                     {formatReturnCurrency(row.externalFlow)}
                   </td>
-                  <td className="px-3 py-3">{marketValue}</td>
+                  <td
+                    className={`px-3 py-3 text-right ${
+                      hasMissingValuation
+                        ? 'text-[var(--app-text-tertiary)]'
+                        : returnTone(row.marketPnl)
+                    }`}
+                  >
+                    {marketValue}
+                  </td>
                 </tr>
               );
             })}
@@ -176,4 +202,13 @@ function ReturnCalendarTable({
       </table>
     </div>
   );
+}
+
+function returnTone(value: number | null | undefined): string {
+  if (value == null || value === 0) {
+    return 'text-[var(--app-pnl-neutral)]';
+  }
+  return value > 0
+    ? 'text-[var(--app-pnl-positive)]'
+    : 'text-[var(--app-pnl-negative)]';
 }

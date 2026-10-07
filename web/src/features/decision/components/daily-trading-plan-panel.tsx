@@ -515,6 +515,7 @@ function PaperShadowReview({
             type="button"
             className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-center text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!canRunPaperShadow || paperShadowRunPending}
+            aria-busy={paperShadowRunPending ? 'true' : undefined}
             onClick={onRunPaperShadow}
           >
             {paperShadowRunPending

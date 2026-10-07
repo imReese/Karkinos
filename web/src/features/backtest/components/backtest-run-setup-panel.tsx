@@ -209,6 +209,9 @@ function BacktestSetupForm() {
           type="submit"
           className="app-button-primary min-h-11 w-full rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold transition active:scale-[0.99] sm:w-auto"
           disabled={runBacktest.isPending || datasetPreparing}
+          aria-busy={
+            runBacktest.isPending || datasetPreparing ? 'true' : undefined
+          }
         >
           {runBacktest.isPending ? labels.running : labels.run}
         </button>

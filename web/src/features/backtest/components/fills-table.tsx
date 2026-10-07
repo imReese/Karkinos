@@ -49,28 +49,44 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
       },
       {
         accessorKey: 'fill_price',
-        header: labels.fillPrice,
-        cell: ({ row }) => formatPrice(row.original.fill_price),
+        header: () => (
+          <span className="block text-right">{labels.fillPrice}</span>
+        ),
+        cell: ({ row }) => (
+          <span className="block text-right font-mono tabular-nums">
+            {formatPrice(row.original.fill_price)}
+          </span>
+        ),
       },
       {
         accessorKey: 'fill_quantity',
-        header: labels.quantity,
-        cell: ({ row }) => formatQuantity(row.original.fill_quantity),
+        header: () => (
+          <span className="block text-right">{labels.quantity}</span>
+        ),
+        cell: ({ row }) => (
+          <span className="block text-right font-mono tabular-nums">
+            {formatQuantity(row.original.fill_quantity)}
+          </span>
+        ),
       },
       {
         accessorKey: 'commission',
-        header: labels.commission,
+        header: () => (
+          <span className="block text-right">{labels.commission}</span>
+        ),
         cell: ({ row }) => (
-          <span className="text-[var(--app-pnl-negative)]">
+          <span className="block text-right font-mono tabular-nums text-[var(--app-pnl-negative)]">
             {formatCurrency(row.original.commission)}
           </span>
         ),
       },
       {
         accessorKey: 'slippage',
-        header: labels.slippage,
+        header: () => (
+          <span className="block text-right">{labels.slippage}</span>
+        ),
         cell: ({ row }) => (
-          <span className="text-[var(--app-pnl-negative)]">
+          <span className="block text-right font-mono tabular-nums text-[var(--app-pnl-negative)]">
             {formatCurrency(row.original.slippage)}
           </span>
         ),

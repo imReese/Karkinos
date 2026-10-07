@@ -10,14 +10,22 @@ export function Button({
   size = 'sm',
   className,
   type = 'button',
+  loading,
+  disabled,
+  'aria-busy': ariaBusy,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  loading?: boolean;
 }) {
+  const isBusy = Boolean(loading || ariaBusy);
   return (
     <button
       type={type}
+      disabled={disabled || loading}
+      aria-busy={isBusy ? 'true' : undefined}
+      data-loading={loading ? 'true' : undefined}
       data-workbench-primitive="button"
       data-button-variant={variant}
       data-button-size={size}

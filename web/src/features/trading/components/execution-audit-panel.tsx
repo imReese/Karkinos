@@ -149,6 +149,7 @@ export function ExecutionAuditPanel({
             type="button"
             className="app-button-secondary shrink-0 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={shadowRunPending}
+            aria-busy={shadowRunPending ? 'true' : undefined}
             onClick={onRunShadowReview}
           >
             {shadowRunPending
@@ -160,6 +161,7 @@ export function ExecutionAuditPanel({
               type="button"
               className="app-button-primary shrink-0 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               disabled={reviewPending}
+              aria-busy={reviewPending ? 'true' : undefined}
               onClick={onAcceptSimulationReview}
             >
               {reviewPending

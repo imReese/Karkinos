@@ -246,6 +246,7 @@ export function DecisionQualityPanel() {
                   (view.current_day_captured &&
                     view.current_binding_valid === true)
                 }
+                aria-busy={capture.isPending ? 'true' : undefined}
                 onClick={() => void submit()}
               >
                 {capture.isPending

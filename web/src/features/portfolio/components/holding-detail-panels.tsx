@@ -391,6 +391,7 @@ export function HoldingEvidencePanel({
                 type="button"
                 className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
                 disabled={refreshQuote.isPending}
+                aria-busy={refreshQuote.isPending ? 'true' : undefined}
                 onClick={onRefreshQuote}
                 aria-label={`${labels.refreshQuote}: ${position.symbol}`}
               >
