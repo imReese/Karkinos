@@ -49,6 +49,8 @@ def load_research_observation_source(
             raise ValueError
         if config.get("strategy") == "dual_ma":
             detail = _dual_ma_source(config, metrics, objects, start, end)
+        elif config.get("strategy") == "etf_rotation":
+            detail = _rotation_source(config, metrics, objects, start, end)
         elif config.get("strategy") == "ai_formula_research":
             detail = _formula_source(config, metrics, start, end)
         else:
@@ -251,6 +253,47 @@ def _dual_ma_source(config, metrics, objects, start, end):
         "instruments": _instrument_payload(instruments),
         "minimum_bars": validated["long_period"] + 1,
         "entry_target_weight": "1",
+    }
+
+
+def _rotation_source(config, metrics, objects, start, end):
+    dataset_id = config.get("dataset_id")
+    if not dataset_id:
+        raise ResearchObservationInputError(
+            "observation_source_formal_dataset_required"
+        )
+    snapshot = _read(objects, dataset_id).snapshot
+    if (snapshot.start_date, snapshot.end_date) != (start, end) or (
+        metrics.get("dataset_binding") or {}
+    ).get("dataset_id") != dataset_id:
+        raise ResearchObservationInputError("observation_source_dataset_mismatch")
+    if _instruments(config.get("assets")) != snapshot.instruments or any(
+        item.instrument_type is not InstrumentType.ETF for item in snapshot.instruments
+    ):
+        raise ResearchObservationInputError("observation_source_universe_mismatch")
+    params = validate_strategy_params(
+        "etf_rotation",
+        STRATEGY_PARAMETER_SCHEMAS["etf_rotation"],
+        config.get("params") or {},
+    )
+    # A defensive ETF has to be part of the saved, verified trading universe.
+    if params["cash_proxy"] and params["cash_proxy"] not in {
+        item.symbol for item in snapshot.instruments
+    }:
+        raise ResearchObservationInputError("observation_cash_proxy_outside_universe")
+    return {
+        "strategy_kind": "etf_rotation",
+        "parameters": params,
+        "dataset_id": dataset_id,
+        "source_dataset_kind": "immutable_dataset",
+        "instruments": _instrument_payload(snapshot.instruments),
+        "minimum_bars": max(
+            params["lookback_period"],
+            params["volatility_window"] if params["use_risk_adjusted"] else 1,
+            params["trend_filter_period"],
+        )
+        + 1,
+        "entry_target_weight": str(Decimal(1) / params["top_k"]),
     }
 
 

@@ -1,6 +1,7 @@
 """Explicit commands for an isolated research paper book."""
 
 from decimal import Decimal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,6 +15,10 @@ class StartResearchPaperBookRequest(BaseModel):
     request_id: UUID
     initial_cash: Decimal = Field(gt=0, allow_inf_nan=False)
     cost_assumptions: BacktestCostAssumptions | None = None
+    corporate_action_mode: (
+        Literal["price_only", "reported_distributions_gross"] | None
+    ) = None
+    health_policy: dict[str, Any] | None = None
 
 
 class SettleResearchPaperBookRequest(BaseModel):

@@ -6,6 +6,8 @@ export {
   type BacktestReport,
 } from '../backtest/api';
 export { useResearchObservations } from '../backtest/observation-api';
+export { useResearchPaperBook } from '../backtest/paper-book-api';
+export { ResearchPaperPerformance } from '../backtest/components/research-paper-performance';
 export { observationCopy } from '../backtest/copy-observations';
 export { ResearchObservationHealth } from '../backtest/components/research-observation-health';
 export { ResearchObservationHistory } from '../backtest/components/research-observation-history';

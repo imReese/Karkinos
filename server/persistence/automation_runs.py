@@ -33,7 +33,11 @@ def _observation_policy_payload(row, observation_id: str) -> dict[str, Any] | No
 
 
 def require_observation_automation_policy(
-    conn: sqlite3.Connection, observation_id: str, generation: str
+    conn: sqlite3.Connection,
+    observation_id: str,
+    generation: str,
+    *,
+    paper_settlement=False,
 ) -> None:
     """Fence a scheduled observation write under its existing write lock."""
     row = conn.execute(
@@ -44,7 +48,11 @@ def require_observation_automation_policy(
     if (
         value is None
         or not observation_automation_policy_valid(value, observation_id)
-        or value["enabled"] is not True
+        or (
+            value.get("paper_settlement_enabled", False) is not True
+            if paper_settlement
+            else value["enabled"] is not True
+        )
         or value["generation"] != generation
     ):
         raise ValueError("observation_automation_policy_conflict")
@@ -138,6 +146,15 @@ class AutomationRunRepository(SQLiteRepository):
                 raise ValueError("observation_automation_policy_conflict")
             if payload["enabled"] and observation["lifecycle"] != "active":
                 raise ValueError("observation_automation_paused")
+            if (
+                payload.get("paper_settlement_enabled")
+                and conn.execute(
+                    "SELECT 1 FROM research_paper_books WHERE observation_id=?",
+                    (observation_id,),
+                ).fetchone()
+                is None
+            ):
+                raise ValueError("paper_book_not_found")
             conn.execute(
                 "INSERT INTO automation_policies "
                 "(policy_id, payload_json, created_at, updated_at, updated_by) "
@@ -188,6 +205,7 @@ class AutomationRunRepository(SQLiteRepository):
         generation: str,
         stop_requested: Callable[[], bool],
         now: str,
+        paper_settlement: bool = False,
     ) -> bool:
         """Fence the rebuildable projection too when activation/disable races it."""
         with connect_sqlite(self._path) as conn:
@@ -196,7 +214,9 @@ class AutomationRunRepository(SQLiteRepository):
             if stop_requested():
                 return False
             try:
-                require_observation_automation_policy(conn, observation_id, generation)
+                require_observation_automation_policy(
+                    conn, observation_id, generation, paper_settlement=paper_settlement
+                )
             except ValueError:
                 return False
             upsert_automation_run_in_transaction(conn, run, now=now)

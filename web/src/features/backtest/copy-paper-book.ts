@@ -4,16 +4,17 @@ export const paperBookCopy = {
     detail:
       '独立记录模拟现金、持仓、成交和净资产，与上方仅记录目标及价格观察的 shadow 并列。仅接收本账本创建之后实际发布的目标，不补造历史交易。',
     boundary:
-      '仅手动结算，不继承观察的自动推进权限，不改变真实账本或资金授权。采用日线成交模型和服务商报告的税前分红送转，不代表实际成交、历史完整知情或保证收益。',
+      '可手动结算，或单独启用本地自动结算；观察的自动推进不授予账本结算权限。采用日线模拟成交，ETF 默认仅价格收益，不代表实际成交、完整分配覆盖或保证收益。',
     initialCash: '初始模拟现金（元）',
     create: '创建独立模拟账本',
     createHint:
       '每条观察最多一个账本。初始资金和成本创建后冻结；更改配置或重新开始需另起观察。',
     costs:
-      '这些成本仅用于新建的独立模拟账本；股票佣金、最低佣金和滑点可选覆盖，其余费用由服务端模型决定并冻结。',
-    defaultCosts: '使用服务端内置成本与零滑点，创建后可查看冻结的有效费率。',
+      '这些成本仅用于新建的独立模拟账本；股票/ETF 佣金、最低佣金、滑点和成交量上限可选覆盖，其余费用由服务端模型决定并冻结。',
+    defaultCosts:
+      '使用服务端费率、5 基点滑点和 1% 日成交量上限；创建后可查看冻结的有效假设。',
     unsupported:
-      '独立模拟账本目前仅支持标准 A 股股票；所选观察包含不支持的品种。',
+      '独立模拟账本支持标准 A 股股票和交易所 ETF；所选观察包含不支持的品种。',
     refresh: '刷新模拟账本',
     loading: '正在读取已保存的模拟账本…',
     loadFailed:
@@ -24,15 +25,15 @@ export const paperBookCopy = {
     paused: '已停止接收新目标',
     pause: '停止接收新目标',
     pauseHint:
-      '此操作不可恢复接收，不会清仓。已接收目标与已有持仓仍可手动结算；重新开始需另起观察。',
+      '此操作不可恢复接收，不会清仓。已接收目标与已有持仓仍可结算；重新开始需另起观察。',
     dataset: '用于模拟账本结算的正式 Dataset',
     choose: '请选择已保存的数据集',
     refreshDatasets: '刷新账本可选 Dataset',
     datasetHint:
-      '仅列出同一起始日、同一股票集合且标有双源核验和分红送转证据的 Dataset。服务端仍会检查最新已收盘日、完整历史前缀和证据；缺失时请通过现有研究数据准备流程补齐。',
+      '仅列出同一起始日、同一标的集合且标有双源核验；包含分红的账本还要求分红送转证据的 Dataset。服务端仍会检查最新已收盘日、完整历史前缀和证据；缺失时请通过现有研究数据准备流程补齐。',
     datasetFailed: '无法读取可选 Dataset，请刷新后再结算。',
     noDatasets:
-      '没有匹配的正式 Dataset。请先在研究数据准备流程完成核验并绑定分红送转证据。',
+      '没有匹配的正式 Dataset。请先准备并核验完整区间；含分红的账本还须绑定分红送转证据。',
     settle: '手动结算模拟账本',
     snapshot: '已保存账本快照',
     asOf: '截至已结算日',
@@ -80,17 +81,17 @@ export const paperBookCopy = {
     detail:
       'Separate simulated cash, positions, fills and net asset value alongside the target-only shadow above. Only targets actually published after this book was created are eligible; no historical trades are invented.',
     boundary:
-      'Manual settlement only. Observation automation grants no permission to this book; real account records and capital authority are unchanged. Daily-bar fills and provider-reported gross distributions do not establish actual execution, complete historical knowledge or guaranteed returns.',
+      'Settle manually or separately enable local automatic settlement. Observation advance grants no settlement permission. Daily-bar fills and ETF price-only returns do not establish actual execution, complete distribution coverage or guaranteed returns.',
     initialCash: 'Initial simulated cash (CNY)',
     create: 'Create independent paper book',
     createHint:
       'One book per observation. Initial cash and costs are frozen at creation; use a new observation to change them or start again.',
     costs:
-      'Costs apply only to this new independent paper book. Stock commission, minimum commission and slippage may be overridden; the server freezes other fees from its model.',
+      'Costs apply only to this new independent paper book. Stock/ETF commission, minimum commission, slippage and volume participation may be overridden; the server freezes other fees from its model.',
     defaultCosts:
-      'Use built-in server costs and zero slippage. Frozen effective rates are available after creation.',
+      'Use server fees, 5 bps slippage and a 1% daily volume cap. Frozen assumptions are available after creation.',
     unsupported:
-      'Independent paper books currently support standard A-share stocks only; this observation contains an unsupported instrument.',
+      'Independent paper books support standard A-share stocks and exchange ETFs; this observation contains an unsupported instrument.',
     refresh: 'Refresh paper book',
     loading: 'Reading the saved paper book…',
     loadFailed:
@@ -101,15 +102,15 @@ export const paperBookCopy = {
     paused: 'New target intake stopped',
     pause: 'Stop accepting new targets',
     pauseHint:
-      'Intake cannot be resumed. This does not liquidate positions. Previously accepted targets and existing positions can still be settled manually; start a new observation to begin again.',
+      'Intake cannot be resumed. This does not liquidate positions. Previously accepted targets and existing positions can still be settled; start a new observation to begin again.',
     dataset: 'Formal Dataset for paper settlement',
     choose: 'Choose a saved Dataset',
     refreshDatasets: 'Refresh paper Dataset choices',
     datasetHint:
-      'Lists matching source start dates and stock universes marked with cross-source verification and distribution evidence. The server still checks the latest closed session, complete history prefix and evidence. Use the existing research data preparation flow to supply missing data.',
+      'Lists matching source start dates and universes with cross-source verification; distribution evidence is also required for books that include distributions. The server still checks the latest closed session, complete history prefix and evidence. Use the existing research data preparation flow to supply missing data.',
     datasetFailed: 'Could not read Dataset choices. Refresh before settlement.',
     noDatasets:
-      'No matching formal Dataset. Prepare and verify research data, then bind distribution evidence through the existing flow.',
+      'No matching formal Dataset. Prepare and verify the complete interval; books that include distributions also require distribution evidence.',
     settle: 'Settle paper book manually',
     snapshot: 'Saved book snapshot',
     asOf: 'As of settled session',

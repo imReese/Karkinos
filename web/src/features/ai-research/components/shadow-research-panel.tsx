@@ -626,11 +626,16 @@ export function ShadowResearchPanel() {
         approvedBy={policy.updated_by}
         copy={copy}
         locale={locale}
-        onApprove={async (qualificationCandidateId, approvalNotes) => {
+        onApprove={async (
+          qualificationCandidateId,
+          approvalNotes,
+          forwardReview,
+        ) => {
           await approveQualification.mutateAsync({
             qualification_candidate_id: qualificationCandidateId,
             approved_by: policy.updated_by,
             notes: approvalNotes,
+            ...(forwardReview ? { forward_review: forwardReview } : {}),
           });
         }}
         pending={approveQualification.isPending}

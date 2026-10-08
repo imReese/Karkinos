@@ -6,8 +6,7 @@ import { usePublishedDatasets } from '../dataset-api';
 import type { ResearchObservation } from '../observation-contracts';
 import { usePaperBookCommand, useResearchPaperBook } from '../paper-book-api';
 import type { PaperBookCommand } from '../paper-book-contracts';
-import { BacktestCostControls } from './backtest-cost-controls';
-import { useBacktestCostInputs } from './backtest-cost-inputs';
+import { ResearchPaperBookStart } from './research-paper-book-start';
 import { ResearchPaperBookState } from './research-paper-book-state';
 
 const fieldClass = 'app-field min-h-11 w-full min-w-0 px-3 py-2';
@@ -24,24 +23,20 @@ export function ResearchPaperBookPanel({
   const { locale } = usePreferences();
   const labels = paperBookCopy[locale];
   const [open, setOpen] = useState(false);
-  const [initialCash, setInitialCash] = useState('');
   const [datasetId, setDatasetId] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   const pendingRequest = useRef<{ key: string; id: string } | null>(null);
-  const costs = useBacktestCostInputs();
   const query = useResearchPaperBook(observation.id, open);
   const mutation = usePaperBookCommand();
   const book = query.data;
   const datasets = usePublishedDatasets(open && Boolean(book));
-  const supported =
-    observation.universe.length > 0 &&
-    observation.universe.every((item) => item.instrument_type === 'stock');
   const matching =
     datasets.data?.datasets.filter(
       (item) =>
         item.cross_source_verified === true &&
-        Boolean(item.corporate_action_evidence) &&
+        (book?.policy.corporate_action_mode === 'price_only' ||
+          Boolean(item.corporate_action_evidence)) &&
         /^sha256:[0-9a-f]{64}$/.test(item.dataset_id) &&
         item.start_date === observation.source.start_date &&
         item.instruments.length === observation.universe.length &&
@@ -61,10 +56,6 @@ export function ResearchPaperBookPanel({
   const selected = matching.find((item) => item.dataset_id === datasetId);
   const waiting = busy || mutation.isPending || query.isFetching;
   const blocked = waiting || query.isError || Boolean(error);
-  const validCash =
-    /^\d+(?:\.\d+)?$/.test(initialCash.trim()) &&
-    Number.isFinite(Number(initialCash)) &&
-    Number(initialCash) > 0;
   const failure = error ? paperBookError(error, locale) : null;
 
   function requestId(key: string) {
@@ -134,57 +125,21 @@ export function ResearchPaperBookPanel({
           </p>
         ) : null}
         {query.data === null && !query.isError ? (
-          <div className="min-w-0 space-y-3">
-            <p className="app-muted text-xs leading-5">{labels.createHint}</p>
-            {!supported ? (
-              <p className="text-xs leading-5">{labels.unsupported}</p>
-            ) : null}
-            <label className="grid max-w-sm gap-2 text-xs">
-              {labels.initialCash}
-              <input
-                className={fieldClass}
-                type="text"
-                inputMode="decimal"
-                value={initialCash}
-                disabled={blocked || !supported}
-                onChange={(event) => setInitialCash(event.target.value)}
-              />
-            </label>
-            <BacktestCostControls
-              inputs={costs}
-              disabled={blocked || !supported}
-              description={labels.costs}
-              defaultDescription={labels.defaultCosts}
-              fields={[
-                'stock_commission_rate',
-                'stock_min_commission',
-                'slippage_bps',
-              ]}
-            />
-            <button
-              type="button"
-              className={buttonClass}
-              disabled={blocked || !supported || !validCash || !costs.valid}
-              onClick={() => {
-                const payload = {
-                  initial_cash: initialCash.trim(),
-                  ...(costs.assumptions
-                    ? { cost_assumptions: costs.assumptions }
-                    : {}),
-                };
-                void submit({
-                  kind: 'create',
-                  observationId: observation.id,
-                  payload: {
-                    ...payload,
-                    request_id: requestId(`create:${JSON.stringify(payload)}`),
-                  },
-                });
-              }}
-            >
-              {mutation.isPending ? labels.saving : labels.create}
-            </button>
-          </div>
+          <ResearchPaperBookStart
+            observation={observation}
+            blocked={blocked}
+            saving={mutation.isPending}
+            onCreate={(payload) =>
+              void submit({
+                kind: 'create',
+                observationId: observation.id,
+                payload: {
+                  ...payload,
+                  request_id: requestId(`create:${JSON.stringify(payload)}`),
+                },
+              })
+            }
+          />
         ) : null}
         {book ? (
           <>

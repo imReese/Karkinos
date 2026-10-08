@@ -1,5 +1,6 @@
 """Actual publications drive a restartable, isolated modeled paper book."""
 
+from dataclasses import replace
 from datetime import date, datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -10,7 +11,7 @@ from backtest.distributions import StockDistribution
 from backtest.engine import BacktestExecutionConfig
 from backtest.paper_replay import PublishedPaperTarget, replay_paper_book
 from core.events import MarketEvent
-from core.types import ZERO, Symbol
+from core.types import ZERO, InstrumentType, Symbol
 from domain.instrument import make_stock
 from domain.portfolio import Portfolio
 from execution.commission import StockACommission
@@ -36,6 +37,7 @@ def _bar(day, price="10", *, symbol=SYMBOL, volume="10000"):
         close=value,
         volume=Decimal(volume),
         available_at=_at(day, 16),
+        instrument_type=InstrumentType.STOCK,
     )
 
 
@@ -145,6 +147,24 @@ def test_actual_fee_and_slippage_resize_buy_and_preserve_decimal_accounting():
     assert row["cash"] == "945"
     assert row["equity"] == "1945"
     assert row["positions"][SYMBOL]["avg_cost"] == "11.05"
+    assert row["attempts"][0]["partially_filled"] is True
+    assert row["attempts"][0]["reason"] == "cash_resized_partial_fill"
+
+
+def test_paper_explains_capacity_partial_fill_without_inventing_future_attempts():
+    result = _replay(
+        [_bar(day) for day in DAYS[:3]],
+        [_target(1)],
+        cost_config=replace(_cost(), max_volume_participation=Decimal("0.01")),
+    )
+    assert result["fills"][0]["fill_quantity"] == "100"
+    attempt = result["attempts"][0]
+    assert attempt["requested_quantity"] == "1000"
+    assert attempt["partially_filled"] is True
+    assert attempt["reason"] == "volume_participation_partial_fill"
+    assert attempt["target_weight"] == "1"
+    assert attempt["actual_weight"] == "0.1"
+    assert result["sessions"][-1]["attempts"] == []
 
 
 def test_cash_and_share_distribution_uses_record_holdings_and_listing_day():

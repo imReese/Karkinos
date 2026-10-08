@@ -5,6 +5,7 @@ import { usePreferences } from '../../../shared/preferences/context';
 import { paperBookCopy, paperAttemptReason } from '../copy-paper-book';
 import type { ResearchPaperBook } from '../paper-book-contracts';
 import { BacktestEffectiveCostsView } from './backtest-cost-evidence-panel';
+import { ResearchPaperPerformance } from './research-paper-performance';
 
 const money = (value: string) => formatCurrency(Number(value));
 
@@ -58,6 +59,7 @@ export function ResearchPaperBookState({ book }: { book: ResearchPaperBook }) {
           {labels.asOf}: {book.last_settled_session ?? labels.notSettled}
         </p>
       </div>
+      <ResearchPaperPerformance book={book} />
       <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           [labels.equity, book.state.equity],

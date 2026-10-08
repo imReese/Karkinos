@@ -51,6 +51,8 @@ def create_router():
                 request_id=str(request.request_id),
                 initial_cash=request.initial_cash,
                 cost_assumptions=request.cost_assumptions,
+                corporate_action_mode=request.corporate_action_mode,
+                health_policy=request.health_policy,
             )
         except ValueError as exc:
             raise _error(exc) from exc

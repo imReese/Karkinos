@@ -17,7 +17,7 @@ export const observationCopy = {
     invalid:
       'Use an integer horizon from 1 to 60 and weights greater than 0 and at most 1.',
     unsupported:
-      'Start from a saved dual moving-average report bound to an immutable Dataset, or a saved Formula research definition.',
+      'Start from a saved dual moving-average or ETF rotation report bound to an immutable Dataset, or a saved Formula research definition.',
     select: 'Saved observations for this report',
     none: 'No saved observations for this report.',
     loading: 'Loading saved observations…',
@@ -104,7 +104,7 @@ export const observationCopy = {
     grossCap: '总权重上限',
     invalid: '观察跨度须为 1 至 60 的整数，权重须大于 0 且不超过 1。',
     unsupported:
-      '请从绑定不可变 Dataset 的已保存双均线报告，或已保存的 Formula 研究定义开始。',
+      '请从绑定不可变 Dataset 的已保存双均线、ETF 轮动报告，或已保存的 Formula 研究定义开始。',
     select: '本报告已保存的观察',
     none: '本报告尚无已保存的观察。',
     loading: '正在读取已保存的观察…',
@@ -116,7 +116,7 @@ export const observationCopy = {
     sourceUnknown:
       '原回测未绑定代码版本。本次观察将当前实现冻结为新的研究版本。',
     pitUnknown:
-      '冻结的研究股票池不能证明历史时点成分正确，也不能排除幸存者偏差。',
+      '冻结的研究标的池不能证明历史时点成分正确，也不能排除幸存者偏差。',
     dataset: '用于本次观察的核验数据集',
     choose: '选择已保存的数据集',
     datasetHint:

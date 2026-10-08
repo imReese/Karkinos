@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 
+from analytics.paper_performance import validate_paper_health_policy
 from backtest.distributions import distributions_from_evidence
 from backtest.paper_replay import (
     PAPER_REPLAY_POLICY_ID,
@@ -36,7 +37,8 @@ from data.dataset.reader import (
     DatasetReaderError,
     read_dataset_corporate_action_evidence,
 )
-from domain.instrument import Instrument, make_stock
+from domain.instrument import Instrument, make_etf, make_stock
+from domain.research_targets import build_research_target_weights
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.strategy_models import BacktestCostAssumptions
 from server.persistence.research_paper_books import ResearchPaperBooksRepository
@@ -67,6 +69,7 @@ def paper_book_code_binding():
     root = Path(__file__).resolve().parents[2]
     paths = (
         "server/services/research_paper_books.py",
+        "analytics/paper_performance.py",
         "server/persistence/research_paper_books.py",
         "server/services/backtest_costs.py",
         "backtest/paper_replay.py",
@@ -166,8 +169,10 @@ def _market_event(bar):
         close=bar.close,
         volume=bar.volume,
         available_at=bar.available_at,
-        asset_class=AssetClass.STOCK,
-        instrument_type=InstrumentType.STOCK,
+        asset_class=AssetClass.FUND
+        if bar.instrument.instrument_type is InstrumentType.ETF
+        else AssetClass.STOCK,
+        instrument_type=bar.instrument.instrument_type,
     )
 
 
@@ -273,14 +278,26 @@ class ResearchPaperBookService:
         request_id,
         initial_cash: Decimal,
         cost_assumptions: BacktestCostAssumptions | None = None,
+        corporate_action_mode: str | None = None,
+        health_policy: dict[str, Any] | None = None,
     ):
         if not initial_cash.is_finite() or initial_cash <= 0:
             raise ValueError("paper_book_initial_cash_invalid")
         cost_inputs = (cost_assumptions or BacktestCostAssumptions()).model_dump(
             mode="json"
         )
+        validated_health = (
+            validate_paper_health_policy(health_policy)
+            if health_policy is not None
+            else None
+        )
         fingerprint = content_fingerprint(
-            {"initial_cash": str(initial_cash), "cost_inputs": cost_inputs}
+            {
+                "initial_cash": str(initial_cash),
+                "cost_inputs": cost_inputs,
+                "corporate_action_mode": corporate_action_mode,
+                "health_policy": validated_health,
+            }
         )
         replay = self.repository.get_operation(
             observation_id, request_id, "start", fingerprint
@@ -293,10 +310,18 @@ class ResearchPaperBookService:
         if observation["code_binding"] != observation_code_binding():
             raise ValueError("paper_book_observation_code_changed")
         universe = observation["universe"]
-        if any(item["instrument_type"] != "stock" for item in universe) or len(
-            {item["symbol"] for item in universe}
-        ) != len(universe):
+        if any(
+            item["instrument_type"] not in {"stock", "etf"} for item in universe
+        ) or len({item["symbol"] for item in universe}) != len(universe):
             raise ValueError("paper_book_instrument_unsupported")
+        has_etf = any(item["instrument_type"] == "etf" for item in universe)
+        action_mode = corporate_action_mode or (
+            "price_only" if has_etf else "reported_distributions_gross"
+        )
+        if action_mode not in {"price_only", "reported_distributions_gross"} or (
+            has_etf and action_mode != "price_only"
+        ):
+            raise ValueError("paper_book_corporate_action_mode_unsupported")
         now = _instant(self.clock())
         calendar = self.observations._calendar(
             date.fromisoformat(observation["source"]["start_date"]), now
@@ -332,13 +357,44 @@ class ResearchPaperBookService:
             "historical_pit_verified": False,
             "contains_simulated_fills": True,
             "observation_target_policy": observation["policy"],
-            "corporate_action_mode": "reported_distributions_gross",
+            "corporate_action_mode": action_mode,
+            "health_policy": validated_health,
             "cost_inputs": cost_inputs,
             "cost_assumptions": effective_costs,
             "warmup_session": earlier[-1].isoformat(),
             "max_sessions": 2000,
             "max_dataset_rows": observation["policy"]["max_dataset_rows"],
-            "limitations": [*_STATE_LIMITATIONS, *effective_costs["limitations"]],
+            "limitations": [
+                *_STATE_LIMITATIONS,
+                *effective_costs["limitations"],
+                "Empty corporate-action responses never prove the absence of events or complete economic-return coverage.",
+                "ETF model uses canonical 100-unit lots, T+1 and 10% limits; instrument-specific T+0, special limits and ETF distributions are not verified.",
+            ]
+            if has_etf
+            else [*_STATE_LIMITATIONS, *effective_costs["limitations"]],
+        }
+        equal = {item["symbol"]: Decimal(1) / len(universe) for item in universe}
+        benchmark_weights = build_research_target_weights(
+            equal,
+            **{
+                name: Decimal(observation["policy"][name])
+                for name in ("max_symbol_weight", "max_gross_weight")
+            },
+        )
+        policy["benchmark"] = {
+            "policy_id": "karkinos.paper.equal_weight_buy_and_hold.v1",
+            "name": "Equal-weight same-universe buy-and-hold, capped by frozen observation limits",
+            "target_weights": {
+                key: str(value) for key, value in benchmark_weights.items()
+            },
+            "execution": "one_attempt_at_first_accepted_target_close",
+            "activation": "first_real_published_target_accepted_after_book_start",
+            "same_initial_cash_instruments_costs_and_distribution_mode": True,
+            "cash_interest": "zero",
+            "rebalances": False,
+            "limitations": [
+                "A bounded simulated comparator; not a risk-factor neutral alpha or executable venue return."
+            ],
         }
         return self.repository.start(
             book_id=str(
@@ -359,7 +415,9 @@ class ResearchPaperBookService:
             code_binding=paper_book_code_binding(),
             instruments={
                 item["symbol"]: _instrument_payload(
-                    make_stock(item["symbol"], item["symbol"])
+                    (make_etf if item["instrument_type"] == "etf" else make_stock)(
+                        item["symbol"], item["symbol"]
+                    )
                 )
                 for item in universe
             },
@@ -368,9 +426,26 @@ class ResearchPaperBookService:
             computation_not_before=now,
         )
 
-    def settle(self, observation_id, *, request_id, expected_version, dataset_id):
+    def settle(
+        self,
+        observation_id,
+        *,
+        request_id,
+        expected_version,
+        dataset_id,
+        automation_generation=None,
+        automation_stop_requested=None,
+    ):
         fingerprint = content_fingerprint(
-            {"expected_version": expected_version, "dataset_id": dataset_id}
+            {
+                "expected_version": expected_version,
+                "dataset_id": dataset_id,
+                **(
+                    {"automation_generation": automation_generation}
+                    if automation_generation is not None
+                    else {}
+                ),
+            }
         )
         replay = self.repository.get_operation(
             observation_id, request_id, "settle", fingerprint
@@ -427,11 +502,15 @@ class ResearchPaperBookService:
                 # revised out of the current price window. It is still the same
                 # immutable observation, with its original capture/cutoff checks.
                 try:
-                    evidence = read_dataset_corporate_action_evidence(
-                        self.observations.objects,
-                        replace(
-                            result.snapshot, start_date=date.min, end_date=date.max
-                        ),
+                    evidence = (
+                        read_dataset_corporate_action_evidence(
+                            self.observations.objects,
+                            replace(
+                                result.snapshot, start_date=date.min, end_date=date.max
+                            ),
+                        )
+                        if book["policy"]["corporate_action_mode"] != "price_only"
+                        else None
                     )
                 except (DatasetReaderError, OSError):
                     raise ValueError(
@@ -475,7 +554,11 @@ class ResearchPaperBookService:
             if bar.session_date in new_sessions
         )
         evidence_rows.append(current.corporate_action_evidence)
-        distributions = _merge_distributions(evidence_rows, evaluation_start=start)
+        distributions = (
+            _merge_distributions(evidence_rows, evaluation_start=start)
+            if book["policy"]["corporate_action_mode"] != "price_only"
+            else ()
+        )
         observation = self.observations.repository.get(observation_id)
         publications = self._targets(book, observation, now, end)
         costs, effective = resolve_backtest_costs(
@@ -498,6 +581,40 @@ class ResearchPaperBookService:
             distributions=distributions,
         )
         projections = {item["session"]: item for item in result["sessions"]}
+        benchmark_policy = book["policy"].get("benchmark")
+        if benchmark_policy is not None:
+            first_target = min(
+                publications, key=lambda item: item.reference_session, default=None
+            )
+            benchmark_publications = []
+            if first_target is not None:
+                benchmark_publications = [
+                    PublishedPaperTarget(
+                        id=book["id"] + ":benchmark",
+                        published_at=first_target.published_at,
+                        reference_session=first_target.reference_session,
+                        target_weights={
+                            key: Decimal(value)
+                            for key, value in benchmark_policy["target_weights"].items()
+                        },
+                    )
+                ]
+            benchmark = replay_paper_book(
+                book_id=book["id"] + ":benchmark",
+                initial_cash=Decimal(book["initial_cash"]),
+                instruments={
+                    Symbol(key): _restore_instrument(value)
+                    for key, value in book["instruments"].items()
+                },
+                bars=bars,
+                publications=benchmark_publications,
+                evaluation_start=start,
+                through_session=end,
+                cost_config=costs,
+                distributions=distributions,
+            )
+            for row in benchmark["sessions"]:
+                projections[row["session"]]["benchmark"] = row
         if set(projections) != {day.isoformat() for day in sessions}:
             raise ValueError("paper_book_session_projection_incomplete")
         for step in old_steps:
@@ -509,6 +626,8 @@ class ResearchPaperBookService:
             fingerprint=fingerprint,
             expected_version=expected_version,
             computation_not_before=now,
+            automation_generation=automation_generation,
+            automation_stop_requested=automation_stop_requested,
             steps=[
                 {
                     "session": day.isoformat(),

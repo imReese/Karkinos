@@ -50,11 +50,13 @@ def configure_observation_automation(
     *,
     enabled: bool,
     expected_generation: str | None,
+    paper_settlement_enabled: bool = False,
 ) -> dict[str, Any]:
     payload = {
         "schema_version": OBSERVATION_AUTOMATION_SCHEMA,
         "observation_id": observation_id,
         "enabled": enabled,
+        "paper_settlement_enabled": paper_settlement_enabled,
         "generation": str(uuid4()),
         "dataset_selection": OBSERVATION_DATASET_SELECTION,
         "local_data_only": True,
@@ -75,6 +77,7 @@ def project_observation_automation(service, observation) -> dict[str, Any]:
     policy = store.get_observation_automation_policy(identity)
     valid = observation_automation_policy_valid(policy, identity)
     enabled = valid and policy["enabled"] is True
+    paper_enabled = valid and policy.get("paper_settlement_enabled", False) is True
     run = store.get_automation_run_sync(_run_id(identity))
     payload = _run_payload(run)
     invalid_run = payload is None
@@ -98,6 +101,10 @@ def project_observation_automation(service, observation) -> dict[str, Any]:
     return {
         "observation_id": identity,
         "enabled": enabled,
+        "paper_settlement_enabled": paper_enabled,
+        "paper_settlement": _project_paper_settlement(
+            store, identity, generation, paper_enabled
+        ),
         "generation": generation,
         "status": status,
         "last_checked_at": payload.get("last_checked_at"),
@@ -124,6 +131,126 @@ def _now(service) -> datetime:
 
 def _run_id(identity: str) -> str:
     return f"research-observation-automation:{identity}:latest"
+
+
+def _project_paper_settlement(store, identity, generation, enabled):
+    payload = (
+        _run_payload(store.get_automation_run_sync(_run_id(identity) + ":paper")) or {}
+    )
+    if payload.get("generation") != generation:
+        payload = {}
+    return {
+        "enabled": enabled,
+        "status": payload.get("status", "ready") if enabled else "disabled",
+        "last_checked_at": payload.get("last_checked_at"),
+        "last_settled_session": payload.get("last_settled_session"),
+        "last_blocker": payload.get("last_blocker"),
+        "dataset_id": payload.get("dataset_id"),
+        "local_data_only": True,
+        "account_authority": False,
+    }
+
+
+def _settle_opted_paper(service, observation, policy, stopped):
+    """Separate standing permission; target pause retains valuation of holdings."""
+    from server.services.research_paper_books import ResearchPaperBookService
+
+    now = _now(service)
+    dataset_id = None
+    last = None
+    status, blocker = "waiting", None
+    try:
+        books = ResearchPaperBookService(service.db, clock=service.clock)
+        book = books.get(observation["id"])
+        if book is None:
+            raise ValueError("paper_book_not_found")
+        last = book["last_settled_session"]
+        calendar = service._calendar(
+            date.fromisoformat(book["source"]["start_date"]), now
+        )
+        closed = latest_closed_session(calendar, now=now)
+        if now < datetime.combine(closed, time(16), _SHANGHAI):
+            raise ValueError("paper_book_automation_waiting_after_close")
+        if closed.isoformat() < book["evaluation_start"] or (
+            last is not None and closed.isoformat() <= last
+        ):
+            status = "completed" if last else "waiting"
+        else:
+            entry, snapshot = _select_dataset(
+                service, observation, now, closed, unreadable_candidate_dataset_ids=[]
+            )
+            dataset_id = entry.ref.dataset_id
+            if (snapshot.start_date, snapshot.end_date, snapshot.cutoff) != (
+                date.fromisoformat(book["source"]["start_date"]),
+                closed,
+                entry.cutoff,
+            ):
+                raise ValueError("observation_automation_catalog_mismatch")
+            if stopped():
+                return None
+            request_id = str(
+                uuid5(
+                    NAMESPACE_URL,
+                    content_fingerprint(
+                        {
+                            "book_id": book["id"],
+                            "dataset_id": dataset_id,
+                            "expected_version": book["version"],
+                            "automation_generation": policy["generation"],
+                        }
+                    ),
+                )
+            )
+            result = books.settle(
+                observation["id"],
+                request_id=request_id,
+                expected_version=book["version"],
+                dataset_id=dataset_id,
+                automation_generation=policy["generation"],
+                automation_stop_requested=stopped,
+            )
+            last = result["last_settled_session"]
+            status = "completed"
+    except ValueError as exc:
+        blocker = str(exc)
+        status = (
+            "blocked"
+            if blocker
+            in {"paper_book_code_changed", "paper_book_settled_prefix_conflict"}
+            else "waiting"
+        )
+    except Exception:
+        logger.exception("Local independent paper settlement failed")
+        status, blocker = "blocked", "paper_book_automation_failed"
+    if stopped():
+        return None
+    payload = {
+        "generation": policy["generation"],
+        "status": status,
+        "last_checked_at": now.isoformat(),
+        "last_settled_session": last,
+        "last_blocker": {"code": blocker} if blocker else None,
+        "dataset_id": dataset_id,
+    }
+    recorded = AutomationRunRepository(
+        service.db.path
+    ).record_observation_automation_status(
+        {
+            "run_id": _run_id(observation["id"]) + ":paper",
+            "run_type": "research_paper_settlement",
+            "run_date": now.astimezone(_SHANGHAI).date().isoformat(),
+            "status": status,
+            "execution_mode": "independent_paper",
+            "source_ref": observation["id"],
+            "payload": payload,
+        },
+        observation_id=observation["id"],
+        generation=policy["generation"],
+        stop_requested=stopped,
+        now=now.isoformat(),
+        paper_settlement=True,
+    )
+    return payload if recorded else None
 
 
 def _run_payload(run) -> dict[str, Any] | None:
@@ -275,13 +402,16 @@ def run_research_observation_automation_once(
         if stopped():
             break
         identity = policy.get("observation_id") if isinstance(policy, dict) else None
-        if (
-            not observation_automation_policy_valid(policy, identity)
-            or not policy["enabled"]
-        ):
+        if not observation_automation_policy_valid(policy, identity):
             continue
         observation = service.repository.get(identity)
-        if observation is None or observation["lifecycle"] != "active":
+        if observation is None:
+            continue
+        if policy.get("paper_settlement_enabled", False):
+            paper_report = _settle_opted_paper(service, observation, policy, stopped)
+            if paper_report is not None and not policy["enabled"]:
+                reports.append({**paper_report, "scope": "independent_paper"})
+        if not policy["enabled"] or observation["lifecycle"] != "active":
             continue
         now = _now(service)
         decision_session = None

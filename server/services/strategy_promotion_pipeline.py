@@ -440,6 +440,22 @@ def resolve_ai_shadow_strategy_promotion_binding(
     )
     reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
     raw_binding = reader(candidate_id) if callable(reader) and candidate_id else None
+    if human_review.get("forward_review") is not None:
+        from server.services.forward_paper_review import (
+            verify_forward_paper_review,
+        )
+
+        try:
+            verify_forward_paper_review(
+                db,
+                human_review["forward_review"],
+                source_result_id=int(
+                    (raw_binding or {}).get("candidate_result_id") or 0
+                ),
+                exact_current=False,
+            )
+        except (ValueError, LookupError, TypeError, KeyError):
+            blockers.append("ai_shadow_strategy_forward_review_binding_invalid")
     normalized_research = (
         isinstance(raw_binding, dict)
         and raw_binding.get("research_run_capital_mode")
@@ -458,6 +474,7 @@ def resolve_ai_shadow_strategy_promotion_binding(
         "qualification_run_id": readiness.get("qualification_run_id"),
         "qualification_binding": _json_object(readiness.get("qualification_binding")),
         "human_reviewer": human_review.get("reviewer"),
+        "forward_review": human_review.get("forward_review"),
         "human_review_note_recorded": bool(
             str(human_review.get("review_note") or "").strip()
         ),

@@ -49,6 +49,57 @@ export type PaperAttempt = {
   fill_id?: string | null;
 };
 
+export type PaperHealthPolicy = {
+  mode: 'report_only' | 'pause_on_breach';
+  minimum_settled_sessions: number;
+  maximum_drawdown: string;
+  minimum_net_excess_return: string;
+};
+
+export type PaperPerformance = {
+  input_version: number;
+  outcome_fingerprint: string;
+  evaluation_start: string;
+  through_session: string | null;
+  status: 'waiting' | 'measured';
+  settled_sessions: number;
+  sessions_since_first_accepted_target: number;
+  benchmark_start_session?: string | null;
+  waiting_sessions_before_first_target?: number;
+  net_return: string;
+  max_drawdown: string;
+  benchmark_net_return: string | null;
+  modeled_net_excess_return: string | null;
+  fees_paid: string;
+  slippage_cost: string;
+  cash_weight: string | null;
+  pnl_reconciliation_residual: string;
+  return_basis: string;
+  position_contributions: {
+    symbol: string;
+    net_pnl: string;
+    return_contribution: string;
+    distribution_income: string;
+  }[];
+  equity_series: {
+    session: string | null;
+    net_return: string;
+    benchmark_net_return: string | null;
+  }[];
+};
+
+export type PaperHealth = {
+  status:
+    | 'not_configured'
+    | 'unavailable'
+    | 'insufficient_evidence'
+    | 'threshold_breached'
+    | 'within_rule';
+  action: string;
+  breaches: string[];
+  policy?: PaperHealthPolicy;
+};
+
 export type ResearchPaperBook = {
   id: string;
   observation_id: string;
@@ -62,7 +113,8 @@ export type ResearchPaperBook = {
   policy: {
     cost_assumptions: BacktestEffectiveCosts;
     cost_inputs: Partial<Record<keyof BacktestCostAssumptions, number | null>>;
-    corporate_action_mode: 'reported_distributions_gross';
+    corporate_action_mode: 'reported_distributions_gross' | 'price_only';
+    health_policy?: PaperHealthPolicy | null;
     currency: 'CNY';
   };
   last_settled_session: string | null;
@@ -89,6 +141,8 @@ export type ResearchPaperBook = {
   }[];
   fills: PaperFill[];
   attempts: PaperAttempt[];
+  performance?: PaperPerformance;
+  health?: PaperHealth;
   limitations: string[];
   account_authority: false;
   automatic: false;
@@ -103,6 +157,7 @@ export type PaperBookCommand = {
         request_id: string;
         initial_cash: string;
         cost_assumptions?: BacktestCostAssumptions;
+        health_policy?: PaperHealthPolicy;
       };
     }
   | {

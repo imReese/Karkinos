@@ -34,7 +34,7 @@ export function ResearchObservationsPanel({
 }) {
   const { locale } = usePreferences();
   const labels = observationCopy[locale];
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [selectedId, setSelectedId] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
@@ -224,7 +224,7 @@ function ObservationStartForm({
     threshold: '',
   });
   const healthPolicy = configuredHealthPolicy(health);
-  const supported = ['dual_ma', 'ai_formula_research'].includes(
+  const supported = ['dual_ma', 'ai_formula_research', 'etf_rotation'].includes(
     report.config.strategy,
   );
   const valid =

@@ -61,10 +61,14 @@ export function useConfigureObservationAutomation() {
       sourceResultId: number;
       enabled: boolean;
       expectedGeneration: string | null;
+      paperSettlementEnabled?: boolean;
     }) => {
       const url = `${path}/${encodeURIComponent(command.observationId)}`;
       await putJson(`${url}/automation`, {
         enabled: command.enabled,
+        ...(command.paperSettlementEnabled === undefined
+          ? {}
+          : { paper_settlement_enabled: command.paperSettlementEnabled }),
         expected_generation: command.expectedGeneration,
       });
       const observation = await apiClient<ResearchObservation>(url);

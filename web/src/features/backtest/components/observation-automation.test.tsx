@@ -133,6 +133,73 @@ async function controls() {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test('paper settlement is separately opted in and survives toggling forecast advance', async () => {
+  const saved = observation();
+  saved.automation = {
+    ...state(),
+    generation,
+    paper_settlement: {
+      enabled: false,
+      status: 'disabled',
+      last_checked_at: null,
+      last_settled_session: null,
+      last_blocker: null,
+      dataset_id: null,
+    },
+  };
+  const writes: unknown[] = [];
+  mount(async (url, init) => {
+    if (init?.method === 'PUT') {
+      const payload = JSON.parse(String(init.body));
+      writes.push(payload);
+      saved.automation = {
+        ...saved.automation!,
+        enabled: payload.enabled,
+        generation: nextGeneration,
+        status: payload.enabled ? 'ready' : 'disabled',
+        paper_settlement: {
+          ...saved.automation!.paper_settlement!,
+          enabled: payload.paper_settlement_enabled,
+          status: payload.paper_settlement_enabled ? 'ready' : 'disabled',
+        },
+      };
+      return json(saved.automation);
+    }
+    return json(url.includes('?') ? [saved] : saved);
+  });
+  const view = await controls();
+  expect(writes).toEqual([]);
+  fireEvent.click(
+    view.getByRole('button', { name: 'Enable paper automatic settlement' }),
+  );
+  await view.findByRole('button', {
+    name: 'Disable paper automatic settlement',
+  });
+  expect(writes).toEqual([
+    {
+      enabled: false,
+      paper_settlement_enabled: true,
+      expected_generation: generation,
+    },
+  ]);
+  fireEvent.click(
+    view.getByRole('button', { name: 'Enable automatic advance' }),
+  );
+  await view.findByRole('button', { name: 'Disable automatic advance' });
+  expect(writes).toEqual([
+    {
+      enabled: false,
+      paper_settlement_enabled: true,
+      expected_generation: generation,
+    },
+    {
+      enabled: true,
+      paper_settlement_enabled: true,
+      expected_generation: nextGeneration,
+    },
+  ]);
+});
+
 test('opt-in and disable use saved generations, reload persisted state, and preserve manual commands', async () => {
   const saved = observation();
   const writes: unknown[] = [];

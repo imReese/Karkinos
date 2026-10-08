@@ -115,16 +115,34 @@ function mount(locale: 'en' | 'zh' = 'en', savedReport = report) {
       </PreferencesContext.Provider>
     </QueryClientProvider>,
   );
-  const disclosure = screen.getByTestId(
-    'research-observations-panel',
-  ) as HTMLDetailsElement;
-  disclosure.open = true;
-  fireEvent(disclosure, new Event('toggle'));
   return view;
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+test('opens the forward journey immediately and permits a saved ETF rotation source', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => json([])),
+  );
+  mount('en', {
+    ...report,
+    config: { ...report.config, strategy: 'etf_rotation' },
+  });
+  expect(screen.getByTestId('research-observations-panel')).toHaveAttribute(
+    'open',
+  );
+  expect(screen.getByText('Independent forward observation')).toBeVisible();
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Start observation' }),
+    ).toBeEnabled(),
+  );
+  expect(
+    screen.queryByText(/Start from a saved dual moving-average/),
+  ).toBeNull();
 });
 
 test('starts, publishes, reloads persisted evidence, measures future data and pauses new publications', async () => {

@@ -116,6 +116,15 @@ export type ResearchObservation = {
 export type ObservationAutomation = {
   observation_id: string;
   enabled: boolean;
+  paper_settlement_enabled?: boolean;
+  paper_settlement?: {
+    enabled: boolean;
+    status: string;
+    last_checked_at: string | null;
+    last_settled_session: string | null;
+    last_blocker: { code: string } | null;
+    dataset_id: string | null;
+  };
   generation: string | null;
   status: 'disabled' | 'paused' | 'waiting' | 'ready' | 'completed' | 'blocked';
   last_checked_at: string | null;

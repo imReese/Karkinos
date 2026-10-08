@@ -70,6 +70,7 @@ class _PublishedTargetReplay(BacktestEngine):
         self._session_fill_start = 0
         self._session_attempt_start = 0
         self._publication: PublishedPaperTarget | None = None
+        self._requested_order: OrderEvent | None = None
         super().__init__(
             strategy=_NoForecastStrategy(book_id, EventBus()),
             db=None,
@@ -82,6 +83,7 @@ class _PublishedTargetReplay(BacktestEngine):
         session = event.timestamp.astimezone(_SHANGHAI).date()
         publication = self.schedule.get(session) if not self._warming_up else None
         self._publication = publication
+        self._requested_order = None
         if publication is not None:
             self._pending_signals[event.symbol] = SignalEvent(
                 timestamp=publication.published_at,
@@ -90,6 +92,8 @@ class _PublishedTargetReplay(BacktestEngine):
                 target_weight=publication.target_weights[str(event.symbol)],
             )
         previous_fills = len(self.paper_fills)
+        cash_resized = self._cash_resized_count
+        capacity_resized = self._capacity_resized_count
         blocked = dict(self._execution_blocked)
         ca_blocked = (
             self._dividend_replay.execution_blocked_count
@@ -114,6 +118,10 @@ class _PublishedTargetReplay(BacktestEngine):
                 and self._dividend_replay.execution_blocked_count > ca_blocked
             ):
                 reason = "corporate_action_price_limit_reference_missing"
+            if fill and self._capacity_resized_count > capacity_resized:
+                reason = "volume_participation_partial_fill"
+            elif fill and self._cash_resized_count > cash_resized:
+                reason = "cash_resized_partial_fill"
             self.attempts.append(
                 {
                     "publication_id": publication.id,
@@ -123,6 +131,27 @@ class _PublishedTargetReplay(BacktestEngine):
                     "reason": reason
                     or ("filled" if fill else "target_sizing_no_order"),
                     "fill_id": fill["fill_id"] if fill else None,
+                    "target_weight": _decimal_text(
+                        publication.target_weights[str(event.symbol)]
+                    ),
+                    "actual_weight": _decimal_text(
+                        self.portfolio.positions[event.symbol].market_value
+                        / self.portfolio.total_equity
+                    )
+                    if event.symbol in self.portfolio.positions
+                    and self.portfolio.total_equity > 0
+                    else "0",
+                    "requested_quantity": _decimal_text(self._requested_order.quantity)
+                    if self._requested_order
+                    else None,
+                    "filled_quantity": fill["fill_quantity"] if fill else "0",
+                    "cash_after_attempt": _decimal_text(self.portfolio.cash),
+                    "partially_filled": bool(
+                        fill
+                        and self._requested_order
+                        and Decimal(fill["fill_quantity"])
+                        < self._requested_order.quantity
+                    ),
                 }
             )
         self._publication = None
@@ -131,6 +160,7 @@ class _PublishedTargetReplay(BacktestEngine):
         publication = self._publication
         if publication is None:
             raise ValueError("paper_replay_unpublished_order")
+        self._requested_order = event
         parts = (
             self.book_id,
             publication.id,
@@ -299,6 +329,7 @@ def replay_paper_book(
         day = local.date()
         if (
             event.symbol not in universe
+            or event.instrument_type != instruments[event.symbol].instrument_type
             or event.frequency is not BarFrequency.DAILY
             or local.time() != time(15)
             or day > through_session

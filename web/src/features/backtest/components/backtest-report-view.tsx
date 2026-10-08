@@ -368,16 +368,16 @@ export function BacktestReportView() {
         <EvidenceState kind="error" title={labels.selection.selectedFailed} />
       ) : report.data ? (
         <>
+          <ResearchObservationsPanel
+            key={report.data.id}
+            report={report.data}
+          />
           <EquityDrawdownChart
             fills={report.data.fills ?? []}
             points={report.data.equity_curve}
           />
           <MetricsGrid report={report.data} />
           <BacktestCostEvidencePanel report={report.data} />
-          <ResearchObservationsPanel
-            key={report.data.id}
-            report={report.data}
-          />
           <CashDividendAccountingPanel
             accounting={report.data.metrics_json?.cash_dividend_accounting}
           />

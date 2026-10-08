@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from analytics.paper_performance import evaluate_paper_health, paper_book_performance
+from server.persistence.automation_runs import require_observation_automation_policy
 from server.persistence.connection import connect_sqlite
 
 
@@ -122,6 +124,8 @@ class ResearchPaperBooksRepository:
         expected_version,
         steps: Sequence[Mapping],
         computation_not_before: datetime,
+        automation_generation=None,
+        automation_stop_requested=None,
     ):
         with self._connect(write=True) as conn:
             row = self._row(conn, observation_id)
@@ -129,6 +133,15 @@ class ResearchPaperBooksRepository:
             if replay is not None:
                 return replay
             row = self._version(row, expected_version)
+            if automation_generation is not None:
+                if (
+                    automation_stop_requested is not None
+                    and automation_stop_requested()
+                ):
+                    raise ValueError("paper_book_automation_stopped")
+                require_observation_automation_policy(
+                    conn, observation_id, automation_generation, paper_settlement=True
+                )
             now = self._locked_clock(conn, row, computation_not_before)
             last = conn.execute(
                 "SELECT MAX(session) FROM research_paper_steps WHERE book_id=?",
@@ -158,6 +171,15 @@ class ResearchPaperBooksRepository:
                 "UPDATE research_paper_books SET version=version+1 WHERE id=?",
                 (row["id"],),
             )
+            updated = self._detail(conn, self._row(conn, observation_id))
+            if (
+                updated["health"]["action"] == "pause_paper_target_acceptance"
+                and row["paused_at"] is None
+            ):
+                conn.execute(
+                    "UPDATE research_paper_books SET lifecycle='paused', paused_at=? WHERE id=?",
+                    (now.isoformat(), row["id"]),
+                )
             return self._record(
                 conn, observation_id, request_id, "settle", fingerprint, now
             )
@@ -244,6 +266,7 @@ class ResearchPaperBooksRepository:
         result["steps"] = [
             {
                 "session": step["session"],
+                "book_version": step["book_version"],
                 "dataset_id": step["dataset_id"],
                 "settled_at": step["settled_at"],
                 "input": json.loads(step["input_json"]),
@@ -289,5 +312,9 @@ class ResearchPaperBooksRepository:
             automatic=False,
             account_authority=False,
             limitations=result["policy"]["limitations"],
+        )
+        result["performance"] = paper_book_performance(result)
+        result["health"] = evaluate_paper_health(
+            result["performance"], result["policy"].get("health_policy")
         )
         return result

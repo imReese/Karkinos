@@ -14,11 +14,23 @@ from server.composition.ai_application_services import (
 )
 
 
+class ForwardPaperReviewPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observation_id: str = Field(min_length=1, max_length=160)
+    book_id: str = Field(min_length=1, max_length=160)
+    input_version: int = Field(ge=1, strict=True)
+    outcome_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    evaluation_start: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    through_session: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
 class ShadowResearchQualificationPromotionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     approved_by: str = Field(min_length=1, max_length=128)
     notes: str = Field(min_length=1, max_length=8_000)
+    forward_review: ForwardPaperReviewPayload | None = None
     confirmation: Literal[
         "approve_exact_account_qualified_candidate_for_paper_shadow_only_without_"
         "order_trade_or_capital_authority"
@@ -79,6 +91,11 @@ def create_router() -> APIRouter:
                 approved_by=payload.approved_by,
                 notes=payload.notes,
                 confirmation=payload.confirmation,
+                **(
+                    {"forward_review": payload.forward_review.model_dump()}
+                    if payload.forward_review
+                    else {}
+                ),
             )
             return JSONResponse(status_code=201, content=result)
         except PermissionError as exc:

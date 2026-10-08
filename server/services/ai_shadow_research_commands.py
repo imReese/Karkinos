@@ -604,6 +604,7 @@ class AiShadowResearchCommandsMixin:
         approved_by: str,
         notes: str,
         confirmation: str,
+        forward_review: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         timestamp = self._utc_now()
         approval = self._store.prepare_qualification_candidate_approval(
@@ -624,6 +625,22 @@ class AiShadowResearchCommandsMixin:
                 + ",".join(blockers or ["unknown"])
             )
         source_candidate_id = str(evidence["source_candidate_id"])
+        from server.services.forward_paper_review import (
+            verify_forward_paper_review,
+        )
+
+        source_result_id = (
+            int(self._store.get_candidate(source_candidate_id)["candidate_result_id"])
+            if forward_review is not None
+            else 0
+        )
+        forward_binding = (
+            verify_forward_paper_review(
+                self._db, forward_review, source_result_id=source_result_id
+            )
+            if forward_review is not None
+            else None
+        )
         strategy_id = f"ai_formula_shadow:{source_candidate_id}"
         readiness = {
             "schema_version": AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
@@ -677,6 +694,21 @@ class AiShadowResearchCommandsMixin:
             "broker_submission_enabled": False,
             "does_not_change_capital_authority": True,
         }
+        if forward_binding is not None:
+            state_payload["human_review"]["forward_review"] = forward_binding
+            event_payload["forward_review"] = forward_binding
+
+        def current_evidence_validator():
+            if forward_binding is not None:
+                verify_forward_paper_review(
+                    self._db, forward_binding, source_result_id=source_result_id
+                )
+            return resolve_ai_shadow_qualification_promotion_evidence(
+                self._db,
+                qualification_candidate_id,
+                proposed_qualification_approval=approval,
+            )
+
         committed = self._store.approve_qualification_candidate_for_paper_shadow(
             qualification_candidate_id,
             approval=approval,
@@ -685,13 +717,7 @@ class AiShadowResearchCommandsMixin:
             state_payload=state_payload,
             event_payload=event_payload,
             expected_state=current,
-            current_evidence_validator=lambda: (
-                resolve_ai_shadow_qualification_promotion_evidence(
-                    self._db,
-                    qualification_candidate_id,
-                    proposed_qualification_approval=approval,
-                )
-            ),
+            current_evidence_validator=current_evidence_validator,
             actor=normalized_actor,
             now=timestamp,
         )
@@ -710,6 +736,7 @@ class AiShadowResearchCommandsMixin:
             **approval,
             "qualification_approval": approval,
             "promotion_decision": promotion_decision,
+            "forward_review": forward_binding,
             "qualification_run": self._store.get_public_qualification_run(
                 str(evidence["qualification_run_id"])
             ),

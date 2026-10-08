@@ -37,4 +37,5 @@ class ConfigureResearchObservationAutomationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: StrictBool
+    paper_settlement_enabled: StrictBool = False
     expected_generation: UUID | None = None

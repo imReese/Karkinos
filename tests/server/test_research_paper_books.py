@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 from dataclasses import replace
@@ -53,7 +54,7 @@ def bound_dataset(tmp_path, *, count, now, records=(), closes=None):
     )
 
 
-def create(client, path):
+def create(client, path, *, health_policy=None):
     request = {
         "request_id": str(uuid4()),
         "initial_cash": "100000",
@@ -61,8 +62,11 @@ def create(client, path):
             "stock_commission_rate": 0,
             "stock_min_commission": 5,
             "slippage_bps": 0,
+            "max_volume_participation": 1,
         },
     }
+    if health_policy is not None:
+        request["health_policy"] = health_policy
     result = client.post(path, json=request)
     assert result.status_code == 200, result.text
     return result.json(), request
@@ -93,9 +97,9 @@ def settle(client, path, version, ref):
     return response.json(), request
 
 
-def prepare_trade(paper, tmp_path, *, records=()):
+def prepare_trade(paper, tmp_path, *, records=(), health_policy=None):
     client, service, current, observation, path = paper
-    created, start_request = create(client, path)
+    created, start_request = create(client, path, health_policy=health_policy)
     current[0] += timedelta(seconds=1)
     closes = dict(zip(DAYS[:5], ("12", "11", "10", "9", "12"), strict=True))
     ref = bound_dataset(tmp_path, count=5, now=current[0], closes=closes)
@@ -130,6 +134,7 @@ def test_cash_fill_restart_pause_and_mark_without_shared_account_writes(
     assert fill["fee_breakdown"]["total_fee"] == "5.25"
     assert first["state"]["cash"] == "74994.75"
     assert first["state"]["equity"] == "99994.75"
+    assert first["steps"][0]["book_version"] == 1
     assert fill["timestamp"] != first["steps"][0]["settled_at"]
     reopened = ResearchPaperBookService(service.db, clock=lambda: current[0])
     monkeypatch.setattr(routes, "_service", lambda: reopened)
@@ -632,3 +637,265 @@ def test_book_start_clock_cannot_reclassify_existing_publication_as_future(
     )
     assert book["fills"] == []
     assert book["state"]["equity"] == "100000"
+
+
+def test_net_book_health_pauses_acceptance_but_retains_positions_and_replay(
+    paper, tmp_path
+):
+    client, _, current, observation, path = paper
+    policy = {
+        "mode": "pause_on_breach",
+        "minimum_settled_sessions": 1,
+        "maximum_drawdown": "0",
+        "minimum_net_excess_return": "-1",
+    }
+    created, first, _, _, closes, publication = prepare_trade(
+        paper, tmp_path, health_policy=policy
+    )
+    assert created["health"]["status"] == "unavailable"
+    assert first["lifecycle"] == "paused"
+    assert first["health"]["action"] == "pause_paper_target_acceptance"
+    assert first["performance"]["net_pnl"] == "-5.25"
+    assert first["performance"]["max_drawdown"] == "0.0000525"
+    assert first["performance"]["equity_series"][0]["equity"] == "100000"
+    assert first["performance"]["modeled_net_excess_return"] == "0"
+    assert first["performance"]["pnl_reconciliation_residual"] == "0"
+    current[0] += timedelta(seconds=1)
+    publish(
+        client,
+        {**observation, "version": publication["version"]},
+        bound_dataset(tmp_path, count=6, now=current[0], closes=closes),
+    )
+    current[0] = datetime(2026, 9, 22, 8, tzinfo=timezone.utc)
+    closes[DAYS[6]] = "11"
+    final, _ = settle(
+        client,
+        path,
+        first["version"],
+        bound_dataset(tmp_path, count=7, now=current[0], closes=closes),
+    )
+    assert final["lifecycle"] == "paused"
+    assert final["fills"] == first["fills"]
+    assert final["state"]["equity"] == "102494.75"
+    assert final["steps"][0] == first["steps"][0]
+
+
+def test_paper_automation_is_separate_opt_in_and_marks_paused_observation(
+    paper, tmp_path
+):
+    from server.services import research_observation_automation as automation
+    from tests.server.test_research_observation_automation import register
+
+    client, books, current, observation, path = paper
+    _, first, _, _, closes, publication = prepare_trade(paper, tmp_path)
+    observations = books.observations
+    # A publication schedule alone has no permission to write paper settlement.
+    response = client.put(
+        f"/api/research-observations/{observation['id']}/automation",
+        json={"enabled": True},
+    )
+    assert response.status_code == 200, response.text
+    enabled = response.json()
+    current[0] = datetime(2026, 9, 22, 8, tzinfo=timezone.utc)
+    closes[DAYS[6]] = "11"
+    ref = bound_dataset(tmp_path, count=7, now=current[0], closes=closes)
+    register(observations, ref)
+    automation.run_research_observation_automation_once(observations)
+    assert books.get(observation["id"])["version"] == first["version"]
+    current_observation = observations.repository.get(observation["id"])
+    observations.pause(
+        observation["id"],
+        request_id=str(uuid4()),
+        expected_version=current_observation["version"],
+    )
+    response = client.put(
+        f"/api/research-observations/{observation['id']}/automation",
+        json={
+            "enabled": False,
+            "paper_settlement_enabled": True,
+            "expected_generation": enabled["generation"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["paper_settlement_enabled"] is True
+    result = automation.run_research_observation_automation_once(observations)
+    assert result[0]["status"] == "completed", result
+    marked = books.get(observation["id"])
+    assert marked["version"] == first["version"] + 1
+    assert marked["state"]["equity"] == "102494.75"
+    automation.run_research_observation_automation_once(observations)
+    assert books.get(observation["id"])["version"] == marked["version"]
+
+
+def test_frozen_etf_rotation_publishes_and_settles_with_etf_fees_without_fake_ca_coverage(
+    journey, tmp_path, monkeypatch
+):
+    from core.types import InstrumentKey, InstrumentType
+    from tests.server import test_research_observation_inputs as inputs
+
+    client, observations, current, _, _ = journey
+    etf = InstrumentKey("510300", InstrumentType.ETF)
+    monkeypatch.setattr(inputs, "STOCK", etf)
+    closes = {
+        day: str(Decimal("10") + Decimal(index) / 10)
+        for index, day in enumerate(DAYS[:5])
+    }
+    _, ref = inputs.dataset(tmp_path / "research", cutoff=current[0], closes=closes)
+    config = json.loads(inputs.source(ref)["config_json"])
+    config.update(
+        strategy="etf_rotation",
+        assets=[{"symbol": etf.symbol, "instrument_type": "etf"}],
+        params={
+            "lookback_period": 2,
+            "volatility_window": 2,
+            "top_k": 1,
+            "rebalance_interval": 1,
+            "use_risk_adjusted": False,
+            "cash_proxy": "",
+        },
+    )
+    result_id = asyncio.run(
+        observations.db.save_backtest_result(
+            config_json=json.dumps(config),
+            metrics_json=json.dumps(
+                {"dataset_binding": {"dataset_id": ref.dataset_id}}
+            ),
+            initial_cash=100000,
+            final_equity=100000,
+            total_return=0,
+            sharpe=0,
+            max_dd=0,
+            equity_curve_json="[]",
+        )
+    )
+    observation, _ = start(client, result_id)
+    books = ResearchPaperBookService(observations.db, clock=lambda: current[0])
+    monkeypatch.setattr(routes, "_service", lambda: books)
+    client.app.include_router(routes.create_router())
+    path = f"/api/research-observations/{observation['id']}/paper-book"
+    created, _ = create(client, path)
+    assert created["policy"]["corporate_action_mode"] == "price_only"
+    assert created["instruments"][etf.symbol]["commission_type"] == "fund_etf"
+    current[0] += timedelta(seconds=1)
+    publish(client, observation, ref)
+    current[0] = datetime(2026, 9, 21, 8, tzinfo=timezone.utc)
+    closes[DAYS[5]] = "10.5"
+    _, later = inputs.dataset(
+        tmp_path / "research", days=DAYS[:6], cutoff=current[0], closes=closes
+    )
+    settled, _ = settle(client, path, 0, later)
+    assert settled["state"]["positions"][etf.symbol]["quantity"] == "2300"
+    assert settled["fills"][0]["fee_breakdown"]["stamp_tax"] == "0"
+    assert settled["performance"]["corporate_action_coverage_complete"] is False
+    assert settled["performance"]["return_basis"] == "price_only"
+    assert settled["performance"]["benchmark_status"] == "measured"
+
+
+def test_paper_scheduling_disable_during_replay_fences_the_commit(
+    paper, tmp_path, monkeypatch
+):
+    from server.services import research_observation_automation as automation
+    from server.services import research_paper_books as paper_service
+    from tests.server.test_research_observation_automation import register
+
+    client, books, current, observation, path = paper
+    _, first, _, _, closes, _ = prepare_trade(paper, tmp_path)
+    api = f"/api/research-observations/{observation['id']}/automation"
+    configured = client.put(
+        api, json={"enabled": False, "paper_settlement_enabled": True}
+    ).json()
+    current[0] = datetime(2026, 9, 22, 8, tzinfo=timezone.utc)
+    closes[DAYS[6]] = "11"
+    register(
+        books.observations,
+        bound_dataset(tmp_path, count=7, now=current[0], closes=closes),
+    )
+    original = paper_service.replay_paper_book
+    interrupted = []
+
+    def replay_and_disable(**kwargs):
+        result = original(**kwargs)
+        if not interrupted:
+            disabled = client.put(
+                api,
+                json={
+                    "enabled": False,
+                    "paper_settlement_enabled": False,
+                    "expected_generation": configured["generation"],
+                },
+            )
+            assert disabled.status_code == 200, disabled.text
+            interrupted.append(True)
+        return result
+
+    monkeypatch.setattr(paper_service, "replay_paper_book", replay_and_disable)
+    assert automation.run_research_observation_automation_once(books.observations) == []
+    assert books.get(observation["id"]) == first
+    assert (
+        client.get(f"/api/research-observations/{observation['id']}").json()[
+            "automation"
+        ]["paper_settlement"]["status"]
+        == "disabled"
+    )
+
+
+def test_waiting_cash_cannot_earn_health_excess_against_an_early_benchmark(
+    paper, tmp_path
+):
+    from tests.server.test_research_observation_automation import extend_calendar
+
+    client, books, current, observation, path = paper
+    extend_calendar(books.observations)
+    policy = {
+        "mode": "report_only",
+        "minimum_settled_sessions": 1,
+        "maximum_drawdown": "1",
+        "minimum_net_excess_return": "0.05",
+    }
+    created, _ = create(client, path, health_policy=policy)
+    assert (
+        created["policy"]["benchmark"]["activation"]
+        == "first_real_published_target_accepted_after_book_start"
+    )
+    closes = dict(zip(DAYS[:5], ("12", "11", "10", "9", "12"), strict=True))
+    current[0] = datetime(2026, 9, 21, 8, tzinfo=timezone.utc)
+    closes[DAYS[5]] = "10"
+    first, _ = settle(
+        client, path, 0, bound_dataset(tmp_path, count=6, now=current[0], closes=closes)
+    )
+    assert first["performance"]["benchmark_start_session"] is None
+    assert first["health"]["status"] == "insufficient_evidence"
+    current[0] = datetime(2026, 9, 22, 8, tzinfo=timezone.utc)
+    closes[DAYS[6]] = "8"
+    waiting, _ = settle(
+        client, path, 1, bound_dataset(tmp_path, count=7, now=current[0], closes=closes)
+    )
+    assert waiting["steps"][0] == first["steps"][0]
+    assert waiting["performance"]["modeled_net_excess_return"] == "0"
+    assert waiting["performance"]["waiting_sessions_before_first_target"] == 2
+    assert waiting["health"]["status"] == "insufficient_evidence"
+    current[0] += timedelta(seconds=1)
+    # This first genuine future target elects cash; its comparator starts at the
+    # same future session instead of manufacturing gains from the earlier fall.
+    publish(
+        client,
+        observation,
+        bound_dataset(tmp_path, count=7, now=current[0], closes=closes),
+    )
+    current[0] = datetime(2026, 9, 23, 8, tzinfo=timezone.utc)
+    closes[DAYS[7]] = "8"
+    measured, _ = settle(
+        client, path, 2, bound_dataset(tmp_path, count=8, now=current[0], closes=closes)
+    )
+    assert measured["steps"][:2] == waiting["steps"]
+    assert measured["performance"]["benchmark_start_session"] == "2026-09-23"
+    assert measured["performance"]["sessions_since_first_accepted_target"] == 1
+    assert Decimal(measured["performance"]["modeled_net_excess_return"]) < Decimal(
+        "0.05"
+    )
+    assert measured["health"]["status"] == "threshold_breached"
+    assert measured["health"]["action"] == "review"
+    assert (
+        measured["health"]["comparison_basis"]
+        == "book_cash_baseline_with_synchronized_first_accepted_target"
+    )

@@ -15,6 +15,7 @@ from core.types import Symbol
 from data.market.model import DailyBarObservation
 from server.ai_runtime.formula_dsl import evaluate_formula
 from strategy.builtins.dual_ma import DualMAStrategy
+from strategy.builtins.etf_rotation import EtfRotationStrategy
 
 FORECAST_POLICY_ID = "karkinos.research.forward_directional_forecast.v1"
 
@@ -50,6 +51,11 @@ def build_observation_forecasts(
         ):
             raise ValueError("observation_forecast_bar_outside_scope")
         by_symbol[bar.instrument.symbol].append(bar)
+    rotation = (
+        _rotation_targets(source, bars, decision_session)
+        if source["strategy_kind"] == "etf_rotation"
+        else None
+    )
     forecasts = []
     for symbol in symbols:
         history = sorted(by_symbol[symbol], key=lambda bar: bar.session_date)
@@ -68,6 +74,9 @@ def build_observation_forecasts(
                 universe_size=len(symbols),
                 active=previous_targets[symbol] > 0,
             )
+        elif source["strategy_kind"] == "etf_rotation":
+            weight = rotation.get(symbol) if rotation is not None else None
+            action = "hold" if weight is None else "enter" if weight > 0 else "exit"
         else:
             raise ValueError("observation_strategy_unsupported")
         forecasts.append(
@@ -85,7 +94,40 @@ def build_observation_forecasts(
                 "consumer": "independent_target_shadow",
             }
         )
+        if source["strategy_kind"] == "etf_rotation" and symbol in rotation:
+            forecasts[-1]["desired_weight"] = str(rotation[symbol])
     return forecasts
+
+
+def _rotation_targets(source, bars, decision_session):
+    """Cross-sectional decisions must see each complete session together."""
+    bus = EventBus()
+    emitted = []
+    bus.subscribe(SignalEvent, emitted.append)
+    strategy = EtfRotationStrategy(bus, **source["parameters"])
+    strategy.on_init([Symbol(item["symbol"]) for item in source["instruments"]])
+    latest = {}
+    for bar in sorted(
+        bars, key=lambda value: (value.session_date, value.instrument.symbol)
+    ):
+        emitted.clear()
+        strategy.on_data(
+            MarketEvent(
+                timestamp=bar.event_time,
+                symbol=Symbol(bar.instrument.symbol),
+                open=bar.open,
+                high=bar.high,
+                low=bar.low,
+                close=bar.close,
+                volume=bar.volume,
+                instrument_type=bar.instrument.instrument_type,
+                available_at=bar.available_at,
+            )
+        )
+        bus.drain()
+        if bar.session_date == decision_session:
+            latest.update({str(item.symbol): item.target_weight for item in emitted})
+    return latest
 
 
 def _dual_ma_action(

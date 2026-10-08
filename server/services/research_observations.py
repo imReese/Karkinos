@@ -69,6 +69,7 @@ def observation_code_binding() -> dict[str, Any]:
         "server/ai_runtime/formula_dsl.py",
         "strategy/base.py",
         "strategy/builtins/dual_ma.py",
+        "strategy/builtins/etf_rotation.py",
         "core/event_bus.py",
         "core/events.py",
         "core/types.py",
@@ -421,7 +422,9 @@ class ResearchObservationService:
         )
         desired = dict(previous)
         for forecast in forecasts:
-            if forecast["action"] == "enter":
+            if "desired_weight" in forecast:
+                desired[forecast["symbol"]] = Decimal(forecast["desired_weight"])
+            elif forecast["action"] == "enter":
                 desired[forecast["symbol"]] = Decimal(policy["entry_weight"])
             elif forecast["action"] == "exit":
                 desired[forecast["symbol"]] = Decimal(0)

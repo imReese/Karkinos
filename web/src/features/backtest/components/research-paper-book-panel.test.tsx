@@ -212,6 +212,58 @@ test('failed reads do not offer creation; refresh recovers without mutation', as
   ).toBe(true);
 });
 
+test('health thresholds require explicit selection and freeze validated percentages with the new book', async () => {
+  const writes: Record<string, unknown>[] = [];
+  let saved: ResearchPaperBook | null = null;
+  mount(async (_url, init) => {
+    if (init?.method === 'POST') {
+      writes.push(JSON.parse(String(init.body)));
+      saved = initialBook();
+    }
+    return json(saved);
+  });
+  open();
+  const create = await screen.findByRole('button', {
+    name: 'Create independent paper book',
+  });
+  fireEvent.change(screen.getByLabelText('Initial simulated cash (CNY)'), {
+    target: { value: '100000' },
+  });
+  fireEvent.click(
+    screen.getByLabelText('Freeze modeled book health rules (optional)'),
+  );
+  fireEvent.change(screen.getByLabelText('Minimum eligible settled sessions'), {
+    target: { value: '0' },
+  });
+  expect(create).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Minimum eligible settled sessions'), {
+    target: { value: '30' },
+  });
+  fireEvent.change(screen.getByLabelText('Maximum drawdown (%)'), {
+    target: { value: '8' },
+  });
+  fireEvent.change(screen.getByLabelText('Minimum modeled net excess (%)'), {
+    target: { value: '-2' },
+  });
+  fireEvent.change(screen.getByLabelText('Action on breach'), {
+    target: { value: 'pause_on_breach' },
+  });
+  fireEvent.click(create);
+  await screen.findByRole('region', { name: 'Saved book snapshot' });
+  expect(writes).toEqual([
+    {
+      request_id: expect.any(String),
+      initial_cash: '100000',
+      health_policy: {
+        mode: 'pause_on_breach',
+        minimum_settled_sessions: 30,
+        maximum_drawdown: '0.08',
+        minimum_net_excess_return: '-0.02',
+      },
+    },
+  ]);
+});
+
 test('a version conflict keeps the dated snapshot and requires an explicit refresh without retry', async () => {
   const saved = initialBook();
   saved.last_settled_session = '2026-09-21';

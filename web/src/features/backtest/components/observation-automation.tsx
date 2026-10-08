@@ -81,6 +81,7 @@ export function ObservationAutomationControls({
               observationId: observation.id,
               sourceResultId: observation.source_backtest_result_id,
               enabled: !automation.enabled,
+              paperSettlementEnabled: automation.paper_settlement?.enabled,
               expectedGeneration: automation.generation,
             });
           }}
@@ -101,6 +102,79 @@ export function ObservationAutomationControls({
           {labels.refresh}
         </button>
       </div>
+      {automation?.paper_settlement ? (
+        <div className="space-y-2 border-t border-[var(--app-divider)] pt-3">
+          <h5 className="font-semibold">
+            {locale === 'zh'
+              ? '独立模拟账本自动结算'
+              : 'Independent paper automatic settlement'}
+          </h5>
+          <p className="app-muted">
+            {locale === 'zh'
+              ? '单独授权消费本地已核验数据。不会获取数据、补造历史目标或改变真实账户；观察暂停后仍可结算持仓。需先创建模拟账本。'
+              : 'Separate permission to consume verified local data. It does not fetch data, backfill targets or change real accounts. Existing positions can settle after observation pause. Create a paper book first.'}
+          </p>
+          <p role="status">
+            {automation.paper_settlement.enabled
+              ? locale === 'zh'
+                ? '已启用'
+                : 'Enabled'
+              : locale === 'zh'
+                ? '已关闭'
+                : 'Disabled'}{' '}
+            ·{' '}
+            {(
+              {
+                ready: locale === 'zh' ? '等待检查' : 'Awaiting check',
+                waiting: locale === 'zh' ? '等待数据' : 'Waiting for data',
+                completed: locale === 'zh' ? '已结算' : 'Settled',
+                blocked: locale === 'zh' ? '结算阻断' : 'Settlement blocked',
+                disabled:
+                  locale === 'zh' ? '未自动结算' : 'No automatic settlement',
+              } as Record<string, string>
+            )[automation.paper_settlement.status] ??
+              automation.paper_settlement.status}
+          </p>
+          <button
+            type="button"
+            className="app-button-secondary min-h-11 px-3 py-2 disabled:opacity-50"
+            disabled={
+              blocked || readFailed || mutation.isError || refreshFailed
+            }
+            onClick={() =>
+              mutation.mutate({
+                observationId: observation.id,
+                sourceResultId: observation.source_backtest_result_id,
+                enabled: automation.enabled,
+                expectedGeneration: automation.generation,
+                paperSettlementEnabled: !automation.paper_settlement!.enabled,
+              })
+            }
+          >
+            {automation.paper_settlement.enabled
+              ? locale === 'zh'
+                ? '关闭账本自动结算'
+                : 'Disable paper automatic settlement'
+              : locale === 'zh'
+                ? '启用账本自动结算'
+                : 'Enable paper automatic settlement'}
+          </button>
+          {automation.paper_settlement.last_settled_session ? (
+            <p>
+              {locale === 'zh' ? '最近自动结算日' : 'Last automatic settlement'}
+              : {automation.paper_settlement.last_settled_session}
+            </p>
+          ) : null}
+          {automation.paper_settlement.last_blocker ? (
+            <p>
+              {automationBlocker(
+                automation.paper_settlement.last_blocker.code,
+                locale,
+              )}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {mutation.isError ? (
         <p role="alert">{conflict ? labels.conflict : labels.failed}</p>
       ) : mutation.isSuccess ? (

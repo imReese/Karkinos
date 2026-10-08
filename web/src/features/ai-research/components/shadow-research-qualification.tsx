@@ -7,9 +7,11 @@ import type {
   ShadowResearchCandidate,
   ShadowResearchQualificationCandidate,
   ShadowResearchQualificationRun,
+  ForwardReviewBinding,
 } from '../api';
 import type { ShadowResearchCopy } from './shadow-research-copy';
 import { ShadowResearchObservations } from './shadow-research-observations';
+import { QualificationForwardReview } from './qualification-forward-review';
 
 type QualificationView = {
   run: ShadowResearchQualificationRun | undefined;
@@ -115,12 +117,18 @@ export function ShadowResearchQualificationReview({
   approvedBy: string;
   copy: ShadowResearchCopy;
   locale: Locale;
-  onApprove: (qualificationCandidateId: string, notes: string) => Promise<void>;
+  onApprove: (
+    qualificationCandidateId: string,
+    notes: string,
+    forwardReview?: ForwardReviewBinding,
+  ) => Promise<void>;
   pending: boolean;
   status: ShadowResearchAutomationStatus | undefined;
 }) {
   const [notes, setNotes] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [forwardReview, setForwardReview] =
+    useState<ForwardReviewBinding | null>(null);
   const view = qualificationView(status);
   const outcomeStatus =
     status?.research_outcome.account_qualification_status ?? 'not_evaluated';
@@ -135,7 +143,11 @@ export function ShadowResearchQualificationReview({
       return;
     }
     try {
-      await onApprove(view.winner.qualification_candidate_id, notes.trim());
+      await onApprove(
+        view.winner.qualification_candidate_id,
+        notes.trim(),
+        forwardReview ?? undefined,
+      );
       setNotes('');
       setConfirmed(false);
     } catch {
@@ -233,6 +245,14 @@ export function ShadowResearchQualificationReview({
 
       {view.approvalEligible && view.winner ? (
         <div className="mt-5 border-t border-[var(--app-divider)] pt-4">
+          {view.sourceCandidate?.candidate_result_id ? (
+            <QualificationForwardReview
+              sourceResultId={view.sourceCandidate.candidate_result_id}
+              binding={forwardReview}
+              onSelect={setForwardReview}
+              disabled={pending}
+            />
+          ) : null}
           <label className="text-xs font-semibold text-[var(--app-text)]">
             {copy.qualificationApprovalNote}
             <textarea

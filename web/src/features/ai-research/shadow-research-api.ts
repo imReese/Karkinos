@@ -419,6 +419,15 @@ export function useApproveShadowResearchCandidateMutation() {
   });
 }
 
+export type ForwardReviewBinding = {
+  observation_id: string;
+  book_id: string;
+  input_version: number;
+  outcome_fingerprint: string;
+  evaluation_start: string;
+  through_session: string;
+};
+
 export function useApproveShadowResearchQualificationCandidateMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -426,12 +435,16 @@ export function useApproveShadowResearchQualificationCandidateMutation() {
       qualification_candidate_id: string;
       approved_by: string;
       notes: string;
+      forward_review?: ForwardReviewBinding;
     }) =>
       postJson<Record<string, unknown>>(
         `/api/ai/strategy-research/shadow-qualification-candidates/${encodeURIComponent(input.qualification_candidate_id)}/paper-shadow-approvals`,
         {
           approved_by: input.approved_by,
           notes: input.notes,
+          ...(input.forward_review
+            ? { forward_review: input.forward_review }
+            : {}),
           confirmation:
             'approve_exact_account_qualified_candidate_for_paper_shadow_only_without_order_trade_or_capital_authority',
         },
