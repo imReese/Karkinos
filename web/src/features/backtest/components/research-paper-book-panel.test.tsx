@@ -79,7 +79,10 @@ function mount(
               end_date: '2026-09-21',
               instruments: observation.universe,
               cross_source_verified: true,
-              corporate_action_evidence: { status: 'observed' },
+              corporate_action_evidence: {
+                status: 'observed',
+                oldest_captured_at: '2026-09-21T07:00:00Z',
+              },
             },
           ],
         }),
@@ -110,6 +113,7 @@ function mount(
   );
   const rendered = render(view(id));
   return {
+    client,
     fetchMock,
     rerender: (nextId: string) => rendered.rerender(view(nextId)),
   };
@@ -132,102 +136,120 @@ async function chooseDataset() {
 }
 afterEach(() => vi.unstubAllGlobals());
 
-test('collects missing distribution evidence in the paper journey before settling its new dataset', async () => {
-  const saved = initialBook();
-  const original = structuredClone(saved);
-  const enrichedId = `sha256:${'b'.repeat(64)}`;
-  const raw = {
-    dataset_id: datasetId,
-    start_date: observation.source.start_date,
-    end_date: '2026-09-21',
-    instruments: observation.universe,
-    cross_source_verified: true,
-  };
-  const enriched = {
-    ...raw,
-    dataset_id: enrichedId,
-    corporate_action_evidence: { status: 'observed' },
-  };
-  let available: unknown[] = [raw];
-  let completeCollection!: (value: Response) => void;
-  const collecting = new Promise<Response>((resolve) => {
-    completeCollection = resolve;
-  });
-  const writes: { url: string; body: Record<string, unknown> }[] = [];
-  mount(
-    async (url, init) => {
-      if (init?.method === 'POST') {
-        const body = JSON.parse(String(init.body));
-        writes.push({ url, body });
-        if (url.endsWith('/corporate-actions')) return collecting;
-        expect(url).toBe(
-          `/api/research-observations/${identity}/paper-book/settle`,
-        );
-        expect(body).toEqual({
-          request_id: expect.any(String),
-          expected_version: 0,
-          dataset_id: enrichedId,
-        });
-        saved.version = 1;
-        saved.last_settled_session = '2026-09-21';
-      }
-      return json(saved);
-    },
-    identity,
-    () => available,
-  );
-  open();
-  await chooseDataset();
-  const settle = screen.getByRole('button', {
-    name: 'Settle paper book manually',
-  });
-  expect(settle).toBeDisabled();
-  expect(
-    screen.getByText(
-      /Collect evidence for the selected dataset before settling/,
-    ),
-  ).toBeInTheDocument();
-  fireEvent.click(
-    screen.getByRole('button', {
-      name: 'Collect dividend and bonus-share evidence',
-    }),
-  );
-  await waitFor(() => expect(writes).toHaveLength(1));
-  expect(writes[0]).toEqual({
-    url: `/api/backtest/datasets/${encodeURIComponent(datasetId)}/corporate-actions`,
-    body: { refresh: false },
-  });
-  expect(
-    screen.getByLabelText('Formal Dataset for paper settlement'),
-  ).toBeDisabled();
-  expect(
-    screen.getByRole('button', { name: 'Stop accepting new targets' }),
-  ).toBeDisabled();
-  expect(settle).toBeDisabled();
-  expect(saved).toEqual(original);
-  await act(async () => {
-    available = [raw, enriched];
-    completeCollection(json(enriched));
-  });
-  await waitFor(() => {
+test.each([false, true])(
+  'collects or refreshes distribution evidence (existing=%s) before settling its new dataset',
+  async (existing) => {
+    const saved = initialBook();
+    const original = structuredClone(saved);
+    const enrichedId = `sha256:${'b'.repeat(64)}`;
+    const raw = {
+      dataset_id: datasetId,
+      start_date: observation.source.start_date,
+      end_date: '2026-09-21',
+      instruments: observation.universe,
+      cross_source_verified: true,
+      ...(existing
+        ? {
+            corporate_action_evidence: {
+              status: 'observed',
+              oldest_captured_at: '2026-09-18T08:00:00Z',
+            },
+          }
+        : {}),
+    };
+    const enriched = {
+      ...raw,
+      dataset_id: enrichedId,
+      corporate_action_evidence: {
+        status: 'observed',
+        oldest_captured_at: '2026-09-21T07:00:00Z',
+      },
+    };
+    let available: unknown[] = [raw];
+    let completeCollection!: (value: Response) => void;
+    const collecting = new Promise<Response>((resolve) => {
+      completeCollection = resolve;
+    });
+    const writes: { url: string; body: Record<string, unknown> }[] = [];
+    mount(
+      async (url, init) => {
+        if (init?.method === 'POST') {
+          const body = JSON.parse(String(init.body));
+          writes.push({ url, body });
+          if (url.endsWith('/corporate-actions')) return collecting;
+          expect(url).toBe(
+            `/api/research-observations/${identity}/paper-book/settle`,
+          );
+          expect(body).toEqual({
+            request_id: expect.any(String),
+            expected_version: 0,
+            dataset_id: enrichedId,
+          });
+          saved.version = 1;
+          saved.last_settled_session = '2026-09-21';
+        }
+        return json(saved);
+      },
+      identity,
+      () => available,
+    );
+    open();
+    await chooseDataset();
+    const settle = screen.getByRole('button', {
+      name: 'Settle paper book manually',
+    });
+    expect(settle).toBeDisabled();
+    expect(
+      screen.getByText(
+        existing
+          ? /every stock report is captured at or after 2026-09-21 15:00 Shanghai time/
+          : /Collect evidence for the selected dataset before settling/,
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: existing
+          ? 'Refresh dividend and bonus-share evidence'
+          : 'Collect dividend and bonus-share evidence',
+      }),
+    );
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]).toEqual({
+      url: `/api/backtest/datasets/${encodeURIComponent(datasetId)}/corporate-actions`,
+      body: { refresh: existing },
+    });
     expect(
       screen.getByLabelText('Formal Dataset for paper settlement'),
-    ).toHaveValue(enrichedId);
-    expect(settle).toBeEnabled();
-  });
-  expect(saved).toEqual(original);
-  expect(writes).toHaveLength(1);
-  fireEvent.click(settle);
-  await waitFor(() => expect(writes).toHaveLength(2));
-  expect(saved.policy.corporate_action_mode).toBe(
-    'reported_distributions_gross',
-  );
-  await waitFor(() =>
-    expect(screen.getByTestId('paper-book-as-of')).toHaveTextContent(
-      '2026-09-21',
-    ),
-  );
-});
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Stop accepting new targets' }),
+    ).toBeDisabled();
+    expect(settle).toBeDisabled();
+    expect(saved).toEqual(original);
+    await act(async () => {
+      available = [raw, enriched];
+      completeCollection(json(enriched));
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText('Formal Dataset for paper settlement'),
+      ).toHaveValue(enrichedId);
+      expect(settle).toBeEnabled();
+    });
+    expect(saved).toEqual(original);
+    expect(writes).toHaveLength(1);
+    fireEvent.click(settle);
+    await waitFor(() => expect(writes).toHaveLength(2));
+    expect(saved.policy.corporate_action_mode).toBe(
+      'reported_distributions_gross',
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('paper-book-as-of')).toHaveTextContent(
+        '2026-09-21',
+      ),
+    );
+  },
+);
 
 test('opening only reads; creation needs explicit positive cash and freezes optional cost inputs', async () => {
   let saved: ResearchPaperBook | null = null;
@@ -287,6 +309,196 @@ test('opening only reads; creation needs explicit positive cash and freezes opti
     ).toBeEnabled(),
   );
   expect(writes).toHaveLength(1);
+});
+
+test.each([
+  [undefined, false],
+  ['invalid', false],
+  ['2026-09-21T16:00:00', false],
+  ['2026-09-21T06:59:59Z', false],
+  ['2026-09-21T07:00:00Z', true],
+  ['2026-09-21T15:00:00+08:00', true],
+])(
+  'settlement checks the oldest aware capture time %s (ready=%s)',
+  async (oldestCapture, ready) => {
+    mount(
+      async () => json(initialBook()),
+      identity,
+      () => [
+        {
+          dataset_id: datasetId,
+          start_date: observation.source.start_date,
+          end_date: '2026-09-21',
+          instruments: observation.universe,
+          cross_source_verified: true,
+          corporate_action_evidence: {
+            status: 'observed',
+            available_at: '2026-09-22T08:00:00Z',
+            oldest_captured_at: oldestCapture,
+          },
+        },
+      ],
+    );
+    open();
+    await chooseDataset();
+    const settle = screen.getByRole('button', {
+      name: 'Settle paper book manually',
+    });
+    if (ready) expect(settle).toBeEnabled();
+    else expect(settle).toBeDisabled();
+    expect(
+      screen.getByRole('button', {
+        name: 'Refresh dividend and bonus-share evidence',
+      }),
+    ).toBeEnabled();
+  },
+);
+
+test('a server stale-evidence rejection allows inline refresh and settlement with the refreshed dataset', async () => {
+  const saved = initialBook();
+  const refreshedId = `sha256:${'c'.repeat(64)}`;
+  const original = {
+    dataset_id: datasetId,
+    start_date: observation.source.start_date,
+    end_date: '2026-09-21',
+    instruments: observation.universe,
+    cross_source_verified: true,
+    corporate_action_evidence: {
+      status: 'observed',
+      oldest_captured_at: '2026-09-21T07:00:00Z',
+    },
+  };
+  const refreshed = { ...original, dataset_id: refreshedId };
+  let available = [original];
+  const writes: { url: string; body: Record<string, unknown> }[] = [];
+  mount(
+    async (url, init) => {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        writes.push({ url, body });
+        if (url.endsWith('/corporate-actions')) {
+          available = [original, refreshed];
+          return json(refreshed);
+        }
+        if (body.dataset_id === datasetId)
+          return json(
+            { detail: 'paper_book_corporate_action_evidence_stale' },
+            422,
+          );
+        expect(body.dataset_id).toBe(refreshedId);
+        saved.version = 1;
+        saved.last_settled_session = '2026-09-21';
+      }
+      return json(saved);
+    },
+    identity,
+    () => available,
+  );
+  open();
+  await chooseDataset();
+  const settle = screen.getByRole('button', {
+    name: 'Settle paper book manually',
+  });
+  fireEvent.click(settle);
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Refresh evidence below',
+  );
+  expect(settle).toBeDisabled();
+  const refresh = screen.getByRole('button', {
+    name: 'Refresh dividend and bonus-share evidence',
+  });
+  expect(refresh).toBeEnabled();
+  fireEvent.click(refresh);
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText('Formal Dataset for paper settlement'),
+    ).toHaveValue(refreshedId);
+    expect(settle).toBeEnabled();
+  });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual({
+    url: `/api/backtest/datasets/${encodeURIComponent(datasetId)}/corporate-actions`,
+    body: { refresh: true },
+  });
+  fireEvent.click(settle);
+  await waitFor(() => expect(writes).toHaveLength(3));
+  expect(writes[2].body).toEqual({
+    request_id: expect.any(String),
+    expected_version: 0,
+    dataset_id: refreshedId,
+  });
+});
+
+test('an evidence refresh cannot change the selection after the book version changes', async () => {
+  const saved = initialBook();
+  const original = {
+    dataset_id: datasetId,
+    start_date: observation.source.start_date,
+    end_date: '2026-09-21',
+    instruments: observation.universe,
+    cross_source_verified: true,
+    corporate_action_evidence: { status: 'observed' },
+  };
+  const refreshed = {
+    ...original,
+    dataset_id: `sha256:${'d'.repeat(64)}`,
+    corporate_action_evidence: {
+      status: 'observed',
+      oldest_captured_at: '2026-09-21T07:00:00Z',
+    },
+  };
+  let available = [original];
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const { client, fetchMock } = mount(
+    async (_url, init) => (init?.method === 'POST' ? pending : json(saved)),
+    identity,
+    () => available,
+  );
+  open();
+  await chooseDataset();
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: 'Refresh dividend and bonus-share evidence',
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST'),
+    ).toHaveLength(1),
+  );
+  act(() =>
+    client.setQueryData(['research-paper-book', identity], {
+      ...saved,
+      version: 1,
+      lifecycle: 'paused',
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId('paper-book-lifecycle')).toHaveTextContent(
+      'New target intake stopped',
+    ),
+  );
+  await act(async () => {
+    available = [original, refreshed];
+    finish(json(refreshed));
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', {
+        name: 'Refresh dividend and bonus-share evidence',
+      }),
+    ).toBeEnabled(),
+  );
+  expect(
+    screen.getByLabelText('Formal Dataset for paper settlement'),
+  ).toHaveValue(datasetId);
+  expect(
+    screen.getByRole('button', { name: 'Settle paper book manually' }),
+  ).toBeDisabled();
 });
 
 test('failed reads do not offer creation; refresh recovers without mutation', async () => {
@@ -623,6 +835,7 @@ test.each([
   ['paper_book_code_changed', 'Code differs from the frozen source'],
   ['observation_dataset_unverified', 'cross-source verification'],
   ['corporate_action_evidence_required', 'Distribution evidence'],
+  ['paper_book_corporate_action_evidence_stale', 'Refresh evidence below'],
   ['paper_book_no_new_sessions', 'No new closed session'],
 ])(
   'financial blocker %s keeps its code and gives a specific explanation',

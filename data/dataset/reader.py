@@ -180,7 +180,10 @@ def read_daily_bar_dataset(
 
 
 def read_dataset_corporate_action_evidence(
-    store: ContentAddressedObjectStore, snapshot: DailyBarDatasetSnapshot
+    store: ContentAddressedObjectStore,
+    snapshot: DailyBarDatasetSnapshot,
+    *,
+    include_capture_freshness: bool = False,
 ) -> dict[str, Any] | None:
     """Replay the bound observations; an empty provider report is not full coverage."""
     if not snapshot.corporate_action_observation_ids:
@@ -241,6 +244,13 @@ def read_dataset_corporate_action_evidence(
     )
     for key in ("total_record_count", "matched_event_count", "undated_event_count"):
         result[key] = sum(item[key] for item in summaries)
+    if include_capture_freshness:
+        # Keep the default summary byte-for-byte compatible with frozen report
+        # bindings; operational freshness is an optional derived projection.
+        result["oldest_captured_at"] = min(
+            (item["captured_at"] for item in summaries),
+            key=datetime.fromisoformat,
+        )
     return result
 
 

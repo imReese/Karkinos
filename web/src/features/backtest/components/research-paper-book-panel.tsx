@@ -65,17 +65,27 @@ export function ResearchPaperBookPanel({
   const selected = matching.find((item) => item.dataset_id === datasetId);
   const waiting =
     busy || mutation.isPending || query.isFetching || collectingActions;
-  const blocked = waiting || query.isError || Boolean(error);
   const failure = error ? paperBookError(error, locale) : null;
+  const staleEvidenceError =
+    failure?.code === 'paper_book_corporate_action_evidence_stale';
+  const blocked = waiting || query.isError || Boolean(error);
+  const recoveryBlocked =
+    waiting || query.isError || Boolean(error && !staleEvidenceError);
   const needsDistributions =
     book?.policy.corporate_action_mode === 'reported_distributions_gross';
+  const oldestCapture = selected?.corporate_action_evidence?.oldest_captured_at;
   const distributionsReady =
-    !needsDistributions || Boolean(selected?.corporate_action_evidence);
+    !needsDistributions ||
+    (typeof oldestCapture === 'string' &&
+      /(?:Z|[+-]\d{2}:\d{2})$/i.test(oldestCapture) &&
+      Date.parse(oldestCapture) >=
+        Date.parse(`${selected?.end_date}T15:00:00+08:00`));
   const selectionScope = `${observation.id}:${book?.version}:${selected?.dataset_id}`;
   const currentSelection = useRef({ scope: selectionScope, readable: false });
   currentSelection.current = {
     scope: selectionScope,
-    readable: !query.isError && !error && !datasets.isError,
+    readable:
+      !query.isError && (!error || staleEvidenceError) && !datasets.isError,
   };
 
   function requestId(key: string) {
@@ -175,8 +185,11 @@ export function ResearchPaperBookPanel({
                 <select
                   className={fieldClass}
                   value={selected?.dataset_id ?? ''}
-                  disabled={blocked || datasets.isFetching}
-                  onChange={(event) => setDatasetId(event.target.value)}
+                  disabled={recoveryBlocked || datasets.isFetching}
+                  onChange={(event) => {
+                    setDatasetId(event.target.value);
+                    if (staleEvidenceError) setError(null);
+                  }}
                 >
                   <option value="">{labels.choose}</option>
                   {matching.map((item) => (
@@ -214,23 +227,27 @@ export function ResearchPaperBookPanel({
                 key={`${observation.id}:${selected.dataset_id}`}
                 dataset={selected}
                 locale={locale}
-                busy={blocked || datasets.isFetching || datasets.isError}
+                busy={
+                  recoveryBlocked || datasets.isFetching || datasets.isError
+                }
                 onPendingChange={setCollectingActions}
                 onSelect={(dataset) => {
                   if (
                     mounted.current &&
                     currentSelection.current.scope === selectionScope &&
                     currentSelection.current.readable
-                  )
+                  ) {
                     setDatasetId(dataset.dataset_id);
+                    if (staleEvidenceError) setError(null);
+                  }
                 }}
               />
             ) : null}
             {selected && !distributionsReady ? (
               <p role="status" className="app-muted text-xs leading-5">
-                {locale === 'zh'
-                  ? '该账本包含供应商报告的分红送转。请先为所选数据集采集证据，再执行结算；原账本保持不变。'
-                  : 'This book models reported distributions. Collect evidence for the selected dataset before settling; the saved book is unchanged.'}
+                {selected.corporate_action_evidence
+                  ? labels.distributionEvidenceStale(selected.end_date)
+                  : labels.distributionEvidenceMissing}
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2">

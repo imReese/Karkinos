@@ -15,7 +15,10 @@ from core.types import InstrumentKey
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.manifest import publish_daily_bar_dataset_manifest
 from data.dataset.model import DatasetRef
-from data.dataset.reader import read_daily_bar_dataset
+from data.dataset.reader import (
+    read_daily_bar_dataset,
+    read_dataset_corporate_action_evidence,
+)
 from data.market.contracts import DailyBarRequest
 from data.source_policy import verification_source_policy_for_config
 from server.contracts.jobs import JobRun
@@ -157,6 +160,25 @@ def _prepared_prefix(service, observation, now):
         if rows:
             identities.append(rows[-1]["dataset_id"])
     selected = original
+
+    def freshness(snapshot, evidence):
+        # Bar coverage is the append cursor. For equal coverage prefer a fresh
+        # complete-basket capture, not report-ID containment: a refresh replaces
+        # the report for each instrument rather than adding duplicate reports.
+        return (
+            snapshot.end_date,
+            datetime.fromisoformat(evidence["oldest_captured_at"])
+            if evidence
+            else datetime.min.replace(tzinfo=timezone.utc),
+            snapshot.cutoff,
+        )
+
+    selected_freshness = freshness(
+        original,
+        read_dataset_corporate_action_evidence(
+            service.objects, original, include_capture_freshness=True
+        ),
+    )
     for identity in dict.fromkeys(identities):
         try:
             current_ref = DatasetRef(service.objects.resolve_ref(identity))
@@ -165,14 +187,6 @@ def _prepared_prefix(service, observation, now):
             raise ValueError("observation_data_preparation_prefix_unreadable") from None
         snapshot = current.snapshot
         shorter, longer = sorted((selected, snapshot), key=lambda item: item.end_date)
-        if selected.end_date == snapshot.end_date:
-            # Equal bar coverage may gain a bound distribution observation.
-            # Keep the evidence superset regardless of anchor traversal order;
-            # incomparable observations still fail the subset check below.
-            if set(snapshot.corporate_action_observation_ids).issubset(
-                selected.corporate_action_observation_ids
-            ):
-                shorter, longer = snapshot, selected
         if (
             not snapshot.verification_bound
             or snapshot.instruments != original.instruments
@@ -182,9 +196,6 @@ def _prepared_prefix(service, observation, now):
             or snapshot.resolver_policy_id != original.resolver_policy_id
             or snapshot.market_schema_version != original.market_schema_version
             or longer.partitions[: len(shorter.partitions)] != shorter.partitions
-            or not set(shorter.corporate_action_observation_ids).issubset(
-                longer.corporate_action_observation_ids
-            )
             or tuple(part.partition_date for part in snapshot.partitions)
             != verified_dataset_dates(
                 service.db, snapshot.start_date, snapshot.end_date
@@ -193,8 +204,15 @@ def _prepared_prefix(service, observation, now):
             raise ValueError("observation_data_preparation_prefix_mismatch")
         if len(current.bars) > observation["policy"]["max_dataset_rows"]:
             raise ValueError("observation_dataset_budget_exceeded")
-        if longer is snapshot:
+        current_freshness = freshness(
+            snapshot,
+            read_dataset_corporate_action_evidence(
+                service.objects, snapshot, include_capture_freshness=True
+            ),
+        )
+        if current_freshness > selected_freshness:
             ref, selected = current_ref, snapshot
+            selected_freshness = current_freshness
     return ref, selected
 
 

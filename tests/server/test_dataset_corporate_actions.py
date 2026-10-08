@@ -194,7 +194,9 @@ def test_explicit_capture_refresh_and_offline_backtest_product_flow(
     assert len(calls) == 1
     assert prepared["reused"] is False
     assert bound != original
-    summary = prepared["corporate_action_evidence"]
+    summary = dict(prepared["corporate_action_evidence"])
+    assert summary.pop("oldest_captured_at") == summary["captured_at"]
+    # Operational freshness is not added to persisted research-report bindings.
     assert summary["matched_event_count"] == 1
     assert summary["coverage_status"] == "provider_reported_only"
     assert summary["historical_availability_verified"] is False
@@ -316,6 +318,12 @@ def test_multi_stock_evidence_requires_exact_coverage_and_aggregates_latest_capt
     assert summary["matched_event_count"] == 2
     assert summary["total_record_count"] == 2
     assert summary["available_at"] == summary["captured_at"] == latest.isoformat()
+    assert "oldest_captured_at" not in summary
+    fresh = read_dataset_corporate_action_evidence(
+        store, snapshot, include_capture_freshness=True
+    )
+    assert fresh.pop("oldest_captured_at") == CAPTURED.isoformat()
+    assert fresh == summary
     assert {event["symbol"] for event in summary["events"]} == {"600000", "600001"}
     assert summary["returns_modeled"] is False
 

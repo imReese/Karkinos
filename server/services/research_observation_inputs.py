@@ -229,7 +229,11 @@ def require_observation_dataset_prefix(
     source: Mapping[str, Any],
     snapshot: DailyBarDatasetSnapshot,
 ) -> None:
-    """Preserve the frozen forward input, or the original legacy research prefix."""
+    """Preserve frozen daily inputs while allowing newly captured action reports.
+
+    A refreshed action binding creates another immutable Dataset. Paper replay
+    owns compatibility with previously settled financial results.
+    """
     identity = observation_input_binding(source)["dataset_id"]
     if not identity:
         raise ResearchObservationInputError(
@@ -244,9 +248,6 @@ def require_observation_dataset_prefix(
         or original.resolver_policy_id != snapshot.resolver_policy_id
         or original.market_schema_version != snapshot.market_schema_version
         or original.partitions != snapshot.partitions[: len(original.partitions)]
-        or not set(original.corporate_action_observation_ids).issubset(
-            snapshot.corporate_action_observation_ids
-        )
     ):
         raise ResearchObservationInputError("observation_dataset_frozen_prefix_changed")
 

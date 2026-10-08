@@ -4,6 +4,7 @@ export type CorporateActionEvidence = {
   observation_ids: string[];
   provider: 'tushare';
   available_at: string;
+  oldest_captured_at?: string;
   availability_basis: 'capture_completed_at';
   historical_availability_verified: false;
   covered_action_types: string[];

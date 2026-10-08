@@ -180,11 +180,13 @@ def _market_event(bar):
 
 def _merge_distributions(evidence_rows, *, evaluation_start):
     merged, terms, filtered = {}, {}, []
+    known_periods = set()
     try:
         for evidence in evidence_rows:
             if evidence is None:
                 raise ValueError("cash_dividend_evidence_required")
             events = []
+            reported_periods, relevant_periods = set(), set()
             for event in evidence["events"]:
                 # An empty initial book cannot own a pre-start record entitlement.
                 # An ex-date inside the book still controls order tradability.
@@ -198,6 +200,9 @@ def _merge_distributions(evidence_rows, *, evaluation_start):
                     raise ValueError("report_period_required")
                 if period:
                     key = (event["symbol"], date.fromisoformat(period))
+                    reported_periods.add(key)
+                    if not past:
+                        relevant_periods.add(key)
                     financial = tuple(
                         event.get(field)
                         for field in (
@@ -214,6 +219,13 @@ def _merge_distributions(evidence_rows, *, evaluation_start):
                     terms.setdefault(key, []).append((not past, financial))
                 if not past:
                     events.append(event)
+            # Each input is the complete bound provider report for this basket.
+            # A disappeared known event may be a retraction or an incomplete
+            # refresh; retaining its old terms would invent continuing validity.
+            # Proven-zero pre-start entitlements never enter known_periods.
+            if not known_periods.issubset(reported_periods):
+                raise ValueError("paper_book_corporate_action_revision_conflict")
+            known_periods.update(relevant_periods)
             filtered.append(
                 {
                     **evidence,
@@ -520,6 +532,7 @@ class ResearchPaperBookService:
                             replace(
                                 result.snapshot, start_date=date.min, end_date=date.max
                             ),
+                            include_capture_freshness=True,
                         )
                         if book["policy"]["corporate_action_mode"] != "price_only"
                         else None
@@ -534,6 +547,18 @@ class ResearchPaperBookService:
 
         current_input = {"read_at": now.isoformat(), "calendar": calendar}
         current = read(dataset_id, current_input["read_at"], calendar)
+        if book["policy"]["corporate_action_mode"] != "price_only":
+            evidence = current.corporate_action_evidence
+            if evidence is None:
+                raise ValueError("cash_dividend_evidence_required")
+            # Every stock needs a report captured after the latest session's
+            # close. This is freshness of provider-reported evidence, never a
+            # completeness claim. Historical steps retain their original inputs.
+            oldest = evidence.get("oldest_captured_at")
+            if oldest is None or _instant(oldest) < datetime.combine(
+                end, time(15), _SHANGHAI
+            ):
+                raise ValueError("paper_book_corporate_action_evidence_stale")
         evidence_rows = []
         bars = []
         for step in old_steps:

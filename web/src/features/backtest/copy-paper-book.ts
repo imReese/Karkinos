@@ -30,7 +30,11 @@ export const paperBookCopy = {
     choose: '请选择已保存的数据集',
     refreshDatasets: '刷新账本可选 Dataset',
     datasetHint:
-      '仅列出同一起始日、同一标的集合且标有双源核验；包含分红的账本还要求分红送转证据的 Dataset。服务端仍会检查最新已收盘日、完整历史前缀和证据；缺失时请通过现有研究数据准备流程补齐。',
+      '仅列出同一起始日、同一标的集合且标有双源核验的 Dataset。包含分红的账本要求每只股票的报告均在本次结算截止日收盘后采集，可在下方采集或刷新。服务端仍会检查最新已收盘日、完整历史前缀和证据。',
+    distributionEvidenceMissing:
+      '该账本包含供应商报告的分红送转。请先为所选数据集采集证据，再执行结算；原账本保持不变。',
+    distributionEvidenceStale: (endDate: string) =>
+      `分红送转证据尚未确认更新至本次结算日。请刷新证据，使每只股票的报告采集时间均不早于 ${endDate} 15:00（上海时间），再执行结算；原账本保持不变。`,
     datasetFailed: '无法读取可选 Dataset，请刷新后再结算。',
     noDatasets:
       '没有匹配的正式 Dataset。请先准备并核验完整区间；含分红的账本还须绑定分红送转证据。',
@@ -107,7 +111,11 @@ export const paperBookCopy = {
     choose: 'Choose a saved Dataset',
     refreshDatasets: 'Refresh paper Dataset choices',
     datasetHint:
-      'Lists matching source start dates and universes with cross-source verification; distribution evidence is also required for books that include distributions. The server still checks the latest closed session, complete history prefix and evidence. Use the existing research data preparation flow to supply missing data.',
+      'Lists matching source start dates and universes with cross-source verification. Books that include distributions require every stock report to be captured at or after the settlement end date closes; collect or refresh below. The server still checks the latest closed session, complete history prefix and evidence.',
+    distributionEvidenceMissing:
+      'This book models reported distributions. Collect evidence for the selected dataset before settling; the saved book is unchanged.',
+    distributionEvidenceStale: (endDate: string) =>
+      `Distribution evidence is not confirmed current for this settlement. Refresh evidence so every stock report is captured at or after ${endDate} 15:00 Shanghai time before settling; the saved book is unchanged.`,
     datasetFailed: 'Could not read Dataset choices. Refresh before settlement.',
     noDatasets:
       'No matching formal Dataset. Prepare and verify the complete interval; books that include distributions also require distribution evidence.',
@@ -199,6 +207,10 @@ export function paperBookError(error: unknown, locale: 'zh' | 'en') {
     message = zh
       ? '代码版本与冻结来源不同，当前账本不能继续结算。请核对版本后另起观察。'
       : 'Code differs from the frozen source. This book cannot continue settlement; review the version and start a new observation.';
+  else if (code === 'paper_book_corporate_action_evidence_stale')
+    message = zh
+      ? '分红送转报告未更新至本次结算截止日。请在下方刷新证据，待每只股票的报告均在截止日收盘后采集，再使用新 Dataset 结算；已保存账本保留。'
+      : 'Distribution reports are not current through this settlement. Refresh evidence below so every stock report is captured at or after the end date closes, then settle with the new Dataset; the saved book is retained.';
   else if (/corporate_action|distribution/.test(code))
     message = zh
       ? '分红送转报告证据缺失、冲突或不可用。请通过研究数据准备流程检查报告并绑定可用证据后重试。'

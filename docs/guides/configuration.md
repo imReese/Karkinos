@@ -156,12 +156,14 @@ Token 写入 `.env`，不写入 `config.json`。
 `stock_commission_rate`、`etf_commission_rate`（小数费率），以及
 `stock_min_commission`、`etf_min_commission`（每笔最低佣金）；未指定项保持
 已有模型默认值，显式 `0` 是有效覆盖。`slippage_bps` 按基点计，买入提高、
-卖出降低模拟成交价，默认 `0`。印花税、过户费仍由现有资产费用模型计算。
+卖出降低模拟成交价，默认 `5` bps。印花税、过户费仍由现有资产费用模型计算。
 这些是研究假设，不是已核验的券商费率，也不是按历史日期还原的税费表。
 每个结果保存实际采用的成本参数、完整成交费用和日线成交量参与率，扫描
 及对比的子结果使用同一组成本设置。旧报告未记录的参数保持未知。
 
-日线参与率仅作流动性诊断，固定比例滑点不模拟市场冲击或部分成交。
+`max_volume_participation` 默认 `0.01`，将单日模拟成交量限制在日线成交量的
+1%；可部分成交，单次执行尝试后的余量取消。固定比例滑点不模拟盘中盘口
+或市场冲击。默认设置另以 10／25 bps 重放成本压力场景。
 
 新配置应分别使用 `market_data.source_policy` 与 `market_data.verification_source_policy`。显式核验任务的响应包含其 `source_policy_id`；已提交任务保留原策略身份。如果排队任务的策略与当前核验策略不同，worker 会在请求 Provider 前拒绝该任务，需按新策略重新提交。旧 Dataset 的 ID 和离线重放语义不变。历史 `data_source.provider` / `KARKINOS_DATA_SOURCE` 仅保留兼容读取，不作为新数据飞轮的配置方式。
 

@@ -22,6 +22,7 @@ from data.dataset.reader import read_daily_bar_dataset
 from data.market.contracts import DailyBarRequest
 from data.provider_registry import ProviderRegistration, ProviderRegistry
 from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
+from data.providers.tdx import TdxRuntimeSettings
 from data.providers.tencent import AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR
 from data.source_policy import FREE_CN_RESEARCH_V1
 from server.persistence.automation_runs import AutomationRunRepository
@@ -30,7 +31,10 @@ from server.services import research_observation_data_preparation as preparation
 from server.services.market_calendar_dates import (
     resolve_verified_closed_trading_dates_in_range,
 )
-from server.services.research_datasets import publish_verified_interval_dataset
+from server.services.research_datasets import (
+    ResearchDatasetService,
+    publish_verified_interval_dataset,
+)
 from server.services.research_observation_automation import (
     run_research_observation_automation_once,
 )
@@ -44,7 +48,7 @@ from server.workers.data_worker import (
     _require_current_verified_daily_market_job,
     execute_verified_daily_market_job,
 )
-from tests.server.test_dataset_corporate_actions import _observe
+from tests.server.test_dataset_corporate_actions import _observe, _response
 from tests.server.test_research_observation_inputs import (
     DAYS,
     NOW,
@@ -790,17 +794,18 @@ def test_temporary_failure_retains_prefix_after_earlier_provider_revision(
 
 
 @pytest.mark.parametrize(
-    "status_actions,book_actions,extend_status,admitted",
+    "status_actions,book_actions,extend_status,expected_actions",
     [
-        ("first", None, False, True),
-        (None, "first", False, True),
-        ("second", "first", False, False),
-        (None, "first", True, False),
-        ("first", "first", True, True),
+        ("first", None, False, "first"),
+        (None, "first", False, "first"),
+        ("second", "first", False, "second"),
+        ("first", "second", False, "second"),
+        (None, "first", True, None),
+        ("first", "first", True, "first"),
     ],
 )
-def test_prepared_prefix_preserves_corporate_action_evidence_across_book_anchors(
-    journey, status_actions, book_actions, extend_status, admitted
+def test_prepared_prefix_allows_refreshed_reports_without_rewriting_bar_anchors(
+    journey, status_actions, book_actions, extend_status, expected_actions
 ):
     client, observations, current, source_ref, result_id = journey
     observation, _ = start(client, result_id)
@@ -872,18 +877,162 @@ def test_prepared_prefix_preserves_corporate_action_evidence_across_book_anchors
     report = preparation.run_research_observation_data_preparation_once(
         observations.db, CONFIG, now=current[0]
     )[0]
-    if not admitted:
-        assert report["status"] == "blocked"
-        assert (
-            report["last_blocker"]["code"]
-            == "observation_data_preparation_prefix_mismatch"
-        )
-        return
     assert report["status"] == "completed", report
-    expected = status_ref if status_actions else book_ref
+    expected = (
+        status_ref if extend_status or status_actions == expected_actions else book_ref
+    )
     assert report["dataset_id"] == expected.dataset_id
     selected = read_daily_bar_dataset(
         observations.objects,
         DatasetRef(observations.objects.resolve_ref(report["dataset_id"])),
     ).snapshot
-    assert selected.corporate_action_observation_ids == (actions["first"],)
+    assert selected.corporate_action_observation_ids == (
+        (actions[expected_actions],) if expected_actions else ()
+    )
+
+
+def test_stock_paper_waits_for_each_fresh_report_then_resumes_append_and_settlement(
+    request, monkeypatch
+):
+    from data.providers import tushare_corporate_actions as provider
+
+    basket = (STOCK, InstrumentKey("600001", InstrumentType.STOCK))
+    monkeypatch.setattr(f"{__name__}.BASKET", basket)
+    supplied = request.getfixturevalue("supplied")
+    client, observations, current, old_observation, prefix, *_ = supplied
+    current[0] = NOW
+    capture_times = {item: NOW for item in basket}
+    collect = provider.collect_tushare_dividend_observation
+    captures = []
+
+    def capture(store, *, instrument, token):
+        assert token == "synthetic-only"
+        captures.append((instrument, capture_times[instrument]))
+        return collect(
+            store,
+            instrument=instrument,
+            client=SimpleNamespace(
+                dividend=lambda **_: _response(f"{instrument.symbol}.SH")
+            ),
+            clock=lambda: capture_times[instrument],
+        )
+
+    monkeypatch.setattr(provider, "collect_tushare_dividend_observation", capture)
+    datasets = ResearchDatasetService(
+        observations.db.path.parent / "research", TdxRuntimeSettings()
+    )
+
+    def refresh(dataset_id):
+        return datasets.collect_corporate_actions(
+            dataset_id,
+            config=SimpleNamespace(tushare_token="synthetic-only"),
+            refresh=True,
+        )
+
+    seed = refresh(prefix["dataset_id"])
+    seed_ref = DatasetRef(observations.objects.resolve_ref(seed["dataset_id"]))
+    original = read_daily_bar_dataset(observations.objects, seed_ref)
+    response = client.post(
+        "/api/research-observations",
+        json={
+            "request_id": str(uuid4()),
+            "source_backtest_result_id": observations.repository.get(
+                old_observation["id"]
+            )["source"]["source_result_id"],
+            "forward_dataset_id": seed["dataset_id"],
+            "horizon_sessions": 1,
+        },
+    )
+    assert response.status_code == 200, response.text
+    observation = response.json()
+    supplied = (*supplied[:3], observation, seed, *supplied[5:])
+    identity = observation["id"]
+    books = ResearchPaperBookService(observations.db, clock=lambda: current[0])
+    started = books.start(
+        identity, request_id=str(uuid4()), initial_cash=Decimal("100000")
+    )
+    current[0] += timedelta(seconds=1)
+    configured = client.put(
+        f"/api/research-observations/{identity}/automation",
+        json={
+            "enabled": True,
+            "dataset_preparation_enabled": True,
+            "paper_settlement_enabled": True,
+        },
+    )
+    assert configured.status_code == 200, configured.text
+    assert (
+        run_research_observation_automation_once(observations)[0]["status"]
+        == "completed"
+    )
+
+    current[0] = FUTURE
+    pending = prepare(supplied)[0]
+    assert execute(supplied, pending["pending_job_ids"][0]).status == "succeeded"
+    ready = prepare(supplied)[0]
+    run_research_observation_automation_once(observations)
+    assert books.get(identity) == started
+    status = client.get(f"/api/research-observations/{identity}").json()["automation"]
+    assert status["paper_settlement"]["status"] == "waiting"
+    assert status["paper_settlement"]["last_blocker"]["code"] == (
+        "paper_book_corporate_action_evidence_stale"
+    )
+
+    # A newly captured report for only one stock must not hide the other stale
+    # report behind the aggregate's most recent capture timestamp.
+    capture_times[basket[1]] = FUTURE
+    partial = refresh(ready["dataset_id"])
+    assert partial["corporate_action_evidence"]["captured_at"] == FUTURE.isoformat()
+    assert partial["corporate_action_evidence"]["oldest_captured_at"] == NOW.isoformat()
+    with pytest.raises(ValueError, match="paper_book_corporate_action_evidence_stale"):
+        books.settle(
+            identity,
+            request_id=str(uuid4()),
+            expected_version=0,
+            dataset_id=partial["dataset_id"],
+        )
+    assert books.get(identity) == started
+
+    current[0] += timedelta(seconds=1)
+    capture_times.update({item: current[0] for item in basket})
+    fresh = refresh(partial["dataset_id"])
+    assert fresh["dataset_id"] != partial["dataset_id"] != seed["dataset_id"]
+    run_research_observation_automation_once(observations)
+    first = books.get(identity)
+    assert first["last_settled_session"] == DAYS[5].isoformat()
+    assert first["steps"][0]["dataset_id"] == fresh["dataset_id"]
+    assert {fill["symbol"] for fill in first["fills"]} == {
+        item.symbol for item in basket
+    }
+    assert read_daily_bar_dataset(observations.objects, seed_ref) == original
+
+    current[0] = FUTURE + timedelta(days=1)
+    pending = prepare(supplied)[0]
+    assert len(pending["pending_job_ids"]) == 1
+    assert execute(supplied, pending["pending_job_ids"][0]).status == "succeeded"
+    ready = prepare(supplied)[0]
+    assert ready["status"] == "completed", ready
+    appended = read_daily_bar_dataset(
+        observations.objects,
+        DatasetRef(observations.objects.resolve_ref(ready["dataset_id"])),
+    )
+    assert appended.snapshot.partitions[: len(original.snapshot.partitions)] == (
+        original.snapshot.partitions
+    )
+    assert (
+        appended.corporate_action_evidence["observation_ids"]
+        == (fresh["corporate_action_evidence"]["observation_ids"])
+    )
+    run_research_observation_automation_once(observations)
+    assert books.get(identity) == first
+    current[0] += timedelta(seconds=1)
+    capture_times.update({item: current[0] for item in basket})
+    final = refresh(ready["dataset_id"])
+    run_research_observation_automation_once(observations)
+    second = books.get(identity)
+    assert second["steps"][:-1] == first["steps"], client.get(
+        f"/api/research-observations/{identity}"
+    ).json()["automation"]["paper_settlement"]
+    assert second["steps"][-1]["dataset_id"] == final["dataset_id"]
+    assert second["last_settled_session"] == DAYS[6].isoformat()
+    assert len(captures) == 8

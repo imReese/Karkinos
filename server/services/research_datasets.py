@@ -110,7 +110,9 @@ def dataset_summary(root: Path, ref: DatasetRef) -> dict[str, Any]:
     store = ContentAddressedObjectStore(root / "objects")
     snapshot = read_daily_bar_dataset_manifest(store, ref)
     require_supported_snapshot(snapshot)
-    corporate_actions = read_dataset_corporate_action_evidence(store, snapshot)
+    corporate_actions = read_dataset_corporate_action_evidence(
+        store, snapshot, include_capture_freshness=True
+    )
     return {
         "dataset_id": ref.dataset_id,
         "start_date": snapshot.start_date.isoformat(),

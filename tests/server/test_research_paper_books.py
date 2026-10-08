@@ -311,6 +311,43 @@ def test_ca_report_period_date_revision_blocks_even_when_moved_to_future(
     assert client.get(path).json() == first
 
 
+@pytest.mark.parametrize("prestart", [False, True])
+def test_report_can_drop_only_proven_zero_prestart_entitlements(
+    paper, tmp_path, prestart
+):
+    client, _, current, _, path = paper
+    event = (
+        ca_record(record_date="20260917", ex_date="20260918", pay_date="20260918")
+        if prestart
+        else ca_record()
+    )
+    _, first, _, _, closes, _ = prepare_trade(paper, tmp_path, records=[event])
+    assert first["state"]["dividend_receivable"] == "0"
+    assert first["steps"][0]["projection"]["corporate_actions"] == []
+    # Fresh capture alone cannot establish that the previously reported
+    # entitlement is still valid when the provider no longer reports it.
+    current[0] = datetime(2026, 9, 22, 8, tzinfo=timezone.utc)
+    ref = bound_dataset(tmp_path, count=7, now=current[0], closes=closes, records=[])
+    response = client.post(
+        path + "/settle",
+        json={
+            "request_id": str(uuid4()),
+            "expected_version": first["version"],
+            "dataset_id": ref.dataset_id,
+        },
+    )
+    if prestart:
+        assert response.status_code == 200, response.text
+        assert response.json()["steps"][:-1] == first["steps"]
+        assert response.json()["state"]["dividend_income"] == "0"
+    else:
+        assert response.status_code == 409, response.text
+        assert (
+            response.json()["detail"] == "paper_book_corporate_action_revision_conflict"
+        )
+        assert client.get(path).json() == first
+
+
 def test_late_ca_cannot_rewrite_settled_cash_or_nav(paper, tmp_path):
     client, _, current, _, path = paper
     _, _, _, _, closes, _ = prepare_trade(paper, tmp_path)

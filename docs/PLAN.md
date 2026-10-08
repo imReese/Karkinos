@@ -60,6 +60,11 @@ still requires its separate evidence. Ordinary, Formula and baseline research
 use explicit cost and daily-volume participation assumptions. Default research
 slippage is 5 bps and participation is 1%; adverse cost scenarios reuse the same
 data and rules. These values are assumptions, not calibrated execution evidence.
+New normalized candidate recommendations rank comparable complete 10/25 bps
+cost-stress evidence first, then the worst net excess over their bound baseline,
+before the existing research metrics. Missing evidence remains unknown; neither
+completeness nor a winning rank is a profitability gate. Saved older rankings
+retain their original identity and order.
 The final normalized-research test freezes the champion, baseline and a bounded
 simple/random challenger family before the future interval. They use fresh
 equal-notional books, common data and costs; research-period wealth does not
@@ -102,6 +107,10 @@ daily inputs and preserves previously settled results across restart and replay.
 Reported stock distributions reuse the existing gross accounting model. ETF
 books currently use explicit price-only returns because their distributions are
 not verified; empty provider responses never prove complete coverage.
+New stock distribution settlements require every bound report to have been
+captured after the settlement session closed. Refreshing those reports creates
+a new Dataset while preserving the frozen bar prefix and previous settlement
+inputs; revisions that change settled financial results remain blocked.
 The paper view derives net return, drawdown, fees, slippage, cash and position
 contributions from its existing accounting. A frozen same-universe, capped
 equal-weight buy-and-hold comparator uses the same cash, instruments and costs,
