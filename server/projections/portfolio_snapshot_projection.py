@@ -427,35 +427,28 @@ def build_portfolio_snapshot_sync(
                 quote, instrument_type, latest_price=latest_price_value
             )
         )
+        indicative_valuation = (
+            value_position(
+                Decimal(str(pos.quantity)),
+                Decimal(str(pos.avg_cost)),
+                indicative_price,
+            )
+            if not valuation_available and indicative_price is not None and quantity > 0
+            else None
+        )
         indicative_market_value = (
             float(pos.market_value)
             if valuation_available
-            else (
-                float(
-                    value_position(
-                        Decimal(str(pos.quantity)),
-                        Decimal(str(pos.avg_cost)),
-                        indicative_price,
-                    ).market_value
-                )
-                if indicative_price is not None and quantity > 0
-                else None
-            )
+            else float(indicative_valuation.market_value)
+            if indicative_valuation is not None
+            else None
         )
         indicative_unrealized_pnl = (
             float(pos.unrealized_pnl)
             if valuation_available
-            else (
-                float(
-                    value_position(
-                        Decimal(str(pos.quantity)),
-                        Decimal(str(pos.avg_cost)),
-                        indicative_price,
-                    ).unrealized_pnl
-                )
-                if indicative_price is not None and quantity > 0 and avg_cost > 0
-                else None
-            )
+            else float(indicative_valuation.unrealized_pnl)
+            if indicative_valuation is not None and avg_cost > 0
+            else None
         )
         response_position = PositionResponse(
             symbol=symbol,

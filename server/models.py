@@ -106,10 +106,12 @@ from server.contracts.http.portfolio_models import (
     ValuationLaneResponse,
 )
 from server.contracts.http.settings_models import (
+    AccountCostSettingsUpdate,
     AssetMetadataStatusResponse,
     BoardBuyPermissionsUpdate,
     DataSourceSettingsUpdate,
     DataSourceStatusResponse,
+    FullSettingsUpdate,
     LiveStatusResponse,
     NotificationSettingsStatus,
     SettingsResponse,
@@ -257,6 +259,8 @@ __all__ = [
     "HoldingStrategyAttributionReport",
     "NotificationSettingsStatus",
     "SettingsResponse",
+    "AccountCostSettingsUpdate",
+    "FullSettingsUpdate",
     "BoardBuyPermissionsUpdate",
     "DataSourceSettingsUpdate",
     "DataSourceStatusResponse",
