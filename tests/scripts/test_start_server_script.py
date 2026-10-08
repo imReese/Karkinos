@@ -358,6 +358,86 @@ def launcher(tmp_path: Path) -> Iterator[SimpleNamespace]:
                 _terminate(int(pid_text))
 
 
+@pytest.mark.parametrize("branch", ["dev", "research-forward-fixture"])
+@pytest.mark.parametrize("state", ["new", "existing", "empty_env"])
+def test_custom_workspace_configuration_is_preserved_before_startup(
+    launcher: SimpleNamespace, tmp_path: Path, branch: str, state: str
+) -> None:
+    (launcher.repo / "config.json").write_text('{"ai":{"enabled":true}}\n')
+    (launcher.repo / ".env").write_text(
+        "KARKINOS_AI_API_KEY=synthetic-repository-value\n"
+    )
+    custom = tmp_path / "experiment"
+    config = custom / "config/config.json"
+    env_file = custom / "config/.env"
+    expected_config = (
+        '{"ai":{"enabled":false},"server":{"market_calendar_auto_sync":false}}\n'
+    )
+    expected_env = "KARKINOS_AI_ENABLED=false\n" if state == "existing" else ""
+    if state != "new":
+        config.parent.mkdir(parents=True)
+        config.write_text(expected_config)
+        env_file.write_text(expected_env)
+        for path in (config, env_file):
+            os.utime(path, (1000, 1000))
+    for path in (launcher.repo / "config.json", launcher.repo / ".env"):
+        os.utime(path, (2000, 2000))
+    result = launcher.run(
+        "start_server.sh",
+        branch,
+        env_extra={
+            "FAKE_GIT_HEAD_BRANCH": "dev",
+            "KARKINOS_DEV_HOME": str(custom),
+            # Run the real workspace preparation, then stop before any runtime.
+            "FAKE_UV_SYNC_EXIT_CODE": "17",
+        },
+    )
+    assert result.returncode != 0
+    assert "fake uv sync failed" in result.stderr
+    assert not launcher.runtime_started.exists()
+    if state == "new":
+        assert json.loads(config.read_text()) == {
+            "server": {"market_calendar_auto_sync": False},
+            "ai": {"enabled": False},
+        }
+    else:
+        assert config.read_text() == expected_config
+        assert config.stat().st_mtime == 1000
+    assert env_file.read_text() == expected_env
+
+
+def test_default_workspace_keeps_repository_sync_before_startup(
+    launcher: SimpleNamespace, tmp_path: Path
+) -> None:
+    sandbox_home = tmp_path / "sandbox-home"
+    development = sandbox_home / ".karkinos/development"
+    config = development / "config/config.json"
+    env_file = development / "config/.env"
+    config.parent.mkdir(parents=True)
+    config.write_text('{"ai":{"enabled":false}}\n')
+    env_file.write_text("")
+    os.utime(config, (1000, 1000))
+    config_bytes = b'{"ai":{"enabled":true}}\n'
+    env_bytes = b"KARKINOS_AI_API_KEY=synthetic-repository-value\n"
+    (launcher.repo / "config.json").write_bytes(config_bytes)
+    (launcher.repo / ".env").write_bytes(env_bytes)
+    result = launcher.run(
+        "start_server.sh",
+        "dev",
+        env_extra={
+            "HOME": str(sandbox_home),
+            "KARKINOS_DEV_HOME": "",
+            "FAKE_GIT_HEAD_BRANCH": "dev",
+            "FAKE_UV_SYNC_EXIT_CODE": "17",
+        },
+    )
+    assert result.returncode != 0
+    assert "fake uv sync failed" in result.stderr
+    assert not launcher.runtime_started.exists()
+    assert config.read_bytes() == config_bytes
+    assert env_file.read_bytes() == env_bytes
+
+
 def test_default_start_runs_stable_main(launcher: SimpleNamespace) -> None:
     result = launcher.run(
         "start_server.sh", env_extra={"FAKE_RUNTIME_DUMP": str(launcher.dump_path())}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
@@ -10,6 +11,70 @@ from pathlib import Path
 import pytest
 
 from scripts.service import run_dev
+
+
+@pytest.mark.parametrize("state", ["new", "existing", "empty_env"])
+def test_custom_home_never_inherits_repository_configuration(
+    tmp_path, monkeypatch, state
+):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "config.json").write_text('{"ai":{"enabled":true}}\n')
+    (source / ".env").write_text("KARKINOS_AI_API_KEY=synthetic-repository-value\n")
+    monkeypatch.setattr(run_dev, "ROOT", source)
+    custom = tmp_path / "experiment"
+    config = custom / "config/config.json"
+    env_file = custom / "config/.env"
+    expected_config = (
+        '{"ai":{"enabled":false},"server":{"market_calendar_auto_sync":false}}\n'
+    )
+    expected_env = "KARKINOS_AI_ENABLED=false\n" if state == "existing" else ""
+    if state != "new":
+        config.parent.mkdir(parents=True)
+        config.write_text(expected_config)
+        env_file.write_text(expected_env)
+        for path in (config, env_file):
+            os.utime(path, (1000, 1000))
+    for path in (source / "config.json", source / ".env"):
+        os.utime(path, (2000, 2000))
+
+    environment = run_dev.development_environment(custom)
+    if state == "new":
+        assert json.loads(config.read_text()) == {
+            "server": {"market_calendar_auto_sync": False},
+            "ai": {"enabled": False},
+        }
+    else:
+        assert config.read_text() == expected_config
+        assert config.stat().st_mtime == 1000
+    assert env_file.read_text() == expected_env
+    assert environment["KARKINOS_ENV_FILE"] == str(env_file)
+    before = (config.read_bytes(), env_file.read_bytes())
+    os.utime(source / "config.json", (3000, 3000))
+    os.utime(source / ".env", (3000, 3000))
+    run_dev.development_environment(custom)
+    assert (config.read_bytes(), env_file.read_bytes()) == before
+
+
+def test_default_home_keeps_repository_configuration_sync(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    config_bytes = b'{"ai":{"enabled":true}}\n'
+    env_bytes = b"KARKINOS_AI_API_KEY=synthetic-repository-value\n"
+    (source / "config.json").write_bytes(config_bytes)
+    (source / ".env").write_bytes(env_bytes)
+    development = tmp_path / "default-development"
+    config = development / "config/config.json"
+    env_file = development / "config/.env"
+    config.parent.mkdir(parents=True)
+    config.write_text('{"ai":{"enabled":false}}\n')
+    env_file.write_text("")
+    os.utime(config, (1000, 1000))
+    monkeypatch.setattr(run_dev, "ROOT", source)
+    monkeypatch.setattr(run_dev, "DEFAULT_DEVELOPMENT_HOME", development)
+    run_dev.development_environment(development)
+    assert config.read_bytes() == config_bytes
+    assert env_file.read_bytes() == env_bytes
 
 
 def test_development_initializes_only_its_own_state(tmp_path, monkeypatch):

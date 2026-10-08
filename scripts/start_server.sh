@@ -184,19 +184,23 @@ ensure_stable_workspace() {
 }
 
 ensure_development_workspace() {
-    local home="${KARKINOS_DEV_HOME:-${HOME}/.karkinos/development}"
+    local development_home="${KARKINOS_DEV_HOME:-${HOME}/.karkinos/development}"
+    local sync_repository_config=false
+    if [[ "${development_home%/}" == "${HOME}/.karkinos/development" ]]; then
+        sync_repository_config=true
+    fi
 
     mkdir -p \
-        "${home}/config" \
-        "${home}/data" \
-        "${home}/logs"
+        "${development_home}/config" \
+        "${development_home}/data" \
+        "${development_home}/logs"
 
-    if [[ -f "${REPO_ROOT}/config.json" ]]; then
-        if [[ ! -f "${home}/config/config.json" || "${REPO_ROOT}/config.json" -nt "${home}/config/config.json" ]]; then
-            cp -p "${REPO_ROOT}/config.json" "${home}/config/config.json"
+    if [[ "${sync_repository_config}" == true && -f "${REPO_ROOT}/config.json" ]]; then
+        if [[ ! -f "${development_home}/config/config.json" || "${REPO_ROOT}/config.json" -nt "${development_home}/config/config.json" ]]; then
+            cp -p "${REPO_ROOT}/config.json" "${development_home}/config/config.json"
         fi
-    elif [[ ! -f "${home}/config/config.json" ]]; then
-        cat >"${home}/config/config.json" <<'EOF'
+    elif [[ ! -f "${development_home}/config/config.json" ]]; then
+        cat >"${development_home}/config/config.json" <<'EOF'
 {
   "server": {
     "market_calendar_auto_sync": false
@@ -208,25 +212,25 @@ ensure_development_workspace() {
 EOF
     fi
 
-    if [[ -f "${REPO_ROOT}/.env" ]]; then
-        if [[ ! -s "${home}/config/.env" || "${REPO_ROOT}/.env" -nt "${home}/config/.env" ]]; then
-            cp -p "${REPO_ROOT}/.env" "${home}/config/.env"
-            chmod 600 "${home}/config/.env"
+    if [[ "${sync_repository_config}" == true && -f "${REPO_ROOT}/.env" ]]; then
+        if [[ ! -s "${development_home}/config/.env" || "${REPO_ROOT}/.env" -nt "${development_home}/config/.env" ]]; then
+            cp -p "${REPO_ROOT}/.env" "${development_home}/config/.env"
+            chmod 600 "${development_home}/config/.env"
         fi
-    elif [[ ! -f "${home}/config/.env" ]]; then
-        touch "${home}/config/.env"
-        chmod 600 "${home}/config/.env"
+    elif [[ ! -f "${development_home}/config/.env" ]]; then
+        touch "${development_home}/config/.env"
+        chmod 600 "${development_home}/config/.env"
     fi
 
     mkdir -p "${REPO_ROOT}/logs"
-    ln -sf "${REPO_ROOT}/logs/dev-server.log" "${home}/logs/dev-server.log"
+    ln -sf "${REPO_ROOT}/logs/dev-server.log" "${development_home}/logs/dev-server.log"
 
-    export KARKINOS_WORKSPACE="${home}"
-    export KARKINOS_HOME="${home}"
-    export KARKINOS_DATA_DIR="${home}/data"
+    export KARKINOS_WORKSPACE="${development_home}"
+    export KARKINOS_HOME="${development_home}"
+    export KARKINOS_DATA_DIR="${development_home}/data"
     export KARKINOS_WORKSPACE_ROLE="development"
-    export KARKINOS_CONFIG_PATH="${home}/config/config.json"
-    export KARKINOS_ENV_FILE="${home}/config/.env"
+    export KARKINOS_CONFIG_PATH="${development_home}/config/config.json"
+    export KARKINOS_ENV_FILE="${development_home}/config/.env"
 }
 
 write_runtime_state() {

@@ -55,9 +55,10 @@ def development_environment(home: Path) -> dict[str, str]:
         )
     for directory in (home, home / "config", data, home / "logs"):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    sync_repository_config = home == DEFAULT_DEVELOPMENT_HOME
     root_config = ROOT / "config.json"
     if not config.exists():
-        if root_config.is_file():
+        if sync_repository_config and root_config.is_file():
             shutil.copy2(root_config, config)
         else:
             with config.open("x", encoding="utf-8") as output:
@@ -70,12 +71,16 @@ def development_environment(home: Path) -> dict[str, str]:
                     indent=2,
                 )
                 output.write("\n")
-    elif root_config.is_file() and root_config.stat().st_mtime > config.stat().st_mtime:
+    elif (
+        sync_repository_config
+        and root_config.is_file()
+        and root_config.stat().st_mtime > config.stat().st_mtime
+    ):
         shutil.copy2(root_config, config)
 
     env_file = home / "config/.env"
     root_env = ROOT / ".env"
-    if root_env.is_file():
+    if sync_repository_config and root_env.is_file():
         if (
             not env_file.exists()
             or env_file.stat().st_size == 0

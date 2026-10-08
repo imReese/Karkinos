@@ -54,6 +54,13 @@ git fetch origin
 ~/.karkinos/development/
 ```
 
+The default development directory continues to copy newer repository `config.json`
+and `.env` files. Set `KARKINOS_DEV_HOME` to a different directory for an independent
+workspace. Its configuration is never copied from the repository: existing files,
+including an empty `.env`, are preserved. A new custom workspace starts with AI and
+automatic market-data synchronization disabled and an empty `.env`; configure its
+`config/config.json` and `config/.env` explicitly before enabling those features.
+
 Development runs the Web UI with Vite HMR and the backend with reload:
 
 ```text
