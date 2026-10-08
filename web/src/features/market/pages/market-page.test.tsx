@@ -1,5 +1,6 @@
+import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
@@ -285,6 +286,7 @@ function renderMarketPage(
 }
 
 afterEach(() => {
+  window.history.replaceState(window.history.state, '', '/market');
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -1184,4 +1186,169 @@ test('supports keyboard navigation (↑ / ↓ / j / k) to cycle watchlist items'
   await waitFor(() => {
     expect(within(detail).getByText('贵州茅台')).toBeTruthy();
   });
+});
+
+test('cancels a note edit and resets its identity when the selected symbol changes', async () => {
+  const user = userEvent.setup();
+  const commonItem = {
+    asset_class: 'stock',
+    is_holding: false,
+    quantity: null,
+    avg_cost: null,
+    market_value: null,
+    unrealized_pnl: null,
+    realized_pnl: null,
+    last_snapshot_at: null,
+    price: 100,
+    volume: null,
+    research_count: 1,
+    last_research_at: null,
+  };
+  renderMarketPage({
+    items: [
+      { ...commonItem, symbol: '600519', name: '第一标的' },
+      { ...commonItem, symbol: '000001', name: '第二标的' },
+    ],
+    notes: [
+      {
+        id: 7,
+        symbol: '600519',
+        asset_class: 'stock',
+        entry_kind: 'note',
+        title: 'Saved first-symbol note',
+        content: 'Evidence',
+        priority: 'normal',
+        event_date: null,
+        updated_at: '2026-06-17T10:00:00+08:00',
+      },
+    ],
+  });
+  await user.click(await screen.findByRole('button', { name: 'Edit note' }));
+  const title = screen.getByRole('textbox', { name: 'Title' });
+  expect(title).toHaveValue('Saved first-symbol note');
+  await user.click(screen.getByRole('button', { name: 'Cancel editing' }));
+  expect(title).toHaveValue('');
+  await user.click(screen.getByRole('button', { name: 'Edit note' }));
+  await user.click(
+    screen.getByTestId('market-instrument-name-000001').closest('button')!,
+  );
+  await waitFor(() => expect(title).toHaveValue(''));
+  expect(screen.queryByRole('button', { name: 'Cancel editing' })).toBeNull();
+  expect(new URL(window.location.href).searchParams.get('symbol')).toBe(
+    '000001',
+  );
+});
+
+test('leaves symbol selection alone when keyboard navigation belongs to a select', async () => {
+  const user = userEvent.setup();
+  const commonItem = {
+    asset_class: 'stock',
+    is_holding: false,
+    quantity: null,
+    avg_cost: null,
+    market_value: null,
+    unrealized_pnl: null,
+    realized_pnl: null,
+    last_snapshot_at: null,
+    price: 100,
+    volume: null,
+    research_count: 0,
+    last_research_at: null,
+  };
+  renderMarketPage({
+    items: [
+      { ...commonItem, symbol: '600519', name: '第一标的' },
+      { ...commonItem, symbol: '000001', name: '第二标的' },
+    ],
+  });
+  const history = await screen.findByTestId('market-research-note-history');
+  const filter = within(history).getByRole('combobox', { name: 'Record type' });
+  filter.focus();
+  await user.keyboard('{ArrowDown}');
+  expect(
+    within(screen.getByTestId('market-selected-instrument')).getByRole(
+      'heading',
+      { name: '第一标的' },
+    ),
+  ).toBeTruthy();
+});
+
+test('locks the note editor through a delayed delete after switching symbols', async () => {
+  const user = userEvent.setup();
+  const commonItem = {
+    asset_class: 'stock',
+    is_holding: false,
+    quantity: null,
+    avg_cost: null,
+    market_value: null,
+    unrealized_pnl: null,
+    realized_pnl: null,
+    last_snapshot_at: null,
+    price: 100,
+    volume: null,
+    research_count: 1,
+    last_research_at: null,
+  };
+  const { fetchMock } = renderMarketPage({
+    items: [
+      { ...commonItem, symbol: '600519', name: '第一标的' },
+      { ...commonItem, symbol: '000001', name: '第二标的' },
+    ],
+    notes: [
+      {
+        id: 7,
+        symbol: '600519',
+        asset_class: 'stock',
+        entry_kind: 'note',
+        title: 'First-symbol note',
+        content: 'Evidence',
+        priority: 'normal',
+        event_date: null,
+        updated_at: '2026-06-17T10:00:00+08:00',
+      },
+    ],
+  });
+  await user.click(await screen.findByRole('button', { name: 'Edit note' }));
+  const title = screen.getByRole('textbox', { name: 'Title' });
+  let finish!: (response: Response) => void;
+  const deleteResponse = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/api/market/research-notes/7') &&
+      init?.method === 'DELETE'
+        ? deleteResponse
+        : fetchMock(input, init),
+    ),
+  );
+  const history = screen.getByTestId('market-research-note-history');
+  await user.click(within(history).getByRole('button', { name: 'Remove' }));
+  await user.click(
+    within(history).getByRole('button', { name: 'Confirm removal' }),
+  );
+  await waitFor(() => expect(title).toBeDisabled());
+  await user.click(
+    screen.getByTestId('market-instrument-name-000001').closest('button')!,
+  );
+  await waitFor(() => expect(title).toHaveValue(''));
+  await user.click(
+    screen.getByTestId('market-research-note-editor').querySelector('summary')!,
+  );
+  await user.type(title, 'Unsafe concurrent draft');
+  expect(title).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled();
+  await act(async () => {
+    finish(jsonResponse({ status: 'deleted' }));
+  });
+  await waitFor(() => expect(title).not.toBeDisabled());
+  await user.type(title, 'New-symbol draft');
+  expect(title).toHaveValue('New-symbol draft');
+  expect(
+    within(screen.getByTestId('market-selected-instrument')).getByRole(
+      'heading',
+      { name: '第二标的' },
+    ),
+  ).toBeTruthy();
 });

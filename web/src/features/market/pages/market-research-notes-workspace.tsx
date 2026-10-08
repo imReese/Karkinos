@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import { getErrorMessage } from '../../../shared/error-message';
@@ -30,6 +31,8 @@ function MarketResearchNoteEditor({
   const {
     copy,
     createResearchNote,
+    deleteResearchNote,
+    resetNoteEditor,
     editingNoteId,
     noteContent,
     noteDate,
@@ -38,7 +41,6 @@ function MarketResearchNoteEditor({
     noteType,
     pushToast,
     selectedItem,
-    setEditingNoteId,
     setNoteContent,
     setNoteDate,
     setNotePriority,
@@ -46,6 +48,10 @@ function MarketResearchNoteEditor({
     setNoteType,
     updateResearchNote,
   } = controller;
+  const mutationPending =
+    createResearchNote.isPending ||
+    updateResearchNote.isPending ||
+    deleteResearchNote.isPending;
   return (
     <details
       id="market-research-note-editor"
@@ -80,6 +86,7 @@ function MarketResearchNoteEditor({
             className="grid gap-3"
             onSubmit={async (event) => {
               event.preventDefault();
+              if (mutationPending) return;
               if (!noteTitle.trim() || !noteContent.trim()) {
                 pushToast(
                   'error',
@@ -109,12 +116,7 @@ function MarketResearchNoteEditor({
                     event_date: noteDate || null,
                   });
                 }
-                setEditingNoteId(null);
-                setNoteType('note');
-                setNotePriority('normal');
-                setNoteTitle('');
-                setNoteContent('');
-                setNoteDate('');
+                resetNoteEditor();
                 pushToast(
                   'success',
                   editingNoteId !== null
@@ -131,89 +133,106 @@ function MarketResearchNoteEditor({
               }
             }}
           >
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-2">
-                <span className="text-sm font-medium">
-                  {copy.market.noteType}
-                </span>
-                <select
-                  name="research_note_type"
-                  value={noteType}
-                  onChange={(event) => setNoteType(event.target.value)}
-                  className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-                >
-                  <option value="note">{copy.market.note}</option>
-                  <option value="thesis">{copy.market.thesis}</option>
-                  <option value="catalyst">{copy.market.catalyst}</option>
-                </select>
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-medium">
-                  {copy.market.notePriority}
-                </span>
-                <select
-                  name="research_note_priority"
-                  value={notePriority}
-                  onChange={(event) => setNotePriority(event.target.value)}
-                  className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-                >
-                  <option value="high">{copy.market.highPriority}</option>
-                  <option value="normal">{copy.market.normalPriority}</option>
-                  <option value="low">{copy.market.lowPriority}</option>
-                </select>
-              </label>
-            </div>
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">
-                {copy.market.noteTitle}
-              </span>
-              <input
-                name="research_note_title"
-                autoComplete="off"
-                value={noteTitle}
-                onChange={(event) => setNoteTitle(event.target.value)}
-                placeholder={copy.market.noteTitlePlaceholder}
-                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">
-                {copy.market.noteContent}
-              </span>
-              <textarea
-                name="research_note_content"
-                value={noteContent}
-                onChange={(event) => setNoteContent(event.target.value)}
-                placeholder={copy.market.noteContentPlaceholder}
-                rows={5}
-                className="app-field min-h-32 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">
-                {copy.market.noteDate}
-              </span>
-              <input
-                name="research_note_date"
-                type="date"
-                value={noteDate}
-                onChange={(event) => setNoteDate(event.target.value)}
-                className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={
-                createResearchNote.isPending || updateResearchNote.isPending
-              }
-              className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm"
+            <fieldset
+              disabled={mutationPending}
+              className="contents disabled:opacity-60"
             >
-              {createResearchNote.isPending || updateResearchNote.isPending
-                ? copy.market.savingNote
-                : editingNoteId !== null
-                  ? copy.market.updateNote
-                  : copy.market.saveNote}
-            </button>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">
+                    {copy.market.noteType}
+                  </span>
+                  <select
+                    name="research_note_type"
+                    value={noteType}
+                    onChange={(event) => setNoteType(event.target.value)}
+                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                  >
+                    <option value="note">{copy.market.note}</option>
+                    <option value="thesis">{copy.market.thesis}</option>
+                    <option value="catalyst">{copy.market.catalyst}</option>
+                  </select>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">
+                    {copy.market.notePriority}
+                  </span>
+                  <select
+                    name="research_note_priority"
+                    value={notePriority}
+                    onChange={(event) => setNotePriority(event.target.value)}
+                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                  >
+                    <option value="high">{copy.market.highPriority}</option>
+                    <option value="normal">{copy.market.normalPriority}</option>
+                    <option value="low">{copy.market.lowPriority}</option>
+                  </select>
+                </label>
+              </div>
+              <label className="grid gap-2">
+                <span className="text-sm font-medium">
+                  {copy.market.noteTitle}
+                </span>
+                <input
+                  name="research_note_title"
+                  required
+                  autoComplete="off"
+                  value={noteTitle}
+                  onChange={(event) => setNoteTitle(event.target.value)}
+                  placeholder={copy.market.noteTitlePlaceholder}
+                  className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-sm font-medium">
+                  {copy.market.noteContent}
+                </span>
+                <textarea
+                  name="research_note_content"
+                  required
+                  value={noteContent}
+                  onChange={(event) => setNoteContent(event.target.value)}
+                  placeholder={copy.market.noteContentPlaceholder}
+                  rows={5}
+                  className="app-field min-h-32 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-sm font-medium">
+                  {copy.market.noteDate}
+                </span>
+                <input
+                  name="research_note_date"
+                  type="date"
+                  value={noteDate}
+                  onChange={(event) => setNoteDate(event.target.value)}
+                  className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                />
+              </label>
+            </fieldset>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="submit"
+                disabled={mutationPending}
+                className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm"
+              >
+                {createResearchNote.isPending || updateResearchNote.isPending
+                  ? copy.market.savingNote
+                  : editingNoteId !== null
+                    ? copy.market.updateNote
+                    : copy.market.saveNote}
+              </button>
+              {editingNoteId !== null ? (
+                <button
+                  type="button"
+                  onClick={() => resetNoteEditor()}
+                  disabled={mutationPending}
+                  className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm"
+                >
+                  {copy.market.cancelEdit}
+                </button>
+              ) : null}
+            </div>
           </form>
         ) : (
           <div className="app-muted text-sm">{copy.market.noSelection}</div>
@@ -230,6 +249,11 @@ function MarketResearchNoteHistory({
 }) {
   const {
     copy,
+    activeSymbol,
+    createResearchNote,
+    updateResearchNote,
+    resetNoteEditor,
+    editingNoteId,
     deleteResearchNote,
     noteFilterDateFrom,
     noteFilterDateTo,
@@ -248,6 +272,17 @@ function MarketResearchNoteHistory({
     setNoteTitle,
     setNoteType,
   } = controller;
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  useEffect(() => setPendingDeleteId(null), [activeSymbol]);
+  const mutationPending =
+    createResearchNote.isPending ||
+    updateResearchNote.isPending ||
+    deleteResearchNote.isPending;
+  const invalidDateRange = Boolean(
+    noteFilterDateFrom &&
+    noteFilterDateTo &&
+    noteFilterDateFrom > noteFilterDateTo,
+  );
   return (
     <div
       className="min-w-0 border-y border-[var(--app-divider)] px-1 py-4 sm:px-3 sm:py-5"
@@ -299,6 +334,7 @@ function MarketResearchNoteHistory({
           </span>
           <input
             type="date"
+            max={noteFilterDateTo || undefined}
             value={noteFilterDateFrom}
             onChange={(event) => setNoteFilterDateFrom(event.target.value)}
             className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
@@ -309,6 +345,7 @@ function MarketResearchNoteHistory({
           <span className="text-sm font-medium">{copy.market.noteDateTo}</span>
           <input
             type="date"
+            min={noteFilterDateFrom || undefined}
             value={noteFilterDateTo}
             onChange={(event) => setNoteFilterDateTo(event.target.value)}
             className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
@@ -316,10 +353,26 @@ function MarketResearchNoteHistory({
           />
         </label>
       </FilterBar>
+      {invalidDateRange ? (
+        <p role="alert" className="mt-3 text-sm text-[var(--app-danger-text)]">
+          {copy.market.invalidNoteDateRange}
+        </p>
+      ) : null}
       {notes.isLoading ? (
         <div className="app-muted mt-4 text-sm">{copy.states.loading}</div>
       ) : notes.isError ? (
-        <div className="app-muted mt-4 text-sm">{copy.market.noteFailed}</div>
+        <div className="mt-4 space-y-2" role="alert">
+          <p className="text-sm text-[var(--app-danger-text)]">
+            {copy.market.noteFailed}: {getErrorMessage(notes.error)}
+          </p>
+          <button
+            type="button"
+            onClick={() => void notes.refetch()}
+            className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs"
+          >
+            {copy.states.retry}
+          </button>
+        </div>
       ) : notes.data && notes.data.items.length > 0 ? (
         <div className="mt-4 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
           {notes.data.items.map((note) => (
@@ -343,39 +396,79 @@ function MarketResearchNoteHistory({
                   <button
                     type="button"
                     className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-1 text-xs sm:min-h-8"
+                    disabled={mutationPending}
                     onClick={() => {
+                      setPendingDeleteId(null);
                       setEditingNoteId(note.id);
                       setNoteType(note.entry_kind);
                       setNotePriority(note.priority);
                       setNoteTitle(note.title);
                       setNoteContent(note.content);
                       setNoteDate(note.event_date ?? '');
+                      document
+                        .getElementById('market-research-note-editor')
+                        ?.scrollIntoView?.({
+                          behavior: window.matchMedia(
+                            '(prefers-reduced-motion: reduce)',
+                          ).matches
+                            ? 'auto'
+                            : 'smooth',
+                          block: 'start',
+                        });
                     }}
                   >
                     {copy.market.editNote}
                   </button>
-                  <button
-                    type="button"
-                    className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-1 text-xs sm:min-h-8"
-                    onClick={async () => {
-                      try {
-                        await deleteResearchNote.mutateAsync(note.id);
-                        pushToast(
-                          'success',
-                          copy.market.noteDeleted,
-                          note.title,
-                        );
-                      } catch (error) {
-                        pushToast(
-                          'error',
-                          copy.market.noteDeleteFailed,
-                          getErrorMessage(error),
-                        );
-                      }
-                    }}
-                  >
-                    {copy.market.remove}
-                  </button>
+                  {pendingDeleteId === note.id ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={mutationPending}
+                        className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-1 text-xs text-[var(--app-danger-text)] sm:min-h-8"
+                        onClick={async () => {
+                          if (mutationPending) return;
+                          try {
+                            await deleteResearchNote.mutateAsync(note.id);
+                            if (editingNoteId === note.id)
+                              resetNoteEditor(activeSymbol, note.id);
+                            setPendingDeleteId(null);
+                            pushToast(
+                              'success',
+                              copy.market.noteDeleted,
+                              note.title,
+                            );
+                          } catch (error) {
+                            pushToast(
+                              'error',
+                              copy.market.noteDeleteFailed,
+                              getErrorMessage(error),
+                            );
+                          }
+                        }}
+                      >
+                        {deleteResearchNote.isPending
+                          ? copy.market.removingNote
+                          : copy.market.confirmRemove}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={mutationPending}
+                        className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-1 text-xs sm:min-h-8"
+                        onClick={() => setPendingDeleteId(null)}
+                      >
+                        {copy.market.cancelRemove}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={mutationPending}
+                      className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-1 text-xs sm:min-h-8"
+                      onClick={() => setPendingDeleteId(note.id)}
+                    >
+                      {copy.market.remove}
+                    </button>
+                  )}
                 </div>
               </div>
               <details

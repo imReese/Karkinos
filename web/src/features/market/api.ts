@@ -500,9 +500,14 @@ export function useAddWatchlistItemMutation() {
     mutationFn: (payload: { symbol: string; asset_class: string }) =>
       postJson('/api/market/watchlist', payload),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['market-research-board'],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
+        queryClient.invalidateQueries({ queryKey: ['settings'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['settings-asset-metadata'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['settings-data-source'] }),
+      ]);
     },
   });
 }
@@ -545,10 +550,10 @@ export function useUpdateResearchNoteMutation(symbol: string) {
         `/api/market/research-notes/${payload.noteId}`,
         payload,
       ),
-    onSuccess: async () => {
+    onSuccess: async (note) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ['market-research-notes', symbol],
+          queryKey: ['market-research-notes', note.symbol || symbol],
         }),
         queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
       ]);
@@ -578,9 +583,14 @@ export function useRemoveWatchlistItemMutation() {
     mutationFn: (symbol: string) =>
       deleteJson(`/api/market/watchlist/${encodeURIComponent(symbol)}`),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['market-research-board'],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
+        queryClient.invalidateQueries({ queryKey: ['settings'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['settings-asset-metadata'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['settings-data-source'] }),
+      ]);
     },
   });
 }

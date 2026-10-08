@@ -70,6 +70,15 @@ export function MarketPageView({
             kind="error"
             title={copy.states.error}
             description={copy.market.error}
+            action={
+              <button
+                type="button"
+                onClick={() => void board.refetch()}
+                className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
+              >
+                {copy.states.retry}
+              </button>
+            }
           />
         ) : (
           <MarketResolvedWorkspace controller={controller} />
@@ -133,6 +142,7 @@ function MarketInstrumentSelection({
       onRetryBars={() => void kline.refetch()}
       onSelect={setSelectedSymbol}
       onRemove={async (symbol) => {
+        if (removeWatchlistItem.isPending) return;
         try {
           await removeWatchlistItem.mutateAsync(symbol);
           pushToast('success', copy.market.symbolRemoved, symbol);
@@ -170,7 +180,7 @@ function MarketInstrumentSelection({
                 });
                 pushToast('success', copy.market.symbolAdded, trimmed);
                 setNewSymbol('');
-                setSelectedSymbol('');
+                setSelectedSymbol(trimmed);
               } catch (error) {
                 pushToast(
                   'error',

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import type { ToastItem } from '../../../shared/ui/toast-stack';
@@ -47,7 +47,7 @@ export function useMarketPageController() {
     );
   const metadataBackfill = useInstrumentMetadataBackfillMutation();
   const barsBackfill = useMarketBarsBackfillMutation();
-  const [selectedSymbol, setSelectedSymbol] = useState(() => {
+  const [selectedSymbol, setSelectedSymbolValue] = useState(() => {
     if (typeof window === 'undefined') return '';
     return new URLSearchParams(window.location.search).get('symbol') ?? '';
   });
@@ -58,9 +58,7 @@ export function useMarketPageController() {
       const urlSymbol = new URLSearchParams(window.location.search).get(
         'symbol',
       );
-      if (urlSymbol) {
-        setSelectedSymbol(urlSymbol);
-      }
+      setSelectedSymbolValue(urlSymbol ?? '');
     };
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
@@ -84,6 +82,46 @@ export function useMarketPageController() {
     [health?.quotes],
   );
   const activeSymbol = selectedSymbol || items[0]?.symbol || '';
+  const currentEditorIdentity = useRef({
+    symbol: activeSymbol,
+    noteId: editingNoteId,
+  });
+  currentEditorIdentity.current = {
+    symbol: activeSymbol,
+    noteId: editingNoteId,
+  };
+  const setSelectedSymbol = (symbol: string) => {
+    setSelectedSymbolValue(symbol);
+    const url = new URL(window.location.href);
+    if (symbol) url.searchParams.set('symbol', symbol);
+    else url.searchParams.delete('symbol');
+    window.history.replaceState(window.history.state, '', url);
+  };
+  const resetNoteEditor = (
+    expectedSymbol?: string,
+    expectedNoteId?: number,
+  ) => {
+    if (
+      expectedSymbol !== undefined &&
+      (currentEditorIdentity.current.symbol !== expectedSymbol ||
+        currentEditorIdentity.current.noteId !== expectedNoteId)
+    )
+      return;
+    setEditingNoteId(null);
+    setNoteType('note');
+    setNotePriority('normal');
+    setNoteTitle('');
+    setNoteContent('');
+    setNoteDate('');
+  };
+  useEffect(() => {
+    setEditingNoteId(null);
+    setNoteType('note');
+    setNotePriority('normal');
+    setNoteTitle('');
+    setNoteContent('');
+    setNoteDate('');
+  }, [activeSymbol]);
   const updateResearchNote = useUpdateResearchNoteMutation(activeSymbol);
   const selectedItem =
     items.find((item) => item.symbol === activeSymbol) ?? null;
@@ -256,6 +294,7 @@ export function useMarketPageController() {
     setNoteDate,
     editingNoteId,
     setEditingNoteId,
+    resetNoteEditor,
     items,
     health,
     healthBySymbol,

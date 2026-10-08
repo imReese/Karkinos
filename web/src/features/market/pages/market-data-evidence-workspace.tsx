@@ -90,7 +90,11 @@ export function MarketDataEvidenceWorkspace({
                       ? copy.market.quoteRefreshStale
                       : copy.market.quoteRefreshFailed;
               pushToast(
-                response.quote_status === 'error' ? 'error' : 'success',
+                response.quote_status === 'live'
+                  ? 'success'
+                  : response.quote_status === 'error'
+                    ? 'error'
+                    : 'warning',
                 title,
                 response.message,
               );

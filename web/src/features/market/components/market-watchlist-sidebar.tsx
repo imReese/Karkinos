@@ -125,6 +125,7 @@ function useWatchlistKeyboardNavigation({
         target &&
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
           target.isContentEditable ||
           target.getAttribute('role') === 'textbox')
       ) {

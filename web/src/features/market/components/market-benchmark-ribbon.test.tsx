@@ -10,6 +10,7 @@ function createMockController(
 ): MarketPageController {
   const setSelectedSymbol = vi.fn();
   return {
+    resetNoteEditor: vi.fn(),
     copy: {
       ...marketCopy.zh,
       market: marketCopy.zh,
