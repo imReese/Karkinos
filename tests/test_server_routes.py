@@ -1847,7 +1847,7 @@ def test_load_latest_snapshot_marks_tushare_fund_permission_fallback(monkeypatch
 
     monkeypatch.setattr(
         "data.manager.build_sources",
-        lambda data_source, tushare_token: {
+        lambda data_source, tushare_token, source_policy: {
             "tushare": TushareWithoutFundNav(),
             "akshare": AkshareFundEstimate(),
         },
@@ -1882,7 +1882,7 @@ def test_load_latest_snapshot_propagates_the_final_fallback_error(monkeypatch):
 
     monkeypatch.setattr(
         "data.manager.build_sources",
-        lambda data_source, tushare_token: {
+        lambda data_source, tushare_token, source_policy: {
             "tushare": TushareWithoutIndexSupport(),
             "akshare": AkshareTimeout(),
         },
@@ -1926,7 +1926,7 @@ def test_load_latest_snapshot_routes_index_to_capable_source_with_bounded_timeou
 
     monkeypatch.setattr(
         "data.manager.build_sources",
-        lambda data_source, tushare_token: {
+        lambda data_source, tushare_token, source_policy: {
             "tushare": tushare,
             "akshare": akshare,
         },
