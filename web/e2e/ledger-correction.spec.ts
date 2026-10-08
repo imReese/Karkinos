@@ -26,7 +26,7 @@ test('correction evidence remains readable on desktop and mobile without writes'
       page.getByText('历史重复记账修正', { exact: true }),
     ).toBeVisible();
     await expect(page.getByText(/记录于 2026\/02\/20/)).toBeVisible();
-    await expect(page.getByText(/账本生效于 2026\/02\/10/)).toBeVisible();
+    await expect(page.getByText(/旧补偿时间 2026\/02\/10/)).toBeVisible();
     await page.getByText('查看修正依据', { exact: true }).click();
     await expect(
       page.getByText('重复原流水 #101', { exact: true }),
@@ -36,6 +36,23 @@ test('correction evidence remains readable on desktop and mobile without writes'
     ).toBeVisible();
     await expect(
       page.getByText('有授权摘要，未核验批准人／批准时间。'),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        '重复买入从原交易日期起作废；此记录保留修正依据，不再产生一笔资金变动。',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.getByLabel('关联原流水')).toContainText('02/05');
+    await expect(
+      page
+        .getByRole('table', { name: '修正前后状态' })
+        .getByRole('row', { name: '账面现金 ¥60.00 ¥80.00' }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole('table', { name: '修正前后状态' })
+        .getByRole('row', { name: '份额 20 10' }),
     ).toBeVisible();
     expect(
       await page.evaluate(

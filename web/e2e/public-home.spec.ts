@@ -10,6 +10,14 @@ const publicHomeViewports = [
   { width: 390, height: 844 },
 ] as const;
 
+test.beforeEach(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('karkinos.locale', 'en');
+    window.localStorage.setItem('karkinos.theme', 'light');
+  });
+});
+
 test('public home presents the brand contract before entering the workbench', async ({
   page,
 }) => {
@@ -54,25 +62,19 @@ test('public home presents the brand contract before entering the workbench', as
     );
     return {
       evidenceTop,
-      sectionTops: ['product', 'principles', 'workflow'].map((id) =>
-        Math.round(
-          document.getElementById(id)?.getBoundingClientRect().top ?? 0,
-        ),
-      ),
+      footerBottom: document.querySelector('footer')!.getBoundingClientRect()
+        .bottom,
       verticalOverflow:
         document.documentElement.scrollHeight -
         document.documentElement.clientHeight,
     };
   });
   expect(composition.evidenceTop).toBeLessThan(500);
-  expect(composition.verticalOverflow).toBeGreaterThan(0);
-  expect(composition.sectionTops[0]).toBeGreaterThan(800);
-  expect(composition.sectionTops[1]).toBeGreaterThan(
-    composition.sectionTops[0] ?? 0,
-  );
-  expect(composition.sectionTops[2]).toBeGreaterThan(
-    composition.sectionTops[1] ?? 0,
-  );
+  expect(composition.verticalOverflow).toBe(0);
+  expect(composition.footerBottom).toBeLessThanOrEqual(900);
+  await expect(page.locator('#product')).toBeVisible();
+  await expect(page.locator('#principles')).toBeHidden();
+  await expect(page.locator('#workflow')).toBeHidden();
 
   await expect(
     page.getByLabel('Public-to-private route').getByText('/overview'),
@@ -95,22 +97,34 @@ test('public home presents the brand contract before entering the workbench', as
       .locator('#product')
       .evaluate((element) => Math.round(element.getBoundingClientRect().top)),
   ).toBeGreaterThanOrEqual(56);
+  await expect(page.locator('#product')).toBeFocused();
+  await expect(
+    publicNavigation.getByRole('link', { name: 'Product' }),
+  ).toHaveAttribute('aria-current', 'location');
+  await expect(page.locator('.app-public-hero')).toBeHidden();
   await expect(
     page.getByRole('link', { name: 'Open surface: Account Truth' }),
   ).toHaveAttribute('href', '/account-truth');
   await publicNavigation.getByRole('link', { name: 'Trust' }).click();
   await expect(page).toHaveURL(/#principles$/);
   await expect(page.locator('#principles')).toBeVisible();
+  await expect(page.locator('#principles')).toBeFocused();
+  await expect(page.locator('#product')).toBeHidden();
   await publicNavigation.getByRole('link', { name: 'Workflow' }).click();
   await expect(page).toHaveURL(/#workflow$/);
   await expect(page.locator('#workflow')).toBeVisible();
-  expect(
-    await page.evaluate(
-      () =>
-        document.documentElement.scrollHeight -
-        document.documentElement.clientHeight,
-    ),
-  ).toBeGreaterThan(0);
+  await expect(page.locator('#workflow')).toBeFocused();
+  await expect(page.locator('#principles')).toBeHidden();
+  await page.goBack();
+  await expect(page).toHaveURL(/#principles$/);
+  await expect(page.locator('#principles')).toBeVisible();
+  await expect(page.locator('#principles')).toBeFocused();
+  await page
+    .getByRole('banner')
+    .getByRole('link', { name: 'Karkinos home' })
+    .click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator('.app-public-hero')).toBeVisible();
 
   const documentOverflow = await page.evaluate(
     () =>
@@ -139,7 +153,7 @@ test('public home remains localized, themeable, and overflow safe on mobile', as
   await page.getByRole('button', { name: 'Switch to Chinese' }).click();
   await expect(
     page.getByRole('heading', {
-      name: '让每一个投资决定，都有证据可回放。',
+      name: /^让每一个投资决定，\s*都有证据可回放。$/,
     }),
   ).toBeVisible();
 
@@ -165,7 +179,7 @@ test('public home remains localized, themeable, and overflow safe on mobile', as
   }));
   expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
   expect(geometry.controls.every((control) => control.height >= 36)).toBe(true);
-  expect(geometry.evidenceTop).toBeLessThan(700);
+  expect(geometry.evidenceTop).toBeLessThan(844);
   await expect(
     page.getByRole('banner').getByText('工作台', { exact: true }),
   ).toBeVisible();
@@ -174,6 +188,16 @@ test('public home remains localized, themeable, and overflow safe on mobile', as
       .locator('.app-public-evidence-boundary')
       .getByText('仅查看与复核', { exact: true }),
   ).toBeVisible();
+  const productRail = page.getByRole('list', { name: '产品证明' });
+  await productRail.focus();
+  await productRail.press('ArrowRight');
+  await expect
+    .poll(() => productRail.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(0);
+  await productRail.press('ArrowLeft');
+  await expect
+    .poll(() => productRail.evaluate((element) => element.scrollLeft))
+    .toBe(0);
 });
 
 test('public home preserves its composition across the seven visual acceptance viewports', async ({
@@ -193,6 +217,12 @@ test('public home preserves its composition across the seven visual acceptance v
           .querySelector('.app-public-evidence-frame')
           ?.getBoundingClientRect().top ?? 0,
       ),
+      heroActionBottom: document
+        .querySelector('.app-public-hero-actions .app-public-primary-cta')!
+        .getBoundingClientRect().bottom,
+      sectionIndexBottom: document
+        .querySelector('.app-public-section-index')!
+        .getBoundingClientRect().bottom,
       unexpectedOverflow: Array.from(
         document.querySelectorAll<HTMLElement>(
           '.app-public-header, .app-public-hero, .app-public-evidence-frame, .app-public-footer',
@@ -239,18 +269,74 @@ test('public home preserves its composition across the seven visual acceptance v
       expect(localOverflow.overflowX, localOverflow.name).toBe('auto');
       expect(localOverflow.tabIndex, localOverflow.name).toBe(0);
     }
-    expect(latteGeometry.evidenceTop, JSON.stringify(viewport)).toBeLessThan(
-      700,
-    );
-    expect(latteGeometry.visibleSections, JSON.stringify(viewport)).toEqual([
-      'product',
-      'principles',
-      'workflow',
-    ]);
     expect(
-      latteGeometry.verticalOverflow,
+      latteGeometry.heroActionBottom,
       JSON.stringify(viewport),
-    ).toBeGreaterThan(0);
+    ).toBeLessThanOrEqual(viewport.height);
+    if (viewport.width >= 1024) {
+      expect(latteGeometry.evidenceTop, JSON.stringify(viewport)).toBeLessThan(
+        viewport.height,
+      );
+    } else {
+      const evidenceGap =
+        latteGeometry.evidenceTop - latteGeometry.sectionIndexBottom;
+      expect(evidenceGap, JSON.stringify(viewport)).toBeGreaterThanOrEqual(0);
+      expect(evidenceGap, JSON.stringify(viewport)).toBeLessThanOrEqual(44);
+      const boundary = page.locator('.app-public-evidence-boundary');
+      await boundary.scrollIntoViewIfNeeded();
+      await expect(boundary).toBeVisible();
+      const boundaryBounds = (await boundary.boundingBox())!;
+      expect(
+        boundaryBounds.y + boundaryBounds.height,
+        JSON.stringify(viewport),
+      ).toBeLessThanOrEqual(viewport.height);
+    }
+    expect(latteGeometry.visibleSections, JSON.stringify(viewport)).toEqual(
+      viewport.width >= 1024
+        ? viewport.height >= 860
+          ? ['product']
+          : []
+        : ['product', 'principles', 'workflow'],
+    );
+    if (viewport.width >= 1024) {
+      expect(latteGeometry.verticalOverflow, JSON.stringify(viewport)).toBe(0);
+      const navigation = page.getByRole('navigation', {
+        name: 'Public navigation',
+      });
+      for (const [name, id] of [
+        ['Product', 'product'],
+        ['Trust', 'principles'],
+        ['Workflow', 'workflow'],
+      ] as const) {
+        const navigationLink = navigation.getByRole('link', {
+          name,
+          exact: true,
+        });
+        await navigationLink.press('Enter');
+        await expect(page).toHaveURL(new RegExp(`#${id}$`));
+        const panel = page.locator(`#${id}`);
+        await expect(panel).toBeVisible();
+        await expect(panel).toBeFocused();
+        await expect(
+          navigation.getByRole('link', { name, exact: true }),
+        ).toHaveAttribute('aria-current', 'location');
+        const panelBounds = await panel.boundingBox();
+        const footerBounds = await page.getByRole('contentinfo').boundingBox();
+        expect(
+          panelBounds!.y,
+          `${id} ${JSON.stringify(viewport)}`,
+        ).toBeGreaterThanOrEqual(56);
+        expect(
+          panelBounds!.y + panelBounds!.height,
+          `${id} ${JSON.stringify(viewport)}`,
+        ).toBeLessThanOrEqual(footerBounds!.y + 1);
+      }
+    } else {
+      expect(
+        latteGeometry.verticalOverflow,
+        JSON.stringify(viewport),
+      ).toBeGreaterThan(0);
+    }
     await expect(
       page
         .getByRole('banner')
@@ -271,7 +357,7 @@ test('public home preserves its composition across the seven visual acceptance v
   }
 });
 
-test('public home completes the evidence path inside the tablet first viewport', async ({
+test('public home keeps tablet evidence aligned and fully reachable by scrolling', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 834, height: 1112 });
@@ -315,6 +401,17 @@ test('public home completes the evidence path inside the tablet first viewport',
   expect(geometry.priority?.height).toBeLessThanOrEqual(
     geometry.flow?.height ?? 0,
   );
-  expect(geometry.evidence?.bottom).toBeLessThanOrEqual(1112);
-  expect(geometry.hero?.bottom).toBeLessThanOrEqual(1112);
+  expect(geometry.evidence?.top).toBeLessThan(1112);
+  expect(geometry.evidence?.bottom).toBeLessThanOrEqual(
+    geometry.hero?.bottom ?? 0,
+  );
+  const boundary = page.locator('.app-public-evidence-boundary');
+  await boundary.scrollIntoViewIfNeeded();
+  await expect(boundary).toBeVisible();
+  const boundaryBounds = (await boundary.boundingBox())!;
+  expect(boundaryBounds.y).toBeGreaterThanOrEqual(56);
+  expect(boundaryBounds.y + boundaryBounds.height).toBeLessThanOrEqual(1112);
+  await expect(
+    boundary.getByText('Read and review only', { exact: true }),
+  ).toBeVisible();
 });

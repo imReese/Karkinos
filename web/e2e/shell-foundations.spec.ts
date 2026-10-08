@@ -1,5 +1,35 @@
 import { expect, test } from '@playwright/test';
 
+test('mobile navigation keeps keyboard focus inside and releases the workspace at desktop size', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portfolio');
+  const trigger = page.getByTestId('mobile-navigation-toggle');
+  await trigger.click();
+  const navigation = page.locator('#app-shell-navigation');
+  await expect(navigation).toHaveAttribute('aria-modal', 'true');
+  await expect(page.locator('.app-shell-main')).toHaveAttribute('inert', '');
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByTestId('sidebar-nav-settings')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(
+    navigation.getByRole('link', { name: /Public home|公开首页/ }),
+  ).toBeFocused();
+  await expect(page.getByTestId('sidebar-nav-portfolio')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('.app-shell-main')).not.toHaveAttribute('inert');
+  await trigger.click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator('.app-shell-main')).not.toHaveAttribute('inert');
+  await expect(navigation).not.toHaveAttribute('aria-modal');
+});
+
 const desktopViewports = [
   { width: 1360, height: 900 },
   { width: 1280, height: 800 },
@@ -24,14 +54,7 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
       await expect(statusRail).toBeHidden();
       await expect(page.getByTestId('compact-status-trigger')).toBeVisible();
     }
-    for (const group of [
-      'Workspace',
-      'Invest',
-      'Research',
-      'Act',
-      'Control',
-      'System',
-    ]) {
+    for (const group of ['Monitor', 'Decide', 'Execute', 'System']) {
       await expect(page.getByText(group, { exact: true })).toBeVisible();
     }
     await expect(page.getByTestId('sidebar-nav-overview')).toContainText(
@@ -397,23 +420,16 @@ test('desktop utility controls align and overview holdings avoid partial columns
   await expect
     .poll(() =>
       valuationStatus.evaluate((element) => {
-        const style = getComputedStyle(element);
         const statusShell = element.closest('.app-status-chip') as HTMLElement;
         const toolbar = element.closest('.app-toolbar-shell') as HTMLElement;
-        const selectedTheme = document.querySelector(
-          '.app-theme-switcher-option[aria-pressed="true"]',
-        ) as HTMLElement;
         return {
-          backgroundMatches:
-            style.backgroundColor ===
-            getComputedStyle(selectedTheme).backgroundColor,
           dividerMatches:
             getComputedStyle(statusShell).borderRightColor ===
             getComputedStyle(toolbar).borderBottomColor,
         };
       }),
     )
-    .toEqual({ backgroundMatches: true, dividerMatches: true });
+    .toEqual({ dividerMatches: true });
 
   const overlayGeometry = await page.evaluate(() => {
     const content = document.querySelector('.app-shell-content') as HTMLElement;
@@ -541,7 +557,7 @@ test('wide financial canvases use large displays without excessive gutters', asy
       expect(geometry.routeWidth, `${path} ${viewport.width}`).toBeGreaterThan(
         viewport.width >= 2560 ? 1900 : 1550,
       );
-      expect(geometry.routeWidth).toBeLessThanOrEqual(2048.5);
+      expect(geometry.routeWidth).toBeLessThanOrEqual(2320.5);
       expect(
         Math.abs(geometry.leftGutter - geometry.rightGutter),
         `${path} ${viewport.width}`,

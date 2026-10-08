@@ -223,10 +223,17 @@ for (const width of [390, 1280]) {
     async function openPanels() {
       if (width < 1280)
         await page.getByRole('tab', { name: 'Results and evidence' }).click();
-      await page
-        .getByText('Independent forward observation', { exact: true })
-        .click();
-      await page.getByText('Independent paper book', { exact: true }).click();
+      await expect(page.getByTestId('backtest-result-panel')).toBeVisible();
+      const observations = page.getByTestId('research-observations-panel');
+      await expect(observations).toBeVisible();
+      if ((await observations.getAttribute('open')) === null)
+        await observations.locator(':scope > summary').click();
+      await expect(observations).toHaveAttribute('open', '');
+      const paperBook = page.getByTestId('research-paper-book-panel');
+      await expect(paperBook).toBeVisible();
+      if ((await paperBook.getAttribute('open')) === null)
+        await paperBook.locator(':scope > summary').click();
+      await expect(paperBook).toHaveAttribute('open', '');
     }
     await page.goto('/backtest');
     await openPanels();

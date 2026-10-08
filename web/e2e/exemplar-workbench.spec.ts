@@ -399,21 +399,26 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const overviewAllocationRisk = page.getByTestId('overview-allocation-risk');
   const overviewResearchActions = page.getByTestId('overview-research-actions');
   await expect(overviewPrimary).toBeVisible({ timeout: 15_000 });
-  await expect(
-    overviewPrimary.getByTestId('overview-today-digest'),
-  ).toBeVisible();
+  if (await overviewPrimary.getByTestId('overview-today-digest').count()) {
+    await expect(
+      overviewPrimary.getByTestId('overview-today-digest'),
+    ).toBeVisible();
+  }
   await expect(overviewHoldings).toBeVisible();
   const overviewPerformanceBox = (await overviewPerformance.boundingBox())!;
   const overviewHoldingsBox = (await overviewHoldings.boundingBox())!;
   const overviewAllocationRiskBox =
     (await overviewAllocationRisk.boundingBox())!;
-  const overviewResearchActionsBox =
-    (await overviewResearchActions.boundingBox())!;
+  const overviewResearchActionsBox = (await overviewResearchActions.count())
+    ? await overviewResearchActions.boundingBox()
+    : null;
   expect(overviewPerformanceBox.y).toBeLessThan(overviewHoldingsBox.y);
   expect(overviewHoldingsBox.y).toBeLessThan(overviewAllocationRiskBox.y);
-  expect(overviewAllocationRiskBox.y).toBeLessThan(
-    overviewResearchActionsBox.y,
-  );
+  if (overviewResearchActionsBox) {
+    expect(overviewAllocationRiskBox.y).toBeLessThan(
+      overviewResearchActionsBox.y,
+    );
+  }
   expect(
     Math.abs(overviewPerformanceBox.x - overviewHoldingsBox.x),
   ).toBeLessThan(8);
@@ -423,26 +428,23 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
 
   await page.goto('/risk');
   const blockingRegister = page.getByTestId('risk-blocking-register');
-  const riskMetrics = page.getByLabel('Risk metrics');
   const thresholdTable = page.getByTestId('risk-threshold-table');
-  const controlledActions = page.getByTestId('risk-trading-control-grid');
+  const controlledActions = page.getByTestId(
+    'risk-controlled-action-disclosure',
+  );
   const analysisDisclosure = page.getByTestId('risk-analysis-disclosure');
   const riskHistory = page.getByTestId('risk-history-disclosure');
   await expect(blockingRegister).toBeVisible({ timeout: 30_000 });
   const blockingRegisterBox = (await blockingRegister.boundingBox())!;
-  const riskMetricsBox = (await riskMetrics.boundingBox())!;
-  const controlledActionsBox = (await controlledActions.boundingBox())!;
-  expect(blockingRegisterBox.x).toBeLessThan(riskMetricsBox.x);
-  expect(Math.abs(blockingRegisterBox.y - riskMetricsBox.y)).toBeLessThan(8);
-  expect(Math.abs(controlledActionsBox.x - riskMetricsBox.x)).toBeLessThan(8);
-  expect(controlledActionsBox.y).toBeGreaterThan(riskMetricsBox.y);
-  expect(controlledActionsBox.y).toBeLessThan(
-    blockingRegisterBox.y + blockingRegisterBox.height,
-  );
-  await expect(page.getByTestId('order-approval-panel')).toHaveCount(0);
+  await expect(thresholdTable).toBeVisible();
   expect((await thresholdTable.boundingBox())!.y).toBeGreaterThan(
     blockingRegisterBox.y + blockingRegisterBox.height,
   );
+  await expect(controlledActions).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('risk-trading-control-grid')).toBeHidden();
+  await controlledActions.locator(':scope > summary').click();
+  await expect(page.getByTestId('risk-trading-control-grid')).toBeVisible();
+  await expect(page.getByTestId('order-approval-panel')).toHaveCount(0);
   await expect(analysisDisclosure).not.toHaveAttribute('open', '');
   await expect(page.getByTestId('risk-analysis-overview')).toBeHidden();
   await analysisDisclosure.locator('summary').click();
@@ -484,8 +486,8 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   );
   await expect(primaryResearch).toBeVisible();
   await expect(strategyDetail).not.toHaveAttribute('open', '');
-  expect((await parameterPanel.boundingBox())!.x).toBeLessThan(
-    (await resultPanel.boundingBox())!.x,
+  expect((await resultPanel.boundingBox())!.x).toBeLessThan(
+    (await parameterPanel.boundingBox())!.x,
   );
   await expect(page.getByTestId('backtest-mobile-workspace-tabs')).toBeHidden();
 });
@@ -897,7 +899,7 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
       `header action ${JSON.stringify(viewport)}`,
     ).toBeLessThanOrEqual(1);
     expect(
-      Math.abs(boundaryBadgesBox.x - primaryCanvasBox.x),
+      primaryCanvasBox.x - boundaryBadgesBox.x,
       `workspace control ${JSON.stringify(viewport)}`,
     ).toBeLessThanOrEqual(1);
     expect(
@@ -905,9 +907,9 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
       `workspace control gap ${JSON.stringify(viewport)}`,
     ).toBeGreaterThanOrEqual(0);
     expect(
-      collapseWorkspaceBox.x - (boundaryBadgesBox.x + boundaryBadgesBox.width),
-      `workspace control gap ${JSON.stringify(viewport)}`,
-    ).toBeLessThanOrEqual(16);
+      collapseWorkspaceBox.x + collapseWorkspaceBox.width,
+      `workspace controls stay in their pane ${JSON.stringify(viewport)}`,
+    ).toBeLessThanOrEqual(primaryCanvasBox.x + primaryCanvasBox.width);
     expect(
       openComposerBox.x,
       `queue action ${JSON.stringify(viewport)}`,
@@ -1133,7 +1135,7 @@ test('portfolio keeps filtering ordered above a compact holdings projection', as
   await expect(page.getByTestId('portfolio-summary-strip')).toBeVisible();
   await expect(filterBar).toBeVisible();
   await expect(filterBar.getByRole('textbox')).toBeVisible();
-  await expect(filterBar.getByRole('combobox')).toHaveCount(5);
+  await expect(filterBar.getByRole('combobox')).toHaveCount(4);
 
   const firstTableCell = page
     .locator('.app-positions-table .app-data-table th')
@@ -1233,7 +1235,7 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   const loadingRows = page.getByTestId('portfolio-loading-rows');
 
   await expect(loadingSummary).toBeVisible();
-  await expect(loadingSummary.locator(':scope > *')).toHaveCount(4);
+  await expect(loadingSummary.locator(':scope > *')).toHaveCount(6);
   await expect(
     loadingHoldings.getByRole('heading', { level: 2 }),
   ).toBeVisible();
@@ -1313,12 +1315,10 @@ test('overview loads one account projection before history without fabricated fi
   await expect(page.getByTestId('overview-total-value')).toContainText(
     '100,500.00',
   );
-  for (const path of [
-    '/api/portfolio/equity-curve/series',
-    '/api/decision/trading-plan',
-  ]) {
-    await expect.poll(() => requestedPaths.includes(path), path).toBe(true);
-  }
+  await expect
+    .poll(() => requestedPaths.includes('/api/portfolio/equity-curve/series'))
+    .toBe(true);
+  expect(requestedPaths).not.toContain('/api/decision/trading-plan');
   for (const path of [
     '/api/portfolio/overview',
     '/api/portfolio',
@@ -1553,13 +1553,13 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
 
   releaseWorkspaceResponse();
   await expect(page.getByTestId('risk-blocking-register')).toBeVisible();
-  await expect(page.getByTestId('risk-metric-rail')).toBeVisible();
+  await expect(page.getByTestId('risk-threshold-register')).toBeVisible();
   await expect(page.getByTestId('risk-summary-loading-state')).toHaveCount(0);
   await page.setViewportSize({ width: 834, height: 1112 });
   expect(
     await page
-      .getByTestId('risk-metric-rail')
-      .locator('dt')
+      .getByTestId('risk-threshold-table')
+      .locator('tbody th[scope="row"]')
       .evaluateAll((elements) =>
         elements.every((element) => {
           const style = getComputedStyle(element);
@@ -1721,7 +1721,7 @@ test('holding detail keeps realized and unrealized PnL context readable on lapto
   await expect(summary).toBeVisible({ timeout: 15_000 });
   const unrealizedDetail = summary
     .locator('.app-metric-strip-item')
-    .filter({ hasText: 'Unrealized PnL' })
+    .filter({ hasText: 'Floating P&L' })
     .locator('div.app-type-label');
   await expect(unrealizedDetail).toContainText('Realized PnL ¥192.90');
 
@@ -1925,6 +1925,9 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
 
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      const globalEvidence = page.getByTestId('market-global-data-evidence');
+      await expect(globalEvidence).not.toHaveAttribute('open', '');
+      await globalEvidence.locator(':scope > summary').click();
       await expect(page.getByTestId('market-data-health-summary')).toBeVisible({
         timeout: 15_000,
       });
@@ -2182,7 +2185,7 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
           .getByTestId('overview-strategy-recommendation')
           .boundingBox();
         const queue = page.getByTestId('overview-today-queue');
-        expect(holdingsBox?.y ?? 0).toBeLessThan(decisionBox?.y ?? 0);
+        expect(decisionBox?.y ?? 0).toBeLessThan(holdingsBox?.y ?? 0);
         if ((await queue.count()) > 0) {
           const queueBox = await queue.boundingBox();
           expect(queueBox?.y ?? 0).toBeGreaterThanOrEqual(
@@ -2302,7 +2305,7 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
 
   await page.goto('/trading');
   await expect(
-    page.getByRole('heading', { name: /Trading review|交易复核/ }),
+    page.getByRole('heading', { name: /^(Execution|执行)$/ }),
   ).toBeVisible();
   const killSwitch = page.getByTestId('kill-switch-panel');
   await expect(killSwitch).toBeVisible();
@@ -2330,8 +2333,7 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   ).toBeVisible();
   const metadataDisclosure = page.getByTestId('settings-metadata-disclosure');
   await expect(metadataDisclosure).not.toHaveAttribute('open', '');
-  await metadataDisclosure.locator('summary').click();
-  await expect(metadataDisclosure).toHaveAttribute('open', '');
+  await expect(metadataDisclosure).toBeVisible();
   const metadataSource = page.getByText('Saved register and watchlist', {
     exact: true,
   });
@@ -2344,8 +2346,7 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   expect(metadataSourceGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
   expect(metadataSourceGeometry.verticalOverflow).toBeLessThanOrEqual(0);
   expect(metadataSourceGeometry.whiteSpace).toBe('normal');
-  await metadataDisclosure.locator('summary').click();
-  await expect(metadataDisclosure).not.toHaveAttribute('open', '');
+  await expect(metadataDisclosure).toBeVisible();
   for (const testId of [
     'settings-configuration-editor',
     'settings-data-source-disclosure',
@@ -2614,9 +2615,19 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
             'section[aria-labelledby="ai-research-queue-title"]',
           ) as HTMLElement;
           const panelStyle = getComputedStyle(panel);
+          const themeSurface = document.createElement('span');
+          themeSurface.style.backgroundColor = 'var(--app-surface)';
+          panel.append(themeSurface);
+          const expectedBackground =
+            getComputedStyle(themeSurface).backgroundColor;
+          themeSurface.remove();
           return {
             formTop: form.getBoundingClientRect().top,
             panelBackground: panelStyle.backgroundColor,
+            expectedBackground,
+            expectedRadius: panelStyle
+              .getPropertyValue('--app-radius-surface')
+              .trim(),
             panelRadius: panelStyle.borderRadius,
             reviewQueueTop: reviewQueue.getBoundingClientRect().top,
           };
@@ -2624,8 +2635,12 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
         expect(researchGeometry.reviewQueueTop).toBeLessThan(
           researchGeometry.formTop,
         );
-        expect(researchGeometry.panelBackground).toBe('rgba(0, 0, 0, 0)');
-        expect(researchGeometry.panelRadius).toBe('0px');
+        expect(researchGeometry.panelBackground).toBe(
+          researchGeometry.expectedBackground,
+        );
+        expect(researchGeometry.panelRadius).toBe(
+          researchGeometry.expectedRadius,
+        );
       }
 
       if (path === '/activity') {

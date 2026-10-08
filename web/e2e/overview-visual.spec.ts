@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   installOverviewFixture,
+  overviewFixture,
   overviewTradingPlanFixture,
 } from './overview-fixture';
 
@@ -51,8 +52,11 @@ for (const target of [
     const holdings = page.getByTestId('overview-holdings-section');
     await holdings.scrollIntoViewIfNeeded();
     await expect(holdings).toContainText(
-      target.locale === 'zh' ? '今日收益' : 'Today PnL',
+      target.locale === 'zh' ? '当日盈亏' : 'Day’s P&L',
     );
+    for (const value of ['60,000.00', '18,000.00', '-¥400.00', '-¥50.00']) {
+      await expect(holdings).toContainText(value);
+    }
     await expect(holdings).not.toContainText(
       target.locale === 'zh' ? '已公布净值' : 'Published NAV',
     );
@@ -68,6 +72,21 @@ test('overview surfaces only manually reviewable strategy actions', async ({
   page,
 }) => {
   await installOverviewFixture(page);
+  const account = overviewFixture();
+  await page.route('**/api/portfolio/state', (route) =>
+    route.fulfill({
+      json: {
+        ...account,
+        overview: {
+          ...account.overview,
+          market_session: {
+            ...account.overview.market_session,
+            status: 'after_close',
+          },
+        },
+      },
+    }),
+  );
   await page.unroute('**/api/decision/trading-plan');
   await page.route('**/api/decision/trading-plan', (route) =>
     route.fulfill({
