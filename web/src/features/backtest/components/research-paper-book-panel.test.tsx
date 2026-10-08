@@ -65,13 +65,14 @@ const json = (value: unknown, status = 200) =>
 function mount(
   handler: (url: string, init?: RequestInit) => Promise<Response>,
   id = identity,
+  datasetRows?: () => unknown[],
 ) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === '/api/backtest/datasets')
       return Promise.resolve(
         json({
-          datasets: [
+          datasets: datasetRows?.() ?? [
             {
               dataset_id: datasetId,
               start_date: observation.source.start_date,
@@ -130,6 +131,103 @@ async function chooseDataset() {
   fireEvent.change(select, { target: { value: datasetId } });
 }
 afterEach(() => vi.unstubAllGlobals());
+
+test('collects missing distribution evidence in the paper journey before settling its new dataset', async () => {
+  const saved = initialBook();
+  const original = structuredClone(saved);
+  const enrichedId = `sha256:${'b'.repeat(64)}`;
+  const raw = {
+    dataset_id: datasetId,
+    start_date: observation.source.start_date,
+    end_date: '2026-09-21',
+    instruments: observation.universe,
+    cross_source_verified: true,
+  };
+  const enriched = {
+    ...raw,
+    dataset_id: enrichedId,
+    corporate_action_evidence: { status: 'observed' },
+  };
+  let available: unknown[] = [raw];
+  let completeCollection!: (value: Response) => void;
+  const collecting = new Promise<Response>((resolve) => {
+    completeCollection = resolve;
+  });
+  const writes: { url: string; body: Record<string, unknown> }[] = [];
+  mount(
+    async (url, init) => {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        writes.push({ url, body });
+        if (url.endsWith('/corporate-actions')) return collecting;
+        expect(url).toBe(
+          `/api/research-observations/${identity}/paper-book/settle`,
+        );
+        expect(body).toEqual({
+          request_id: expect.any(String),
+          expected_version: 0,
+          dataset_id: enrichedId,
+        });
+        saved.version = 1;
+        saved.last_settled_session = '2026-09-21';
+      }
+      return json(saved);
+    },
+    identity,
+    () => available,
+  );
+  open();
+  await chooseDataset();
+  const settle = screen.getByRole('button', {
+    name: 'Settle paper book manually',
+  });
+  expect(settle).toBeDisabled();
+  expect(
+    screen.getByText(
+      /Collect evidence for the selected dataset before settling/,
+    ),
+  ).toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: 'Collect dividend and bonus-share evidence',
+    }),
+  );
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0]).toEqual({
+    url: `/api/backtest/datasets/${encodeURIComponent(datasetId)}/corporate-actions`,
+    body: { refresh: false },
+  });
+  expect(
+    screen.getByLabelText('Formal Dataset for paper settlement'),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole('button', { name: 'Stop accepting new targets' }),
+  ).toBeDisabled();
+  expect(settle).toBeDisabled();
+  expect(saved).toEqual(original);
+  await act(async () => {
+    available = [raw, enriched];
+    completeCollection(json(enriched));
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText('Formal Dataset for paper settlement'),
+    ).toHaveValue(enrichedId);
+    expect(settle).toBeEnabled();
+  });
+  expect(saved).toEqual(original);
+  expect(writes).toHaveLength(1);
+  fireEvent.click(settle);
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(saved.policy.corporate_action_mode).toBe(
+    'reported_distributions_gross',
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId('paper-book-as-of')).toHaveTextContent(
+      '2026-09-21',
+    ),
+  );
+});
 
 test('opening only reads; creation needs explicit positive cash and freezes optional cost inputs', async () => {
   let saved: ResearchPaperBook | null = null;
@@ -290,6 +388,11 @@ test('a version conflict keeps the dated snapshot and requires an explicit refre
   );
   expect(
     screen.getByRole('button', { name: 'Settle paper book manually' }),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole('button', {
+      name: 'Refresh dividend and bonus-share evidence',
+    }),
   ).toBeDisabled();
   expect(writes).toBe(1);
   fireEvent.click(screen.getByRole('button', { name: 'Refresh paper book' }));

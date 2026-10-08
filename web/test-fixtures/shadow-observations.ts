@@ -2,6 +2,8 @@ import type {
   ShadowResearchAutomationStatus,
   ShadowResearchCandidate,
 } from '../src/features/ai-research/shadow-research-api';
+import type { BacktestReport } from '../src/features/backtest/api';
+import type { ResearchPaperBook } from '../src/features/backtest/paper-book-contracts';
 import type { ResearchObservation } from '../src/features/backtest/observation-contracts';
 
 export const normalizedCandidate: ShadowResearchCandidate = {
@@ -241,5 +243,99 @@ export function researchStatus(
     broker_submission_enabled: false,
     human_paper_shadow_approval_required: true,
     authority_effect: 'research_only',
+  };
+}
+
+export function candidateSourceReport(id = 8): BacktestReport {
+  return {
+    id,
+    created_at: '2026-09-16T08:00:00Z',
+    config: {
+      strategy: 'ai_formula_research',
+      dataset_id: `sha256:${'a'.repeat(64)}`,
+      start_date: '2026-09-01',
+      end_date: '2026-09-15',
+      initial_cash: 1000000,
+    },
+    metrics: {
+      initial_cash: 1000000,
+      final_equity: 1000000,
+      total_return: 0,
+      annual_return: 0,
+      sharpe: 0,
+      sortino: 0,
+      max_drawdown: 0,
+      win_rate: 0,
+      duration_days: 14,
+    },
+    equity_curve: [],
+  };
+}
+
+export function savedPaperBook(): ResearchPaperBook {
+  return {
+    id: 'saved-book',
+    observation_id: 'saved-observation',
+    scope: 'independent_paper',
+    lifecycle: 'paused',
+    version: 2,
+    started_at: '2026-09-18T08:02:00Z',
+    paused_at: '2026-09-23T08:02:00Z',
+    evaluation_start: '2026-09-21',
+    initial_cash: '100000',
+    last_settled_session: '2026-09-23',
+    policy: {
+      cost_assumptions: {
+        slippage_model: 'percent_of_reference_price',
+        slippage_bps: '5',
+      },
+      cost_inputs: {},
+      corporate_action_mode: 'price_only',
+      currency: 'CNY',
+    },
+    state: {
+      cash: '98800',
+      equity: '98800',
+      dividend_receivable: '0',
+      dividend_income: '0',
+      positions: {},
+    },
+    steps: [],
+    fills: [],
+    attempts: [],
+    limitations: [],
+    account_authority: false,
+    automatic: false,
+    performance: {
+      input_version: 2,
+      outcome_fingerprint: 'saved-outcome',
+      status: 'measured',
+      evaluation_start: '2026-09-21',
+      through_session: '2026-09-23',
+      settled_sessions: 2,
+      sessions_since_first_accepted_target: 2,
+      net_return: '-0.012',
+      max_drawdown: '0.025',
+      benchmark_net_return: '-0.005',
+      modeled_net_excess_return: '-0.007',
+      fees_paid: '12',
+      slippage_cost: '25',
+      cash_weight: '1',
+      return_basis: 'price_only',
+      pnl_reconciliation_residual: '0',
+      position_contributions: [],
+      equity_series: [
+        {
+          session: '2026-09-23',
+          net_return: '-0.012',
+          benchmark_net_return: '-0.005',
+        },
+      ],
+    },
+    health: {
+      status: 'threshold_breached',
+      action: 'pause_paper_target_acceptance',
+      breaches: ['minimum_net_excess_return'],
+    },
   };
 }

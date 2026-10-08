@@ -1,12 +1,14 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  candidateSourceReport,
   researchStatus,
   savedObservation,
+  savedPaperBook,
 } from '../test-fixtures/shadow-observations';
 
 for (const width of [390, 1280]) {
-  test(`normalized and qualified source observations remain read-only at ${width}px`, async ({
+  test(`candidate starts exact-source observation and reviews paper results at ${width}px`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
@@ -15,8 +17,9 @@ for (const width of [390, 1280]) {
       localStorage.setItem('karkinos.theme', 'light');
     });
     let qualified = false;
-    const reads: string[] = [];
-    const writes: string[] = [];
+    let started = false;
+    const reportReads: string[] = [];
+    const writes: { path: string; body: Record<string, unknown> }[] = [];
     const older = savedObservation('older-observation');
     older.started_at = '2026-09-17T08:00:00Z';
     older.lifecycle = 'active';
@@ -25,25 +28,51 @@ for (const width of [390, 1280]) {
     older.health_decision = null;
     older.publications = [];
     older.outcomes = [];
+    const created = { ...older, id: 'new-observation' };
     await page.route('**/api/**', async (route) => {
-      const url = new URL(route.request().url());
-      if (route.request().method() !== 'GET') {
-        writes.push(`${route.request().method()} ${url.pathname}`);
-        await route.fulfill({
-          status: 403,
-          json: { detail: 'read_only_fixture' },
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() !== 'GET') {
+        writes.push({
+          path: `${request.method()} ${url.pathname}`,
+          body: request.postDataJSON(),
         });
+        if (
+          request.method() === 'POST' &&
+          url.pathname === '/api/research-observations'
+        ) {
+          expect(request.postDataJSON().source_backtest_result_id).toBe(8);
+          started = true;
+          await route.fulfill({ status: 200, json: { id: created.id } });
+        } else {
+          await route.fulfill({
+            status: 403,
+            json: { detail: 'unexpected_mutation' },
+          });
+        }
         return;
       }
       let payload: unknown;
       if (url.pathname === '/api/ai/strategy-research/shadow-automation')
         payload = researchStatus(qualified);
-      else if (url.pathname === '/api/research-observations') {
+      else if (url.pathname === '/api/backtest/results/8') {
+        reportReads.push(url.pathname);
+        payload = candidateSourceReport();
+      } else if (url.pathname === '/api/research-observations') {
         expect(url.searchParams.get('source_backtest_result_id')).toBe('8');
         expect(url.searchParams.get('limit')).toBe('100');
-        reads.push(url.pathname);
-        payload = [savedObservation(), older];
-      } else if (
+        payload = [...(started ? [created] : []), savedObservation(), older];
+      } else if (url.pathname === '/api/research-observations/new-observation')
+        payload = created;
+      else if (
+        url.pathname ===
+        '/api/research-observations/saved-observation/paper-book'
+      )
+        payload = savedPaperBook();
+      else if (url.pathname.endsWith('/paper-book')) payload = null;
+      else if (url.pathname === '/api/backtest/datasets')
+        payload = { datasets: [] };
+      else if (
         url.pathname === '/api/strategy-promotion/states' ||
         url.pathname === '/api/backtest/results'
       )
@@ -60,61 +89,60 @@ for (const width of [390, 1280]) {
     await page.goto('/ai-research');
     const qualification = page.getByTestId('shadow-research-qualification');
     await expect(qualification).toContainText('Qualification blocked');
-    await expect(qualification.getByRole('button')).toHaveCount(0);
-    await qualification
-      .getByRole('heading', {
-        name: 'Account qualification review',
-        exact: true,
-      })
-      .evaluate((element) => element.scrollIntoView({ block: 'start' }));
-    await page.screenshot({
-      path: testInfo.outputPath(`observation-review-blocked-${width}.png`),
-    });
     const candidate = page.getByTestId('shadow-research-candidate');
     await expect(candidate).toContainText(
       'Synthetic normalized trend candidate',
     );
-    expect(reads).toHaveLength(0);
+    expect(reportReads).toHaveLength(0);
     const evidence = candidate.getByTestId('shadow-research-observations');
     await evidence
-      .getByText('Supplementary forward-observation evidence', { exact: true })
+      .getByText('Forward observation and paper results', { exact: true })
       .click();
     await expect(
-      evidence.getByTestId('shadow-research-observation-record'),
+      evidence
+        .getByLabel('Saved observations for this report')
+        .locator('option'),
     ).toHaveCount(2);
     await expect(evidence).toContainText('#8');
-    await expect(evidence).toContainText('100 most recently started');
     await expect(evidence).toContainText(
       'do not replace independent final evaluation or account qualification',
     );
-    await expect(evidence.getByRole('button')).toHaveText([
-      'Refresh saved evidence',
-    ]);
+    await expect(
+      evidence.getByRole('button', { name: 'Start observation', exact: true }),
+    ).toBeEnabled();
+    expect(writes).toEqual([]);
+
+    const paper = evidence.getByTestId('research-paper-book-panel');
+    await paper.locator(':scope > summary').click();
+    await expect(paper).toContainText('Modeled net excess');
+    await expect(paper).toContainText('-0.7%');
+    await expect(paper).toContainText(
+      'Settled sessions after a real target: 2',
+    );
+    await expect(paper).toContainText('ETF distributions are unverified');
+    await expect(paper).toContainText('New target intake stopped');
+    await paper
+      .locator(':scope > summary')
+      .evaluate((element) => element.scrollIntoView({ block: 'start' }));
+    await page.screenshot({
+      path: testInfo.outputPath(`candidate-paper-results-${width}.png`),
+    });
+    expect(writes).toEqual([]);
+
     await evidence
-      .locator(':scope > summary')
-      .evaluate((element) => element.scrollIntoView({ block: 'start' }));
-    await page.screenshot({
-      path: testInfo.outputPath(`observation-review-list-${width}.png`),
+      .getByRole('button', { name: 'Start observation', exact: true })
+      .click();
+    await expect(
+      evidence.getByLabel('Saved observations for this report'),
+    ).toHaveValue('new-observation');
+    await expect(evidence).toContainText('Publishing enabled · new-obse');
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({
+      path: 'POST /api/research-observations',
+      body: { source_backtest_result_id: 8 },
     });
-    const record = evidence
-      .getByTestId('shadow-research-observation-record')
-      .first();
-    await record.locator(':scope > summary').click();
-    await expect(record).toContainText('Configured threshold breached');
-    await expect(record).toContainText('Measured price response · 1.0%');
-    await record
-      .locator(':scope > summary')
-      .evaluate((element) => element.scrollIntoView({ block: 'start' }));
-    await page.screenshot({
-      path: testInfo.outputPath(`observation-review-health-${width}.png`),
-    });
-    const publication = record
-      .locator('summary')
-      .filter({ hasText: 'Decision session' });
-    await publication.click();
-    await expect(record.getByRole('table')).toContainText('600000');
-    await expect(record.getByRole('button')).toHaveCount(0);
     await expect(qualification).toContainText('Qualification blocked');
+
     qualified = true;
     await page.reload();
     await expect(qualification).toContainText(
@@ -122,11 +150,11 @@ for (const width of [390, 1280]) {
     );
     const bound = qualification.getByTestId('shadow-research-observations');
     await bound
-      .getByText('Supplementary forward-observation evidence', { exact: true })
+      .getByText('Forward observation and paper results', { exact: true })
       .click();
     await expect(
-      bound.getByTestId('shadow-research-observation-record'),
-    ).toHaveCount(2);
+      bound.getByLabel('Saved observations for this report').locator('option'),
+    ).toHaveCount(3);
     await expect(bound).toContainText('normalized-candidate / normalized-run');
     await expect(bound).toContainText('#8');
     await expect(
@@ -139,7 +167,7 @@ for (const width of [390, 1280]) {
       .locator(':scope > summary')
       .evaluate((element) => element.scrollIntoView({ block: 'start' }));
     await page.screenshot({
-      path: testInfo.outputPath(`observation-review-qualified-${width}.png`),
+      path: testInfo.outputPath(`candidate-observation-start-${width}.png`),
     });
     await expect
       .poll(() =>
@@ -150,7 +178,7 @@ for (const width of [390, 1280]) {
         ),
       )
       .toBeLessThanOrEqual(1);
-    expect(reads).toHaveLength(2);
-    expect(writes).toEqual([]);
+    expect(reportReads).toHaveLength(2);
+    expect(writes).toHaveLength(1);
   });
 }

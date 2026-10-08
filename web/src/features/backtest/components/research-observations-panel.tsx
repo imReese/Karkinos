@@ -17,6 +17,7 @@ import { ResearchObservationHistory } from './research-observation-history';
 import { ResearchObservationHealth } from './research-observation-health';
 import { ObservationAutomationControls } from './observation-automation';
 import { ResearchPaperBookPanel } from './research-paper-book-panel';
+import { ObservationForwardInput } from './observation-forward-input';
 import {
   configuredHealthPolicy,
   ObservationHealthSettings,
@@ -32,6 +33,10 @@ export function ResearchObservationsPanel({
 }: {
   report: BacktestReport;
 }) {
+  return <ObservationPanel key={report.id} report={report} />;
+}
+
+function ObservationPanel({ report }: { report: BacktestReport }) {
   const { locale } = usePreferences();
   const labels = observationCopy[locale];
   const [open, setOpen] = useState(true);
@@ -213,6 +218,13 @@ function ObservationStartForm({
 }) {
   const { locale } = usePreferences();
   const labels = observationCopy[locale];
+  const [useForwardInput, setUseForwardInput] = useState(
+    !report.config.dataset_id,
+  );
+  const [forwardInput, setForwardInput] = useState<{
+    datasetId: string | null;
+    busy: boolean;
+  }>({ datasetId: null, busy: false });
   const [horizon, setHorizon] = useState('5');
   const [symbolLimit, setSymbolLimit] = useState('0.25');
   const [grossLimit, setGrossLimit] = useState('1');
@@ -227,6 +239,8 @@ function ObservationStartForm({
   const supported = ['dual_ma', 'ai_formula_research', 'etf_rotation'].includes(
     report.config.strategy,
   );
+  const inputReady =
+    !useForwardInput || (!!forwardInput.datasetId && !forwardInput.busy);
   const valid =
     Number.isInteger(Number(horizon)) &&
     Number(horizon) >= 1 &&
@@ -242,9 +256,18 @@ function ObservationStartForm({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (valid && healthPolicy !== undefined && supported && !busy)
+        if (
+          valid &&
+          inputReady &&
+          healthPolicy !== undefined &&
+          supported &&
+          !busy
+        )
           onStart({
             source_backtest_result_id: report.id,
+            ...(useForwardInput && forwardInput.datasetId
+              ? { forward_dataset_id: forwardInput.datasetId }
+              : {}),
             horizon_sessions: Number(horizon),
             max_symbol_weight: symbolLimit.trim(),
             max_gross_weight: grossLimit.trim(),
@@ -254,6 +277,27 @@ function ObservationStartForm({
     >
       <fieldset disabled={busy} className="min-w-0 space-y-3">
         <legend className="text-xs font-semibold">{labels.setup}</legend>
+        {supported ? (
+          <>
+            <label className="flex items-start gap-2 text-xs leading-5">
+              <input
+                type="checkbox"
+                checked={useForwardInput}
+                onChange={(event) => setUseForwardInput(event.target.checked)}
+              />
+              {locale === 'zh'
+                ? '为新观察选择或准备独立预热数据'
+                : 'Choose or prepare separate warmup data for this new observation'}
+            </label>
+            {useForwardInput ? (
+              <ObservationForwardInput
+                sourceResultId={report.id}
+                disabled={busy}
+                onChange={setForwardInput}
+              />
+            ) : null}
+          </>
+        ) : null}
         <div className="grid min-w-0 gap-3 sm:grid-cols-3">
           <label className="grid min-w-0 gap-2 text-xs">
             {labels.horizon}
@@ -304,7 +348,9 @@ function ObservationStartForm({
         <button
           className={buttonClass}
           type="submit"
-          disabled={!valid || healthPolicy === undefined || !supported}
+          disabled={
+            !valid || !inputReady || healthPolicy === undefined || !supported
+          }
         >
           {saving ? labels.busy : labels.start}
         </button>
@@ -337,7 +383,9 @@ function ObservationDetail({
       (item) =>
         item.cross_source_verified === true &&
         /^sha256:[0-9a-f]{64}$/.test(item.dataset_id) &&
-        item.start_date === observation.source.start_date &&
+        item.start_date ===
+          (observation.source.forward_input?.start_date ??
+            observation.source.start_date) &&
         item.instruments.length === observation.universe.length &&
         new Set(
           item.instruments.map(
@@ -369,6 +417,17 @@ function ObservationDetail({
         {labels.grossCap}:{' '}
         {formatPercent(Number(observation.policy.max_gross_weight))}
       </p>
+      {observation.source.forward_input ? (
+        <p className="app-muted break-all text-xs leading-5">
+          {locale === 'zh'
+            ? '本次观察的预热区间'
+            : 'Warmup history for this observation'}
+          : {observation.source.forward_input.start_date} →{' '}
+          {observation.source.forward_input.end_date}
+          {' · '}
+          {observation.source.forward_input.dataset_id}
+        </p>
+      ) : null}
       {!observation.source.source_code_verified ? (
         <p className="app-muted text-xs leading-5">{labels.sourceUnknown}</p>
       ) : null}

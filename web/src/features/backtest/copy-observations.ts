@@ -17,7 +17,7 @@ export const observationCopy = {
     invalid:
       'Use an integer horizon from 1 to 60 and weights greater than 0 and at most 1.',
     unsupported:
-      'Start from a saved dual moving-average or ETF rotation report bound to an immutable Dataset, or a saved Formula research definition.',
+      'Start from a saved dual moving-average, ETF rotation or Formula research definition. Choose verified warmup data for a new observation.',
     select: 'Saved observations for this report',
     none: 'No saved observations for this report.',
     loading: 'Loading saved observations…',
@@ -87,7 +87,7 @@ export const observationCopy = {
     capacity:
       'The active-observation limit has been reached. Pause an observation before starting another.',
     sourceInvalid:
-      'This saved result cannot supply a supported, intact frozen source. Run a supported strategy against a saved immutable Dataset first.',
+      'This saved result cannot supply a supported, intact strategy definition. Check its saved parameters and typed instruments before starting a new observation.',
   },
   zh: {
     title: '独立前向观察',
@@ -104,7 +104,7 @@ export const observationCopy = {
     grossCap: '总权重上限',
     invalid: '观察跨度须为 1 至 60 的整数，权重须大于 0 且不超过 1。',
     unsupported:
-      '请从绑定不可变 Dataset 的已保存双均线、ETF 轮动报告，或已保存的 Formula 研究定义开始。',
+      '请从已保存的双均线、ETF 轮动报告或 Formula 研究定义开始，并为新观察选择已核验的预热数据。',
     select: '本报告已保存的观察',
     none: '本报告尚无已保存的观察。',
     loading: '正在读取已保存的观察…',
@@ -164,7 +164,7 @@ export const observationCopy = {
     publicationPaused: '新增发布已暂停，已有发布仍可评估。',
     capacity: '活跃观察已达上限。请先暂停一个观察，再开始新的观察。',
     sourceInvalid:
-      '此报告无法提供受支持且完整的冻结来源。请先使用已保存的不可变 Dataset 运行支持的策略。',
+      '这份报告无法提供完整的策略定义。请核对保存的参数和标的类型，再开始新观察。',
   },
 };
 
@@ -184,6 +184,10 @@ export function observationError(error: unknown, locale: 'en' | 'zh') {
     return observationHealthCopy[locale].invalid;
   if (code === 'observation_code_changed') return labels.codeChanged;
   if (code.includes('calendar')) return labels.calendar;
+  if (code === 'observation_source_formal_dataset_required')
+    return locale === 'zh'
+      ? '原报告未绑定正式数据集。请为新观察选择或准备独立预热数据。'
+      : 'The original report has no formal Dataset. Choose or prepare separate warmup data for this new observation.';
   if (code === 'observation_session_already_published')
     return labels.alreadyPublished;
   if (

@@ -147,13 +147,13 @@ The default `market_data.source_policy` is **`free_cn_research_v1`**. The data w
 
 ### Start a continuing research observation
 
-1. Choose a strategy, dates and the full stock/ETF basket in Backtest. The ETF sample basket demonstrates the controls.
-2. Submit two-source verification jobs, publish the Dataset after every session succeeds, then run the backtest against that exact Dataset.
-3. Start an independent observation from the saved report, freezing parameters, horizon and target limits. Separately create a paper book to freeze cash, costs, benchmark and optional health rules.
+1. Open a saved dual-MA, ETF-rotation or Formula report in Backtest, or its candidate in AI Research.
+2. Choose separate warmup data for a new observation. The panel reads the frozen strategy's exact stock/ETF basket and minimum history; select a matching verified Dataset, or submit two-source jobs for a recent interval ending at the latest closed session and publish it when all jobs succeed.
+3. Start the observation, freezing the strategy, warmup Dataset, horizon and target limits. The historical report is preserved; strategy state is recomputed from the new warmup history. Separately create a paper book to freeze cash, costs, benchmark and optional health rules.
 4. Enable data preparation, automatic advance and paper settlement separately in the observation panel. Keep the service and data worker running.
-5. Inspect each stage's status and modeled net performance, benchmark-relative return and drawdown. Missing data waits; targets missed before the next opening are never backfilled.
+5. Inspect modeled net performance, benchmark-relative return, drawdown and costs in the same panel. Missing data waits; targets missed before the next opening are never backfilled. Use outcomes to decide whether to continue, pause or start a new research experiment.
 
-Automatic preparation preserves the original verified immutable Dataset and appends subsequent verified sessions. Its scope is at most 32 instruments and 366 calendar days from the original start, within existing provider budgets. Revocation fences old queued work. Sources without a verified immutable prefix cannot reconstruct one automatically. ETF paper results currently use price-only returns. Observation evidence does not grant account qualification or publication authority.
+Automatic preparation preserves the frozen input prefix and appends subsequent verified sessions in batches of at most 366 calendar days, for up to 32 instruments and within the observation's frozen row budget. Completed batches remain available across restart; provider budgets and revocation checks still apply. A newly selected warmup Dataset is a new forward experiment, not verification or replacement of the old report's historical inputs. ETF paper results currently use price-only returns. Observation evidence does not grant account qualification or publication authority.
 
 ## Development
 

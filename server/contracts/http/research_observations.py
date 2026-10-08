@@ -16,6 +16,9 @@ class StartResearchObservationRequest(BaseModel):
     max_symbol_weight: Decimal = Field(default=Decimal("0.25"), gt=0, le=1)
     max_gross_weight: Decimal = Field(default=Decimal("1"), gt=0, le=1)
     health_policy: dict[str, Any] | None = None
+    forward_dataset_id: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
 
 
 class AdvanceResearchObservationRequest(BaseModel):

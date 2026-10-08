@@ -156,6 +156,9 @@ def build_normalized_robustness_evidence(metrics: Mapping[str, Any]) -> JsonObje
     regime = metrics.get("market_regime_robustness")
     regime = regime if isinstance(regime, Mapping) else {}
     return {
+        "cost_sensitivity": _normalized_cost_sensitivity(
+            metrics.get("cost_sensitivity")
+        ),
         "parameter_robustness": {
             "schema_version": _text(parameter.get("schema_version")),
             "source_evidence_fingerprint": _text(parameter.get("evidence_fingerprint")),
@@ -212,6 +215,40 @@ def build_normalized_robustness_evidence(metrics: Mapping[str, Any]) -> JsonObje
             "limitations": _strings(regime.get("limitations")),
         },
     }
+
+
+def _normalized_cost_sensitivity(value: Any) -> list[JsonObject]:
+    """Preserve saved stress outcomes without raw account amounts or pass claims."""
+    if not isinstance(value, list):
+        return []
+    scenarios = []
+    for row in value:
+        if not isinstance(row, Mapping):
+            continue
+        assumptions = row.get("cost_assumptions", row)
+        assumptions = assumptions if isinstance(assumptions, Mapping) else {}
+        scenarios.append(
+            {
+                **{
+                    key: _finite_float(assumptions.get(key))
+                    for key in ("slippage_bps", "max_volume_participation")
+                },
+                **{
+                    key: _text(assumptions.get(key))
+                    for key in (
+                        "execution_cost_model_id",
+                        "slippage_model",
+                        "calibration",
+                    )
+                },
+                "total_return": _finite_float(row.get("total_return")),
+                "max_drawdown": _finite_float(row.get("max_drawdown")),
+                "fill_count": _integer(row.get("fill_count")),
+                "status": _text(row.get("status")),
+                "failure_code": _text(row.get("failure_code")),
+            }
+        )
+    return scenarios
 
 
 def _numeric_parameters(value: Any) -> JsonObject:

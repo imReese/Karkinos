@@ -31,6 +31,7 @@ from server.release_activation import (
 )
 from server.services.research_observation_inputs import (
     latest_closed_session,
+    observation_input_binding,
     observation_outcome_sessions,
     read_research_observation_dataset,
     require_observation_dataset_prefix,
@@ -195,7 +196,8 @@ def _settle_opted_paper(service, observation, policy, stopped):
             raise ValueError("paper_book_not_found")
         last = book["last_settled_session"]
         calendar = service._calendar(
-            date.fromisoformat(book["source"]["start_date"]), now
+            date.fromisoformat(observation_input_binding(book["source"])["start_date"]),
+            now,
         )
         closed = latest_closed_session(calendar, now=now)
         if now < datetime.combine(closed, time(16), _SHANGHAI):
@@ -214,7 +216,9 @@ def _settle_opted_paper(service, observation, policy, stopped):
                     service.objects, observation["source"], snapshot
                 )
             if (snapshot.start_date, snapshot.end_date, snapshot.cutoff) != (
-                date.fromisoformat(book["source"]["start_date"]),
+                date.fromisoformat(
+                    observation_input_binding(book["source"])["start_date"]
+                ),
                 closed,
                 entry.cutoff,
             ):
@@ -301,7 +305,9 @@ def _select_dataset(
     service, observation, now, decision_session, *, unreadable_candidate_dataset_ids
 ):
     """Discover a matching manifest; the caller must validate its bound inputs."""
-    start = date.fromisoformat(observation["source"]["start_date"])
+    start = date.fromisoformat(
+        observation_input_binding(observation["source"])["start_date"]
+    )
     instruments = tuple(
         sorted(
             (
@@ -455,7 +461,10 @@ def run_research_observation_automation_once(
             if observation["code_binding"] != observation_code_binding():
                 raise ValueError("observation_code_changed")
             calendar = service._calendar(
-                date.fromisoformat(observation["source"]["start_date"]), now
+                date.fromisoformat(
+                    observation_input_binding(observation["source"])["start_date"]
+                ),
+                now,
             )
             decision_session = latest_closed_session(calendar, now=now)
             # Automatic publication belongs to the just-closed session's window,
@@ -519,7 +528,9 @@ def run_research_observation_automation_once(
                         service.objects, observation["source"], snapshot
                     )
                 if (snapshot.start_date, snapshot.end_date, snapshot.cutoff) != (
-                    date.fromisoformat(observation["source"]["start_date"]),
+                    date.fromisoformat(
+                        observation_input_binding(observation["source"])["start_date"]
+                    ),
                     decision_session,
                     entry.cutoff,
                 ):

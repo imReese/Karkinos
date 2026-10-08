@@ -17,10 +17,10 @@ const report: BacktestReport = {
   created_at: '2026-09-18T08:00:00Z',
   config: {
     strategy: 'dual_ma',
-    start_date: '2026-09-14',
-    end_date: '2026-09-18',
+    start_date: '2024-01-02',
+    end_date: '2024-12-31',
     initial_cash: 100000,
-    dataset_id: datasetId,
+    dataset_id: null,
     assets: [{ symbol: '600000', asset_class: 'stock' }],
   },
   metrics: {
@@ -39,7 +39,7 @@ const report: BacktestReport = {
 };
 
 for (const width of [390, 1280]) {
-  test(`saved observation publishes, reloads, pauses and measures at ${width}px`, async ({
+  test(`old report starts with new warmup, publishes, reloads and measures at ${width}px`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
@@ -67,6 +67,13 @@ for (const width of [390, 1280]) {
           },
         ];
       else if (path === '/api/backtest/results/201') payload = report;
+      else if (path === '/api/research-observations/sources/201')
+        payload = {
+          source_backtest_result_id: 201,
+          strategy_kind: 'dual_ma',
+          minimum_bars: 4,
+          instruments: [{ symbol: '600000', instrument_type: 'stock' }],
+        };
       else if (path === '/api/backtest/strategies') payload = [];
       else if (path === '/api/backtest/strategy-promotion-readiness')
         payload = { rows: [], limitations: [] };
@@ -82,6 +89,7 @@ for (const width of [390, 1280]) {
             instruments: [{ symbol: '600000', instrument_type: 'stock' }],
             cross_source_verified: true,
             point_in_time_verified: false,
+            partition_count: id === datasetId ? 5 : 7,
           })),
         };
       else if (path === '/api/research-observations' && method === 'GET') {
@@ -91,6 +99,7 @@ for (const width of [390, 1280]) {
         const request = route.request().postDataJSON();
         commands.push('start');
         expect(request.source_backtest_result_id).toBe(201);
+        expect(request.forward_dataset_id).toBe(datasetId);
         expect(request.horizon_sessions).toBe(1);
         expect(request.health_policy).toEqual({
           mode: 'observe_only',
@@ -107,8 +116,13 @@ for (const width of [390, 1280]) {
           last_blocker: null,
           source: {
             strategy_kind: 'dual_ma',
-            start_date: '2026-09-14',
-            dataset_id: datasetId,
+            start_date: '2024-01-02',
+            dataset_id: null,
+            forward_input: {
+              dataset_id: datasetId,
+              start_date: '2026-09-14',
+              end_date: '2026-09-18',
+            },
             source_code_verified: false,
             source_historical_pit_verified: false,
           },
@@ -279,6 +293,9 @@ for (const width of [390, 1280]) {
     await page.goto('/backtest');
     await openPanel();
     const panel = page.getByTestId('research-observations-panel');
+    await panel
+      .getByLabel('Warmup dataset for this observation')
+      .selectOption(datasetId);
     await panel
       .getByLabel('Outcome horizon (trading sessions)', { exact: true })
       .fill('1');

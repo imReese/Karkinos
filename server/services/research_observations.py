@@ -44,10 +44,13 @@ from server.services.research_observation_forecasts import (
     build_observation_forecasts,
 )
 from server.services.research_observation_inputs import (
+    bind_observation_forward_input,
     latest_closed_session,
     load_research_observation_source,
+    observation_input_binding,
     observation_outcome_sessions,
     read_research_observation_dataset,
+    require_observation_dataset_prefix,
 )
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -111,6 +114,22 @@ class ResearchObservationService:
             db.path.resolve().parent / "research" / "objects"
         )
 
+    async def source_inputs(self, source_backtest_result_id: int) -> dict[str, Any]:
+        """Describe a saved candidate for an explicitly selected forward warmup."""
+        row = await self.db.get_backtest_result(source_backtest_result_id)
+        if row is None:
+            raise ValueError("observation_source_not_found")
+        source = load_research_observation_source(
+            row, self.objects, allow_unbound_dataset=True
+        )
+        return {
+            "source_backtest_result_id": source_backtest_result_id,
+            **{
+                key: source[key]
+                for key in ("strategy_kind", "instruments", "minimum_bars")
+            },
+        }
+
     async def start(
         self,
         *,
@@ -120,6 +139,7 @@ class ResearchObservationService:
         max_symbol_weight: Decimal,
         max_gross_weight: Decimal,
         health_policy: Mapping[str, Any] | None = None,
+        forward_dataset_id: str | None = None,
     ) -> dict[str, Any]:
         if not 1 <= horizon_sessions <= 60 or any(
             not value.is_finite() or not 0 < value <= 1
@@ -136,6 +156,8 @@ class ResearchObservationService:
             request["health_policy"] = validate_forward_observation_health_policy(
                 health_policy
             )
+        if forward_dataset_id is not None:
+            request["forward_dataset_id"] = forward_dataset_id
         identity = str(
             uuid5(NAMESPACE_URL, f"karkinos:research-observation:{request_id}")
         )
@@ -151,9 +173,19 @@ class ResearchObservationService:
         row = await self.db.get_backtest_result(source_backtest_result_id)
         if row is None:
             raise ValueError("observation_source_not_found")
-        source = load_research_observation_source(row, self.objects)
+        source = load_research_observation_source(
+            row, self.objects, allow_unbound_dataset=forward_dataset_id is not None
+        )
         if len(source["instruments"]) > 50:
             raise ValueError("observation_universe_budget_exceeded")
+        if forward_dataset_id is not None:
+            source["forward_input"] = bind_observation_forward_input(
+                self.objects,
+                source,
+                forward_dataset_id,
+                now=self.clock(),
+                calendar_reader=self._calendar,
+            )
         source["source_row_fingerprint"] = content_fingerprint(dict(row))
         # A fresh observation is a new, now-frozen derivative. Old backtests did
         # not bind these code bytes and are never retroactively certified.
@@ -238,7 +270,10 @@ class ResearchObservationService:
         try:
             if observation["code_binding"] != observation_code_binding():
                 raise ValueError("observation_code_changed")
-            calendar = self._calendar(date.fromisoformat(source["start_date"]), now)
+            input_start = date.fromisoformat(
+                observation_input_binding(source)["start_date"]
+            )
+            calendar = self._calendar(input_start, now)
             market_as_of = latest_closed_session(calendar, now=now)
             result = read_research_observation_dataset(
                 self.objects,
@@ -247,13 +282,17 @@ class ResearchObservationService:
                     InstrumentKey.from_values(item["symbol"], item["instrument_type"])
                     for item in observation["universe"]
                 ),
-                start_date=date.fromisoformat(source["start_date"]),
+                start_date=input_start,
                 now=now,
                 calendar_rows=calendar,
                 minimum_bars=source["minimum_bars"],
             )
             if len(result.bars) > policy["max_dataset_rows"]:
                 raise ValueError("observation_dataset_budget_exceeded")
+            if "forward_input" in source:
+                require_observation_dataset_prefix(
+                    self.objects, source, result.snapshot
+                )
             decision_session = market_as_of
             outcomes = self._outcomes(
                 observation, result, dataset_id, now, decision_session

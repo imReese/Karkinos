@@ -187,6 +187,53 @@ def test_robustness_feedback_preserves_losses_and_excludes_raw_financial_rows() 
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+def test_cost_feedback_preserves_failed_and_incomplete_scenarios_without_account_values():
+    feedback = build_normalized_robustness_evidence(
+        {
+            "cost_sensitivity": [
+                {
+                    "slippage_bps": "10",
+                    "max_volume_participation": "0.01",
+                    "calibration": "explicit_research_assumption",
+                    "total_return": -0.03,
+                    "max_drawdown": 0.09,
+                    "fill_count": 11,
+                    "initial_cash": 123456,
+                },
+                {
+                    "cost_assumptions": {
+                        "slippage_bps": "25",
+                        "max_volume_participation": "0.02",
+                        "stock": {"min_commission": "5"},
+                        "cash": 765432,
+                    },
+                    "status": "failed",
+                    "failure_code": "simulation_incomplete",
+                    "total_return": "NaN",
+                    "private_extension": {"quantity": 100},
+                },
+            ]
+        }
+    )
+    first, failed = feedback["cost_sensitivity"]
+    assert first["total_return"] == -0.03
+    assert first["slippage_bps"] == 10
+    assert first["fill_count"] == 11
+    assert first["status"] is None
+    assert failed["slippage_bps"] == 25
+    assert failed["max_volume_participation"] == 0.02
+    assert failed["status"] == "failed"
+    assert failed["failure_code"] == "simulation_incomplete"
+    assert failed["total_return"] is None
+    assert failed["fill_count"] is None
+    assert "private_extension" not in str(feedback)
+    assert "min_commission" not in str(feedback)
+    assert research_pack_privacy_violations(feedback) == []
+    assert build_normalized_robustness_evidence({})["cost_sensitivity"] == []
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_critique_diagnostics_use_allowlists_and_remove_lot_size() -> None:
     signal = build_normalized_signal_execution_evidence(
         {

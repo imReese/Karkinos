@@ -32,8 +32,8 @@ export function ObservationDataPreparation({
       </p>
       <p className="app-muted">
         {zh
-          ? '最多 32 个标的、从原始起点起不超过 366 个日历日。需要数据工作进程运行；自动发布目标和账本结算需分别启用。观察暂停后，仅在账本自动结算仍启用时继续供数以估值持仓。'
-          : 'Up to 32 instruments and 366 calendar days from the original start. The data worker must be running. Target publication and paper settlement require their own settings. After observation pause, data supply continues only with paper settlement enabled, to value retained holdings.'}
+          ? '最多 32 个标的，每批追加不超过 366 个日历日，并遵守冻结的数据行数上限。需要数据工作进程运行；自动发布目标和账本结算需分别启用。观察暂停后，仅在账本自动结算仍启用时继续供数以估值持仓。'
+          : 'Up to 32 instruments and 366 calendar days per appended batch, within the frozen row budget. The data worker must be running. Target publication and paper settlement require their own settings. After observation pause, data supply continues only with paper settlement enabled, to value retained holdings.'}
       </p>
       <p role="status">{states[preparation.status] ?? preparation.status}</p>
       <button

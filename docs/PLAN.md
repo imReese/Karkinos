@@ -80,11 +80,17 @@ target scheduling does not request providers or backfill missed targets. A separ
 default-off observation data-preparation opt-in lets the existing data worker
 verify the frozen basket and append subsequent closed sessions to its original
 immutable Dataset. It preserves original partitions, uses existing provider budgets,
-and stops at 32 instruments or 366 calendar days from the original start. Missing,
-conflicting or incomplete sessions do not publish an interval. Sources without a
-verified immutable prefix cannot use this automatic preparation path.
+and admits at most 32 instruments, appending at most 366 calendar days per batch
+within the observation's frozen total row budget. Missing,
+conflicting or incomplete sessions do not publish an interval. A new observation may explicitly bind a separate verified warmup Dataset with the
+same typed universe, adequate history and latest closed session. This preserves the
+original report and freezes a new forward experiment; it does not certify historical
+inputs or continue the historical strategy state. Observations without a verified
+immutable input prefix cannot use automatic preparation.
 Normalized candidates and human qualification review
-show observations from the exact source report as supplementary evidence. Raw
+show observations from the exact source report as supplementary evidence. The
+candidate view reuses the observation and paper controls so current net performance,
+benchmark, costs and health are available at the research decision point. Raw
 price responses do not replace independent final evaluation or change account
 qualification. Human review may separately bind an exact simulated paper-book
 version and interval; later settlement preserves that reviewed financial prefix.

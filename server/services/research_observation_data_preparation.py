@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
 from core.types import InstrumentKey
+from data.dataset.catalog import DatasetCatalog
+from data.dataset.manifest import publish_daily_bar_dataset_manifest
 from data.dataset.model import DatasetRef
 from data.dataset.reader import read_daily_bar_dataset
 from data.market.contracts import DailyBarRequest
@@ -23,12 +27,18 @@ from server.persistence.automation_runs import (
     require_observation_automation_policy,
 )
 from server.persistence.jobs import SQLiteJobStore, job_id_for
+from server.persistence.research_paper_books import ResearchPaperBooksRepository
 from server.release_activation import is_release_activation_guarded
 from server.services.market_calendar_dates import (
     resolve_latest_verified_closed_trading_date,
     resolve_verified_closed_trading_dates_in_range,
 )
-from server.services.research_datasets import publish_verified_interval_dataset
+from server.services.research_datasets import (
+    _verified_dates,
+    dataset_summary,
+    publish_verified_interval_dataset,
+)
+from server.services.research_observation_inputs import observation_input_binding
 from server.services.research_observations import (
     ResearchObservationService,
     observation_code_binding,
@@ -83,12 +93,8 @@ def _observation(service: ResearchObservationService, grant: dict[str, str]):
 
 
 def _prefix(service, observation, now):
-    source = observation["source"]
-    identity = (
-        source["dataset_id"]
-        if source["source_dataset_kind"] == "immutable_dataset"
-        else source.get("immutable_dataset_id")
-    )
+    source = observation_input_binding(observation["source"])
+    identity = source["dataset_id"]
     if not identity:
         raise ValueError("observation_data_preparation_verified_source_required")
     try:
@@ -115,16 +121,97 @@ def _prefix(service, observation, now):
         or not 1 <= len(instruments) <= 32
     ):
         raise ValueError("observation_data_preparation_source_mismatch")
-    expected = resolve_verified_closed_trading_dates_in_range(
-        service.db, now, start_date=snapshot.start_date, end_date=snapshot.end_date
-    )
-    if not expected or tuple(
-        part.partition_date.isoformat() for part in snapshot.partitions
-    ) != tuple(day.trade_date for day in expected):
+    # Supply only histories that the target/paper readers can still consume.
+    # This reuses their horizon policy; verified session coverage remains below.
+    service._calendar(snapshot.start_date, now)
+    if tuple(part.partition_date for part in snapshot.partitions) != _verified_dates(
+        service.db, snapshot.start_date, snapshot.end_date
+    ):
         raise ValueError("observation_data_preparation_source_calendar_mismatch")
     if len(result.bars) > observation["policy"]["max_dataset_rows"]:
         raise ValueError("observation_dataset_budget_exceeded")
     return ref, snapshot
+
+
+def _prepared_prefix(service, observation, now):
+    """Resume the last verified append without changing any earlier partition."""
+    ref, original = _prefix(service, observation, now)
+    run = AutomationRunRepository(service.db.path).get_automation_run_sync(
+        f"research-observation-automation:{observation['id']}:latest:data"
+    )
+    try:
+        identity = json.loads(run["payload_json"]).get("dataset_id") if run else None
+    except Exception:
+        raise ValueError("observation_data_preparation_prefix_unreadable") from None
+    # The latest run is a rebuildable projection. Previously used observation
+    # and book inputs remain anchors even if that projection is absent or stale.
+    book = ResearchPaperBooksRepository(service.db.path, clock=service.clock).get(
+        observation["id"]
+    )
+    identities = [identity] if identity is not None else []
+    for rows in (
+        observation.get("publications", []),
+        observation.get("outcomes", []),
+        (book or {}).get("steps", []),
+    ):
+        if rows:
+            identities.append(rows[-1]["dataset_id"])
+    selected = original
+    for identity in dict.fromkeys(identities):
+        try:
+            current_ref = DatasetRef(service.objects.resolve_ref(identity))
+            current = read_daily_bar_dataset(service.objects, current_ref)
+        except Exception:
+            raise ValueError("observation_data_preparation_prefix_unreadable") from None
+        snapshot = current.snapshot
+        shorter, longer = sorted((selected, snapshot), key=lambda item: item.end_date)
+        if selected.end_date == snapshot.end_date:
+            # Equal bar coverage may gain a bound distribution observation.
+            # Keep the evidence superset regardless of anchor traversal order;
+            # incomparable observations still fail the subset check below.
+            if set(snapshot.corporate_action_observation_ids).issubset(
+                selected.corporate_action_observation_ids
+            ):
+                shorter, longer = snapshot, selected
+        if (
+            not snapshot.verification_bound
+            or snapshot.instruments != original.instruments
+            or snapshot.start_date != original.start_date
+            or snapshot.end_date < original.end_date
+            or snapshot.cutoff > now
+            or snapshot.resolver_policy_id != original.resolver_policy_id
+            or snapshot.market_schema_version != original.market_schema_version
+            or longer.partitions[: len(shorter.partitions)] != shorter.partitions
+            or not set(shorter.corporate_action_observation_ids).issubset(
+                longer.corporate_action_observation_ids
+            )
+            or tuple(part.partition_date for part in snapshot.partitions)
+            != _verified_dates(service.db, snapshot.start_date, snapshot.end_date)
+        ):
+            raise ValueError("observation_data_preparation_prefix_mismatch")
+        if len(current.bars) > observation["policy"]["max_dataset_rows"]:
+            raise ValueError("observation_dataset_budget_exceeded")
+        if longer is snapshot:
+            ref, selected = current_ref, snapshot
+    return ref, selected
+
+
+def _batch_dates(db, observation, prefix, through, now):
+    if through == prefix.end_date:
+        return ()
+    dates = resolve_verified_closed_trading_dates_in_range(
+        db,
+        now,
+        start_date=prefix.end_date + timedelta(days=1),
+        end_date=min(through, prefix.end_date + timedelta(days=366)),
+    )
+    if not dates:
+        raise ValueError("observation_data_preparation_calendar_unavailable")
+    if (len(prefix.partitions) + len(dates)) * len(prefix.instruments) > observation[
+        "policy"
+    ]["max_dataset_rows"]:
+        raise ValueError("observation_dataset_budget_exceeded")
+    return dates
 
 
 def require_observation_preparation_job(db, config, job: JobRun) -> None:
@@ -134,33 +221,30 @@ def require_observation_preparation_job(db, config, job: JobRun) -> None:
         return
     service = ResearchObservationService(db)
     observation = _observation(service, grant)
-    _, prefix = _prefix(service, observation, service.clock())
+    now = service.clock()
+    _, prefix = _prepared_prefix(service, observation, now)
+    closed = resolve_latest_verified_closed_trading_date(db, now)
+    if closed is None:
+        raise ValueError("observation_data_preparation_calendar_unavailable")
+    dates = _batch_dates(
+        db, observation, prefix, date.fromisoformat(closed.trade_date), now
+    )
     planned = VerifiedDailyMarketJobRequest.from_payload(job.payload)
     if (
         planned.instruments != prefix.instruments
-        or planned.trade_date <= prefix.end_date
-        or (planned.trade_date - prefix.start_date).days >= 366
+        or planned.trade_date.isoformat() not in {item.trade_date for item in dates}
         or planned.source_policy_id
         != verification_source_policy_for_config(config).policy_id
     ):
         raise ValueError("observation_data_preparation_job_scope_mismatch")
 
 
-def _daily_jobs(db, config, store, observation, prefix, through, now, grant, stopped):
-    if through == prefix.end_date:
-        return ()
-    dates = resolve_verified_closed_trading_dates_in_range(
-        db, now, start_date=prefix.end_date + timedelta(days=1), end_date=through
-    )
+def _daily_jobs(db, config, store, observation, prefix, dates, now, grant, stopped):
     if not dates:
-        raise ValueError("observation_data_preparation_calendar_unavailable")
-    if (len(prefix.partitions) + len(dates)) * len(prefix.instruments) > observation[
-        "policy"
-    ]["max_dataset_rows"]:
-        raise ValueError("observation_dataset_budget_exceeded")
+        return ()
     source_policy = verification_source_policy_for_config(config).policy_id
     prior = store.list_verified_observation_jobs(
-        observation["id"], start_date=dates[0].trade_date, end_date=through.isoformat()
+        observation["id"], start_date=dates[0].trade_date, end_date=dates[-1].trade_date
     )
     payloads, reuse = [], {}
     for resolved in dates:
@@ -194,8 +278,39 @@ def _daily_jobs(db, config, store, observation, prefix, through, now, grant, sto
     return tuple(reuse[resolved.trade_date] for resolved in dates)
 
 
+def _publish_append(service, prefix, through, job_ids):
+    """Use the bounded interval publisher for the new suffix, then retain the prefix."""
+    root = service.db.path.resolve().parent / "research"
+    tail = publish_verified_interval_dataset(
+        root,
+        DailyBarRequest(
+            prefix.instruments, prefix.end_date + timedelta(days=1), through
+        ),
+        db=service.db,
+        job_ids=job_ids,
+    )
+    suffix = read_daily_bar_dataset(
+        service.objects, DatasetRef(service.objects.resolve_ref(tail["dataset_id"]))
+    ).snapshot
+    if (
+        suffix.resolver_policy_id != prefix.resolver_policy_id
+        or suffix.market_schema_version != prefix.market_schema_version
+    ):
+        raise ValueError("observation_data_preparation_prefix_mismatch")
+    combined = replace(
+        prefix,
+        end_date=through,
+        cutoff=max(prefix.cutoff, suffix.cutoff),
+        partitions=prefix.partitions + suffix.partitions,
+    )
+    ref = publish_daily_bar_dataset_manifest(service.objects, combined)
+    read_daily_bar_dataset(service.objects, ref)
+    DatasetCatalog(root).register(service.objects, ref)
+    return dataset_summary(root, ref)
+
+
 def _prepare(service, config, store, observation, now, grant, stopped):
-    ref, prefix = _prefix(service, observation, now)
+    ref, prefix = _prepared_prefix(service, observation, now)
     if prefix.resolver_policy_id != verified_daily_resolver_policy_id(
         verification_source_policy_for_config(config).policy_id
     ):
@@ -206,10 +321,10 @@ def _prepare(service, config, store, observation, now, grant, stopped):
     through = date.fromisoformat(closed.trade_date)
     if through < prefix.end_date:
         raise ValueError("observation_data_preparation_source_not_closed")
-    if (through - prefix.start_date).days >= 366:
-        raise ValueError("observation_data_preparation_range_exceeds_366_days")
+    dates = _batch_dates(service.db, observation, prefix, through, now)
+    batch_end = date.fromisoformat(dates[-1].trade_date) if dates else prefix.end_date
     jobs = _daily_jobs(
-        service.db, config, store, observation, prefix, through, now, grant, stopped
+        service.db, config, store, observation, prefix, dates, now, grant, stopped
     )
     job_ids = tuple(job.job_id for job in jobs)
     if any(job.status != "succeeded" for job in jobs):
@@ -217,7 +332,8 @@ def _prepare(service, config, store, observation, now, grant, stopped):
             "status": "blocked"
             if any(job.status == "failed" for job in jobs)
             else "waiting",
-            "through_session": through.isoformat(),
+            "through_session": batch_end.isoformat(),
+            "dataset_id": ref.dataset_id,
             "job_ids": list(job_ids),
             "pending_job_ids": [
                 job.job_id for job in jobs if job.status != "succeeded"
@@ -228,20 +344,20 @@ def _prepare(service, config, store, observation, now, grant, stopped):
         observation_id=observation["id"],
         generation=grant["generation"],
         stop_requested=stopped,
-        publish=lambda: publish_verified_interval_dataset(
-            service.db.path.resolve().parent / "research",
-            DailyBarRequest(prefix.instruments, prefix.start_date, through),
-            db=service.db,
-            job_ids=job_ids,
-            prefix_dataset_id=ref.dataset_id,
+        publish=lambda: (
+            _publish_append(service, prefix, batch_end, job_ids)
+            if dates
+            else {"dataset_id": ref.dataset_id}
         ),
     )
     return {
-        "status": "completed",
-        "through_session": through.isoformat(),
+        "status": "completed" if batch_end == through else "waiting",
+        "through_session": batch_end.isoformat(),
         "job_ids": list(job_ids),
         "dataset_id": published["dataset_id"],
-        "last_blocker": None,
+        "last_blocker": None
+        if batch_end == through
+        else {"code": "observation_data_preparation_catching_up"},
     }
 
 
@@ -276,6 +392,9 @@ def run_research_observation_data_preparation_once(
         ):
             continue
         grant = {"observation_id": identity, "generation": policy["generation"]}
+        previous = runs.get_automation_run_sync(
+            f"research-observation-automation:{identity}:latest:data"
+        )
         try:
             observation = _observation(service, grant)
             payload = _prepare(service, config, store, observation, now, grant, stopped)
@@ -293,6 +412,15 @@ def run_research_observation_data_preparation_once(
                 "status": "blocked",
                 "last_blocker": {"code": "observation_data_preparation_failed"},
             }
+        # A temporary provider/calendar failure must not discard the last frozen
+        # append and rebuild settled history from a newer daily-job revision.
+        if "dataset_id" not in payload and previous is not None:
+            try:
+                prepared_id = json.loads(previous["payload_json"]).get("dataset_id")
+            except (ValueError, TypeError, AttributeError):
+                prepared_id = None
+            if prepared_id is not None:
+                payload["dataset_id"] = prepared_id
         payload.update(generation=policy["generation"], last_checked_at=now.isoformat())
         if runs.record_observation_automation_status(
             {

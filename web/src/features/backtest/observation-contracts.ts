@@ -96,7 +96,12 @@ export type ResearchObservation = {
   source: {
     strategy_kind: string;
     start_date: string;
-    dataset_id: string;
+    dataset_id: string | null;
+    forward_input?: {
+      dataset_id: string;
+      start_date: string;
+      end_date: string;
+    };
     source_code_verified: boolean;
     source_historical_pit_verified: boolean;
   };
@@ -149,6 +154,7 @@ export type ObservationAutomation = {
 export type StartObservation = {
   request_id: string;
   source_backtest_result_id: number;
+  forward_dataset_id?: string;
   horizon_sessions: number;
   max_symbol_weight: string;
   max_gross_weight: string;

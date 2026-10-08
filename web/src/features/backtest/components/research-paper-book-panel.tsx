@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { usePreferences } from '../../../shared/preferences/context';
 import { paperBookCopy, paperBookError } from '../copy-paper-book';
@@ -6,6 +6,7 @@ import { usePublishedDatasets } from '../dataset-api';
 import type { ResearchObservation } from '../observation-contracts';
 import { usePaperBookCommand, useResearchPaperBook } from '../paper-book-api';
 import type { PaperBookCommand } from '../paper-book-contracts';
+import { DatasetCorporateActions } from './dataset-corporate-actions';
 import { ResearchPaperBookStart } from './research-paper-book-start';
 import { ResearchPaperBookState } from './research-paper-book-state';
 
@@ -26,6 +27,14 @@ export function ResearchPaperBookPanel({
   const [datasetId, setDatasetId] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
+  const [collectingActions, setCollectingActions] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const pendingRequest = useRef<{ key: string; id: string } | null>(null);
   const query = useResearchPaperBook(observation.id, open);
   const mutation = usePaperBookCommand();
@@ -35,10 +44,10 @@ export function ResearchPaperBookPanel({
     datasets.data?.datasets.filter(
       (item) =>
         item.cross_source_verified === true &&
-        (book?.policy.corporate_action_mode === 'price_only' ||
-          Boolean(item.corporate_action_evidence)) &&
         /^sha256:[0-9a-f]{64}$/.test(item.dataset_id) &&
-        item.start_date === observation.source.start_date &&
+        item.start_date ===
+          (observation.source.forward_input?.start_date ??
+            observation.source.start_date) &&
         item.instruments.length === observation.universe.length &&
         new Set(
           item.instruments.map(
@@ -54,9 +63,20 @@ export function ResearchPaperBookPanel({
         ),
     ) ?? [];
   const selected = matching.find((item) => item.dataset_id === datasetId);
-  const waiting = busy || mutation.isPending || query.isFetching;
+  const waiting =
+    busy || mutation.isPending || query.isFetching || collectingActions;
   const blocked = waiting || query.isError || Boolean(error);
   const failure = error ? paperBookError(error, locale) : null;
+  const needsDistributions =
+    book?.policy.corporate_action_mode === 'reported_distributions_gross';
+  const distributionsReady =
+    !needsDistributions || Boolean(selected?.corporate_action_evidence);
+  const selectionScope = `${observation.id}:${book?.version}:${selected?.dataset_id}`;
+  const currentSelection = useRef({ scope: selectionScope, readable: false });
+  currentSelection.current = {
+    scope: selectionScope,
+    readable: !query.isError && !error && !datasets.isError,
+  };
 
   function requestId(key: string) {
     if (pendingRequest.current?.key !== key)
@@ -189,6 +209,30 @@ export function ResearchPaperBookPanel({
                 {selected.dataset_id}
               </p>
             ) : null}
+            {selected && needsDistributions ? (
+              <DatasetCorporateActions
+                key={`${observation.id}:${selected.dataset_id}`}
+                dataset={selected}
+                locale={locale}
+                busy={blocked || datasets.isFetching || datasets.isError}
+                onPendingChange={setCollectingActions}
+                onSelect={(dataset) => {
+                  if (
+                    mounted.current &&
+                    currentSelection.current.scope === selectionScope &&
+                    currentSelection.current.readable
+                  )
+                    setDatasetId(dataset.dataset_id);
+                }}
+              />
+            ) : null}
+            {selected && !distributionsReady ? (
+              <p role="status" className="app-muted text-xs leading-5">
+                {locale === 'zh'
+                  ? '该账本包含供应商报告的分红送转。请先为所选数据集采集证据，再执行结算；原账本保持不变。'
+                  : 'This book models reported distributions. Collect evidence for the selected dataset before settling; the saved book is unchanged.'}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -196,6 +240,7 @@ export function ResearchPaperBookPanel({
                 disabled={
                   blocked ||
                   !selected ||
+                  !distributionsReady ||
                   datasets.isFetching ||
                   datasets.isError
                 }

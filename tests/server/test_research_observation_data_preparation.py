@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import threading
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -43,10 +44,12 @@ from server.workers.data_worker import (
     _require_current_verified_daily_market_job,
     execute_verified_daily_market_job,
 )
+from tests.server.test_dataset_corporate_actions import _observe
 from tests.server.test_research_observation_inputs import (
     DAYS,
     NOW,
     STOCK,
+    calendar,
     dataset,
     source,
 )
@@ -80,7 +83,10 @@ def supplied(journey, monkeypatch):
             )
             for row in batch.rows:
                 scale = Decimal("0.2") if row.instrument == ETF else Decimal("1")
-                close = row.close_value + moves[DAYS.index(day)] * scale
+                move = moves[DAYS.index(day)] if day in DAYS else Decimal("0")
+                close = (
+                    row.close_value + move * scale + state.get("offset", Decimal("0"))
+                )
                 rows.append(
                     replace(
                         row,
@@ -112,8 +118,12 @@ def supplied(journey, monkeypatch):
             return replace(
                 batch,
                 rows=rows,
-                started_at=captured - timedelta(seconds=1),
-                completed_at=captured,
+                raw_payload=batch.raw_payload + str(state.get("offset", "0")).encode(),
+                started_at=captured
+                + timedelta(minutes=1 if state.get("offset") else 0)
+                - timedelta(seconds=1),
+                completed_at=captured
+                + timedelta(minutes=1 if state.get("offset") else 0),
             )
 
     descriptors = (BAOSTOCK_DAILY_BAR_DESCRIPTOR, AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR)
@@ -298,7 +308,7 @@ def test_explicit_supply_appends_full_basket_then_local_publication_and_restart(
     reopened = prepare(supplied)[0]
     assert reopened["generation"] == newer["generation"]
     assert reopened["dataset_id"] == ready["dataset_id"]
-    assert reopened["job_ids"] == ready["job_ids"]
+    assert reopened["job_ids"] == []
     assert state["calls"] == ["baostock", "akshare_tencent"]
 
 
@@ -516,6 +526,14 @@ def test_supply_drives_real_automatic_paper_fills_fees_and_later_marks(supplied)
     assert first["performance"]["costs_already_in_equity"] is True
     assert first["performance"]["account_authority"] is False
 
+    # Operational status can be rebuilt; the book's accepted inputs must still
+    # keep their exact partitions when preparation resumes after its loss.
+    with sqlite3.connect(observations.db.path) as conn:
+        conn.execute(
+            "DELETE FROM automation_runs WHERE run_id=?",
+            (f"research-observation-automation:{observation['id']}:latest:data",),
+        )
+
     current[0] = FUTURE + timedelta(days=1)
     second_pending = prepare(supplied)[0]
     assert len(second_pending["pending_job_ids"]) == 1
@@ -531,3 +549,341 @@ def test_supply_drives_real_automatic_paper_fills_fees_and_later_marks(supplied)
     assert second["performance"]["return_basis"] == "price_only"
     assert second["performance"]["corporate_action_coverage_complete"] is False
     assert state["calls"] == ["baostock", "akshare_tencent"] * 2
+
+
+@pytest.fixture
+def long_supplied(supplied):
+    client, observations, current, _, _, verified, jobs, state = supplied
+    history = tuple(
+        map(
+            date.fromisoformat, ("2024-01-02", "2024-06-03", "2024-09-02", "2025-01-03")
+        )
+    )
+    future = tuple(
+        map(
+            date.fromisoformat, ("2025-01-06", "2025-12-31", "2026-09-21", "2026-09-22")
+        )
+    )
+    for year in (2024, 2025, 2026):
+        observations.db.upsert_market_calendar_snapshot_sync(
+            calendar(year=year, trading_days=history + future)
+        )
+        observations.db.update_market_calendar_verification_sync(
+            exchange="SSE",
+            year=year,
+            source_fingerprint="a" * 64,
+            verification_status="verified",
+            official_source_url="https://example.test/calendar",
+            official_source_fingerprint="b" * 64,
+            verified_by="synthetic fixture",
+        )
+    _, original = dataset(observations.db.path.parent / "research", days=history)
+    row = source(original)
+    config = json.loads(row["config_json"])
+    config.update(start_date=history[0].isoformat(), end_date=history[-1].isoformat())
+    result_id = asyncio.run(
+        observations.db.save_backtest_result(
+            config_json=json.dumps(config),
+            metrics_json=row["metrics_json"],
+            initial_cash=100000,
+            final_equity=100000,
+            total_return=0,
+            sharpe=0,
+            max_dd=0,
+            equity_curve_json="[]",
+        )
+    )
+    current[0] = NOW
+    observation, _ = start(client, result_id)
+    observation = observations.repository.get(observation["id"])
+    current[0] = FUTURE
+    state["calls"].clear()
+    return (
+        client,
+        observations,
+        current,
+        observation,
+        {"dataset_id": original.dataset_id},
+        verified,
+        jobs,
+        state,
+    )
+
+
+def test_long_history_appends_bounded_batches_and_reuses_frozen_prior_batch(
+    long_supplied,
+):
+    _, observations, _, observation, prefix, _, jobs, state = long_supplied
+    toggle(long_supplied)
+    pending = prepare(long_supplied)[0]
+    dates = [
+        jobs.get(identity).payload["trade_date"]
+        for identity in pending["pending_job_ids"]
+    ]
+    assert dates == ["2025-01-06", "2025-12-31"]
+    assert pending["dataset_id"] == prefix["dataset_id"]
+    for identity in pending["pending_job_ids"]:
+        assert execute(long_supplied, identity).status == "succeeded"
+    first = prepare(long_supplied)[0]
+    assert first["status"] == "waiting"
+    assert first["last_blocker"]["code"] == "observation_data_preparation_catching_up"
+    assert first["through_session"] == "2025-12-31"
+    before = read_daily_bar_dataset(
+        observations.objects,
+        DatasetRef(observations.objects.resolve_ref(first["dataset_id"])),
+    ).snapshot
+    original = read_daily_bar_dataset(
+        observations.objects,
+        DatasetRef(observations.objects.resolve_ref(prefix["dataset_id"])),
+    ).snapshot
+    assert (original.end_date - original.start_date).days >= 366
+    assert before.partitions[: len(original.partitions)] == original.partitions
+    second_pending = prepare(long_supplied)[0]
+    assert second_pending["dataset_id"] == first["dataset_id"]
+    assert len(second_pending["pending_job_ids"]) == 1
+    assert (
+        jobs.get(second_pending["pending_job_ids"][0]).payload["trade_date"]
+        == "2026-09-21"
+    )
+    assert (
+        execute(long_supplied, second_pending["pending_job_ids"][0]).status
+        == "succeeded"
+    )
+    ready = prepare(long_supplied)[0]
+    assert ready["status"] == "completed"
+    after = read_daily_bar_dataset(
+        observations.objects,
+        DatasetRef(observations.objects.resolve_ref(ready["dataset_id"])),
+    ).snapshot
+    assert after.partitions[: len(before.partitions)] == before.partitions
+    assert prepare(long_supplied)[0]["dataset_id"] == ready["dataset_id"]
+    assert state["calls"] == ["baostock", "akshare_tencent"] * 3
+    assert (
+        observations.repository.get(observation["id"])["source"]
+        == observation["source"]
+    )
+
+
+def test_long_history_total_row_budget_blocks_before_enqueue(long_supplied):
+    _, observations, current, observation, _, _, jobs, state = long_supplied
+    policy = toggle(long_supplied)
+    bounded = {
+        **observation,
+        "policy": {**observation["policy"], "max_dataset_rows": 5},
+    }
+    before = jobs.list_recent(VERIFIED_DAILY_MARKET_JOB)
+    with pytest.raises(ValueError, match="observation_dataset_budget_exceeded"):
+        preparation._prepare(
+            observations,
+            CONFIG,
+            jobs,
+            bounded,
+            current[0],
+            {"observation_id": observation["id"], "generation": policy["generation"]},
+            lambda: False,
+        )
+    assert jobs.list_recent(VERIFIED_DAILY_MARKET_JOB) == before
+    assert state["calls"] == []
+
+
+def test_expired_consumer_history_blocks_new_and_already_queued_supply(
+    long_supplied, monkeypatch
+):
+    _, observations, current, _, _, _, jobs, state = long_supplied
+    toggle(long_supplied)
+    pending = prepare(long_supplied)[0]
+    existing = jobs.list_recent(VERIFIED_DAILY_MARKET_JOB)
+    current[0] = datetime(2035, 9, 21, 8, 10, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        preparation, "ResearchObservationService", lambda *args, **kwargs: observations
+    )
+
+    blocked = prepare(long_supplied)[0]
+    assert blocked["status"] == "blocked"
+    assert blocked["last_blocker"]["code"] == "observation_history_budget_exceeded"
+    assert jobs.list_recent(VERIFIED_DAILY_MARKET_JOB) == existing
+    assert execute(long_supplied, pending["pending_job_ids"][0]).status != "succeeded"
+    assert state["calls"] == []
+
+
+def test_revocation_in_later_batch_preserves_completed_prefix(long_supplied):
+    _, observations, _, observation, _, _, jobs, state = long_supplied
+    policy = toggle(long_supplied)
+    pending = prepare(long_supplied)[0]
+    for identity in pending["pending_job_ids"]:
+        assert execute(long_supplied, identity).status == "succeeded"
+    first = prepare(long_supplied)[0]
+    pending = prepare(long_supplied)[0]
+    state["calls"].clear()
+    state["after_fetch"] = lambda _: toggle(
+        long_supplied, preparation_enabled=False, generation=policy["generation"]
+    )
+    assert execute(long_supplied, pending["pending_job_ids"][0]).status != "succeeded"
+    assert state["calls"] == ["baostock"]
+    run = AutomationRunRepository(observations.db.path).get_automation_run_sync(
+        f"research-observation-automation:{observation['id']}:latest:data"
+    )
+    assert json.loads(run["payload_json"])["dataset_id"] == first["dataset_id"]
+    assert prepare(long_supplied) == []
+    assert not any(
+        entry.start_date == date(2024, 1, 2) and entry.end_date == date(2026, 9, 21)
+        for entry in DatasetCatalog(
+            observations.db.path.parent / "research"
+        ).list_daily_bar_datasets()
+    )
+
+
+def test_temporary_failure_retains_prefix_after_earlier_provider_revision(
+    supplied, monkeypatch
+):
+    _, observations, current, _, _, verified, jobs, state = supplied
+    toggle(supplied)
+    pending = prepare(supplied)[0]
+    original_job = jobs.get(pending["pending_job_ids"][0])
+    assert execute(supplied, original_job.job_id).status == "succeeded"
+    ready = prepare(supplied)[0]
+    frozen = read_daily_bar_dataset(
+        observations.objects,
+        DatasetRef(observations.objects.resolve_ref(ready["dataset_id"])),
+    ).snapshot
+
+    # A separately collected revision of an already settled date is not an
+    # instruction to replace this observation's previously accepted partition.
+    manual_payload = {
+        key: value
+        for key, value in original_job.payload.items()
+        if key != "observation_automation"
+    }
+    manual = jobs.enqueue(VERIFIED_DAILY_MARKET_JOB, manual_payload, now=current[0])
+    claimed = jobs.claim(
+        VERIFIED_DAILY_MARKET_JOB, "manual", now=current[0], job_id=manual.job_id
+    )
+    state["offset"] = Decimal("0.05")
+    revision = verified.run(claimed.payload, checked_at=current[0])
+    jobs.finish(claimed.lease, now=current[0], result_ref=revision.result_ref)
+    revised = read_daily_bar_dataset(
+        observations.objects, revision.dataset_ref
+    ).snapshot
+    assert revised.partitions[0] != frozen.partitions[-1]
+    state["offset"] = Decimal("0")
+
+    with monkeypatch.context() as transient:
+        transient.setattr(
+            preparation,
+            "resolve_latest_verified_closed_trading_date",
+            lambda *args: None,
+        )
+        failed = prepare(supplied)[0]
+    assert failed["status"] == "waiting"
+    assert failed["dataset_id"] == ready["dataset_id"]
+
+    current[0] += timedelta(days=1)
+    following = prepare(supplied)[0]
+    assert len(following["pending_job_ids"]) == 1
+    assert execute(supplied, following["pending_job_ids"][0]).status == "succeeded"
+    completed = prepare(supplied)[0]
+    appended = read_daily_bar_dataset(
+        observations.objects,
+        DatasetRef(observations.objects.resolve_ref(completed["dataset_id"])),
+    ).snapshot
+    assert appended.partitions[: len(frozen.partitions)] == frozen.partitions
+
+
+@pytest.mark.parametrize(
+    "status_actions,book_actions,extend_status,admitted",
+    [
+        ("first", None, False, True),
+        (None, "first", False, True),
+        ("second", "first", False, False),
+        (None, "first", True, False),
+        ("first", "first", True, True),
+    ],
+)
+def test_prepared_prefix_preserves_corporate_action_evidence_across_book_anchors(
+    journey, status_actions, book_actions, extend_status, admitted
+):
+    client, observations, current, source_ref, result_id = journey
+    observation, _ = start(client, result_id)
+    identity = observation["id"]
+    books = ResearchPaperBookService(observations.db, clock=lambda: current[0])
+    book = books.start(
+        identity,
+        request_id=str(uuid4()),
+        initial_cash=Decimal("100000"),
+        corporate_action_mode="price_only",
+    )
+    current[0] += timedelta(seconds=1)
+    observations.advance(
+        identity,
+        request_id=str(uuid4()),
+        expected_version=0,
+        dataset_id=source_ref.dataset_id,
+    )
+    current[0] = FUTURE
+    actions = {
+        "first": _observe(
+            observations.objects, at=FUTURE - timedelta(minutes=1)
+        ).object_id,
+        "second": _observe(observations.objects, at=FUTURE).object_id,
+    }
+
+    def bound_dataset(action, *, extended=False):
+        end = 7 if extended else 6
+        _, ref = dataset(
+            observations.db.path.parent / "research",
+            days=DAYS[:end],
+            cutoff=current[0],
+        )
+        if action is None:
+            return ref
+        snapshot = read_daily_bar_dataset(observations.objects, ref).snapshot
+        return publish_daily_bar_dataset_manifest(
+            observations.objects,
+            replace(snapshot, corporate_action_observation_ids=(actions[action],)),
+        )
+
+    book_ref = bound_dataset(book_actions)
+    books.settle(
+        identity,
+        request_id=str(uuid4()),
+        expected_version=book["version"],
+        dataset_id=book_ref.dataset_id,
+    )
+    assert books.get(identity)["steps"][-1]["dataset_id"] == book_ref.dataset_id
+    if extend_status:
+        current[0] += timedelta(days=1)
+    status_ref = bound_dataset(status_actions, extended=extend_status)
+    configured = client.put(
+        f"/api/research-observations/{identity}/automation",
+        json={"enabled": True, "dataset_preparation_enabled": True},
+    )
+    assert configured.status_code == 200, configured.text
+    AutomationRunRepository(observations.db.path).upsert_automation_run_sync(
+        {
+            "run_id": f"research-observation-automation:{identity}:latest:data",
+            "run_type": "research_observation_dataset_preparation",
+            "run_date": current[0].date().isoformat(),
+            "status": "completed",
+            "source_ref": identity,
+            "execution_mode": "research_inputs",
+            "payload": {"dataset_id": status_ref.dataset_id},
+        }
+    )
+    report = preparation.run_research_observation_data_preparation_once(
+        observations.db, CONFIG, now=current[0]
+    )[0]
+    if not admitted:
+        assert report["status"] == "blocked"
+        assert (
+            report["last_blocker"]["code"]
+            == "observation_data_preparation_prefix_mismatch"
+        )
+        return
+    assert report["status"] == "completed", report
+    expected = status_ref if status_actions else book_ref
+    assert report["dataset_id"] == expected.dataset_id
+    selected = read_daily_bar_dataset(
+        observations.objects,
+        DatasetRef(observations.objects.resolve_ref(report["dataset_id"])),
+    ).snapshot
+    assert selected.corporate_action_observation_ids == (actions["first"],)

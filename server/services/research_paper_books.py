@@ -45,8 +45,10 @@ from server.persistence.research_paper_books import ResearchPaperBooksRepository
 from server.services.backtest_costs import resolve_backtest_costs
 from server.services.research_observation_inputs import (
     latest_closed_session,
+    observation_input_binding,
     observation_outcome_sessions,
     read_research_observation_dataset,
+    require_observation_dataset_prefix,
 )
 from server.services.research_observations import (
     ResearchObservationService,
@@ -324,7 +326,10 @@ class ResearchPaperBookService:
             raise ValueError("paper_book_corporate_action_mode_unsupported")
         now = _instant(self.clock())
         calendar = self.observations._calendar(
-            date.fromisoformat(observation["source"]["start_date"]), now
+            date.fromisoformat(
+                observation_input_binding(observation["source"])["start_date"]
+            ),
+            now,
         )
         try:
             evaluation_start, _ = observation_outcome_sessions(
@@ -461,7 +466,8 @@ class ResearchPaperBookService:
             raise ValueError("paper_book_code_changed")
         now = _instant(self.clock())
         calendar = self.observations._calendar(
-            date.fromisoformat(book["source"]["start_date"]), now
+            date.fromisoformat(observation_input_binding(book["source"])["start_date"]),
+            now,
         )
         end = latest_closed_session(calendar, now=now)
         start = date.fromisoformat(book["evaluation_start"])
@@ -491,11 +497,17 @@ class ResearchPaperBookService:
                         )
                         for item in book["source"]["universe"]
                     ),
-                    start_date=date.fromisoformat(book["source"]["start_date"]),
+                    start_date=date.fromisoformat(
+                        observation_input_binding(book["source"])["start_date"]
+                    ),
                     now=_instant(captured),
                     calendar_rows=rows,
                     minimum_bars=book["source"]["minimum_bars"],
                 )
+                if "forward_input" in book["source"]:
+                    require_observation_dataset_prefix(
+                        self.observations.objects, book["source"], result.snapshot
+                    )
                 if len(result.bars) > book["policy"]["max_dataset_rows"]:
                     raise ValueError("paper_book_dataset_budget_exceeded")
                 # Inspect the complete bound provider report, including terms

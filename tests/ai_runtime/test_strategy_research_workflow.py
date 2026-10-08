@@ -1490,6 +1490,10 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
             "external.strategy_hypothesis_researcher.v10",
             "karkinos.ai.strategy_research_prompt.v11",
         ),
+        (
+            "external.strategy_hypothesis_researcher.v16",
+            "karkinos.ai.strategy_research_prompt.v17",
+        ),
     ):
         registry.register_role(
             AgentRole(
@@ -1544,14 +1548,15 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v9" in role_ids
     assert "external.strategy_hypothesis_researcher.v10" in role_ids
     assert "external.strategy_hypothesis_researcher.v16" in role_ids
+    assert "external.strategy_hypothesis_researcher.v17" in role_ids
     current_role = next(
         item
         for item in service._ai_store.list_roles()
-        if item.role_id == "external.strategy_hypothesis_researcher.v16"
+        if item.role_id == "external.strategy_hypothesis_researcher.v17"
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v17"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v18"
     )
 
     backtest = await service.run_formula_backtest(
@@ -1758,9 +1763,21 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert external_result["robustness_evidence_fingerprint"] == content_fingerprint(
         {
             key: external_result[key]
-            for key in ("parameter_robustness", "market_regime_robustness")
+            for key in (
+                "parameter_robustness",
+                "market_regime_robustness",
+                "cost_sensitivity",
+            )
         }
     )
+    assert len(external_result["cost_sensitivity"]) == 2
+    for actual, saved_stress in zip(
+        external_result["cost_sensitivity"],
+        saved_metrics["cost_sensitivity"],
+        strict=True,
+    ):
+        assert actual["total_return"] == saved_stress["total_return"]
+        assert actual["slippage_bps"] == float(saved_stress["slippage_bps"])
     external_oos = critique_input["critique_input"]["canonical_backtest"][
         "oos_validation"
     ]

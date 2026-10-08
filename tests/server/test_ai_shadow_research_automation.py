@@ -3801,6 +3801,15 @@ async def test_five_round_policy_critiques_blocked_candidates_and_feeds_measured
         initial_cash=1_000_000.0,
         include_parameter_panel=True,
     )
+    candidate_payload["metrics_json"]["cost_sensitivity"] = [
+        {
+            "slippage_bps": "25",
+            "max_volume_participation": "0.01",
+            "total_return": -0.08,
+            "max_drawdown": 0.18,
+            "fill_count": 12,
+        }
+    ]
     curve = candidate_payload["equity_curve"]
     candidate_payload["metrics_json"]["market_regime_robustness"] = (
         build_backtest_market_regime_evidence(
@@ -3851,9 +3860,17 @@ async def test_five_round_policy_critiques_blocked_candidates_and_feeds_measured
             "max_candidates_per_run": 5,
         }
     )
-    monkeypatch.setattr(
-        service, "_prepare_baseline", lambda policy: _prepared_baseline()
-    )
+    prepared = _prepared_baseline()
+    prepared.result["metrics_json"]["cost_sensitivity"] = [
+        {
+            "slippage_bps": "25",
+            "max_volume_participation": "0.01",
+            "total_return": -0.02,
+            "max_drawdown": 0.16,
+            "fill_count": 8,
+        }
+    ]
+    monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
 
     def unexpected_valuation(*args, **kwargs):
         raise AssertionError("normalized-notional discovery must not read valuation")
@@ -3891,6 +3908,8 @@ async def test_five_round_policy_critiques_blocked_candidates_and_feeds_measured
         feedback = parent["evaluation"]["research_feedback"]
         assert feedback["comparison_reference"] == "baseline"
         assert feedback["candidate"]["result_id"] == candidate_result_id
+        assert feedback["candidate"]["cost_sensitivity"][0]["total_return"] == -0.08
+        assert feedback["baseline"]["cost_sensitivity"][0]["total_return"] == -0.02
         assert (
             feedback["candidate"]["parameter_robustness"]["tested_results"]
             == (

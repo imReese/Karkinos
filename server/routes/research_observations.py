@@ -51,6 +51,13 @@ def create_router() -> APIRouter:
             for item in observations
         ]
 
+    @router.get("/sources/{source_backtest_result_id}")
+    async def source_inputs(source_backtest_result_id: int) -> dict[str, Any]:
+        try:
+            return await _service().source_inputs(source_backtest_result_id)
+        except ValueError as exc:
+            raise _error(exc) from exc
+
     @router.get("/{observation_id}")
     def get_observation(observation_id: UUID) -> dict[str, Any]:
         service = _service()

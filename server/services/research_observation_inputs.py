@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Any
@@ -32,7 +32,10 @@ class ResearchObservationInputError(ValueError):
 
 
 def load_research_observation_source(
-    row: Mapping[str, Any], objects: ContentAddressedObjectStore
+    row: Mapping[str, Any],
+    objects: ContentAddressedObjectStore,
+    *,
+    allow_unbound_dataset: bool = False,
 ) -> dict[str, Any]:
     """Freeze a saved strategy definition without upgrading its historical proof."""
     config = _object(row.get("config_json"))
@@ -48,9 +51,13 @@ def load_research_observation_source(
         if start > end:
             raise ValueError
         if config.get("strategy") == "dual_ma":
-            detail = _dual_ma_source(config, metrics, objects, start, end)
+            detail = _dual_ma_source(
+                config, metrics, objects, start, end, allow_unbound_dataset
+            )
         elif config.get("strategy") == "etf_rotation":
-            detail = _rotation_source(config, metrics, objects, start, end)
+            detail = _rotation_source(
+                config, metrics, objects, start, end, allow_unbound_dataset
+            )
         elif config.get("strategy") == "ai_formula_research":
             detail = _formula_source(config, metrics, start, end)
         else:
@@ -70,6 +77,57 @@ def load_research_observation_source(
             "cost_model_reference"
         ),
         **detail,
+    }
+
+
+def observation_input_binding(source: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep a new forward warmup separate from the immutable research identity."""
+    if "forward_input" in source:
+        value = source["forward_input"]
+        if (
+            not isinstance(value, Mapping)
+            or set(value) != {"dataset_id", "start_date", "end_date"}
+            or any(not isinstance(item, str) or not item for item in value.values())
+        ):
+            raise ResearchObservationInputError("observation_forward_input_invalid")
+        return dict(value)
+    return {
+        "dataset_id": source["dataset_id"]
+        if source["source_dataset_kind"] == "immutable_dataset"
+        else source.get("immutable_dataset_id"),
+        "start_date": source["start_date"],
+        "end_date": source["end_date"],
+    }
+
+
+def bind_observation_forward_input(
+    objects: ContentAddressedObjectStore,
+    source: Mapping[str, Any],
+    dataset_id: str,
+    *,
+    now: datetime,
+    calendar_reader: Callable[[date, datetime], Sequence[dict[str, Any]]],
+) -> dict[str, str]:
+    """Verify a newly selected warmup without recertifying the source backtest."""
+    snapshot = _read(objects, dataset_id).snapshot
+    result = read_research_observation_dataset(
+        objects,
+        dataset_id,
+        instruments=tuple(
+            InstrumentKey.from_values(item["symbol"], item["instrument_type"])
+            for item in source["instruments"]
+        ),
+        start_date=snapshot.start_date,
+        now=now,
+        calendar_rows=calendar_reader(snapshot.start_date, now),
+        minimum_bars=source["minimum_bars"],
+    )
+    if len(result.bars) > 200_000:
+        raise ResearchObservationInputError("observation_dataset_budget_exceeded")
+    return {
+        "dataset_id": dataset_id,
+        "start_date": snapshot.start_date.isoformat(),
+        "end_date": snapshot.end_date.isoformat(),
     }
 
 
@@ -171,12 +229,8 @@ def require_observation_dataset_prefix(
     source: Mapping[str, Any],
     snapshot: DailyBarDatasetSnapshot,
 ) -> None:
-    """An opted-in input supply must preserve its frozen research prefix."""
-    identity = (
-        source["dataset_id"]
-        if source["source_dataset_kind"] == "immutable_dataset"
-        else source.get("immutable_dataset_id")
-    )
+    """Preserve the frozen forward input, or the original legacy research prefix."""
+    identity = observation_input_binding(source)["dataset_id"]
     if not identity:
         raise ResearchObservationInputError(
             "observation_data_preparation_verified_source_required"
@@ -247,20 +301,43 @@ def observation_outcome_sessions(
     return reference, end
 
 
-def _dual_ma_source(config, metrics, objects, start, end):
+def _unbound_source_instruments(config):
+    assets = config.get("assets")
+    if assets is None and config.get("symbol"):
+        assets = [
+            {"symbol": config["symbol"], "asset_class": config.get("asset_class")}
+        ]
+    return _instruments(assets)
+
+
+def _unbound_dataset_identity(metrics):
+    snapshot = (
+        _object(metrics["dataset_snapshot"])
+        if metrics.get("dataset_snapshot") is not None
+        else {}
+    )
+    return {
+        "dataset_id": snapshot.get("snapshot_id"),
+        "source_dataset_kind": "analytics_snapshot" if snapshot else "saved_report",
+    }
+
+
+def _dual_ma_source(config, metrics, objects, start, end, allow_unbound_dataset=False):
     dataset_id = config.get("dataset_id")
-    if not dataset_id:
+    if not dataset_id and not allow_unbound_dataset:
         raise ResearchObservationInputError(
             "observation_source_formal_dataset_required"
         )
-    result = _read(objects, dataset_id)
-    snapshot = result.snapshot
-    if (snapshot.start_date, snapshot.end_date) != (start, end):
-        raise ResearchObservationInputError("observation_source_dataset_mismatch")
-    binding_id = (metrics.get("dataset_binding") or {}).get("dataset_id")
-    if binding_id != dataset_id:
-        raise ResearchObservationInputError("observation_source_dataset_mismatch")
-    instruments = snapshot.instruments
+    if dataset_id:
+        snapshot = _read(objects, dataset_id).snapshot
+        if (snapshot.start_date, snapshot.end_date) != (start, end):
+            raise ResearchObservationInputError("observation_source_dataset_mismatch")
+        binding_id = (metrics.get("dataset_binding") or {}).get("dataset_id")
+        if binding_id != dataset_id:
+            raise ResearchObservationInputError("observation_source_dataset_mismatch")
+        instruments = snapshot.instruments
+    else:
+        instruments = _unbound_source_instruments(config)
     if (
         config.get("assets") is not None
         and _instruments(config["assets"]) != instruments
@@ -279,28 +356,33 @@ def _dual_ma_source(config, metrics, objects, start, end):
     return {
         "strategy_kind": "dual_ma",
         "parameters": validated,
-        "dataset_id": dataset_id,
-        "source_dataset_kind": "immutable_dataset",
+        **(
+            {"dataset_id": dataset_id, "source_dataset_kind": "immutable_dataset"}
+            if dataset_id
+            else _unbound_dataset_identity(metrics)
+        ),
         "instruments": _instrument_payload(instruments),
         "minimum_bars": validated["long_period"] + 1,
         "entry_target_weight": "1",
     }
 
 
-def _rotation_source(config, metrics, objects, start, end):
+def _rotation_source(config, metrics, objects, start, end, allow_unbound_dataset=False):
     dataset_id = config.get("dataset_id")
-    if not dataset_id:
+    if not dataset_id and not allow_unbound_dataset:
         raise ResearchObservationInputError(
             "observation_source_formal_dataset_required"
         )
-    snapshot = _read(objects, dataset_id).snapshot
-    if (snapshot.start_date, snapshot.end_date) != (start, end) or (
-        metrics.get("dataset_binding") or {}
-    ).get("dataset_id") != dataset_id:
-        raise ResearchObservationInputError("observation_source_dataset_mismatch")
-    if _instruments(config.get("assets")) != snapshot.instruments or any(
-        item.instrument_type is not InstrumentType.ETF for item in snapshot.instruments
-    ):
+    instruments = _instruments(config.get("assets"))
+    if dataset_id:
+        snapshot = _read(objects, dataset_id).snapshot
+        if (snapshot.start_date, snapshot.end_date) != (start, end) or (
+            metrics.get("dataset_binding") or {}
+        ).get("dataset_id") != dataset_id:
+            raise ResearchObservationInputError("observation_source_dataset_mismatch")
+        if instruments != snapshot.instruments:
+            raise ResearchObservationInputError("observation_source_universe_mismatch")
+    if any(item.instrument_type is not InstrumentType.ETF for item in instruments):
         raise ResearchObservationInputError("observation_source_universe_mismatch")
     params = validate_strategy_params(
         "etf_rotation",
@@ -309,15 +391,18 @@ def _rotation_source(config, metrics, objects, start, end):
     )
     # A defensive ETF has to be part of the saved, verified trading universe.
     if params["cash_proxy"] and params["cash_proxy"] not in {
-        item.symbol for item in snapshot.instruments
+        item.symbol for item in instruments
     }:
         raise ResearchObservationInputError("observation_cash_proxy_outside_universe")
     return {
         "strategy_kind": "etf_rotation",
         "parameters": params,
-        "dataset_id": dataset_id,
-        "source_dataset_kind": "immutable_dataset",
-        "instruments": _instrument_payload(snapshot.instruments),
+        **(
+            {"dataset_id": dataset_id, "source_dataset_kind": "immutable_dataset"}
+            if dataset_id
+            else _unbound_dataset_identity(metrics)
+        ),
+        "instruments": _instrument_payload(instruments),
         "minimum_bars": max(
             params["lookback_period"],
             params["volatility_window"] if params["use_risk_adjusted"] else 1,

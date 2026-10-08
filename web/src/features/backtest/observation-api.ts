@@ -6,7 +6,36 @@ import type {
   ResearchObservation,
 } from './observation-contracts';
 
+type ObservationSource = {
+  source_backtest_result_id: number;
+  strategy_kind: string;
+  instruments: { symbol: string; instrument_type: 'stock' | 'etf' }[];
+  minimum_bars: number;
+};
+
 const path = '/api/research-observations';
+
+export function useObservationSource(sourceResultId: number) {
+  return useQuery({
+    queryKey: ['research-observation-source', sourceResultId],
+    queryFn: async () => {
+      const source = await apiClient<ObservationSource>(
+        `${path}/sources/${sourceResultId}`,
+      );
+      if (
+        source.source_backtest_result_id !== sourceResultId ||
+        !Array.isArray(source.instruments) ||
+        !source.instruments.length ||
+        !Number.isSafeInteger(source.minimum_bars) ||
+        source.minimum_bars < 1
+      )
+        throw new Error('observation_source_response_mismatch');
+      return source;
+    },
+    retry: false,
+  });
+}
+
 const queryKey = (sourceResultId: number) => [
   'research-observations',
   sourceResultId,

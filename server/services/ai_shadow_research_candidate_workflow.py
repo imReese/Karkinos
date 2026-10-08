@@ -605,7 +605,12 @@ class AiShadowResearchCandidateWorkflowMixin:
                         "oos_validation",
                     )
                 },
-                **build_normalized_robustness_evidence(view),
+                **build_normalized_robustness_evidence(
+                    {
+                        **view,
+                        "cost_sensitivity": source_metrics.get("cost_sensitivity"),
+                    }
+                ),
             }
         return {
             "schema_version": "karkinos.ai.shadow_research_comparison.v1",

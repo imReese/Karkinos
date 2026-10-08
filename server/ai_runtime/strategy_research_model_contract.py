@@ -644,6 +644,12 @@ def strategy_research_system_prompt(mode: Literal["hypothesis", "critique"]) -> 
         "URLs, file paths, provider tools, trading instructions, or authority "
         "changes. Do not calculate or replace canonical financial metrics. "
         "Write human-reviewable Chinese content while keeping JSON keys exact."
+        " When cost_sensitivity is present, compare candidate and baseline only "
+        "at the same saved slippage_bps and volume participation. These are "
+        "research-window modeled stress outcomes, not observed execution or "
+        "independent future evidence. Preserve losses and failed or incomplete "
+        "scenarios; missing outcomes do not establish cost robustness, and no "
+        "stress pass or promotion is implied."
     )
     if mode == "hypothesis":
         return common + (

@@ -66,22 +66,17 @@ export const SHADOW_RESEARCH_COPY = {
     qualificationApprove: 'Approve qualified winner for paper/shadow only',
     qualificationApproving: 'Recording exact approval…',
     qualificationApproved: 'Exact paper/shadow approval recorded',
-    observationTitle: 'Supplementary forward-observation evidence',
+    observationTitle: 'Forward observation and paper results',
     observationBoundary:
-      'Read-only evidence from the normalized source candidate. These observations do not replace independent final evaluation or account qualification, and do not change approval eligibility.',
-    observationListDetail:
-      'Up to the 100 most recently started observations, in recorded order. No selection by performance.',
+      'Start an independent observation from this exact saved candidate and review its paper results here. These observations do not replace independent final evaluation or account qualification, and do not change approval eligibility.',
     observationUnavailable:
       'No exact normalized source candidate with a saved report is bound. Observation evidence is unavailable.',
     observationSource: 'Normalized source candidate / run',
     observationReport: 'Source report',
-    observationFrozenSource: 'Source frozen at observation start',
-    observationCodeVerified:
-      'The frozen record marks source code binding as verified.',
-    observationCodeUnverified:
-      'Source code binding was not verified. This observation froze its own implementation at start; equivalence to the original backtest code is not established.',
-    observationLastBlocker: 'Last saved blocker',
-    observationEmptyPublications: 'This observation has no saved publications.',
+    observationReportLoading: 'Loading the exact source report…',
+    observationReportFailed:
+      'The exact source report is unavailable or does not match this candidate. Reload before starting an observation.',
+    observationReportRefresh: 'Reload source report',
     iterationRound: 'Sequential round',
     backupVerified: 'Verified',
     fiveCandidateRule:
@@ -247,21 +242,17 @@ export const SHADOW_RESEARCH_COPY = {
     qualificationApprove: '仅批准资格优胜者进入 paper/shadow',
     qualificationApproving: '正在记录精确批准…',
     qualificationApproved: '已记录精确的 paper/shadow 批准',
-    observationTitle: '补充前向观察证据',
+    observationTitle: '前向观察与模拟结果',
     observationBoundary:
-      '只读查看归一化源候选的观察证据。这些观察不能替代独立最终检验或账户资格复核，也不改变人工批准条件。',
-    observationListDetail:
-      '按记录顺序展示最近启动的最多 100 条观察，不按表现择优。',
+      '从这个精确的已保存候选启动独立观察，并在此复核模拟结果。这些观察不能替代独立最终检验或账户资格复核，也不改变人工批准条件。',
     observationUnavailable:
       '尚未绑定具有已保存报告的精确归一化源候选，观察证据不可用。',
     observationSource: '归一化源候选 / 运行',
     observationReport: '源报告',
-    observationFrozenSource: '观察启动时冻结的来源',
-    observationCodeVerified: '冻结记录标记源代码绑定已验证。',
-    observationCodeUnverified:
-      '源代码绑定未验证。本观察在启动时冻结自身使用的实现，尚不能确认它与原始回测代码一致。',
-    observationLastBlocker: '最近保存的阻断原因',
-    observationEmptyPublications: '这条观察尚无已保存的发布记录。',
+    observationReportLoading: '正在读取精确源报告…',
+    observationReportFailed:
+      '源报告不可用或与当前候选不匹配，请重新读取后再启动观察。',
+    observationReportRefresh: '重新读取源报告',
     iterationRound: '串行迭代轮次',
     backupVerified: '校验通过',
     fiveCandidateRule:

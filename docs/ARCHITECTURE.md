@@ -482,9 +482,21 @@ When this supply permission is enabled, automatic target and paper consumers als
 check the selected Dataset against the original prefix. A newer catalog entry
 with revised history blocks the action; it cannot silently substitute that history
 or cause fallback to an older matching entry.
-The scope is at most 32 instruments and 366 calendar days from the original start,
-within the configured provider budgets. Receipt-only sources without a verified
-immutable prefix remain blocked for automatic preparation.
+The scope is at most 32 instruments, within the frozen total row limit and configured
+provider budgets. Each appended batch spans at most 366 calendar days; successful
+batches extend the preserved prefix and serve as the next batch's cursor. Pending
+or failed jobs cannot advance that cursor. Long-lived observations do not lose data
+supply merely because their original start is more than a year old.
+
+At observation creation, an explicit forward Dataset may supply a separate warmup
+history. The source report identity, original research dates and parameters stay
+unchanged. This Dataset binds the same typed universe, complete verified sessions,
+minimum warmup and latest closed session at creation. Its availability must precede
+creation. Strategy state is recomputed from that seed, not claimed to continue the
+old backtest state. Subsequent manual and automatic observation/paper inputs must
+preserve its exact partitions. Existing observations without this binding retain
+their original source history. A verified prefix is still required for automatic
+preparation; a new seed does not certify historical research or account publication.
 
 This permission never enables target publication or paper settlement. Queued jobs
 bind the configuration generation. Revocation is checked at provider entry, visible

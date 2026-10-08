@@ -122,6 +122,171 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test('prepares verified warmup and starts an old report as a separate forward experiment', async () => {
+  const oldReport = {
+    ...report,
+    config: {
+      ...report.config,
+      dataset_id: null,
+      start_date: '2024-01-02',
+      end_date: '2024-12-31',
+    },
+  };
+  const warmup = { ...dataset, partition_count: 11 };
+  let published = false;
+  let saved: ResearchObservation | null = null;
+  const commands: { path: string; body: Record<string, unknown> }[] = [];
+  const job = {
+    job_id: 'job-1',
+    trade_date: '2026-09-15',
+    source_policy_id: 'verified-policy',
+    status: 'queued',
+    result_ref: null,
+    instruments: warmup.instruments,
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (init?.method === 'POST') commands.push({ path, body });
+      if (path === '/api/research-observations/sources/7')
+        return json({
+          source_backtest_result_id: 7,
+          strategy_kind: 'dual_ma',
+          instruments: warmup.instruments,
+          minimum_bars: 3,
+        });
+      if (path === '/api/backtest/datasets')
+        return json({ datasets: published ? [warmup] : [] });
+      if (path === '/api/backtest/datasets/verified-jobs')
+        return json({ jobs: [job] });
+      if (path === '/api/backtest/datasets/verified-jobs/job-1')
+        return json({ ...job, status: 'succeeded' });
+      if (path === '/api/backtest/datasets/verified-interval') {
+        published = true;
+        return json(warmup);
+      }
+      if (path.startsWith('/api/research-observations?'))
+        return json(saved ? [saved] : []);
+      if (path === '/api/research-observations' && init?.method === 'POST') {
+        saved = {
+          ...initial,
+          source: {
+            ...initial.source,
+            start_date: '2024-01-02',
+            dataset_id: null,
+            forward_input: {
+              dataset_id: datasetId,
+              start_date: warmup.start_date,
+              end_date: warmup.end_date,
+            },
+          },
+        };
+        return json({ id: observationId });
+      }
+      if (path === `/api/research-observations/${observationId}`)
+        return json(saved);
+      throw new Error(`Unexpected request ${path}`);
+    }),
+  );
+  mount('en', oldReport);
+  await screen.findByText(/At least 3 sessions per instrument/);
+  expect(
+    screen.getByRole('button', { name: 'Start observation' }),
+  ).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Warmup start date'), {
+    target: { value: warmup.start_date },
+  });
+  fireEvent.change(screen.getByLabelText('Latest closed session'), {
+    target: { value: warmup.end_date },
+  });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Submit two-source verification' }),
+  );
+  await screen.findByTestId('verified-job-status');
+  expect(
+    screen.getByRole('button', { name: 'Publish verified interval Dataset' }),
+  ).toBeDisabled();
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Refresh verification status' }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Publish verified interval Dataset' }),
+    ).toBeEnabled(),
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Publish verified interval Dataset' }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Start observation' }),
+    ).toBeEnabled(),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Start observation' }));
+  await screen.findByText(/Warmup history for this observation/);
+  expect(commands.map((command) => command.path)).toEqual([
+    '/api/backtest/datasets/verified-jobs',
+    '/api/backtest/datasets/verified-interval',
+    '/api/research-observations',
+  ]);
+  expect(commands[0].body).toMatchObject({
+    symbol: '600001',
+    instrument_type: 'stock',
+    start_date: warmup.start_date,
+    end_date: warmup.end_date,
+  });
+  expect(commands[2].body).toMatchObject({
+    source_backtest_result_id: 7,
+    forward_dataset_id: datasetId,
+  });
+  expect(oldReport.config.start_date).toBe('2024-01-02');
+  expect(oldReport.config.dataset_id).toBeNull();
+});
+
+test('cannot select mismatched, unverified or short warmup data for a new observation', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path === '/api/research-observations/sources/7')
+      return json({
+        source_backtest_result_id: 7,
+        strategy_kind: 'dual_ma',
+        minimum_bars: 20,
+        instruments: dataset.instruments,
+      });
+    if (path === '/api/backtest/datasets')
+      return json({
+        datasets: [
+          { ...dataset, partition_count: 19 },
+          { ...dataset, partition_count: 30, cross_source_verified: false },
+          {
+            ...dataset,
+            partition_count: 30,
+            instruments: [{ symbol: '600001', instrument_type: 'etf' }],
+          },
+        ],
+      });
+    return json([]);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  mount('en', { ...report, config: { ...report.config, dataset_id: null } });
+  await screen.findByText(/At least 20 sessions per instrument/);
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Refresh forward inputs' }),
+    ).toBeEnabled(),
+  );
+  expect(
+    within(
+      screen.getByLabelText('Warmup dataset for this observation'),
+    ).getAllByRole('option'),
+  ).toHaveLength(1);
+  expect(
+    screen.getByRole('button', { name: 'Start observation' }),
+  ).toBeDisabled();
+});
+
 test('opens the forward journey immediately and permits a saved ETF rotation source', async () => {
   vi.stubGlobal(
     'fetch',
