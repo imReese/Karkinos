@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from backtest.costs import research_friction_assumptions
 from backtest.engine import BacktestExecutionConfig
 from core.types import GOLD_SPOT_COMMISSION_RATE, CommissionType
 from execution.commission import (
@@ -39,12 +40,13 @@ def resolve_backtest_costs(
     commission.set_commission(CommissionType.STOCK_A, stock)
     commission.set_commission(CommissionType.FUND_ETF, etf)
     slippage_bps = Decimal(str(inputs.slippage_bps))
+    participation = Decimal(str(inputs.max_volume_participation))
     bond = BondExchangeCommission()
     effective = {
         "schema_version": "karkinos.backtest_cost_assumptions.v1",
         "source": "research_simulation",
-        "slippage_model": "percent_of_reference_price",
-        "slippage_bps": str(slippage_bps),
+        **research_friction_assumptions(slippage_bps),
+        "max_volume_participation": str(participation),
         "stock": {
             **_fee_parameters(stock),
             "sell_stamp_tax_rate": str(stock.stamp_tax_rate),
@@ -60,13 +62,15 @@ def resolve_backtest_costs(
         "limitations": [
             "Research assumptions are not a reviewed broker fee schedule.",
             "Tax and transfer-fee rates use the built-in model, not historical dated schedules.",
-            "Fixed proportional slippage does not model market impact or partial fills.",
+            "Slippage and participation are research assumptions, not calibrated execution evidence.",
+            "Daily-bar participation caps model partial fills but not intraday order-book liquidity.",
         ],
     }
     return (
         BacktestExecutionConfig(
             commission_calc=commission,
             slippage_model=PercentSlippage(slippage_bps / Decimal("10000")),
+            max_volume_participation=participation,
         ),
         effective,
     )

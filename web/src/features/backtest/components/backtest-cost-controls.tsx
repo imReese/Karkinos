@@ -57,7 +57,13 @@ export function BacktestCostControls({
                   type="number"
                   min="0"
                   step="any"
-                  max={field.endsWith('_rate') ? 10000 : undefined}
+                  max={
+                    field.endsWith('_rate')
+                      ? 10000
+                      : field === 'max_volume_participation'
+                        ? 100
+                        : undefined
+                  }
                   value={inputs.values[field] ?? ''}
                   disabled={disabled}
                   placeholder={labels.inherited}

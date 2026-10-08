@@ -7,6 +7,7 @@ export const backtestCostFields = [
   'etf_commission_rate',
   'etf_min_commission',
   'slippage_bps',
+  'max_volume_participation',
 ] as const;
 
 export function useBacktestCostInputs() {
@@ -25,12 +26,17 @@ export function useBacktestCostInputs() {
         !Number.isFinite(value) ||
         value < 0 ||
         (field.endsWith('_rate') && value > 10000) ||
-        (field === 'slippage_bps' && value >= 10000)
+        (field === 'slippage_bps' && value >= 10000) ||
+        (field === 'max_volume_participation' && (value <= 0 || value > 100))
       ) {
         valid = false;
         continue;
       }
-      assumptions[field] = field.endsWith('_rate') ? value / 10000 : value;
+      assumptions[field] = field.endsWith('_rate')
+        ? value / 10000
+        : field === 'max_volume_participation'
+          ? value / 100
+          : value;
     }
   }
   return {

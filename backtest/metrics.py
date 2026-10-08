@@ -291,7 +291,13 @@ def calculate_backtest_metrics(
     risk_free_rate: float = 0.03,
 ) -> BacktestMetrics:
     """Calculate standard performance and cost metrics from equity curve."""
-    equities = [float(equity) for _, equity in equity_curve]
+    # The first recorded close is already after trading/costs. Initial cash is
+    # the book's pre-session anchor, not an invented timestamped observation.
+    equities = (
+        ([float(initial_cash)] + [float(equity) for _, equity in equity_curve])
+        if equity_curve
+        else []
+    )
     returns = [
         Decimal(str((equities[i] - equities[i - 1]) / equities[i - 1]))
         for i in range(1, len(equities))

@@ -1,4 +1,5 @@
 import { usePreferences } from '../../../shared/preferences/context';
+import { formatPercent } from '../../../shared/format';
 import { StatusBadge } from '../../../shared/ui/workbench';
 import type {
   BacktestReport,
@@ -6,6 +7,7 @@ import type {
   BacktestCapacityReview,
 } from '../api';
 import { backtestCostCopy } from '../copy-costs';
+import { readBacktestEffectiveCosts } from '../cost-contracts';
 
 function numeric(value: string | number | undefined, scale = 1) {
   if (value === undefined || value === null || value === '') return '—';
@@ -31,13 +33,14 @@ export function BacktestCostEvidencePanel({
       <BacktestEffectiveCostsView
         costs={report.metrics_json?.cost_assumptions}
       />
+      <CostSensitivity report={report} />
       <CapacityReview capacity={report.metrics_json?.capacity_review} />
     </section>
   );
 }
 
 export function BacktestEffectiveCostsView({
-  costs,
+  costs: recordedCosts,
   recordedLabel,
 }: {
   costs?: BacktestEffectiveCosts | null;
@@ -45,14 +48,11 @@ export function BacktestEffectiveCostsView({
 }) {
   const { locale } = usePreferences();
   const labels = backtestCostCopy[locale];
-  if (
-    !costs ||
-    costs.schema_version !== 'karkinos.backtest_cost_assumptions.v1' ||
-    costs.slippage_model !== 'percent_of_reference_price'
-  ) {
+  const costs = readBacktestEffectiveCosts(recordedCosts);
+  if (!costs) {
     return (
       <p className="app-muted mt-3 text-xs leading-5">
-        {costs ? labels.unsupportedCosts : labels.missingCosts}
+        {recordedCosts ? labels.unsupportedCosts : labels.missingCosts}
       </p>
     );
   }
@@ -62,60 +62,89 @@ export function BacktestEffectiveCostsView({
   return (
     <div className="mt-3 min-w-0">
       <p className="app-muted text-xs">{recordedLabel ?? labels.recorded}</p>
-      <dl className="mt-2 text-sm">
-        <dt className="app-muted text-xs">{labels.slippage}</dt>
-        <dd className="mt-1 font-mono tabular-nums">
-          {numeric(costs.slippage_bps)} {labels.bps}
-        </dd>
+      <dl className="mt-2 grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="app-muted text-xs">{labels.slippage}</dt>
+          <dd className="mt-1 font-mono tabular-nums">
+            {numeric(costs.slippage_bps)} {labels.bps}
+          </dd>
+        </div>
+        <div>
+          <dt className="app-muted text-xs">{labels.participation}</dt>
+          <dd className="mt-1 font-mono tabular-nums">
+            {costs.max_volume_participation === undefined
+              ? labels.participationMissing
+              : `${numeric(costs.max_volume_participation, 100)}%`}
+          </dd>
+        </div>
       </dl>
-      <div
-        className="mt-3 min-w-0 overflow-x-auto"
-        role="region"
-        aria-label={recordedLabel ?? labels.recorded}
-        tabIndex={0}
-      >
-        <table className="w-full min-w-[680px] text-left text-xs">
-          <caption className="sr-only">
-            {recordedLabel ?? labels.recorded}
-          </caption>
-          <thead className="app-muted">
-            <tr>
-              {[
-                labels.asset,
-                labels.commission,
-                labels.minimum,
-                labels.stamp,
-                labels.transfer,
-                labels.other,
-              ].map((label) => (
-                <th key={label} className="px-2 py-2 font-medium">
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ asset, fees }) => (
-              <tr key={asset} className="border-t border-[var(--app-divider)]">
-                <th scope="row" className="px-2 py-2 font-medium">
-                  {labels[asset]}
-                </th>
+      {costs.commission_model_reference ? (
+        <div className="app-muted mt-3 break-words text-xs leading-5">
+          <p>
+            {labels.commissionReference}:{' '}
+            <span className="font-mono">
+              {costs.commission_model_reference}
+            </span>
+          </p>
+          <p>{labels.commissionReferenceDetail}</p>
+        </div>
+      ) : null}
+      {rows.length ? (
+        <div
+          className="mt-3 min-w-0 overflow-x-auto"
+          role="region"
+          aria-label={recordedLabel ?? labels.recorded}
+          tabIndex={0}
+        >
+          <table className="w-full min-w-[680px] text-left text-xs">
+            <caption className="sr-only">
+              {recordedLabel ?? labels.recorded}
+            </caption>
+            <thead className="app-muted">
+              <tr>
                 {[
-                  numeric(fees.commission_rate, 10000),
-                  numeric(fees.min_commission),
-                  numeric(fees.sell_stamp_tax_rate, 10000),
-                  numeric(fees.transfer_fee_rate, 10000),
-                  numeric(fees.other_fee_rate, 10000),
-                ].map((value, index) => (
-                  <td key={index} className="px-2 py-2 font-mono tabular-nums">
-                    {value}
-                  </td>
+                  labels.asset,
+                  labels.commission,
+                  labels.minimum,
+                  labels.stamp,
+                  labels.transfer,
+                  labels.other,
+                ].map((label) => (
+                  <th key={label} className="px-2 py-2 font-medium">
+                    {label}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map(({ asset, fees }) => (
+                <tr
+                  key={asset}
+                  className="border-t border-[var(--app-divider)]"
+                >
+                  <th scope="row" className="px-2 py-2 font-medium">
+                    {labels[asset]}
+                  </th>
+                  {[
+                    numeric(fees.commission_rate, 10000),
+                    numeric(fees.min_commission),
+                    numeric(fees.sell_stamp_tax_rate, 10000),
+                    numeric(fees.transfer_fee_rate, 10000),
+                    numeric(fees.other_fee_rate, 10000),
+                  ].map((value, index) => (
+                    <td
+                      key={index}
+                      className="px-2 py-2 font-mono tabular-nums"
+                    >
+                      {value}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
       <details className="mt-3 min-w-0 text-xs">
         <summary className="cursor-pointer font-medium">
           {labels.recordedNotes}
@@ -138,6 +167,136 @@ export function BacktestEffectiveCostsView({
           </ul>
         ) : null}
       </details>
+    </div>
+  );
+}
+
+function CostSensitivity({ report }: { report: BacktestReport }) {
+  const { locale } = usePreferences();
+  const labels = backtestCostCopy[locale];
+  const scenarios = report.metrics_json?.cost_sensitivity;
+  const baseCosts = readBacktestEffectiveCosts(
+    report.metrics_json?.cost_assumptions,
+  );
+  const normalized = Array.isArray(scenarios)
+    ? scenarios.map((scenario) => ({
+        ...scenario,
+        costs: readBacktestEffectiveCosts(
+          scenario &&
+            typeof scenario === 'object' &&
+            'cost_assumptions' in scenario
+            ? scenario.cost_assumptions
+            : scenario,
+        ),
+      }))
+    : [];
+  const supported =
+    baseCosts &&
+    Number.isFinite(report.metrics.total_return) &&
+    Number.isFinite(report.metrics.max_drawdown) &&
+    normalized.every(
+      (scenario) =>
+        scenario.costs &&
+        [
+          scenario.total_return,
+          scenario.max_drawdown,
+          scenario.fill_count,
+        ].every(Number.isFinite) &&
+        Number.isInteger(scenario.fill_count) &&
+        scenario.fill_count >= 0,
+    );
+  const rows =
+    supported && scenarios?.length
+      ? [
+          {
+            name: labels.baseScenario,
+            costs: baseCosts,
+            netReturn: report.metrics.total_return,
+            drawdown: report.metrics.max_drawdown,
+            fills:
+              report.cost_summary_json?.total_trades ??
+              report.metrics.total_trades,
+          },
+          ...normalized.map((scenario) => ({
+            name: labels.stressScenario,
+            costs: scenario.costs,
+            netReturn: scenario.total_return,
+            drawdown: scenario.max_drawdown,
+            fills: scenario.fill_count,
+          })),
+        ]
+      : [];
+  return (
+    <div className="mt-4 min-w-0 border-t border-[var(--app-divider)] pt-3">
+      <h4 className="text-xs font-semibold">{labels.sensitivity}</h4>
+      {rows.length ? (
+        <>
+          <p className="app-muted mt-2 text-xs leading-5">
+            {labels.sensitivityDetail}
+          </p>
+          <div
+            className="mt-3 min-w-0 overflow-x-auto"
+            role="region"
+            aria-label={labels.sensitivity}
+            tabIndex={0}
+          >
+            <table className="w-full min-w-[650px] text-left text-xs">
+              <caption className="sr-only">{labels.sensitivity}</caption>
+              <thead className="app-muted">
+                <tr>
+                  {[
+                    labels.scenario,
+                    labels.slippage,
+                    labels.participation,
+                    labels.netReturn,
+                    labels.maxDrawdown,
+                    labels.fills,
+                  ].map((label) => (
+                    <th key={label} className="px-2 py-2 font-medium">
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr
+                    key={index}
+                    className="border-t border-[var(--app-divider)]"
+                  >
+                    <th scope="row" className="px-2 py-2 font-medium">
+                      {row.name}
+                    </th>
+                    <td className="px-2 py-2 font-mono tabular-nums">
+                      {numeric(row.costs?.slippage_bps)} {labels.bps}
+                    </td>
+                    <td className="px-2 py-2 font-mono tabular-nums">
+                      {row.costs?.max_volume_participation === undefined
+                        ? labels.participationMissing
+                        : `${numeric(row.costs.max_volume_participation, 100)}%`}
+                    </td>
+                    <td className="px-2 py-2 font-mono tabular-nums">
+                      {formatPercent(row.netReturn)}
+                    </td>
+                    <td className="px-2 py-2 font-mono tabular-nums">
+                      {formatPercent(row.drawdown)}
+                    </td>
+                    <td className="px-2 py-2 font-mono tabular-nums">
+                      {numeric(row.fills)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <p className="app-muted mt-2 text-xs leading-5">
+          {scenarios == null || (Array.isArray(scenarios) && !scenarios.length)
+            ? labels.sensitivityMissing
+            : labels.sensitivityUnsupported}
+        </p>
+      )}
     </div>
   );
 }

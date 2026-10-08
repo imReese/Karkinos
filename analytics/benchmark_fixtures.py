@@ -1,4 +1,7 @@
-"""Deterministic fixture backtests for v0.2 benchmark validation."""
+"""Synthetic deterministic backtests for validation-matrix test journeys.
+
+These rows are not persisted, PIT admission, or strategy/account promotion proof.
+"""
 
 from __future__ import annotations
 
@@ -12,17 +15,11 @@ import pandas as pd
 
 import strategy.builtins  # noqa: F401
 from analytics.oos_validation import build_out_of_sample_validation
-from backtest.engine import BacktestEngine
+from backtest.engine import BacktestEngine, research_execution_config
 from core.event_bus import EventBus
 from core.types import AssetClass, BarFrequency, Symbol
 from data.handler import DataHandler
-from domain.instrument import (
-    Instrument,
-    make_bond,
-    make_etf,
-    make_gold_spot,
-    make_stock,
-)
+from domain.instrument import Instrument, make_etf, make_stock
 from strategy.registry import StrategyRegistry
 
 
@@ -38,7 +35,7 @@ class BenchmarkFixtureSpec:
 
 
 def build_benchmark_fixture_backtest_rows() -> list[dict[str, str | int]]:
-    """Run deterministic fixture backtests for the three v0.2 benchmark roles."""
+    """Run every built-in's synthetic OOS and after-cost fixture."""
     rows: list[dict[str, str | int]] = []
     for result_id, spec in enumerate(_benchmark_fixture_specs(), start=1):
         result = _run_fixture_backtest(spec)
@@ -93,6 +90,7 @@ def _run_fixture_backtest(spec: BenchmarkFixtureSpec):
             symbol,
             frequency=BarFrequency.DAILY,
             asset_class=instrument.asset_class,
+            instrument_type=instrument.instrument_type,
         )
         for symbol, instrument in spec.instruments.items()
         for prices in [spec.price_series[symbol]]
@@ -102,6 +100,7 @@ def _run_fixture_backtest(spec: BenchmarkFixtureSpec):
         instruments=spec.instruments,
         data_handlers=handlers,
         initial_cash=Decimal("100000"),
+        execution_config=research_execution_config(),
     )
     return engine.run()
 
@@ -160,8 +159,8 @@ def _benchmark_fixture_specs() -> list[BenchmarkFixtureSpec]:
             benchmark_return=Decimal("0"),
             instruments={
                 equity_etf: make_etf(str(equity_etf), "沪深300ETF"),
-                bond_etf: make_bond(str(bond_etf), "交易所债券ETF替代"),
-                gold_etf: make_gold_spot(str(gold_etf), "黄金ETF替代"),
+                bond_etf: make_etf(str(bond_etf), "合成国债ETF"),
+                gold_etf: make_etf(str(gold_etf), "合成黄金ETF"),
             },
             price_series={
                 equity_etf: [
@@ -422,6 +421,89 @@ def _benchmark_fixture_specs() -> list[BenchmarkFixtureSpec]:
                 "exit_z": 0.3,
                 "pair_weight": 1.0,
                 "neutral_weight": 0.5,
+            },
+        ),
+        BenchmarkFixtureSpec(
+            strategy_id="rsi",
+            benchmark_role="rsi_mean_reversion",
+            split_timestamp=datetime(2026, 1, 14),
+            benchmark_return=Decimal("0"),
+            instruments={equity_etf: make_etf(str(equity_etf), "合成权益ETF")},
+            price_series={
+                equity_etf: [
+                    10,
+                    9.8,
+                    9.6,
+                    9.4,
+                    9.2,
+                    9.4,
+                    9.7,
+                    10,
+                    10.2,
+                    10,
+                    9.8,
+                    9.6,
+                    9.8,
+                    10,
+                    10.2,
+                ]
+            },
+            strategy_kwargs={"rsi_period": 3, "oversold": 30, "overbought": 70},
+        ),
+        BenchmarkFixtureSpec(
+            strategy_id="etf_rotation",
+            benchmark_role="cross_sectional_etf_rotation",
+            split_timestamp=datetime(2026, 1, 14),
+            benchmark_return=Decimal("0"),
+            instruments={
+                equity_etf: make_etf(str(equity_etf), "合成权益ETF"),
+                gold_etf: make_etf(str(gold_etf), "合成黄金ETF"),
+                bond_etf: make_etf(str(bond_etf), "合成国债ETF"),
+            },
+            price_series={
+                equity_etf: [
+                    10,
+                    10.1,
+                    10.2,
+                    10.3,
+                    10.4,
+                    10.5,
+                    10.4,
+                    10.3,
+                    10.2,
+                    10.1,
+                    10,
+                    9.9,
+                    9.8,
+                    9.7,
+                    9.6,
+                ],
+                gold_etf: [
+                    10,
+                    9.9,
+                    9.8,
+                    9.7,
+                    9.6,
+                    9.5,
+                    9.6,
+                    9.7,
+                    9.8,
+                    9.9,
+                    10,
+                    10.1,
+                    10.2,
+                    10.3,
+                    10.4,
+                ],
+                bond_etf: [100] * 15,
+            },
+            strategy_kwargs={
+                "lookback_period": 2,
+                "volatility_window": 2,
+                "top_k": 1,
+                "rebalance_interval": 1,
+                "use_risk_adjusted": False,
+                "cash_proxy": str(bond_etf),
             },
         ),
     ]

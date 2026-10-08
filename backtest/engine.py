@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from backtest.costs import RESEARCH_MAX_VOLUME_PARTICIPATION, RESEARCH_SLIPPAGE_BPS
 from backtest.distributions import DistributionReplay, StockDistribution
 from backtest.equity_curve import canonicalize_equity_curve
 from backtest.metrics import (
@@ -43,7 +44,10 @@ from execution.commission import (
     MultiAssetCommission,
 )
 from execution.simulator import SimulatedExecution
-from execution.slippage import SlippageModel
+from execution.slippage import (
+    PercentSlippage,
+    SlippageModel,
+)
 from execution.tracker import BrokerFillReport, ExecutionOrderTracker
 from risk.manager import RiskManager
 from strategy.base import Strategy
@@ -62,8 +66,22 @@ class BacktestExecutionConfig:
 
     slippage_model: SlippageModel | None = None
     commission_calc: CommissionCalculator | None = None
+    max_volume_participation: Decimal | None = None
     availability_mode: Literal["historical_snapshot", "observed"] = (
         "historical_snapshot"
+    )
+
+
+def research_execution_config(
+    commission_calc: CommissionCalculator | None = None,
+    *,
+    slippage_bps: Decimal = RESEARCH_SLIPPAGE_BPS,
+) -> BacktestExecutionConfig:
+    """The same explicit friction assumption for automatic research consumers."""
+    return BacktestExecutionConfig(
+        commission_calc=commission_calc,
+        slippage_model=PercentSlippage(slippage_bps / Decimal("10000")),
+        max_volume_participation=RESEARCH_MAX_VOLUME_PARTICIPATION,
     )
 
 
@@ -90,6 +108,7 @@ class BacktestEngine:
         cash_dividends: tuple[StockDistribution, ...] | None = None,
         include_share_distributions: bool = False,
         evaluation_start: date | None = None,
+        warmup_final_bar_targets: bool = False,
         strict_event_errors: bool = False,
         session_completed: Callable[[date], None] | None = None,
     ) -> None:
@@ -103,6 +122,12 @@ class BacktestEngine:
         self.data_handlers = data_handlers
         self.initial_cash = initial_cash
         self.evaluation_start = evaluation_start
+        if type(warmup_final_bar_targets) is not bool or (
+            warmup_final_bar_targets and evaluation_start is None
+        ):
+            raise ValueError("backtest_warmup_targets_require_evaluation_window")
+        self._warmup_final_bar_targets = warmup_final_bar_targets
+        self._warmup_target_timestamps = {}
         # Earlier bars initialize strategy history, never a carried trading book.
         # Initialization emissions are also discarded for an evaluation window.
         self._warming_up = evaluation_start is not None
@@ -133,6 +158,20 @@ class BacktestEngine:
         self._previous_close: dict[Symbol, Decimal] = {}
         self._execution_blocked = {"limit": 0, "suspension": 0, "risk": 0, "cash": 0}
         self._cash_resized_count = 0
+        self._max_volume_participation = (
+            execution_config.max_volume_participation
+            if execution_config is not None
+            else None
+        )
+        if self._max_volume_participation is not None and (
+            not self._max_volume_participation.is_finite()
+            or not ZERO < self._max_volume_participation <= Decimal("1")
+        ):
+            raise ValueError("backtest_volume_participation_invalid")
+        self._bar_filled_quantity: dict[tuple[Symbol, object], Decimal] = {}
+        self._capacity_resized_count = 0
+        self._capacity_unfilled_quantity = ZERO
+        self._execution_blocked["capacity"] = 0
         self.execution_tracker = (
             ExecutionOrderTracker(event_bus=self.event_bus, db=db)
             if db is not None
@@ -200,6 +239,12 @@ class BacktestEngine:
         """运行回测，返回 BacktestResult。"""
         # Validate availability before any strategy state can observe the input.
         all_events = self._merge_streams()
+        if self._warmup_final_bar_targets:
+            self._warmup_target_timestamps = {
+                event.symbol: event.timestamp
+                for event in all_events
+                if self._session_date(event) < self.evaluation_start
+            }
         if self._dividend_replay is not None:
             self._dividend_replay.validate_events(
                 all_events, observed=self._availability_mode == "observed"
@@ -212,6 +257,7 @@ class BacktestEngine:
 
         # 主循环
         for current_date, session in groupby(all_events, key=self._session_date):
+            self._bar_filled_quantity.clear()
             session_events = list(session)
             self._warming_up = (
                 self.evaluation_start is not None
@@ -303,7 +349,13 @@ class BacktestEngine:
 
     def _on_signal(self, event: SignalEvent) -> None:
         """Retain the latest target until a strictly later bar for that symbol."""
-        if self._warming_up or self._current_market_event is None:
+        if self._current_market_event is None:
+            return
+        if self._warming_up and (
+            not self._warmup_final_bar_targets
+            or self._current_market_event.timestamp
+            != self._warmup_target_timestamps.get(event.symbol)
+        ):
             return
         decision_at = max(event.timestamp, self._current_market_event.timestamp)
         self._pending_signals[event.symbol] = replace(event, timestamp=decision_at)
@@ -415,7 +467,9 @@ class BacktestEngine:
         approved = self._approved_order(event)
         execution = None
         if approved is not None and self._tradeable_order(approved):
-            execution = self._cash_funded_fill(approved)
+            capacity_order = self._capacity_order(approved)
+            if capacity_order is not None:
+                execution = self._cash_funded_fill(capacity_order)
         if event.intent_id is not None and event.risk_decision_id is not None:
             passed = execution is not None
             self.event_bus.publish(
@@ -438,8 +492,52 @@ class BacktestEngine:
         if execution is None:
             return
         event, fill = execution
+        bar = self._current_market_event
+        if bar is not None and bar.symbol == event.symbol:
+            key = (bar.symbol, bar.timestamp)
+            self._bar_filled_quantity[key] = (
+                self._bar_filled_quantity.get(key, ZERO) + fill.fill_quantity
+            )
         self._record_order_event(event)
         self._record_fill_event(fill, event)
+
+    def _capacity_order(self, order: OrderEvent) -> OrderEvent | None:
+        """One bar's cumulative share budget; unfilled remainder is cancelled.
+
+        This is an explicit research participation assumption, not a calibrated
+        impact model or a standing order. Missing/invalid volume cannot fund a
+        capacity-constrained fill. Cash sizing still re-quotes the capped order.
+        """
+        if self._max_volume_participation is None:
+            return order
+        if not order.quantity.is_finite() or order.quantity <= ZERO:
+            self._execution_blocked["risk"] += 1
+            return None
+        bar = self._current_market_event
+        inst = self.instruments.get(order.symbol)
+        if bar is None or bar.symbol != order.symbol or inst is None:
+            self._execution_blocked["capacity"] += 1
+            self._capacity_unfilled_quantity += order.quantity
+            return None
+        volume = bar.volume
+        remaining = ZERO
+        if volume.is_finite() and volume > ZERO:
+            remaining = max(
+                ZERO,
+                volume * self._max_volume_participation
+                - self._bar_filled_quantity.get((bar.symbol, bar.timestamp), ZERO),
+            )
+        quantity = min(order.quantity, (remaining // inst.lot_size) * inst.lot_size)
+        # A complete odd-lot liquidation is legal if it fits the share budget.
+        if order.side is OrderSide.SELL and order.quantity <= remaining:
+            quantity = order.quantity
+        if quantity < order.quantity:
+            self._capacity_unfilled_quantity += order.quantity - quantity
+            self._capacity_resized_count += 1
+        if quantity <= ZERO:
+            self._execution_blocked["capacity"] += 1
+            return None
+        return replace(order, quantity=quantity)
 
     def _resolve_fill(self, event: OrderEvent) -> FillEvent | None:
         """Resolve one price and complete fee; never re-execute an accepted fill."""
@@ -645,11 +743,22 @@ class BacktestEngine:
                 "risk_blocked_count": self._execution_blocked["risk"],
                 "cash_blocked_count": self._execution_blocked["cash"],
                 "cash_resized_count": self._cash_resized_count,
+                "capacity_model": "cumulative_bar_share_participation"
+                if self._max_volume_participation is not None
+                else "unconstrained",
+                "max_volume_participation": str(self._max_volume_participation)
+                if self._max_volume_participation is not None
+                else None,
+                "capacity_resized_count": self._capacity_resized_count,
+                "capacity_blocked_count": self._execution_blocked["capacity"],
+                "capacity_unfilled_quantity": str(self._capacity_unfilled_quantity),
+                "unfilled_remainder_policy": "cancel_after_one_execution_attempt",
                 "historical_pit_verified": False,
                 **(
                     {
                         "evaluation_start": self.evaluation_start.isoformat(),
                         "warmup_basis": "strategy_history_only_fresh_book",
+                        "warmup_final_bar_targets": self._warmup_final_bar_targets,
                     }
                     if self.evaluation_start is not None
                     else {}

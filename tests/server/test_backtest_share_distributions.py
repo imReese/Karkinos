@@ -5,12 +5,24 @@ from decimal import Decimal
 
 import pytest
 
-from tests.server.test_backtest_cash_dividends import _capture, _cash_response, _run
+from tests.server.test_backtest_cash_dividends import _capture, _cash_response
+from tests.server.test_backtest_cash_dividends import _run as _run_cash
 from tests.server.test_dataset_corporate_actions import (
     client_context as client_context,
 )
 
 MODE = "reported_distributions_gross"
+
+
+def _run(client, ref, *, mode):
+    # Fix the entry quantity for the distribution-accounting assertions; cost
+    # and capacity behavior have their own real-fill integration coverage.
+    return _run_cash(
+        client,
+        ref,
+        mode=mode,
+        cost_assumptions={"slippage_bps": 0, "max_volume_participation": 1},
+    )
 
 
 def _share_response(**changes):

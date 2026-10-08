@@ -45,7 +45,10 @@ class BacktestCostAssumptions(BaseModel):
         default=None, ge=0, le=1, allow_inf_nan=False
     )
     etf_min_commission: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    slippage_bps: float = Field(default=0, ge=0, lt=10000, allow_inf_nan=False)
+    slippage_bps: float = Field(default=5, ge=0, lt=10000, allow_inf_nan=False)
+    max_volume_participation: float = Field(
+        default=0.01, gt=0, le=1, allow_inf_nan=False
+    )
 
 
 class BacktestRequest(BaseModel):

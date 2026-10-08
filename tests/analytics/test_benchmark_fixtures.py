@@ -33,7 +33,9 @@ def test_fixture_backtests_generate_validation_evidence_for_all_benchmarks():
         assert cost_summary["total_trades"] > 0
         assert cost_summary["gross_turnover"] > 0
         assert "gross_return_before_costs" in evidence
-        assert evidence["total_cost"] >= 0
+        assert cost_summary["total_commission"] > 0
+        assert cost_summary["total_slippage"] > 0
+        assert evidence["total_cost"] > 0
         assert "profitability claim" in evidence["limitations"][0]
         assert oos["strategy_id"] == strategy_id
         assert oos["out_of_sample"]["fill_count"] >= 0
@@ -43,3 +45,6 @@ def test_fixture_backtests_generate_validation_evidence_for_all_benchmarks():
             "benchmark_not_supplied",
         }
         assert "not investment advice" in oos["limitations"][0]
+        if strategy_id in {"rsi", "etf_rotation"}:
+            assert oos["out_of_sample"]["fill_count"] > 0
+            assert oos["out_of_sample"]["total_cost"] > 0

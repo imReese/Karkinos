@@ -40,6 +40,7 @@ export const backtestPageZh = {
     donchian_breakout: 'Donchian 通道突破',
     volatility_target_trend: '波动率目标趋势',
     pairs_ratio_mean_reversion: '配对比值均值回归',
+    etf_rotation: 'ETF 动量轮动',
   },
   strategyDescriptions: {
     dual_ma: '用短期均线与长期均线的交叉关系判断趋势方向的基准策略。',

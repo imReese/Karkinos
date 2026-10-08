@@ -42,6 +42,7 @@ export const backtestPageEn = {
     donchian_breakout: 'Donchian Channel Breakout',
     volatility_target_trend: 'Volatility Target Trend',
     pairs_ratio_mean_reversion: 'Pairs Ratio Mean Reversion',
+    etf_rotation: 'ETF Momentum Rotation',
   },
   strategyDescriptions: {
     dual_ma: 'Dual moving-average crossover baseline.',

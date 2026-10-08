@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -24,7 +25,11 @@ from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
 from analytics.sweep_robustness import build_sweep_robustness_evidence
-from backtest.engine import BacktestEngine
+from backtest.costs import (
+    RESEARCH_COST_STRESS_BPS,
+    research_friction_assumptions,
+)
+from backtest.engine import BacktestEngine, research_execution_config
 from backtest.result import BacktestResult
 from core.events import MarketEvent
 from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
@@ -251,6 +256,7 @@ class RestrictedFormulaBacktestAdapter:
             data_handlers=handlers,
             initial_cash=Decimal(str(selection.initial_cash)),
             commission_calc=commission_calc,
+            execution_config=research_execution_config(commission_calc),
             db=None,
         )
         result = engine.run()
@@ -262,6 +268,31 @@ class RestrictedFormulaBacktestAdapter:
         )
         metrics_json = metrics.to_json_dict()
         metrics_json["execution_timing"] = result.execution_timing
+        metrics_json["cost_assumptions"] = {
+            **research_friction_assumptions(),
+            "commission_model_reference": selection.cost_model_reference,
+        }
+        metrics_json["cost_sensitivity"] = []
+        for bps in RESEARCH_COST_STRESS_BPS:
+            stressed = BacktestEngine(
+                strategy=_FormulaSignalStrategy(
+                    formula_ast, len(instruments), allocation_slots=allocation_slots
+                ),
+                instruments=instruments,
+                data_handlers=handlers,
+                initial_cash=Decimal(str(selection.initial_cash)),
+                execution_config=research_execution_config(
+                    commission_calc, slippage_bps=bps
+                ),
+            ).run()
+            metrics_json["cost_sensitivity"].append(
+                {
+                    **research_friction_assumptions(bps),
+                    "total_return": float(stressed.total_return),
+                    "max_drawdown": stressed.metrics.max_drawdown,
+                    "fill_count": len(stressed.fills),
+                }
+            )
         min_train_points, test_window_points, step_points = rolling_oos_parameters(
             len(result.equity_curve)
         )
@@ -316,9 +347,13 @@ class RestrictedFormulaBacktestAdapter:
                     fills=result.fills,
                     data_handlers=handlers,
                     initial_cash=result.initial_cash,
+                    max_daily_volume_participation=Decimal(
+                        research_friction_assumptions()["max_volume_participation"]
+                    ),
                 ),
                 "drawdown_evidence": build_backtest_drawdown_evidence(
                     equity_curve=result.equity_curve,
+                    initial_cash=result.initial_cash,
                 ),
                 "account_capital_constraint": resolved_account_capital_evidence,
                 "market_regime_robustness": build_backtest_market_regime_evidence(
@@ -544,7 +579,10 @@ class RestrictedFormulaBacktestAdapter:
             data_handlers=handlers,
             initial_cash=Decimal(str(selection.initial_cash)),
             commission_calc=commission_calc,
+            execution_config=research_execution_config(commission_calc),
             db=None,
+            evaluation_start=date.fromisoformat(selection.end_date) + timedelta(days=1),
+            warmup_final_bar_targets=True,
         )
         result = engine.run()
         result.dataset_snapshot = snapshot
@@ -594,6 +632,7 @@ def _formula_parameter_robustness(
                 data_handlers=handlers,
                 initial_cash=initial_cash,
                 commission_calc=commission_calc,
+                execution_config=research_execution_config(commission_calc),
                 db=None,
             ).run()
         results.append(

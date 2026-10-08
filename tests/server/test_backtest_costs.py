@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from decimal import Decimal
 
 import pytest
@@ -32,6 +33,59 @@ def _request(ref):
     ).model_dump(mode="json")
 
 
+@pytest.mark.parametrize("endpoint", ["run", "sweep", "compare"])
+def test_etf_missing_defensive_input_is_400_without_persisting_a_run_or_fill(
+    client_context, endpoint, monkeypatch
+):
+    client, state, ref, _ = client_context
+    body = _backtest_request(
+        ref,
+        strategy="etf_rotation",
+        params={"lookback_period": 2, "volatility_window": 2},
+    ).model_dump(mode="json")
+    if endpoint == "sweep":
+        body["param_grid"] = {"lookback_period": [2, 3]}
+    elif endpoint == "compare":
+        body["runs"] = [{"strategy": "etf_rotation", "params": body["params"]}]
+    monkeypatch.setattr(
+        "data.manager.DataManager.get_bars",
+        lambda *_args, **_kwargs: pytest.fail("No provider fallback"),
+    )
+    tables = ("backtest_results", "orders", "fills", "ledger_entries")
+    with sqlite3.connect(state.db.path) as conn:
+        before = {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in tables
+        }
+    response = client.post(f"/api/backtest/{endpoint}", json=body)
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "etf_rotation_cash_proxy_input_missing:511010"
+    with sqlite3.connect(state.db.path) as conn:
+        assert {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in tables
+        } == before
+
+
+def test_unknown_strategy_failure_keeps_its_server_error_boundary(
+    client_context, monkeypatch
+):
+    from fastapi.testclient import TestClient
+
+    from server.routes import backtest
+
+    client, _, ref, _ = client_context
+
+    def fail(*_args, **_kwargs):
+        raise ValueError("etf_rotation_internal_unexpected_failure")
+
+    monkeypatch.setattr(backtest, "_run_backtest", fail)
+    with TestClient(client.app, raise_server_exceptions=False) as caller:
+        response = caller.post("/api/backtest/run", json=_request(ref))
+    assert response.status_code == 500
+    assert response.text == "Internal Server Error"
+
+
 def test_run_applies_and_freezes_effective_costs_with_capacity(
     client_context, tmp_path, monkeypatch
 ):
@@ -58,7 +112,7 @@ def test_run_applies_and_freezes_effective_costs_with_capacity(
     assert len(result["fills"]) == len(baseline["fills"]) == 1
     fill = result["fills"][0]
     assert fill["fill_price"] == pytest.approx(
-        baseline["fills"][0]["fill_price"] * 1.0025
+        baseline["fills"][0]["fill_price"] / 1.0005 * 1.0025
     )
     notional = Decimal(str(fill["fill_price"])) * Decimal(str(fill["fill_quantity"]))
     fees = fill["fee_breakdown"]
@@ -68,6 +122,14 @@ def test_run_applies_and_freezes_effective_costs_with_capacity(
     assert fill["fee_rule_id"] == "cn_stock_research_override_v1"
     assert result["metrics"]["final_equity"] < baseline["metrics"]["final_equity"]
     effective = result["metrics_json"]["cost_assumptions"]
+    stress = result["metrics_json"]["cost_sensitivity"]
+    assert [Decimal(item["cost_assumptions"]["slippage_bps"]) for item in stress] == [
+        50,
+        125,
+    ]
+    assert all(
+        item["total_return"] < result["metrics"]["total_return"] for item in stress
+    )
     assert effective["schema_version"] == "karkinos.backtest_cost_assumptions.v1"
     assert Decimal(effective["slippage_bps"]) == 25
     assert Decimal(effective["stock"]["min_commission"]) == 11
@@ -81,6 +143,7 @@ def test_run_applies_and_freezes_effective_costs_with_capacity(
     assert saved.status_code == 200, saved.text
     assert saved.json()["metrics_json"]["cost_assumptions"] == effective
     assert saved.json()["metrics_json"]["capacity_review"] == capacity
+    assert saved.json()["metrics_json"]["cost_sensitivity"] == stress
     assert (
         saved.json()["config"]["cost_assumptions"]
         == result["config"]["cost_assumptions"]
@@ -154,7 +217,8 @@ def test_omission_keeps_existing_models_and_explicit_zero_keeps_taxes():
             assert after.commission == 0
             assert after.stamp_tax == before.stamp_tax
             assert after.transfer_fee == before.transfer_fee
-    assert Decimal(effective["slippage_bps"]) == 0
+    assert Decimal(effective["slippage_bps"]) == 5
+    assert default.max_volume_participation == Decimal("0.01")
     assert Decimal(zero_effective["stock"]["commission_rate"]) == 0
 
 
@@ -167,6 +231,8 @@ def test_omission_keeps_existing_models_and_explicit_zero_keeps_taxes():
         {"stock_commission_rate": float("inf")},
         {"stock_commission_rate": 1.1},
         {"etf_min_commission": -1},
+        {"max_volume_participation": 0},
+        {"max_volume_participation": 1.1},
         {"stamp_tax_rate": 0},
     ],
 )

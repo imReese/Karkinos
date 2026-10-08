@@ -5,7 +5,7 @@ export const backtestCostCopy = {
     default: 'Built-in model',
     custom: 'Custom research assumptions',
     defaultDetail:
-      'Built-in fees and zero slippage. Each new report saves the effective assumptions used.',
+      'Built-in fees, 5 bps slippage per fill and a 1% daily-bar participation cap. Each new report saves its effective assumptions.',
     shared:
       'These settings apply to the backtest, parameter sweep, and comparison.',
     blank:
@@ -16,18 +16,22 @@ export const backtestCostCopy = {
       etf_commission_rate: 'ETF commission (bps)',
       etf_min_commission: 'ETF minimum commission (CNY)',
       slippage_bps: 'Slippage per fill (bps)',
+      max_volume_participation: 'Maximum daily-bar participation (%)',
     },
     inherited: 'Use built-in value',
     invalid:
-      'Costs must be finite and non-negative; commissions cannot exceed 10,000 bps and slippage must be below 10,000 bps.',
+      'Costs must be finite and non-negative; commissions cannot exceed 10,000 bps and slippage must be below 10,000 bps. Participation must be greater than 0% and at most 100%.',
     boundary:
-      'Tax and transfer fees follow the built-in model. Fixed slippage does not model market impact or partial fills.',
+      'Tax and transfer fees follow the built-in model. The participation cap can reduce or block fills; daily bars and fixed slippage do not establish executable market depth.',
     report: 'Recorded costs and liquidity',
     recorded: 'Effective assumptions saved with this report',
     missingCosts:
       'This report did not save its effective cost assumptions. Current defaults cannot reconstruct them.',
     unsupportedCosts:
       'This report uses an unsupported cost model. Its assumptions are not reconstructed here.',
+    commissionReference: 'Recorded commission model reference',
+    commissionReferenceDetail:
+      'This reference does not provide a saved fee schedule. Fee rates are not reconstructed here.',
     asset: 'Asset',
     stock: 'Stock',
     etf: 'ETF',
@@ -39,6 +43,21 @@ export const backtestCostCopy = {
     transfer: 'Transfer fee (bps)',
     other: 'Other fee (bps)',
     slippage: 'Slippage per fill',
+    participation: 'Simulated daily-bar participation cap',
+    participationMissing: 'Not recorded',
+    sensitivity: 'Saved adverse-cost replays',
+    sensitivityDetail:
+      'Each stress scenario reruns the same data and strategy with higher slippage. Returns include the simulated fees and fill constraints.',
+    sensitivityMissing:
+      'No adverse-cost replays were saved with this report. Current assumptions cannot reconstruct them.',
+    sensitivityUnsupported:
+      'The saved stress results are incomplete or unsupported.',
+    scenario: 'Scenario',
+    baseScenario: 'Original run',
+    stressScenario: 'Higher slippage',
+    netReturn: 'Net return',
+    maxDrawdown: 'Maximum drawdown',
+    fills: 'Filled orders',
     bps: 'bps',
     rules: 'Recorded fee rules',
     capacity: 'Recorded daily-bar liquidity check',
@@ -63,7 +82,8 @@ export const backtestCostCopy = {
     mode: '成本模型',
     default: '内置模型',
     custom: '自定义研究假设',
-    defaultDetail: '使用内置费用和零滑点；新报告会保存本次实际采用的假设。',
+    defaultDetail:
+      '使用内置费用、每笔 5 基点滑点和日成交量 1% 参与率上限；新报告会保存实际假设。',
     shared: '这些设置同时用于单次回测、参数扫描和参数对比。',
     blank: '留空沿用内置值。1 个基点（bp）等于 0.01%。',
     fields: {
@@ -72,16 +92,20 @@ export const backtestCostCopy = {
       etf_commission_rate: 'ETF 佣金（基点）',
       etf_min_commission: 'ETF 最低佣金（元）',
       slippage_bps: '每笔成交滑点（基点）',
+      max_volume_participation: '日成交量参与率上限（%）',
     },
     inherited: '沿用内置值',
     invalid:
-      '成本须为有限非负数；佣金不可超过 10,000 基点，滑点须小于 10,000 基点。',
-    boundary: '印花税与过户费沿用内置模型；固定滑点不模拟市场冲击或部分成交。',
+      '成本须为有限非负数；佣金不可超过 10,000 基点，滑点须小于 10,000 基点。参与率须大于 0% 且不超过 100%。',
+    boundary:
+      '印花税与过户费沿用内置模型。参与率上限会缩减或阻断成交；日线和固定滑点不能证明真实可成交深度。',
     report: '报告成本与流动性',
     recorded: '本报告保存的实际成本假设',
     missingCosts: '本报告未保存实际成本假设，不能用当前默认值还原。',
     unsupportedCosts:
       '本报告采用的成本模型尚不受此视图支持，此处不补造其假设。',
+    commissionReference: '报告保存的佣金模型引用',
+    commissionReferenceDetail: '此引用不提供已保存的费率表，此处不补造费率。',
     asset: '资产',
     stock: '股票',
     etf: 'ETF',
@@ -93,6 +117,19 @@ export const backtestCostCopy = {
     transfer: '过户费（基点）',
     other: '其他费用（基点）',
     slippage: '每笔成交滑点',
+    participation: '模拟日成交量参与率上限',
+    participationMissing: '未记录',
+    sensitivity: '已保存的成本压力回放',
+    sensitivityDetail:
+      '各压力情景使用相同数据和策略，以更高滑点重新回放。收益包含模拟费用和成交限制。',
+    sensitivityMissing: '本报告未保存成本压力回放，不能用当前假设补造结果。',
+    sensitivityUnsupported: '已保存的压力结果不完整或暂不受支持。',
+    scenario: '情景',
+    baseScenario: '原始运行',
+    stressScenario: '更高滑点',
+    netReturn: '净收益率',
+    maxDrawdown: '最大回撤',
+    fills: '成交笔数',
     bps: '基点',
     rules: '保存的费用规则',
     capacity: '报告日线流动性检查',

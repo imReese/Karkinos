@@ -59,7 +59,7 @@ def _capture(client_context, monkeypatch, response):
     return DatasetRef(store.resolve_ref(captured.json()["dataset_id"]))
 
 
-def _run(client, ref, *, mode="cash_dividends_gross"):
+def _run(client, ref, *, mode="cash_dividends_gross", cost_assumptions=None):
     request = _backtest_request(
         ref,
         strategy="time_series_momentum",
@@ -70,6 +70,8 @@ def _run(client, ref, *, mode="cash_dividends_gross"):
             "target_weight": 0.1,
         },
     ).model_dump(mode="json")
+    if cost_assumptions is not None:
+        request["cost_assumptions"] = cost_assumptions
     if mode is None:
         request.pop("corporate_action_mode")
     else:

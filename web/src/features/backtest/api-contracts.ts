@@ -11,12 +11,14 @@ import type {
   BacktestCostAssumptions,
   BacktestEffectiveCosts,
   BacktestCapacityReview,
+  BacktestCostSensitivity,
   CostSummary,
 } from './cost-contracts';
 export type {
   BacktestCostAssumptions,
   BacktestEffectiveCosts,
   BacktestCapacityReview,
+  BacktestCostSensitivity,
   CostSummary,
 } from './cost-contracts';
 
@@ -26,23 +28,8 @@ export type {
   CorporateActionMode,
 } from './corporate-action-contracts';
 
-export type BacktestMetrics = {
-  initial_cash: number;
-  final_equity: number;
-  total_return: number;
-  annual_return: number;
-  sharpe: number;
-  sortino: number;
-  max_drawdown: number;
-  calmar?: number | string;
-  volatility?: number;
-  win_rate: number;
-  duration_days: number;
-  total_commission?: number;
-  total_slippage?: number;
-  total_trades?: number;
-  gross_turnover?: number;
-};
+import type { BacktestMetrics } from './metric-contracts';
+export type { BacktestMetrics } from './metric-contracts';
 
 export type DatasetQualityIssue = {
   code: string;
@@ -512,6 +499,7 @@ export type BacktestReport = {
     execution_window?: BacktestExecutionWindow | null;
     chronological_validation?: ChronologicalSweepValidation;
     cost_assumptions?: BacktestEffectiveCosts | null;
+    cost_sensitivity?: BacktestCostSensitivity[] | null;
     capacity_review?: BacktestCapacityReview | null;
     cash_dividend_accounting?: CashDividendAccounting | null;
     execution_timing?: {

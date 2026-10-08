@@ -14,6 +14,8 @@ REQUIRED_STRATEGY_IDS = {
     "donchian_breakout",
     "volatility_target_trend",
     "pairs_ratio_mean_reversion",
+    "rsi",
+    "etf_rotation",
 }
 
 
@@ -31,6 +33,8 @@ def _backtest_row(
         "donchian_breakout": 105,
         "volatility_target_trend": 106,
         "pairs_ratio_mean_reversion": 107,
+        "rsi": 108,
+        "etf_rotation": 109,
     }
     metrics_json = {
         "total_commission": 12.5,
@@ -76,21 +80,15 @@ def _backtest_row(
 def test_strategy_validation_matrix_marks_all_benchmarks_ready():
     matrix = build_strategy_validation_matrix(
         StrategyRegistry.get_info(),
-        [
-            _backtest_row("dual_ma"),
-            _backtest_row("monthly_rebalance"),
-            _backtest_row("bollinger"),
-            _backtest_row("time_series_momentum"),
-            _backtest_row("donchian_breakout"),
-            _backtest_row("volatility_target_trend"),
-            _backtest_row("pairs_ratio_mean_reversion"),
-        ],
+        [_backtest_row(strategy_id) for strategy_id in sorted(REQUIRED_STRATEGY_IDS)],
     )
 
     assert matrix.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert matrix.ready_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert matrix.is_complete is True
     assert {row.strategy_id for row in matrix.rows} == REQUIRED_STRATEGY_IDS
+    assert all(row.requires_out_of_sample_validation for row in matrix.rows)
+    assert all(row.requires_after_cost_report for row in matrix.rows)
     assert all(row.has_after_cost_report for row in matrix.rows)
     assert all(row.has_out_of_sample_validation for row in matrix.rows)
     assert all(row.missing_requirements == [] for row in matrix.rows)
@@ -100,22 +98,25 @@ def test_strategy_validation_matrix_reports_missing_evidence():
     matrix = build_strategy_validation_matrix(
         StrategyRegistry.get_info(),
         [
-            _backtest_row("dual_ma"),
-            _backtest_row("monthly_rebalance", include_oos=False),
-            _backtest_row("bollinger", include_after_cost=False),
-            _backtest_row("time_series_momentum"),
-            _backtest_row("donchian_breakout"),
-            _backtest_row("volatility_target_trend"),
-            _backtest_row("pairs_ratio_mean_reversion"),
+            _backtest_row(
+                strategy_id,
+                include_oos=strategy_id not in {"monthly_rebalance", "etf_rotation"},
+                include_after_cost=strategy_id not in {"bollinger", "rsi"},
+            )
+            for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
         ],
     )
 
     by_strategy = {row.strategy_id: row for row in matrix.rows}
 
     assert matrix.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
-    assert matrix.ready_strategy_count == len(REQUIRED_STRATEGY_IDS) - 2
+    assert matrix.ready_strategy_count == len(REQUIRED_STRATEGY_IDS) - 4
     assert matrix.is_complete is False
     assert by_strategy["monthly_rebalance"].missing_requirements == [
         "out_of_sample_validation"
     ]
     assert by_strategy["bollinger"].missing_requirements == ["after_cost_report"]
+    assert by_strategy["etf_rotation"].missing_requirements == [
+        "out_of_sample_validation"
+    ]
+    assert by_strategy["rsi"].missing_requirements == ["after_cost_report"]

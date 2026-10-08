@@ -11,6 +11,7 @@ const APP_ROOT = resolve(BACKTEST_ROOT, '../../app');
 const API_FACADE = resolve(BACKTEST_ROOT, 'api.ts');
 const API_CONTRACTS = resolve(BACKTEST_ROOT, 'api-contracts.ts');
 const COST_CONTRACTS = resolve(BACKTEST_ROOT, 'cost-contracts.ts');
+const METRIC_CONTRACTS = resolve(BACKTEST_ROOT, 'metric-contracts.ts');
 const CORPORATE_ACTION_CONTRACTS = resolve(
   BACKTEST_ROOT,
   'corporate-action-contracts.ts',
@@ -132,6 +133,7 @@ BacktestCompareResponse
 BacktestCompareResult
 BacktestCompareRunRequest
 BacktestCostAssumptions
+BacktestCostSensitivity
 BacktestEffectiveCosts
 BacktestCapacityReview
 BacktestEquityPoint
@@ -171,6 +173,7 @@ StrategySignalPreviewResponse
 StrategyValidationMatrix
 StrategyValidationRow
 ValidationSegmentEvidence
+readBacktestEffectiveCosts
 useAccountStrategyAssignmentQuery
 useAccountStrategyAssignmentsQuery
 useAccountStrategyAttributionQuery
@@ -286,6 +289,7 @@ test('backtest API facade preserves its public export surface', () => {
   const actualExports = [
     API_CONTRACTS,
     COST_CONTRACTS,
+    METRIC_CONTRACTS,
     CORPORATE_ACTION_CONTRACTS,
     API_GOVERNANCE_CONTRACTS,
     API_HOOKS,

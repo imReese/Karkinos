@@ -17,6 +17,7 @@ from server.contracts.http.strategy_models import (
     StrategyCompareItem,
 )
 from server.http.backtest_endpoints.dependencies import ResultEndpointDependencies
+from server.http.backtest_endpoints.execution import raise_strategy_input_error
 from server.services.research_datasets import ResearchDatasetError
 
 
@@ -198,6 +199,8 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
                 )
             except ResearchDatasetError as exc:
                 raise HTTPException(409, str(exc)) from None
+            except ValueError as exc:
+                raise_strategy_input_error(exc)
             metrics_json = _backtest_report_metrics_json(bt_request, bt_result)
             bt_result = {**bt_result, "metrics_json": metrics_json}
             snapshot = _dataset_snapshot_from_result(bt_result)

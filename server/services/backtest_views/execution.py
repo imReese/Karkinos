@@ -173,6 +173,7 @@ def run_single_backtest(
     from backtest.engine import BacktestEngine
     from data.manager import DataManager
     from data.store import DataStore
+    from server.contracts.http.strategy_models import BacktestCostAssumptions
     from server.services.backtest_costs import resolve_backtest_costs
     from server.services.research_datasets import ResearchDatasetError
 
@@ -310,10 +311,46 @@ def run_single_backtest(
     metrics_json = metrics.to_json_dict()
     metrics_json["execution_timing"] = result.execution_timing
     metrics_json["cost_assumptions"] = cost_assumptions
+    # Two explicit adverse scenarios reuse the frozen bars, rules and fresh book;
+    # stress replay never persists additional Orders/Fills or tunes parameters.
+    inputs = request.cost_assumptions or BacktestCostAssumptions()
+    base_bps = inputs.slippage_bps
+    metrics_json["cost_sensitivity"] = []
+    stress_levels = sorted(
+        {min(9999.0, max(10.0, base_bps * 2)), min(9999.0, max(25.0, base_bps * 5))}
+    )
+    for bps in stress_levels:
+        if bps <= base_bps:
+            continue
+        stress_config, stress_assumptions = resolve_backtest_costs(
+            inputs.model_copy(update={"slippage_bps": bps})
+        )
+        stressed = BacktestEngine(
+            strategy=build_strategy(strategy_config, event_bus_placeholder),
+            instruments=instruments,
+            data_handlers=data_handlers,
+            initial_cash=result.initial_cash,
+            execution_config=stress_config,
+            cash_dividends=cash_dividends,
+            include_share_distributions=cash_dividend_mode
+            == "reported_distributions_gross",
+            evaluation_start=evaluation_start,
+        ).run()
+        metrics_json["cost_sensitivity"].append(
+            {
+                "cost_assumptions": stress_assumptions,
+                "total_return": float(stressed.total_return),
+                "max_drawdown": stressed.metrics.max_drawdown,
+                "fill_count": len(stressed.fills),
+            }
+        )
     metrics_json["capacity_review"] = build_backtest_capacity_evidence(
         fills=result.fills,
         data_handlers=data_handlers,
         initial_cash=result.initial_cash,
+        max_daily_volume_participation=Decimal(
+            cost_assumptions["max_volume_participation"]
+        ),
     )
     if result.cash_dividend_accounting is not None:
         metrics_json["cash_dividend_accounting"] = result.cash_dividend_accounting

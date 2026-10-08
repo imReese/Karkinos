@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.ledger_models import EquityPoint
@@ -15,6 +17,25 @@ from server.contracts.http.strategy_models import (
 )
 from server.http.backtest_endpoints.dependencies import ExecutionEndpointDependencies
 from server.services.research_datasets import ResearchDatasetError
+
+
+def raise_strategy_input_error(exc: ValueError) -> NoReturn:
+    """Translate only the ETF strategy's declared input errors at HTTP delivery."""
+    detail = str(exc)
+    known = {
+        "etf_rotation_universe_invalid",
+        "etf_rotation_lookback_period_invalid",
+        "etf_rotation_volatility_window_invalid",
+        "etf_rotation_top_k_invalid",
+        "etf_rotation_rebalance_interval_invalid",
+        "etf_rotation_trend_filter_period_invalid",
+        "etf_rotation_min_momentum_invalid",
+    }
+    if detail in known or detail.startswith(
+        ("etf_rotation_cash_proxy_input_missing:", "etf_rotation_price_invalid:")
+    ):
+        raise HTTPException(status_code=400, detail=detail) from None
+    raise exc
 
 
 def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
@@ -79,6 +100,8 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
             )
         except ResearchDatasetError as exc:
             raise HTTPException(409, str(exc)) from None
+        except ValueError as exc:
+            raise_strategy_input_error(exc)
         result_id, metrics_json = await save_result(state.db, request, bt_result)
 
         return BacktestResponse(
@@ -138,6 +161,8 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
                 )
             except ResearchDatasetError as exc:
                 raise HTTPException(409, str(exc)) from None
+            except ValueError as exc:
+                raise_strategy_input_error(exc)
             parameter_payloads = [item.params for item in chronology["requests"]]
 
         sweep_results: list[BacktestSweepResult] = []
@@ -154,6 +179,8 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
                 )
             except ResearchDatasetError as exc:
                 raise HTTPException(409, str(exc)) from None
+            except ValueError as exc:
+                raise_strategy_input_error(exc)
             result_id, metrics_json = await save_result(state.db, bt_request, bt_result)
 
             metrics = _backtest_metrics_from_payload(bt_result)

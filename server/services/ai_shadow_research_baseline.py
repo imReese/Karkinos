@@ -19,7 +19,8 @@ from analytics.backtest_market_regime_evidence import (
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
 from analytics.oos_validation import build_rolling_out_of_sample_validation
 from analytics.sweep_robustness import build_sweep_robustness_evidence
-from backtest.engine import BacktestEngine
+from backtest.costs import RESEARCH_COST_STRESS_BPS, research_friction_assumptions
+from backtest.engine import BacktestEngine, research_execution_config
 from backtest.result import BacktestResult
 from core.types import BarFrequency, Symbol
 from data.handler import DataHandler
@@ -311,6 +312,7 @@ class AiShadowResearchBaselineMixin:
             data_handlers=handlers,
             initial_cash=Decimal(str(request.initial_cash)),
             commission_calc=commission_calc,
+            execution_config=research_execution_config(commission_calc),
             db=None,
         ).run()
         min_train, test_window, step = rolling_oos_parameters(len(result.equity_curve))
@@ -323,6 +325,17 @@ class AiShadowResearchBaselineMixin:
         metrics = result.metrics
         metrics_json = metrics.to_json_dict()
         metrics_json["execution_timing"] = result.execution_timing
+        metrics_json["cost_assumptions"] = {
+            **research_friction_assumptions(),
+            "commission_model_reference": cost_model_reference,
+        }
+        metrics_json["cost_sensitivity"] = _baseline_cost_sensitivity(
+            request=request,
+            handlers=handlers,
+            instruments=instruments,
+            initial_cash=result.initial_cash,
+            commission_calc=commission_calc,
+        )
         metrics_json.update(
             {
                 "evidence_bundle": evidence,
@@ -356,9 +369,13 @@ class AiShadowResearchBaselineMixin:
                     fills=result.fills,
                     data_handlers=handlers,
                     initial_cash=result.initial_cash,
+                    max_daily_volume_participation=Decimal(
+                        research_friction_assumptions()["max_volume_participation"]
+                    ),
                 ),
                 "drawdown_evidence": build_backtest_drawdown_evidence(
                     equity_curve=result.equity_curve,
+                    initial_cash=result.initial_cash,
                 ),
                 "market_regime_robustness": build_backtest_market_regime_evidence(
                     result=result,
@@ -381,25 +398,7 @@ class AiShadowResearchBaselineMixin:
                 instruments=instruments,
                 commission_calc=commission_calc,
             )
-        payload = {
-            "initial_cash": float(result.initial_cash),
-            "final_equity": float(result.final_equity),
-            "total_return": float(result.total_return),
-            "annual_return": metrics.annual_return,
-            "sharpe": metrics.sharpe,
-            "sortino": metrics.sortino,
-            "max_drawdown": metrics.max_drawdown,
-            "win_rate": metrics.win_rate,
-            "duration_days": result.duration_days,
-            "equity_curve": [
-                {"timestamp": timestamp.isoformat(), "equity": float(value)}
-                for timestamp, value in result.equity_curve
-            ],
-            "metrics_json": metrics_json,
-            "cost_summary_json": result.cost_summary.to_json_dict(),
-            "evidence_json": evidence,
-            "fills": [fill_to_response(fill) for fill in result.fills],
-        }
+        payload = _baseline_result_payload(result, metrics_json, evidence)
         payload["metrics_json"] = build_backtest_report_metrics_json(
             request,
             payload,
@@ -413,6 +412,63 @@ class AiShadowResearchBaselineMixin:
             cost_model_reference=cost_model_reference,
             fee_schedule_evidence=fee_schedule_evidence,
         )
+
+
+def _baseline_cost_sensitivity(
+    *,
+    request: BacktestRequest,
+    handlers: dict[Symbol, DataHandler],
+    instruments: dict[Symbol, Any],
+    initial_cash: Decimal,
+    commission_calc: Any,
+) -> list[dict[str, Any]]:
+    """Replay the baseline's fixed rules under the bounded adverse cost panel."""
+    scenarios = []
+    for bps in RESEARCH_COST_STRESS_BPS:
+        stressed = BacktestEngine(
+            strategy=build_dual_ma_research_strategy(request.params, len(instruments)),
+            instruments=instruments,
+            data_handlers=handlers,
+            initial_cash=initial_cash,
+            execution_config=research_execution_config(
+                commission_calc, slippage_bps=bps
+            ),
+        ).run()
+        scenarios.append(
+            {
+                **research_friction_assumptions(bps),
+                "total_return": float(stressed.total_return),
+                "max_drawdown": stressed.metrics.max_drawdown,
+                "fill_count": len(stressed.fills),
+            }
+        )
+    return scenarios
+
+
+def _baseline_result_payload(
+    result: BacktestResult, metrics_json: dict[str, Any], evidence: dict[str, Any]
+) -> dict[str, Any]:
+    """Serialize the same canonical result for persistence and the saved report."""
+    metrics = result.metrics
+    return {
+        "initial_cash": float(result.initial_cash),
+        "final_equity": float(result.final_equity),
+        "total_return": float(result.total_return),
+        "annual_return": metrics.annual_return,
+        "sharpe": metrics.sharpe,
+        "sortino": metrics.sortino,
+        "max_drawdown": metrics.max_drawdown,
+        "win_rate": metrics.win_rate,
+        "duration_days": result.duration_days,
+        "equity_curve": [
+            {"timestamp": timestamp.isoformat(), "equity": float(value)}
+            for timestamp, value in result.equity_curve
+        ],
+        "metrics_json": metrics_json,
+        "cost_summary_json": result.cost_summary.to_json_dict(),
+        "evidence_json": evidence,
+        "fills": [fill_to_response(fill) for fill in result.fills],
+    }
 
 
 def _load_baseline_universe(
@@ -533,6 +589,7 @@ def _dual_ma_parameter_robustness(
                 data_handlers=handlers,
                 initial_cash=selected_result.initial_cash,
                 commission_calc=commission_calc,
+                execution_config=research_execution_config(commission_calc),
                 db=None,
             ).run()
             results.append({"params": params, "score": float(result.total_return)})
