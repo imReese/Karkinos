@@ -64,7 +64,11 @@ class _Provider:
             close += Decimal("0.1")
         response = {
             field: pd.DataFrame(
-                [[value]], index=[day], columns=[f"{request.instruments[0].symbol}.SH"]
+                [[value] * len(request.instruments)],
+                index=[day],
+                columns=[
+                    f"{instrument.symbol}.SH" for instrument in request.instruments
+                ],
             )
             for field, value in zip(
                 ("Open", "High", "Low", "Close", "Volume", "Amount"),
@@ -828,3 +832,112 @@ def test_worker_delivery_is_private_and_cleanup_survives_failure(
     with pytest.raises(ResearchDatasetError, match=expected):
         service._prepare_in_child(_REQUEST, _DAYS, False)
     assert not library.parent.exists()
+
+
+@pytest.mark.parametrize(
+    "instrument_type,symbols",
+    [
+        ("etf", ("511010", "510300")),
+        ("stock", ("600001", "600000")),
+    ],
+)
+def test_multi_asset_prepare_http_reuses_tdx_adapter_and_real_backtest_consumer(
+    tmp_path, monkeypatch, instrument_type, symbols
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    monkeypatch.setattr(
+        db, "get_market_calendar_snapshot_sync", lambda **kwargs: _calendar()
+    )
+    service = ResearchDatasetService(
+        tmp_path / "research", TdxRuntimeSettings("test-only")
+    )
+    provider = _Provider()
+
+    def prepare(request, dates, refresh):
+        ref = prepare_daily_dataset(
+            service.root,
+            request=request,
+            dates=dates,
+            provider=provider,
+            refresh=refresh,
+        )
+        return {**dataset_summary(service.root, ref), "reused": False}
+
+    monkeypatch.setattr(service, "_prepare_in_child", prepare)
+    monkeypatch.setenv("KARKINOS_BACKTEST_REPORT_DIR", str(tmp_path / "reports"))
+    state = AppState()
+    state.db, state.config, state.research_datasets = db, ServerConfig(), service
+    app = FastAPI()
+    app.add_middleware(AppStateContextMiddleware, app_state=state)
+    app.include_router(create_router())
+    instruments = [
+        {"symbol": symbol, "instrument_type": instrument_type} for symbol in symbols
+    ]
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/backtest/datasets",
+            json={
+                "instruments": instruments,
+                "start_date": _DAYS[0].isoformat(),
+                "end_date": _DAYS[-1].isoformat(),
+            },
+        )
+        assert response.status_code == 200, response.text
+        summary = response.json()
+        assert summary["instruments"] == list(reversed(instruments))
+        assert summary["cross_source_verified"] is False
+        assert summary["point_in_time_verified"] is False
+        result = client.post(
+            "/api/backtest/run",
+            json={
+                "dataset_id": summary["dataset_id"],
+                "assets": instruments,
+                "start_date": _DAYS[0].isoformat(),
+                "end_date": _DAYS[-1].isoformat(),
+                "strategy": "etf_rotation" if instrument_type == "etf" else "dual_ma",
+                "params": {
+                    "lookback_period": 2,
+                    "volatility_window": 2,
+                    "top_k": 1,
+                    "rebalance_interval": 1,
+                    "use_risk_adjusted": False,
+                    "cash_proxy": "511010",
+                }
+                if instrument_type == "etf"
+                else {"short_period": 1, "long_period": 2},
+            },
+        )
+        assert result.status_code == 200, result.text
+        assert result.json()["fills"]
+        assert all(
+            fill["fee_rule_id"]
+            == (
+                "cn_fund_etf_default_v1"
+                if instrument_type == "etf"
+                else "cn_stock_a_default_v1"
+            )
+            for fill in result.json()["fills"]
+        )
+    store = ContentAddressedObjectStore(service.root / "objects")
+    restored = read_daily_bar_dataset(
+        store, DatasetCatalog(service.root).get(summary["dataset_id"]).ref
+    )
+    assert restored.row_count == 2 * len(_DAYS)
+    assert provider.calls == list(_DAYS)
+    # Restart cache reuse requires no credentials and retains the whole identity.
+    restarted = ResearchDatasetService(service.root, TdxRuntimeSettings())
+    assert (
+        restarted.prepare(
+            DailyBarRequest(
+                tuple(
+                    InstrumentKey(item["symbol"], InstrumentType(instrument_type))
+                    for item in instruments
+                ),
+                _DAYS[0],
+                _DAYS[-1],
+            ),
+            db=None,
+        )["dataset_id"]
+        == summary["dataset_id"]
+    )

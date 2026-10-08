@@ -663,3 +663,81 @@ def test_planner_rejects_invalid_persisted_watchlist_identity(tmp_path):
         enqueue_latest_verified_daily_market_jobs(
             db, _config(), _store(tmp_path), now=NOW
         )
+
+
+def test_multi_asset_verified_jobs_are_one_complete_universe_per_day(tmp_path):
+    client, store = _verified_jobs_api(
+        tmp_path, trading_dates={date(2026, 9, 16), date(2026, 9, 18)}
+    )
+    instruments = [
+        {"symbol": "511010", "instrument_type": "etf"},
+        {"symbol": "510300", "instrument_type": "etf"},
+        {"symbol": "600000", "instrument_type": "stock"},
+    ]
+    request = {
+        "instruments": instruments,
+        "start_date": "2026-09-16",
+        "end_date": "2026-09-18",
+    }
+    with client:
+        response = client.post("/api/backtest/datasets/verified-jobs", json=request)
+        reordered = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={**request, "instruments": list(reversed(instruments))},
+        )
+        assert response.status_code == 200, response.text
+        assert reordered.json() == response.json()
+        jobs = response.json()["jobs"]
+        canonical = sorted(
+            instruments, key=lambda item: (item["instrument_type"], item["symbol"])
+        )
+        assert len(jobs) == 2
+        assert [job["trade_date"] for job in jobs] == ["2026-09-16", "2026-09-18"]
+        assert all(job["instruments"] == canonical for job in jobs)
+        assert (
+            client.get(
+                f"/api/backtest/datasets/verified-jobs/{jobs[0]['job_id']}"
+            ).json()["instruments"]
+            == canonical
+        )
+    assert len(store.list_recent(VERIFIED_DAILY_MARKET_JOB)) == 2
+    for row in store.list_recent(VERIFIED_DAILY_MARKET_JOB):
+        assert json.loads(row["payload_json"])["instruments"] == canonical
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"instruments": []},
+        {"instruments": [{"symbol": "510300", "instrument_type": "gold"}]},
+        {"instruments": [{"symbol": "510300", "instrument_type": "etf"}] * 2},
+        {
+            "instruments": [
+                {"symbol": "510300", "instrument_type": kind}
+                for kind in ("stock", "etf")
+            ]
+        },
+        {
+            "instruments": [
+                {"symbol": str(510300 + i), "instrument_type": "etf"} for i in range(33)
+            ]
+        },
+        {"symbol": "600000"},
+        {"instrument_type": "stock"},
+    ],
+)
+def test_multi_asset_http_rejects_ambiguous_or_unbounded_universe_before_enqueue(
+    tmp_path, changes
+):
+    client, store = _verified_jobs_api(tmp_path, trading_dates={TRADE_DATE})
+    request = {
+        "instruments": [{"symbol": "510300", "instrument_type": "etf"}],
+        "start_date": "2026-09-18",
+        "end_date": "2026-09-18",
+    }
+    with client:
+        response = client.post(
+            "/api/backtest/datasets/verified-jobs", json={**request, **changes}
+        )
+    assert response.status_code == 422, response.text
+    assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []

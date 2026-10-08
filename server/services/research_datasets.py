@@ -356,10 +356,16 @@ class ResearchDatasetService:
         config: Any = None,
         refresh: bool = False,
     ) -> dict[str, Any]:
-        if len(request.instruments) != 1 or request.instruments[
-            0
-        ].instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}:
-            raise ResearchDatasetError("dataset_single_stock_or_etf_required")
+        if (
+            not 1 <= len(request.instruments) <= 32
+            or any(
+                item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
+                for item in request.instruments
+            )
+            or len({item.symbol for item in request.instruments})
+            != len(request.instruments)
+        ):
+            raise ResearchDatasetError("dataset_stock_or_etf_universe_required")
         if (request.end_date - request.start_date).days > 730:
             raise ResearchDatasetError("dataset_range_exceeds_two_years")
         close = datetime.combine(request.end_date, time(15), ZoneInfo("Asia/Shanghai"))
@@ -469,13 +475,19 @@ def publish_verified_interval_dataset(
     *,
     db: Any,
     job_ids: tuple[str, ...],
+    prefix_dataset_id: str | None = None,
 ) -> dict[str, Any]:
-    """Freeze exact successful verified-day jobs into one offline Dataset."""
-    if len(request.instruments) != 1 or request.instruments[0].instrument_type not in {
-        InstrumentType.STOCK,
-        InstrumentType.ETF,
-    }:
-        raise ResearchDatasetError("verified_interval_single_stock_or_etf_required")
+    """Freeze verified-day jobs, optionally preserving an exact original prefix."""
+    if (
+        not 1 <= len(request.instruments) <= 32
+        or any(
+            item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
+            for item in request.instruments
+        )
+        or len({item.symbol for item in request.instruments})
+        != len(request.instruments)
+    ):
+        raise ResearchDatasetError("verified_interval_stock_or_etf_universe_required")
     if (request.end_date - request.start_date).days >= 366:
         raise ResearchDatasetError("verified_interval_range_exceeds_366_days")
     close = datetime.combine(request.end_date, time(16), ZoneInfo("Asia/Shanghai"))
@@ -483,21 +495,53 @@ def publish_verified_interval_dataset(
         raise ResearchDatasetError("verified_interval_session_not_closed")
 
     expected_dates = _verified_dates(db, request.start_date, request.end_date)
+    root = root.resolve()
+    store = ContentAddressedObjectStore(root / "objects")
+    prefix = None
+    if prefix_dataset_id is not None:
+        try:
+            prefix = read_daily_bar_dataset(
+                store, DatasetRef(store.resolve_ref(prefix_dataset_id))
+            ).snapshot
+        except (
+            DatasetReaderError,
+            DatasetManifestError,
+            ObjectIntegrityError,
+            ObjectNotFoundError,
+            OSError,
+            ValueError,
+        ):
+            raise ResearchDatasetError("verified_interval_prefix_unreadable") from None
+        if (
+            not prefix.verification_bound
+            or not is_verified_daily_resolver_policy(prefix.resolver_policy_id)
+            or prefix.instruments != request.instruments
+            or prefix.start_date != request.start_date
+            or prefix.end_date > request.end_date
+            or prefix.cutoff > datetime.now(timezone.utc)
+        ):
+            raise ResearchDatasetError("verified_interval_prefix_mismatch")
+        prefix_dates = tuple(day for day in expected_dates if day <= prefix.end_date)
+        if tuple(part.partition_date for part in prefix.partitions) != prefix_dates:
+            raise ResearchDatasetError("verified_interval_prefix_calendar_mismatch")
+    job_dates = tuple(
+        day for day in expected_dates if prefix is None or day > prefix.end_date
+    )
     if (
         not isinstance(job_ids, tuple)
-        or len(job_ids) != len(expected_dates)
+        or len(job_ids) != len(job_dates)
         or any(not isinstance(job_id, str) for job_id in job_ids)
         or len(set(job_ids)) != len(job_ids)
     ):
         raise ResearchDatasetError("verified_interval_job_coverage_invalid")
 
-    root = root.resolve()
-    store = ContentAddressedObjectStore(root / "objects")
     jobs = SQLiteJobStore(db.path)
     calendar_refs: dict[int, str] = {}
     selected: dict[date, DailyBarDatasetSnapshot] = {}
-    policy_id: str | None = None
-    schema_version: str | None = None
+    policy_id: str | None = prefix.resolver_policy_id if prefix is not None else None
+    schema_version: str | None = (
+        prefix.market_schema_version if prefix is not None else None
+    )
 
     for job_id in job_ids:
         try:
@@ -513,7 +557,7 @@ def publish_verified_interval_dataset(
         except (TypeError, ValueError, VerifiedDailyMarketDataRequestError) as exc:
             raise ResearchDatasetError("verified_interval_job_payload_invalid") from exc
         day = planned.trade_date
-        if day not in expected_dates or day in selected:
+        if day not in job_dates or day in selected:
             raise ResearchDatasetError("verified_interval_job_coverage_invalid")
         if planned.instruments != request.instruments:
             raise ResearchDatasetError("verified_interval_instrument_mismatch")
@@ -568,18 +612,24 @@ def publish_verified_interval_dataset(
         schema_version = daily.market_schema_version
         selected[day] = daily
 
-    if set(selected) != set(expected_dates):
+    if set(selected) != set(job_dates):
         raise ResearchDatasetError("verified_interval_job_coverage_invalid")
-    ordered = tuple(selected[day] for day in expected_dates)
+    ordered = tuple(selected[day] for day in job_dates)
     assert policy_id is not None and schema_version is not None
     snapshot = DailyBarDatasetSnapshot(
         start_date=request.start_date,
         end_date=request.end_date,
-        cutoff=max(item.cutoff for item in ordered),
+        cutoff=max(
+            [item.cutoff for item in ordered] + ([prefix.cutoff] if prefix else [])
+        ),
         instruments=request.instruments,
         resolver_policy_id=policy_id,
         market_schema_version=schema_version,
-        partitions=tuple(item.partitions[0] for item in ordered),
+        partitions=(prefix.partitions if prefix else ())
+        + tuple(item.partitions[0] for item in ordered),
+        corporate_action_observation_ids=(
+            prefix.corporate_action_observation_ids if prefix else ()
+        ),
     )
     ref = publish_daily_bar_dataset_manifest(store, snapshot)
     try:

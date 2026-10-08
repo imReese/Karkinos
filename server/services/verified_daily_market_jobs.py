@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
+from data.market.contracts import DailyBarRequest
 from data.source_policy import (
     source_policy_for_config,
     verification_source_policy_for_config,
@@ -159,7 +160,8 @@ def enqueue_verified_daily_market_jobs_for_range(
     config: object,
     store: JobStore,
     *,
-    instrument: InstrumentKey,
+    instrument: InstrumentKey | None = None,
+    instruments: tuple[InstrumentKey, ...] | None = None,
     start_date: date,
     end_date: date,
     now: datetime,
@@ -168,8 +170,22 @@ def enqueue_verified_daily_market_jobs_for_range(
     """Explicitly enqueue one verified-source job for each closed SSE session."""
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("verified_daily_market_job_plan_now_must_be_timezone_aware")
-    if instrument.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}:
-        raise ValueError("verified_daily_market_instrument_type_unsupported")
+    if instrument is not None and instruments is not None:
+        raise ValueError("verified_daily_market_universe_fields_conflict")
+    if instruments is None:
+        if instrument is None:
+            raise ValueError("verified_daily_market_instruments_required")
+        instruments = (instrument,)
+    instruments = DailyBarRequest(instruments, start_date, end_date).instruments
+    if (
+        not 1 <= len(instruments) <= 32
+        or any(
+            item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
+            for item in instruments
+        )
+        or len({item.symbol for item in instruments}) != len(instruments)
+    ):
+        raise ValueError("verified_daily_market_universe_invalid")
     if not isinstance(reobserve, bool):
         raise ValueError("verified_daily_market_reobserve_invalid")
     resolved_dates = resolve_verified_closed_trading_dates_in_range(
@@ -188,7 +204,7 @@ def enqueue_verified_daily_market_jobs_for_range(
     payloads = tuple(
         VerifiedDailyMarketJobRequest(
             trade_date=date.fromisoformat(resolved.trade_date),
-            instruments=(instrument,),
+            instruments=instruments,
             source_policy_id=policy.policy_id,
             calendar_evidence_refs=resolved.calendar_evidence_refs,
             observation_round=observation_round,

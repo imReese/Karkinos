@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import DailyBarRequest
@@ -29,19 +29,57 @@ from server.services.verified_daily_market_jobs import (
 )
 
 
-class PrepareDatasetRequest(BaseModel):
+class DatasetInstrumentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     symbol: str = Field(pattern=r"^[0-9]{6}$")
-    instrument_type: Literal["stock", "etf"] = "stock"
-    start_date: date
-    end_date: date
-    refresh: bool = False
+    instrument_type: Literal["stock", "etf"]
 
 
 class VerifiedDatasetRangeRequest(BaseModel):
-    symbol: str = Field(pattern=r"^[0-9]{6}$")
-    instrument_type: Literal["stock", "etf"]
+    symbol: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
+    instrument_type: Literal["stock", "etf"] | None = None
+    instruments: list[DatasetInstrumentRequest] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
     start_date: date
     end_date: date
+
+    @model_validator(mode="after")
+    def validate_universe(self):
+        if "instruments" in self.model_fields_set:
+            if self.instruments is None:
+                raise ValueError("dataset_instruments_required")
+            if {"symbol", "instrument_type"} & self.model_fields_set:
+                raise ValueError("dataset_universe_fields_conflict")
+        elif self.symbol is None or self.instrument_type is None:
+            raise ValueError("dataset_instruments_required")
+        request = self.daily_request()
+        if len({item.symbol for item in request.instruments}) != len(
+            request.instruments
+        ):
+            raise ValueError("dataset_duplicate_symbol")
+        if self.instruments is not None:
+            self.instruments.sort(key=lambda item: (item.instrument_type, item.symbol))
+        return self
+
+    def daily_request(self) -> DailyBarRequest:
+        if self.instruments is not None:
+            instruments = tuple(
+                InstrumentKey(item.symbol, InstrumentType(item.instrument_type))
+                for item in self.instruments
+            )
+        else:
+            assert self.symbol is not None and self.instrument_type is not None
+            instruments = (
+                InstrumentKey(self.symbol, InstrumentType(self.instrument_type)),
+            )
+        return DailyBarRequest(instruments, self.start_date, self.end_date)
+
+
+class PrepareDatasetRequest(VerifiedDatasetRangeRequest):
+    instrument_type: Literal["stock", "etf"] | None = "stock"
+    refresh: bool = False
 
 
 class PrepareVerifiedJobsRequest(VerifiedDatasetRangeRequest):
@@ -80,15 +118,7 @@ def create_router() -> APIRouter:
         if service is None:
             raise HTTPException(503, "research_dataset_service_unavailable")
         try:
-            request = DailyBarRequest(
-                (
-                    InstrumentKey(
-                        payload.symbol, InstrumentType(payload.instrument_type)
-                    ),
-                ),
-                payload.start_date,
-                payload.end_date,
-            )
+            request = payload.daily_request()
             return await asyncio.to_thread(
                 service.prepare,
                 request,
@@ -116,9 +146,7 @@ def create_router() -> APIRouter:
                 state.db,
                 state.config,
                 SQLiteJobStore(state.db.path),
-                instrument=InstrumentKey(
-                    payload.symbol, InstrumentType(payload.instrument_type)
-                ),
+                instruments=payload.daily_request().instruments,
                 start_date=payload.start_date,
                 end_date=payload.end_date,
                 now=datetime.now(timezone.utc),
@@ -138,6 +166,7 @@ def create_router() -> APIRouter:
                     "trade_date": job.payload["trade_date"],
                     "job_id": job.job_id,
                     "source_policy_id": job.payload["source_policy_id"],
+                    "instruments": job.payload["instruments"],
                     "observation_round": job.payload["observation_round"],
                     "status": job.status,
                     "result_ref": job.result_ref,
@@ -181,15 +210,7 @@ def create_router() -> APIRouter:
         if state.db is None:
             raise HTTPException(503, "verified_interval_database_unavailable")
         try:
-            request = DailyBarRequest(
-                (
-                    InstrumentKey(
-                        payload.symbol, InstrumentType(payload.instrument_type)
-                    ),
-                ),
-                payload.start_date,
-                payload.end_date,
-            )
+            request = payload.daily_request()
         except ValueError:
             raise HTTPException(422, "verified_interval_request_invalid") from None
         try:
@@ -228,6 +249,7 @@ def create_router() -> APIRouter:
             "trade_date": request.trade_date.isoformat(),
             "job_id": job.job_id,
             "source_policy_id": request.source_policy_id,
+            "instruments": request.to_payload()["instruments"],
             "observation_round": request.observation_round,
             "status": job.status,
             "attempt": job.attempt,
