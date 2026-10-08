@@ -34,9 +34,9 @@ from server.services.market_calendar_dates import (
     resolve_verified_closed_trading_dates_in_range,
 )
 from server.services.research_datasets import (
-    _verified_dates,
     dataset_summary,
     publish_verified_interval_dataset,
+    verified_dataset_dates,
 )
 from server.services.research_observation_inputs import observation_input_binding
 from server.services.research_observations import (
@@ -124,9 +124,9 @@ def _prefix(service, observation, now):
     # Supply only histories that the target/paper readers can still consume.
     # This reuses their horizon policy; verified session coverage remains below.
     service._calendar(snapshot.start_date, now)
-    if tuple(part.partition_date for part in snapshot.partitions) != _verified_dates(
-        service.db, snapshot.start_date, snapshot.end_date
-    ):
+    if tuple(
+        part.partition_date for part in snapshot.partitions
+    ) != verified_dataset_dates(service.db, snapshot.start_date, snapshot.end_date):
         raise ValueError("observation_data_preparation_source_calendar_mismatch")
     if len(result.bars) > observation["policy"]["max_dataset_rows"]:
         raise ValueError("observation_dataset_budget_exceeded")
@@ -186,7 +186,9 @@ def _prepared_prefix(service, observation, now):
                 longer.corporate_action_observation_ids
             )
             or tuple(part.partition_date for part in snapshot.partitions)
-            != _verified_dates(service.db, snapshot.start_date, snapshot.end_date)
+            != verified_dataset_dates(
+                service.db, snapshot.start_date, snapshot.end_date
+            )
         ):
             raise ValueError("observation_data_preparation_prefix_mismatch")
         if len(current.bars) > observation["policy"]["max_dataset_rows"]:

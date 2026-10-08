@@ -335,7 +335,7 @@ def test_verified_interval_limits_explicit_range_to_366_natural_days(
 ) -> None:
     db = _db(tmp_path)
     monkeypatch.setattr(
-        "server.services.research_datasets._verified_dates",
+        "server.services.research_datasets.verified_dataset_dates",
         lambda *_args: (DAYS[-1],),
     )
     start = DAYS[-1] - timedelta(days=365)

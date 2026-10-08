@@ -34,9 +34,9 @@ from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
 from server.services.research_datasets import (
     ResearchDatasetError,
     ResearchDatasetService,
-    _verified_dates,
     dataset_summary,
     prepare_daily_dataset,
+    verified_dataset_dates,
 )
 
 _DAYS = tuple(date(2026, 9, day) for day in (7, 8, 9, 10, 11))
@@ -216,7 +216,7 @@ def test_prepare_without_healthy_cache_enters_explicit_preparation(
     path.write_bytes(b"broken")
     service = ResearchDatasetService(tmp_path, TdxRuntimeSettings("test-key"))
     monkeypatch.setattr(
-        "server.services.research_datasets._verified_dates", lambda *_: _DAYS
+        "server.services.research_datasets.verified_dataset_dates", lambda *_: _DAYS
     )
     calls = []
 
@@ -402,10 +402,10 @@ def _calendar():
 def test_calendar_is_verified_and_does_not_infer_weekdays(monkeypatch):
     row = _calendar()
     db = SimpleNamespace(get_market_calendar_snapshot_sync=lambda **kwargs: row)
-    assert _verified_dates(db, _DAYS[0], _DAYS[-1]) == _DAYS
+    assert verified_dataset_dates(db, _DAYS[0], _DAYS[-1]) == _DAYS
     row["official_verification_status"] = "needs_review"
     with pytest.raises(ResearchDatasetError, match="dataset_calendar_unavailable:2026"):
-        _verified_dates(db, _DAYS[0], _DAYS[-1])
+        verified_dataset_dates(db, _DAYS[0], _DAYS[-1])
 
     def sync(self, year):
         assert year == 2026
@@ -415,7 +415,10 @@ def test_calendar_is_verified_and_does_not_infer_weekdays(monkeypatch):
         "server.services.market_calendar_automation.MarketCalendarAutomationService.sync_year",
         sync,
     )
-    assert _verified_dates(db, _DAYS[0], _DAYS[-1], config=SimpleNamespace()) == _DAYS
+    assert (
+        verified_dataset_dates(db, _DAYS[0], _DAYS[-1], config=SimpleNamespace())
+        == _DAYS
+    )
 
 
 def test_bound_dataset_at_event_availability_still_has_no_pit_admission(

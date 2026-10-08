@@ -403,7 +403,9 @@ class ResearchDatasetService:
                             type(exc).__name__,
                         )
             self._settings.require_credentials()
-            dates = _verified_dates(db, request.start_date, request.end_date, config)
+            dates = verified_dataset_dates(
+                db, request.start_date, request.end_date, config
+            )
             return self._prepare_in_child(request, dates, refresh)
         finally:
             self._lock.release()
@@ -494,7 +496,7 @@ def publish_verified_interval_dataset(
     if close > datetime.now(timezone.utc):
         raise ResearchDatasetError("verified_interval_session_not_closed")
 
-    expected_dates = _verified_dates(db, request.start_date, request.end_date)
+    expected_dates = verified_dataset_dates(db, request.start_date, request.end_date)
     root = root.resolve()
     store = ContentAddressedObjectStore(root / "objects")
     prefix = None
@@ -642,7 +644,7 @@ def publish_verified_interval_dataset(
     return dataset_summary(root, ref)
 
 
-def _verified_dates(
+def verified_dataset_dates(
     db: Any,
     start: date,
     end: date,
