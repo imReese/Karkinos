@@ -39,6 +39,11 @@ export function AppShellSidebar({
       id="app-shell-navigation"
       data-mobile-open={mobileNavOpen}
       data-desktop-expanded={desktopNavExpanded}
+      role={mobileNavOpen ? 'dialog' : undefined}
+      aria-modal={mobileNavOpen ? true : undefined}
+      aria-label={
+        mobileNavOpen ? `${copy.shell.navigation} · Karkinos` : undefined
+      }
       className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(84vw,280px)] flex-col border-r border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-3 xl:relative xl:h-full ${desktopNavExpanded ? 'xl:w-52' : 'xl:w-14'} xl:translate-x-0 ${
         mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
       }`}
@@ -90,6 +95,7 @@ export function AppShellSidebar({
                 <Link
                   key={item.to}
                   to={item.to}
+                  aria-current={active ? 'page' : undefined}
                   onClick={onMobileNavClose}
                   data-testid={`sidebar-nav-${item.key}`}
                   title={

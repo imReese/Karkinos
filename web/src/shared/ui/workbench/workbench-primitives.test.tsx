@@ -516,12 +516,12 @@ test('closes the evidence drawer with Escape and restores focus', async () => {
   expect(dialog).toBeTruthy();
   expect(dialog.parentElement?.parentElement).toBe(document.body);
   expect(document.activeElement).toBe(
-    screen.getAllByRole('button', { name: 'Close evidence' })[1],
+    within(dialog).getByRole('button', { name: 'Close evidence' }),
   );
 
   await user.keyboard('{Tab}');
   expect(document.activeElement).toBe(
-    screen.getAllByRole('button', { name: 'Close evidence' })[1],
+    within(dialog).getByRole('button', { name: 'Close evidence' }),
   );
 
   await user.keyboard('{Escape}');

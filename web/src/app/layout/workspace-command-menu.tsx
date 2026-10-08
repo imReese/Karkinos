@@ -243,7 +243,8 @@ export function WorkspaceCommandMenu({
                       to={item.to}
                       search={item.search as any}
                       data-command-item-index={itemIndex}
-                      aria-selected={isSelected ? 'true' : undefined}
+                      data-command-active={isSelected ? 'true' : undefined}
+                      aria-current={isCurrent ? 'page' : undefined}
                       className={`app-command-result ${
                         isSelected || isCurrent
                           ? 'app-command-result-active'
@@ -264,6 +265,9 @@ export function WorkspaceCommandMenu({
             <div className="app-command-empty">{copy.shell.commandEmpty}</div>
           )}
         </nav>
+        <span className="sr-only" role="status" aria-live="polite">
+          {flatItems[activeIndex]?.label ?? copy.shell.commandEmpty}
+        </span>
       </section>
     </div>
   );

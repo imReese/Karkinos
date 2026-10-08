@@ -36,7 +36,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           pathname={shell.pathname}
         />
 
-        <main className="app-shell-main relative flex min-w-0 flex-1 flex-col">
+        <main
+          inert={shell.mobileNavOpen}
+          className="app-shell-main relative flex min-w-0 flex-1 flex-col"
+        >
           <AppShellToolbar
             commandOpen={shell.commandOpen}
             copy={shell.copy}

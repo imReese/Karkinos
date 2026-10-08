@@ -30,7 +30,7 @@ const OVERVIEW = sourceTree('features/overview');
 const PORTFOLIO = sourceTree('features/portfolio');
 
 function cssBlock(selector: string) {
-  const start = CSS.indexOf(selector);
+  const start = CSS.indexOf(`${selector} {`);
   if (start < 0) return '';
   const open = CSS.indexOf('{', start);
   const close = CSS.indexOf('}', open);

@@ -310,6 +310,10 @@ textarea {
   outline-offset: 2px;
 }
 
+.app-workbench-route summary:focus-visible {
+  outline-offset: -2px;
+}
+
 .app-root {
   background: var(--app-bg);
   color: var(--app-text);

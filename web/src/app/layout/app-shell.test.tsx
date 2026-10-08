@@ -579,16 +579,16 @@ test('supports slash shortcut and keyboard arrow navigation in command menu', as
 
   // Initial active item is the first one (Overview)
   const results = within(dialog).getAllByRole('link');
-  expect(results[0].getAttribute('aria-selected')).toBe('true');
+  expect(results[0].getAttribute('data-command-active')).toBe('true');
 
   // Press ArrowDown to cycle to next item (Portfolio)
   await user.keyboard('{ArrowDown}');
-  expect(results[1].getAttribute('aria-selected')).toBe('true');
-  expect(results[0].getAttribute('aria-selected')).toBeNull();
+  expect(results[1].getAttribute('data-command-active')).toBe('true');
+  expect(results[0].getAttribute('data-command-active')).toBeNull();
 
   // Press ArrowUp to cycle back to first item (Overview)
   await user.keyboard('{ArrowUp}');
-  expect(results[0].getAttribute('aria-selected')).toBe('true');
+  expect(results[0].getAttribute('data-command-active')).toBe('true');
 
   // Type a ticker query (e.g. 600519) and verify direct quote jump
   await user.type(search, '600519');
@@ -596,7 +596,7 @@ test('supports slash shortcut and keyboard arrow navigation in command menu', as
     name: /View 600519 in Market/i,
   });
   expect(directLink).toBeTruthy();
-  expect(directLink.getAttribute('aria-selected')).toBe('true');
+  expect(directLink.getAttribute('data-command-active')).toBe('true');
 
   await user.keyboard('{Escape}');
   await waitFor(() =>

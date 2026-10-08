@@ -52,7 +52,24 @@ export function useAppShellController() {
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault();
         setMobileNavOpen(false);
+      } else if (event.key === 'Tab') {
+        const focusable = Array.from(
+          mobileNavRef.current?.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled])',
+          ) ?? [],
+        ).filter((element) => element.getClientRects().length > 0);
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (!first || !last) return;
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
       }
     };
 
@@ -71,17 +88,28 @@ export function useAppShellController() {
   }, [mobileNavOpen]);
 
   useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1280px)');
+    const closeAtDesktop = () => {
+      if (desktop.matches) setMobileNavOpen(false);
+    };
+    desktop.addEventListener('change', closeAtDesktop);
+    return () => desktop.removeEventListener('change', closeAtDesktop);
+  }, []);
+
+  useEffect(() => {
     const handleCommandKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isInput =
         target &&
         (target.tagName === 'INPUT' ||
+          target.tagName === 'SELECT' ||
           target.tagName === 'TEXTAREA' ||
           target.isContentEditable ||
           target.getAttribute('role') === 'textbox');
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        setMobileNavOpen(false);
         setCommandOpen(true);
         return;
       }
@@ -93,6 +121,7 @@ export function useAppShellController() {
         !event.altKey
       ) {
         event.preventDefault();
+        setMobileNavOpen(false);
         setCommandOpen(true);
         return;
       }

@@ -1,33 +1,41 @@
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+
+import { usePreferences } from '../preferences/context';
 
 export type ToastItem = {
   id: number;
   title: string;
   message: string;
-  tone: 'success' | 'error';
+  tone: 'success' | 'warning' | 'error';
 };
 
 export function ToastStack({ toasts }: { toasts: ToastItem[] }) {
+  const { locale } = usePreferences();
   if (toasts.length === 0) {
     return null;
   }
 
-  return (
+  return createPortal(
     <div
       aria-live="polite"
       role="region"
-      aria-label="Notifications"
-      className="pointer-events-none fixed right-4 top-4 z-50 flex w-full max-w-sm flex-col gap-2.5"
+      aria-label={locale === 'zh' ? '操作通知' : 'Notifications'}
+      className="pointer-events-none fixed right-4 top-4 z-[200] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2.5"
     >
       {toasts.map((toast) => {
         const isSuccess = toast.tone === 'success';
         const Icon = isSuccess ? CheckCircle2 : AlertTriangle;
         const borderClass = isSuccess
           ? 'border-[var(--app-success-border)]'
-          : 'border-[var(--app-danger-border)]';
+          : toast.tone === 'warning'
+            ? 'border-[var(--app-warning-border)]'
+            : 'border-[var(--app-danger-border)]';
         const iconClass = isSuccess
           ? 'text-[var(--app-success-indicator)]'
-          : 'text-[var(--app-danger-indicator)]';
+          : toast.tone === 'warning'
+            ? 'text-[var(--app-warning-indicator)]'
+            : 'text-[var(--app-danger-indicator)]';
 
         return (
           <div
@@ -43,13 +51,14 @@ export function ToastStack({ toasts }: { toasts: ToastItem[] }) {
               <div className="text-sm font-semibold text-[var(--app-text)]">
                 {toast.title}
               </div>
-              <div className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
+              <div className="mt-0.5 break-words text-xs text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
                 {toast.message}
               </div>
             </div>
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }

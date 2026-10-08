@@ -34,6 +34,7 @@ export function AppShellMobileNavigation({
           <Link
             key={item.to}
             to={item.to}
+            aria-current={active ? 'page' : undefined}
             className={`app-mobile-primary-item ${
               active ? 'app-mobile-primary-item-active' : ''
             }`}
