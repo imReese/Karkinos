@@ -337,6 +337,16 @@ authorizes its own publication. Deterministic platform code may admit it to
 simulation under an explicit owner-authorized policy; this records an automated
 decision, not human confirmation.
 
+An exact exploratory Dataset snapshot with complete content identities and clean
+consumed rows can support research selection and hypothetical simulation. Its
+bytes must still replay before use. This admission does not infer historical
+information availability, corporate-action coverage or economic-return validity,
+and never admits account publication. Default research execution assumptions
+include 5 bps proportional slippage and a cumulative 1% share-volume cap per bar;
+explicit overrides remain frozen in each report. Unfilled residuals are cancelled
+after the attempt. Adverse cost replays use fresh books over the same inputs and
+rules. These assumptions do not prove venue liquidity or executable returns.
+
 ### Research, simulation, and account publication
 
 | Decision | Inputs and owner | Effect |
@@ -380,9 +390,10 @@ rerunning its backtest is not forward observation. Replacing a candidate starts 
 new observation identity; it does not rewrite the incumbent's history or book.
 Actual-account movements are never imported into a simulation book as its fills.
 
-The independent target shadow journey freezes an ordinary saved dual-MA strategy
-or validated Formula definition under an explicit observation policy. A Formula
-source retains its original analytics snapshot and canonical sizing evidence;
+The independent target shadow journey freezes an ordinary saved dual-MA or
+ETF-rotation strategy, or a validated Formula definition, under an explicit
+observation policy. A Formula source retains its original analytics snapshot
+and canonical sizing evidence;
 new publications bind formal verified Datasets without upgrading the source's
 historical PIT or code-verification claims. Forecasts contain directional rule
 decisions; Portfolio constructs capped targets, Risk independently checks them,
@@ -402,8 +413,8 @@ aborts publication. Stored request receipts, version checks and immutable histor
 protect retries and concurrent commands. Pausing stops new publications while
 allowing explicit measurement of previously published targets after restart.
 
-An observation can also explicitly start a separate stock paper book with initial
-cash, empty holdings and frozen instrument, cost and implementation assumptions.
+An observation can also explicitly start a separate stock/ETF paper book with
+initial cash, empty holdings and frozen instrument, cost and implementation assumptions.
 It accepts only targets actually published after that book started and before
 their designated session opened. Settlement models one attempt at that session's
 close, using the existing simulation, risk, Portfolio and distribution calculations;
@@ -422,6 +433,33 @@ newly published targets; it does not liquidate holdings or prevent their subsequ
 valuation and settlement. Paper facts stay outside actual-account ledgers and
 shared execution tables. Observation scheduling does not authorize paper settlement.
 
+Stock paper books default to the existing gross reported-distribution model;
+ETF books currently use explicit price-only returns because ETF distributions
+are not covered by that owner. Both preserve provider coverage, tax, timing and
+instrument-model limitations. Trading identity remains stock or ETF even when an
+ETF's investment exposure is gold or bonds.
+
+Paper performance is derived from the recorded equity, fills, positions and
+attempts. Net equity already includes fees and slipped prices; diagnostics never
+subtract those costs again. The return and drawdown series includes initial cash.
+A frozen, capped equal-weight same-universe buy-and-hold comparator shares the
+book's initial cash, instruments, cost and distribution assumptions. Its first
+single execution attempt is synchronized to the earliest genuinely accepted
+published target session by a rule frozen at book start. Waiting sessions remain
+visible and both simulated books retain cash until that session. This comparison
+is modeled net excess return, not factor-neutral alpha or proof of execution.
+
+An optional paper-health policy freezes minimum evaluated sessions and net-excess
+and drawdown thresholds at book start. Sessions before any accepted target do
+not satisfy its sample requirement. A breach may report a review or atomically
+pause only that paper book's acceptance of new targets; holdings continue to be
+valued. Its decision identifies the financial version, interval and comparison
+basis. Missing evaluation inputs cannot trigger a new performance action. Reads
+derive paper diagnostics from the preserved book version. Human publication
+review may bind a supplementary paper version and outcome fingerprint; later
+ordinary settlement preserves the reviewed immutable prefix. This evidence never
+replaces independent final evaluation or account qualification.
+
 Local scheduling is a separate, default-off opt-in for an exact observation.
 It reuses these same commands and receipts, with a persisted configuration
 generation rechecked under the publication write lock. It consumes existing
@@ -433,6 +471,13 @@ status; they do not create empty observation versions or performance evidence.
 An unidentified unreadable discovery candidate is reported separately; a selected
 matching Dataset that fails verification blocks instead of falling back to an
 older matching version.
+
+Paper settlement requires a separate default-off opt-in on that observation;
+enabling target publication alone grants no settlement permission. It runs the
+same replay and append checks using verified local Datasets after the close,
+including valuation of existing holdings when target publication is paused.
+Its configuration generation and stop request are rechecked under the paper
+write lock. It never requests providers or reconstructs unpublished targets.
 
 An optional price-monitoring rule is frozen when starting an observation; it has
 no default performance threshold. Measurement evaluates stable,
@@ -472,12 +517,23 @@ without AI and remains exploratory validation, not sealed final qualification.
 
 For the automated normalized-research path, explicit research and sealed end dates
 freeze one validation-selected champion before the sealed interval starts. The
-reservation binds the input snapshot, formula, baseline, costs and recorded trial
-family. The provider-free final evaluator checks the frozen research prefix and
+reservation binds the input snapshot, formula, baseline, costs, recorded trial
+family and bounded simple/random challengers. The provider-free final evaluator
+checks the frozen research prefix and
 binds the observed holdout snapshot. Overlapping consumed/reserved intervals cannot
 be reused to choose another champion; retries retain the original evaluation.
 New qualification and publication read this persisted evidence. Existing research
 results without it remain available as exploratory results.
+
+The champion, baseline and challenger replays begin their sealed interval with
+the same initial notional and empty positions. Earlier bars supply formula
+history and the last known pre-sealed rule decision, without carrying research
+cash, holdings, profits or costs. That last decision may execute only on a
+strictly later sealed bar. Each replay uses the same frozen costs, participation
+cap, universe and observed holdout snapshot. The final comparison requires
+positive net excess over the strongest frozen comparator, without selecting a
+replacement champion from the holdout. This counterfactual test does not prove
+historical PIT availability or actual execution.
 
 Trial correction uses actual adjacent-period equity returns and distinct recorded
 formula/parameter trials. Its nominal-count DSR estimate assumes independent trials

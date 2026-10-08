@@ -53,9 +53,22 @@ order:
    evidence and configured rules. Keep the existing account scan's evidence gates
    throughout migration; simulation admission alone never activates that scan.
 
+Exact, clean exploratory Dataset snapshots can support normalized research
+selection and simulation after replay checks. This admission preserves their
+historical-availability and economic-return limitations; account publication
+still requires its separate evidence. Ordinary, Formula and baseline research
+use explicit cost and daily-volume participation assumptions. Default research
+slippage is 5 bps and participation is 1%; adverse cost scenarios reuse the same
+data and rules. These values are assumptions, not calibrated execution evidence.
+The final normalized-research test freezes the champion, baseline and a bounded
+simple/random challenger family before the future interval. They use fresh
+equal-notional books, common data and costs; research-period wealth does not
+carry into that comparison. Winning this experiment does not upgrade PIT or
+account-publication evidence.
+
 Independent target-only research observation supports explicit start, publish /
-measure, and pause commands. It freezes a saved dual-MA or Formula candidate,
-publishes only the latest closed session from a verified immutable Dataset, and
+measure, and pause commands. It freezes a saved dual-MA, ETF-rotation or Formula
+candidate, publishes only the latest closed session from a verified immutable Dataset, and
 measures exact future price endpoints in a separate observation history. It
 does not simulate fills or account returns. An optional rule frozen at start
 monitors subsequent raw-price responses during explicit measurement, with a
@@ -65,18 +78,28 @@ pause. Per-observation scheduling is an explicit opt-in that consumes local
 verified Datasets within the next-opening publication deadline. Missing data waits
 for the existing preparation journey; scheduling does not request providers or
 backfill missed targets. Normalized candidates and human qualification review
-show observations from the exact source report as supplementary evidence. These
-price responses do not replace sealed independent evaluation, change account
-qualification, or bind the displayed observation version into an approval.
+show observations from the exact source report as supplementary evidence. Raw
+price responses do not replace independent final evaluation or change account
+qualification. Human review may separately bind an exact simulated paper-book
+version and interval; later settlement preserves that reviewed financial prefix.
 
-An observation may separately start an independent stock paper book, with its own
-initial cash, positions, modeled fills, costs and equity history. Explicit
+An observation may separately start an independent stock/ETF paper book, with
+its own initial cash, positions, modeled fills, costs and equity history. Explicit
 settlement consumes only targets published after the book started, binds immutable
 daily inputs and preserves previously settled results across restart and replay.
-Reported distributions reuse the existing gross accounting model. Pausing target
-acceptance retains holdings and allows subsequent settlement. This book has no
-automatic settlement or actual-account authority; the target shadow health rule
-continues to monitor price responses rather than paper-account returns.
+Reported stock distributions reuse the existing gross accounting model. ETF
+books currently use explicit price-only returns because their distributions are
+not verified; empty provider responses never prove complete coverage.
+The paper view derives net return, drawdown, fees, slippage, cash and position
+contributions from its existing accounting. A frozen same-universe, capped
+equal-weight buy-and-hold comparator uses the same cash, instruments and costs,
+and starts at the first genuinely accepted target session. Waiting cash before
+that session cannot manufacture relative performance. A separately configured
+paper-health rule may report or pause acceptance of new paper targets; it does
+not qualify or publish an account strategy. Pausing retains holdings for later
+settlement. Paper settlement has its own default-off per-observation scheduling
+opt-in, consumes verified local Datasets, and never backfills missing targets.
+The target shadow health rule continues to measure raw-price responses.
 
 Do not expand this work into live trading, broker adapters, capital authorization
 or a general workflow framework.
