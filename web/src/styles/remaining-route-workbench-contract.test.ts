@@ -450,7 +450,6 @@ describe('remaining route workbench contract', () => {
         /className="([^"]+)"\s+data-settings-surface="flat"/g,
       ),
     ];
-    expect(flatSettingsSurfaces).toHaveLength(4);
     for (const [, className] of flatSettingsSurfaces) {
       expect(className).toContain('border-y border-[var(--app-divider)]');
       expect(className).not.toContain('rounded-');

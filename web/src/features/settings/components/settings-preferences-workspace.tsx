@@ -100,7 +100,7 @@ export function SettingsPreferencesWorkspace({
                 className="app-button-secondary inline-flex items-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={testNotification.isPending || !notificationConfigured}
                 aria-busy={testNotification.isPending}
-                onClick={() => void testNotification.mutateAsync()}
+                onClick={() => testNotification.mutate()}
               >
                 {notificationConfigured ? (
                   <BeaconDot

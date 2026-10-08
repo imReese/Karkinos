@@ -51,8 +51,8 @@ class SettingsResponse(BaseModel):
         default=60,
         ge=MIN_LIVE_POLL_INTERVAL_SECONDS,
     )
-    account_commission_rate: float = 0.0001
-    account_min_commission: float = 5.0
+    account_commission_rate: float = Field(default=0.0001, ge=0, allow_inf_nan=False)
+    account_min_commission: float = Field(default=5.0, ge=0, allow_inf_nan=False)
 
     @field_validator("data_source")
     @classmethod
@@ -60,6 +60,32 @@ class SettingsResponse(BaseModel):
         if value not in SUPPORTED_DATA_SOURCES:
             raise ValueError("unsupported data source")
         return value
+
+
+class AccountCostSettingsUpdate(BaseModel):
+    """A narrow update that cannot overwrite unrelated runtime settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    account_commission_rate: float = Field(ge=0, allow_inf_nan=False)
+    account_min_commission: float = Field(ge=0, allow_inf_nan=False)
+
+
+class FullSettingsUpdate(SettingsResponse):
+    """Legacy replacement requests must state every mutable runtime setting."""
+
+    host: str = Field(...)
+    port: int = Field(...)
+    initial_cash: float = Field(...)
+    start_date: str = Field(...)
+    end_date: str = Field(...)
+    strategy: str = Field(...)
+    short_period: int = Field(...)
+    long_period: int = Field(...)
+    data_source: str = Field(...)
+    live_poll_interval: int = Field(..., ge=MIN_LIVE_POLL_INTERVAL_SECONDS)
+    account_commission_rate: float = Field(..., ge=0, allow_inf_nan=False)
+    account_min_commission: float = Field(..., ge=0, allow_inf_nan=False)
 
 
 class DataSourceSettingsUpdate(BaseModel):

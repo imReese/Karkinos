@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { formatTimestamp } from '../../../shared/format';
 import {
@@ -46,16 +46,23 @@ function SettingsBoardPermissions({
     beijing: 'unknown',
   });
   const [confirmed, setConfirmed] = useState(false);
+  const dirty = useRef(false);
 
   useEffect(() => {
-    if (status.data) setBoards(status.data.boards);
+    if (status.data && !dirty.current) setBoards(status.data.boards);
   }, [status.data]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!confirmed) return;
-    await update.mutateAsync(boards);
-    setConfirmed(false);
+    if (!confirmed || update.isPending || status.isError) return;
+    try {
+      const saved = await update.mutateAsync(boards);
+      dirty.current = false;
+      setBoards(saved.boards);
+      setConfirmed(false);
+    } catch {
+      // Preserve the reviewed draft and expose the mutation error below.
+    }
   };
 
   const names = {
@@ -103,13 +110,19 @@ function SettingsBoardPermissions({
                 {names[board]}
               </span>
               <select
+                disabled={
+                  status.isLoading || status.isError || update.isPending
+                }
                 value={boards[board]}
-                onChange={(event) =>
+                onChange={(event) => {
+                  dirty.current = true;
+                  setConfirmed(false);
+                  update.reset();
                   setBoards((current) => ({
                     ...current,
                     [board]: event.target.value as BoardPermissionStatus,
-                  }))
-                }
+                  }));
+                }}
                 className="w-full rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-0)] px-2 py-1.5 text-xs text-[var(--app-text)] outline-hidden focus:border-[var(--app-accent-border)]"
               >
                 {options.map(([value, label]) => (
@@ -129,6 +142,7 @@ function SettingsBoardPermissions({
         <label className="flex items-start gap-2 text-xs text-[var(--app-text)]">
           <input
             type="checkbox"
+            disabled={status.isLoading || status.isError || update.isPending}
             checked={confirmed}
             onChange={(event) => setConfirmed(event.target.checked)}
           />
@@ -143,6 +157,22 @@ function SettingsBoardPermissions({
             {locale === 'zh' ? '保存失败，请重试。' : 'Save failed. Try again.'}
           </p>
         ) : null}
+        {update.isSuccess ? (
+          <p role="status" className="text-xs text-[var(--app-success-text)]">
+            {locale === 'zh'
+              ? '账户权限核实已保存。'
+              : 'Account access review saved.'}
+          </p>
+        ) : null}
+        {status.isError ? (
+          <button
+            type="button"
+            onClick={() => void status.refetch()}
+            className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs"
+          >
+            {locale === 'zh' ? '重新读取权限' : 'Retry access review'}
+          </button>
+        ) : null}
         <button
           type="submit"
           disabled={
@@ -151,7 +181,13 @@ function SettingsBoardPermissions({
           aria-busy={update.isPending ? 'true' : undefined}
           className="app-button-secondary w-fit rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {locale === 'zh' ? '保存权限核实' : 'Save access review'}
+          {update.isPending
+            ? locale === 'zh'
+              ? '保存中'
+              : 'Saving review'
+            : locale === 'zh'
+              ? '保存权限核实'
+              : 'Save access review'}
         </button>
       </form>
     </SettingsDisclosure>

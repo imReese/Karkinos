@@ -141,6 +141,10 @@ export const settingsCopy = {
     accountCostProfile: 'Account cost profile',
     accountCostProfileDetail:
       'Used only to prefill manual stock/ETF trade fees. It does not change backtest assumptions or submit orders.',
+    invalidAccountCosts:
+      'Enter a finite, non-negative rate and minimum commission.',
+    invalidDataSettings:
+      'Choose a data source and a whole-number poll interval of at least 15 seconds.',
     stockCommissionRate: 'Stock commission rate',
     minimumCommission: 'Minimum commission',
     accountCostPreview: (rate: number, minimum: number) =>
@@ -338,9 +342,11 @@ export const settingsCopy = {
     credentialNotRequired: '当前行情源不需要凭证',
     credentialEnvironmentDetail:
       '基于金融安全规范，API 凭据不在网页输入或存储。请在项目根目录 .env 中添加对应配置（格式可参考根目录 .env.example），保存并重启服务即可生效。',
-    accountCostProfile: '股票与基金交易费率模型',
+    accountCostProfile: '股票与 ETF 默认佣金',
     accountCostProfileDetail:
-      '设置默认交易佣金费率与单笔最低佣金。此费率用于手动录入交易记录时自动预填，并参与投资组合交易摩擦成本测算。',
+      '用于手工录入股票与 ETF 交易时预填佣金，不包含印花税、过户费或基金申赎费用；不会改变回测假设或提交订单。',
+    invalidAccountCosts: '请填写有限且不小于零的佣金率和最低佣金。',
+    invalidDataSettings: '请选择行情源，轮询间隔须为不小于 15 秒的整数。',
     stockCommissionRate: '股票佣金率',
     minimumCommission: '最低佣金',
     accountCostPreview: (rate: number, minimum: number) =>

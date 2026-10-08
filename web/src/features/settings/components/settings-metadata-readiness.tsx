@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
+import { useCopy } from '../../../shared/i18n/context';
 import { MetricStrip } from '../../../shared/ui/workbench';
 import type { SettingsPageController } from './settings-page-controller';
 import { InlineNotice, SettingsDisclosure } from './settings-view-primitives';
@@ -18,19 +20,9 @@ function TrackedAssetPool({
   locale: string;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [classFilter, setClassFilter] = useState<'all' | 'stock' | 'fund'>(
-    'all',
-  );
+  const [classFilter, setClassFilter] = useState('all');
+  const copy = useCopy();
   const [expanded, setExpanded] = useState(false);
-
-  const stockCount = useMemo(
-    () => configuredAssets.filter((a) => a.asset_class === 'stock').length,
-    [configuredAssets],
-  );
-  const fundCount = useMemo(
-    () => configuredAssets.filter((a) => a.asset_class === 'fund').length,
-    [configuredAssets],
-  );
 
   const filteredAssets = useMemo(() => {
     let list: readonly TrackedAssetItem[] = configuredAssets;
@@ -104,6 +96,11 @@ function TrackedAssetPool({
           <div className="relative min-w-44 max-w-xs flex-1">
             <input
               type="text"
+              aria-label={
+                locale === 'zh'
+                  ? '搜索标的代码或名称'
+                  : 'Search asset code or name'
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={
@@ -117,6 +114,7 @@ function TrackedAssetPool({
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
+                aria-label={locale === 'zh' ? '清空搜索' : 'Clear search'}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--app-muted)] hover:text-[var(--app-text)]"
               >
                 ✕
@@ -132,16 +130,16 @@ function TrackedAssetPool({
                   ? `全部 (${configuredAssets.length})`
                   : `All (${configuredAssets.length})`,
               ],
-              [
-                'stock',
-                locale === 'zh'
-                  ? `A股 (${stockCount})`
-                  : `Stock (${stockCount})`,
-              ],
-              [
-                'fund',
-                locale === 'zh' ? `基金 (${fundCount})` : `Fund (${fundCount})`,
-              ],
+              ...Array.from(
+                new Set(
+                  configuredAssets.map(
+                    (asset) => asset.asset_class ?? 'unknown',
+                  ),
+                ),
+              ).map((assetClass) => [
+                assetClass,
+                `${formatAssetClassLabel(assetClass, copy.common)} (${configuredAssets.filter((asset) => (asset.asset_class ?? 'unknown') === assetClass).length})`,
+              ]),
             ].map(([key, label]) => (
               <button
                 key={key}
@@ -151,7 +149,8 @@ function TrackedAssetPool({
                     ? 'border border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent-text)]'
                     : 'border border-transparent text-[var(--app-soft)] hover:text-[var(--app-text)]'
                 }`}
-                onClick={() => setClassFilter(key as typeof classFilter)}
+                aria-pressed={classFilter === key}
+                onClick={() => setClassFilter(key)}
               >
                 {label}
               </button>
@@ -190,13 +189,7 @@ function TrackedAssetPool({
                       : 'border border-[color-mix(in_srgb,var(--app-success)_24%,transparent)] text-[var(--app-success-text)]'
                   }`}
                 >
-                  {isStock
-                    ? locale === 'zh'
-                      ? 'A股'
-                      : 'STOCK'
-                    : locale === 'zh'
-                      ? '基金'
-                      : 'FUND'}
+                  {formatAssetClassLabel(asset.asset_class, copy.common)}
                 </span>
               </div>
             );
@@ -287,11 +280,12 @@ export function SettingsMetadataReadiness({
     settings,
   } = controller;
   const [snippetCopied, setSnippetCopied] = useState(false);
+  const [snippetCopyError, setSnippetCopyError] = useState(false);
 
-  const configuredAssets: readonly TrackedAssetItem[] = assetMetadataStatus.data
-    ?.configured_assets?.length
-    ? assetMetadataStatus.data.configured_assets
-    : (settings.data?.assets ?? []);
+  const configuredAssets: readonly TrackedAssetItem[] =
+    assetMetadataStatus.data?.configured_assets ?? settings.data?.assets ?? [];
+  const metadataUnavailable =
+    assetMetadataStatus.isError || !assetMetadataStatus.data;
 
   return (
     <SettingsDisclosure
@@ -300,9 +294,13 @@ export function SettingsMetadataReadiness({
       detail={copy.settings.metadataReadinessDetail}
       badge={
         <span className="app-type-micro rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2 py-0.5 font-semibold text-[var(--app-soft)]">
-          {locale === 'zh'
-            ? `${metadataConfiguredCount} 个已登记`
-            : `${metadataConfiguredCount} mapped`}
+          {assetMetadataStatus.isLoading
+            ? copy.shell.checking
+            : metadataUnavailable
+              ? copy.shell.statusUnknown
+              : locale === 'zh'
+                ? `${metadataConfiguredCount} 个已登记`
+                : `${metadataConfiguredCount} mapped`}
         </span>
       }
     >
@@ -317,15 +315,22 @@ export function SettingsMetadataReadiness({
             label: copy.settings.metadataConfigured,
             value: assetMetadataStatus.isLoading
               ? copy.shell.checking
-              : metadataConfiguredCount,
-            tone: metadataConfiguredCount > 0 ? 'neutral' : 'warning',
+              : metadataUnavailable
+                ? copy.shell.statusUnknown
+                : metadataConfiguredCount,
+            tone:
+              !metadataUnavailable && metadataConfiguredCount === 0
+                ? 'warning'
+                : 'neutral',
           },
           {
             id: 'metadata-missing',
             label: copy.settings.assetMetadataMissingCount,
             value: assetMetadataStatus.isLoading
               ? copy.shell.checking
-              : missingMetadataSymbols.length,
+              : metadataUnavailable
+                ? copy.shell.statusUnknown
+                : missingMetadataSymbols.length,
             tone: missingMetadataSymbols.length > 0 ? 'warning' : 'neutral',
           },
           {
@@ -342,6 +347,16 @@ export function SettingsMetadataReadiness({
           title={copy.shell.checking}
           detail={copy.settings.assetMetadataDetail}
         />
+      ) : metadataUnavailable ? (
+        <InlineNotice
+          tone="danger"
+          title={copy.shell.statusUnknown}
+          detail={
+            locale === 'zh'
+              ? '元数据状态无法读取，请重试后再核验覆盖范围。'
+              : 'Metadata status could not be read. Retry before assessing coverage.'
+          }
+        />
       ) : assetMetadataStatus.data?.has_missing_metadata ? (
         <div className="grid gap-3">
           <InlineNotice
@@ -357,10 +372,18 @@ export function SettingsMetadataReadiness({
               <button
                 type="button"
                 className="app-button-secondary inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-mono font-medium"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(metadataSnippet);
-                  setSnippetCopied(true);
-                  setTimeout(() => setSnippetCopied(false), 2000);
+                onClick={async () => {
+                  setSnippetCopied(false);
+                  setSnippetCopyError(false);
+                  try {
+                    if (!navigator.clipboard?.writeText)
+                      throw new Error('clipboard unavailable');
+                    await navigator.clipboard.writeText(metadataSnippet);
+                    setSnippetCopied(true);
+                    setTimeout(() => setSnippetCopied(false), 2000);
+                  } catch {
+                    setSnippetCopyError(true);
+                  }
                 }}
               >
                 {snippetCopied
@@ -372,6 +395,13 @@ export function SettingsMetadataReadiness({
                     : 'Copy JSON'}
               </button>
             </div>
+            {snippetCopyError ? (
+              <p role="alert" className="text-xs text-[var(--app-danger-text)]">
+                {locale === 'zh'
+                  ? '复制失败，请手动选择下方 JSON 复制。'
+                  : 'Copy failed. Select and copy the JSON below.'}
+              </p>
+            ) : null}
             <textarea
               className="app-field min-h-44 resize-y rounded-[var(--app-radius-control)] px-3 py-3 font-mono text-xs leading-5"
               readOnly

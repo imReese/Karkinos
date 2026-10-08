@@ -38,21 +38,41 @@ export function SettingsPageView({
       />
       <SettingsCategoryBar controller={controller} />
       {statusLoadFailed ? (
-        <InlineNotice
-          tone="danger"
-          title={copy.settings.error}
-          detail={[
-            settings.error,
-            dataSourceStatus.error,
-            assetMetadataStatus.error,
-            liveStatus.error,
-            marketHealth.error,
-            overview.error,
-          ]
-            .filter(Boolean)
-            .map((error) => getErrorMessage(error, copy.settings.error))
-            .join(' · ')}
-        />
+        <div className="space-y-3" role="alert">
+          <InlineNotice
+            tone="danger"
+            title={copy.settings.error}
+            detail={[
+              settings.error,
+              dataSourceStatus.error,
+              assetMetadataStatus.error,
+              liveStatus.error,
+              marketHealth.error,
+              overview.error,
+            ]
+              .filter(Boolean)
+              .map((error) => getErrorMessage(error, copy.settings.error))
+              .join(' · ')}
+          />
+          <button
+            type="button"
+            className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
+            onClick={() => {
+              for (const query of [
+                settings,
+                dataSourceStatus,
+                assetMetadataStatus,
+                liveStatus,
+                marketHealth,
+                overview,
+              ]) {
+                if (query.isError) void query.refetch();
+              }
+            }}
+          >
+            {copy.settings.retry}
+          </button>
+        </div>
       ) : null}
       <SettingsPersistedConfiguration controller={controller} />
       <SettingsDataStatus controller={controller} />
@@ -109,7 +129,9 @@ function SettingsDataStatus({
             label: copy.settings.marketState,
             value: marketHealth.isLoading ? (
               copy.shell.checking
-            ) : marketHealth.data?.market_open ? (
+            ) : marketHealth.isError || !marketHealth.data ? (
+              copy.shell.statusUnknown
+            ) : marketHealth.data.market_open ? (
               <span
                 aria-label={`${copy.settings.marketState}: ${copy.shell.marketOpen}`}
               >
@@ -222,13 +244,7 @@ function SettingsCategoryBar({
 }: {
   controller: SettingsPageController;
 }) {
-  const {
-    accountCommissionRate,
-    locale,
-    pollInterval,
-    providerName,
-    trackedAssets,
-  } = controller;
+  const { copy, locale, settings, trackedAssets } = controller;
 
   const jumpTo = (targetId: string, parentDisclosureId?: string) => {
     if (parentDisclosureId) {
@@ -241,21 +257,35 @@ function SettingsCategoryBar({
     if (target instanceof HTMLDetailsElement) {
       target.open = true;
     }
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth',
+      block: 'start',
+    });
   };
 
-  const commissionBp = (Number(accountCommissionRate) * 10000).toFixed(1);
+  const commissionBp = settings.data
+    ? (settings.data.account_commission_rate * 10000).toFixed(1)
+    : null;
 
   const categories = [
     {
       id: 'settings-persisted-configuration',
       label: locale === 'zh' ? '基础参数' : 'Core Defaults',
-      meta: `${providerName} · ${pollInterval}s`,
+      meta: settings.data
+        ? `${settings.data.data_source} · ${settings.data.live_poll_interval}s`
+        : copy.shell.statusUnknown,
     },
     {
       id: 'settings-configuration-editor',
       label: locale === 'zh' ? '费率与数据源' : 'Costs & Source',
-      meta: locale === 'zh' ? `万 ${commissionBp}` : `${commissionBp} bp`,
+      meta:
+        commissionBp === null
+          ? copy.shell.statusUnknown
+          : locale === 'zh'
+            ? `万 ${commissionBp}`
+            : `${commissionBp} bp`,
     },
     {
       id: 'settings-metadata-disclosure',

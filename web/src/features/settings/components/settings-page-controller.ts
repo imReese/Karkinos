@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import {
   useAccountOverviewQuery,
@@ -39,10 +39,15 @@ export function useSettingsPageController() {
   const { locale, setLocale, theme, setTheme } = usePreferences();
   const fundNavCapabilityLabel =
     locale === 'zh' ? '基金净值接口' : 'Fund NAV capability';
-  const [dataSource, setDataSource] = useState('');
-  const [pollInterval, setPollInterval] = useState('60');
-  const [accountCommissionRate, setAccountCommissionRate] = useState('0.0001');
-  const [accountMinCommission, setAccountMinCommission] = useState('5');
+  const [dataSource, setDataSourceValue] = useState('');
+  const dataSourceDirty = useRef(false);
+  const accountCostsDirty = useRef(false);
+  const [accountCostsError, setAccountCostsError] = useState('');
+  const [dataSettingsError, setDataSettingsError] = useState('');
+  const [pollInterval, setPollIntervalValue] = useState('60');
+  const [accountCommissionRate, setAccountCommissionRateValue] =
+    useState('0.0001');
+  const [accountMinCommission, setAccountMinCommissionValue] = useState('5');
   const taskStorageKey = useMemo(() => dailyTaskKey(), []);
   const [manualTasksDone, setManualTasksDone] = useState<
     Partial<Record<ManualTaskId, boolean>>
@@ -58,10 +63,18 @@ export function useSettingsPageController() {
     if (!settings.data) {
       return;
     }
-    setDataSource(settings.data.data_source);
-    setPollInterval(String(settings.data.live_poll_interval));
-    setAccountCommissionRate(String(settings.data.account_commission_rate));
-    setAccountMinCommission(String(settings.data.account_min_commission));
+    if (!dataSourceDirty.current) {
+      setDataSourceValue(settings.data.data_source);
+      setPollIntervalValue(String(settings.data.live_poll_interval));
+    }
+    if (!accountCostsDirty.current) {
+      setAccountCommissionRateValue(
+        String(settings.data.account_commission_rate),
+      );
+      setAccountMinCommissionValue(
+        String(settings.data.account_min_commission),
+      );
+    }
   }, [settings.data]);
 
   useEffect(() => {
@@ -108,30 +121,80 @@ export function useSettingsPageController() {
     );
   }, [accountCommissionRate, accountMinCommission, settings.data]);
 
+  const setDataSource = (value: string) => {
+    dataSourceDirty.current = true;
+    updateDataSource.reset();
+    setDataSettingsError('');
+    setDataSourceValue(value);
+  };
+  const setPollInterval = (value: string) => {
+    dataSourceDirty.current = true;
+    updateDataSource.reset();
+    setDataSettingsError('');
+    setPollIntervalValue(value);
+  };
+  const setAccountCommissionRate = (value: string) => {
+    accountCostsDirty.current = true;
+    updateSettings.reset();
+    setAccountCostsError('');
+    setAccountCommissionRateValue(value);
+  };
+  const setAccountMinCommission = (value: string) => {
+    accountCostsDirty.current = true;
+    updateSettings.reset();
+    setAccountCostsError('');
+    setAccountMinCommissionValue(value);
+  };
+  const accountCostsValid = [accountCommissionRate, accountMinCommission].every(
+    (value) =>
+      value.trim() !== '' &&
+      Number.isFinite(Number(value)) &&
+      Number(value) >= 0,
+  );
+  const dataSettingsValid =
+    dataSource.trim() !== '' &&
+    pollInterval.trim() !== '' &&
+    Number.isSafeInteger(Number(pollInterval)) &&
+    Number(pollInterval) >= 15;
+
   const submitDataSource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const normalizedInterval = Math.max(Number(pollInterval) || 60, 15);
-    await updateDataSource.mutateAsync({
-      data_source: dataSource.trim() || settings.data?.data_source || 'akshare',
-      live_poll_interval: normalizedInterval,
-    });
-    setPollInterval(String(normalizedInterval));
+    if (!settings.data || updateDataSource.isPending) return;
+    if (!dataSettingsValid) {
+      setDataSettingsError(copy.settings.invalidDataSettings);
+      return;
+    }
+    try {
+      const saved = await updateDataSource.mutateAsync({
+        data_source: dataSource,
+        live_poll_interval: Number(pollInterval),
+      });
+      dataSourceDirty.current = false;
+      setDataSourceValue(saved.data_source);
+      setPollIntervalValue(String(saved.live_poll_interval));
+    } catch {
+      // The mutation state keeps the error visible and the draft retryable.
+    }
   };
 
   const submitAccountCommission = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!settings.data) {
+    if (!settings.data || updateSettings.isPending) return;
+    if (!accountCostsValid) {
+      setAccountCostsError(copy.settings.invalidAccountCosts);
       return;
     }
-    const normalizedRate = Math.max(Number(accountCommissionRate) || 0, 0);
-    const normalizedMinimum = Math.max(Number(accountMinCommission) || 0, 0);
-    await updateSettings.mutateAsync({
-      ...settings.data,
-      account_commission_rate: normalizedRate,
-      account_min_commission: normalizedMinimum,
-    });
-    setAccountCommissionRate(String(normalizedRate));
-    setAccountMinCommission(String(normalizedMinimum));
+    try {
+      const saved = await updateSettings.mutateAsync({
+        account_commission_rate: Number(accountCommissionRate),
+        account_min_commission: Number(accountMinCommission),
+      });
+      accountCostsDirty.current = false;
+      setAccountCommissionRateValue(String(saved.account_commission_rate));
+      setAccountMinCommissionValue(String(saved.account_min_commission));
+    } catch {
+      // The mutation state keeps the error visible and the draft retryable.
+    }
   };
 
   return {
@@ -164,6 +227,10 @@ export function useSettingsPageController() {
     ...operationsModel,
     dataSourceChanged,
     accountCommissionChanged,
+    accountCostsValid,
+    accountCostsError,
+    dataSettingsValid,
+    dataSettingsError,
     submitDataSource,
     submitAccountCommission,
   };

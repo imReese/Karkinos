@@ -1,5 +1,6 @@
+import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -138,6 +139,8 @@ type MockOptions = {
   assetMetadataStatus?: AssetMetadataStatusResponse;
   overview?: Partial<MockOverview> & Record<string, unknown>;
   failLiveStatus?: boolean;
+  failMarketHealth?: boolean;
+  failMetadata?: boolean;
 };
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
@@ -156,6 +159,8 @@ function installFetchMock({
   assetMetadataStatus = defaultAssetMetadataStatus,
   overview = defaultOverview,
   failLiveStatus = false,
+  failMarketHealth = false,
+  failMetadata = false,
 }: MockOptions = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
@@ -201,7 +206,9 @@ function installFetchMock({
       return jsonResponse(dataSourceStatus);
     }
     if (url.includes('/api/settings/asset-metadata')) {
-      return jsonResponse(assetMetadataStatus);
+      return failMetadata
+        ? jsonResponse({ detail: 'metadata unavailable' }, { status: 503 })
+        : jsonResponse(assetMetadataStatus);
     }
     if (url.includes('/api/settings/notification/test')) {
       return jsonResponse({ status: 'ok', message: 'sent' });
@@ -221,7 +228,9 @@ function installFetchMock({
         : jsonResponse(liveStatus);
     }
     if (url.includes('/api/market/data-health')) {
-      return jsonResponse(marketHealth);
+      return failMarketHealth
+        ? jsonResponse({ detail: 'health unavailable' }, { status: 503 })
+        : jsonResponse(marketHealth);
     }
     if (url.includes('/api/portfolio/overview')) {
       return jsonResponse(overview);
@@ -255,7 +264,7 @@ function renderSettingsPage(options: MockOptions = {}) {
     </PreferencesProvider>,
   );
 
-  return { fetchMock };
+  return { fetchMock, queryClient };
 }
 
 beforeEach(() => {
@@ -501,7 +510,6 @@ test('saves account commission settings through the settings endpoint', async ()
       expect.objectContaining({
         method: 'PUT',
         body: JSON.stringify({
-          ...defaultSettings,
           account_commission_rate: 0.00025,
           account_min_commission: 3,
         }),
@@ -752,4 +760,181 @@ test('disables notification tests when environment credentials are missing', asy
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+});
+
+test('preserves an unsaved cost draft when saved settings refresh', async () => {
+  const user = userEvent.setup();
+  const { queryClient } = renderSettingsPage();
+  const rate = await screen.findByRole('spinbutton', {
+    name: 'Stock commission rate',
+  });
+  await waitFor(() => expect(rate).toHaveValue(0.0001));
+  await user.clear(rate);
+  await user.type(rate, '0.00025');
+  await act(async () => {
+    queryClient.setQueryData(['settings'], {
+      ...defaultSettings,
+      account_commission_rate: 0.0002,
+      account_min_commission: 4,
+    });
+  });
+  expect(rate).toHaveValue(0.00025);
+  expect(
+    screen.getByRole('spinbutton', { name: 'Minimum commission' }),
+  ).toHaveValue(5);
+});
+
+test('keeps a blank cost draft unsaved and applies the floor when the rate is zero', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderSettingsPage({
+    settings: { ...defaultSettings, account_commission_rate: 0 },
+  });
+  const rate = await screen.findByRole('spinbutton', {
+    name: 'Stock commission rate',
+  });
+  await waitFor(() => expect(rate).toHaveValue(0));
+  const previews = screen.getByLabelText('Commission preview');
+  expect(within(previews).getAllByText('Commission ¥5.00')).toHaveLength(3);
+  await user.clear(rate);
+  expect(
+    screen.getByRole('button', { name: 'Save account costs' }),
+  ).toBeDisabled();
+  expect(screen.queryByLabelText('Commission preview')).toBeNull();
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(
+    false,
+  );
+});
+
+test('restores an editable source and integer poll interval with a narrow save', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderSettingsPage();
+  const source = await screen.findByRole('combobox', {
+    name: 'Select data source',
+  });
+  await waitFor(() => expect(source).toHaveValue('akshare'));
+  await user.selectOptions(source, 'tushare');
+  const interval = screen.getByRole('spinbutton', {
+    name: 'Poll interval (seconds)',
+  });
+  await user.clear(interval);
+  await user.type(interval, '120');
+  await user.click(screen.getByRole('button', { name: 'Save data settings' }));
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/settings/data-source',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          data_source: 'tushare',
+          live_poll_interval: 120,
+        }),
+      }),
+    ),
+  );
+  expect(await screen.findByText('Data settings saved')).toBeTruthy();
+  expect(screen.queryByText('Mesh Live')).toBeNull();
+});
+
+test('locks cost fields during save and keeps the draft after a failed save', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderSettingsPage();
+  const rate = await screen.findByRole('spinbutton', {
+    name: 'Stock commission rate',
+  });
+  await waitFor(() => expect(rate).toHaveValue(0.0001));
+  let finish!: (response: Response) => void;
+  const saveResponse = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/api/settings') && init?.method === 'PUT'
+        ? saveResponse
+        : fetchMock(input, init),
+    ),
+  );
+  await user.clear(rate);
+  await user.type(rate, '0.00025');
+  await user.click(screen.getByRole('button', { name: 'Save account costs' }));
+  await waitFor(() => expect(rate).toBeDisabled());
+  await act(async () => {
+    finish(
+      jsonResponse({ detail: 'fixture storage unavailable' }, { status: 503 }),
+    );
+  });
+  expect(await screen.findByText('fixture storage unavailable')).toBeTruthy();
+  expect(rate).toHaveValue(0.00025);
+  expect(rate).not.toBeDisabled();
+});
+
+test('does not describe failed market or metadata reads as closed or complete', async () => {
+  renderSettingsPage({ failMarketHealth: true, failMetadata: true });
+  expect(
+    await screen.findByText('Failed to load settings state.'),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText('Market state: Market closed')).toBeNull();
+  expect(screen.queryByText('Metadata complete')).toBeNull();
+  expect(
+    await screen.findByText(
+      'Metadata status could not be read. Retry before assessing coverage.',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Retry status' })).toBeTruthy();
+});
+
+test('keeps ETF and other asset identities distinct in the tracked pool', async () => {
+  renderSettingsPage({
+    assetMetadataStatus: {
+      ...defaultAssetMetadataStatus,
+      configured_count: 3,
+      configured_assets: [
+        { symbol: 'ETF-A', display_name: 'Example ETF', asset_class: 'etf' },
+        { symbol: 'GOLD-A', display_name: 'Example gold', asset_class: 'gold' },
+        { symbol: 'BOND-A', display_name: 'Example bond', asset_class: 'bond' },
+      ],
+    },
+  });
+  const metadata = await screen.findByTestId('settings-metadata-disclosure');
+  expect(await within(metadata).findByText('Example ETF')).toBeTruthy();
+  expect(within(metadata).getByText('ETF')).toBeTruthy();
+  expect(within(metadata).getByText('Gold')).toBeTruthy();
+  expect(within(metadata).getByText('Bond')).toBeTruthy();
+});
+
+test('keeps saved settings metadata separate from unsaved editor drafts', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderSettingsPage();
+  const source = await screen.findByRole('combobox', {
+    name: 'Select data source',
+  });
+  await waitFor(() => expect(source).toHaveValue('akshare'));
+  await user.selectOptions(source, 'tushare');
+  const interval = screen.getByRole('spinbutton', {
+    name: 'Poll interval (seconds)',
+  });
+  await user.clear(interval);
+  await user.type(interval, '120');
+  const rate = screen.getByRole('spinbutton', {
+    name: 'Stock commission rate',
+  });
+  await user.clear(rate);
+  await user.type(rate, '0.00025');
+  const categories = screen.getByRole('navigation', {
+    name: 'Settings Categories',
+  });
+  expect(within(categories).getByText('akshare · 60s')).toBeTruthy();
+  expect(within(categories).getByText('1.0 bp')).toBeTruthy();
+  expect(
+    screen.getByLabelText('Register item: Poll interval 60s'),
+  ).toBeTruthy();
+  expect(
+    screen.queryByLabelText('Register item: Poll interval 120s'),
+  ).toBeNull();
+  expect(
+    screen.getByText('Manual trade default: 2.50 bp, minimum ¥5.00'),
+  ).toBeTruthy();
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(
+    false,
+  );
 });

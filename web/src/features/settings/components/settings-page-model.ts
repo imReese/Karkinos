@@ -195,21 +195,18 @@ export function buildSettingsMarketModel(inputs: SettingsModelInputs) {
       source: isTushareProvider
         ? 'tushare_realtime_quote'
         : marketHealth.data?.provider_name || '--',
-      status:
-        hasTushareStockQuote || isTushareProvider
-          ? copy.settings.available
-          : copy.shell.statusUnknown,
-      tone: hasTushareStockQuote || isTushareProvider ? 'success' : 'neutral',
+      status: hasTushareStockQuote
+        ? copy.settings.available
+        : copy.shell.statusUnknown,
+      tone: hasTushareStockQuote ? 'success' : 'neutral',
     },
     {
       label: copy.settings.capabilityStockDaily,
       source: isTushareProvider
         ? 'tushare_daily'
         : marketHealth.data?.provider_name || '--',
-      status: isTushareProvider
-        ? copy.settings.available
-        : copy.shell.statusUnknown,
-      tone: isTushareProvider ? 'success' : 'neutral',
+      status: copy.shell.statusUnknown,
+      tone: 'neutral',
     },
     {
       label: fundNavCapabilityLabel,
@@ -236,10 +233,18 @@ export function buildSettingsMarketModel(inputs: SettingsModelInputs) {
     {
       label: copy.settings.capabilityPersistentCache,
       source: 'SQLite',
-      status: marketHealth.data?.has_persistent_cache
-        ? copy.settings.available
-        : copy.market.notConfigured,
-      tone: marketHealth.data?.has_persistent_cache ? 'success' : 'warning',
+      status:
+        marketHealth.isError || marketHealth.data?.has_persistent_cache == null
+          ? copy.shell.statusUnknown
+          : marketHealth.data.has_persistent_cache
+            ? copy.settings.available
+            : copy.market.notConfigured,
+      tone:
+        marketHealth.isError || marketHealth.data?.has_persistent_cache == null
+          ? 'neutral'
+          : marketHealth.data.has_persistent_cache
+            ? 'success'
+            : 'warning',
     },
   ] satisfies Array<{
     label: string;
@@ -301,8 +306,7 @@ export function buildSettingsOperationsModel(
   inputs: SettingsModelInputs,
   marketModel: SettingsMarketModel,
 ) {
-  const { copy, dataSourceStatus, liveStatus, locale, pollInterval, settings } =
-    inputs;
+  const { copy, dataSourceStatus, liveStatus, locale, settings } = inputs;
   const {
     providerSupportsFunds,
     quoteNeedsReview,
@@ -322,7 +326,11 @@ export function buildSettingsOperationsModel(
     },
     {
       label: copy.settings.registerPollInterval,
-      value: settings.isLoading ? copy.shell.checking : `${pollInterval}s`,
+      value: settings.isLoading
+        ? copy.shell.checking
+        : settings.data
+          ? `${settings.data.live_poll_interval}s`
+          : copy.shell.statusUnknown,
       tone: 'neutral',
     },
     {

@@ -52,7 +52,10 @@ export type DataSourceSettingsPayload = {
   live_poll_interval: number;
 };
 
-export type SettingsUpdatePayload = SettingsResponse;
+export type SettingsUpdatePayload = Pick<
+  SettingsResponse,
+  'account_commission_rate' | 'account_min_commission'
+>;
 
 export type BoardPermissionStatus = 'enabled' | 'disabled' | 'unknown';
 
@@ -206,8 +209,13 @@ export function useUpdateSettingsMutation() {
   return useMutation({
     mutationFn: (payload: SettingsUpdatePayload) =>
       putJson<SettingsResponse>('/api/settings', payload),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['settings'] });
+    onSuccess: async (settings) => {
+      queryClient.setQueryData(['settings'], settings);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['settings'] }),
+        queryClient.invalidateQueries({ queryKey: ['trading-manual-orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['decision'] }),
+      ]);
     },
   });
 }

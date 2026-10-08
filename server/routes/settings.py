@@ -7,13 +7,19 @@ import logging
 from dataclasses import is_dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
+from pydantic import Field
 
 from notification.notifier import notification_configuration_status
 from server.bootstrap import resolve_config_path
 from server.config_types import AccountBoardPermissionsConfig
-from server.contracts.http.settings_models import BoardBuyPermissionsUpdate
+from server.contracts.http.settings_models import (
+    AccountCostSettingsUpdate,
+    BoardBuyPermissionsUpdate,
+    FullSettingsUpdate,
+)
 from server.models import (
     AssetMetadataStatusResponse,
     DataSourceSettingsUpdate,
@@ -219,8 +225,12 @@ def _persist_runtime_config(
     _write_persisted_config(persisted)
 
 
-def _persist_account_cost_settings(config) -> None:
-    rate, minimum = _account_cost_settings(config)
+def _persist_account_cost_settings(
+    config, *, rate: Decimal | None = None, minimum: Decimal | None = None
+) -> None:
+    current_rate, current_minimum = _account_cost_settings(config)
+    rate = current_rate if rate is None else rate
+    minimum = current_minimum if minimum is None else minimum
     persisted = _read_persisted_config()
     raw_schedule = persisted.get("broker_fee")
     if not isinstance(raw_schedule, dict):
@@ -347,12 +357,24 @@ def create_router() -> APIRouter:
         return _settings_response(state)
 
     @r.put("", response_model=SettingsResponse)
-    async def update_settings(settings: SettingsResponse) -> SettingsResponse:
+    async def update_settings(
+        settings: Annotated[
+            AccountCostSettingsUpdate | FullSettingsUpdate,
+            Field(union_mode="left_to_right"),
+        ],
+    ) -> SettingsResponse:
         """Update runtime settings and persist account commission rules."""
         from server.dependencies import get_app_state
 
         state = get_app_state()
         config = state.config
+
+        if isinstance(settings, AccountCostSettingsUpdate):
+            rate = Decimal(str(settings.account_commission_rate))
+            minimum = Decimal(str(settings.account_min_commission))
+            _persist_account_cost_settings(config, rate=rate, minimum=minimum)
+            _set_account_cost_settings(config, rate, minimum)
+            return _settings_response(state)
 
         _require_configured_provider_credential(settings.data_source, config)
 
@@ -403,13 +425,13 @@ def create_router() -> APIRouter:
         config = state.config
 
         _require_configured_provider_credential(payload.data_source, config)
-        config.data_source = payload.data_source
-        config.live_poll_interval = payload.live_poll_interval
         updates = {
-            "data_source": config.data_source,
-            "live_poll_interval": config.live_poll_interval,
+            "data_source": payload.data_source,
+            "live_poll_interval": payload.live_poll_interval,
         }
         _persist_runtime_config(updates)
+        config.data_source = payload.data_source
+        config.live_poll_interval = payload.live_poll_interval
 
         return _settings_response(state)
 
