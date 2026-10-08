@@ -36,7 +36,7 @@ import { useBacktestPortfolioInstrumentsQuery } from './backtest-portfolio-query
 import { useBacktestCostInputs } from './backtest-cost-inputs';
 import { backtestCostCopy } from '../copy-costs';
 import {
-  backtestParametersValid,
+  backtestParameterError,
   buildResearchAssets,
   datasetMatchesResearchInputs,
   researchUniverseError,
@@ -210,38 +210,29 @@ export function useBacktestPageController() {
   const submitRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (datasetPreparing || runBacktest.isPending) return;
-    if (!startDate || !endDate || startDate > endDate) {
-      setFormError(labels.dateRangeInvalid);
-      return;
-    }
-    if (universeError) {
-      setFormError(universeError);
-      return;
-    }
-    if (!costInputs.valid) {
-      setFormError(backtestCostCopy[locale].invalid);
-      return;
-    }
-    if (
-      !datasetMatchesResearchInputs(
+    const inputError =
+      ((!startDate || !endDate || startDate > endDate) &&
+        labels.dateRangeInvalid) ||
+      universeError ||
+      (!costInputs.valid && backtestCostCopy[locale].invalid) ||
+      (!datasetMatchesResearchInputs(
         selectedDataset,
         runAssets,
         startDate,
         endDate,
-      )
-    ) {
-      setFormError(
-        locale === 'zh'
+      ) &&
+        (locale === 'zh'
           ? '所选 Dataset 与当前完整资产篮子或日期不一致，请重新选择或准备数据。'
-          : 'The selected Dataset does not match the complete asset universe or dates. Select or prepare a matching dataset.',
+          : 'The selected Dataset does not match the complete asset universe or dates. Select or prepare a matching dataset.')) ||
+      (!isPositiveNumber(initialCash) && common.mustBePositive) ||
+      backtestParameterError(
+        parameterSchema,
+        parameterValues,
+        locale === 'zh',
+        labels.parameterLabels,
       );
-      return;
-    }
-    if (
-      !isPositiveNumber(initialCash) ||
-      !backtestParametersValid(parameterSchema, parameterValues)
-    ) {
-      setFormError(common.mustBePositive);
+    if (inputError) {
+      setFormError(inputError);
       return;
     }
     setFormError('');

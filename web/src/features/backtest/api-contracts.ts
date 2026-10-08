@@ -179,10 +179,13 @@ export type BacktestSummary = {
   max_drawdown: number;
 };
 
+export type StrategyParameterValue =
+  number | string | boolean | Record<string, unknown> | null;
+
 export type StrategyParameterSchema = {
   name: string;
   type: 'int' | 'float' | 'str' | 'bool' | 'dict' | string;
-  default: number | string | boolean | Record<string, unknown> | null;
+  default: StrategyParameterValue;
   required: boolean;
   min?: number | null;
   max?: number | null;
@@ -222,7 +225,7 @@ export type StrategyMetadataSnapshot = {
   requires_after_cost_report?: boolean;
   validation_notes?: string[];
   parameter_schema?: StrategyParameterSchema[];
-  params?: Record<string, number | string | boolean | null>;
+  params?: Record<string, StrategyParameterValue>;
 };
 
 export type BacktestRunRequest = {
@@ -235,7 +238,7 @@ export type BacktestRunRequest = {
   strategy: string;
   short_period?: number;
   long_period?: number;
-  params?: Record<string, number | string | boolean | null>;
+  params?: Record<string, StrategyParameterValue>;
   assets?: Array<{ symbol: string; asset_class: string }>;
 };
 
@@ -246,7 +249,7 @@ export type StrategySignalPreviewRequest = {
   start_date?: string | null;
   end_date?: string | null;
   dataset_id?: string | null;
-  params?: Record<string, number | string | boolean | null>;
+  params?: Record<string, StrategyParameterValue>;
 };
 
 export type StrategySignalPreviewOutput = {
@@ -287,7 +290,7 @@ export type StrategySignalPreviewResponse = {
   schema_version: string;
   strategy_id: string;
   symbol: string;
-  params: Record<string, number | string | boolean | null>;
+  params: Record<string, StrategyParameterValue>;
   run_id: string;
   dataset_snapshot_id?: string | null;
   decision_availability?: DatasetDecisionAvailability | null;
@@ -422,7 +425,7 @@ export type BacktestSweepRequest = Omit<
   BacktestRunRequest,
   'short_period' | 'long_period'
 > & {
-  param_grid: Record<string, Array<number | string | boolean | null>>;
+  param_grid: Record<string, StrategyParameterValue[]>;
   rank_by?: string;
   max_combinations?: number;
   test_start_date?: string | null;
@@ -432,7 +435,7 @@ export type BacktestSweepResult = {
   rank: number;
   result_id: number;
   strategy: string;
-  params: Record<string, number | string | boolean | null>;
+  params: Record<string, StrategyParameterValue>;
   metrics: BacktestMetrics;
   score: number;
 };
@@ -449,7 +452,7 @@ export type BacktestSweepResponse = {
 
 export type BacktestCompareRunRequest = {
   strategy: string;
-  params?: Record<string, number | string | boolean | null>;
+  params?: Record<string, StrategyParameterValue>;
 };
 
 export type BacktestCompareRequest = {
@@ -468,7 +471,7 @@ export type BacktestCompareResult = {
   strategy: string;
   description: string;
   result_id?: number | null;
-  params: Record<string, number | string | boolean | null>;
+  params: Record<string, StrategyParameterValue>;
   dataset_snapshot_id?: string | null;
   dataset_snapshot?: Partial<DatasetSnapshot>;
   metrics: BacktestMetrics;

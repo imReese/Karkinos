@@ -131,7 +131,15 @@ function mount({
   dataset = datasetId,
   strategy = 'dual_ma',
   locale = 'en',
-}: { dataset?: string; strategy?: string; locale?: 'en' | 'zh' } = {}) {
+  parameterSchema = schema,
+  parameterValues = { short_period: '2', long_period: '3' },
+}: {
+  dataset?: string;
+  strategy?: string;
+  locale?: 'en' | 'zh';
+  parameterSchema?: StrategyParameterSchema[];
+  parameterValues?: Record<string, string>;
+} = {}) {
   return render(
     <QueryClientProvider
       client={
@@ -159,8 +167,8 @@ function mount({
             initialCash="100000"
             strategy={strategy}
             datasetId={dataset}
-            parameterSchema={schema}
-            parameterValues={{ short_period: '2', long_period: '3' }}
+            parameterSchema={parameterSchema}
+            parameterValues={parameterValues}
             corporateActionMode="reported_distributions_gross"
             costAssumptions={{ slippage_bps: 12.5 }}
             assets={[{ symbol: '600000', asset_class: 'stock' }]}
@@ -195,6 +203,66 @@ test('legacy sweep stays default and omits the chronological boundary and test-r
   );
   expect(screen.queryByText('Selected candidate · test result')).toBeNull();
 });
+
+test.each([
+  {
+    input: '{"510300":0.7,"511010":0.3}, {"510300":0.4,"511010":0.6}',
+    expected: [
+      { '510300': 0.7, '511010': 0.3 },
+      { '510300': 0.4, '511010': 0.6 },
+    ],
+  },
+  { input: '   ', expected: [null] },
+])(
+  'submits optional risk-budget candidates as typed objects or null: $input',
+  async ({ input, expected }) => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        json({ ...response, results: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    mount({
+      strategy: 'risk_parity_macro',
+      parameterSchema: [
+        {
+          name: 'risk_budgets',
+          type: 'dict',
+          default: null,
+          required: false,
+          description: '',
+        },
+        {
+          name: 'trend_filter',
+          type: 'bool',
+          default: true,
+          required: false,
+          description: '',
+        },
+      ],
+      parameterValues: { risk_budgets: '', trend_filter: 'true' },
+    });
+    fireEvent.change(screen.getByLabelText('Risk Budgets candidates'), {
+      target: { value: input },
+    });
+    fireEvent.change(screen.getByLabelText('Trend Filter candidates'), {
+      target: { value: 'TRUE, False' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Run parameter sweep' }),
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/backtest/sweep',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      strategy: 'risk_parity_macro',
+      param_grid: { risk_budgets: expected, trend_filter: [true, false] },
+    });
+  },
+);
 
 test.each([{ dataset: '' }, { strategy: 'custom' }])(
   'chronological mode requires a formal Dataset and canonical strategy: %j',

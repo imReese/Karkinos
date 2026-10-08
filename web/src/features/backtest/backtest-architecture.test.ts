@@ -165,6 +165,7 @@ StrategyLearningReviewItem
 StrategyLearningReviewQueue
 StrategyMetadataSnapshot
 StrategyParameterSchema
+StrategyParameterValue
 StrategyPromotionReadiness
 StrategyPromotionReadinessRow
 StrategySignalPreviewOutput

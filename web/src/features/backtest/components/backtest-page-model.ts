@@ -6,6 +6,7 @@ import type {
   BacktestRunRequest,
   BacktestStrategyInfo,
   StrategyParameterSchema,
+  StrategyParameterValue,
 } from '../api';
 
 export function todayDate() {
@@ -114,20 +115,77 @@ export function schemaDefaultValue(param: StrategyParameterSchema) {
   return String(param.default);
 }
 
-export function parseParamValue(param: StrategyParameterSchema, value: string) {
-  if (value.trim() === '') {
+export function parseParamValue(
+  param: StrategyParameterSchema,
+  value: string,
+): StrategyParameterValue {
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    if (param.required || ['int', 'float', 'bool'].includes(param.type)) {
+      throw new Error('invalid_parameter');
+    }
     return null;
   }
-  if (param.type === 'int') {
-    return Number.parseInt(value, 10);
+  let parsed: StrategyParameterValue = trimmed;
+  if (param.type === 'int' || param.type === 'float') {
+    parsed = Number(trimmed);
+    if (
+      !Number.isFinite(parsed) ||
+      (param.type === 'int' && !Number.isInteger(parsed)) ||
+      (param.min != null && parsed < param.min) ||
+      (param.max != null && parsed > param.max)
+    ) {
+      throw new Error('invalid_parameter');
+    }
+  } else if (param.type === 'bool') {
+    if (!/^(true|false)$/i.test(trimmed)) {
+      throw new Error('invalid_parameter');
+    }
+    parsed = trimmed.toLowerCase() === 'true';
+  } else if (param.type === 'dict') {
+    const object: unknown = JSON.parse(trimmed);
+    if (
+      object === null ||
+      typeof object !== 'object' ||
+      Array.isArray(object)
+    ) {
+      throw new Error('invalid_parameter');
+    }
+    parsed = object as Record<string, unknown>;
   }
-  if (param.type === 'float') {
-    return Number(value);
+  if (
+    param.allowed_values?.length &&
+    !param.allowed_values.some((allowed) => allowed === parsed)
+  ) {
+    throw new Error('invalid_parameter');
   }
-  if (param.type === 'bool') {
-    return value === 'true';
+  return parsed;
+}
+
+export function parameterInputError(
+  param: StrategyParameterSchema,
+  value: string,
+  zh: boolean,
+  localizedNames?: Record<string, string>,
+) {
+  try {
+    parseParamValue(param, value);
+    return '';
+  } catch {
+    const hint =
+      param.type === 'dict'
+        ? zh
+          ? '请输入合法的 JSON 对象。'
+          : 'Enter a valid JSON object.'
+        : param.type === 'bool'
+          ? zh
+            ? '请输入 true 或 false。'
+            : 'Enter true or false.'
+          : zh
+            ? '请输入符合参数范围及选项的有效值。'
+            : 'Enter a valid value within the allowed range and options.';
+    return `${parameterDisplayName(param, localizedNames)}: ${hint}`;
   }
-  return value;
 }
 
 export function buildParamValues(

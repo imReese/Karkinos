@@ -5,7 +5,7 @@ import type {
   VerifiedDatasetJob,
   VerifiedDatasetRange,
 } from '../dataset-api';
-import { buildSingleAsset } from './backtest-page-model';
+import { buildSingleAsset, parameterInputError } from './backtest-page-model';
 
 export type ResearchAsset = { symbol: string; asset_class: string };
 
@@ -125,20 +125,20 @@ export function verificationMatchesResearchInputs(
   );
 }
 
-export function backtestParametersValid(
+export function backtestParameterError(
   schema: StrategyParameterSchema[],
   values: Record<string, string>,
+  zh: boolean,
+  localizedNames?: Record<string, string>,
 ) {
-  return schema.every((param) => {
-    if (!['int', 'float'].includes(param.type)) return true;
-    const value = values[param.name] ?? '';
-    const number = Number(value);
-    return (
-      value.trim() !== '' &&
-      Number.isFinite(number) &&
-      (param.type !== 'int' || Number.isInteger(number)) &&
-      (param.min == null || number >= param.min) &&
-      (param.max == null || number <= param.max)
+  for (const param of schema) {
+    const error = parameterInputError(
+      param,
+      values[param.name] ?? '',
+      zh,
+      localizedNames,
     );
-  });
+    if (error) return error;
+  }
+  return '';
 }

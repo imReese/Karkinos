@@ -11,12 +11,18 @@ import type {
   BacktestRunRequest,
   BacktestSweepResponse,
   StrategyParameterSchema,
+  StrategyParameterValue,
 } from '../api';
 import { useRunBacktestSweepMutation } from '../api';
 import { chronologicalCopy } from '../copy-chronological';
 import { ChronologicalSweepResult } from './chronological-sweep-result';
 
-type ParameterPrimitive = number | string | boolean | null;
+import {
+  parameterInputError,
+  parseParamValue,
+  schemaDefaultValue,
+} from './backtest-page-model';
+import { backtestParameterError } from './backtest-universe';
 
 function defaultGridValues(
   parameterSchema: StrategyParameterSchema[],
@@ -25,7 +31,7 @@ function defaultGridValues(
   return Object.fromEntries(
     parameterSchema.map((param) => [
       param.name,
-      parameterValues[param.name] || String(param.default ?? ''),
+      parameterValues[param.name] ?? schemaDefaultValue(param),
     ]),
   );
 }
@@ -33,43 +39,30 @@ function defaultGridValues(
 function parseGridValue(
   param: StrategyParameterSchema,
   value: string,
-): ParameterPrimitive[] {
+): StrategyParameterValue[] {
+  if (!value.trim()) return [parseParamValue(param, value)];
+  if (param.type === 'dict') {
+    const candidates: unknown[] = JSON.parse(`[${value}]`);
+    return candidates.map((candidate) =>
+      parseParamValue(param, JSON.stringify(candidate)),
+    );
+  }
   return value
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean)
-    .map((part) => {
-      if (param.type === 'int') {
-        return Number.parseInt(part, 10);
-      }
-      if (param.type === 'float') {
-        return Number(part);
-      }
-      if (param.type === 'bool') {
-        return part.toLowerCase() === 'true';
-      }
-      return part;
-    });
-}
-
-function hasInvalidNumbers(
-  param: StrategyParameterSchema,
-  values: ParameterPrimitive[],
-) {
-  if (param.type !== 'int' && param.type !== 'float') {
-    return false;
-  }
-  return values.some(
-    (value) => typeof value !== 'number' || !Number.isFinite(value),
-  );
+    .map((part) => parseParamValue(param, part));
 }
 
 function formatParamList(
-  params: Record<string, ParameterPrimitive>,
+  params: Record<string, StrategyParameterValue>,
   labels: Partial<Record<string, string>>,
 ) {
   return Object.entries(params)
-    .map(([name, value]) => `${parameterLabel(labels, name)}=${String(value)}`)
+    .map(
+      ([name, value]) =>
+        `${parameterLabel(labels, name)}=${typeof value === 'object' ? JSON.stringify(value) : String(value)}`,
+    )
     .join(', ');
 }
 
@@ -137,31 +130,53 @@ export function ParameterSweepPanel({
     setGridValues(defaultGridValues(parameterSchema, parameterValues));
   }, [parameterSchema, strategy]);
 
-  const combinationCount = useMemo(
-    () =>
-      parameterSchema.reduce((total, param) => {
+  const combinationCount = useMemo(() => {
+    try {
+      return parameterSchema.reduce((total, param) => {
         const count = parseGridValue(
           param,
           gridValues[param.name] ?? '',
         ).length;
         return total * Math.max(count, 1);
-      }, 1),
-    [gridValues, parameterSchema],
-  );
+      }, 1);
+    } catch {
+      return 0;
+    }
+  }, [gridValues, parameterSchema]);
 
   const submitSweep = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (disabledReason || !chronologicalValid) return;
-    const paramGrid = Object.fromEntries(
-      parameterSchema.map((param) => [
-        param.name,
-        parseGridValue(param, gridValues[param.name] ?? ''),
-      ]),
+    const baseError = backtestParameterError(
+      parameterSchema,
+      parameterValues,
+      locale === 'zh',
+      pageLabels.parameterLabels,
     );
-    const invalid = parameterSchema.some((param) => {
-      const values = paramGrid[param.name];
-      return values.length === 0 || hasInvalidNumbers(param, values);
-    });
+    if (baseError) {
+      setError(baseError);
+      return;
+    }
+    const paramGrid: Record<string, StrategyParameterValue[]> = {};
+    for (const param of parameterSchema) {
+      const value = gridValues[param.name] ?? '';
+      try {
+        paramGrid[param.name] = parseGridValue(param, value);
+      } catch {
+        setError(
+          parameterInputError(
+            param,
+            value,
+            locale === 'zh',
+            pageLabels.parameterLabels,
+          ) || common.genericSubmitError,
+        );
+        return;
+      }
+    }
+    const invalid = Object.values(paramGrid).some(
+      (values) => values.length === 0,
+    );
     if (
       !startDate ||
       !endDate ||
@@ -185,7 +200,7 @@ export function ParameterSweepPanel({
         params: Object.fromEntries(
           parameterSchema.map((param) => [
             param.name,
-            parseGridValue(param, parameterValues[param.name] ?? '')[0] ?? null,
+            parseParamValue(param, parameterValues[param.name] ?? ''),
           ]),
         ),
         param_grid: paramGrid,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   formatAmount,
   formatCurrency,
@@ -10,17 +11,16 @@ import type {
   BacktestCompareResponse,
   BacktestRunRequest,
   StrategyParameterSchema,
+  StrategyParameterValue,
 } from '../api';
 import { useRunBacktestCompareMutation } from '../api';
 
-type ParameterPrimitive = number | string | boolean | null;
-
-function schemaDefaultValue(param: StrategyParameterSchema) {
-  if (param.default === null || param.default === undefined) {
-    return '';
-  }
-  return String(param.default);
-}
+import {
+  humanizeParameterName,
+  parameterInputError,
+  parseParamValue,
+  schemaDefaultValue,
+} from './backtest-page-model';
 
 function parameterLabel(labels: Partial<Record<string, string>>, name: string) {
   return labels[name] ?? humanizeParameterName(name);
@@ -30,12 +30,20 @@ function defaultCompareSets(
   parameterSchema: StrategyParameterSchema[],
   labels: Partial<Record<string, string>>,
 ) {
-  const defaults = parameterSchema
-    .map(
-      (param) =>
-        `${parameterLabel(labels, param.name)}=${schemaDefaultValue(param)}`,
-    )
-    .join(', ');
+  const defaults = parameterSchema.some((param) => param.type === 'dict')
+    ? JSON.stringify(
+        Object.fromEntries(
+          parameterSchema
+            .filter((param) => param.default != null)
+            .map((param) => [param.name, param.default]),
+        ),
+      )
+    : parameterSchema
+        .map(
+          (param) =>
+            `${parameterLabel(labels, param.name)}=${schemaDefaultValue(param)}`,
+        )
+        .join(', ');
   return [defaults, defaults].filter(Boolean).join('\n');
 }
 
@@ -45,6 +53,9 @@ function comparisonExample(
 ) {
   if (!parameterSchema.length) {
     return '';
+  }
+  if (parameterSchema.some((param) => param.type === 'dict')) {
+    return defaultCompareSets(parameterSchema, labels).split('\n')[0];
   }
   const exampleValues: Record<string, string> = {
     long_period: '9',
@@ -60,82 +71,61 @@ function comparisonExample(
     .join(', ');
 }
 
-function humanizeParameterName(name: string) {
-  return name
-    .split('_')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function parseParamValue(
-  param: StrategyParameterSchema,
-  value: string,
-): ParameterPrimitive {
-  const trimmed = value.trim();
-  if (trimmed === '') {
-    return null;
-  }
-  if (param.type === 'int') {
-    return Number.parseInt(trimmed, 10);
-  }
-  if (param.type === 'float') {
-    return Number(trimmed);
-  }
-  if (param.type === 'bool') {
-    return trimmed.toLowerCase() === 'true';
-  }
-  return trimmed;
-}
-
 function parseParameterSet(
   line: string,
   schemaByName: Map<string, StrategyParameterSchema>,
   schemaByAlias: Map<string, StrategyParameterSchema>,
+  zh: boolean,
+  labels: Record<string, string>,
 ) {
-  const params: Record<string, ParameterPrimitive> = {};
-  for (const rawPart of line.split(',')) {
-    const part = rawPart.trim();
-    if (!part) {
-      continue;
-    }
-    const separatorIndex = part.indexOf('=');
-    if (separatorIndex === -1) {
+  const params: Record<string, StrategyParameterValue> = {};
+  const jsonLine = line.trim().startsWith('{');
+  let entries: [string, unknown][];
+  if (jsonLine) {
+    const object: unknown = JSON.parse(line);
+    if (!object || typeof object !== 'object' || Array.isArray(object)) {
       throw new Error('invalid');
     }
-    const name = part.slice(0, separatorIndex).trim();
-    const value = part.slice(separatorIndex + 1);
+    entries = Object.entries(object);
+  } else {
+    entries = line
+      .split(',')
+      .filter((part) => part.trim())
+      .map((part) => {
+        const separatorIndex = part.indexOf('=');
+        if (separatorIndex === -1) throw new Error('invalid');
+        return [
+          part.slice(0, separatorIndex).trim(),
+          part.slice(separatorIndex + 1),
+        ];
+      });
+  }
+  for (const [name, rawValue] of entries) {
     const schema = schemaByName.get(name) ?? schemaByAlias.get(name);
-    if (!schema) {
-      throw new Error('invalid');
-    }
+    if (!schema) throw new Error('invalid');
+    const value =
+      jsonLine && schema.type === 'dict'
+        ? JSON.stringify(rawValue)
+        : jsonLine && rawValue === null
+          ? ''
+          : String(rawValue);
+    const error = parameterInputError(schema, value, zh, labels);
+    if (error) throw new Error(error);
     params[schema.name] = parseParamValue(schema, value);
   }
-  if (Object.keys(params).length === 0) {
-    throw new Error('invalid');
-  }
+  if (Object.keys(params).length === 0) throw new Error('invalid');
   return params;
 }
 
-function hasInvalidNumbers(
-  schemaByName: Map<string, StrategyParameterSchema>,
-  params: Record<string, ParameterPrimitive>,
-) {
-  return Object.entries(params).some(([name, value]) => {
-    const schema = schemaByName.get(name);
-    if (!schema || (schema.type !== 'int' && schema.type !== 'float')) {
-      return false;
-    }
-    return typeof value !== 'number' || !Number.isFinite(value);
-  });
-}
-
 function formatParamList(
-  params: Record<string, ParameterPrimitive>,
+  params: Record<string, StrategyParameterValue>,
   labels: Partial<Record<string, string>>,
 ) {
   return Object.entries(params)
-    .map(([name, value]) => `${parameterLabel(labels, name)}=${String(value)}`)
+    .map(
+      ([name, value]) =>
+        `${parameterLabel(labels, name)}=${typeof value === 'object' ? JSON.stringify(value) : String(value)}`,
+    )
     .join(', ');
 }
 
@@ -163,6 +153,7 @@ export function ParameterComparePanel({
   disabledReason?: string;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.backtest.compare;
   const pageLabels = copy.backtest.page;
   const common = copy.common;
@@ -206,12 +197,35 @@ export function ParameterComparePanel({
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean)
-        .map((line) => parseParameterSet(line, schemaByName, schemaByAlias));
-      return { parsed, valid: true };
-    } catch {
-      return { parsed: [], valid: false };
+        .map((line) =>
+          parseParameterSet(
+            line,
+            schemaByName,
+            schemaByAlias,
+            locale === 'zh',
+            pageLabels.parameterLabels,
+          ),
+        );
+      return { parsed, error: '' };
+    } catch (caught) {
+      return {
+        parsed: [],
+        error:
+          caught instanceof Error &&
+          caught.message !== 'invalid' &&
+          !(caught instanceof SyntaxError)
+            ? caught.message
+            : labels.invalidSets,
+      };
     }
-  }, [parameterSets, schemaByAlias, schemaByName]);
+  }, [
+    parameterSets,
+    schemaByAlias,
+    schemaByName,
+    locale,
+    pageLabels.parameterLabels,
+    labels.invalidSets,
+  ]);
 
   const submitCompare = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -221,12 +235,9 @@ export function ParameterComparePanel({
       !endDate ||
       !Number.isFinite(Number(initialCash)) ||
       parsedRuns.parsed.length < 2 ||
-      !parsedRuns.valid ||
-      parsedRuns.parsed.some((params) =>
-        hasInvalidNumbers(schemaByName, params),
-      )
+      Boolean(parsedRuns.error)
     ) {
-      setError(labels.invalidSets);
+      setError(parsedRuns.error || labels.invalidSets);
       return;
     }
     setError('');
@@ -273,7 +284,11 @@ export function ParameterComparePanel({
           />
         </label>
         <span className="app-muted text-xs">
-          {labels.setsHint(parsedRuns.parsed.length, exampleSet)}
+          {parameterSchema.some((param) => param.type === 'dict')
+            ? locale === 'zh'
+              ? `每行一个参数 JSON 对象；例如 ${exampleSet}`
+              : `One JSON parameter object per line; for example ${exampleSet}`
+            : labels.setsHint(parsedRuns.parsed.length, exampleSet)}
         </span>
         {error ? (
           <div

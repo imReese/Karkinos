@@ -839,6 +839,39 @@ const extensionStrategy = {
   validation_notes: ['Requires paper/shadow review before promotion.'],
 };
 
+const riskBudgetParameters = [
+  {
+    name: 'risk_budgets',
+    type: 'dict',
+    default: null,
+    required: false,
+    description: 'Positive relative risk budget for every universe symbol.',
+  },
+  {
+    name: 'trend_filter',
+    type: 'bool',
+    default: true,
+    required: false,
+    description: 'Apply the trend filter to non-proxy risk budgets.',
+  },
+  {
+    name: 'cash_proxy',
+    type: 'str',
+    default: '511010',
+    required: false,
+    description: 'Universe symbol exempt from trend filtering.',
+  },
+];
+
+const riskBudgetStrategy = {
+  ...strategyCatalog[0],
+  strategy_id: 'risk_parity_macro',
+  name: 'risk_parity_macro',
+  display_name: 'Bounded Macro Risk Budgeting',
+  params: riskBudgetParameters,
+  parameter_schema: riskBudgetParameters,
+};
+
 const strategyValidation = {
   required_strategy_count: 2,
   ready_strategy_count: 1,
@@ -2345,6 +2378,117 @@ test('renders extension strategy metadata and submits its typed params', async (
   expect(payload.assets).toEqual([{ symbol: '600002', asset_class: 'stock' }]);
 });
 
+async function prepareRiskBudgetBacktest() {
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    strategies: [...strategyCatalog, riskBudgetStrategy],
+  });
+  await selectCatalogStrategy(
+    'risk_parity_macro',
+    'Bounded Macro Risk Budgeting',
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Use ETF example basket' }),
+  );
+  return fetchMock;
+}
+
+test.each([
+  { input: 'TRUE', expected: true },
+  { input: 'False', expected: false },
+])(
+  'submits custom risk budgets as an object and $input as a boolean',
+  async ({ input, expected }) => {
+    const fetchMock = await prepareRiskBudgetBacktest();
+    const riskBudgets = { '510300': 0.5, '511010': 0.3, '518880': 0.2 };
+    fireEvent.change(screen.getByLabelText('Risk Budgets'), {
+      target: { value: JSON.stringify(riskBudgets) },
+    });
+    fireEvent.change(screen.getByLabelText('Trend Filter'), {
+      target: { value: input },
+    });
+    fireEvent.submit(
+      screen.getByRole('button', { name: 'Run backtest' }).closest('form')!,
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/backtest/run',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    const runCall = fetchMock.mock.calls.find(
+      ([url]) => String(url) === '/api/backtest/run',
+    );
+    expect(JSON.parse(String(runCall?.[1]?.body))).toMatchObject({
+      strategy: 'risk_parity_macro',
+      params: { risk_budgets: riskBudgets, trend_filter: expected },
+    });
+  },
+);
+
+test('submits a blank optional risk-budget object as null', async () => {
+  const fetchMock = await prepareRiskBudgetBacktest();
+  fireEvent.change(screen.getByLabelText('Risk Budgets'), {
+    target: { value: '   ' },
+  });
+  fireEvent.submit(
+    screen.getByRole('button', { name: 'Run backtest' }).closest('form')!,
+  );
+
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/run',
+      expect.objectContaining({ method: 'POST' }),
+    ),
+  );
+  const runCall = fetchMock.mock.calls.find(
+    ([url]) => String(url) === '/api/backtest/run',
+  );
+  expect(JSON.parse(String(runCall?.[1]?.body)).params).toEqual({
+    risk_budgets: null,
+    trend_filter: true,
+    cash_proxy: '511010',
+  });
+});
+
+test.each(['{"510300":', '[1, 2]', 'null', '1', '"budget"'])(
+  'blocks invalid or non-object risk-budget input %s before requesting a backtest',
+  async (value) => {
+    const fetchMock = await prepareRiskBudgetBacktest();
+    fireEvent.change(screen.getByLabelText('Risk Budgets'), {
+      target: { value },
+    });
+    fireEvent.submit(
+      screen.getByRole('button', { name: 'Run backtest' }).closest('form')!,
+    );
+
+    expect(
+      await screen.findByText('Risk Budgets: Enter a valid JSON object.'),
+    ).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url) === '/api/backtest/run'),
+    ).toBe(false);
+  },
+);
+
+test('blocks unrecognized boolean input before requesting a backtest', async () => {
+  const fetchMock = await prepareRiskBudgetBacktest();
+  fireEvent.change(screen.getByLabelText('Trend Filter'), {
+    target: { value: 'yes' },
+  });
+  fireEvent.submit(
+    screen.getByRole('button', { name: 'Run backtest' }).closest('form')!,
+  );
+
+  expect(
+    await screen.findByText('Trend Filter: Enter true or false.'),
+  ).toBeTruthy();
+  expect(
+    fetchMock.mock.calls.some(([url]) => String(url) === '/api/backtest/run'),
+  ).toBe(false);
+});
+
 test('accepts ordinary whole-number initial cash values in browser validation', async () => {
   renderBacktestPage({ results: [] });
 
@@ -3606,6 +3750,87 @@ test.each([
     ).toBeGreaterThan(0);
   },
 );
+
+test('compares complete JSON parameter sets with nested risk budgets, booleans, and an optional null cash proxy', async () => {
+  const fetchMock = await prepareRiskBudgetBacktest();
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
+  const firstBudgets = { '510300': 0.5, '511010': 0.3, '518880': 0.2 };
+  const secondBudgets = { '510300': 0.2, '511010': 0.5, '518880': 0.3 };
+  fireEvent.change(screen.getByLabelText('Comparison parameter sets'), {
+    target: {
+      value: [
+        JSON.stringify({
+          risk_budgets: firstBudgets,
+          trend_filter: false,
+          cash_proxy: null,
+        }),
+        JSON.stringify({
+          risk_budgets: secondBudgets,
+          trend_filter: true,
+          cash_proxy: '511010',
+        }),
+      ].join('\n'),
+    },
+  });
+  fireEvent.submit(
+    screen.getByRole('button', { name: 'Run comparison' }).closest('form')!,
+  );
+
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/compare',
+      expect.objectContaining({ method: 'POST' }),
+    ),
+  );
+  const compareCall = fetchMock.mock.calls.find(
+    ([url]) => String(url) === '/api/backtest/compare',
+  );
+  expect(JSON.parse(String(compareCall?.[1]?.body)).runs).toEqual([
+    {
+      strategy: 'risk_parity_macro',
+      params: {
+        risk_budgets: firstBudgets,
+        trend_filter: false,
+        cash_proxy: null,
+      },
+    },
+    {
+      strategy: 'risk_parity_macro',
+      params: {
+        risk_budgets: secondBudgets,
+        trend_filter: true,
+        cash_proxy: '511010',
+      },
+    },
+  ]);
+});
+
+test.each([
+  '{"risk_budgets":{broken},"trend_filter":true}',
+  '{"risk_budgets":{"510300":1,"511010":1,"518880":1},"trend_filter":"yes"}',
+])('blocks a comparison containing invalid typed input: %s', async (line) => {
+  const fetchMock = await prepareRiskBudgetBacktest();
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
+  fireEvent.change(screen.getByLabelText('Comparison parameter sets'), {
+    target: {
+      value: [
+        '{"risk_budgets":{"510300":1,"511010":1,"518880":1},"trend_filter":true}',
+        line,
+      ].join('\n'),
+    },
+  });
+  const form = screen
+    .getByRole('button', { name: 'Run comparison' })
+    .closest('form')!;
+  fireEvent.submit(form);
+
+  expect(await within(form).findByRole('alert')).toBeTruthy();
+  expect(
+    fetchMock.mock.calls.some(
+      ([url]) => String(url) === '/api/backtest/compare',
+    ),
+  ).toBe(false);
+});
 
 test('runs a same-dataset parameter comparison and renders saved result ids', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
