@@ -374,11 +374,22 @@ export function useUpdateShadowResearchPolicyMutation() {
   });
 }
 
+export type ShadowResearchRunReceipt = {
+  schema_version: 'karkinos.ai.shadow_research_job_scheduler.v1';
+  status: 'enqueued' | 'already_enqueued' | 'blocked' | 'disabled';
+  failure_code: string | null;
+  available_at?: string;
+  provider_call_performed: false;
+  broker_order_created: false;
+  execution_authority_granted: false;
+  capital_authority_granted: false;
+};
+
 export function useRunShadowResearchMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      postJson<ShadowResearchAutomationStatus>(
+      postJson<ShadowResearchRunReceipt>(
         '/api/ai/strategy-research/shadow-automation/run',
         {},
       ),

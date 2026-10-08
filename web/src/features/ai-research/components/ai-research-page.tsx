@@ -16,7 +16,10 @@ export function AiResearchPage() {
   const labels = copy.aiResearchPage;
   const savedBacktests = useBacktestResultsQuery();
   const accountStrategy = useAccountStrategyAssignmentQuery();
-  const latestBacktest = savedBacktests.data?.[0] ?? null;
+  const latestBacktest = savedBacktests.isError
+    ? null
+    : (savedBacktests.data?.[0] ?? null);
+  const currentStrategy = accountStrategy.isError ? null : accountStrategy.data;
 
   return (
     <section
@@ -87,10 +90,10 @@ export function AiResearchPage() {
                 label: labels.strategyContext,
                 value: accountStrategy.isLoading
                   ? copy.shell.checking
-                  : accountStrategy.data
+                  : currentStrategy
                     ? labels.available
                     : labels.unavailable,
-                detail: accountStrategy.data
+                detail: currentStrategy
                   ? labels.persistedAssignment
                   : accountStrategy.isLoading
                     ? copy.shell.checking
@@ -99,12 +102,25 @@ export function AiResearchPage() {
                       : labels.noStrategyAssignment,
                 tone:
                   !accountStrategy.isLoading &&
-                  (accountStrategy.isError || !accountStrategy.data)
+                  (accountStrategy.isError || !currentStrategy)
                     ? 'warning'
                     : 'neutral',
               },
             ]}
           />
+          {savedBacktests.isError || accountStrategy.isError ? (
+            <button
+              className="app-button-secondary mt-3 min-h-11 px-3 py-2 text-xs font-semibold"
+              disabled={savedBacktests.isFetching || accountStrategy.isFetching}
+              onClick={() => {
+                if (savedBacktests.isError) void savedBacktests.refetch();
+                if (accountStrategy.isError) void accountStrategy.refetch();
+              }}
+              type="button"
+            >
+              {copy.states.retry}
+            </button>
+          ) : null}
         </section>
 
         <div
@@ -116,17 +132,38 @@ export function AiResearchPage() {
             className="flex items-center gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-1"
             role="tablist"
           >
-            {(['all', 'shadow', 'tasks'] as const).map((tab) => (
+            {(['all', 'shadow', 'tasks'] as const).map((tab, index, tabs) => (
               <button
+                aria-controls="ai-research-tabpanel"
                 aria-selected={activeTab === tab}
-                className={`flex-1 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold transition-all ${
+                className={`min-h-11 flex-1 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold transition-colors ${
                   activeTab === tab
                     ? 'bg-[var(--app-surface-raised)] text-[var(--app-text)] shadow-xs'
                     : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
                 }`}
                 key={tab}
+                id={`ai-research-tab-${tab}`}
                 onClick={() => setActiveTab(tab)}
+                onKeyDown={(event) => {
+                  const nextIndex =
+                    event.key === 'ArrowRight'
+                      ? (index + 1) % tabs.length
+                      : event.key === 'ArrowLeft'
+                        ? (index - 1 + tabs.length) % tabs.length
+                        : event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? tabs.length - 1
+                            : null;
+                  if (nextIndex === null) return;
+                  event.preventDefault();
+                  setActiveTab(tabs[nextIndex]);
+                  event.currentTarget.parentElement
+                    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                    [nextIndex]?.focus();
+                }}
                 role="tab"
+                tabIndex={activeTab === tab ? 0 : -1}
                 type="button"
               >
                 {labels.tabs[tab]}
@@ -135,23 +172,34 @@ export function AiResearchPage() {
           </div>
 
           <div
-            className={
-              activeTab === 'all' || activeTab === 'tasks' ? 'block' : 'hidden'
-            }
+            aria-labelledby={`ai-research-tab-${activeTab}`}
+            className="grid min-w-0 gap-5"
+            id="ai-research-tabpanel"
+            role="tabpanel"
           >
-            <ResearchTaskPanel
-              backtestResultId={latestBacktest?.id ?? null}
-              defaultOpen
-              routePrimary
-              strategyId={accountStrategy.data?.strategy_id ?? null}
-            />
-          </div>
-          <div
-            className={
-              activeTab === 'all' || activeTab === 'shadow' ? 'block' : 'hidden'
-            }
-          >
-            <ShadowResearchPanel />
+            <div
+              className={
+                activeTab === 'all' || activeTab === 'tasks'
+                  ? 'block'
+                  : 'hidden'
+              }
+            >
+              <ResearchTaskPanel
+                backtestResultId={latestBacktest?.id ?? null}
+                defaultOpen
+                routePrimary
+                strategyId={currentStrategy?.strategy_id ?? null}
+              />
+            </div>
+            <div
+              className={
+                activeTab === 'all' || activeTab === 'shadow'
+                  ? 'block'
+                  : 'hidden'
+              }
+            >
+              <ShadowResearchPanel />
+            </div>
           </div>
         </div>
       </div>

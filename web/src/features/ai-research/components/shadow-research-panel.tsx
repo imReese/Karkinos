@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { formatTimestamp } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
+import { EvidenceState } from '../../../shared/ui/workbench';
 import {
   useApproveShadowResearchQualificationCandidateMutation,
   useApproveShadowResearchCandidateMutation,
@@ -17,61 +18,13 @@ import {
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 import { ShadowResearchCandidateWorkspace } from './shadow-research-candidate-workspace';
 import { ShadowResearchQualificationReview } from './shadow-research-qualification';
-import { Field, NumberField, StatusMetric } from './shadow-research-view';
-
-const MAX_PROVIDER_CALLS = 10;
-const MAX_CANDIDATES = 5;
-
-function hasValidResearchDates(policy: ShadowResearchPolicyInput) {
-  return (
-    (!policy.research_end_date && !policy.sealed_end_date) ||
-    Boolean(
-      policy.research_end_date &&
-      policy.sealed_end_date &&
-      policy.research_end_date < policy.sealed_end_date,
-    )
-  );
-}
-
-function FinalEvaluationDates({
-  policy,
-  onChange,
-  copy,
-}: {
-  policy: ShadowResearchPolicyInput;
-  onChange: (
-    dates: Pick<
-      ShadowResearchPolicyInput,
-      'research_end_date' | 'sealed_end_date'
-    >,
-  ) => void;
-  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
-}) {
-  return (
-    <>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <Field
-          label={copy.researchEndDate}
-          type="date"
-          value={policy.research_end_date ?? ''}
-          onChange={(value) => onChange({ research_end_date: value || null })}
-        />
-        <Field
-          label={copy.sealedEndDate}
-          type="date"
-          value={policy.sealed_end_date ?? ''}
-          onChange={(value) => onChange({ sealed_end_date: value || null })}
-        />
-      </div>
-      <p className="sr-only">{copy.sealedDatesDetail}</p>
-      {!hasValidResearchDates(policy) ? (
-        <p role="alert" className="mt-2 text-sm text-[var(--app-danger-text)]">
-          {copy.sealedDatesInvalid}
-        </p>
-      ) : null}
-    </>
-  );
-}
+import {
+  MAX_PROVIDER_CALLS,
+  MAX_CANDIDATES,
+  ShadowResearchPolicyCard,
+  hasValidResearchDates,
+} from './shadow-research-policy-card';
+import { StatusMetric } from './shadow-research-view';
 
 function isFiveRoundPolicy(policy: {
   max_provider_calls_per_market_date: number;
@@ -179,7 +132,7 @@ function TodayProviderActivityMetric({
   return (
     <StatusMetric
       label={copy.todayCalls}
-      value={String(activity?.provider_calls ?? 0)}
+      value={activity ? String(activity.provider_calls) : '—'}
       detail={
         activity?.last_provider_call_at
           ? `${copy.lastProviderCall}: ${formatTimestamp(
@@ -227,220 +180,6 @@ function ShadowResearchUsageMetrics({
           latestRun ? `${latestRun.market_date} · ${latestRun.status}` : '—'
         }
       />
-    </div>
-  );
-}
-
-function ShadowResearchPolicyCard({
-  copy,
-  datesValid,
-  draftPolicyReady,
-  locale,
-  onRun,
-  onSavePolicy,
-  persistedPolicyReady,
-  policy,
-  policyConfirmed,
-  providerWindowEligible,
-  runPending,
-  setPolicy,
-  setPolicyConfirmed,
-  status,
-  updatePolicyPending,
-}: {
-  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
-  datesValid: boolean;
-  draftPolicyReady: boolean;
-  locale: string;
-  onRun: () => void;
-  onSavePolicy: () => void;
-  persistedPolicyReady: boolean;
-  policy: ShadowResearchPolicyInput;
-  policyConfirmed: boolean;
-  providerWindowEligible: boolean;
-  runPending: boolean;
-  setPolicy: React.Dispatch<React.SetStateAction<ShadowResearchPolicyInput>>;
-  setPolicyConfirmed: React.Dispatch<React.SetStateAction<boolean>>;
-  status: ReturnType<typeof useShadowResearchAutomationQuery>['data'];
-  updatePolicyPending: boolean;
-}) {
-  return (
-    <div className="mt-5 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-3">
-        <div>
-          <h3 className="text-sm font-semibold text-[var(--app-text)]">
-            {locale === 'zh'
-              ? '自动化投研策略与门禁参数'
-              : 'Automation Policy & Gate Parameters'}
-          </h3>
-        </div>
-        <span
-          className={`app-type-micro inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-semibold ${
-            policy.enabled
-              ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
-              : 'border-[var(--app-divider)] text-[var(--app-text-tertiary)]'
-          }`}
-        >
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              policy.enabled
-                ? 'bg-[var(--app-success-text)]'
-                : 'bg-[var(--app-text-tertiary)]'
-            }`}
-          />
-          {policy.enabled ? copy.enabled : copy.disabled}
-        </span>
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <label className="min-w-0 text-xs font-semibold text-[var(--app-text)]">
-          {copy.question}
-          <textarea
-            className="app-input mt-2 min-h-24 w-full resize-y"
-            onChange={(event) =>
-              setPolicy((current) => ({
-                ...current,
-                research_question: event.target.value,
-              }))
-            }
-            value={policy.research_question}
-          />
-        </label>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-          <Field
-            label={copy.operator}
-            onChange={(value) =>
-              setPolicy((current) => ({ ...current, updated_by: value }))
-            }
-            value={policy.updated_by}
-          />
-          <Field
-            label={copy.closeTime}
-            onChange={(value) =>
-              setPolicy((current) => ({
-                ...current,
-                after_close_time: value,
-              }))
-            }
-            type="time"
-            value={policy.after_close_time}
-          />
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <NumberField
-          label={copy.calls}
-          max={MAX_PROVIDER_CALLS}
-          min={2}
-          onChange={(value) =>
-            setPolicy((current) => ({
-              ...current,
-              max_provider_calls_per_market_date: value,
-              max_candidates_per_run: Math.min(
-                current.max_candidates_per_run,
-                Math.max(1, Math.floor(value / 2)),
-              ),
-            }))
-          }
-          value={policy.max_provider_calls_per_market_date}
-        />
-        <StatusMetric
-          detail={copy.providerLimitsRemain}
-          label={copy.tokenPolicy}
-          value={copy.unboundedDailyTokens}
-        />
-        <NumberField
-          label={copy.candidates}
-          max={Math.min(
-            MAX_CANDIDATES,
-            Math.max(
-              1,
-              Math.floor(policy.max_provider_calls_per_market_date / 2),
-            ),
-          )}
-          min={1}
-          onChange={(value) =>
-            setPolicy((current) => ({
-              ...current,
-              max_candidates_per_run: value,
-            }))
-          }
-          value={policy.max_candidates_per_run}
-        />
-      </div>
-
-      <FinalEvaluationDates
-        policy={policy}
-        copy={copy}
-        onChange={(dates) => {
-          setPolicy((current) => ({ ...current, ...dates }));
-          setPolicyConfirmed(false);
-        }}
-      />
-
-      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[var(--app-divider)] pt-4">
-        <label className="flex min-h-11 items-center gap-2 text-sm font-semibold text-[var(--app-text)]">
-          <input
-            checked={policy.enabled}
-            onChange={(event) => {
-              setPolicy((current) => ({
-                ...current,
-                enabled: event.target.checked,
-              }));
-              setPolicyConfirmed(false);
-            }}
-            type="checkbox"
-          />
-          {policy.enabled ? copy.enabled : copy.disabled}
-        </label>
-        <label className="flex min-w-0 flex-1 items-start gap-2 text-xs leading-5 text-[var(--app-muted)]">
-          <input
-            checked={policyConfirmed}
-            className="mt-1"
-            onChange={(event) => setPolicyConfirmed(event.target.checked)}
-            type="checkbox"
-          />
-          <span>{policy.enabled ? copy.confirmEnable : copy.confirmPause}</span>
-        </label>
-        <button
-          className="app-button-primary min-h-11 px-4 py-2 text-sm font-semibold"
-          disabled={
-            updatePolicyPending ||
-            !policyConfirmed ||
-            !datesValid ||
-            !policy.research_question.trim() ||
-            (policy.enabled && !draftPolicyReady)
-          }
-          onClick={onSavePolicy}
-          type="button"
-        >
-          {updatePolicyPending ? copy.saving : copy.save}
-        </button>
-        <button
-          className="app-button-secondary min-h-11 px-4 py-2 text-sm font-semibold"
-          disabled={
-            runPending ||
-            !status?.policy?.enabled ||
-            !persistedPolicyReady ||
-            !providerWindowEligible
-          }
-          onClick={onRun}
-          type="button"
-        >
-          {runPending ? copy.running : copy.run}
-        </button>
-      </div>
-      {policy.enabled && !draftPolicyReady && (
-        <p className="mt-3 text-sm text-[var(--app-danger-text)]">
-          {copy.fiveRoundPolicyBlocked}
-        </p>
-      )}
-      {status?.policy.enabled && !persistedPolicyReady && draftPolicyReady && (
-        <p className="mt-3 text-sm text-[var(--app-danger-text)]">
-          {copy.normalizedMigrationRequired}
-        </p>
-      )}
     </div>
   );
 }
@@ -494,6 +233,7 @@ export function ShadowResearchPanel() {
   const savePolicy = async () => {
     if (!policyConfirmed || !policy.research_question.trim() || !datesValid)
       return;
+    run.reset();
     try {
       await updatePolicy.mutateAsync(policy);
       setPolicyConfirmed(false);
@@ -548,6 +288,11 @@ export function ShadowResearchPanel() {
   };
 
   const status = query.data;
+  const policyDirty = status
+    ? (Object.keys(policy) as Array<keyof ShadowResearchPolicyInput>).some(
+        (key) => (policy[key] ?? null) !== (status.policy[key] ?? null),
+      )
+    : false;
   const draftPolicyReady = isFiveRoundPolicy(policy);
   const persistedPolicyReady = status?.policy
     ? isFiveRoundPolicy(status.policy)
@@ -558,6 +303,41 @@ export function ShadowResearchPanel() {
   const latestBackup = status?.daily_backups?.[0];
   const dailyOutcome = dailyResearchOutcome(status, copy);
   const verifiedCandidateIds = verifiedDailyCandidateIds(status);
+
+  if (!status || query.isError) {
+    return (
+      <section
+        aria-labelledby="shadow-research-title"
+        className="app-ai-research-boundary min-w-0 p-4 sm:p-5"
+        data-evidence-kind="persisted-ai-shadow-research"
+        data-testid="shadow-research-panel"
+      >
+        <h2
+          id="shadow-research-title"
+          className="app-type-section-title text-[var(--app-text)]"
+        >
+          {copy.title}
+        </h2>
+        <EvidenceState
+          className="mt-4"
+          kind={query.isError ? 'error' : 'loading'}
+          title={query.isError ? copy.loadFailed : copy.loading}
+          action={
+            query.isError ? (
+              <button
+                className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+                disabled={query.isFetching}
+                onClick={() => void query.refetch()}
+                type="button"
+              >
+                {query.isFetching ? copy.loading : copy.retry}
+              </button>
+            ) : undefined
+          }
+        />
+      </section>
+    );
+  }
 
   return (
     <section
@@ -603,13 +383,27 @@ export function ShadowResearchPanel() {
         persistedPolicyReady={persistedPolicyReady}
         policy={policy}
         policyConfirmed={policyConfirmed}
+        policyDirty={policyDirty}
         providerWindowEligible={providerWindowEligible}
         runPending={run.isPending}
-        setPolicy={setPolicy}
+        runReceipt={run.isPending ? undefined : run.data}
+        setPolicy={(update) => {
+          run.reset();
+          setPolicy(update);
+          setPolicyConfirmed(false);
+        }}
         setPolicyConfirmed={setPolicyConfirmed}
         status={status}
         updatePolicyPending={updatePolicy.isPending}
       />
+      {updatePolicy.isSuccess && !policyDirty ? (
+        <p
+          role="status"
+          className="mt-3 text-sm text-[var(--app-success-text)]"
+        >
+          {copy.policySaved}
+        </p>
+      ) : null}
       {(query.isError ||
         updatePolicy.isError ||
         run.isError ||

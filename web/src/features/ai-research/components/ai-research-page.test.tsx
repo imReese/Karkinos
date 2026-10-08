@@ -66,6 +66,19 @@ test('keeps canonical context neutral until persisted queries settle', async () 
   expect(loadingTasks[0]?.parentElement?.className).not.toContain('shrink-0');
   expect(screen.queryByText('0 tasks')).toBeNull();
   expect(metrics).toBeTruthy();
+  const tabs = screen.getAllByRole('tab');
+  tabs[0].focus();
+  fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(tabs[1]);
+  expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+  expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+  const panel = screen.getByRole('tabpanel');
+  expect(panel.id).toBe(tabs[1].getAttribute('aria-controls'));
+  expect(panel.getAttribute('aria-labelledby')).toBe(tabs[1].id);
+  fireEvent.keyDown(tabs[1], { key: 'End' });
+  expect(document.activeElement).toBe(tabs[2]);
+  fireEvent.keyDown(tabs[2], { key: 'Home' });
+  expect(document.activeElement).toBe(tabs[0]);
 });
 
 test('opens the cited research canvas from canonical persisted context', async () => {

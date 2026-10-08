@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 
 import { EvidenceState, StatusBadge } from '../../../shared/ui/workbench';
 import { usePreferences } from '../../../shared/preferences/context';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   useCreateHumanResearchTaskMutation,
   useResearchTaskFixtureAnalysesQuery,
@@ -31,6 +32,7 @@ export function ResearchTaskPanel({
 }) {
   const { locale } = usePreferences();
   const copy = RESEARCH_TASK_COPY[locale];
+  const sharedCopy = useCopy();
   const [open, setOpen] = useState(defaultOpen);
   const [composerOpen, setComposerOpen] = useState(false);
   const tasks = useResearchTasksQuery(open);
@@ -55,6 +57,7 @@ export function ResearchTaskPanel({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (createTask.isPending) return;
     setSuccessMessage('');
     const evidenceTypes = [...BASE_EVIDENCE];
     if (includeBacktest && backtestResultId !== null) {
@@ -179,7 +182,9 @@ export function ResearchTaskPanel({
                 <StatusBadge className="max-w-full truncate" tone="neutral">
                   {tasks.isLoading
                     ? copy.loading
-                    : copy.taskCount(tasks.data?.tasks.length ?? 0)}
+                    : tasks.isError
+                      ? copy.loadErrorTitle
+                      : copy.taskCount(tasks.data?.tasks.length ?? 0)}
                 </StatusBadge>
                 <button
                   aria-expanded={composerOpen}
@@ -214,6 +219,16 @@ export function ResearchTaskPanel({
                 description={copy.loadError}
                 kind="error"
                 title={copy.loadErrorTitle}
+                action={
+                  <button
+                    className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+                    disabled={tasks.isFetching}
+                    onClick={() => void tasks.refetch()}
+                    type="button"
+                  >
+                    {sharedCopy.states.retry}
+                  </button>
+                }
               />
             ) : tasks.data?.tasks.length ? (
               <div className="mt-3 space-y-3">
@@ -288,12 +303,22 @@ export function ResearchTaskPanel({
               </p>
             ) : null}
             {analyses.isError ? (
-              <p
-                className="mt-3 text-sm text-[var(--app-danger-text)]"
-                role="alert"
-              >
-                {copy.analysisLoadError}
-              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <p
+                  className="text-sm text-[var(--app-danger-text)]"
+                  role="alert"
+                >
+                  {copy.analysisLoadError}
+                </p>
+                <button
+                  className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+                  disabled={analyses.isFetching}
+                  onClick={() => void analyses.refetch()}
+                  type="button"
+                >
+                  {sharedCopy.states.retry}
+                </button>
+              </div>
             ) : null}
             {startFixture.isError ? (
               <p
@@ -455,109 +480,120 @@ function ResearchTaskComposer({
   return (
     <form
       aria-labelledby="ai-research-composer-title"
+      aria-busy={createTask.isPending}
       className="border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4"
       onSubmit={(event) => void onSubmit(event)}
     >
-      <div className="app-product-mark">{copy.formKicker}</div>
-      <h3
-        className="app-type-section-title mt-1.5 text-[var(--app-text)]"
-        id="ai-research-composer-title"
-      >
-        {copy.formTitle}
-      </h3>
-      <p className="app-muted mt-1 text-xs leading-5">{copy.formDetail}</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <LabeledInput
-          label={copy.operator}
-          onChange={setOperator}
-          required
-          value={operator}
-        />
-        <LabeledInput
-          label={copy.account}
-          onChange={setAccountAlias}
-          required
-          value={accountAlias}
-        />
-      </div>
-      <div className="mt-3">
-        <LabeledInput
-          label={copy.taskTitle}
-          onChange={setTitle}
-          required
-          value={title}
-        />
-      </div>
-      <label className="mt-3 block text-xs font-semibold text-[var(--app-muted)]">
-        {copy.question}
-        <textarea
-          className="app-input mt-1 min-h-24 w-full resize-y px-3 py-2 text-sm text-[var(--app-text)]"
-          onChange={(event) => setQuestion(event.target.value)}
-          required
-          value={question}
-        />
-      </label>
-      <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
-        <input
-          checked={includeBacktest}
-          className="mt-1"
-          disabled={backtestResultId === null}
-          onChange={(event) => setIncludeBacktest(event.target.checked)}
-          type="checkbox"
-        />
-        <span>
-          {copy.includeBacktest}
-          {backtestResultId === null ? (
-            <span className="app-muted mt-1 block text-xs">
-              {copy.noBacktest}
-            </span>
-          ) : (
-            <span className="app-muted mt-1 block font-mono text-xs">
-              backtest_result_id={backtestResultId}
-            </span>
-          )}
-        </span>
-      </label>
-      <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
-        <input
-          checked={includeContribution}
-          className="mt-1"
-          disabled={strategyId === null}
-          onChange={(event) => setIncludeContribution(event.target.checked)}
-          type="checkbox"
-        />
-        <span>
-          {copy.includeContribution}
-          {strategyId === null ? (
-            <span className="app-muted mt-1 block text-xs">
-              {copy.noContribution}
-            </span>
-          ) : (
-            <span className="app-muted mt-1 block font-mono text-xs">
-              strategy_id={strategyId}
-            </span>
-          )}
-        </span>
-      </label>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button
-          className="app-button-primary min-h-11 px-4 py-2 text-sm font-semibold"
-          disabled={
-            createTask.isPending || (includeContribution && strategyId === null)
-          }
-          type="submit"
+      <fieldset className="min-w-0" disabled={createTask.isPending}>
+        <div className="app-product-mark">{copy.formKicker}</div>
+        <h3
+          className="app-type-section-title mt-1.5 text-[var(--app-text)]"
+          id="ai-research-composer-title"
         >
-          {createTask.isPending ? copy.submitting : copy.submit}
-        </button>
-        <span className="text-xs text-[var(--app-muted)]">
-          {copy.persistedOnly}
-        </span>
-      </div>
-      {createTask.isError ? (
-        <p className="mt-3 text-sm text-[var(--app-danger-text)]" role="alert">
-          {createTask.error.message}
-        </p>
-      ) : null}
+          {copy.formTitle}
+        </h3>
+        <p className="app-muted mt-1 text-xs leading-5">{copy.formDetail}</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <LabeledInput
+            label={copy.operator}
+            onChange={setOperator}
+            required
+            value={operator}
+          />
+          <LabeledInput
+            label={copy.account}
+            onChange={setAccountAlias}
+            required
+            value={accountAlias}
+          />
+        </div>
+        <div className="mt-3">
+          <LabeledInput
+            label={copy.taskTitle}
+            onChange={setTitle}
+            required
+            value={title}
+          />
+        </div>
+        <label className="mt-3 block text-xs font-semibold text-[var(--app-muted)]">
+          {copy.question}
+          <textarea
+            className="app-input mt-1 min-h-24 w-full resize-y px-3 py-2 text-sm text-[var(--app-text)]"
+            onChange={(event) => setQuestion(event.target.value)}
+            required
+            value={question}
+          />
+        </label>
+        <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
+          <input
+            checked={includeBacktest}
+            className="mt-1"
+            disabled={backtestResultId === null}
+            onChange={(event) => setIncludeBacktest(event.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            {copy.includeBacktest}
+            {backtestResultId === null ? (
+              <span className="app-muted mt-1 block text-xs">
+                {copy.noBacktest}
+              </span>
+            ) : (
+              <span className="app-muted mt-1 block font-mono text-xs">
+                backtest_result_id={backtestResultId}
+              </span>
+            )}
+          </span>
+        </label>
+        <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
+          <input
+            checked={includeContribution}
+            className="mt-1"
+            disabled={strategyId === null}
+            onChange={(event) => setIncludeContribution(event.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            {copy.includeContribution}
+            {strategyId === null ? (
+              <span className="app-muted mt-1 block text-xs">
+                {copy.noContribution}
+              </span>
+            ) : (
+              <span className="app-muted mt-1 block font-mono text-xs">
+                strategy_id={strategyId}
+              </span>
+            )}
+          </span>
+        </label>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            className="app-button-primary min-h-11 px-4 py-2 text-sm font-semibold"
+            disabled={
+              createTask.isPending ||
+              !operator.trim() ||
+              !accountAlias.trim() ||
+              !title.trim() ||
+              !question.trim() ||
+              (includeContribution && strategyId === null)
+            }
+            type="submit"
+          >
+            {createTask.isPending ? copy.submitting : copy.submit}
+          </button>
+          <span className="text-xs text-[var(--app-muted)]">
+            {copy.persistedOnly}
+          </span>
+        </div>
+        {createTask.isError ? (
+          <p
+            className="mt-3 text-sm text-[var(--app-danger-text)]"
+            role="alert"
+          >
+            {createTask.error.message}
+          </p>
+        ) : null}
+      </fieldset>
     </form>
   );
 }

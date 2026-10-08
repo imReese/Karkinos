@@ -222,6 +222,60 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('keeps unavailable automated research separate from paused policy and zero usage, then retries the read', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  window.localStorage.setItem('karkinos.locale', 'en');
+  let attempts = 0;
+  let resolveFirst!: (response: Response) => void;
+  const firstRead = new Promise<Response>((resolve) => {
+    resolveFirst = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      if (
+        String(input).endsWith('/api/ai/strategy-research/shadow-automation')
+      ) {
+        attempts += 1;
+        return attempts === 1 ? firstRead : jsonResponse(status);
+      }
+      if (String(input).endsWith('/api/strategy-promotion/states'))
+        return jsonResponse([]);
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+  expect(
+    await screen.findByText('Reading saved automated research…'),
+  ).toBeTruthy();
+  expect(screen.queryByText('Clear')).toBeNull();
+  expect(screen.queryByText('Paused')).toBeNull();
+  expect(screen.queryByText('0 / 10')).toBeNull();
+  expect(
+    screen.queryByRole('button', { name: 'Save research policy' }),
+  ).toBeNull();
+  resolveFirst(jsonResponse({ detail: 'unavailable' }, 503));
+  expect(
+    await screen.findByText('Automated research status could not be loaded.'),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText('2 / 10')).toBeTruthy();
+  expect(attempts).toBe(2);
+});
+
 test('shows the next off-peak window and disables manual run during peak', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
@@ -268,7 +322,7 @@ test('shows the next off-peak window and disables manual run during peak', async
   expect(
     (
       screen.getByRole('button', {
-        name: 'Check and run now',
+        name: 'Check and schedule research',
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -503,17 +557,17 @@ test('preserves the research cutoff and requires paired final holdout dates when
   expect(screen.getByRole('alert').textContent).toContain('Set both dates');
   expect(
     screen
-      .getByRole('button', { name: 'Save standing policy' })
+      .getByRole('button', { name: 'Save research policy' })
       .hasAttribute('disabled'),
   ).toBe(true);
   fireEvent.change(holdoutEnd, { target: { value: '2026-12-31' } });
-  fireEvent.click(screen.getByLabelText('Paused'));
+  fireEvent.click(screen.getByLabelText('Enable recurring research'));
   fireEvent.click(
     await screen.findByText(
-      /I authorize five strictly sequential normalized-notional research rounds and ten provider calls/,
+      'I have reviewed the scope above and authorize this research policy.',
     ),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Save standing policy' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save research policy' }));
 
   await vi.waitFor(() => {
     const policyCall = fetchMock.mock.calls.find(
@@ -545,6 +599,7 @@ test('manual run and policy pause preserve the unbounded token policy', async ()
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   });
+  let runAttempt = 0;
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -552,7 +607,23 @@ test('manual run and policy pause preserve the unbounded token policy', async ()
         url.endsWith('/api/ai/strategy-research/shadow-automation/run') &&
         init?.method === 'POST'
       ) {
-        return jsonResponse(status);
+        runAttempt += 1;
+        return jsonResponse(
+          {
+            schema_version: 'karkinos.ai.shadow_research_job_scheduler.v1',
+            status: runAttempt === 1 ? 'enqueued' : 'blocked',
+            failure_code:
+              runAttempt === 1 ? null : 'deepseek_provider_not_configured',
+            ...(runAttempt === 1
+              ? { available_at: '2026-08-12T18:00:00+08:00' }
+              : {}),
+            provider_call_performed: false,
+            broker_order_created: false,
+            execution_authority_granted: false,
+            capital_authority_granted: false,
+          },
+          202,
+        );
       }
       if (
         url.endsWith('/api/ai/strategy-research/shadow-automation/policy') &&
@@ -583,9 +654,31 @@ test('manual run and policy pause preserve the unbounded token policy', async ()
   );
 
   const runButton = (await screen.findByRole('button', {
-    name: 'Check and run now',
+    name: 'Check and schedule research',
   })) as HTMLButtonElement;
   await vi.waitFor(() => expect(runButton.disabled).toBe(false));
+  const question = screen.getByLabelText('Standing research question');
+  fireEvent.change(question, {
+    target: { value: 'An unsaved research question' },
+  });
+  expect(runButton.disabled).toBe(true);
+  expect(
+    screen.getByText(
+      'Unsaved changes. Confirm and save the policy before running.',
+    ),
+  ).toBeTruthy();
+  fireEvent.click(runButton);
+  expect(
+    fetchMock.mock.calls.some(
+      ([input, init]) =>
+        String(input).endsWith('/shadow-automation/run') &&
+        init?.method === 'POST',
+    ),
+  ).toBe(false);
+  fireEvent.change(question, {
+    target: { value: status.policy.research_question },
+  });
+  expect(runButton.disabled).toBe(false);
   fireEvent.click(runButton);
   await vi.waitFor(() => {
     expect(
@@ -598,11 +691,26 @@ test('manual run and policy pause preserve the unbounded token policy', async ()
     ).toBe(true);
   });
 
-  fireEvent.click(screen.getByLabelText('Authorized'));
+  await screen.findByText('Research queued');
+  expect(
+    screen.getByText('A queued receipt does not mean the model has run.'),
+  ).toBeTruthy();
+  expect(screen.getByText(/Scheduled for/)).toBeTruthy();
+  await vi.waitFor(() => expect(runButton.disabled).toBe(false));
+  fireEvent.click(runButton);
+  await screen.findByText(
+    /Research was not started. DeepSeek is not enabled or configured./,
+  );
+  expect(screen.queryByText('Research queued')).toBeNull();
+  await vi.waitFor(() => expect(runButton.disabled).toBe(false));
+
+  fireEvent.click(screen.getByLabelText('Enable recurring research'));
+  expect(screen.getByText('Saved policy · Authorized')).toBeTruthy();
+  expect(runButton.disabled).toBe(true);
   fireEvent.click(
     screen.getByText('I confirm pausing recurring AI strategy research.'),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Save standing policy' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save research policy' }));
 
   await vi.waitFor(() => {
     const policyCall = fetchMock.mock.calls.find(
@@ -671,7 +779,7 @@ test('blocks an enabled legacy partial policy until five sequential rounds are s
     await screen.findByText(/Enabled research is blocked until/),
   ).toBeTruthy();
   const runButton = screen.getByRole('button', {
-    name: 'Check and run now',
+    name: 'Check and schedule research',
   }) as HTMLButtonElement;
   expect(runButton.disabled).toBe(true);
 });
@@ -726,15 +834,15 @@ test('requires explicit normalized-notional reauthorization for an account-bound
     await screen.findByText(/persisted policy is legacy account-bound/),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: 'Check and run now' }),
+    screen.getByRole('button', { name: 'Check and schedule research' }),
   ).toHaveProperty('disabled', true);
 
   fireEvent.click(
     screen.getByText(
-      /I authorize five strictly sequential normalized-notional research rounds/,
+      'I have reviewed the scope above and authorize this research policy.',
     ),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Save standing policy' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save research policy' }));
 
   await vi.waitFor(() => {
     const policyCall = fetchMock.mock.calls.find(

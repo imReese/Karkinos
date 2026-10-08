@@ -2,6 +2,9 @@ export const SHADOW_RESEARCH_COPY = {
   en: {
     kicker: 'After-close DeepSeek research',
     title: 'Automated shadow strategy research',
+    loading: 'Reading saved automated research…',
+    loadFailed: 'Automated research status could not be loaded.',
+    retry: 'Retry',
     detail:
       'After the persisted market close, Karkinos runs Formula discovery with normalized notional capital and canonical estimated costs. It does not require or export Account Truth, valuation or ledger facts. Formula validation, after-cost backtest and rolling OOS remain local before the evidence critique; account qualification remains a separate promotion and execution gate.',
     disabled: 'Paused',
@@ -98,13 +101,40 @@ export const SHADOW_RESEARCH_COPY = {
       'Set both dates, with the holdout end after the research cutoff, or leave both blank.',
     question: 'Standing research question',
     operator: 'Owner identity',
-    save: 'Save standing policy',
+    save: 'Save research policy',
     saving: 'Saving…',
+    savedPolicy: 'Saved policy',
+    enableResearch: 'Enable recurring research',
+    policyEditDetail: 'Changes take effect after confirmation and saving.',
+    authorizationScope: 'Authorization scope',
+    scopeRounds:
+      'Per market date: five strictly sequential research rounds with normalized notional capital and at most ten provider calls.',
+    scopeUsage:
+      'No Karkinos daily aggregate token limit. Usage is recorded; per-request provider and context limits still apply.',
+    scopeAuthority:
+      'Discovery does not read Account Truth. This grants no promotion, strategy replacement, capital, or trading authority.',
     confirmEnable:
-      'I authorize five strictly sequential normalized-notional research rounds and ten provider calls per market date with no Karkinos daily aggregate token limit. Account Truth is not used for discovery; provider limits and usage accounting remain, and this grants no promotion, strategy replacement, capital, or trading authority.',
+      'I have reviewed the scope above and authorize this research policy.',
     confirmPause: 'I confirm pausing recurring AI strategy research.',
-    run: 'Check and run now',
-    running: 'Checking evidence…',
+    unsavedPolicy:
+      'Unsaved changes. Confirm and save the policy before running.',
+    runSavedPolicy: 'Run uses the saved policy and checks eligibility first.',
+    policySaved: 'Research policy saved.',
+    run: 'Check and schedule research',
+    running: 'Checking eligibility…',
+    runEnqueued: 'Research queued',
+    runAlreadyEnqueued: 'Research is already queued. No duplicate was created.',
+    runBlocked: 'Research was not started.',
+    runScheduledFor: 'Scheduled for',
+    runProviderPending: 'A queued receipt does not mean the model has run.',
+    runBlockedReasons: {
+      shadow_research_policy_disabled: 'Recurring research is paused.',
+      research_worker_kill_switch_status_unavailable:
+        'Pause controls are unavailable.',
+      kill_switch_enabled: 'The global pause is active.',
+      deepseek_provider_not_configured:
+        'DeepSeek is not enabled or configured.',
+    },
     noCandidates:
       'No completed automated candidate is in the research pool yet.',
     currentCandidates: 'Current research candidates',
@@ -154,6 +184,9 @@ export const SHADOW_RESEARCH_COPY = {
       'LLM generation passed bounded self-healing correction without schema violation escapes; structured into valid Formula and economic hypothesis.',
   },
   zh: {
+    loading: '正在读取已保存自动研究…',
+    loadFailed: '无法读取自动研究状态。',
+    retry: '重试',
     kicker: 'DeepSeek 收盘后研究',
     title: '自动 shadow 策略研究池',
     detail:
@@ -248,13 +281,36 @@ export const SHADOW_RESEARCH_COPY = {
       '请同时设置两项日期，且检验结束日须晚于研究截止日；或将两项同时留空。',
     question: '长期研究问题',
     operator: '所有者身份',
-    save: '保存站立授权',
+    save: '保存研究策略',
     saving: '保存中…',
-    confirmEnable:
-      '我授权每个交易日使用归一化名义资金进行 5 轮严格串行研究、最多 10 次模型调用，Karkinos 不设每日累计 Token 上限；Formula discovery 不读取 Account Truth，仍记录用量并受模型单次请求和上下文窗口限制。该授权不包含晋级、策略替换、资本或交易权。',
+    savedPolicy: '已保存策略',
+    enableResearch: '启用自动研究',
+    policyEditDetail: '修改须经确认并保存后生效。',
+    authorizationScope: '授权范围',
+    scopeRounds:
+      '每个交易日使用归一化名义资金，进行 5 轮严格串行研究、最多 10 次模型调用。',
+    scopeUsage:
+      'Karkinos 不设每日累计 Token 上限；记录用量，仍受模型单次请求及上下文窗口限制。',
+    scopeAuthority:
+      '研究不读取 Account Truth 账户事实；不授予晋级、策略替换、资本或交易权限。',
+    confirmEnable: '我已了解以上范围，确认授权此研究策略。',
     confirmPause: '我确认暂停周期性 AI 策略研究。',
-    run: '立即检查并运行',
-    running: '正在检查证据…',
+    unsavedPolicy: '有未保存的修改，请先确认并保存后运行。',
+    runSavedPolicy: '运行使用已保存策略，并先检查运行条件。',
+    policySaved: '研究策略已保存。',
+    run: '检查并安排研究',
+    running: '正在检查运行条件…',
+    runEnqueued: '研究已排入队列',
+    runAlreadyEnqueued: '研究已在队列中，未重复创建任务。',
+    runBlocked: '研究未启动。',
+    runScheduledFor: '计划运行时间',
+    runProviderPending: '排队确认不代表模型已运行。',
+    runBlockedReasons: {
+      shadow_research_policy_disabled: '自动研究已暂停。',
+      research_worker_kill_switch_status_unavailable: '无法读取全局暂停状态。',
+      kill_switch_enabled: '全局暂停已生效。',
+      deepseek_provider_not_configured: 'DeepSeek 尚未启用或配置。',
+    },
     noCandidates: '研究池里还没有完成的自动候选。',
     currentCandidates: '当前研究候选',
     candidateRegistry: '候选登记',

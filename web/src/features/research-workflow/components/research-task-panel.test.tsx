@@ -288,6 +288,33 @@ test('stays idle until explicitly opened', async () => {
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
+test('shows failed task reads as unavailable and lets the user retry', async () => {
+  const { fetchMock } = renderPanel();
+  const originalFetch = fetchMock.getMockImplementation()!;
+  let taskReads = 0;
+  fetchMock.mockImplementation((input, init) => {
+    if (String(input).includes('/api/ai/research-tasks?limit=20')) {
+      taskReads += 1;
+      if (taskReads === 1)
+        return Promise.resolve(
+          jsonResponse({ detail: 'unavailable' }, { status: 503 }),
+        );
+    }
+    return originalFetch(input, init);
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
+  const retry = await screen.findByRole('button', { name: 'Retry' });
+  expect(screen.queryByText('0 tasks')).toBeNull();
+  expect(
+    screen.queryByText('No human research task has been recorded yet.'),
+  ).toBeNull();
+  fireEvent.click(retry);
+  expect(
+    await screen.findByText('No human research task has been recorded yet.'),
+  ).toBeTruthy();
+  expect(taskReads).toBe(2);
+});
+
 test('captures exact persisted context before recording a task', async () => {
   const { requests } = renderPanel();
   fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
