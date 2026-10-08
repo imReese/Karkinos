@@ -90,8 +90,8 @@ export function FactorEvaluationPanel() {
           </h3>
           <p className="app-muted mt-1 text-xs">
             {locale === 'zh'
-              ? '验证选股/选基因子在多资产池中的 Rank IC 预测力、ICIR 稳定性、分位数多空利差与截面单调性。'
-              : 'Validate predictive power of alpha factors via Rank IC, ICIR stability, quantile spreads, and monotonicity.'}
+              ? '使用完整的本地行情探索 Rank IC、ICIR 与税费前分层利差。数据缺失时阻断；不使用随机示例或补造价格。'
+              : 'Explore Rank IC, ICIR and gross quantile spreads from complete local bars. Missing data blocks evaluation; prices are never replaced with synthetic samples.'}
           </p>
         </div>
       </div>
@@ -236,185 +236,208 @@ export function FactorEvaluationPanel() {
       {factorMutation.isError ? (
         <div role="alert" className="text-xs text-[var(--app-danger-text)]">
           {locale === 'zh'
-            ? '因子体检失败，请重试。'
-            : 'Factor evaluation failed. Please try again.'}
+            ? '因子体检未完成。请确认所选 ETF 标的均有完整且足够的本地日线历史，再重试。'
+            : 'Factor evaluation did not complete. Confirm that every selected ETF has sufficient, complete local daily-bar history before retrying.'}
         </div>
       ) : null}
 
       {/* 因子体检结果看板 */}
       {evaluationResult ? (
-        <div
-          className="space-y-4 border-t border-[var(--app-divider)] pt-4"
-          data-testid="factor-results"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-[var(--app-accent)]" />
-              <h4 className="text-xs font-semibold text-[var(--app-text)]">
-                {locale === 'zh'
-                  ? '因子体检报告 (Tear Sheet)'
-                  : 'Factor Evaluation Tear Sheet'}
-              </h4>
-            </div>
-            <span className="app-type-micro font-mono tabular-nums text-[var(--app-text-tertiary)]">
+        <FactorEvaluationResults
+          evaluationResult={evaluationResult}
+          locale={locale}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function FactorEvaluationResults({
+  evaluationResult,
+  locale,
+}: {
+  evaluationResult: FactorEvaluationResponse;
+  locale: 'en' | 'zh';
+}) {
+  return (
+    <div
+      className="space-y-4 border-t border-[var(--app-divider)] pt-4"
+      data-testid="factor-results"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-[var(--app-accent)]" />
+          <h4 className="text-xs font-semibold text-[var(--app-text)]">
+            {locale === 'zh'
+              ? '因子体检报告 (Tear Sheet)'
+              : 'Factor Evaluation Tear Sheet'}
+          </h4>
+        </div>
+        <span className="app-type-micro font-mono tabular-nums text-[var(--app-text-tertiary)]">
+          {locale === 'zh'
+            ? `非重叠有效样本: ${evaluationResult.sample_count} 期`
+            : `Non-overlapping valid samples: ${evaluationResult.sample_count} periods`}
+        </span>
+      </div>
+      <p className="app-muted text-xs leading-5">
+        {evaluationResult.universe_name} · {evaluationResult.data_start} →{' '}
+        {evaluationResult.data_end} ·{' '}
+        {locale === 'zh'
+          ? `每 ${evaluationResult.forward_period} 根日线抽样；按每年 ${evaluationResult.summary.annual_periods} 期年化。税费前、不复权因子诊断，不包含成交或完整分配收益，也不构成策略准入依据。`
+          : `Sampled every ${evaluationResult.forward_period} daily bars; annualized at ${evaluationResult.summary.annual_periods} periods per year. Gross unadjusted factor diagnostics exclude fills and complete distributions and provide no strategy admission evidence.`}
+      </p>
+      <p className="app-muted text-xs leading-5">
+        {locale === 'zh'
+          ? '本地缓存未证明历史时点可得性或完整公司行动覆盖；正态近似 p 值不证明样本独立或 alpha。'
+          : 'Local cached bars do not establish historical PIT or complete corporate-action coverage. Normal-approximation p-values do not prove sample independence or alpha.'}
+      </p>
+
+      {/* 核心指标卡片矩阵 */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
+        <MetricCard
+          label="Rank IC 均值"
+          value={`${(evaluationResult.summary.mean_ic * 100).toFixed(2)}%`}
+          tone={
+            evaluationResult.summary.mean_ic > 0.03
+              ? 'positive'
+              : evaluationResult.summary.mean_ic < -0.03
+                ? 'negative'
+                : 'neutral'
+          }
+          subtext={`Std: ${(evaluationResult.summary.std_ic * 100).toFixed(2)}%`}
+        />
+        <MetricCard
+          label="年化 ICIR"
+          value={evaluationResult.summary.annualized_icir.toFixed(2)}
+          tone={
+            evaluationResult.summary.annualized_icir > 0.8
+              ? 'positive'
+              : 'neutral'
+          }
+          subtext={`ICIR: ${evaluationResult.summary.icir.toFixed(2)}`}
+        />
+        <MetricCard
+          label="t 检验统计量"
+          value={evaluationResult.summary.t_stat.toFixed(2)}
+          tone={
+            Math.abs(evaluationResult.summary.t_stat) > 2.0
+              ? 'positive'
+              : 'neutral'
+          }
+          subtext={`p-val: ${evaluationResult.summary.p_value.toFixed(4)}`}
+        />
+        <MetricCard
+          label="IC 胜率"
+          value={`${(evaluationResult.summary.positive_ratio * 100).toFixed(1)}%`}
+          tone={
+            evaluationResult.summary.positive_ratio > 0.55
+              ? 'positive'
+              : 'neutral'
+          }
+          subtext="IC > 0 占比"
+        />
+        <MetricCard
+          label="分层单调性"
+          value={evaluationResult.spread_summary.monotonicity_score.toFixed(2)}
+          tone={
+            evaluationResult.spread_summary.monotonicity_score > 0.7
+              ? 'positive'
+              : evaluationResult.spread_summary.monotonicity_score < -0.7
+                ? 'negative'
+                : 'neutral'
+          }
+          subtext={`Q1..Q${evaluationResult.n_quantiles}`}
+        />
+        <MetricCard
+          label={
+            locale === 'zh' ? '税费前年化分层利差' : 'Annualized gross spread'
+          }
+          value={`${(evaluationResult.spread_summary.annualized_spread_return * 100).toFixed(2)}%`}
+          tone={
+            evaluationResult.spread_summary.annualized_spread_return > 0
+              ? 'positive'
+              : 'negative'
+          }
+          subtext={`Q${evaluationResult.n_quantiles} - Q1`}
+        />
+        <MetricCard
+          label={locale === 'zh' ? '税费前分层夏普' : 'Gross spread Sharpe'}
+          value={evaluationResult.spread_summary.spread_sharpe.toFixed(2)}
+          tone={
+            evaluationResult.spread_summary.spread_sharpe > 1.0
+              ? 'positive'
+              : 'neutral'
+          }
+          subtext={`回撤: ${(evaluationResult.spread_summary.spread_max_drawdown * 100).toFixed(1)}%`}
+        />
+      </div>
+
+      {/* 最新截面标的评分与排序 */}
+      {evaluationResult.latest_cross_section.length > 0 ? (
+        <div className="space-y-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] p-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-[var(--app-text)]">
               {locale === 'zh'
-                ? `有效截面样本: ${evaluationResult.sample_count} 期`
-                : `Valid Samples: ${evaluationResult.sample_count} periods`}
+                ? '最新截面因子评分与排序 (Latest Cross-Section Ranking)'
+                : 'Latest Cross-Section Ranking'}
+            </span>
+            <span className="app-type-micro text-[var(--app-text-tertiary)]">
+              {locale === 'zh'
+                ? '探索性排名，不生成组合目标'
+                : 'Exploratory ranking; no portfolio target'}
             </span>
           </div>
-
-          {/* 核心指标卡片矩阵 */}
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
-            <MetricCard
-              label="Rank IC 均值"
-              value={`${(evaluationResult.summary.mean_ic * 100).toFixed(2)}%`}
-              tone={
-                evaluationResult.summary.mean_ic > 0.03
-                  ? 'positive'
-                  : evaluationResult.summary.mean_ic < -0.03
-                    ? 'negative'
-                    : 'neutral'
-              }
-              subtext={`Std: ${(evaluationResult.summary.std_ic * 100).toFixed(2)}%`}
-            />
-            <MetricCard
-              label="年化 ICIR"
-              value={evaluationResult.summary.annualized_icir.toFixed(2)}
-              tone={
-                evaluationResult.summary.annualized_icir > 0.8
-                  ? 'positive'
-                  : 'neutral'
-              }
-              subtext={`ICIR: ${evaluationResult.summary.icir.toFixed(2)}`}
-            />
-            <MetricCard
-              label="t 检验统计量"
-              value={evaluationResult.summary.t_stat.toFixed(2)}
-              tone={
-                Math.abs(evaluationResult.summary.t_stat) > 2.0
-                  ? 'positive'
-                  : 'neutral'
-              }
-              subtext={`p-val: ${evaluationResult.summary.p_value.toFixed(4)}`}
-            />
-            <MetricCard
-              label="IC 胜率"
-              value={`${(evaluationResult.summary.positive_ratio * 100).toFixed(1)}%`}
-              tone={
-                evaluationResult.summary.positive_ratio > 0.55
-                  ? 'positive'
-                  : 'neutral'
-              }
-              subtext="IC > 0 占比"
-            />
-            <MetricCard
-              label="分层单调性"
-              value={evaluationResult.spread_summary.monotonicity_score.toFixed(
-                2,
-              )}
-              tone={
-                evaluationResult.spread_summary.monotonicity_score > 0.7
-                  ? 'positive'
-                  : evaluationResult.spread_summary.monotonicity_score < -0.7
-                    ? 'negative'
-                    : 'neutral'
-              }
-              subtext="Q1..Q5 秩相关"
-            />
-            <MetricCard
-              label="多空年化收益"
-              value={`${(evaluationResult.spread_summary.annualized_spread_return * 100).toFixed(2)}%`}
-              tone={
-                evaluationResult.spread_summary.annualized_spread_return > 0
-                  ? 'positive'
-                  : 'negative'
-              }
-              subtext="Q5 - Q1 利差"
-            />
-            <MetricCard
-              label="多空夏普比率"
-              value={evaluationResult.spread_summary.spread_sharpe.toFixed(2)}
-              tone={
-                evaluationResult.spread_summary.spread_sharpe > 1.0
-                  ? 'positive'
-                  : 'neutral'
-              }
-              subtext={`回撤: ${(evaluationResult.spread_summary.spread_max_drawdown * 100).toFixed(1)}%`}
-            />
-          </div>
-
-          {/* 最新截面标的评分与排序 */}
-          {evaluationResult.latest_cross_section.length > 0 ? (
-            <div className="space-y-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] p-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-[var(--app-text)]">
-                  {locale === 'zh'
-                    ? '最新截面因子评分与排序 (Latest Cross-Section Ranking)'
-                    : 'Latest Cross-Section Ranking'}
-                </span>
-                <span className="app-type-micro text-[var(--app-text-tertiary)]">
-                  {locale === 'zh'
-                    ? 'Top-K 将作为多头轮动候选'
-                    : 'Top-K candidates for rotation'}
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-[var(--app-divider)] text-[var(--app-text-secondary)]">
-                      <th className="py-1.5 pr-3 text-left font-semibold">
-                        排名
-                      </th>
-                      <th className="py-1.5 px-3 text-left font-semibold">
-                        标的名称
-                      </th>
-                      <th className="py-1.5 px-3 text-left font-semibold">
-                        代码
-                      </th>
-                      <th className="py-1.5 px-3 text-right font-semibold">
-                        因子原始值
-                      </th>
-                      <th className="py-1.5 pl-3 text-right font-semibold">
-                        截面百分位
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--app-divider)] font-mono tabular-nums">
-                    {evaluationResult.latest_cross_section.map((item) => (
-                      <tr
-                        key={item.symbol}
-                        className="hover:bg-[var(--app-accent-bg)]"
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-[var(--app-divider)] text-[var(--app-text-secondary)]">
+                  <th className="py-1.5 pr-3 text-left font-semibold">排名</th>
+                  <th className="py-1.5 px-3 text-left font-semibold">
+                    标的名称
+                  </th>
+                  <th className="py-1.5 px-3 text-left font-semibold">代码</th>
+                  <th className="py-1.5 px-3 text-right font-semibold">
+                    因子原始值
+                  </th>
+                  <th className="py-1.5 pl-3 text-right font-semibold">
+                    截面百分位
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--app-divider)] font-mono tabular-nums">
+                {evaluationResult.latest_cross_section.map((item) => (
+                  <tr
+                    key={item.symbol}
+                    className="hover:bg-[var(--app-accent-bg)]"
+                  >
+                    <td className="py-1.5 pr-3 text-left">
+                      <span
+                        className={`inline-block w-5 text-center font-bold ${
+                          item.rank <= 3
+                            ? 'text-[var(--app-accent-text)]'
+                            : 'text-[var(--app-text-tertiary)]'
+                        }`}
                       >
-                        <td className="py-1.5 pr-3 text-left">
-                          <span
-                            className={`inline-block w-5 text-center font-bold ${
-                              item.rank <= 3
-                                ? 'text-[var(--app-accent-text)]'
-                                : 'text-[var(--app-text-tertiary)]'
-                            }`}
-                          >
-                            #{item.rank}
-                          </span>
-                        </td>
-                        <td className="py-1.5 px-3 font-sans text-left font-medium text-[var(--app-text)]">
-                          {item.name}
-                        </td>
-                        <td className="py-1.5 px-3 text-left text-[var(--app-text-secondary)]">
-                          {item.symbol}
-                        </td>
-                        <td className="py-1.5 px-3 text-right text-[var(--app-text)]">
-                          {item.factor_value.toFixed(4)}
-                        </td>
-                        <td className="py-1.5 pl-3 text-right font-semibold text-[var(--app-text)]">
-                          {item.percentile.toFixed(1)}%
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
+                        #{item.rank}
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-3 font-sans text-left font-medium text-[var(--app-text)]">
+                      {item.name}
+                    </td>
+                    <td className="py-1.5 px-3 text-left text-[var(--app-text-secondary)]">
+                      {item.symbol}
+                    </td>
+                    <td className="py-1.5 px-3 text-right text-[var(--app-text)]">
+                      {item.factor_value.toFixed(4)}
+                    </td>
+                    <td className="py-1.5 pl-3 text-right font-semibold text-[var(--app-text)]">
+                      {item.percentile.toFixed(1)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
     </div>

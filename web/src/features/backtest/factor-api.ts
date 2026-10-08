@@ -38,6 +38,15 @@ export type FactorEvaluationResponse = {
   lookback_period: number;
   forward_period: number;
   sample_count: number;
+  n_quantiles: number;
+  data_source: 'local_typed_daily_bars';
+  data_start: string;
+  data_end: string;
+  evaluated_symbols: string[];
+  sampling: 'fixed_nonoverlapping_daily_bar_rows';
+  return_basis: 'gross_unadjusted_quantile_diagnostic';
+  research_only: true;
+  limitations: string[];
   summary: {
     sample_count: number;
     mean_ic: number;
@@ -47,6 +56,8 @@ export type FactorEvaluationResponse = {
     t_stat: number;
     p_value: number;
     positive_ratio: number;
+    sample_stride: number;
+    annual_periods: number;
   };
   spread_summary: {
     annualized_spread_return: number;
