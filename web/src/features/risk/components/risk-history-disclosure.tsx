@@ -1,6 +1,11 @@
 import { ChevronDown } from 'lucide-react';
 
-import { StatusBadge, WorkbenchSelect } from '../../../shared/ui/workbench';
+import {
+  Button,
+  EvidenceState,
+  StatusBadge,
+  WorkbenchSelect,
+} from '../../../shared/ui/workbench';
 import type { RiskPageController } from '../model/use-risk-page-controller';
 import { RiskHistoryWorkspace } from './risk-history-workspace';
 
@@ -29,6 +34,8 @@ export function RiskHistoryDisclosure({
         <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
           {controller.explainability.isLoading ? (
             <StatusBadge tone="neutral">{copy.states.loading}</StatusBadge>
+          ) : controller.explainability.isError ? (
+            <StatusBadge tone="danger">{copy.states.error}</StatusBadge>
           ) : (
             <>
               <StatusBadge tone="neutral">
@@ -53,16 +60,39 @@ export function RiskHistoryDisclosure({
         </div>
       </summary>
       <div className="border-t border-[var(--app-divider)] py-4 sm:py-5">
-        <RiskHistoryWorkspace
-          title={copy.riskPage.equityBridge}
-          stateLabelRecent={copy.riskPage.recentDrivers}
-          stateLabelPositions={copy.riskPage.positionDrivers}
-          emptyLabel={copy.riskPage.emptyDrivers}
-          explainability={controller.explainability.data}
-          loading={controller.explainability.isLoading}
-          instrumentNames={controller.instrumentNames}
-          filters={<RiskHistoryFilters controller={controller} />}
-        />
+        {controller.explainability.isError ? (
+          <EvidenceState
+            kind="error"
+            title={copy.states.error}
+            description={
+              locale === 'zh'
+                ? '历史归因暂时无法读取。当前持仓与风险结果仍可独立使用。'
+                : 'History and attribution could not be read. Current holdings and risk remain independently available.'
+            }
+            action={
+              <Button
+                variant="secondary"
+                disabled={controller.explainability.isFetching}
+                onClick={() => void controller.explainability.refetch()}
+              >
+                {copy.states.retry}
+              </Button>
+            }
+          />
+        ) : null}
+        {controller.explainability.data ||
+        !controller.explainability.isError ? (
+          <RiskHistoryWorkspace
+            title={copy.riskPage.equityBridge}
+            stateLabelRecent={copy.riskPage.recentDrivers}
+            stateLabelPositions={copy.riskPage.positionDrivers}
+            emptyLabel={copy.riskPage.emptyDrivers}
+            explainability={controller.explainability.data}
+            loading={controller.explainability.isLoading}
+            instrumentNames={controller.instrumentNames}
+            filters={<RiskHistoryFilters controller={controller} />}
+          />
+        ) : null}
       </div>
     </details>
   );

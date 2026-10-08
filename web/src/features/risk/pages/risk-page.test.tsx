@@ -1238,3 +1238,30 @@ test('paginates valuation history instead of mounting the full canonical timelin
   expect(within(timelineList).getByText('2026-04-13')).toBeTruthy();
   expect(within(timelineList).queryByText('2026-04-25')).toBeNull();
 });
+
+test('shows history failure independently and retries without empty-history claims', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderRiskPage({ locale: 'en' });
+  const originalFetch = fetchMock.getMockImplementation()!;
+  let failHistory = true;
+  fetchMock.mockImplementation(async (input) => {
+    if (
+      String(input).includes('/api/portfolio/explainability') &&
+      failHistory
+    ) {
+      return new Response('History unavailable', { status: 503 });
+    }
+    return originalFetch(input);
+  });
+  const history = await screen.findByTestId('risk-history-disclosure');
+  await user.click(history.querySelector('summary')!);
+  await within(history).findByText(
+    'History and attribution could not be read. Current holdings and risk remain independently available.',
+  );
+  expect(history.textContent).not.toContain('0 impact events');
+  expect(within(history).queryByRole('tablist')).toBeNull();
+  failHistory = false;
+  await user.click(within(history).getByRole('button', { name: 'Retry' }));
+  await within(history).findByRole('tablist');
+  expect(history.textContent).toContain('2 impact events');
+});
