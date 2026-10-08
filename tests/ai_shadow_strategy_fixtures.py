@@ -428,6 +428,11 @@ def _seed_approved_final_evaluation(
         build_sealed_holdout_evaluation,
         build_sealed_partition,
     )
+    from backtest.costs import research_friction_assumptions
+    from server.ai_runtime.formula_challengers import (
+        build_challenger_comparison,
+        frozen_research_challengers,
+    )
     from server.ai_runtime.formula_dsl import (
         CANONICAL_COST_MODEL_REFERENCE,
         FormulaBinding,
@@ -438,7 +443,10 @@ def _seed_approved_final_evaluation(
     )
     from server.contracts.strategy_research import StrategyResearchSelection
     from server.persistence.backtest_results import insert_backtest_result
-    from server.services.research_final_evaluation import FINAL_EVALUATION_SCHEMA
+    from server.services.research_final_evaluation import (
+        FINAL_EVALUATION_SCHEMA,
+        sealed_execution_code_binding,
+    )
 
     run_id = f"run-{fixture_id}"
     candidate_id = (
@@ -594,6 +602,10 @@ def _seed_approved_final_evaluation(
         + content_fingerprint(draft["formula_ast"]),
         # This preselected slow baseline remains in cash on the short fixture.
         "baseline_formula_ast": _approved_formula(long_period=60),
+        "challenger_family": frozen_research_challengers(selection.fingerprint),
+        "execution_cost_assumptions": research_friction_assumptions(),
+        "sealed_book_policy": "fresh_equal_notional_history_warmup_final_bar_target.v1",
+        "code_binding": sealed_execution_code_binding(),
         "research_snapshot": snapshot,
         "selection_fingerprint": selection.fingerprint,
         "research_identity": {
@@ -623,26 +635,55 @@ def _seed_approved_final_evaluation(
     assert audit.claim_reserved_sealed_test(
         reservation["sealed_test_id"], now=evaluated_at
     )
+    # Artificial returns are isolated to this test-only linkage fixture.  The
+    # future book starts from the same fixed cash, with no research NAV carried
+    # across the split; this is not adapter or profitability evidence.
+    sealed_curve = []
+    sealed_equity = Decimal(str(NORMALIZED_RESEARCH_NOTIONAL))
+    for stamp in frame["timestamp"]:
+        if stamp.date() >= partition.sealed_start:
+            sealed_equity *= Decimal("1.007")
+            sealed_curve.append((stamp.to_pydatetime(), sealed_equity))
     sealed = build_sealed_holdout_evaluation(
         strategy_id="ai_formula_research",
-        benchmark_role="frozen_dual_ma_baseline",
+        benchmark_role="frozen_dual_ma_and_simple_random_challengers",
         research_family_id=family["research_family_id"],
         formula_fingerprint=binding["champion_formula_fingerprint"],
         partition=partition,
         result=BacktestResult(
-            equity_curve=curve,
+            equity_curve=sealed_curve,
             positions={},
-            initial_cash=curve[0][1],
-            final_equity=curve[-1][1],
+            initial_cash=Decimal(str(NORMALIZED_RESEARCH_NOTIONAL)),
+            final_equity=sealed_equity,
+            execution_timing={
+                "evaluation_start": partition.sealed_start.isoformat(),
+                "warmup_basis": "strategy_history_only_fresh_book",
+                "warmup_final_bar_targets": True,
+            },
         ),
         benchmark_return=Decimal("0"),
     ).to_json_dict()
+    challenger_results = [
+        {
+            "label": challenger["label"],
+            "formula_fingerprint": "sha256:"
+            + content_fingerprint(challenger["formula_ast"]),
+            "sealed_return": 0.0,
+        }
+        for challenger in binding["challenger_family"]
+    ]
     core = {
         "schema_version": FINAL_EVALUATION_SCHEMA,
         "reservation": binding,
         "sealed_test_id": reservation["sealed_test_id"],
         "sealed_dataset_snapshot": full_snapshot,
         "sealed_evaluation": sealed,
+        "challenger_results": challenger_results,
+        "challenger_comparison": build_challenger_comparison(
+            champion_return=sealed["sealed_return"],
+            challenger_returns=[item["sealed_return"] for item in challenger_results],
+        ),
+        "baseline_sealed_return": 0.0,
         "evaluated_at": evaluated_at,
         "authority_effect": "none",
     }

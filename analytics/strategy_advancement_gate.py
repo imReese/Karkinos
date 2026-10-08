@@ -219,6 +219,8 @@ def strategy_advancement_backtest_view(
                 "canonical_target_weight",
             )
         },
+        "cost_assumptions": _json_object(metrics.get("cost_assumptions")),
+        "dataset_snapshot": dataset,
         "dataset_quality_status": dataset_quality.get("status"),
         "dataset_issue_count": len(dataset_quality.get("issues") or []),
         **(

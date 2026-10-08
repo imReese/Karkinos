@@ -13,6 +13,7 @@ import pytest
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
 from analytics.sealed_holdout import final_research_evaluation_blocker
+from backtest.costs import research_friction_assumptions
 from backtest.result import BacktestResult
 from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.handler import DataHandler
@@ -20,6 +21,7 @@ from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.strategy_research_privacy import NORMALIZED_RESEARCH_NOTIONAL
 from server.ai_runtime.strategy_research_sealed import StrategyResearchSealedMixin
+from server.contracts.normalized_strategy_research import CANONICAL_COST_MODEL_REFERENCE
 from server.contracts.strategy_research import (
     SEALED_TEST_CONFIRMATION,
     SealedTestRequest,
@@ -93,6 +95,10 @@ def _seed_trial(
             "formula_ast": draft["formula_ast"],
         },
         "dataset_snapshot": h.snapshot,
+        "cost_assumptions": {
+            **research_friction_assumptions(),
+            "commission_model_reference": selection.cost_model_reference,
+        },
         "parameter_robustness": {
             "tested_results": [
                 {"params": {"window": 2}},
@@ -231,7 +237,15 @@ def harness(tmp_path, monkeypatch):
             sharpe=0,
             max_dd=0,
             equity_curve_json="[]",
-            metrics_json=json.dumps({"dataset_snapshot": h.snapshot}),
+            metrics_json=json.dumps(
+                {
+                    "dataset_snapshot": h.snapshot,
+                    "cost_assumptions": {
+                        **research_friction_assumptions(),
+                        "commission_model_reference": CANONICAL_COST_MODEL_REFERENCE,
+                    },
+                }
+            ),
         )
     h.selection = StrategyResearchSelection(
         saved_backtest_result_id=baseline_id,
@@ -256,11 +270,19 @@ def harness(tmp_path, monkeypatch):
         curve = _curve(
             baseline=kwargs["draft"]["formula_ast"] != h.draft["formula_ast"]
         )
+        boundary = curve[15][1]
+        notional = Decimal(str(kwargs["selection"].initial_cash))
+        curve = [(stamp, equity / boundary * notional) for stamp, equity in curve[16:]]
         result = BacktestResult(
             equity_curve=curve,
             positions={},
-            initial_cash=curve[0][1],
+            initial_cash=notional,
             final_equity=curve[-1][1],
+            execution_timing={
+                "evaluation_start": "2026-01-17",
+                "warmup_basis": "strategy_history_only_fresh_book",
+                "warmup_final_bar_targets": True,
+            },
         )
         result.dataset_snapshot = deepcopy(h.full_snapshot)
         return result
@@ -299,6 +321,25 @@ async def _evaluate(h, *, now=MATURE):
 
 
 @pytest.mark.asyncio
+async def test_same_runtime_contract_cannot_hide_changed_frozen_execution_code(
+    harness, monkeypatch
+):
+    h = harness
+    reservation = await _reserve(h)
+    binding = deepcopy(reservation["evidence"]["reservation"]["code_binding"])
+    binding["files"]["backtest/engine.py"] = "0" * 64
+    monkeypatch.setattr(
+        "server.services.research_final_evaluation.sealed_execution_code_binding",
+        lambda: binding,
+    )
+    with pytest.raises(
+        StrategyResearchRejected, match="independent_final_execution_code_changed"
+    ):
+        await _evaluate(h)
+    assert h.calls == []
+
+
+@pytest.mark.asyncio
 async def test_freeze_evaluate_replay_and_new_publication_usable_path(harness):
     h = harness
     reserved = await _reserve(h)
@@ -311,10 +352,17 @@ async def test_freeze_evaluate_replay_and_new_publication_usable_path(harness):
     assert (await _reserve(h, now=MATURE.isoformat())) == reserved
     evidence = await _evaluate(h)
     assert final_research_evaluation_blocker(evidence) is None
-    assert len(h.calls) == 2
+    assert len(evidence["reservation"]["challenger_family"]) == 8
+    assert len(evidence["challenger_results"]) == 8
+    assert all(call["expected_dataset_snapshot"] == h.snapshot for call in h.calls)
+    assert all(
+        call["selection"].fingerprint == h.selection.fingerprint for call in h.calls
+    )
+    assert evidence["challenger_comparison"]["ai_increment_over_max_challenger"] > 0
+    assert len(h.calls) == 10
     assert evidence["authority_effect"] == "none"
     assert await _evaluate(h) == evidence
-    assert len(h.calls) == 2
+    assert len(h.calls) == 10
     assert (
         verify_persisted_final_evaluation(
             research_store=h.store, evidence=evidence, store_root=h.data._root
@@ -553,7 +601,12 @@ async def test_real_failed_final_evidence_cannot_pass_gate(harness, failure):
 
         def equal_baseline(**kwargs):
             result = original(**kwargs)
-            result.equity_curve = _curve(baseline=True)
+            curve = _curve(baseline=True)
+            boundary = curve[15][1]
+            result.equity_curve = [
+                (stamp, equity / boundary * result.initial_cash)
+                for stamp, equity in curve[16:]
+            ]
             result.final_equity = result.equity_curve[-1][1]
             return result
 
@@ -569,7 +622,7 @@ async def test_real_failed_final_evidence_cannot_pass_gate(harness, failure):
     assert h.store.get_sealed_test(evidence["sealed_test_id"])["status"] == "completed"
     with pytest.raises(StrategyResearchRejected, match=blocker):
         await _evaluate(h)
-    assert len(h.calls) == 2
+    assert len(h.calls) == 10
 
 
 def test_direct_publication_cannot_bypass_final_guard(harness, monkeypatch):
@@ -657,7 +710,7 @@ async def test_late_market_delivery_waits_then_evaluates_same_champion(harness):
     assert not h.calls
     h.adapter.run_sealed = actual
     assert final_research_evaluation_blocker(await _evaluate(h)) is None
-    assert len(h.calls) == 2
+    assert len(h.calls) == 10
 
 
 @pytest.mark.asyncio
@@ -681,6 +734,10 @@ async def test_automatic_completed_batch_freezes_selected_champion_before_cutoff
     prepared = _prepared_baseline()
     result = deepcopy(prepared.result)
     result["metrics_json"]["dataset_snapshot"] = h.snapshot
+    result["metrics_json"]["cost_assumptions"] = {
+        **research_friction_assumptions(),
+        "commission_model_reference": CANONICAL_COST_MODEL_REFERENCE,
+    }
     prepared = replace(
         prepared,
         seed_result_id=h.selection.saved_backtest_result_id,

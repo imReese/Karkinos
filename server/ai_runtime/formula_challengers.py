@@ -143,6 +143,27 @@ def generate_random_challenger_formulas(
     return formulas
 
 
+def frozen_research_challengers(selection_fingerprint: str) -> list[dict[str, Any]]:
+    """Bounded comparison family fixed before seeing the final interval.
+
+    Four ordinary templates and four seeded random rules cost eight replays.
+    They are benchmarks, never a holdout-tuned replacement champion.
+    """
+    labels = {
+        "ma_crossover_5",
+        "ma_crossover_20",
+        "rsi_reversion_14_30_70",
+        "momentum_20",
+    }
+    deterministic = [
+        item
+        for item in generate_deterministic_challenger_formulas()
+        if item["label"] in labels
+    ]
+    seed = int(hashlib.sha256(selection_fingerprint.encode()).hexdigest()[:8], 16)
+    return deterministic + generate_random_challenger_formulas(seed, 4)
+
+
 def _fingerprint(payload: Mapping[str, Any]) -> str:
     encoded = json.dumps(
         dict(payload),
@@ -203,4 +224,5 @@ __all__ = [
     "generate_deterministic_challenger_formulas",
     "generate_random_challenger_formulas",
     "build_challenger_comparison",
+    "frozen_research_challengers",
 ]

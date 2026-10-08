@@ -116,13 +116,25 @@ def sealed_return_from_result(
     sealed_start = datetime.combine(partition.sealed_start, datetime.min.time())
     boundary = [equity for ts, equity in result.equity_curve if ts < sealed_start]
     sealed = [equity for ts, equity in result.equity_curve if ts >= sealed_start]
-    if not boundary or not sealed:
+    fresh = _fresh_sealed_book(result, partition)
+    if (not boundary and not fresh) or not sealed or (fresh and boundary):
         raise ValueError("sealed_evaluation_insufficient_sealed_bars")
-    initial_equity = boundary[-1]
+    initial_equity = result.initial_cash if fresh else boundary[-1]
     final_equity = sealed[-1]
     if initial_equity == Decimal("0"):
         return Decimal("0")
     return (final_equity - initial_equity) / initial_equity
+
+
+def _fresh_sealed_book(
+    result: BacktestResult, partition: SealedHoldoutPartition
+) -> bool:
+    timing = result.execution_timing or {}
+    return (
+        timing.get("evaluation_start") == partition.sealed_start.isoformat()
+        and timing.get("warmup_basis") == "strategy_history_only_fresh_book"
+        and timing.get("warmup_final_bar_targets") is True
+    )
 
 
 def build_sealed_partition(
@@ -326,9 +338,14 @@ def build_sealed_holdout_evaluation(
     boundary_points = [
         (ts, equity) for ts, equity in result.equity_curve if ts < sealed_start
     ]
-    if not boundary_points or len(sealed_points) < 1:
+    fresh = _fresh_sealed_book(result, partition)
+    if (
+        (not boundary_points and not fresh)
+        or not sealed_points
+        or (fresh and boundary_points)
+    ):
         raise ValueError("sealed_evaluation_insufficient_sealed_bars")
-    boundary_equity = boundary_points[-1][1]
+    boundary_equity = result.initial_cash if fresh else boundary_points[-1][1]
     sealed_initial_equity = boundary_equity
     sealed_final_equity = sealed_points[-1][1]
     sealed_fills = [fill for fill in result.fills if fill.timestamp >= sealed_start]
@@ -581,6 +598,45 @@ def final_research_evaluation_blocker(value: Any) -> str | None:
             != binding.get("trial_family", {}).get("trial_fingerprints")
         ):
             return "independent_final_evaluation_invalid"
+        family = binding.get("challenger_family")
+        results = core.get("challenger_results")
+        comparison = dict(core.get("challenger_comparison") or {})
+        comparison_fingerprint = comparison.pop("evidence_fingerprint", None)
+        comparison.pop("limitations", None)
+        if (
+            not isinstance(family, list)
+            or len(family) != 8
+            or not isinstance(results, list)
+            or len(results) != len(family)
+            or comparison_fingerprint != _fingerprint(comparison)
+            or comparison.get("challenger_count") != len(family)
+            or comparison.get("champion_return") != evaluation.get("sealed_return")
+        ):
+            return "independent_final_challenger_evidence_invalid"
+        for expected, measured in zip(family, results, strict=True):
+            if measured.get("label") != expected.get("label") or measured.get(
+                "formula_fingerprint"
+            ) != "sha256:" + _fingerprint(expected.get("formula_ast") or {}):
+                return "independent_final_challenger_evidence_invalid"
+        returns = [_decimal(item["sealed_return"]) for item in results]
+        if (
+            _decimal(comparison["challenger_max_return"]) != max(returns)
+            or _decimal(evaluation["benchmark_return"])
+            != max(_decimal(core["baseline_sealed_return"]), *returns)
+            or not binding.get("execution_cost_assumptions")
+            or binding.get("sealed_book_policy")
+            != "fresh_equal_notional_history_warmup_final_bar_target.v1"
+        ):
+            return "independent_final_challenger_evidence_invalid"
+        code = dict(binding.get("code_binding") or {})
+        code_fingerprint = code.pop("fingerprint", None)
+        if (
+            code_fingerprint != _fingerprint(code)
+            or code.get("purpose") != "frozen_future_evaluation_implementation"
+            or code.get("verifies_historical_research_code") is not False
+            or not code.get("files")
+        ):
+            return "independent_final_execution_code_binding_invalid"
         if evaluation.get("passed_benchmark") is not True:
             return "independent_final_excess_not_positive"
         if (

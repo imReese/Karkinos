@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,11 @@ from analytics.sealed_holdout import (
     final_research_evaluation_blocker,
     sealed_return_from_result,
 )
+from backtest.costs import research_friction_assumptions
+from server.ai_runtime.formula_challengers import (
+    build_challenger_comparison,
+    frozen_research_challengers,
+)
 from server.ai_runtime.strategy_research_backtest import build_dual_ma_research_strategy
 from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_RUNTIME_CONTRACT,
@@ -27,6 +33,74 @@ from server.contracts.content_identity import content_fingerprint
 from server.contracts.strategy_research import StrategyResearchRejected
 
 FINAL_EVALUATION_SCHEMA = "karkinos.research_final_evaluation.v1"
+
+
+def sealed_execution_code_binding() -> dict[str, Any]:
+    """Freeze the implementation used for the future test, not historical proof."""
+    import hashlib
+    import platform
+    from pathlib import Path
+
+    import numpy as np
+    import pandas as pd
+    import pyarrow as pa
+
+    root = Path(__file__).resolve().parents[2]
+    paths = (
+        "server/services/research_final_evaluation.py",
+        "server/ai_runtime/strategy_research_backtest.py",
+        "server/ai_runtime/formula_dsl.py",
+        "server/ai_runtime/formula_challengers.py",
+        "server/contracts/content_identity.py",
+        "server/contracts/strategy_research.py",
+        "server/services/market_calendar_evidence.py",
+        "server/services/market_universe_automation.py",
+        "analytics/dataset_snapshot.py",
+        "analytics/sealed_holdout.py",
+        "analytics/multiple_testing.py",
+        "backtest/costs.py",
+        "backtest/engine.py",
+        "backtest/metrics.py",
+        "backtest/result.py",
+        "backtest/equity_curve.py",
+        "core/event_bus.py",
+        "core/events.py",
+        "core/types.py",
+        "core/clock.py",
+        "domain/portfolio.py",
+        "domain/position.py",
+        "domain/portfolio_accounting.py",
+        "domain/instrument.py",
+        "domain/a_share_limits.py",
+        "execution/commission.py",
+        "execution/slippage.py",
+        "execution/simulator.py",
+        "risk/manager.py",
+        "risk/rules.py",
+        "strategy/base.py",
+        "data/features.py",
+        "data/handler.py",
+        "data/manager.py",
+        "data/research_market_data.py",
+        "data/store.py",
+        "data/dataset/reader.py",
+        "data/dataset/model.py",
+        "data/dataset/manifest.py",
+        "data/storage/objects.py",
+    )
+    payload = {
+        "purpose": "frozen_future_evaluation_implementation",
+        "python": platform.python_version(),
+        "numpy": np.__version__,
+        "pandas": pd.__version__,
+        "pyarrow": pa.__version__,
+        "files": {
+            path: hashlib.sha256((root / path).read_bytes()).hexdigest()
+            for path in paths
+        },
+        "verifies_historical_research_code": False,
+    }
+    return {**payload, "fingerprint": content_fingerprint(payload)}
 
 
 def _object(value: Any) -> dict[str, Any]:
@@ -64,6 +138,15 @@ async def reserve_final_research_evaluation(
     if not isinstance(baseline, Mapping) or not isinstance(candidate, Mapping):
         raise StrategyResearchRejected("sealed_research_result_missing")
     baseline_config = _object(baseline.get("config_json"))
+    expected_costs = {
+        **research_friction_assumptions(),
+        "commission_model_reference": selection.cost_model_reference,
+    }
+    if any(
+        _object(row.get("metrics_json")).get("cost_assumptions") != expected_costs
+        for row in (baseline, candidate)
+    ):
+        raise StrategyResearchRejected("sealed_research_execution_cost_binding_missing")
     if baseline_config.get("strategy") != "dual_ma":
         raise StrategyResearchRejected("sealed_baseline_formula_unsupported")
     baseline_formula = build_dual_ma_research_strategy(
@@ -103,6 +186,10 @@ async def reserve_final_research_evaluation(
         "champion_formula_fingerprint": "sha256:"
         + content_fingerprint(draft["formula_ast"]),
         "baseline_formula_ast": baseline_formula,
+        "challenger_family": frozen_research_challengers(selection.fingerprint),
+        "execution_cost_assumptions": research_friction_assumptions(),
+        "sealed_book_policy": "fresh_equal_notional_history_warmup_final_bar_target.v1",
+        "code_binding": sealed_execution_code_binding(),
         "research_snapshot": snapshot,
         "selection_fingerprint": selection.fingerprint,
         "research_identity": {
@@ -155,6 +242,22 @@ def require_final_reservation(
         != research_store.research_trial_family(source.source_selection)
     ):
         raise StrategyResearchRejected("independent_final_reservation_drift")
+    if (
+        binding.get("sealed_book_policy")
+        != "fresh_equal_notional_history_warmup_final_bar_target.v1"
+    ):
+        raise StrategyResearchRejected("independent_final_fresh_book_binding_missing")
+    if binding.get("code_binding") != sealed_execution_code_binding():
+        raise StrategyResearchRejected("independent_final_execution_code_changed")
+    if (
+        "challenger_family" not in binding
+        or binding.get("execution_cost_assumptions") != research_friction_assumptions()
+    ):
+        raise StrategyResearchRejected("independent_final_frozen_comparison_missing")
+    if binding["challenger_family"] != frozen_research_challengers(
+        source.source_selection.fingerprint
+    ):
+        raise StrategyResearchRejected("independent_final_challenger_family_drift")
     if now.tzinfo is None:
         raise StrategyResearchRejected("independent_final_clock_invalid")
     local = now.astimezone(ZoneInfo("Asia/Shanghai"))
@@ -215,6 +318,17 @@ async def evaluate_reserved_champion(
             "sealed_end_date": partition.sealed_end.isoformat(),
             "expected_dataset_snapshot": binding["research_snapshot"],
         }
+
+        def require_fresh_book(measured):
+            timing = measured.execution_timing or {}
+            if (
+                measured.initial_cash != Decimal(str(selection.initial_cash))
+                or timing.get("evaluation_start") != partition.sealed_start.isoformat()
+                or timing.get("warmup_basis") != "strategy_history_only_fresh_book"
+                or timing.get("warmup_final_bar_targets") is not True
+            ):
+                raise StrategyResearchRejected("independent_final_fresh_book_mismatch")
+
         result = await asyncio.to_thread(
             adapter.run_sealed, draft=source.source_draft, **common
         )
@@ -223,19 +337,51 @@ async def evaluate_reserved_champion(
             draft={"formula_ast": binding["baseline_formula_ast"]},
             **common,
         )
+        require_fresh_book(result)
+        require_fresh_book(baseline)
         candidate_snapshot = getattr(result, "dataset_snapshot", None)
         if not isinstance(candidate_snapshot, dict) or candidate_snapshot != getattr(
             baseline, "dataset_snapshot", None
         ):
             raise StrategyResearchRejected("independent_final_dataset_binding_invalid")
+        challenger_results = []
+        for challenger in binding["challenger_family"]:
+            measured = await asyncio.to_thread(
+                adapter.run_sealed, draft=challenger, **common
+            )
+            require_fresh_book(measured)
+            if getattr(measured, "dataset_snapshot", None) != candidate_snapshot:
+                raise StrategyResearchRejected(
+                    "independent_final_challenger_dataset_drift"
+                )
+            challenger_results.append(
+                {
+                    "label": challenger["label"],
+                    "formula_fingerprint": "sha256:"
+                    + content_fingerprint(challenger["formula_ast"]),
+                    "sealed_return": float(
+                        sealed_return_from_result(measured, partition)
+                    ),
+                }
+            )
+        champion_return = sealed_return_from_result(result, partition)
+        baseline_return = sealed_return_from_result(baseline, partition)
+        comparison = build_challenger_comparison(
+            champion_return=float(champion_return),
+            challenger_returns=[item["sealed_return"] for item in challenger_results],
+        )
+        benchmark_return = max(
+            baseline_return,
+            *(Decimal(str(item["sealed_return"])) for item in challenger_results),
+        )
         evaluation = build_sealed_holdout_evaluation(
             strategy_id="ai_formula_research",
-            benchmark_role="frozen_dual_ma_baseline",
+            benchmark_role="frozen_dual_ma_and_simple_random_challengers",
             research_family_id=binding["trial_family"]["research_family_id"],
             formula_fingerprint=binding["champion_formula_fingerprint"],
             partition=partition,
             result=result,
-            benchmark_return=sealed_return_from_result(baseline, partition),
+            benchmark_return=benchmark_return,
         ).to_json_dict()
         core = {
             "schema_version": FINAL_EVALUATION_SCHEMA,
@@ -243,6 +389,9 @@ async def evaluate_reserved_champion(
             "sealed_test_id": row["sealed_test_id"],
             "sealed_dataset_snapshot": candidate_snapshot,
             "sealed_evaluation": evaluation,
+            "challenger_results": challenger_results,
+            "challenger_comparison": comparison,
+            "baseline_sealed_return": float(baseline_return),
             "evaluated_at": now.isoformat(),
             "authority_effect": "none",
         }
@@ -329,6 +478,15 @@ def verify_persisted_final_evaluation(
         or row["request_fingerprint"] != content_fingerprint(binding)
     ):
         raise StrategyResearchRejected("independent_final_research_source_drift")
+    if (
+        binding.get("challenger_family")
+        != frozen_research_challengers(selection.fingerprint)
+        or binding.get("execution_cost_assumptions") != research_friction_assumptions()
+        or binding.get("sealed_book_policy")
+        != "fresh_equal_notional_history_warmup_final_bar_target.v1"
+        or binding.get("code_binding") != sealed_execution_code_binding()
+    ):
+        raise StrategyResearchRejected("independent_final_frozen_comparison_drift")
     for snapshot in (binding["research_snapshot"], evidence["sealed_dataset_snapshot"]):
         replay = verify_backtest_dataset_snapshot_replay(
             snapshot, store_root=store_root

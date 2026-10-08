@@ -626,6 +626,10 @@ def research_execution_policy_matches(
     baseline: Mapping[str, Any], candidate: Mapping[str, Any]
 ) -> bool:
     """New normalized snapshots must compare the same simulation assumptions."""
+    costs_left = _mapping(baseline.get("cost_assumptions"))
+    costs_right = _mapping(candidate.get("cost_assumptions"))
+    if (costs_left or costs_right) and costs_left != costs_right:
+        return False
     if not (
         baseline.get("normalized_market_data")
         or candidate.get("normalized_market_data")

@@ -29,6 +29,56 @@ def dataset_research_use(snapshot: Mapping[str, Any]) -> str | None:
     return snapshot.get("research_use")
 
 
+def dataset_simulation_admission(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    """Admit exact exploratory bars for research selection and simulation only.
+
+    The Dataset label describes its evidentiary limits, not a blanket ban on
+    research. A label alone never satisfies admission: exact content identity,
+    complete per-symbol rows and clean data quality are required. Consumers
+    still replay the bound bytes before running. Account publication keeps its
+    separate historical PIT and economic-return requirements.
+    """
+    core = dict(snapshot)
+    identity = core.pop("snapshot_id", None)
+    content = core.get("content_identity") or {}
+    quality = core.get("data_quality") or {}
+    rows = core.get("symbol_universe") or []
+    admitted = (
+        core.get("schema_version") == "karkinos.dataset_snapshot.v1"
+        and identity == backtest_dataset_snapshot_content_id(core)
+        and isinstance(content, Mapping)
+        and isinstance(quality, Mapping)
+        and content.get("algorithm") == "sha256"
+        and content.get("row_contract") in {"timestamp_ohlcv.v1", "timestamp_ohlcva.v2"}
+        and content.get("complete") is True
+        and quality.get("status") == "ok"
+        and not quality.get("issues")
+        and isinstance(rows, list)
+        and bool(rows)
+        and all(
+            isinstance(row, Mapping)
+            and isinstance(row.get("row_count"), int)
+            and row["row_count"] > 0
+            and len(str(row.get("content_digest") or "").removeprefix("sha256:")) == 64
+            and all(
+                char in "0123456789abcdef"
+                for char in str(row.get("content_digest") or "").removeprefix("sha256:")
+            )
+            for row in rows
+        )
+        and dataset_research_use(snapshot) == "exploratory_backtest"
+    )
+    return {
+        "purpose": "research_selection_and_simulation",
+        "status": "admitted" if admitted else "blocked",
+        "dataset_snapshot_id": identity,
+        "research_use": dataset_research_use(snapshot),
+        "historical_pit_verified": snapshot.get("point_in_time_verified") is True,
+        "account_publication_admitted": False,
+        "limitations": list(snapshot.get("research_limitations") or []),
+    }
+
+
 def _enum_value(raw: Any) -> str | None:
     if raw is None:
         return None

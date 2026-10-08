@@ -887,6 +887,20 @@ async def test_qualification_only_admits_frozen_champion_with_valid_final_eviden
         },
         "trial_correction": correction,
     }
+    from backtest.costs import research_friction_assumptions
+    from server.ai_runtime.formula_challengers import (
+        build_challenger_comparison,
+        frozen_research_challengers,
+    )
+
+    reservation["challenger_family"] = frozen_research_challengers("fixture-selection")
+    reservation["execution_cost_assumptions"] = research_friction_assumptions()
+    reservation["sealed_book_policy"] = (
+        "fresh_equal_notional_history_warmup_final_bar_target.v1"
+    )
+    from server.services.research_final_evaluation import sealed_execution_code_binding
+
+    reservation["code_binding"] = sealed_execution_code_binding()
     sealed_equity = equity * Decimal("1.03")
     sealed_result = BacktestResult(
         equity_curve=[*curve, (datetime(2026, 9, 30), sealed_equity)],
@@ -908,6 +922,20 @@ async def test_qualification_only_admits_frozen_champion_with_valid_final_eviden
         "reservation": reservation,
         "sealed_test_id": "fixture-sealed-test",
         "sealed_evaluation": evaluation,
+        "baseline_sealed_return": 0.01,
+        "challenger_results": [
+            {
+                "label": item["label"],
+                "formula_fingerprint": "sha256:"
+                + content_fingerprint(item["formula_ast"]),
+                "sealed_return": 0.01,
+            }
+            for item in reservation["challenger_family"]
+        ],
+        "challenger_comparison": build_challenger_comparison(
+            champion_return=evaluation["sealed_return"],
+            challenger_returns=[0.01] * 8,
+        ),
         "evaluated_at": "2026-09-30T16:00:00+08:00",
         "authority_effect": "none",
     }

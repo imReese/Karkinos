@@ -183,9 +183,16 @@ def test_sealed_replay_binds_complete_input_without_rewriting_research_prefix(tm
         == snapshot["market_data_binding"]["receipts"]
     )
     assert len(full["market_data_binding"]["receipts"]) == len(_DATES)
-    assert result.fills
-    assert any(
-        fill.timestamp.date().isoformat() > _RESEARCH_END for fill in result.fills
+    # A crossover in the research history is not a carried sealed position.
+    assert not result.fills
+    assert (
+        result.initial_cash
+        == result.final_equity
+        == Decimal(str(selection.initial_cash))
+    )
+    assert result.execution_timing["warmup_final_bar_targets"] is True
+    assert all(
+        stamp.date().isoformat() > _RESEARCH_END for stamp, _ in result.equity_curve
     )
     for bound in (snapshot, full):
         assert (
@@ -194,6 +201,62 @@ def test_sealed_replay_binds_complete_input_without_rewriting_research_prefix(tm
             ]
             == "pass"
         )
+
+
+def test_final_comparison_has_same_fresh_cash_despite_different_research_entries(
+    tmp_path,
+):
+    from analytics.sealed_holdout import (
+        build_sealed_partition,
+        sealed_return_from_result,
+    )
+
+    store, selection, snapshot = _receipt_inputs(tmp_path)
+    adapter = RestrictedFormulaBacktestAdapter(data_store=store)
+    measured = []
+    for threshold in (9, 10.25):
+        formula = {
+            "schema_version": FORMULA_AST_CONTRACT,
+            "entry": {
+                "op": "gt",
+                "left": {"op": "field", "name": "close"},
+                "right": {"op": "constant", "value": threshold},
+            },
+            "exit": {
+                "op": "lt",
+                "left": {"op": "field", "name": "close"},
+                "right": {"op": "constant", "value": 0},
+            },
+            "position_size": {"op": "equal_weight"},
+        }
+        measured.append(
+            adapter.run_sealed(
+                selection=selection,
+                draft={"formula_ast": formula},
+                sealed_end_date=selection.sealed_end_date,
+                expected_dataset_snapshot=snapshot,
+                expected_trading_dates=_DATES,
+            )
+        )
+    partition = build_sealed_partition(
+        research_start=selection.start_date,
+        research_end=selection.end_date,
+        sealed_end=selection.sealed_end_date,
+    )
+    assert (
+        measured[0].initial_cash
+        == measured[1].initial_cash
+        == Decimal(str(selection.initial_cash))
+    )
+    assert measured[0].final_equity == measured[1].final_equity
+    assert measured[0].equity_curve == measured[1].equity_curve
+    assert sealed_return_from_result(
+        measured[0], partition
+    ) == sealed_return_from_result(measured[1], partition)
+    for result in measured:
+        assert len(result.fills) == 1
+        assert result.fills[0].fill_quantity == 1000
+        assert result.fills[0].timestamp.date().isoformat() == _DATES[6]
 
 
 @pytest.mark.parametrize("expected_dates", [_DATES, []])

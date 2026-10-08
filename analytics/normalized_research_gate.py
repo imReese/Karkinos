@@ -9,6 +9,7 @@ remain deferred to the provider-free account qualification stage.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 from analytics.backtest_drawdown_evidence import (
@@ -17,6 +18,7 @@ from analytics.backtest_drawdown_evidence import (
 from analytics.backtest_fee_tax_evidence import (
     is_valid_complete_backtest_fee_tax_evidence,
 )
+from analytics.dataset_snapshot import dataset_simulation_admission
 from analytics.strategy_advancement_evidence import (
     market_regime_robustness_check,
     parameter_robustness_check,
@@ -106,12 +108,33 @@ def build_normalized_research_advancement_gate(
     baseline_snapshot = str(baseline.get("dataset_snapshot_id") or "")
     candidate_snapshot = str(candidate.get("dataset_snapshot_id") or "")
     admission_blocker = None
-    if candidate.get("dataset_research_use") == "exploratory_backtest":
+    candidate_admission = dataset_simulation_admission(
+        candidate.get("dataset_snapshot") or {}
+    )
+    baseline_admission = dataset_simulation_admission(
+        baseline.get("dataset_snapshot") or {}
+    )
+    if (
+        candidate.get("dataset_research_use") == "exploratory_backtest"
+        and candidate_admission["status"] != "admitted"
+    ):
         admission_blocker = "candidate_dataset_exploratory_only"
-    elif "dataset_research_use" in candidate or "immutable_dataset_id" in candidate:
+    elif (
+        "dataset_research_use" in candidate or "immutable_dataset_id" in candidate
+    ) and candidate_admission["status"] != "admitted":
         admission_blocker = "candidate_dataset_research_use_not_admitted"
-    elif "dataset_research_use" in baseline or "immutable_dataset_id" in baseline:
+    elif (
+        "dataset_research_use" in baseline or "immutable_dataset_id" in baseline
+    ) and baseline_admission["status"] != "admitted":
         admission_blocker = "baseline_dataset_research_use_not_admitted"
+    if candidate_admission["status"] == "admitted" and not _explicit_friction(
+        candidate
+    ):
+        admission_blocker = "candidate_execution_cost_assumptions_missing"
+    elif baseline_admission["status"] == "admitted" and not _explicit_friction(
+        baseline
+    ):
+        admission_blocker = "baseline_execution_cost_assumptions_missing"
     record(
         "frozen_dataset_identity",
         passed=(
@@ -139,6 +162,8 @@ def build_normalized_research_advancement_gate(
             "candidate_snapshot_id": candidate_snapshot or None,
             "candidate_quality_status": candidate.get("dataset_quality_status"),
             "candidate_issue_count": candidate.get("dataset_issue_count"),
+            "candidate_simulation_admission": candidate_admission,
+            "baseline_simulation_admission": baseline_admission,
             **(
                 {"candidate_research_use": candidate["dataset_research_use"]}
                 if "dataset_research_use" in candidate
@@ -302,6 +327,25 @@ def build_normalized_research_advancement_gate(
         blockers=unique_blockers,
         checks=tuple(checks),
     )
+
+
+def _explicit_friction(view: Mapping[str, Any]) -> bool:
+    costs = view.get("cost_assumptions")
+    if not isinstance(costs, Mapping):
+        return False
+    try:
+        slippage = Decimal(str(costs.get("slippage_bps")))
+        participation = Decimal(str(costs.get("max_volume_participation")))
+        return (
+            slippage.is_finite()
+            and slippage > 0
+            and participation.is_finite()
+            and 0 < participation <= 1
+            and costs.get("execution_cost_model_id")
+            == "karkinos.research.percent_slippage.volume_cap.v1"
+        )
+    except (ValueError, TypeError, InvalidOperation):
+        return False
 
 
 def baseline_research_evidence_blockers(
