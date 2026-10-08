@@ -16,6 +16,7 @@ REQUIRED_STRATEGY_IDS = {
     "pairs_ratio_mean_reversion",
     "rsi",
     "etf_rotation",
+    "risk_parity_macro",
 }
 
 
@@ -35,6 +36,7 @@ def _backtest_row(
         "pairs_ratio_mean_reversion": 107,
         "rsi": 108,
         "etf_rotation": 109,
+        "risk_parity_macro": 110,
     }
     metrics_json = {
         "total_commission": 12.5,

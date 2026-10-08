@@ -45,6 +45,10 @@ def test_fixture_backtests_generate_validation_evidence_for_all_benchmarks():
             "benchmark_not_supplied",
         }
         assert "not investment advice" in oos["limitations"][0]
-        if strategy_id in {"rsi", "etf_rotation"}:
+        if strategy_id in {"rsi", "etf_rotation", "risk_parity_macro"}:
             assert oos["out_of_sample"]["fill_count"] > 0
             assert oos["out_of_sample"]["total_cost"] > 0
+        if strategy_id == "risk_parity_macro":
+            assert oos["benchmark_role"] == "bounded_macro_risk_budgeting"
+            assert oos["in_sample"]["fill_count"] > 0
+            assert oos["in_sample"]["total_cost"] > 0

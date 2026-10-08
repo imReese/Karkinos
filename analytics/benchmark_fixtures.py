@@ -101,6 +101,14 @@ def _run_fixture_backtest(spec: BenchmarkFixtureSpec):
         data_handlers=handlers,
         initial_cash=Decimal("100000"),
         execution_config=research_execution_config(),
+        **(
+            {
+                "strict_event_errors": True,
+                "session_completed": strategy.require_complete_session,
+            }
+            if spec.strategy_id == "risk_parity_macro"
+            else {}
+        ),
     )
     return engine.run()
 
@@ -126,6 +134,33 @@ def _benchmark_fixture_specs() -> list[BenchmarkFixtureSpec]:
     a_share = Symbol("600519")
 
     return [
+        BenchmarkFixtureSpec(
+            strategy_id="risk_parity_macro",
+            benchmark_role="bounded_macro_risk_budgeting",
+            split_timestamp=datetime(2026, 1, 26),
+            benchmark_return=Decimal("0"),
+            instruments={
+                equity_etf: make_etf(str(equity_etf), "合成权益ETF"),
+                bond_etf: make_etf(str(bond_etf), "合成国债ETF"),
+                gold_etf: make_etf(str(gold_etf), "合成黄金ETF"),
+            },
+            # Each leg has nonzero, distinct return variation. Both sides of
+            # the split include post-warmup targets and strictly later fills.
+            price_series={
+                equity_etf: [
+                    10 + 0.04 * i + 0.1 * (i % 3) + 0.5 * max(i - 14, 0)
+                    for i in range(24)
+                ],
+                bond_etf: [100 + 0.02 * i + 0.03 * (i % 2) for i in range(24)],
+                gold_etf: [20 + 0.03 * i + 0.05 * (i % 5) for i in range(24)],
+            },
+            strategy_kwargs={
+                "lookback_period": 10,
+                "rebalance_interval": 2,
+                "trend_filter": False,
+                "cash_proxy": str(bond_etf),
+            },
+        ),
         BenchmarkFixtureSpec(
             strategy_id="dual_ma",
             benchmark_role="etf_rotation_trend_following",
