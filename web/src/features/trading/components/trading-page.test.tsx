@@ -1956,6 +1956,84 @@ test('records manual execution evidence without saving ledger or submitting brok
   expect(screen.queryByText(/Apply fill/i)).toBeNull();
 });
 
+test('requires a fresh execution preview after editing the form', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderTradingPage();
+  fireEvent.change(await screen.findByLabelText('Status'), {
+    target: { value: 'confirmed' },
+  });
+  await user.click(
+    await screen.findByRole('button', {
+      name: 'Export ticket: 示例成长混合C 019999',
+    }),
+  );
+  await user.click(
+    await screen.findByRole('button', { name: 'Preview manual execution' }),
+  );
+  const record = await screen.findByRole('button', {
+    name: 'Record manual execution evidence',
+  });
+  expect(record.hasAttribute('disabled')).toBe(false);
+  fireEvent.change(screen.getByLabelText('Fill price'), {
+    target: { value: '1700' },
+  });
+  expect(record.hasAttribute('disabled')).toBe(true);
+  expect(
+    screen.getByText(
+      'Execution inputs changed. Preview again before recording.',
+    ),
+  ).toBeTruthy();
+  await user.click(record);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).endsWith('/manual-execution'),
+    ),
+  ).toBe(false);
+});
+
+test('does not record an old execution preview while a replacement is pending or fails', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderTradingPage();
+  fireEvent.change(await screen.findByLabelText('Status'), {
+    target: { value: 'confirmed' },
+  });
+  await user.click(
+    await screen.findByRole('button', {
+      name: 'Export ticket: 示例成长混合C 019999',
+    }),
+  );
+  await user.click(
+    await screen.findByRole('button', { name: 'Preview manual execution' }),
+  );
+  await screen.findByRole('button', {
+    name: 'Record manual execution evidence',
+  });
+  const originalFetch = fetchMock.getMockImplementation()!;
+  let releaseResponse: (response: Response) => void = () => {};
+  const replacement = new Promise<Response>((resolve) => {
+    releaseResponse = resolve;
+  });
+  fetchMock.mockImplementation(async (input, init) => {
+    if (String(input).endsWith('/manual-execution/preview')) return replacement;
+    return originalFetch(input, init);
+  });
+  await user.click(
+    screen.getByRole('button', { name: 'Preview manual execution' }),
+  );
+  expect(
+    screen.queryByRole('button', { name: 'Record manual execution evidence' }),
+  ).toBeNull();
+  expect(screen.getByLabelText('Fill price').matches(':disabled')).toBe(true);
+  releaseResponse(
+    jsonResponse({ detail: 'Execution preview rejected' }, { status: 422 }),
+  );
+  await screen.findByText('Execution preview rejected');
+  expect(
+    screen.queryByRole('button', { name: 'Record manual execution evidence' }),
+  ).toBeNull();
+  expect(screen.getByLabelText('Fill price').matches(':disabled')).toBe(false);
+});
+
 test('shows reject errors without changing local order state', async () => {
   const user = userEvent.setup();
   renderTradingPage({ rejectFails: true });

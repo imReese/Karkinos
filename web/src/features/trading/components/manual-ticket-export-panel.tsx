@@ -45,6 +45,7 @@ export function ManualTicketExportPanel({
     >
       <ManualTicketSummary result={result} />
       <ManualExecutionPanel
+        key={result.order_id}
         result={result}
         executionPreview={executionPreview}
         executionRecord={executionRecord}

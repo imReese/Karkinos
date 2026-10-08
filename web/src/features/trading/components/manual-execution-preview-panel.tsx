@@ -15,12 +15,14 @@ export function ManualExecutionPreviewPanel({
   executionRecord,
   recordPending,
   recordError,
+  recordDisabled = false,
   onRecordExecution,
 }: {
   executionPreview: ManualExecutionPreviewResponse | null;
   executionRecord: ManualExecutionRecordResponse | null;
   recordPending: boolean;
   recordError: string;
+  recordDisabled?: boolean;
   onRecordExecution: (preview: ManualExecutionPreviewResponse) => Promise<void>;
 }) {
   const labels = useCopy().trading.page;
@@ -74,7 +76,12 @@ export function ManualExecutionPreviewPanel({
   ].filter((row) => typeof row.value === 'boolean');
   const record = executionRecord;
   const handleRecordExecution = () => {
-    if (!executionPreview.preview_fingerprint) {
+    if (
+      recordDisabled ||
+      recordPending ||
+      record ||
+      !executionPreview.preview_fingerprint
+    ) {
       return;
     }
     void onRecordExecution(executionPreview);
@@ -217,7 +224,7 @@ export function ManualExecutionPreviewPanel({
         <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
           <button
             type="button"
-            disabled={recordPending}
+            disabled={recordPending || recordDisabled || !!record}
             className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleRecordExecution}
           >

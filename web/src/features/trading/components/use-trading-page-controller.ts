@@ -152,6 +152,9 @@ export function useTradingPageController() {
     setRowError('');
     setConfirmingRejectId(null);
     setExportingOrderId(orderId);
+    manualTicketExport.reset();
+    manualExecutionPreview.reset();
+    manualExecutionRecord.reset();
     try {
       await manualTicketExport.mutateAsync({ orderId });
     } catch {
@@ -167,6 +170,8 @@ export function useTradingPageController() {
   ) => {
     setRowError('');
     setConfirmingRejectId(null);
+    manualExecutionPreview.reset();
+    manualExecutionRecord.reset();
     try {
       await manualExecutionPreview.mutateAsync({ orderId, ...values });
     } catch {

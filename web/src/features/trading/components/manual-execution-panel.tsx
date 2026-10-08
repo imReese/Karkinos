@@ -1,6 +1,7 @@
-import { type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
 import type {
   ManualExecutionPreviewRequest,
   ManualExecutionPreviewResponse,
@@ -43,6 +44,9 @@ export function ManualExecutionPanel({
   ) => Promise<void>;
 }) {
   const labels = useCopy().trading.page;
+  const { locale } = usePreferences();
+  const [previewMatchesForm, setPreviewMatchesForm] = useState(true);
+  const busy = previewPending || recordPending;
   const operatorForm = manualTicketFormFromResult(result);
   const feeTax = operatorForm?.fee_tax_assumptions ?? null;
   const feeComponents = feeTax?.fee_components ?? {};
@@ -59,7 +63,9 @@ export function ManualExecutionPanel({
   );
   const handlePreviewSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (busy) return;
     const formData = new FormData(event.currentTarget);
+    setPreviewMatchesForm(true);
     void onPreviewExecution(result.order_id, {
       fill_price: formDataText(formData, 'fill_price'),
       quantity: formDataText(formData, 'quantity'),
@@ -75,6 +81,7 @@ export function ManualExecutionPanel({
         key={result.order_id}
         className="mt-4 border-t border-[var(--app-divider)] pt-4"
         onSubmit={handlePreviewSubmit}
+        onChange={() => setPreviewMatchesForm(false)}
       >
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -87,7 +94,7 @@ export function ManualExecutionPanel({
           </div>
           <button
             type="submit"
-            disabled={previewPending}
+            disabled={busy}
             className="app-button-secondary shrink-0 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
           >
             {previewPending
@@ -95,7 +102,10 @@ export function ManualExecutionPanel({
               : labels.previewManualExecution}
           </button>
         </div>
-        <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <fieldset
+          disabled={busy}
+          className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5"
+        >
           <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
             {labels.manualExecutionFillPrice}
             <input
@@ -143,18 +153,26 @@ export function ManualExecutionPanel({
               defaultValue={transferFeeDefault}
             />
           </label>
-        </div>
+        </fieldset>
       </form>
       {previewError ? (
         <div className="app-error-text mt-3 text-sm" role="alert">
           {previewError}
         </div>
       ) : null}
+      {executionPreview && !previewMatchesForm ? (
+        <p role="status" className="app-muted mt-3 text-sm">
+          {locale === 'zh'
+            ? '成交信息已变更，请重新预览后再记录。'
+            : 'Execution inputs changed. Preview again before recording.'}
+        </p>
+      ) : null}
       <ManualExecutionPreviewPanel
         executionPreview={executionPreview}
         executionRecord={executionRecord}
         recordPending={recordPending}
         recordError={recordError}
+        recordDisabled={!previewMatchesForm || previewPending || !!previewError}
         onRecordExecution={(preview) =>
           onRecordExecution(result.order_id, preview)
         }
