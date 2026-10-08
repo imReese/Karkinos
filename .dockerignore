@@ -53,6 +53,9 @@ web/src/**
 !web/src/**/*.ts
 !web/src/**/*.tsx
 !web/src/**/*.css
+!web/test-fixtures/
+web/test-fixtures/**
+!web/test-fixtures/shadow-observations.ts
 
 # Runtime/generated files remain excluded even if they appear below an allowed
 # source directory.
