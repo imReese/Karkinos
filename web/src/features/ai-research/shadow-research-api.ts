@@ -98,7 +98,9 @@ export type ShadowResearchDailySelection = {
   status: 'winner_selected' | 'no_selection';
   winner_candidate_id: string | null;
   research_recommendation?: {
-    schema_version: 'karkinos.ai.normalized_daily_research_recommendation.v1';
+    schema_version:
+      | 'karkinos.ai.normalized_daily_research_recommendation.v1'
+      | 'karkinos.ai.normalized_daily_research_recommendation.v2';
     status: 'best_available_for_further_research' | 'no_recommendation';
     research_winner_candidate_id: string | null;
     account_qualification_status: 'not_evaluated';
@@ -109,6 +111,15 @@ export type ShadowResearchDailySelection = {
     execution_eligible: false;
     authority_effect: 'none';
     evidence_fingerprint: string;
+    ranked_candidates?: {
+      candidate_id: string;
+      rank: number;
+      cost_stress?: {
+        status: 'complete' | 'unavailable';
+        reason: string | null;
+        worst_excess_return: number | null;
+      };
+    }[];
   };
   expected_candidate_count: number;
   observed_candidate_count: number;

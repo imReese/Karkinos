@@ -68,7 +68,31 @@ function dailyResearchOutcome(
   const researchWinner = status?.daily_research_winner_candidate_id ?? null;
   const promotionWinner = status?.daily_winner_candidate_id ?? null;
   if (researchWinner) {
-    return { value: researchWinner, detail: copy.researchNotQualified };
+    const recommendation =
+      selection?.integrity_status === 'verified' &&
+      selection.research_recommendation?.research_winner_candidate_id ===
+        researchWinner
+        ? selection.research_recommendation
+        : undefined;
+    const stress = recommendation?.ranked_candidates?.find(
+      (candidate) => candidate.candidate_id === researchWinner,
+    )?.cost_stress;
+    const excess = stress?.worst_excess_return;
+    const stressDetail =
+      recommendation?.schema_version ===
+      'karkinos.ai.normalized_daily_research_recommendation.v1'
+        ? copy.costStressLegacy
+        : recommendation?.schema_version ===
+              'karkinos.ai.normalized_daily_research_recommendation.v2' &&
+            stress?.status === 'complete' &&
+            typeof excess === 'number' &&
+            Number.isFinite(excess)
+          ? `${copy.worstCostStressExcess}: ${(excess * 100).toFixed(2)}%`
+          : copy.costStressUnavailable;
+    return {
+      value: researchWinner,
+      detail: `${copy.researchNotQualified} · ${stressDetail}`,
+    };
   }
   if (promotionWinner) {
     return { value: promotionWinner, detail: copy.winnerBadge };

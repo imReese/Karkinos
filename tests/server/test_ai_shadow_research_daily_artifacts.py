@@ -9,6 +9,9 @@ import pytest
 
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.db import AppDatabase
+from server.projections.normalized_research_recommendation import (
+    is_valid_normalized_research_recommendation,
+)
 from server.services.ai_shadow_research_automation import ShadowResearchStore
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
@@ -218,6 +221,51 @@ def _record_normalized_batch(
         run_status="completed",
         created_at=f"{market_date}T10:16:00+00:00",
     )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_saved_v1_recommendation_retains_fingerprint_and_order_on_read(
+    tmp_path, monkeypatch
+) -> None:
+    from server.services import ai_shadow_research_daily_artifacts as service
+
+    def legacy_selection(**kwargs):
+        selection = build_daily_strategy_selection(**kwargs)
+        recommendation = selection["research_recommendation"]
+        recommendation["schema_version"] = (
+            "karkinos.ai.normalized_daily_research_recommendation.v1"
+        )
+        ranking = recommendation["ranking_method"]
+        ranking["type"] = "normalized_evidence_lexicographic"
+        ranking["priority"] = ranking["priority"][2:]
+        for row in recommendation["ranked_candidates"]:
+            row.pop("cost_stress")
+        recommendation.pop("evidence_fingerprint")
+        recommendation["evidence_fingerprint"] = content_fingerprint(recommendation)
+        selection.pop("selection_fingerprint")
+        selection["selection_fingerprint"] = content_fingerprint(selection)
+        return selection
+
+    # Write the prior persisted shape, then read with the current implementation.
+    with monkeypatch.context() as patch:
+        patch.setattr(service, "build_daily_strategy_selection", legacy_selection)
+        artifacts = _record_normalized_artifacts(tmp_path)
+    before = artifacts.load_latest_verified_research_artifacts()
+    recommendation = before["selection"]["research_recommendation"]
+    assert is_valid_normalized_research_recommendation(recommendation)
+    assert recommendation["schema_version"].endswith(".v1")
+    fingerprint = recommendation["evidence_fingerprint"]
+    order = [row["candidate_id"] for row in recommendation["ranked_candidates"]]
+    batch = artifacts.load_latest_verified_research_candidate_strategies()
+    after = artifacts.load_latest_verified_research_artifacts()
+    assert after == before
+    assert (
+        after["selection"]["research_recommendation"]["evidence_fingerprint"]
+        == fingerprint
+    )
+    assert order == [f"normalized-candidate-{ordinal}" for ordinal in (5, 4, 3, 2, 1)]
+    assert batch["research_winner_candidate_id"] == order[0]
 
 
 @pytest.mark.unit

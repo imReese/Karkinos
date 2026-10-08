@@ -12,6 +12,113 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+test.each([
+  {
+    version: 'v2',
+    excess: 0.0123,
+    evidence: 'complete',
+    bound: true,
+    expected: 'Worst modeled excess vs baseline at 10/25 bps: 1.23%',
+  },
+  {
+    version: 'v2',
+    excess: -0.0234,
+    evidence: 'complete',
+    bound: true,
+    expected: 'Worst modeled excess vs baseline at 10/25 bps: -2.34%',
+  },
+  {
+    version: 'v2',
+    excess: null,
+    evidence: 'unavailable',
+    bound: true,
+    expected: 'Cost stress evidence missing or incomparable',
+  },
+  {
+    version: 'v1',
+    excess: 0.0123,
+    evidence: 'complete',
+    bound: true,
+    expected: 'Legacy ranking · cost stress comparison not recorded',
+  },
+  {
+    version: 'v2',
+    excess: 0.0123,
+    evidence: 'complete',
+    bound: false,
+    expected: 'Cost stress evidence missing or incomparable',
+  },
+])(
+  'shows saved research-winner cost stress honestly: $version $evidence $excess bound=$bound',
+  async ({ version, excess, evidence, bound, expected }) => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    const response = {
+      ...status,
+      daily_research_winner_candidate_id: 'candidate-1',
+      daily_selections: status.daily_selections.map((selection) => ({
+        ...selection,
+        research_recommendation: {
+          schema_version: `karkinos.ai.normalized_daily_research_recommendation.${version}`,
+          status: 'best_available_for_further_research',
+          research_winner_candidate_id: bound
+            ? 'candidate-1'
+            : 'candidate-other',
+          account_qualified: false,
+          ranked_candidates: [
+            {
+              candidate_id: 'candidate-1',
+              rank: 1,
+              cost_stress: {
+                status: evidence,
+                reason:
+                  evidence === 'unavailable'
+                    ? 'cost_stress_evidence_missing'
+                    : null,
+                worst_excess_return: excess,
+              },
+            },
+          ],
+        },
+      })),
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/ai/strategy-research/shadow-automation'))
+          return jsonResponse(response);
+        if (url.endsWith('/api/strategy-promotion/states'))
+          return jsonResponse([]);
+        throw new Error('Unexpected request: ' + url);
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <PreferencesProvider>
+        <QueryClientProvider client={queryClient}>
+          <ShadowResearchPanel />
+        </QueryClientProvider>
+      </PreferencesProvider>,
+    );
+    expect(await screen.findByText(expected, { exact: false })).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Best available for research · account qualification not evaluated',
+        { exact: false },
+      ),
+    ).toBeTruthy();
+  },
+);
+
 const status = {
   schema_version: 'karkinos.ai.shadow_research_automation.v1',
   policy: {

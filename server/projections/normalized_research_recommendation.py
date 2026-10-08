@@ -6,6 +6,7 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from backtest.costs import RESEARCH_COST_STRESS_BPS, research_friction_assumptions
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.normalized_strategy_research import (
     NORMALIZED_RESEARCH_NOTIONAL,
@@ -18,6 +19,9 @@ from server.projections.normalized_research_operation_preview import (
 )
 
 NORMALIZED_RESEARCH_RECOMMENDATION_SCHEMA = (
+    "karkinos.ai.normalized_daily_research_recommendation.v2"
+)
+_LEGACY_RECOMMENDATION_SCHEMA = (
     "karkinos.ai.normalized_daily_research_recommendation.v1"
 )
 _RECOMMENDATION_FIELDS = {
@@ -69,6 +73,20 @@ _RANKING_METHOD_FIELDS = {
     "deepseek_selects_winner",
     "best_available_is_not_a_quality_gate",
 }
+_BASE_RANKING_PRIORITY = [
+    "total_return_desc",
+    "mean_oos_return_desc",
+    "worst_oos_return_desc",
+    "sharpe_desc",
+    "max_drawdown_asc",
+    "total_cost_bps_asc",
+    "candidate_id_asc",
+]
+_STRESS_RANKING_PRIORITY = [
+    "complete_cost_stress_evidence_first",
+    "worst_cost_stress_excess_return_desc",
+    *_BASE_RANKING_PRIORITY,
+]
 
 
 def build_normalized_research_recommendation(
@@ -173,16 +191,8 @@ def build_normalized_research_recommendation(
         "evaluated_candidate_count": len(ranked_inputs),
         "blockers": sorted(set(blockers)),
         "ranking_method": {
-            "type": "normalized_evidence_lexicographic",
-            "priority": [
-                "total_return_desc",
-                "mean_oos_return_desc",
-                "worst_oos_return_desc",
-                "sharpe_desc",
-                "max_drawdown_asc",
-                "total_cost_bps_asc",
-                "candidate_id_asc",
-            ],
+            "type": "normalized_cost_stress_lexicographic",
+            "priority": list(_STRESS_RANKING_PRIORITY),
             "deepseek_selects_winner": False,
             "best_available_is_not_a_quality_gate": True,
         },
@@ -217,10 +227,14 @@ def is_valid_normalized_research_recommendation(value: Any) -> bool:
     ranked_candidates = payload.get("ranked_candidates")
     ranking_method = payload.get("ranking_method")
     blockers = payload.get("blockers")
+    legacy = payload.get("schema_version") == _LEGACY_RECOMMENDATION_SCHEMA
+    ranked_fields = _RANKED_CANDIDATE_FIELDS | (set() if legacy else {"cost_stress"})
     if (
         not isinstance(ranked_candidates, list)
         or any(
-            not isinstance(item, Mapping) or set(item) != _RANKED_CANDIDATE_FIELDS
+            not isinstance(item, Mapping)
+            or set(item) != ranked_fields
+            or (not legacy and not _valid_cost_stress(item.get("cost_stress")))
             for item in ranked_candidates
         )
         or not isinstance(ranking_method, Mapping)
@@ -244,11 +258,18 @@ def is_valid_normalized_research_recommendation(value: Any) -> bool:
         and operation_preview.get("source_preview_fingerprint") is not None
     )
     return (
-        payload.get("schema_version") == NORMALIZED_RESEARCH_RECOMMENDATION_SCHEMA
+        payload.get("schema_version")
+        in {_LEGACY_RECOMMENDATION_SCHEMA, NORMALIZED_RESEARCH_RECOMMENDATION_SCHEMA}
         and status in {"best_available_for_further_research", "no_recommendation"}
         and (status == "best_available_for_further_research") == bool(winner)
         and (status == "best_available_for_further_research") == bool(ranked_candidates)
-        and ranking_method.get("type") == "normalized_evidence_lexicographic"
+        and ranking_method.get("type")
+        == (
+            "normalized_evidence_lexicographic"
+            if legacy
+            else "normalized_cost_stress_lexicographic"
+        )
+        and (legacy or ranking_method.get("priority") == _STRESS_RANKING_PRIORITY)
         and ranking_method.get("deepseek_selects_winner") is False
         and ranking_method.get("best_available_is_not_a_quality_gate") is True
         and payload.get("account_qualification_status") == "not_evaluated"
@@ -389,6 +410,8 @@ def _research_outcome(
     ):
         return None
     total_cost_bps = total_cost / initial_cash * 10_000
+    cost_stress = _cost_stress_comparison(comparison)
+    stress_complete = cost_stress["status"] == "complete"
     return {
         "candidate_id": candidate_id,
         "draft_id": str(candidate.get("draft_id") or ""),
@@ -405,9 +428,14 @@ def _research_outcome(
         "sharpe": sharpe,
         "max_drawdown": abs(max_drawdown),
         "total_cost_bps": total_cost_bps,
+        "cost_stress": cost_stress,
         "comparison_fingerprint": content_fingerprint(comparison),
         "_operation_preview": operation_preview,
         "ranking_key": (
+            0 if stress_complete else 1,
+            # Incomplete evidence has its own last-place bucket; None is not a
+            # zero excess return and never competes against measured losses.
+            -cost_stress["worst_excess_return"] if stress_complete else None,
             -total_return,
             -mean_oos_return,
             -worst_oos_return,
@@ -419,6 +447,148 @@ def _research_outcome(
     }
 
 
+def _cost_stress_comparison(comparison: Mapping[str, Any]) -> dict[str, Any]:
+    """Compare saved, equally modeled stress replays, without a new quality gate."""
+    unavailable: dict[str, Any] = {
+        "status": "unavailable",
+        "reason": "cost_stress_evidence_missing",
+        "scenarios": [],
+        "worst_excess_return": None,
+    }
+    feedback = _mapping(comparison.get("research_feedback"))
+    views = [_mapping(comparison.get(label)) for label in ("baseline", "candidate")]
+    panels = [_mapping(feedback.get(label)) for label in ("baseline", "candidate")]
+    if any(not panel.get("cost_sensitivity") for panel in panels):
+        return unavailable
+    if (
+        feedback.get("comparison_reference") != "baseline"
+        or feedback.get("return_unit") != "fraction"
+        or not _valid_fingerprint(views[0].get("dataset_snapshot_id"))
+        or views[0].get("dataset_snapshot_id") != views[1].get("dataset_snapshot_id")
+        or any(
+            type(view.get("result_id")) is not int
+            or view["result_id"] <= 0
+            or panel.get("result_id") != view["result_id"]
+            for view, panel in zip(views, panels, strict=True)
+        )
+        or not views[0].get("cost_assumptions")
+        or views[0].get("cost_assumptions") != views[1].get("cost_assumptions")
+    ):
+        return {**unavailable, "reason": "cost_stress_source_mismatch"}
+    indexed = [_stress_scenarios(panel.get("cost_sensitivity")) for panel in panels]
+    if any(panel is None for panel in indexed):
+        return {**unavailable, "reason": "cost_stress_incomplete_or_incomparable"}
+    baseline, candidate = indexed
+    assert baseline is not None and candidate is not None
+    scenarios = [
+        {
+            "slippage_bps": float(bps),
+            "max_volume_participation": float(
+                research_friction_assumptions(bps)["max_volume_participation"]
+            ),
+            "baseline_net_return": baseline[float(bps)],
+            "candidate_net_return": candidate[float(bps)],
+            "excess_return": candidate[float(bps)] - baseline[float(bps)],
+        }
+        for bps in RESEARCH_COST_STRESS_BPS
+    ]
+    if any(not math.isfinite(item["excess_return"]) for item in scenarios):
+        return {**unavailable, "reason": "cost_stress_incomplete_or_incomparable"}
+    return {
+        "status": "complete",
+        "reason": None,
+        "scenarios": scenarios,
+        "worst_excess_return": min(item["excess_return"] for item in scenarios),
+    }
+
+
+def _stress_scenarios(value: Any) -> dict[float, float] | None:
+    if not isinstance(value, list) or len(value) != len(RESEARCH_COST_STRESS_BPS):
+        return None
+    expected = {
+        float(bps): research_friction_assumptions(bps)
+        for bps in RESEARCH_COST_STRESS_BPS
+    }
+    scenarios: dict[float, float] = {}
+    for row in value:
+        if not isinstance(row, Mapping):
+            return None
+        bps = _number(row.get("slippage_bps"))
+        net_return = _number(row.get("total_return"))
+        if (
+            bps not in expected
+            or bps in scenarios
+            or net_return is None
+            or row.get("status") not in (None, "completed")
+            or row.get("failure_code") not in (None, "")
+        ):
+            return None
+        assumptions = expected[bps]
+        if _number(row.get("max_volume_participation")) != float(
+            assumptions["max_volume_participation"]
+        ) or any(
+            row.get(key) != assumptions[key]
+            for key in ("execution_cost_model_id", "slippage_model", "calibration")
+        ):
+            return None
+        scenarios[bps] = net_return
+    return scenarios
+
+
+def _valid_cost_stress(value: Any) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {
+        "status",
+        "reason",
+        "scenarios",
+        "worst_excess_return",
+    }:
+        return False
+    if value.get("status") == "unavailable":
+        return (
+            value.get("reason")
+            in (
+                "cost_stress_evidence_missing",
+                "cost_stress_source_mismatch",
+                "cost_stress_incomplete_or_incomparable",
+            )
+            and value.get("scenarios") == []
+            and value.get("worst_excess_return") is None
+        )
+    scenarios = value.get("scenarios")
+    if (
+        value.get("status") != "complete"
+        or value.get("reason") is not None
+        or not isinstance(scenarios, list)
+        or len(scenarios) != len(RESEARCH_COST_STRESS_BPS)
+    ):
+        return False
+    excesses = []
+    for row, bps in zip(scenarios, RESEARCH_COST_STRESS_BPS, strict=True):
+        if not isinstance(row, Mapping) or set(row) != {
+            "slippage_bps",
+            "max_volume_participation",
+            "baseline_net_return",
+            "candidate_net_return",
+            "excess_return",
+        }:
+            return False
+        baseline = _number(row.get("baseline_net_return"))
+        candidate = _number(row.get("candidate_net_return"))
+        excess = _number(row.get("excess_return"))
+        if (
+            _number(row.get("slippage_bps")) != float(bps)
+            or _number(row.get("max_volume_participation"))
+            != float(research_friction_assumptions(bps)["max_volume_participation"])
+            or baseline is None
+            or candidate is None
+            or excess is None
+            or excess != candidate - baseline
+        ):
+            return False
+        excesses.append(excess)
+    return _number(value.get("worst_excess_return")) == min(excesses)
+
+
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
@@ -428,7 +598,7 @@ def _number(value: Any) -> float | None:
         return None
     try:
         normalized = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return normalized if math.isfinite(normalized) else None
 
