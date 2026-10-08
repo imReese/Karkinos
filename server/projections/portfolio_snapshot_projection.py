@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from math import isfinite
 from typing import Any
 
 from core.types import InstrumentType, Symbol
@@ -31,6 +32,7 @@ from server.projections.portfolio_quotes import (
     refresh_policy,
     using_persistent_cache,
 )
+from server.projections.portfolio_views.overview import overview_position_pnl_update
 from server.projections.quote_status import (
     current_quote_valuation_evidence,
     quote_performance_session_date,
@@ -195,6 +197,86 @@ def _build_allocation(
     return allocation
 
 
+def _portfolio_summary_fields(
+    positions: list[PositionResponse],
+    *,
+    total_equity: float | None,
+    cash: float,
+    expected_session_date: str | None,
+) -> dict[str, Any]:
+    """Summarize complete canonical marks; missing facts remain unavailable."""
+    valued = (
+        total_equity is not None
+        and isfinite(total_equity)
+        and isfinite(cash)
+        and all(
+            position.valuation_available
+            and position.market_value is not None
+            and isfinite(position.market_value)
+            for position in positions
+        )
+    )
+    unrealized_available = valued and all(
+        position.valuation_available
+        and position.unrealized_pnl is not None
+        and isfinite(position.unrealized_pnl)
+        for position in positions
+    )
+    unrealized = (
+        sum(
+            position.unrealized_pnl
+            for position in positions
+            if position.unrealized_pnl is not None
+        )
+        if unrealized_available
+        else None
+    )
+    cost_basis = sum(position.quantity * position.avg_cost for position in positions)
+    cost_basis_available = all(
+        isfinite(position.quantity)
+        and isfinite(position.avg_cost)
+        and position.quantity > 0
+        and position.avg_cost > 0
+        for position in positions
+    )
+    dates = {position.performance_session_date for position in positions}
+    session_date = (
+        next(iter(dates))
+        if len(dates) == 1 and None not in dates
+        else expected_session_date
+        if not positions
+        else None
+    )
+    daily_available = (
+        valued
+        and session_date is not None
+        and all(
+            position.today_change is not None and isfinite(position.today_change)
+            for position in positions
+        )
+    )
+    return {
+        "total_market_value": total_equity - cash
+        if valued and total_equity is not None
+        else None,
+        "total_today_change": (
+            overview_position_pnl_update(positions)["today_pnl"]
+            if daily_available
+            else None
+        ),
+        "total_unrealized_pnl": unrealized,
+        "total_unrealized_pnl_pct": (
+            unrealized / cost_basis
+            if unrealized is not None
+            and cost_basis_available
+            and isfinite(cost_basis)
+            and cost_basis > 0
+            else None
+        ),
+        "performance_session_date": session_date if daily_available else None,
+    }
+
+
 def build_portfolio_snapshot_sync(
     state,
     *,
@@ -230,6 +312,12 @@ def build_portfolio_snapshot_sync(
             snapshot=PortfolioSnapshot(
                 cash=0.0,
                 total_equity=0.0,
+                total_market_value=0.0,
+                total_today_change=(
+                    0.0 if market_session.get("expected_quote_date") else None
+                ),
+                total_unrealized_pnl=0.0,
+                performance_session_date=market_session.get("expected_quote_date"),
                 total_deposits=0.0,
                 positions=[],
                 allocation=[],
@@ -514,6 +602,12 @@ def build_portfolio_snapshot_sync(
         snapshot=PortfolioSnapshot(
             cash=float(portfolio.cash),
             total_equity=total_equity,
+            **_portfolio_summary_fields(
+                positions,
+                total_equity=total_equity,
+                cash=float(portfolio.cash),
+                expected_session_date=market_session.get("expected_quote_date"),
+            ),
             indicative_total_equity=indicative_total_equity,
             indicative_fund_nav_date=(
                 min(indicative_nav_dates)

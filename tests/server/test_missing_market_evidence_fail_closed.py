@@ -194,6 +194,10 @@ def test_confirmed_nav_missing_blocks_aggregate_account_and_risk_projections() -
     workspace = build_risk_workspace(snapshot, [])
 
     assert snapshot.total_equity is None
+    assert snapshot.total_market_value is None
+    assert snapshot.total_today_change is None
+    assert snapshot.total_unrealized_pnl is None
+    assert snapshot.total_unrealized_pnl_pct is None
     assert snapshot.valuation_status == "degraded"
     assert snapshot.positions[0].latest_price == 2.25
     assert snapshot.positions[0].market_value is None

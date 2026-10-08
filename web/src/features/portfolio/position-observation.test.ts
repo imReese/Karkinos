@@ -130,6 +130,30 @@ test('uses explicit evidence-review symbols and preserves nonzero short position
   expect(review[0]?.quantity).toBe(-20);
 });
 
+test('filters by canonical position class when valuation has no allocation', () => {
+  expect(
+    select({ allocation: [], assetClassFilter: 'stock' }).map(
+      (position) => position.symbol,
+    ),
+  ).toEqual(['600001', '600002']);
+  expect(
+    select({ allocation: [], assetClassFilter: 'fund' }).map(
+      (position) => position.symbol,
+    ),
+  ).toEqual(['018125']);
+});
+
+test('uses allocation class only when position metadata is unavailable', () => {
+  const withoutClass = positions.map(
+    ({ asset_class: _assetClass, ...position }) => position,
+  );
+  expect(
+    select({ positions: withoutClass, assetClassFilter: 'fund' }).map(
+      (position) => position.symbol,
+    ),
+  ).toEqual(['018125']);
+});
+
 test.each(['asc', 'desc'] as const)(
   'keeps missing values last when sorting %s',
   (sortDirection) => {

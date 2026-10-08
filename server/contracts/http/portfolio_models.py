@@ -179,6 +179,11 @@ class AllocationGroup(BaseModel):
 class PortfolioSnapshot(BaseModel):
     cash: float
     total_equity: float | None
+    total_market_value: float | None = None
+    total_today_change: float | None = None
+    total_unrealized_pnl: float | None = None
+    total_unrealized_pnl_pct: float | None = None
+    performance_session_date: str | None = None
     indicative_total_equity: float | None = None
     indicative_fund_nav_date: str | None = None
     total_deposits: float = 0.0

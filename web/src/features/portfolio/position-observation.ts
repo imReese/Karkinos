@@ -111,7 +111,9 @@ export function filterAndSortPortfolioPositions({
   return positions
     .filter((position) => {
       const assetClass =
-        allocationBySymbol.get(position.symbol)?.asset_class ?? 'unknown';
+        position.asset_class ??
+        allocationBySymbol.get(position.symbol)?.asset_class ??
+        'unknown';
       const matchesSearch =
         normalizedSearch.length === 0 ||
         position.symbol.toLowerCase().includes(normalizedSearch) ||

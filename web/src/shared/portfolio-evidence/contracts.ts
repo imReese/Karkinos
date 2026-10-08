@@ -38,6 +38,7 @@ export type Position = {
   commission_paid: number;
   today_change?: number | null;
   today_change_pct?: number | null;
+  performance_session_date?: string | null;
   baseline_price?: number | null;
   baseline_timestamp?: string | null;
   baseline_source?: string;
@@ -88,6 +89,11 @@ export type ValuationLane = {
 export type PortfolioSnapshot = {
   cash: number;
   total_equity: number | null;
+  total_market_value?: number | null;
+  total_today_change?: number | null;
+  total_unrealized_pnl?: number | null;
+  total_unrealized_pnl_pct?: number | null;
+  performance_session_date?: string | null;
   indicative_total_equity?: number | null;
   indicative_fund_nav_date?: string | null;
   total_deposits: number;

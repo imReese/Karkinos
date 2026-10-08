@@ -131,20 +131,13 @@ export function PortfolioPageView({
                 value: (
                   <span className="font-mono">
                     {formatCurrencyValue(model.totalTodayChange)}
-                    {model.totalTodayChangePct != null ? (
-                      <span className="ml-1 text-xs opacity-80">
-                        (
-                        {formatPercent(model.totalTodayChangePct, {
-                          signDisplay: 'always',
-                        })}
-                        )
-                      </span>
-                    ) : null}
                   </span>
                 ),
-                detail: copy.portfolio.summary.todayPnlDetail,
+                detail: snapshot.data.performance_session_date
+                  ? `${copy.portfolio.summary.todayPnlDetail} · ${snapshot.data.performance_session_date}`
+                  : copy.portfolio.summary.todayPnlDetail,
                 tone:
-                  model.totalTodayChange !== 0
+                  model.totalTodayChange != null && model.totalTodayChange !== 0
                     ? model.totalTodayChange > 0
                       ? 'pnl-positive'
                       : 'pnl-negative'
@@ -169,6 +162,7 @@ export function PortfolioPageView({
                 ),
                 detail: copy.portfolio.summary.unrealizedPnlDetail,
                 tone:
+                  model.totalUnrealizedPnl != null &&
                   model.totalUnrealizedPnl !== 0
                     ? model.totalUnrealizedPnl > 0
                       ? 'pnl-positive'
