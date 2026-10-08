@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
@@ -1971,6 +1977,66 @@ test('previews and stages broker evidence from pasted CSV', async () => {
       String(input).includes('/api/account-truth/broker-statement/import'),
     ),
   ).toBe(true);
+});
+
+test('requires a current preview before staging CSV evidence', async () => {
+  renderAccountTruthReviewPage();
+  const importToolsTitle = await screen.findByText('Stage new broker evidence');
+  await userEvent.click(importToolsTitle.closest('summary')!);
+  const wizard = await screen.findByTestId('account-truth-import-wizard');
+  fireEvent.change(within(wizard).getByLabelText('CSV content'), {
+    target: { value: brokerStatementCsv },
+  });
+  const stage = within(wizard).getByRole('button', {
+    name: 'Stage evidence and reconcile',
+  });
+  expect(stage.hasAttribute('disabled')).toBe(true);
+  await userEvent.click(
+    within(wizard).getByRole('button', { name: 'Preview' }),
+  );
+  await within(wizard).findByText('Preview ready');
+  expect(stage.hasAttribute('disabled')).toBe(false);
+  fireEvent.change(within(wizard).getByLabelText('Source name'), {
+    target: { value: 'revised-source.csv' },
+  });
+  expect(stage.hasAttribute('disabled')).toBe(true);
+  expect(within(wizard).queryByText('Preview ready')).toBeNull();
+});
+
+test('clears previous CSV evidence when a replacement file cannot be read', async () => {
+  renderAccountTruthReviewPage();
+  const importToolsTitle = await screen.findByText('Stage new broker evidence');
+  await userEvent.click(importToolsTitle.closest('summary')!);
+  const wizard = await screen.findByTestId('account-truth-import-wizard');
+  fireEvent.change(within(wizard).getByLabelText('CSV content'), {
+    target: { value: brokerStatementCsv },
+  });
+  await userEvent.click(
+    within(wizard).getByRole('button', { name: 'Preview' }),
+  );
+  await within(wizard).findByText('Preview ready');
+  const file = new File(['fixture'], 'unreadable-fixture.csv', {
+    type: 'text/csv',
+  });
+  Object.defineProperty(file, 'text', {
+    value: () => Promise.reject(new Error('Read failed')),
+  });
+  await userEvent.upload(
+    within(wizard).getByLabelText('Choose CSV file'),
+    file,
+  );
+  await waitFor(() => {
+    expect(
+      (within(wizard).getByLabelText('CSV content') as HTMLTextAreaElement)
+        .value,
+    ).toBe('');
+    expect(
+      within(wizard)
+        .getByRole('button', { name: 'Stage evidence and reconcile' })
+        .hasAttribute('disabled'),
+    ).toBe(true);
+  });
+  expect(within(wizard).queryByText('Preview ready')).toBeNull();
 });
 
 test('scans the configured CITIC directory only on command and rechecks by fingerprint before review', async () => {

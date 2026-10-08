@@ -31,11 +31,21 @@ export function BrokerEvidenceImportWizard({
   const [sourceName, setSourceName] = useState('local-broker-statement.csv');
   const [content, setContent] = useState('');
   const [fileMessage, setFileMessage] = useState<string | null>(null);
+  const [fileReadPending, setFileReadPending] = useState(false);
   const previewMutation = useBrokerStatementPreviewMutation();
   const importMutation = useBrokerStatementImportMutation();
   const preview = previewMutation.data ?? importMutation.data?.preview ?? null;
   const canSubmit = content.trim().length > 0 && sourceName.trim().length > 0;
   const previewIsBlocked = preview?.validation_status === 'blocked';
+  const busy =
+    fileReadPending || previewMutation.isPending || importMutation.isPending;
+  const previewIsCurrent = Boolean(
+    previewMutation.isSuccess &&
+    previewMutation.data &&
+    ['pass', 'warning'].includes(previewMutation.data.validation_status) &&
+    previewMutation.variables?.content === content &&
+    previewMutation.variables?.source_name === sourceName,
+  );
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
@@ -43,18 +53,22 @@ export function BrokerEvidenceImportWizard({
       return;
     }
     setFileMessage(null);
+    setFileReadPending(true);
+    setContent('');
+    previewMutation.reset();
+    importMutation.reset();
     setSourceName(file.name || 'local-broker-statement.csv');
     try {
       setContent(await file.text());
-      previewMutation.reset();
-      importMutation.reset();
     } catch {
       setFileMessage(text.noFileContent);
+    } finally {
+      setFileReadPending(false);
     }
   }
 
   function previewStatement() {
-    if (!canSubmit) {
+    if (!canSubmit || busy) {
       setFileMessage(text.noFileContent);
       return;
     }
@@ -66,7 +80,7 @@ export function BrokerEvidenceImportWizard({
   }
 
   function importStatement() {
-    if (!canSubmit) {
+    if (!canSubmit || !previewIsCurrent || busy) {
       setFileMessage(text.noFileContent);
       return;
     }
@@ -110,7 +124,12 @@ export function BrokerEvidenceImportWizard({
               <input
                 className="min-h-10 w-full rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-sm text-[var(--app-text)] outline-none focus-visible:border-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 value={sourceName}
-                onChange={(event) => setSourceName(event.currentTarget.value)}
+                disabled={busy}
+                onChange={(event) => {
+                  setSourceName(event.currentTarget.value);
+                  previewMutation.reset();
+                  importMutation.reset();
+                }}
               />
             </label>
             <label className="grid gap-1 text-xs font-semibold text-[var(--app-text-secondary)]">
@@ -119,6 +138,7 @@ export function BrokerEvidenceImportWizard({
                 accept=".csv,text/csv,text/plain"
                 className="min-h-10 w-full rounded-[var(--app-radius-control)] border border-dashed border-[var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-sm text-[var(--app-text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 type="file"
+                disabled={busy}
                 onChange={handleFileChange}
               />
             </label>
@@ -127,6 +147,7 @@ export function BrokerEvidenceImportWizard({
               <textarea
                 className="min-h-28 w-full resize-y rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface)] px-3 py-2 font-mono text-xs text-[var(--app-text)] outline-none focus-visible:border-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 value={content}
+                disabled={busy}
                 onChange={(event) => {
                   setContent(event.currentTarget.value);
                   previewMutation.reset();
@@ -138,7 +159,7 @@ export function BrokerEvidenceImportWizard({
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-4 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canSubmit || previewMutation.isPending}
+              disabled={!canSubmit || busy}
               type="button"
               onClick={previewStatement}
             >
@@ -146,18 +167,20 @@ export function BrokerEvidenceImportWizard({
             </button>
             <button
               className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={
-                !canSubmit ||
-                previewIsBlocked ||
-                importMutation.isPending ||
-                previewMutation.isPending
-              }
+              disabled={!canSubmit || !previewIsCurrent || busy}
               type="button"
               onClick={importStatement}
             >
               {text.confirmImport}
             </button>
           </div>
+          {canSubmit && !previewIsCurrent && !busy && !previewIsBlocked ? (
+            <p role="status" className="app-muted mt-2 text-xs">
+              {locale === 'zh'
+                ? '请先预览并复核当前内容，再暂存证据。'
+                : 'Preview and review the current content before staging evidence.'}
+            </p>
+          ) : null}
           {fileMessage ? (
             <EvidenceState
               className="mt-3"
