@@ -282,6 +282,16 @@ def run_single_backtest(
         cash_dividends=cash_dividends,
         include_share_distributions=cash_dividend_mode
         == "reported_distributions_gross",
+        # This multi-asset strategy rejects misaligned bars and unsolved risk
+        # budgets. A failed calculation must not become a successful cash report.
+        **(
+            {
+                "strict_event_errors": True,
+                "session_completed": strategy.require_complete_session,
+            }
+            if request.strategy == "risk_parity_macro"
+            else {}
+        ),
         **(
             {"evaluation_start": evaluation_start}
             if evaluation_start is not None
@@ -325,8 +335,9 @@ def run_single_backtest(
         stress_config, stress_assumptions = resolve_backtest_costs(
             inputs.model_copy(update={"slippage_bps": bps})
         )
+        stressed_strategy = build_strategy(strategy_config, event_bus_placeholder)
         stressed = BacktestEngine(
-            strategy=build_strategy(strategy_config, event_bus_placeholder),
+            strategy=stressed_strategy,
             instruments=instruments,
             data_handlers=data_handlers,
             initial_cash=result.initial_cash,
@@ -335,6 +346,14 @@ def run_single_backtest(
             include_share_distributions=cash_dividend_mode
             == "reported_distributions_gross",
             evaluation_start=evaluation_start,
+            **(
+                {
+                    "strict_event_errors": True,
+                    "session_completed": stressed_strategy.require_complete_session,
+                }
+                if request.strategy == "risk_parity_macro"
+                else {}
+            ),
         ).run()
         metrics_json["cost_sensitivity"].append(
             {

@@ -46,6 +46,16 @@ _DEFAULT_BENCHMARK_METADATA = {
 }
 
 _BENCHMARK_METADATA = {
+    "risk_parity_macro": {
+        "asset_universe": ["stock", "etf"],
+        "benchmark_role": "bounded_macro_risk_budgeting",
+        "benchmark_universe": ["equity_etf", "bond_etf", "gold_etf"],
+        "validation_notes": [
+            "Exploratory research allocation; requires after-cost and independent out-of-sample validation.",
+            "Capital-weight bounds can change risk contributions; the trend filter does not guarantee a cash or defensive allocation.",
+            "Requires at least two instruments and complete, aligned daily basket bars; unobservable or unsolved risk budgets fail the run.",
+        ],
+    },
     "dual_ma": {
         "asset_universe": ["stock", "etf"],
         "benchmark_role": "etf_rotation_trend_following",

@@ -59,10 +59,71 @@ STRATEGY_DISPLAY_NAMES = {
     "volatility_target_trend": "Volatility Target Trend",
     "pairs_ratio_mean_reversion": "Pairs Ratio Mean Reversion",
     "etf_rotation": "Cross-Sectional ETF Rotation",
+    "risk_parity_macro": "Bounded Macro Risk Budgeting",
 }
 
 
 STRATEGY_PARAMETER_SCHEMAS = {
+    "risk_parity_macro": [
+        StrategyParameterSchema(
+            "lookback_period",
+            "int",
+            60,
+            min=10,
+            max=500,
+            description="Number of aligned daily returns in the sample covariance.",
+        ),
+        StrategyParameterSchema(
+            "rebalance_interval",
+            "int",
+            20,
+            min=1,
+            max=250,
+            description="Review every N complete basket sessions, counted from input start.",
+        ),
+        StrategyParameterSchema(
+            "trend_filter",
+            "bool",
+            True,
+            description="Multiply below-average non-proxy risk budgets by 0.2, then normalize.",
+        ),
+        StrategyParameterSchema(
+            "trend_ma_period",
+            "int",
+            60,
+            min=1,
+            max=500,
+            description="Complete daily bars used for the trend average.",
+        ),
+        StrategyParameterSchema(
+            "max_asset_weight",
+            "float",
+            0.60,
+            min=0,
+            max=1,
+            description="Capital-weight cap applied after risk budgeting; can change risk contributions.",
+        ),
+        StrategyParameterSchema(
+            "min_asset_weight",
+            "float",
+            0.05,
+            min=0,
+            max=1,
+            description="Capital-weight floor; the full universe must admit weights summing to one.",
+        ),
+        StrategyParameterSchema(
+            "cash_proxy",
+            "str",
+            "511010",
+            description="Universe symbol exempt from trend filtering; null disables exemption. No synthetic cash.",
+        ),
+        StrategyParameterSchema(
+            "risk_budgets",
+            "dict",
+            None,
+            description="Positive relative risk budget for every universe symbol; null uses equal budgets.",
+        ),
+    ],
     "dual_ma": [
         StrategyParameterSchema(
             name="short_period",

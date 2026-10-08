@@ -166,6 +166,7 @@ docs/*
 !docs/guides/return-accounting.md
 !docs/guides/account-truth-import.md
 !docs/guides/strategy-compatibility.md
+!docs/strategies/
 
 # Node.js
 node_modules/

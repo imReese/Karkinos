@@ -8,6 +8,7 @@ from strategy.builtins.monthly_rebalance import MonthlyRebalanceStrategy
 from strategy.builtins.pairs_ratio_mean_reversion import (
     PairsRatioMeanReversionStrategy,
 )
+from strategy.builtins.risk_parity_macro import RiskParityMacroStrategy
 from strategy.builtins.rsi import RSIStrategy
 from strategy.builtins.time_series_momentum import TimeSeriesMomentumStrategy
 from strategy.builtins.volatility_target_trend import VolatilityTargetTrendStrategy
@@ -22,4 +23,5 @@ __all__ = [
     "VolatilityTargetTrendStrategy",
     "PairsRatioMeanReversionStrategy",
     "EtfRotationStrategy",
+    "RiskParityMacroStrategy",
 ]

@@ -116,6 +116,16 @@ The target shadow health rule continues to measure raw-price responses.
 Do not expand this work into live trading, broker adapters, capital authorization
 or a general workflow framework.
 
+The ordinary Dataset backtest also supports the bounded `risk_parity_macro`
+research baseline. Complete aligned daily baskets and a converged risk-budget
+calculation are required; capital-weight bounds may change risk contributions.
+This strategy is not yet an independent forward-observation source. Small Python
+research helpers provide explicitly timed, scoped financial-statement selection
+and aligned benchmark-relative metrics; they do not publish PIT Datasets or
+change account evaluation. The local order-export command projects existing
+manual-order snapshots to review-only CSV, without generating orders or claiming
+broker-format compatibility. Usage is in the [strategy library](strategies/README.md).
+
 ## Frozen
 
 - new live-trading or broker integrations;

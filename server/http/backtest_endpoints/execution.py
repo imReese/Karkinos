@@ -20,7 +20,7 @@ from server.services.research_datasets import ResearchDatasetError
 
 
 def raise_strategy_input_error(exc: ValueError) -> NoReturn:
-    """Translate only the ETF strategy's declared input errors at HTTP delivery."""
+    """Translate declared strategy input/calculation errors at HTTP delivery."""
     detail = str(exc)
     known = {
         "etf_rotation_universe_invalid",
@@ -32,7 +32,12 @@ def raise_strategy_input_error(exc: ValueError) -> NoReturn:
         "etf_rotation_min_momentum_invalid",
     }
     if detail in known or detail.startswith(
-        ("etf_rotation_cash_proxy_input_missing:", "etf_rotation_price_invalid:")
+        (
+            "etf_rotation_cash_proxy_input_missing:",
+            "etf_rotation_price_invalid:",
+            "risk_parity_macro_",
+            "risk_budget_",
+        )
     ):
         raise HTTPException(status_code=400, detail=detail) from None
     raise exc
