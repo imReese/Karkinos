@@ -29,6 +29,8 @@ export const backtestPageZh = {
   runContextReviewHolding: '查看持仓详情',
   startDate: '开始日期',
   endDate: '结束日期',
+  runContextReviewPortfolio: '查看组合',
+  dateRangeInvalid: '请选择开始与结束日期，开始日期不能晚于结束日期。',
   initialCash: '初始现金',
   strategy: '策略',
   strategyNames: {

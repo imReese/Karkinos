@@ -11,10 +11,12 @@ export function StrategyCatalogPanel({
   strategyCatalog,
   selectedStrategyName,
   onSelect,
+  disabled = false,
 }: {
   strategyCatalog: BacktestStrategyInfo[];
   selectedStrategyName: string;
   onSelect: (strategyName: string) => void;
+  disabled?: boolean;
 }) {
   const labels = useCopy().backtest.page;
   const selectedStrategy =
@@ -61,6 +63,7 @@ export function StrategyCatalogPanel({
             aria-label={labels.strategyCatalogTitle}
             className="app-field h-10 rounded-[var(--app-radius-control)] px-3 text-sm"
             value={selectedStrategy.name}
+            disabled={disabled}
             onChange={(event) => onSelect(event.target.value)}
           >
             {strategyCatalog.map((item) => (

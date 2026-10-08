@@ -140,3 +140,31 @@ test('moves listbox focus with arrows and selects a run with Enter or Space', as
   await user.tab({ shift: true });
   expect(options[2]).toHaveFocus();
 });
+
+test('retries a failed saved-run read without treating it as an empty history', async () => {
+  let attempts = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/backtest/results')) {
+        attempts += 1;
+        return attempts === 1
+          ? new Response(JSON.stringify({ detail: 'unavailable' }), {
+              status: 503,
+            })
+          : jsonResponse([]);
+      }
+      return new Response('Not found', { status: 404 });
+    }),
+  );
+  renderReportView();
+  const retry = await screen.findByRole('button', { name: 'Retry' });
+  expect(
+    screen.queryByText(/No backtest reports have been saved yet/),
+  ).toBeNull();
+  await userEvent.setup().click(retry);
+  expect(
+    await screen.findByText(/No backtest reports have been saved yet/),
+  ).toBeTruthy();
+  expect(attempts).toBe(2);
+});

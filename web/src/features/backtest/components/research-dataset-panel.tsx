@@ -44,6 +44,7 @@ export function ResearchDatasetPanel() {
     selectedDataset,
     selectDataset,
     setDatasetPreparing,
+    runBacktest,
   } = useBacktestPage();
   const [open, setOpen] = useState(false);
   const [refresh, setRefresh] = useState(false);
@@ -82,6 +83,7 @@ export function ResearchDatasetPanel() {
     (job) => job.status !== 'failed' && job.error,
   );
   const busy =
+    runBacktest.isPending ||
     prepare.isPending ||
     prepareVerified.isPending ||
     publishVerified.isPending ||

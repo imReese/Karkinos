@@ -384,6 +384,8 @@ test('backtest query and invalidation keys stay at the reviewed contract', () =>
       "['backtest-strategies']",
       "['backtest-strategy-promotion-readiness']",
       "['backtest-strategy-validation']",
+      "['holding-strategy-attribution']",
+      "['holding-strategy-attribution']",
       "['strategy-learning-review']",
     ].sort(),
   );

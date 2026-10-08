@@ -271,7 +271,22 @@ export function BacktestReportView() {
   }
 
   if (results.isError) {
-    return <EvidenceState kind="error" title={labels.selection.loadFailed} />;
+    return (
+      <EvidenceState
+        kind="error"
+        title={labels.selection.loadFailed}
+        action={
+          <button
+            className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+            disabled={results.isFetching}
+            onClick={() => void results.refetch()}
+            type="button"
+          >
+            {copy.states.retry}
+          </button>
+        }
+      />
+    );
   }
 
   if (!results.data?.length) {
@@ -365,7 +380,20 @@ export function BacktestReportView() {
       {report.isLoading ? (
         <BacktestReportSkeleton title={labels.selection.selectedLoading} />
       ) : report.isError ? (
-        <EvidenceState kind="error" title={labels.selection.selectedFailed} />
+        <EvidenceState
+          kind="error"
+          title={labels.selection.selectedFailed}
+          action={
+            <button
+              className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+              disabled={report.isFetching}
+              onClick={() => void report.refetch()}
+              type="button"
+            >
+              {copy.states.retry}
+            </button>
+          }
+        />
       ) : report.data ? (
         <>
           <ResearchObservationsPanel

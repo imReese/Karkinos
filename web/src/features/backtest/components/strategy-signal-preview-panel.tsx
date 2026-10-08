@@ -30,6 +30,7 @@ export function StrategySignalPreviewPanel({
   error,
   singleAsset,
   onRiskPreview,
+  onRiskInputsChange,
   onPaperShadowPreview,
   riskPreviewResult,
   riskPreviewLoading,
@@ -46,6 +47,7 @@ export function StrategySignalPreviewPanel({
   error: boolean;
   singleAsset: { symbol: string; asset_class: string } | null;
   onRiskPreview: (payload: BacktestRiskPreviewRequest) => void;
+  onRiskInputsChange?: () => void;
   onPaperShadowPreview: (payload: BacktestPaperShadowPreviewRequest) => void;
   riskPreviewResult: BacktestRiskPreviewResponse | null;
   riskPreviewLoading: boolean;
@@ -61,6 +63,9 @@ export function StrategySignalPreviewPanel({
   const { locale } = usePreferences();
   const output = preview?.outputs[0] ?? null;
   const [riskQuantity, setRiskQuantity] = useState('');
+  const [submittedRiskInputs, setSubmittedRiskInputs] = useState<string | null>(
+    null,
+  );
   const dataQuality = output?.evidence.data_quality_status ?? 'unknown';
   const datasetSnapshotId =
     preview?.dataset_snapshot_id ??
@@ -97,11 +102,31 @@ export function StrategySignalPreviewPanel({
     parsedReferencePrice !== null &&
     Number.isFinite(parsedReferencePrice) &&
     parsedReferencePrice > 0;
+  const currentRiskInputs = JSON.stringify({
+    output_id: output?.output_id,
+    strategy: preview?.strategy_id,
+    symbol: output?.symbol,
+    asset_class: singleAsset?.asset_class,
+    action: output?.action,
+    quantity: Number(riskQuantity),
+    reference_price: parsedReferencePrice,
+    target_weight: output?.target_weight ?? null,
+    data_quality_status: dataQuality,
+    dataset_snapshot_id: datasetSnapshotId,
+  });
+  const currentRiskResult =
+    submittedRiskInputs === currentRiskInputs && !riskPreviewError
+      ? riskPreviewResult
+      : null;
   const paperShadowPreviewable =
-    riskPreviewable && Boolean(riskPreviewResult?.passed);
+    riskPreviewable &&
+    !riskPreviewLoading &&
+    !riskPreviewError &&
+    Boolean(currentRiskResult?.passed);
 
   useEffect(() => {
     setRiskQuantity('');
+    setSubmittedRiskInputs(null);
   }, [output?.output_id]);
 
   const submitRiskPreview = () => {
@@ -116,6 +141,7 @@ export function StrategySignalPreviewPanel({
     ) {
       return;
     }
+    setSubmittedRiskInputs(currentRiskInputs);
     onRiskPreview({
       strategy: preview.strategy_id,
       symbol: output.symbol,
@@ -152,8 +178,8 @@ export function StrategySignalPreviewPanel({
       signal_id: output.output_id,
       dataset_snapshot_id:
         preview.dataset_snapshot_id ?? output.evidence.dataset_snapshot_id,
-      risk_preview_passed: riskPreviewResult?.passed ?? false,
-      risk_reasons: riskPreviewResult?.reasons ?? [],
+      risk_preview_passed: currentRiskResult?.passed ?? false,
+      risk_reasons: currentRiskResult?.reasons ?? [],
     });
   };
 
@@ -282,10 +308,14 @@ export function StrategySignalPreviewPanel({
             paperShadowPreviewable={paperShadowPreviewable}
             riskPreviewError={riskPreviewError}
             riskPreviewLoading={riskPreviewLoading}
-            riskPreviewResult={riskPreviewResult}
+            riskPreviewResult={riskPreviewLoading ? null : currentRiskResult}
             riskPreviewable={riskPreviewable}
             riskQuantity={riskQuantity}
-            setRiskQuantity={setRiskQuantity}
+            setRiskQuantity={(value) => {
+              setRiskQuantity(value);
+              setSubmittedRiskInputs(null);
+              onRiskInputsChange?.();
+            }}
           />
           <p className="mt-4 border-l-2 border-[var(--app-warning-border)] py-2 pl-3 text-sm font-semibold text-[var(--app-warning-text)]">
             {gateRequired
@@ -352,12 +382,22 @@ function RiskPreviewWorkflow({
                 step="1"
                 type="number"
                 value={riskQuantity}
+                disabled={
+                  riskPreviewLoading ||
+                  paperShadowPreviewLoading ||
+                  attributionPreviewLoading
+                }
                 onChange={(event) => setRiskQuantity(event.target.value)}
               />
             </label>
             <button
               className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={riskPreviewLoading || !isPositiveNumber(riskQuantity)}
+              disabled={
+                riskPreviewLoading ||
+                paperShadowPreviewLoading ||
+                attributionPreviewLoading ||
+                !isPositiveNumber(riskQuantity)
+              }
               onClick={onRiskPreview}
               type="button"
             >

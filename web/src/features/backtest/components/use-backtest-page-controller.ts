@@ -52,7 +52,6 @@ export function useBacktestPageController() {
   const [promotionEvidenceOpen, setPromotionEvidenceOpen] = useState(false);
   const [researchArchiveOpen, setResearchArchiveOpen] = useState(false);
   const [latestReport, setLatestReport] = useState<BacktestReport | null>(null);
-  const accountStrategyEnabled = researchGovernanceOpen || researchArchiveOpen;
   const runBacktest = useRunBacktestMutation();
   const signalPreview = useStrategySignalPreviewMutation();
   const riskPreview = useBacktestRiskPreviewMutation();
@@ -61,7 +60,7 @@ export function useBacktestPageController() {
   const strategies = useBacktestStrategiesQuery();
   const savedResults = useBacktestResultsQuery();
   const accountStrategy = useAccountStrategyAssignmentQuery(
-    accountStrategyEnabled,
+    researchGovernanceOpen || researchArchiveOpen,
   );
   const accountStrategyAssignments = useAccountStrategyAssignmentsQuery(
     researchGovernanceOpen,
@@ -179,11 +178,11 @@ export function useBacktestPageController() {
       : searchDefaults.hasHandoffContext
         ? labels.runContextSourceDecision
         : labels.runContextSourceManual;
-  const reportAsset = latestReport?.config.assets?.[0] ?? null;
   const reportSymbol =
     latestReport?.config.assets?.map((asset) => asset.symbol).join(', ') ||
     symbol;
-  const reportAssetClass = reportAsset?.asset_class ?? assetClass;
+  const reportAssetClass =
+    latestReport?.config.assets?.[0]?.asset_class ?? assetClass;
   const reportAssetClassLabel =
     (latestReport?.config.assets?.length ?? 0) > 1
       ? locale === 'zh'
@@ -210,7 +209,11 @@ export function useBacktestPageController() {
 
   const submitRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (datasetPreparing) return;
+    if (datasetPreparing || runBacktest.isPending) return;
+    if (!startDate || !endDate || startDate > endDate) {
+      setFormError(labels.dateRangeInvalid);
+      return;
+    }
     if (universeError) {
       setFormError(universeError);
       return;
@@ -235,8 +238,6 @@ export function useBacktestPageController() {
       return;
     }
     if (
-      !startDate ||
-      !endDate ||
       !isPositiveNumber(initialCash) ||
       !backtestParametersValid(parameterSchema, parameterValues)
     ) {
@@ -292,21 +293,20 @@ export function useBacktestPageController() {
     }
   };
 
-  const assignSelectedStrategy = async () => {
-    await updateAccountStrategy.mutateAsync({
+  const assignSelectedStrategy = () => {
+    updateAccountStrategy.mutate({
       strategy_id: selectedStrategy.name,
       status: 'research_only',
       scope: 'account',
       notes: 'Assigned from Backtest page for research review.',
     });
   };
-
-  const assignSelectedStrategyToSymbol = async () => {
+  const assignSelectedStrategyToSymbol = () => {
     const trimmedSymbol = symbol.trim();
     if (!trimmedSymbol) {
       return;
     }
-    await updateScopedAccountStrategy.mutateAsync({
+    updateScopedAccountStrategy.mutate({
       strategy_id: selectedStrategy.name,
       status: 'research_only',
       scope: 'symbol',

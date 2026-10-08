@@ -37,6 +37,7 @@ export function BacktestRunResultsPanel() {
       }`}
       data-testid="backtest-result-panel"
       id="backtest-mobile-results"
+      aria-labelledby="backtest-tab-results"
       role="tabpanel"
     >
       <div className="p-4 sm:p-5">
@@ -89,9 +90,15 @@ export function BacktestRunResultsPanel() {
                     {reportSymbol ? (
                       <a
                         className="inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] border border-[var(--app-border)] px-2.5 py-1 text-xs font-semibold text-[var(--app-text)] transition hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-                        href={`/portfolio/${encodeURIComponent(reportSymbol)}`}
+                        href={
+                          (latestReport.config.assets?.length ?? 0) > 1
+                            ? '/portfolio'
+                            : `/portfolio/${encodeURIComponent(reportSymbol)}`
+                        }
                       >
-                        {labels.runContextReviewHolding}
+                        {(latestReport.config.assets?.length ?? 0) > 1
+                          ? labels.runContextReviewPortfolio
+                          : labels.runContextReviewHolding}
                       </a>
                     ) : null}
                     <StatusBadge tone="warning">
@@ -150,6 +157,11 @@ export function BacktestRunResultsPanel() {
                 id="backtest-signal-review-evidence"
               >
                 <StrategySignalPreviewPanel
+                  onRiskInputsChange={() => {
+                    riskPreview.reset();
+                    paperShadowPreview.reset();
+                    attributionPreview.reset();
+                  }}
                   error={signalPreview.isError}
                   loading={signalPreview.isPending}
                   onPaperShadowPreview={(payload) => {
@@ -190,7 +202,11 @@ export function BacktestRunResultsPanel() {
                   riskPreviewError={riskPreview.isError}
                   riskPreviewLoading={riskPreview.isPending}
                   riskPreviewResult={riskPreview.data ?? null}
-                  singleAsset={latestReport.config.assets?.[0] ?? null}
+                  singleAsset={
+                    latestReport.config.assets?.length === 1
+                      ? latestReport.config.assets[0]
+                      : null
+                  }
                 />
               </div>
               <FillsTable fills={latestReport.fills ?? []} />

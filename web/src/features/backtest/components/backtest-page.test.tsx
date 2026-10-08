@@ -1695,6 +1695,16 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   ).toBe(false);
   expect(tabs.getAttribute('role')).toBe('tablist');
   expect(tabs.getAttribute('data-workspace-view')).toBe('setup');
+  const workspaceTabs = within(tabs).getAllByRole('tab');
+  workspaceTabs[0].focus();
+  fireEvent.keyDown(workspaceTabs[0], { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(workspaceTabs[1]);
+  expect(workspaceTabs[1].getAttribute('aria-selected')).toBe('true');
+  expect(workspaceTabs.map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+  expect(results.getAttribute('aria-labelledby')).toBe(workspaceTabs[1].id);
+  fireEvent.keyDown(workspaceTabs[1], { key: 'Home' });
+  expect(document.activeElement).toBe(workspaceTabs[0]);
+  expect(workspaceTabs[0].getAttribute('aria-selected')).toBe('true');
   expect(
     results.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
@@ -2740,6 +2750,122 @@ test('previews paper shadow simulation after a passed risk preview', async () =>
   });
   expect(paperShadowPayload.execution_mode).toBeUndefined();
   expect(paperShadowPayload.order_type).toBeUndefined();
+});
+
+test('invalidates risk and simulation evidence when the sized quantity changes', async () => {
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    riskPreview: passedRiskPreviewResponse,
+  });
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '600002' },
+  });
+  fireEvent.submit(
+    screen.getByRole('button', { name: 'Run backtest' }).closest('form')!,
+  );
+  fireEvent.change(await screen.findByLabelText('Risk quantity'), {
+    target: { value: '100' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview risk' }));
+  await screen.findByText('Risk passed');
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Preview simulation review' }),
+  );
+  await screen.findByText('Filled 100 @ ¥29.17');
+  fireEvent.change(screen.getByLabelText('Risk quantity'), {
+    target: { value: '200' },
+  });
+  expect(screen.queryByText('Risk passed')).toBeNull();
+  expect(screen.queryByText('Filled 100 @ ¥29.17')).toBeNull();
+  expect(
+    screen.queryByRole('button', { name: 'Preview simulation review' }),
+  ).toBeNull();
+  expect(
+    fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes('/api/backtest/paper-shadow-preview'),
+    ),
+  ).toHaveLength(1);
+
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((input, init) =>
+    String(input).includes('/api/backtest/risk-preview')
+      ? new Promise<Response>(() => undefined)
+      : originalFetch(input, init),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Preview risk' }));
+  await screen.findByRole('button', { name: 'Checking risk' });
+  expect(
+    (screen.getByLabelText('Risk quantity') as HTMLInputElement).disabled,
+  ).toBe(true);
+  expect(screen.queryByText('Risk passed')).toBeNull();
+  expect(
+    screen.queryByRole('button', { name: 'Preview simulation review' }),
+  ).toBeNull();
+});
+
+test('rejects an inverted date range before starting a backtest', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [] });
+  fireEvent.change(await screen.findByLabelText('Start date'), {
+    target: { value: '2026-10-08' },
+  });
+  fireEvent.change(screen.getByLabelText('End date'), {
+    target: { value: '2026-10-07' },
+  });
+  fireEvent.submit(
+    screen.getByRole('button', { name: 'Run backtest' }).closest('form')!,
+  );
+  expect(await screen.findByRole('alert')).toHaveProperty(
+    'textContent',
+    'Choose both dates. The start date must be on or before the end date.',
+  );
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/backtest/run'),
+    ),
+  ).toBe(false);
+});
+
+test('opens the portfolio for basket reports and explicitly skips single-instrument previews', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [] });
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((input, init) =>
+    String(input).includes('/api/backtest/run')
+      ? Promise.resolve(
+          jsonResponse({
+            ...runReport,
+            config: {
+              ...runReport.config,
+              assets: [
+                { symbol: '510300', asset_class: 'etf' },
+                { symbol: '518880', asset_class: 'etf' },
+              ],
+            },
+          }),
+        )
+      : originalFetch(input, init),
+  );
+  await screen.findByLabelText('Symbol');
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Use ETF example basket' }),
+  );
+  fireEvent.submit(
+    screen.getByRole('button', { name: 'Run backtest' }).closest('form')!,
+  );
+  expect(
+    (
+      await screen.findByRole('link', { name: 'Review portfolio' })
+    ).getAttribute('href'),
+  ).toBe('/portfolio');
+  expect(
+    await screen.findByText(
+      'Signal preview is available after running a single-symbol backtest.',
+    ),
+  ).toBeTruthy();
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/backtest/signal-preview'),
+    ),
+  ).toBe(false);
 });
 
 test('uses Chinese simulation-review wording instead of paper-shadow jargon', async () => {

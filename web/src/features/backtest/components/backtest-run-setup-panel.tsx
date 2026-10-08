@@ -60,6 +60,7 @@ function BacktestSetupForm() {
           <input
             className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
             type="date"
+            max={endDate || undefined}
             value={startDate}
             disabled={datasetPreparing || runBacktest.isPending}
             onChange={(event) => setStartDate(event.target.value)}
@@ -71,6 +72,7 @@ function BacktestSetupForm() {
           <input
             className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
             type="date"
+            min={startDate || undefined}
             value={endDate}
             disabled={datasetPreparing || runBacktest.isPending}
             onChange={(event) => setEndDate(event.target.value)}
@@ -87,6 +89,7 @@ function BacktestSetupForm() {
           min="1"
           step="1"
           value={initialCash}
+          disabled={datasetPreparing || runBacktest.isPending}
           onChange={(event) => setInitialCash(event.target.value)}
           aria-label={labels.initialCash}
         />
@@ -132,6 +135,7 @@ function BacktestSetupForm() {
                 max={param.max ?? undefined}
                 step={param.type === 'float' ? '0.1' : '1'}
                 value={parameterValues[param.name] ?? ''}
+                disabled={datasetPreparing || runBacktest.isPending}
                 onChange={(event) =>
                   setParameterValues((current) => ({
                     ...current,
@@ -230,6 +234,7 @@ export function BacktestRunSetupPanel() {
   const {
     advancedToolsOpen,
     corporateActionMode,
+    datasetPreparing,
     costInputs,
     endDate,
     initialCash,
@@ -242,6 +247,7 @@ export function BacktestRunSetupPanel() {
     searchDefaults,
     selectedAssetClassLabel,
     selectedDataset,
+    runBacktest,
     runAssets,
     universeError,
     selectedStrategy,
@@ -255,7 +261,11 @@ export function BacktestRunSetupPanel() {
     symbol,
   } = useBacktestPage();
   const advancedDisabledReason =
-    universeError ||
+    (datasetPreparing || runBacktest.isPending
+      ? labels.running
+      : !startDate || !endDate || startDate > endDate
+        ? labels.dateRangeInvalid
+        : universeError) ||
     (!datasetMatchesResearchInputs(
       selectedDataset,
       runAssets,
@@ -275,6 +285,7 @@ export function BacktestRunSetupPanel() {
       }`}
       data-testid="backtest-run-setup-disclosure"
       id="backtest-mobile-setup"
+      aria-labelledby="backtest-tab-setup"
       open={mobileWorkspaceView === 'setup'}
       onToggle={(event) => {
         const nextView = event.currentTarget.open ? 'setup' : 'results';
@@ -310,6 +321,7 @@ export function BacktestRunSetupPanel() {
           <StrategyCatalogPanel
             strategyCatalog={strategyCatalog}
             selectedStrategyName={strategy}
+            disabled={datasetPreparing || runBacktest.isPending}
             onSelect={setStrategy}
           />
         </div>

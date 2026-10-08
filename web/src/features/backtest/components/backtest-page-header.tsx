@@ -86,7 +86,7 @@ export function BacktestPageHeader() {
 
       <div
         aria-label={labels.title}
-        className="flex items-center gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-1"
+        className="flex items-center gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-1 xl:hidden"
         data-workspace-view={mobileWorkspaceView}
         data-testid="backtest-mobile-workspace-tabs"
         role="tablist"
@@ -94,7 +94,7 @@ export function BacktestPageHeader() {
         {[
           { id: 'setup' as const, label: labels.formKicker },
           { id: 'results' as const, label: labels.resultsWorkspaceTab },
-        ].map((item) => (
+        ].map((item, index, tabs) => (
           <button
             aria-controls={`backtest-mobile-${item.id}`}
             aria-selected={mobileWorkspaceView === item.id}
@@ -104,11 +104,32 @@ export function BacktestPageHeader() {
                 : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
             }`}
             key={item.id}
+            id={`backtest-tab-${item.id}`}
             onClick={() => {
               setMobileWorkspaceTouched(true);
               setMobileWorkspaceView(item.id);
             }}
+            onKeyDown={(event) => {
+              const nextIndex =
+                event.key === 'ArrowRight'
+                  ? (index + 1) % tabs.length
+                  : event.key === 'ArrowLeft'
+                    ? (index - 1 + tabs.length) % tabs.length
+                    : event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? tabs.length - 1
+                        : null;
+              if (nextIndex === null) return;
+              event.preventDefault();
+              setMobileWorkspaceTouched(true);
+              setMobileWorkspaceView(tabs[nextIndex].id);
+              event.currentTarget.parentElement
+                ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                [nextIndex]?.focus();
+            }}
             role="tab"
+            tabIndex={mobileWorkspaceView === item.id ? 0 : -1}
             type="button"
           >
             {item.label}

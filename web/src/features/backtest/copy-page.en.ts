@@ -31,6 +31,9 @@ export const backtestPageEn = {
   runContextReviewHolding: 'Review holding detail',
   startDate: 'Start date',
   endDate: 'End date',
+  runContextReviewPortfolio: 'Review portfolio',
+  dateRangeInvalid:
+    'Choose both dates. The start date must be on or before the end date.',
   initialCash: 'Initial cash',
   strategy: 'Strategy',
   strategyNames: {

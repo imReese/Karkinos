@@ -114,6 +114,9 @@ export function useUpdateAccountStrategyAssignmentMutation() {
       void queryClient.invalidateQueries({
         queryKey: ['account-strategy-contribution'],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ['holding-strategy-attribution'],
+      });
     },
   });
 }
@@ -135,6 +138,9 @@ export function useUpdateScopedAccountStrategyAssignmentMutation() {
       });
       void queryClient.invalidateQueries({
         queryKey: ['account-strategy-contribution'],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['holding-strategy-attribution'],
       });
     },
   });

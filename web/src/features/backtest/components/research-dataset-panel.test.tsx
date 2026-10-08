@@ -14,6 +14,7 @@ const context = vi.hoisted(() => ({
   selectedDataset: null,
   selectDataset: vi.fn(),
   setDatasetPreparing: vi.fn(),
+  runBacktest: { isPending: false },
 }));
 vi.mock('./backtest-page-context', () => ({ useBacktestPage: () => context }));
 
@@ -30,6 +31,7 @@ const dataset = {
 
 afterEach(() => {
   context.runAssets = undefined;
+  context.runBacktest.isPending = false;
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
