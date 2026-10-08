@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -48,8 +49,19 @@ def _returns(
             or not series.index.is_monotonic_increasing
         ):
             raise ValueError("benchmark_returns_index_invalid")
-        if np.iscomplexobj(series.to_numpy()) or any(
-            isinstance(value, (bool, np.bool_)) for value in series
+        # NumPy casts temporal values (even inside object arrays) to their unit
+        # counts. Those finite numbers must never become return observations.
+        if (
+            pd.api.types.is_datetime64_any_dtype(series.dtype)
+            or pd.api.types.is_timedelta64_dtype(series.dtype)
+            or np.iscomplexobj(series.to_numpy())
+            or any(
+                isinstance(
+                    value,
+                    (bool, np.bool_, date, timedelta, np.datetime64, np.timedelta64),
+                )
+                for value in series
+            )
         ):
             raise ValueError("benchmark_returns_values_invalid")
     if not portfolio.index.equals(benchmark.index):

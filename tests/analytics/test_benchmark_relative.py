@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from statistics import stdev
 
 import numpy as np
@@ -136,6 +138,49 @@ def test_boolean_or_complex_values_are_not_silently_coerced_to_returns(bad):
         evaluate_benchmark_relative(
             portfolio, benchmark, risk_free_rate=0.0, periods_per_year=252
         )
+
+
+@pytest.mark.parametrize(
+    "values,dtype",
+    [
+        (pd.date_range("2026-01-01", periods=3), None),
+        (pd.date_range("2026-01-01", periods=3, tz="UTC"), None),
+        (pd.to_timedelta([1, 2, 3], unit="D"), None),
+        ([datetime(2026, 1, 1)] * 3, object),
+        ([date(2026, 1, 1)] * 3, object),
+        ([timedelta(days=1)] * 3, object),
+        ([np.datetime64("2026-01-01")] * 3, object),
+        ([np.timedelta64(1, "D")] * 3, object),
+        ([Decimal("0.01"), pd.Timestamp("2026-01-01"), Decimal("0.03")], object),
+    ],
+)
+def test_temporal_values_are_not_cast_to_numeric_returns(values, dtype):
+    index = pd.date_range("2026-01-01", periods=3)
+    invalid = pd.Series(values, index=index, dtype=dtype)
+    valid = pd.Series([0.01, 0.02, 0.03], index=index)
+    for portfolio, benchmark in ((invalid, valid), (valid, invalid)):
+        with pytest.raises(ValueError, match="benchmark_returns_values_invalid"):
+            evaluate_benchmark_relative(
+                portfolio, benchmark, risk_free_rate=0.0, periods_per_year=252
+            )
+
+
+def test_object_decimal_returns_keep_the_same_metrics_as_numeric_returns():
+    portfolio, benchmark = returns([0.01, -0.02, 0.03]), returns([0.02, 0.01, 0.015])
+    decimal_portfolio = portfolio.map(lambda value: Decimal(str(value)))
+    decimal_benchmark = benchmark.map(lambda value: Decimal(str(value)))
+    expected = evaluate_benchmark_relative(
+        portfolio, benchmark, risk_free_rate=0.0, periods_per_year=252
+    )
+    assert (
+        evaluate_benchmark_relative(
+            decimal_portfolio,
+            decimal_benchmark,
+            risk_free_rate=0.0,
+            periods_per_year=252,
+        )
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
