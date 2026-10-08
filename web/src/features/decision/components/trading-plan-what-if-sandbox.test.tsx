@@ -121,7 +121,10 @@ describe('TradingPlanWhatIfSandbox', () => {
     expect(
       within(sandbox).getAllByText(/推演双边换手率/).length,
     ).toBeGreaterThan(0);
-    expect(within(sandbox).getByText(/现金储备充裕/)).toBeTruthy();
+    expect(within(sandbox).getByText(/净现金非负/)).toBeTruthy();
+    expect(within(sandbox).getByText(/不判定正式风控/)).toBeTruthy();
+    expect(within(sandbox).queryByText('满足前置风控')).toBeNull();
+    expect(within(sandbox).queryByText('现金储备充裕')).toBeNull();
   });
 
   it('updates simulated values when toggling candidates and allows resetting', () => {
@@ -149,5 +152,111 @@ describe('TradingPlanWhatIfSandbox', () => {
 
     // Reset button should disappear
     expect(within(sandbox).queryByText(/重置为模型推荐/)).toBeNull();
+  });
+
+  it('does not call positive net cash a risk pass when a sale funds an earlier buy', () => {
+    const plan = {
+      ...mockPlan,
+      available_cash: 100,
+      order_intents: [
+        {
+          ...mockPlan.order_intents[0],
+          target_weight: 0.1,
+          estimated_price: 10,
+        },
+        {
+          ...mockPlan.order_intents[1],
+          side: 'sell',
+          target_weight: 0,
+          estimated_price: 10,
+          position_effect: {
+            ...mockPlan.order_intents[1].position_effect!,
+            current_quantity: 2000,
+          },
+        },
+      ],
+    };
+    render(
+      <PreferencesProvider>
+        <TradingPlanWhatIfSandbox plan={plan} />
+      </PreferencesProvider>,
+    );
+    expect(screen.getByText('净现金非负')).toBeTruthy();
+    expect(screen.getByText(/顺序融资条件/)).toBeTruthy();
+    expect(screen.queryByText('满足前置风控')).toBeNull();
+    expect(screen.queryByText('资金充足率状态')).toBeNull();
+  });
+
+  it.each([
+    ['missing equity', { total_equity: undefined }],
+    ['zero equity', { total_equity: 0 }],
+    ['negative equity', { total_equity: -1 }],
+    ['non-finite equity', { total_equity: Number.POSITIVE_INFINITY }],
+    ['missing cash', { available_cash: undefined }],
+    ['negative cash', { available_cash: -1 }],
+    ['non-finite cash', { available_cash: Number.NaN }],
+  ])(
+    'shows preparation conditions instead of invented amounts for %s',
+    (_name, invalid) => {
+      const plan = { ...mockPlan, ...invalid } as DailyTradingPlanResponse;
+      render(
+        <PreferencesProvider>
+          <TradingPlanWhatIfSandbox plan={plan} />
+        </PreferencesProvider>,
+      );
+      expect(screen.getByRole('status').textContent).toContain('无法推演');
+      expect(screen.getByRole('status').textContent).toContain('总权益');
+      expect(screen.queryByText('假设净现金余额')).toBeNull();
+      const rows = screen.getAllByRole('row').slice(1);
+      for (const row of rows) {
+        const cells = within(row).getAllByRole('cell');
+        expect(cells[5].textContent).toBe('—');
+        expect(cells[6].textContent).toBe('—');
+      }
+      expect(
+        screen.getByTestId('decision-what-if-sandbox').textContent,
+      ).not.toMatch(/NaN|Infinity/);
+    },
+  );
+
+  it.each([undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'requires a valid included price (%s) and resumes after excluding that instrument',
+    (price) => {
+      const plan = {
+        ...mockPlan,
+        order_intents: [
+          { ...mockPlan.order_intents[0], estimated_price: price as number },
+          mockPlan.order_intents[1],
+        ],
+      };
+      render(
+        <PreferencesProvider>
+          <TradingPlanWhatIfSandbox plan={plan} />
+        </PreferencesProvider>,
+      );
+      expect(screen.getByRole('status').textContent).toContain('有效价格');
+      expect(screen.queryByText('假设净现金余额')).toBeNull();
+      fireEvent.click(screen.getAllByRole('checkbox')[0]);
+      expect(screen.queryByRole('status')).toBeNull();
+      expect(screen.getByText('假设净现金余额')).toBeTruthy();
+      fireEvent.click(screen.getAllByRole('checkbox')[0]);
+      expect(screen.getByRole('status').textContent).toContain('无法推演');
+    },
+  );
+
+  it('keeps zero cash valid and charges no illustrative fee for unchanged holdings', () => {
+    const plan = {
+      ...mockPlan,
+      available_cash: 0,
+      order_intents: [{ ...mockPlan.order_intents[0], target_weight: 0 }],
+    };
+    render(
+      <PreferencesProvider>
+        <TradingPlanWhatIfSandbox plan={plan} />
+      </PreferencesProvider>,
+    );
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByText('净现金非负')).toBeTruthy();
+    expect(screen.queryByText('假设净现金为负')).toBeNull();
   });
 });
