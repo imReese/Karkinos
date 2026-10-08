@@ -62,6 +62,7 @@ export function useConfigureObservationAutomation() {
       enabled: boolean;
       expectedGeneration: string | null;
       paperSettlementEnabled?: boolean;
+      datasetPreparationEnabled?: boolean;
     }) => {
       const url = `${path}/${encodeURIComponent(command.observationId)}`;
       await putJson(`${url}/automation`, {
@@ -69,6 +70,9 @@ export function useConfigureObservationAutomation() {
         ...(command.paperSettlementEnabled === undefined
           ? {}
           : { paper_settlement_enabled: command.paperSettlementEnabled }),
+        ...(command.datasetPreparationEnabled === undefined
+          ? {}
+          : { dataset_preparation_enabled: command.datasetPreparationEnabled }),
         expected_generation: command.expectedGeneration,
       });
       const observation = await apiClient<ResearchObservation>(url);

@@ -368,6 +368,30 @@ def test_identified_matching_newest_bad_evidence_blocks_without_older_fallback(j
     assert service.repository.get(started["id"])["version"] == 0
 
 
+def test_data_supply_opt_in_rejects_a_newer_dataset_that_replaces_frozen_history(
+    journey, tmp_path
+):
+    client, service, current, ref, result_id = journey
+    started, _ = start(client, result_id)
+    response = client.put(
+        f"/api/research-observations/{started['id']}/automation",
+        json={"enabled": True, "dataset_preparation_enabled": True},
+    )
+    assert response.status_code == 200, response.text
+    register(service, ref)
+    current[0] = NOW + timedelta(seconds=2)
+    _, revised = dataset(
+        tmp_path / "research",
+        cutoff=NOW + timedelta(seconds=1),
+        closes={DAYS[0]: "12"},
+    )
+    register(service, revised)
+    report = automation.run_research_observation_automation_once(service)[0]
+    assert report["dataset_id"] == revised.dataset_id
+    assert report["last_blocker"]["code"] == "observation_dataset_frozen_prefix_changed"
+    assert service.repository.get(started["id"])["version"] == 0
+
+
 def test_restart_skips_missed_session_and_unresolved_outcomes_do_not_empty_write(
     journey, tmp_path, monkeypatch
 ):

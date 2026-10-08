@@ -33,6 +33,7 @@ from server.services.research_observation_inputs import (
     latest_closed_session,
     observation_outcome_sessions,
     read_research_observation_dataset,
+    require_observation_dataset_prefix,
 )
 from server.services.research_observations import (
     ResearchObservationService,
@@ -51,6 +52,7 @@ def configure_observation_automation(
     enabled: bool,
     expected_generation: str | None,
     paper_settlement_enabled: bool = False,
+    dataset_preparation_enabled: bool | None = None,
 ) -> dict[str, Any]:
     payload = {
         "schema_version": OBSERVATION_AUTOMATION_SCHEMA,
@@ -62,6 +64,8 @@ def configure_observation_automation(
         "local_data_only": True,
         "account_authority": False,
     }
+    if dataset_preparation_enabled is not None:
+        payload["dataset_preparation_enabled"] = dataset_preparation_enabled
     now = _now(service)
     AutomationRunRepository(service.db.path).configure_observation_automation(
         payload=payload, expected_generation=expected_generation, now=now.isoformat()
@@ -78,6 +82,9 @@ def project_observation_automation(service, observation) -> dict[str, Any]:
     valid = observation_automation_policy_valid(policy, identity)
     enabled = valid and policy["enabled"] is True
     paper_enabled = valid and policy.get("paper_settlement_enabled", False) is True
+    preparation_enabled = (
+        valid and policy.get("dataset_preparation_enabled", False) is True
+    )
     run = store.get_automation_run_sync(_run_id(identity))
     payload = _run_payload(run)
     invalid_run = payload is None
@@ -102,6 +109,10 @@ def project_observation_automation(service, observation) -> dict[str, Any]:
         "observation_id": identity,
         "enabled": enabled,
         "paper_settlement_enabled": paper_enabled,
+        "dataset_preparation_enabled": preparation_enabled,
+        "dataset_preparation": _project_dataset_preparation(
+            store, identity, generation, preparation_enabled
+        ),
         "paper_settlement": _project_paper_settlement(
             store, identity, generation, paper_enabled
         ),
@@ -151,6 +162,24 @@ def _project_paper_settlement(store, identity, generation, enabled):
     }
 
 
+def _project_dataset_preparation(store, identity, generation, enabled):
+    payload = (
+        _run_payload(store.get_automation_run_sync(_run_id(identity) + ":data")) or {}
+    )
+    if payload.get("generation") != generation:
+        payload = {}
+    return {
+        "enabled": enabled,
+        "status": payload.get("status", "ready") if enabled else "disabled",
+        "last_checked_at": payload.get("last_checked_at"),
+        "through_session": payload.get("through_session"),
+        "last_blocker": payload.get("last_blocker"),
+        "dataset_id": payload.get("dataset_id"),
+        "job_ids": payload.get("job_ids", []),
+        "account_authority": False,
+    }
+
+
 def _settle_opted_paper(service, observation, policy, stopped):
     """Separate standing permission; target pause retains valuation of holdings."""
     from server.services.research_paper_books import ResearchPaperBookService
@@ -180,6 +209,10 @@ def _settle_opted_paper(service, observation, policy, stopped):
                 service, observation, now, closed, unreadable_candidate_dataset_ids=[]
             )
             dataset_id = entry.ref.dataset_id
+            if policy.get("dataset_preparation_enabled", False):
+                require_observation_dataset_prefix(
+                    service.objects, observation["source"], snapshot
+                )
             if (snapshot.start_date, snapshot.end_date, snapshot.cutoff) != (
                 date.fromisoformat(book["source"]["start_date"]),
                 closed,
@@ -481,6 +514,10 @@ def run_research_observation_automation_once(
                 # validation failure must expose this ID and never try an older
                 # matching Dataset. Catalog metadata alone cannot admit it.
                 dataset_id = entry.ref.dataset_id
+                if policy.get("dataset_preparation_enabled", False):
+                    require_observation_dataset_prefix(
+                        service.objects, observation["source"], snapshot
+                    )
                 if (snapshot.start_date, snapshot.end_date, snapshot.cutoff) != (
                     date.fromisoformat(observation["source"]["start_date"]),
                     decision_session,

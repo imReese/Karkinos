@@ -8,6 +8,7 @@ import {
   automationBlocker,
   observationAutomationCopy,
 } from '../copy-observation-automation';
+import { ObservationDataPreparation } from './observation-data-preparation';
 
 export function ObservationAutomationControls({
   observation,
@@ -82,6 +83,8 @@ export function ObservationAutomationControls({
               sourceResultId: observation.source_backtest_result_id,
               enabled: !automation.enabled,
               paperSettlementEnabled: automation.paper_settlement?.enabled,
+              datasetPreparationEnabled:
+                automation.dataset_preparation?.enabled,
               expectedGeneration: automation.generation,
             });
           }}
@@ -102,6 +105,31 @@ export function ObservationAutomationControls({
           {labels.refresh}
         </button>
       </div>
+      {automation?.dataset_preparation ? (
+        <ObservationDataPreparation
+          preparation={automation.dataset_preparation}
+          disabled={
+            blocked ||
+            readFailed ||
+            mutation.isError ||
+            refreshFailed ||
+            (paused &&
+              !automation.dataset_preparation.enabled &&
+              !automation.paper_settlement?.enabled)
+          }
+          onToggle={() =>
+            mutation.mutate({
+              observationId: observation.id,
+              sourceResultId: observation.source_backtest_result_id,
+              enabled: automation.enabled,
+              expectedGeneration: automation.generation,
+              paperSettlementEnabled: automation.paper_settlement?.enabled,
+              datasetPreparationEnabled:
+                !automation.dataset_preparation!.enabled,
+            })
+          }
+        />
+      ) : null}
       {automation?.paper_settlement ? (
         <div className="space-y-2 border-t border-[var(--app-divider)] pt-3">
           <h5 className="font-semibold">
@@ -148,6 +176,8 @@ export function ObservationAutomationControls({
                 enabled: automation.enabled,
                 expectedGeneration: automation.generation,
                 paperSettlementEnabled: !automation.paper_settlement!.enabled,
+                datasetPreparationEnabled:
+                  automation.dataset_preparation?.enabled,
               })
             }
           >

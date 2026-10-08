@@ -308,7 +308,7 @@ def test_saved_source_rejects_unbound_or_changed_inputs(tmp_path, change, error)
         load_research_observation_source(row, objects)
 
 
-def formula_source():
+def formula_source(*, research_dataset_binding=None):
     frame = pd.DataFrame(
         {
             "timestamp": pd.date_range("2026-09-14", periods=5),
@@ -332,6 +332,7 @@ def formula_source():
         source_names=["fixture"],
         store=None,
         data_handlers={Symbol(STOCK.symbol): handler},
+        research_dataset_binding=research_dataset_binding,
     )
     field = {"op": "field", "name": "close"}
     binding = FormulaBinding(
@@ -402,6 +403,31 @@ def test_formula_uses_actual_saved_snapshot_and_canonical_sizing_without_account
     assert restored["minimum_bars"] == 4
     assert Decimal(restored["entry_target_weight"]) == 1
     assert restored["formula_binding"]["formula_ast"]["position_size"]["value"] == 0.02
+    assert restored["source_historical_pit_verified"] is False
+
+
+def test_formula_keeps_existing_immutable_input_identity_without_upgrading_authority(
+    tmp_path,
+):
+    dataset_id = "sha256:" + "a" * 64
+    row = formula_source(
+        research_dataset_binding={
+            "dataset_id": dataset_id,
+            "cutoff": NOW.isoformat(),
+            "price_basis": "unadjusted",
+            "cross_source_verified": True,
+            "point_in_time_verified": False,
+            "limitations": ["Historical availability unverified", "Price-only returns"],
+        }
+    )
+    restored = load_research_observation_source(
+        row, ContentAddressedObjectStore(tmp_path / "empty")
+    )
+    assert restored["immutable_dataset_id"] == dataset_id
+    assert (
+        restored["dataset_id"] == row["metrics_json"]["dataset_snapshot"]["snapshot_id"]
+    )
+    assert restored["source_dataset_kind"] == "analytics_snapshot"
     assert restored["source_historical_pit_verified"] is False
 
 

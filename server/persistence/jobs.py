@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -113,6 +113,7 @@ class SQLiteJobStore:
         payloads: Iterable[dict[str, Any]],
         *,
         now: datetime,
+        guard: Callable[[sqlite3.Connection], None] | None = None,
     ) -> tuple[JobRun, ...]:
         """Enqueue an entire explicit batch in one transaction or none of it."""
         prepared = tuple(_job_identity(kind, payload) for payload in payloads)
@@ -120,6 +121,8 @@ class SQLiteJobStore:
             return ()
         at = job_time(now)
         with self._transaction() as conn:
+            if guard is not None:
+                guard(conn)
             jobs: list[JobRun] = []
             for job_id, fingerprint, encoded in prepared:
                 conn.execute(
@@ -139,6 +142,22 @@ class SQLiteJobStore:
                     raise JobIdentityConflictError("job_identity_conflict")
                 jobs.append(_job(row))
             return tuple(jobs)
+
+    def list_verified_observation_jobs(
+        self, observation_id: str, *, start_date: str, end_date: str
+    ) -> tuple[JobRun, ...]:
+        """Read the observation's exact daily grants, including earlier generations."""
+        with closing(connect_sqlite(self.path, readonly=True)) as conn:
+            rows = conn.execute(
+                "SELECT job_id FROM job_runs WHERE kind='market_daily_verified' "
+                "AND CASE WHEN json_valid(payload_json) THEN "
+                "json_extract(payload_json, '$.observation_automation.observation_id') END=? "
+                "AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json "
+                "ELSE '{}' END, '$.trade_date') BETWEEN ? AND ? "
+                "ORDER BY created_at DESC, job_id DESC",
+                (observation_id, start_date, end_date),
+            ).fetchall()
+        return tuple(job for row in rows if (job := self.get(row[0])) is not None)
 
     def claim(self, kind, owner, *, now, lease_seconds=60, job_id=None):
         if not owner.strip() or lease_seconds <= 0:
@@ -201,11 +220,13 @@ class SQLiteJobStore:
                 ),
             )
 
-    def finish(self, lease, *, now, result_ref):
+    def finish(self, lease, *, now, result_ref, guard=None):
         if not result_ref.strip():
             raise ValueError("job_result_ref_required")
         with self._transaction() as conn:
             require_job_lease(conn, lease, now=now)
+            if guard is not None:
+                guard(conn)
             conn.execute(
                 "UPDATE job_runs SET status='succeeded', result_ref=?, error=NULL, "
                 "failure_evidence_ref=NULL, "

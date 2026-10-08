@@ -69,6 +69,7 @@ def create_router() -> APIRouter:
                 str(observation_id),
                 enabled=request.enabled,
                 paper_settlement_enabled=request.paper_settlement_enabled,
+                dataset_preparation_enabled=request.dataset_preparation_enabled,
                 expected_generation=(
                     str(request.expected_generation)
                     if request.expected_generation is not None

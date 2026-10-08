@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from analytics.dataset_snapshot import backtest_dataset_snapshot_content_id
 from core.types import InstrumentKey, InstrumentType
-from data.dataset.model import DatasetRef
+from data.dataset.model import DailyBarDatasetSnapshot, DatasetRef
 from data.dataset.reader import DailyBarDatasetReadResult, read_daily_bar_dataset
 from data.market.capture import read_provider_capture
 from data.market.quality_evidence import read_market_quality_evidence
@@ -164,6 +164,37 @@ def read_research_observation_dataset(
             "observation_bound_evidence_unreadable"
         ) from None
     return result
+
+
+def require_observation_dataset_prefix(
+    objects: ContentAddressedObjectStore,
+    source: Mapping[str, Any],
+    snapshot: DailyBarDatasetSnapshot,
+) -> None:
+    """An opted-in input supply must preserve its frozen research prefix."""
+    identity = (
+        source["dataset_id"]
+        if source["source_dataset_kind"] == "immutable_dataset"
+        else source.get("immutable_dataset_id")
+    )
+    if not identity:
+        raise ResearchObservationInputError(
+            "observation_data_preparation_verified_source_required"
+        )
+    original = _read(objects, identity).snapshot
+    if (
+        not original.verification_bound
+        or original.instruments != snapshot.instruments
+        or original.start_date != snapshot.start_date
+        or original.end_date > snapshot.end_date
+        or original.resolver_policy_id != snapshot.resolver_policy_id
+        or original.market_schema_version != snapshot.market_schema_version
+        or original.partitions != snapshot.partitions[: len(original.partitions)]
+        or not set(original.corporate_action_observation_ids).issubset(
+            snapshot.corporate_action_observation_ids
+        )
+    ):
+        raise ResearchObservationInputError("observation_dataset_frozen_prefix_changed")
 
 
 def latest_closed_session(
@@ -359,6 +390,11 @@ def _formula_source(config, metrics, start, end):
         "parameters": binding.parameter_values,
         "dataset_id": binding.dataset_snapshot_id,
         "source_dataset_kind": "analytics_snapshot",
+        **(
+            {"immutable_dataset_id": snapshot["immutable_dataset_id"]}
+            if snapshot.get("immutable_dataset_id") is not None
+            else {}
+        ),
         "instruments": _instrument_payload(instruments),
         "minimum_bars": max(_warmup(binding.formula_ast[k]) for k in ("entry", "exit")),
         "entry_target_weight": str(Decimal(1) / Decimal(min(4, len(instruments)))),

@@ -26,6 +26,7 @@ def observation_automation_policy_valid(value: object, observation_id: str) -> b
         and value.get("observation_id") == observation_id
         and type(value.get("enabled")) is bool
         and type(value.get("paper_settlement_enabled", False)) is bool
+        and type(value.get("dataset_preparation_enabled", False)) is bool
         and value.get("dataset_selection") == OBSERVATION_DATASET_SELECTION
         and value.get("local_data_only") is True
         and value.get("account_authority") is False

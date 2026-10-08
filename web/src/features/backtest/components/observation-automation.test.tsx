@@ -133,6 +133,84 @@ async function controls() {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test('data preparation is separately enabled and preserved by the other controls', async () => {
+  const saved = observation();
+  saved.automation = {
+    ...state(),
+    generation,
+    paper_settlement: {
+      enabled: false,
+      status: 'disabled',
+      last_checked_at: null,
+      last_settled_session: null,
+      last_blocker: null,
+      dataset_id: null,
+    },
+    dataset_preparation: {
+      enabled: false,
+      status: 'disabled',
+      last_checked_at: null,
+      through_session: null,
+      last_blocker: null,
+      dataset_id: null,
+      job_ids: [],
+    },
+  };
+  const writes: Record<string, unknown>[] = [];
+  mount(async (url, init) => {
+    if (url.endsWith('/automation') && init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body));
+      writes.push(body);
+      saved.automation = {
+        ...saved.automation!,
+        generation: nextGeneration,
+        enabled: body.enabled,
+        status: body.enabled ? 'ready' : 'disabled',
+        dataset_preparation: {
+          ...saved.automation!.dataset_preparation!,
+          enabled: body.dataset_preparation_enabled,
+          status: body.dataset_preparation_enabled ? 'ready' : 'disabled',
+        },
+        paper_settlement: {
+          ...saved.automation!.paper_settlement!,
+          enabled: body.paper_settlement_enabled,
+        },
+      };
+      return json(saved.automation);
+    }
+    return json(
+      url === `/api/research-observations/${identity}` ? saved : [saved],
+    );
+  });
+  const panel = await controls();
+  fireEvent.click(
+    panel.getByRole('button', { name: 'Enable automatic data preparation' }),
+  );
+  await panel.findByRole('button', {
+    name: 'Disable automatic data preparation',
+  });
+  expect(writes[0]).toEqual({
+    enabled: false,
+    paper_settlement_enabled: false,
+    dataset_preparation_enabled: true,
+    expected_generation: generation,
+  });
+  fireEvent.click(
+    panel.getByRole('button', { name: 'Enable automatic advance' }),
+  );
+  await panel.findByRole('button', { name: 'Disable automatic advance' });
+  expect(writes[1].dataset_preparation_enabled).toBe(true);
+  expect(writes[1].paper_settlement_enabled).toBe(false);
+  fireEvent.click(
+    panel.getByRole('button', { name: 'Enable paper automatic settlement' }),
+  );
+  await panel.findByRole('button', {
+    name: 'Disable paper automatic settlement',
+  });
+  expect(writes[2].dataset_preparation_enabled).toBe(true);
+  expect(writes[2].enabled).toBe(true);
+});
+
 test('paper settlement is separately opted in and survives toggling forecast advance', async () => {
   const saved = observation();
   saved.automation = {

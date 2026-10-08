@@ -8,7 +8,7 @@ export const observationAutomationCopy = {
       'Opt in separately for this observation. While the service is running, it checks about every 5 minutes and uses only complete, locally verified Datasets. It does not call data providers or grant account authority.',
     window:
       'Publication window: 16:00 after market close to 09:30 on the next trading day (Shanghai time). Missed windows are not backfilled.',
-    data: 'Prepare and verify new Datasets through the existing data controls. Missing data waits; enabling this setting does not fetch it.',
+    data: 'Supply new Datasets manually or enable automatic data preparation separately. Missing data waits; automatic advance alone does not fetch it.',
     separate:
       'Turning automatic advance off does not pause the observation. Manual publication and measurement remain available; paused observations can still be measured manually.',
     enable: 'Enable automatic advance',
@@ -42,7 +42,7 @@ export const observationAutomationCopy = {
     completed: 'Current decision session processed',
     blocked: 'Automatic advance blocked',
     missing:
-      'No complete verified local Dataset is available. Prepare and verify the required data manually.',
+      'No complete verified local Dataset is available. Prepare the required data or inspect automatic data preparation.',
     unreadable:
       'Local Dataset evidence could not be read or verified. Inspect the discovery details and prepare verified data.',
     missed:
@@ -59,7 +59,7 @@ export const observationAutomationCopy = {
       '每条观察单独选择启用。服务运行时约每 5 分钟检查一次，只使用本地完整且已核验的 Dataset，不调用数据供应商，也不授予账户权限。',
     window:
       '发布窗口为收盘当日 16:00 至下一交易日 09:30（北京时间），错过窗口不会补发。',
-    data: '新增 Dataset 仍须通过现有数据界面手动准备和核验。缺少数据时等待，打开开关不会自动获取数据。',
+    data: '新增 Dataset 可手动准备，也可单独启用数据自动准备。缺少数据时等待，仅启用自动推进不会获取数据。',
     separate:
       '关闭自动推进不等于暂停观察，手动发布和评估仍可用；已暂停观察仍可手动评估已有发布。',
     enable: '启用自动推进',
@@ -88,7 +88,8 @@ export const observationAutomationCopy = {
     ready: '已启用 · 等待下一次检查',
     completed: '当前决策交易日已处理',
     blocked: '自动推进已阻断',
-    missing: '暂无完整、已核验的本地 Dataset，请手动准备并核验所需数据。',
+    missing:
+      '暂无完整、已核验的本地 Dataset，请准备所需数据或检查数据自动准备状态。',
     unreadable: '本地 Dataset 证据无法读取或核验，请查看详情并准备已核验数据。',
     missed: '已错过发布窗口，自动推进不会补发该交易日。',
     beforeClose: '等待最近交易日收盘后的 16:00。',

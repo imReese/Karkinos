@@ -38,6 +38,8 @@ def require_observation_automation_policy(
     generation: str,
     *,
     paper_settlement=False,
+    dataset_preparation=False,
+    require_active: bool = True,
 ) -> None:
     """Fence a scheduled observation write under its existing write lock."""
     row = conn.execute(
@@ -49,13 +51,29 @@ def require_observation_automation_policy(
         value is None
         or not observation_automation_policy_valid(value, observation_id)
         or (
-            value.get("paper_settlement_enabled", False) is not True
+            value.get("dataset_preparation_enabled", False) is not True
+            if dataset_preparation
+            else value.get("paper_settlement_enabled", False) is not True
             if paper_settlement
             else value["enabled"] is not True
         )
         or value["generation"] != generation
     ):
         raise ValueError("observation_automation_policy_conflict")
+    if dataset_preparation and require_active:
+        row = conn.execute(
+            "SELECT lifecycle FROM research_observations WHERE id=?", (observation_id,)
+        ).fetchone()
+        has_paper_permission = (
+            value.get("paper_settlement_enabled", False) is True
+            and conn.execute(
+                "SELECT 1 FROM research_paper_books WHERE observation_id=?",
+                (observation_id,),
+            ).fetchone()
+            is not None
+        )
+        if row is None or (row["lifecycle"] != "active" and not has_paper_permission):
+            raise ValueError("observation_data_preparation_paused")
 
 
 def upsert_automation_run_in_transaction(
@@ -144,7 +162,24 @@ class AutomationRunRepository(SQLiteRepository):
             previous = _observation_policy_payload(row, observation_id)
             if (previous or {}).get("generation") != expected_generation:
                 raise ValueError("observation_automation_policy_conflict")
-            if payload["enabled"] and observation["lifecycle"] != "active":
+            payload.setdefault(
+                "dataset_preparation_enabled",
+                (previous or {}).get("dataset_preparation_enabled", False),
+            )
+            if (
+                payload["enabled"]
+                and observation["lifecycle"] != "active"
+                and not (
+                    (previous or {}).get("enabled") is True
+                    and any(
+                        payload.get(key, False) != (previous or {}).get(key, False)
+                        for key in (
+                            "paper_settlement_enabled",
+                            "dataset_preparation_enabled",
+                        )
+                    )
+                )
+            ):
                 raise ValueError("observation_automation_paused")
             if (
                 payload.get("paper_settlement_enabled")
@@ -206,6 +241,7 @@ class AutomationRunRepository(SQLiteRepository):
         stop_requested: Callable[[], bool],
         now: str,
         paper_settlement: bool = False,
+        dataset_preparation: bool = False,
     ) -> bool:
         """Fence the rebuildable projection too when activation/disable races it."""
         with connect_sqlite(self._path) as conn:
@@ -215,12 +251,46 @@ class AutomationRunRepository(SQLiteRepository):
                 return False
             try:
                 require_observation_automation_policy(
-                    conn, observation_id, generation, paper_settlement=paper_settlement
+                    conn,
+                    observation_id,
+                    generation,
+                    paper_settlement=paper_settlement,
+                    dataset_preparation=dataset_preparation,
+                    require_active=False,
                 )
             except ValueError:
                 return False
             upsert_automation_run_in_transaction(conn, run, now=now)
         return True
+
+    def publish_observation_dataset(
+        self,
+        *,
+        observation_id: str,
+        generation: str,
+        stop_requested: Callable[[], bool],
+        publish: Callable[[], Any],
+    ) -> Any:
+        """Hold the opt-in write lock through the bounded offline catalog publish."""
+        with connect_sqlite(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            if stop_requested():
+                raise ValueError("observation_data_preparation_stopped")
+            require_observation_automation_policy(
+                conn, observation_id, generation, dataset_preparation=True
+            )
+            return publish()
+
+    def require_observation_dataset_preparation(
+        self, observation_id: str, generation: str
+    ) -> None:
+        """Read current data permission before entering the provider boundary."""
+        with connect_sqlite(self._path, readonly=True) as conn:
+            conn.row_factory = sqlite3.Row
+            require_observation_automation_policy(
+                conn, observation_id, generation, dataset_preparation=True
+            )
 
     def get_automation_policy_sync(self, policy_id: str) -> dict[str, Any] | None:
         """Read one persisted automation policy by ID."""

@@ -136,7 +136,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
     expected = {
         "ai_shadow_research_uow.py": 1,
         "analysis_reviews.py": 1,
-        "automation_runs.py": 2,
+        "automation_runs.py": 3,  # Policy CAS, status and fenced Dataset publication.
         "broker_connector_soak.py": 1,
         "controlled_broker_cancellation_uow.py": 4,
         "controlled_broker_write_releases.py": 2,

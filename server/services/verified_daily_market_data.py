@@ -257,6 +257,7 @@ class VerifiedDailyMarketDataService:
         before_publish: Callable[[], None] | None = None,
         before_provider_fetch: Callable[[MarketDataProviderDescriptor], None]
         | None = None,
+        publication_guard: Callable[[Callable[[], None]], None] | None = None,
     ) -> VerifiedDailyMarketPublication:
         request = VerifiedDailyMarketJobRequest.from_payload(payload)
         checked_at = _utc_now(checked_at) if checked_at is not None else None
@@ -374,17 +375,21 @@ class VerifiedDailyMarketDataService:
         if before_publish is not None:
             before_publish()
 
-        DatasetCatalog(self.root).register(
-            store,
-            dataset_ref,
-            registered_at=verified_at,
-        )
-        selected = _selected_candidate(evidence, snapshot.partitions[0].provider)
-        MarketServingStore(self.root).apply_daily_bar_revision(
-            store,
-            revision=selected.revision,
-            materialization=selected.materialization,
-        )
+        def publish() -> None:
+            DatasetCatalog(self.root).register(
+                store, dataset_ref, registered_at=verified_at
+            )
+            selected = _selected_candidate(evidence, snapshot.partitions[0].provider)
+            MarketServingStore(self.root).apply_daily_bar_revision(
+                store,
+                revision=selected.revision,
+                materialization=selected.materialization,
+            )
+
+        if publication_guard is None:
+            publish()
+        else:
+            publication_guard(publish)
 
         return VerifiedDailyMarketPublication(
             dataset_ref=dataset_ref,

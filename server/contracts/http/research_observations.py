@@ -38,4 +38,5 @@ class ConfigureResearchObservationAutomationRequest(BaseModel):
 
     enabled: StrictBool
     paper_settlement_enabled: StrictBool = False
+    dataset_preparation_enabled: StrictBool | None = None
     expected_generation: UUID | None = None

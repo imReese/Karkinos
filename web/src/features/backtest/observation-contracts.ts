@@ -117,6 +117,16 @@ export type ObservationAutomation = {
   observation_id: string;
   enabled: boolean;
   paper_settlement_enabled?: boolean;
+  dataset_preparation_enabled?: boolean;
+  dataset_preparation?: {
+    enabled: boolean;
+    status: string;
+    last_checked_at: string | null;
+    through_session: string | null;
+    last_blocker: { code: string } | null;
+    dataset_id: string | null;
+    job_ids: string[];
+  };
   paper_settlement?: {
     enabled: boolean;
     status: string;

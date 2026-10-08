@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import os
+import sqlite3
 import threading
 import uuid
 from collections.abc import Callable
@@ -20,6 +21,7 @@ from data.source_policy import (
 )
 from server.contracts.jobs import JobRun, JobStore
 from server.db import AppDatabase
+from server.persistence.automation_runs import AutomationRunRepository
 from server.persistence.jobs import SQLiteJobStore, job_id_for
 from server.persistence.market_daily_call_budget import (
     MarketDailyProviderBudgetDeferred,
@@ -44,6 +46,12 @@ from server.services.market_calendar_dates import (
 )
 from server.services.market_calendar_evidence import validate_verified_market_calendar
 from server.services.market_hours import get_shanghai_now
+from server.services.research_observation_data_preparation import (
+    guard_observation_data_preparation,
+    observation_daily_job_grant,
+    require_observation_preparation_job,
+    run_research_observation_data_preparation_once,
+)
 from server.services.verified_daily_market_data import (
     VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
     VerifiedDailyMarketDataService,
@@ -218,6 +226,7 @@ def _require_current_verified_daily_market_job(
 ) -> None:
     """Recheck a durable request at provider entry and visible publication."""
     request = VerifiedDailyMarketJobRequest.from_payload(job.payload)
+    require_observation_preparation_job(db, config, job)
     if (
         request.source_policy_id
         != verification_source_policy_for_config(config).policy_id
@@ -396,6 +405,8 @@ async def execute_verified_daily_market_job(
     source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
     request_validator: Callable[[], None] | None = None,
     before_provider_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
+    publication_guard: Callable[[Callable[[], None]], None] | None = None,
+    finish_guard: Callable[[sqlite3.Connection], None] | None = None,
 ) -> None:
     """Run one durable verified-market job behind lease fencing."""
     await _execute_daily_market_job(
@@ -409,6 +420,8 @@ async def execute_verified_daily_market_job(
         source_resolution_recorder=source_resolution_recorder,
         request_validator=request_validator,
         before_provider_fetch=before_provider_fetch,
+        publication_guard=publication_guard,
+        finish_guard=finish_guard,
     )
 
 
@@ -448,7 +461,31 @@ async def _execute_daily_market_job(
     source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
     request_validator: Callable[[], None] | None = None,
     before_provider_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
+    publication_guard: Callable[[Callable[[], None]], None] | None = None,
+    finish_guard: Callable[[sqlite3.Connection], None] | None = None,
 ) -> None:
+    aborted = threading.Event()
+
+    def require_running() -> None:
+        if is_release_activation_guarded():
+            raise WorkerExecutionAborted("release_activation_started")
+        if aborted.is_set():
+            raise WorkerExecutionAborted(f"{label}_execution_stopped")
+
+    def before_fetch(descriptor: MarketDataProviderDescriptor) -> None:
+        require_running()
+        if before_provider_fetch is not None:
+            before_provider_fetch(descriptor)
+
+    def publish(action: Callable[[], None]) -> None:
+        def checked_action():
+            require_running()
+            action()
+
+        if publication_guard is not None:
+            publication_guard(checked_action)
+        else:
+            checked_action()
 
     async def renew():
         while True:
@@ -471,8 +508,7 @@ async def _execute_daily_market_job(
                 work.set_exception(error)
 
     def before_publish() -> None:
-        if is_release_activation_guarded():
-            raise WorkerExecutionAborted("release_activation_started")
+        require_running()
         try:
             store.heartbeat(job.lease, now=datetime.now(timezone.utc))
         except Exception as exc:
@@ -486,7 +522,9 @@ async def _execute_daily_market_job(
                 request_validator()
             kwargs: dict[str, object] = {"before_publish": before_publish}
             if before_provider_fetch is not None:
-                kwargs["before_provider_fetch"] = before_provider_fetch
+                kwargs["before_provider_fetch"] = before_fetch
+            if publication_guard is not None:
+                kwargs["publication_guard"] = publish
             result, error = (
                 service.run(job.payload, **kwargs),
                 None,
@@ -530,11 +568,20 @@ async def _execute_daily_market_job(
             getattr(publication, "source_resolution", None),
             result_ref=result_ref,
         )
-        store.finish(
-            job.lease,
-            now=datetime.now(timezone.utc),
-            result_ref=result_ref,
-        )
+        require_running()
+        if finish_guard is None:
+            store.finish(
+                job.lease, now=datetime.now(timezone.utc), result_ref=result_ref
+            )
+        else:
+            if not isinstance(store, SQLiteJobStore):
+                raise ValueError("observation_data_preparation_requires_sqlite")
+            store.finish(
+                job.lease,
+                now=datetime.now(timezone.utc),
+                result_ref=result_ref,
+                guard=finish_guard,
+            )
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -571,6 +618,7 @@ async def _execute_daily_market_job(
         if isinstance(exc, WorkerExecutionAborted):
             raise
     finally:
+        aborted.set()
         work.cancel()
         heartbeat.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -607,6 +655,7 @@ async def run_data_worker(config) -> None:
     store = SQLiteJobStore(db.path)
     controls = RuntimeControlRepository(db.path)
     owner = f"data-worker:{os.getpid()}:{uuid.uuid4().hex}"
+    preparation_stop = threading.Event()
 
     async def consume():
         while True:
@@ -618,15 +667,27 @@ async def run_data_worker(config) -> None:
                     CALENDAR_JOB, owner, now=now, job_id=scheduled_job.job_id
                 )
                 if job:
-                    service = MarketCalendarAutomationService(
+                    calendar_service = MarketCalendarAutomationService(
                         db=db, config=config, job_lease=job.lease
                     )
                     try:
-                        await execute_calendar_job(store, job, service)
+                        await execute_calendar_job(store, job, calendar_service)
                     except WorkerExecutionAborted:
                         raise
                     except Exception:
                         logger.exception("Calendar job lease or completion failed")
+
+            try:
+                preparation_reports = await asyncio.to_thread(
+                    run_research_observation_data_preparation_once,
+                    db,
+                    config,
+                    now=now,
+                    stop_requested=preparation_stop,
+                )
+            except Exception:
+                logger.exception("Research observation input preparation failed")
+                preparation_reports = []
 
             try:
                 plan = enqueue_latest_daily_market_collection_jobs(
@@ -646,7 +707,7 @@ async def run_data_worker(config) -> None:
 
             collection_job = store.claim(DAILY_MARKET_COLLECTION_JOB, owner, now=now)
             if collection_job:
-                service = DailyMarketCollectionService(
+                collection_service = DailyMarketCollectionService(
                     db.path.resolve().parent / "research", config
                 )
 
@@ -667,7 +728,7 @@ async def run_data_worker(config) -> None:
                     await execute_daily_market_collection_job(
                         store,
                         collection_job,
-                        service,
+                        collection_service,
                         request_validator=lambda: (
                             _require_current_daily_market_collection_job(
                                 db, config, collection_job
@@ -680,12 +741,46 @@ async def run_data_worker(config) -> None:
                 except Exception:
                     logger.exception("Daily market collection job failed")
 
-            market_job = store.claim(VERIFIED_DAILY_MARKET_JOB, owner, now=now)
+            market_job = None
+            # Complete the opted-in current input basket before unrelated older
+            # verification backfills. Lease selection and retries stay canonical.
+            for report in preparation_reports:
+                for job_id in reversed(report.get("pending_job_ids", [])):
+                    market_job = store.claim(
+                        VERIFIED_DAILY_MARKET_JOB, owner, now=now, job_id=job_id
+                    )
+                    if market_job is not None:
+                        break
+                if market_job is not None:
+                    break
+            if market_job is None:
+                market_job = store.claim(VERIFIED_DAILY_MARKET_JOB, owner, now=now)
             if market_job:
-                service = VerifiedDailyMarketDataService(
+                verified_service = VerifiedDailyMarketDataService(
                     db.path.resolve().parent / "research",
                     config,
                 )
+                try:
+                    grant = observation_daily_job_grant(market_job.payload)
+                except ValueError:
+                    # The validator rejects a malformed grant before fetching;
+                    # keep that rejection within the ordinary job failure path.
+                    grant = None
+
+                def publication_guard(action):
+                    assert grant is not None
+                    return AutomationRunRepository(db.path).publish_observation_dataset(
+                        observation_id=grant["observation_id"],
+                        generation=grant["generation"],
+                        stop_requested=preparation_stop.is_set,
+                        publish=action,
+                    )
+
+                def finish_guard(conn):
+                    assert grant is not None
+                    guard_observation_data_preparation(
+                        conn, grant, preparation_stop.is_set
+                    )
 
                 def before_verified_fetch(
                     descriptor: MarketDataProviderDescriptor,
@@ -698,26 +793,33 @@ async def run_data_worker(config) -> None:
                         now=datetime.now(timezone.utc),
                     )
 
+                def record_source_resolution(payload: dict[str, object]) -> None:
+                    db.append_event_sync(
+                        event_type=VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        entity_type="market_daily_job",
+                        entity_id=market_job.job_id,
+                        source="data_worker",
+                        source_ref=market_job.job_id,
+                        payload=payload,
+                    )
+
                 try:
                     await execute_verified_daily_market_job(
                         store,
                         market_job,
-                        service,
+                        verified_service,
                         request_validator=lambda: (
                             _require_current_verified_daily_market_job(
                                 db, config, market_job
                             )
                         ),
                         before_provider_fetch=before_verified_fetch,
-                        source_resolution_recorder=lambda payload: db.append_event_sync(
-                            event_type=VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
-                            timestamp=datetime.now(timezone.utc).isoformat(),
-                            entity_type="market_daily_job",
-                            entity_id=market_job.job_id,
-                            source="data_worker",
-                            source_ref=market_job.job_id,
-                            payload=payload,
-                        ),
+                        publication_guard=publication_guard
+                        if grant is not None
+                        else None,
+                        finish_guard=finish_guard if grant is not None else None,
+                        source_resolution_recorder=record_source_resolution,
                     )
                 except WorkerExecutionAborted:
                     raise
@@ -727,4 +829,7 @@ async def run_data_worker(config) -> None:
                     )
             await asyncio.sleep(5)
 
-    await run_with_presence(controls, "data_worker_heartbeat", owner, consume())
+    try:
+        await run_with_presence(controls, "data_worker_heartbeat", owner, consume())
+    finally:
+        preparation_stop.set()
