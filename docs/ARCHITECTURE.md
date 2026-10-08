@@ -472,6 +472,31 @@ An unidentified unreadable discovery candidate is reported separately; a selecte
 matching Dataset that fails verification blocks instead of falling back to an
 older matching version.
 
+Observation data preparation is a third, separate default-off permission. The
+existing data worker submits one two-source verification job per subsequent closed
+session for the entire frozen stock/ETF basket. It appends successful verified
+daily partitions to the exact original immutable Dataset; it cannot replace that
+prefix or synthesize a multi-asset revision from unrelated single-asset receipts.
+The complete interval retains calendar, source, capture and verification evidence.
+When this supply permission is enabled, automatic target and paper consumers also
+check the selected Dataset against the original prefix. A newer catalog entry
+with revised history blocks the action; it cannot silently substitute that history
+or cause fallback to an older matching entry.
+The scope is at most 32 instruments and 366 calendar days from the original start,
+within the configured provider budgets. Receipt-only sources without a verified
+immutable prefix remain blocked for automatic preparation.
+
+This permission never enables target publication or paper settlement. Queued jobs
+bind the configuration generation. Revocation is checked at provider entry, visible
+daily/interval publication and job completion; queue and publication checks hold
+the existing policy write lock. An already executing provider call may leave
+immutable capture evidence, but cannot proceed to another request or visible
+publication after revocation. Successful prior jobs may be reused offline without
+granting their old generation new provider authority. Paused observations receive
+data only when their separate paper-settlement permission remains enabled, to
+value retained holdings. These inputs establish cross-source agreement, not
+historical availability, total-return coverage or account authority.
+
 Paper settlement requires a separate default-off opt-in on that observation;
 enabling target publication alone grants no settlement permission. It runs the
 same replay and append checks using verified local Datasets after the close,

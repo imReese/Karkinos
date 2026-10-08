@@ -75,9 +75,15 @@ monitors subsequent raw-price responses during explicit measurement, with a
 configured minimum sample count and threshold. It can report a breach or pause
 that observation; missing or unresolved evidence cannot trigger a performance
 pause. Per-observation scheduling is an explicit opt-in that consumes local
-verified Datasets within the next-opening publication deadline. Missing data waits
-for the existing preparation journey; scheduling does not request providers or
-backfill missed targets. Normalized candidates and human qualification review
+verified Datasets within the next-opening publication deadline. Missing data waits;
+target scheduling does not request providers or backfill missed targets. A separate,
+default-off observation data-preparation opt-in lets the existing data worker
+verify the frozen basket and append subsequent closed sessions to its original
+immutable Dataset. It preserves original partitions, uses existing provider budgets,
+and stops at 32 instruments or 366 calendar days from the original start. Missing,
+conflicting or incomplete sessions do not publish an interval. Sources without a
+verified immutable prefix cannot use this automatic preparation path.
+Normalized candidates and human qualification review
 show observations from the exact source report as supplementary evidence. Raw
 price responses do not replace independent final evaluation or change account
 qualification. Human review may separately bind an exact simulated paper-book

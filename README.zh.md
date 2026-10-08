@@ -142,6 +142,16 @@ python -m server
 
 默认 `market_data.source_policy` 是 **`free_cn_research_v1`**：后台自动采集一个日线来源并保存单源质量证据，不因此发布 Dataset。独立的 `market_data.verification_source_policy` 默认使用同一版本化策略，只约束显式研究核验。首选组合是 BaoStock 与通过 AKShare SDK 取得的腾讯日线：两者上游不同；`tencent` 和 `akshare_tencent` 同属腾讯上游，不能算两票。研究需要固定区间时，通过 `POST /api/backtest/datasets/verified-jobs` 为已核验且已收盘的 SSE 交易日明确提交双源核验，并取得每个任务的 `source_policy_id`；`GET /api/backtest/datasets/verified-jobs/{job_id}` 可查看状态与策略。任务成功后，通过 `POST /api/backtest/datasets/verified-interval` 用指定的任务 ID 组成带核验证据的 Dataset。回测、比较和参数扫描明确绑定其 `dataset_id`。跨源一致不证明严格历史 PIT 或总收益，也不授予策略晋级资格；原有 Dataset ID 与重放语义不变。TuShare 与 TDX 是可选增强来源。AI Provider、通知、费用、Server 设置、路径以及环境变量优先级见 [配置指南](docs/guides/configuration.md)。
 
+### 启动一个持续观察的研究实验
+
+1. 在回测页面选择策略、日期和完整标的篮子。多资产模式支持逐个填写股票或 ETF；ETF 示例篮子只是操作示例。
+2. 提交双源核验任务，等所有交易日成功后发布 Dataset，再用这个确切 Dataset 回测。单个日期或标的缺失时不能发布完整区间。
+3. 从保存的报告启动独立观察，冻结参数、预测周期和目标风险限额；需要模拟成交时，再创建独立模拟账本并冻结资金、成本、基准和健康规则。
+4. 在观察面板分别启用“观察数据自动准备”“自动推进”和“账本自动结算”。数据工作进程为冻结篮子准备新增交易日；发布和结算只读取完整本地数据。服务和工作进程需要持续运行。
+5. 每日检查数据准备、发布和结算状态，以及模拟净收益、相对基准表现和回撤。缺失数据会等待，错过次日开盘的目标不会补发；关闭数据准备会撤销旧任务的后续发布权限。
+
+自动数据准备保留原始已核验 Dataset，只追加后续交易日；最多 32 个标的、从原始起点起不超过 366 个日历日，并遵守现有供应商预算。没有已核验 immutable Dataset 的旧研究来源无法自动补造历史输入。ETF 模拟结果当前使用价格收益口径。这个工作流产生可复核的前瞻实验记录，账户资格和人工发布仍需各自的证据。
+
 ## 开发 Karkinos
 
 修改集成到 `dev`。安装上述锁定依赖后，用 `./scripts/start_server.sh dev`

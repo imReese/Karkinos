@@ -145,6 +145,16 @@ The standalone `bootstrap_installer.sh` asset is for the managed release/update 
 
 The default `market_data.source_policy` is **`free_cn_research_v1`**. The data worker automatically captures one daily-bar source and persists its quality result; this alone does not publish a Dataset or establish historical point-in-time availability. The separate `market_data.verification_source_policy` defaults to the same versioned policy and applies only to explicit two-source research verification. Its preferred pair is BaoStock and Tencent daily bars through the AKShare SDK: these are different upstreams, while `tencent` and `akshare_tencent` share the Tencent upstream and cannot count as two sources. For a fixed research interval, `POST /api/backtest/datasets/verified-jobs` enqueues checks for verified, closed SSE sessions and returns each job's `source_policy_id`; `GET /api/backtest/datasets/verified-jobs/{job_id}` reports its status and policy. After those jobs succeed, `POST /api/backtest/datasets/verified-interval` freezes their exact job IDs into one verification-bound Dataset. Backtests, comparisons, and parameter sweeps bind its `dataset_id` explicitly. Cross-source agreement does not establish historical point-in-time availability or total returns, and does not grant strategy promotion. Existing Dataset IDs and replay semantics remain unchanged. TuShare and TDX are optional enhancement sources. AI providers, notifications, fees, server settings, paths, and environment-variable precedence are documented in the [configuration guide](docs/guides/configuration.md).
 
+### Start a continuing research observation
+
+1. Choose a strategy, dates and the full stock/ETF basket in Backtest. The ETF sample basket demonstrates the controls.
+2. Submit two-source verification jobs, publish the Dataset after every session succeeds, then run the backtest against that exact Dataset.
+3. Start an independent observation from the saved report, freezing parameters, horizon and target limits. Separately create a paper book to freeze cash, costs, benchmark and optional health rules.
+4. Enable data preparation, automatic advance and paper settlement separately in the observation panel. Keep the service and data worker running.
+5. Inspect each stage's status and modeled net performance, benchmark-relative return and drawdown. Missing data waits; targets missed before the next opening are never backfilled.
+
+Automatic preparation preserves the original verified immutable Dataset and appends subsequent verified sessions. Its scope is at most 32 instruments and 366 calendar days from the original start, within existing provider budgets. Revocation fences old queued work. Sources without a verified immutable prefix cannot reconstruct one automatically. ETF paper results currently use price-only returns. Observation evidence does not grant account qualification or publication authority.
+
 ## Development
 
 Changes integrate on `dev`. Start the source runtime with
