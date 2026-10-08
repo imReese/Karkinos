@@ -3,7 +3,6 @@ import { ChevronDown } from 'lucide-react';
 import { StatusBadge } from '../../../shared/ui/workbench';
 import { formatStrategyDisplayName as strategyDisplayName } from '../../../shared/strategy-display';
 import {
-  buildSingleAsset,
   parameterDescription,
   parameterDisplayName,
 } from './backtest-page-model';
@@ -21,10 +20,13 @@ import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { StrategyCatalogPanel } from './strategy-catalog-panel';
 import { StrategyMetadataPanel } from './strategy-metadata-panel';
+import { ResearchUniverseEditor } from './research-universe-editor';
+import { datasetMatchesResearchInputs } from './backtest-universe';
 
 function BacktestSetupForm() {
   const {
     assetClass,
+    additionalAssets,
     assetClassOptions,
     costInputs,
     datasetPreparing,
@@ -35,6 +37,7 @@ function BacktestSetupForm() {
     parameterSchema,
     parameterValues,
     runBacktest,
+    runAssets,
     selectedAssetClassLabel,
     selectedStrategy,
     setAssetClass,
@@ -175,10 +178,13 @@ function BacktestSetupForm() {
             ))}
           </select>
         </label>
-        <span className="app-muted text-xs sm:col-span-2">
-          {labels.singleSymbolHint}
-        </span>
+        {!additionalAssets.length ? (
+          <span className="app-muted text-xs sm:col-span-2">
+            {labels.singleSymbolHint}
+          </span>
+        ) : null}
       </div>
+      <ResearchUniverseEditor />
 
       <ResearchDatasetPanel />
       <CashDividendModeControl />
@@ -192,7 +198,7 @@ function BacktestSetupForm() {
         labels={labels}
         parameterCount={parameterSchema.length}
         selectedStrategy={selectedStrategy}
-        symbol={symbol}
+        symbol={runAssets?.map((asset) => asset.symbol).join(', ') || symbol}
       />
 
       {formError ? (
@@ -223,7 +229,6 @@ function BacktestSetupForm() {
 export function BacktestRunSetupPanel() {
   const {
     advancedToolsOpen,
-    assetClass,
     corporateActionMode,
     costInputs,
     endDate,
@@ -237,6 +242,8 @@ export function BacktestRunSetupPanel() {
     searchDefaults,
     selectedAssetClassLabel,
     selectedDataset,
+    runAssets,
+    universeError,
     selectedStrategy,
     setAdvancedToolsOpen,
     setMobileWorkspaceTouched,
@@ -247,9 +254,20 @@ export function BacktestRunSetupPanel() {
     strategyCatalog,
     symbol,
   } = useBacktestPage();
-  const advancedDisabledReason = !costInputs.valid
-    ? backtestCostCopy[locale].invalid
-    : undefined;
+  const advancedDisabledReason =
+    universeError ||
+    (!datasetMatchesResearchInputs(
+      selectedDataset,
+      runAssets,
+      startDate,
+      endDate,
+    )
+      ? locale === 'zh'
+        ? '所选 Dataset 与完整资产篮子或日期不一致，请重新选择或准备。'
+        : 'The selected Dataset does not match the complete asset universe or dates. Select or prepare a matching dataset.'
+      : !costInputs.valid
+        ? backtestCostCopy[locale].invalid
+        : undefined);
   return (
     <details
       className={`group min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] ${
@@ -363,7 +381,7 @@ export function BacktestRunSetupPanel() {
                 strategy={strategy}
                 parameterSchema={parameterSchema}
                 parameterValues={parameterValues}
-                assets={buildSingleAsset(symbol, assetClass)}
+                assets={runAssets}
                 datasetId={selectedDataset?.dataset_id}
               />
               <ParameterComparePanel
@@ -375,7 +393,7 @@ export function BacktestRunSetupPanel() {
                 corporateActionMode={corporateActionMode}
                 strategy={strategy}
                 parameterSchema={parameterSchema}
-                assets={buildSingleAsset(symbol, assetClass)}
+                assets={runAssets}
                 datasetId={selectedDataset?.dataset_id}
               />
             </BacktestResponsiveDisclosure>

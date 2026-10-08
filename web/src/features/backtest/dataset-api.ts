@@ -3,12 +3,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, postJson } from '../../shared/api/client';
 import type { CorporateActionEvidence } from './api-contracts';
 
+export type ResearchInstrument = {
+  symbol: string;
+  instrument_type: 'stock' | 'etf';
+};
+
 export type PublishedDataset = {
   dataset_id: string;
   start_date: string;
   end_date: string;
   cutoff: string;
-  instruments: { symbol: string; instrument_type: 'stock' | 'etf' }[];
+  instruments: ResearchInstrument[];
   partition_count: number;
   price_basis: string;
   point_in_time_verified: boolean;
@@ -24,11 +29,17 @@ export type VerifiedDatasetJob = {
   status: string;
   result_ref: string | null;
   error?: string | null;
+  instruments?: ResearchInstrument[];
 };
 
-export type VerifiedDatasetRange = {
-  symbol: string;
-  instrument_type: 'stock' | 'etf';
+export type VerifiedDatasetRange = (
+  | { symbol: string; instrument_type: 'stock' | 'etf'; instruments?: never }
+  | {
+      instruments: ResearchInstrument[];
+      symbol?: never;
+      instrument_type?: never;
+    }
+) & {
   start_date: string;
   end_date: string;
 };
@@ -53,13 +64,8 @@ export function usePublishedDatasets(enabled: boolean) {
 export function usePrepareDataset() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (payload: {
-      symbol: string;
-      instrument_type: 'stock' | 'etf';
-      start_date: string;
-      end_date: string;
-      refresh: boolean;
-    }) => postJson<PublishedDataset>('/api/backtest/datasets', payload),
+    mutationFn: (payload: VerifiedDatasetRange & { refresh: boolean }) =>
+      postJson<PublishedDataset>('/api/backtest/datasets', payload),
     retry: false,
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ['published-research-datasets'] }),

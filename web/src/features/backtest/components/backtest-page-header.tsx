@@ -18,6 +18,7 @@ export function BacktestPageHeader() {
     setMobileWorkspaceTouched,
     setMobileWorkspaceView,
     symbol,
+    runAssets,
   } = useBacktestPage();
   return (
     <>
@@ -45,7 +46,10 @@ export function BacktestPageHeader() {
             {
               id: 'instrument',
               label: labels.symbol,
-              value: symbol || labels.notDeclared,
+              value:
+                runAssets?.map((asset) => asset.symbol).join(', ') ||
+                symbol ||
+                labels.notDeclared,
               detail: selectedAssetClassLabel,
             },
             {

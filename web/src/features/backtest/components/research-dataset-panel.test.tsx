@@ -7,6 +7,7 @@ import { ResearchDatasetPanel } from './research-dataset-panel';
 const context = vi.hoisted(() => ({
   symbol: '600000',
   assetClass: 'stock',
+  runAssets: undefined as { symbol: string; asset_class: string }[] | undefined,
   startDate: '2026-09-07',
   endDate: '2026-09-11',
   locale: 'zh',
@@ -28,9 +29,159 @@ const dataset = {
 };
 
 afterEach(() => {
+  context.runAssets = undefined;
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
+
+test('prepares and verifies the same sorted typed basket before publishing its complete Dataset', async () => {
+  context.runAssets = [
+    { symbol: '600000', asset_class: 'stock' },
+    { symbol: '518880', asset_class: 'etf' },
+    { symbol: '511010', asset_class: 'etf' },
+  ];
+  const instruments = [
+    { symbol: '511010', instrument_type: 'etf' },
+    { symbol: '518880', instrument_type: 'etf' },
+    { symbol: '600000', instrument_type: 'stock' },
+  ];
+  const mixedDataset = { ...dataset, instruments, partition_count: 15 };
+  const jobs = [
+    {
+      trade_date: '2026-09-11',
+      job_id: 'mixed-fixture-day',
+      source_policy_id: 'mixed-verified-policy',
+      instruments,
+      status: 'queued',
+      result_ref: null,
+    },
+  ];
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      let body: unknown = {
+        tdx_configured: true,
+        busy: false,
+        storage_path: '/workspace/data/research',
+        datasets: [],
+      };
+      if (path === '/api/backtest/datasets' && init?.method === 'POST')
+        body = mixedDataset;
+      else if (path.endsWith('/verified-jobs') && init?.method === 'POST')
+        body = { jobs };
+      else if (path.includes('/verified-jobs/'))
+        body = {
+          ...jobs[0],
+          status: 'succeeded',
+          result_ref: 'verified-day:fixture',
+        };
+      else if (path.endsWith('/verified-interval'))
+        body = { ...mixedDataset, cross_source_verified: true };
+      return new Response(JSON.stringify(body), { status: 200 });
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const { container } = mount();
+  const disclosure = container.querySelector('details')!;
+  disclosure.open = true;
+  fireEvent(disclosure, new Event('toggle'));
+  await screen.findByText(/持久目录：/);
+  fireEvent.click(screen.getByRole('button', { name: '从 TDX 准备并保存' }));
+  await waitFor(() =>
+    expect(context.selectDataset).toHaveBeenCalledWith(mixedDataset),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '提交双源核验' }));
+  await screen.findByText('任务：0/1 成功');
+  fireEvent.click(screen.getByRole('button', { name: '刷新核验状态' }));
+  await screen.findByText('任务：1/1 成功');
+  const publish = screen.getByRole('button', { name: '发布核验区间 Dataset' });
+  expect((publish as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(publish);
+  await waitFor(() =>
+    expect(context.selectDataset).toHaveBeenCalledWith({
+      ...mixedDataset,
+      cross_source_verified: true,
+    }),
+  );
+  for (const [path, extra] of [
+    ['/api/backtest/datasets', { refresh: false }],
+    ['/api/backtest/datasets/verified-jobs', {}],
+    [
+      '/api/backtest/datasets/verified-interval',
+      { job_ids: ['mixed-fixture-day'] },
+    ],
+  ] as const) {
+    const call = fetchMock.mock.calls.find(
+      ([url, init]) => String(url) === path && init?.method === 'POST',
+    );
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      instruments,
+      start_date: context.startDate,
+      end_date: context.endDate,
+      ...extra,
+    });
+  }
+});
+
+test.each([undefined, [{ symbol: '510300', instrument_type: 'stock' }]])(
+  'does not publish basket verification with missing or different typed job inputs (%j)',
+  async (instruments) => {
+    context.runAssets = [
+      { symbol: '510300', asset_class: 'etf' },
+      { symbol: '511010', asset_class: 'etf' },
+    ];
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Response(
+          JSON.stringify(
+            init?.method === 'POST'
+              ? {
+                  jobs: [
+                    {
+                      job_id: 'wrong-basket-fixture',
+                      trade_date: '2026-09-11',
+                      source_policy_id: 'verified-policy',
+                      instruments,
+                      status: 'succeeded',
+                      result_ref: 'verified-day:fixture',
+                    },
+                  ],
+                }
+              : {
+                  tdx_configured: true,
+                  busy: false,
+                  storage_path: '/workspace/data/research',
+                  datasets: [],
+                },
+          ),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = mount();
+    const disclosure = container.querySelector('details')!;
+    disclosure.open = true;
+    fireEvent(disclosure, new Event('toggle'));
+    await screen.findByText(/持久目录：/);
+    fireEvent.click(screen.getByRole('button', { name: '提交双源核验' }));
+    await screen.findByText('任务：1/1 成功');
+    expect(
+      (
+        screen.getByRole('button', {
+          name: '发布核验区间 Dataset',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(screen.getByRole('alert').textContent).toContain(
+      '核验任务未覆盖当前完整类型化资产篮子',
+    );
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith('/verified-interval'),
+      ),
+    ).toHaveLength(0);
+  },
+);
 
 function mount() {
   const queryClient = new QueryClient({

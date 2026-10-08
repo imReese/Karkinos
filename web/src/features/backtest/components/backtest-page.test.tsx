@@ -931,6 +931,7 @@ function installBacktestFetchMock({
   sweepFails = false,
   compareFails = false,
   datasets = [],
+  preparedDataset,
   results = [savedSummary],
   strategies = strategyCatalog,
   accountStrategy = {
@@ -1025,6 +1026,7 @@ function installBacktestFetchMock({
   sweepFails?: boolean;
   compareFails?: boolean;
   datasets?: unknown[];
+  preparedDataset?: unknown;
   results?: unknown[];
   strategies?: unknown[];
   accountStrategy?: unknown;
@@ -1053,6 +1055,8 @@ function installBacktestFetchMock({
         return jsonResponse(strategies);
       }
       if (url.includes('/api/backtest/datasets')) {
+        if (init?.method === 'POST' && preparedDataset)
+          return jsonResponse(preparedDataset);
         return jsonResponse({
           tdx_configured: true,
           storage_path: '/workspace/data/research',
@@ -1238,6 +1242,290 @@ function openBacktestDisclosure(testId: string) {
     fireEvent.click(disclosure);
   }
 }
+
+async function selectBasketDataset(datasetId: string) {
+  const disclosure = (
+    await screen.findByText('Research datasets · persistent snapshots')
+  ).closest('details') as HTMLDetailsElement;
+  disclosure.open = true;
+  fireEvent(disclosure, new Event('toggle'));
+  await screen.findByRole('option', { name: /510300.*511010.*518880/ });
+  fireEvent.change(screen.getByLabelText('Data for this backtest'), {
+    target: { value: datasetId },
+  });
+  await screen.findByTestId('selected-dataset-id');
+}
+
+const basketDataset = {
+  dataset_id: `sha256:${'e'.repeat(64)}`,
+  start_date: '2026-09-07',
+  end_date: '2026-09-11',
+  cutoff: '2026-09-14T08:00:00Z',
+  instruments: ['510300', '511010', '518880'].map((symbol) => ({
+    symbol,
+    instrument_type: 'etf',
+  })),
+  partition_count: 15,
+  price_basis: 'unadjusted',
+  point_in_time_verified: false,
+};
+
+test('prepares the explicit ETF example basket and runs rotation with the same complete Dataset and legal zero parameters', async () => {
+  const rotation = {
+    ...strategyCatalog[0],
+    strategy_id: 'etf_rotation',
+    name: 'etf_rotation',
+    display_name: 'ETF Rotation',
+    parameter_schema: [
+      { name: 'lookback_period', type: 'int', default: 3, min: 1, max: 500 },
+      {
+        name: 'trend_filter_period',
+        type: 'int',
+        default: 0,
+        min: 0,
+        max: 500,
+      },
+      { name: 'min_momentum', type: 'float', default: 0, min: -1, max: 1 },
+      { name: 'cash_proxy', type: 'str', default: '511010' },
+    ],
+  };
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    datasets: [basketDataset],
+    preparedDataset: basketDataset,
+    strategies: [...strategyCatalog, rotation],
+  });
+  await screen.findByText('Strategy Backtest');
+  fireEvent.change(
+    (await screen.findByRole('option', { name: /rotation/i })).closest(
+      'select',
+    )!,
+    {
+      target: { value: 'etf_rotation' },
+    },
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Use ETF example basket' }),
+  );
+  expect(
+    screen.getByText(/example, not an investment recommendation/),
+  ).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Start date'), {
+    target: { value: basketDataset.start_date },
+  });
+  fireEvent.change(screen.getByLabelText('End date'), {
+    target: { value: basketDataset.end_date },
+  });
+  const disclosure = screen
+    .getByText('Research datasets · persistent snapshots')
+    .closest('details') as HTMLDetailsElement;
+  disclosure.open = true;
+  fireEvent(disclosure, new Event('toggle'));
+  await screen.findByRole('option', { name: /510300.*511010.*518880/ });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Prepare and save from TDX' }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId('selected-dataset-id').textContent).toContain(
+      basketDataset.dataset_id,
+    ),
+  );
+  const preparation = fetchMock.mock.calls.find(
+    ([url, init]) =>
+      String(url) === '/api/backtest/datasets' && init?.method === 'POST',
+  );
+  expect(JSON.parse(String(preparation?.[1]?.body))).toEqual({
+    instruments: basketDataset.instruments,
+    start_date: basketDataset.start_date,
+    end_date: basketDataset.end_date,
+    refresh: false,
+  });
+  fireEvent.submit(
+    screen
+      .getByRole('button', { name: 'Run backtest' })
+      .closest('form') as HTMLFormElement,
+  );
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/run',
+      expect.objectContaining({ method: 'POST' }),
+    ),
+  );
+  const run = fetchMock.mock.calls.find(
+    ([url]) => String(url) === '/api/backtest/run',
+  );
+  expect(JSON.parse(String(run?.[1]?.body))).toMatchObject({
+    strategy: 'etf_rotation',
+    dataset_id: basketDataset.dataset_id,
+    start_date: basketDataset.start_date,
+    end_date: basketDataset.end_date,
+    assets: basketDataset.instruments.map((asset) => ({
+      symbol: asset.symbol,
+      asset_class: asset.instrument_type,
+    })),
+    params: {
+      lookback_period: 3,
+      trend_filter_period: 0,
+      min_momentum: 0,
+      cash_proxy: '511010',
+    },
+  });
+  expect(
+    fetchMock.mock.calls.filter(
+      ([url]) => String(url) === '/api/backtest/signal-preview',
+    ),
+  ).toHaveLength(0);
+  expect(
+    fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/api/account-strategy') && init?.method === 'PUT',
+    ),
+  ).toHaveLength(0);
+});
+
+test('restores every typed instrument and date from a selected basket Dataset for run, sweep and comparison', async () => {
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    datasets: [basketDataset],
+  });
+  await selectBasketDataset(basketDataset.dataset_id);
+  expect((screen.getByLabelText('Symbol') as HTMLInputElement).value).toBe(
+    '510300',
+  );
+  expect(
+    (screen.getByLabelText('Basket symbol 2') as HTMLInputElement).value,
+  ).toBe('511010');
+  expect(
+    (screen.getByLabelText('Basket symbol 3') as HTMLInputElement).value,
+  ).toBe('518880');
+  expect(
+    (screen.getByLabelText('Asset 2 type') as HTMLSelectElement).value,
+  ).toBe('etf');
+  expect((screen.getByLabelText('Start date') as HTMLInputElement).value).toBe(
+    basketDataset.start_date,
+  );
+  expect((screen.getByLabelText('End date') as HTMLInputElement).value).toBe(
+    basketDataset.end_date,
+  );
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
+  fireEvent.change(screen.getByLabelText('Comparison parameter sets'), {
+    target: {
+      value: 'short_period=3, long_period=9\nshort_period=5, long_period=9',
+    },
+  });
+  for (const [button, path] of [
+    ['Run parameter sweep', '/api/backtest/sweep'],
+    ['Run comparison', '/api/backtest/compare'],
+    ['Run backtest', '/api/backtest/run'],
+  ]) {
+    fireEvent.submit(
+      screen
+        .getByRole('button', { name: button })
+        .closest('form') as HTMLFormElement,
+    );
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        path,
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    const call = fetchMock.mock.calls.find(([url]) => String(url) === path);
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+      dataset_id: basketDataset.dataset_id,
+      start_date: basketDataset.start_date,
+      end_date: basketDataset.end_date,
+      assets: basketDataset.instruments.map((asset) => ({
+        symbol: asset.symbol,
+        asset_class: asset.instrument_type,
+      })),
+    });
+  }
+});
+
+test.each(['symbol', 'type', 'date'])(
+  'blocks run, sweep and comparison when one %s changes against a selected complete basket Dataset',
+  async (field) => {
+    const { fetchMock } = renderBacktestPage({
+      results: [],
+      datasets: [basketDataset],
+    });
+    await selectBasketDataset(basketDataset.dataset_id);
+    fireEvent.change(
+      screen.getByLabelText(
+        field === 'symbol'
+          ? 'Basket symbol 2'
+          : field === 'type'
+            ? 'Asset 2 type'
+            : 'End date',
+      ),
+      {
+        target: {
+          value:
+            field === 'symbol'
+              ? '511880'
+              : field === 'type'
+                ? 'stock'
+                : '2026-09-14',
+        },
+      },
+    );
+    openBacktestDisclosure('backtest-advanced-tools-disclosure');
+    for (const name of [
+      'Run parameter sweep',
+      'Run comparison',
+      'Run backtest',
+    ]) {
+      fireEvent.submit(
+        screen.getByRole('button', { name }).closest('form') as HTMLFormElement,
+      );
+    }
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        /\/api\/backtest\/(run|sweep|compare)$/.test(String(url)),
+      ),
+    ).toHaveLength(0);
+    expect(
+      screen.getAllByText(/does not match the complete asset universe or dates/)
+        .length,
+    ).toBeGreaterThan(0);
+  },
+);
+
+test('rejects duplicate basket symbols rather than silently dropping one asset or preparing partial inputs', async () => {
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    datasets: [basketDataset],
+  });
+  await selectBasketDataset(basketDataset.dataset_id);
+  fireEvent.change(screen.getByLabelText('Basket symbol 2'), {
+    target: { value: '510300' },
+  });
+  expect(
+    (
+      screen.getByRole('button', {
+        name: 'Prepare and save from TDX',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole('button', {
+        name: 'Submit two-source verification',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.submit(
+    screen
+      .getByRole('button', { name: 'Run backtest' })
+      .closest('form') as HTMLFormElement,
+  );
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST'),
+  ).toHaveLength(0);
+  expect(
+    screen.getAllByText(/unique six-digit stock or ETF symbols/).length,
+  ).toBeGreaterThan(0);
+});
 
 async function clickEnabledButton(name: string) {
   const button = (await screen.findByRole('button', {

@@ -35,6 +35,13 @@ import { cashDividendErrorMessage } from '../copy-cash-dividends';
 import { useBacktestPortfolioInstrumentsQuery } from './backtest-portfolio-query';
 import { useBacktestCostInputs } from './backtest-cost-inputs';
 import { backtestCostCopy } from '../copy-costs';
+import {
+  backtestParametersValid,
+  buildResearchAssets,
+  datasetMatchesResearchInputs,
+  researchUniverseError,
+  type ResearchAsset,
+} from './backtest-universe';
 
 export function useBacktestPageController() {
   const copy = useCopy();
@@ -84,6 +91,9 @@ export function useBacktestPageController() {
   >(() => buildParamValues(fallbackStrategies[0].parameter_schema));
   const [symbol, setSymbol] = useState(searchDefaults.symbol);
   const [assetClass, setAssetClass] = useState(searchDefaults.assetClass);
+  const [additionalAssets, setAdditionalAssets] = useState<ResearchAsset[]>([]);
+  const runAssets = buildResearchAssets(symbol, assetClass, additionalAssets);
+  const universeError = researchUniverseError(runAssets, locale === 'zh');
   const [mobileWorkspaceView, setMobileWorkspaceView] = useState<
     'setup' | 'results'
   >('setup');
@@ -98,9 +108,15 @@ export function useBacktestPageController() {
   const selectDataset = (dataset: PublishedDataset | null) => {
     setSelectedDataset(dataset);
     setCorporateActionMode('price_only');
-    if (dataset?.instruments.length === 1) {
+    if (dataset?.instruments.length) {
       setSymbol(dataset.instruments[0].symbol);
       setAssetClass(dataset.instruments[0].instrument_type);
+      setAdditionalAssets(
+        dataset.instruments.slice(1).map((asset) => ({
+          symbol: asset.symbol,
+          asset_class: asset.instrument_type,
+        })),
+      );
       setStartDate(dataset.start_date);
       setEndDate(dataset.end_date);
     }
@@ -137,9 +153,12 @@ export function useBacktestPageController() {
     () => selectedStrategy.parameter_schema ?? [],
     [selectedStrategy],
   );
-  const selectedAssetClassLabel =
-    assetClassOptions.find((option) => option.value === assetClass)?.label ??
-    assetClass;
+  const selectedAssetClassLabel = additionalAssets.length
+    ? locale === 'zh'
+      ? '股票 / ETF 篮子'
+      : 'Stock / ETF basket'
+    : (assetClassOptions.find((option) => option.value === assetClass)?.label ??
+      assetClass);
   const handoffLabels =
     searchDefaults.handoffSource === 'portfolio'
       ? {
@@ -161,11 +180,17 @@ export function useBacktestPageController() {
         ? labels.runContextSourceDecision
         : labels.runContextSourceManual;
   const reportAsset = latestReport?.config.assets?.[0] ?? null;
-  const reportSymbol = reportAsset?.symbol ?? symbol;
+  const reportSymbol =
+    latestReport?.config.assets?.map((asset) => asset.symbol).join(', ') ||
+    symbol;
   const reportAssetClass = reportAsset?.asset_class ?? assetClass;
   const reportAssetClassLabel =
-    assetClassOptions.find((option) => option.value === reportAssetClass)
-      ?.label ?? reportAssetClass;
+    (latestReport?.config.assets?.length ?? 0) > 1
+      ? locale === 'zh'
+        ? '多资产'
+        : 'Multiple assets'
+      : (assetClassOptions.find((option) => option.value === reportAssetClass)
+          ?.label ?? reportAssetClass);
   const reportStrategy =
     strategyCatalog.find(
       (item) =>
@@ -186,22 +211,26 @@ export function useBacktestPageController() {
   const submitRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (datasetPreparing) return;
+    if (universeError) {
+      setFormError(universeError);
+      return;
+    }
     if (!costInputs.valid) {
       setFormError(backtestCostCopy[locale].invalid);
       return;
     }
     if (
-      selectedDataset &&
-      (selectedDataset.start_date !== startDate ||
-        selectedDataset.end_date !== endDate ||
-        selectedDataset.instruments.length !== 1 ||
-        selectedDataset.instruments[0].symbol !== symbol.trim() ||
-        selectedDataset.instruments[0].instrument_type !== assetClass)
+      !datasetMatchesResearchInputs(
+        selectedDataset,
+        runAssets,
+        startDate,
+        endDate,
+      )
     ) {
       setFormError(
         locale === 'zh'
-          ? '所选 Dataset 与当前标的或日期不一致，请重新选择或准备数据。'
-          : 'The selected Dataset does not match the symbol or dates. Select or prepare a matching dataset.',
+          ? '所选 Dataset 与当前完整资产篮子或日期不一致，请重新选择或准备数据。'
+          : 'The selected Dataset does not match the complete asset universe or dates. Select or prepare a matching dataset.',
       );
       return;
     }
@@ -209,13 +238,7 @@ export function useBacktestPageController() {
       !startDate ||
       !endDate ||
       !isPositiveNumber(initialCash) ||
-      parameterSchema.some((param) => {
-        if (param.type !== 'int' && param.type !== 'float') {
-          return false;
-        }
-        const value = parameterValues[param.name] ?? '';
-        return !isPositiveNumber(value);
-      })
+      !backtestParametersValid(parameterSchema, parameterValues)
     ) {
       setFormError(common.mustBePositive);
       return;
@@ -231,6 +254,7 @@ export function useBacktestPageController() {
         parameterValues,
         symbol,
         assetClass,
+        assets: runAssets,
       });
       if (selectedDataset) payload.dataset_id = selectedDataset.dataset_id;
       if (costInputs.assumptions)
@@ -245,7 +269,7 @@ export function useBacktestPageController() {
       paperShadowPreview.reset();
       attributionPreview.reset();
       const previewAsset = payload.assets?.[0];
-      if (previewAsset) {
+      if (previewAsset && payload.assets?.length === 1) {
         signalPreview.mutate({
           strategy: payload.strategy,
           symbol: previewAsset.symbol,
@@ -298,6 +322,7 @@ export function useBacktestPageController() {
     accountStrategyAttribution,
     accountStrategyContribution,
     advancedToolsOpen,
+    additionalAssets,
     assetClass,
     assetClassOptions,
     assignSelectedStrategy,
@@ -326,6 +351,7 @@ export function useBacktestPageController() {
     researchGovernanceOpen,
     riskPreview,
     runBacktest,
+    runAssets,
     runContextSourceLabel,
     savedResults,
     searchDefaults,
@@ -340,6 +366,7 @@ export function useBacktestPageController() {
     selectedStrategy,
     setAdvancedToolsOpen,
     setAssetClass,
+    setAdditionalAssets,
     setEndDate,
     setInitialCash,
     setMobileWorkspaceTouched,
@@ -358,6 +385,7 @@ export function useBacktestPageController() {
     strategyCatalog,
     submitRun,
     summary,
+    universeError,
     symbol,
     updateAccountStrategy,
     updateScopedAccountStrategy,

@@ -200,6 +200,7 @@ export function buildRunPayload({
   parameterValues,
   symbol,
   assetClass,
+  assets,
 }: {
   startDate: string;
   endDate: string;
@@ -209,6 +210,7 @@ export function buildRunPayload({
   parameterValues: Record<string, string>;
   symbol: string;
   assetClass: string;
+  assets?: BacktestRunRequest['assets'];
 }): BacktestRunRequest {
   const params = Object.fromEntries(
     parameterSchema.map((param) => [
@@ -226,7 +228,7 @@ export function buildRunPayload({
     ...(typeof shortPeriod === 'number' ? { short_period: shortPeriod } : {}),
     ...(typeof longPeriod === 'number' ? { long_period: longPeriod } : {}),
     params,
-    assets: buildSingleAsset(symbol, assetClass),
+    assets: assets ?? buildSingleAsset(symbol, assetClass),
   };
 }
 

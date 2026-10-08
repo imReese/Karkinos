@@ -8,15 +8,36 @@ import {
   usePublishVerifiedIntervalDataset,
   usePublishedDatasets,
   type VerifiedDatasetJob,
-  type VerifiedDatasetRange,
 } from '../dataset-api';
 import { useBacktestPage } from './backtest-page-context';
 import { DatasetCorporateActions } from './dataset-corporate-actions';
+import {
+  researchDatasetRange,
+  verificationMatchesResearchInputs,
+} from './backtest-universe';
+import { buildSingleAsset } from './backtest-page-model';
+
+function VerificationInputsNotice({
+  mismatch,
+  zh,
+}: {
+  mismatch: boolean;
+  zh: boolean;
+}) {
+  return mismatch ? (
+    <p role="alert" className="mt-2 text-xs text-[var(--app-danger)]">
+      {zh
+        ? '核验任务未覆盖当前完整类型化资产篮子，请重新提交核验。'
+        : 'The verification jobs do not cover this complete typed basket. Submit verification again.'}
+    </p>
+  ) : null;
+}
 
 export function ResearchDatasetPanel() {
   const {
     symbol,
     assetClass,
+    runAssets,
     startDate,
     endDate,
     locale,
@@ -39,15 +60,11 @@ export function ResearchDatasetPanel() {
   const prepareVerified = usePrepareVerifiedDatasetJobs();
   const publishVerified = usePublishVerifiedIntervalDataset();
   const zh = locale === 'zh';
-  const supported = assetClass === 'stock' || assetClass === 'etf';
-  const range: VerifiedDatasetRange | null = supported
-    ? {
-        symbol: symbol.trim(),
-        instrument_type: assetClass,
-        start_date: startDate,
-        end_date: endDate,
-      }
-    : null;
+  const range = researchDatasetRange(
+    runAssets ?? buildSingleAsset(symbol, assetClass),
+    startDate,
+    endDate,
+  );
   const rangeKey = range ? JSON.stringify(range) : '';
   const currentJobs = verification?.key === rangeKey ? verification.jobs : null;
   const verificationPolicy = currentJobs?.[0]?.source_policy_id;
@@ -57,6 +74,8 @@ export function ResearchDatasetPanel() {
   const verificationSucceeded =
     !!currentJobs?.length &&
     sameVerificationPolicy &&
+    !!range &&
+    verificationMatchesResearchInputs(currentJobs, range) &&
     currentJobs.every((job) => job.status === 'succeeded');
   const failedJob = currentJobs?.find((job) => job.status === 'failed');
   const retriedJob = currentJobs?.find(
@@ -73,14 +92,11 @@ export function ResearchDatasetPanel() {
   }, [busy, setDatasetPreparing]);
 
   async function prepareData() {
-    if (assetClass !== 'stock' && assetClass !== 'etf') return;
+    if (!range) return;
     setError('');
     try {
       const result = await prepare.mutateAsync({
-        symbol: symbol.trim(),
-        instrument_type: assetClass,
-        start_date: startDate,
-        end_date: endDate,
+        ...range,
         refresh,
       });
       selectDataset(result);
@@ -147,8 +163,8 @@ export function ResearchDatasetPanel() {
       <div className="mt-3 grid min-w-0 gap-3 text-sm">
         <p className="app-muted text-xs leading-5">
           {zh
-            ? '使用上方的标的和日期准备数据。成功后保存在当前 workspace，重启仍可选择；回测只读取选定 Dataset，不会自动刷新或换源。'
-            : 'Prepare the symbol and dates above. Published datasets survive restarts; bound backtests stay offline without refreshing or switching sources.'}
+            ? '使用上方完整资产篮子和日期准备数据。成功后保存在当前 workspace，重启仍可选择；选择 Dataset 会恢复其全部标的与日期，回测只读取该 Dataset，不会自动刷新或换源。'
+            : 'Prepare the complete asset basket and dates above. Selecting a saved Dataset restores all its instruments and dates; bound backtests stay offline without refreshing or switching sources.'}
         </p>
         <label className="grid min-w-0 gap-2">
           {zh ? '本次回测的数据输入' : 'Data for this backtest'}
@@ -171,8 +187,10 @@ export function ResearchDatasetPanel() {
             </option>
             {datasets.data?.datasets.map((item) => (
               <option key={item.dataset_id} value={item.dataset_id}>
-                {item.instruments.map((asset) => asset.symbol).join(', ')} ·{' '}
-                {item.start_date} — {item.end_date} ·{' '}
+                {item.instruments
+                  .map((asset) => `${asset.symbol} (${asset.instrument_type})`)
+                  .join(', ')}{' '}
+                · {item.start_date} — {item.end_date} ·{' '}
                 {item.cross_source_verified
                   ? zh
                     ? '双源核验 · '
@@ -212,7 +230,7 @@ export function ResearchDatasetPanel() {
         <button
           type="button"
           className="app-button-secondary min-h-11 rounded-[var(--app-radius-control)] px-4 py-2"
-          disabled={busy || !supported || !/^\d{6}$/.test(symbol.trim())}
+          disabled={busy || !range}
           onClick={() => void prepareData()}
         >
           {prepare.isPending
@@ -225,8 +243,8 @@ export function ResearchDatasetPanel() {
         </button>
         <p className="app-muted text-xs leading-5">
           {zh
-            ? '准备会请求数据服务并可能消耗积分；不自动重试。默认复用已有区间、补采缺口。当前支持单只股票或 ETF；未复权历史数据仅用于探索性回测，不代表历史 PIT 或总收益已核验。'
-            : 'Preparation can use data-service credits; no automatic retries. Existing sessions are reused. One stock or ETF per request; unadjusted backfill is exploratory, not historical PIT or total-return verification.'}
+            ? '准备会请求数据服务并可能消耗积分；不自动重试。默认复用已有区间、补采缺口。一次支持最多 32 只股票 / ETF，费用与工作量随标的和交易日增加；未复权历史数据仅用于探索性回测，不代表历史 PIT 或总收益已核验。'
+            : 'Preparation can use data-service credits; no automatic retries. Existing sessions are reused. Prepare up to 32 stocks / ETFs; work and data costs grow with instruments and sessions. Unadjusted backfill is exploratory, not historical PIT or total-return verification.'}
         </p>
         <div className="border-t border-[var(--app-divider)] pt-3">
           <p className="font-medium">
@@ -234,8 +252,8 @@ export function ResearchDatasetPanel() {
           </p>
           <p className="app-muted mt-1 text-xs leading-5">
             {zh
-              ? '按上方标的和日期为每个已核验交易日提交任务。任务成功后手动发布一个区间 Dataset；核验只证明两份日线相符，不证明历史 PIT 可用或总收益口径。'
-              : 'Submit one job per verified trading day for the symbol and dates above. Publish an interval Dataset after every job succeeds. Source agreement does not prove historical PIT availability or total return.'}
+              ? '按完整资产篮子和日期为每个已核验交易日提交任务。全部标的和任务成功后手动发布一个区间 Dataset；核验只证明两份日线相符，不证明历史 PIT 可用或总收益口径。'
+              : 'Submit one job per verified trading day for the complete basket and dates above. Publish an interval Dataset after every instrument and job succeeds. Source agreement does not prove historical PIT availability or total return.'}
           </p>
           <p className="app-muted mt-1 text-xs leading-5">
             {zh
@@ -278,7 +296,7 @@ export function ResearchDatasetPanel() {
             <button
               type="button"
               className="app-button-secondary min-h-11 rounded-[var(--app-radius-control)] px-4 py-2"
-              disabled={busy || !range || !/^\d{6}$/.test(range.symbol)}
+              disabled={busy || !range}
               onClick={() => void prepareVerification()}
             >
               {zh ? '提交双源核验' : 'Submit two-source verification'}
@@ -325,6 +343,14 @@ export function ResearchDatasetPanel() {
                   : ''}
             </p>
           ) : null}
+          <VerificationInputsNotice
+            zh={zh}
+            mismatch={
+              !!currentJobs &&
+              !!range &&
+              !verificationMatchesResearchInputs(currentJobs, range)
+            }
+          />
         </div>
         {datasets.data ? (
           <p className="app-muted break-all text-xs">
