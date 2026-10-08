@@ -283,12 +283,16 @@ class TushareSource(DataSource):
         pro = self._get_pro()
         end = datetime.now()
         start = end - timedelta(days=30)
-        df = fetch_tushare_pro_fund_nav(
-            pro,
-            ts_code=ts_code,
-            start_date=start.strftime("%Y%m%d"),
-            end_date=end.strftime("%Y%m%d"),
-        )
+        try:
+            df = fetch_tushare_pro_fund_nav(
+                pro,
+                ts_code=ts_code,
+                start_date=start.strftime("%Y%m%d"),
+                end_date=end.strftime("%Y%m%d"),
+            )
+        except Exception as exc:
+            logger.warning("TuShare pro fund_nav failed for %s: %s", ts_code, exc)
+            return None
         if df is None or df.empty:
             return None
         df = df.sort_values("nav_date", ascending=False)

@@ -388,10 +388,31 @@ def _materialize_quote(
             command.to_dict(),
         )
         if conflict_fields:
-            raise ValueError(
-                "quote authority facts conflict at the same timestamp: "
-                + ",".join(conflict_fields)
-            )
+            if (
+                command.fetch_run_id
+                and existing_latest["fetch_run_id"] != command.fetch_run_id
+            ):
+                financial_conflicts = [
+                    f
+                    for f in conflict_fields
+                    if f
+                    in {
+                        "price",
+                        "nav_date",
+                        "daily_close_price",
+                        "daily_close_date",
+                    }
+                ]
+                if financial_conflicts:
+                    raise ValueError(
+                        "quote authority facts conflict at the same timestamp: "
+                        + ",".join(financial_conflicts)
+                    )
+            else:
+                raise ValueError(
+                    "quote authority facts conflict at the same timestamp: "
+                    + ",".join(conflict_fields)
+                )
     if existing_rank is not None and existing_rank > candidate_rank:
         if inserted_snapshot_id is not None:
             advance_quote_snapshot_checkpoint_on_connection(

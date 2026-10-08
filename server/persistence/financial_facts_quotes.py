@@ -96,10 +96,30 @@ def _advance_latest_quote_from_snapshot_on_connection(
     if existing_instant is not None and existing_instant == candidate_instant:
         conflict_fields = quote_authority_conflict_fields(dict(existing), candidate)
         if conflict_fields:
-            raise ValueError(
-                "quote authority facts conflict at the same timestamp: "
-                + ",".join(conflict_fields)
-            )
+            if candidate.get("fetch_run_id") and existing[
+                "fetch_run_id"
+            ] != candidate.get("fetch_run_id"):
+                financial_conflicts = [
+                    f
+                    for f in conflict_fields
+                    if f
+                    in {
+                        "price",
+                        "nav_date",
+                        "daily_close_price",
+                        "daily_close_date",
+                    }
+                ]
+                if financial_conflicts:
+                    raise ValueError(
+                        "quote authority facts conflict at the same timestamp: "
+                        + ",".join(financial_conflicts)
+                    )
+            else:
+                raise ValueError(
+                    "quote authority facts conflict at the same timestamp: "
+                    + ",".join(conflict_fields)
+                )
         return False
     if existing_instant is not None and existing_instant > candidate_instant:
         return (

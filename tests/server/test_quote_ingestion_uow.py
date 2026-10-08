@@ -693,3 +693,107 @@ def test_older_batch_observation_cannot_regress_latest_projection(tmp_path) -> N
     assert latest is not None
     assert latest["price"] == 12.0
     assert latest["quote_timestamp"] == newer.quote_timestamp
+
+
+def test_cross_run_same_timestamp_quote_refresh_succeeds_when_financial_facts_agree(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    timestamp = "2026-08-26T10:00:00+08:00"
+
+    run_1 = "quote-run-provider-1"
+    _create_run(db, run_1)
+    db.persist_quote_ingestion_sync(
+        _command(
+            price=10.5,
+            timestamp=timestamp,
+            run_id=run_1,
+        )
+    )
+    finished_1 = db.finish_quote_fetch_run(
+        run_id=run_1,
+        finished_at="2026-08-26T15:01:00+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+    )
+    assert finished_1 is not None and finished_1["status"] == "success"
+
+    run_2 = "quote-run-provider-2"
+    _create_run(db, run_2)
+    command_2 = replace(
+        _command(
+            price=10.5,
+            timestamp=timestamp,
+            run_id=run_2,
+        ),
+        quote_source="tencent_realtime_quote",
+        provider_name="tencent",
+        provider_status="live",
+        volume=2000.0,
+    )
+    db.persist_quote_ingestion_sync(command_2)
+    finished_2 = db.finish_quote_fetch_run(
+        run_id=run_2,
+        finished_at="2026-08-26T15:02:00+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+    )
+    assert finished_2 is not None and finished_2["status"] == "success"
+    latest = db.get_latest_quote_sync(command_2.symbol, command_2.asset_type)
+    assert latest is not None
+    assert latest["price"] == 10.5
+    assert latest["provider_name"] == "tencent"
+    assert latest["quote_source"] == "tencent_realtime_quote"
+
+
+def test_cross_run_same_timestamp_quote_refresh_fails_closed_when_price_conflicts(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    timestamp = "2026-08-26T10:00:00+08:00"
+
+    run_1 = "quote-run-price-1"
+    _create_run(db, run_1)
+    db.persist_quote_ingestion_sync(
+        _command(
+            price=10.5,
+            timestamp=timestamp,
+            run_id=run_1,
+        )
+    )
+    db.finish_quote_fetch_run(
+        run_id=run_1,
+        finished_at="2026-08-26T15:01:00+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+    )
+
+    run_2 = "quote-run-price-2"
+    _create_run(db, run_2)
+    command_2 = replace(
+        _command(
+            price=11.5,
+            timestamp=timestamp,
+            run_id=run_2,
+        ),
+        provider_name="tencent",
+    )
+    db.persist_quote_ingestion_sync(command_2)
+    finished_2 = db.finish_quote_fetch_run(
+        run_id=run_2,
+        finished_at="2026-08-26T15:02:00+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+    )
+    assert finished_2 is not None
+    assert finished_2["status"] == "failed"
+    assert (
+        finished_2["error_message"]
+        == "valuation snapshot publication failed: ValueError"
+    )

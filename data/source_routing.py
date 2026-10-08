@@ -105,6 +105,7 @@ def legacy_sources_for_use_case(
     sources = data_manager.build_sources(
         data_source=getattr(config, "data_source", None),
         tushare_token=str(getattr(config, "tushare_token", "") or ""),
+        source_policy=source_policy_for_config(config),
     )
     resolved = {name: sources[name] for name in route.candidates if name in sources}
     if not resolved:
