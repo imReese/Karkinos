@@ -144,6 +144,80 @@ def test_backtest_signal_preview_route_can_load_server_side_bars(monkeypatch) ->
     assert record["does_not_enable_execution"] is True
 
 
+def test_backtest_signal_preview_etf_with_real_data_manager(monkeypatch) -> None:
+    import pandas as pd
+
+    from core.types import AssetClass, BarFrequency, Symbol
+    from data.source import DataSource
+    from server.routes import backtest as backtest_routes
+
+    prices = [10.0, 9.9, 9.8, 9.7]
+    dates = pd.bdate_range("2026-06-01", periods=len(prices))
+    df = pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": prices,
+            "high": [p + 0.2 for p in prices],
+            "low": [p - 0.2 for p in prices],
+            "close": prices,
+            "volume": [1000.0] * len(prices),
+        }
+    )
+
+    class MockFixtureSource(DataSource):
+        def __init__(self):
+            self.name = "fixture"
+
+        def fetch_bars(
+            self,
+            symbol,
+            start,
+            end,
+            frequency=BarFrequency.DAILY,
+            asset_class=AssetClass.STOCK,
+        ):
+            return df
+
+        def fetch_ticks(self, symbol, start, end):
+            raise NotImplementedError
+
+        def list_symbols(self):
+            return [Symbol("510300")]
+
+    mock_src = MockFixtureSource()
+    monkeypatch.setattr(
+        "data.manager.build_sources", lambda **kwargs: {"fixture": mock_src}
+    )
+    monkeypatch.setattr(
+        "server.services.backtest_views.strategy_inputs.resolve_backtest_data_plane",
+        lambda config: ({"fixture": mock_src}, None, "fixture"),
+    )
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state",
+        lambda: SimpleNamespace(config=SimpleNamespace(data_source="fixture")),
+    )
+
+    router = backtest_routes.create_router()
+    endpoint = _route(router, "/api/backtest/signal-preview", "POST").endpoint
+
+    response = asyncio.run(
+        endpoint(
+            backtest_routes.StrategySignalPreviewRequest(
+                strategy="dual_ma",
+                symbol="510300",
+                asset_class="etf",
+                start_date="2026-06-01",
+                end_date="2026-06-04",
+                params={"short_period": "2", "long_period": "3"},
+            )
+        )
+    )
+
+    assert response.strategy_id == "dual_ma"
+    assert response.symbol == "510300"
+    assert response.dataset_snapshot_id is not None
+
+
 def test_backtest_signal_preview_route_rejects_unknown_params_before_running(
     monkeypatch,
 ) -> None:

@@ -10,7 +10,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from server.bootstrap import build_strategy, build_watchlist
+from server.bootstrap import (
+    build_instrument_watchlist,
+    build_strategy,
+    build_watchlist,
+)
 from server.config import BacktestConfig
 from server.models import (
     BacktestRequest,
@@ -213,19 +217,31 @@ def run_single_backtest(
             ),
         )
 
-        watchlist = build_watchlist(BacktestConfig(assets=assets))
+        watchlist = build_instrument_watchlist(BacktestConfig(assets=assets))
         instruments = {}
         data_handlers = {}
-        for sym, ac in watchlist:
-            instrument = DataManager.get_instrument(sym, ac)
+        for sym, ac, itype in watchlist:
+            if hasattr(DataManager, "get_instrument_by_type"):
+                instrument = DataManager.get_instrument_by_type(sym, itype)
+            else:
+                instrument = DataManager.get_instrument(sym, ac)
             instruments[sym] = instrument
 
-            handler = dm.get_bars(
-                sym,
-                datetime.strptime(request.start_date, "%Y-%m-%d"),
-                datetime.strptime(request.end_date, "%Y-%m-%d"),
-                asset_class=ac,
-            )
+            try:
+                handler = dm.get_bars(
+                    sym,
+                    datetime.strptime(request.start_date, "%Y-%m-%d"),
+                    datetime.strptime(request.end_date, "%Y-%m-%d"),
+                    asset_class=ac,
+                    instrument_type=itype,
+                )
+            except TypeError:
+                handler = dm.get_bars(
+                    sym,
+                    datetime.strptime(request.start_date, "%Y-%m-%d"),
+                    datetime.strptime(request.end_date, "%Y-%m-%d"),
+                    asset_class=ac,
+                )
             data_handlers[sym] = handler
 
         source_names = list(sources.keys())

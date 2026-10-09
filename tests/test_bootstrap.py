@@ -11,6 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.types import AssetClass, InstrumentType, Symbol
 from server.bootstrap import (
+    build_instrument_watchlist,
     build_strategy,
     build_watchlist,
     create_runtime_context,
@@ -686,6 +687,24 @@ def test_build_watchlist_maps_asset_classes():
         (Symbol("600519"), AssetClass.STOCK),
         (Symbol("510300"), AssetClass.FUND),
         (Symbol("Au99.99"), AssetClass.GOLD),
+    ]
+
+
+def test_build_instrument_watchlist_preserves_instrument_type():
+    config = BacktestConfig(
+        assets=[
+            {"symbol": "600519", "asset_class": "stock"},
+            {"symbol": "510300", "asset_class": "etf"},
+            {"symbol": "Au99.99", "asset_class": "gold"},
+        ]
+    )
+
+    watchlist = build_instrument_watchlist(config)
+
+    assert watchlist == [
+        (Symbol("600519"), AssetClass.STOCK, InstrumentType.STOCK),
+        (Symbol("510300"), AssetClass.FUND, InstrumentType.ETF),
+        (Symbol("Au99.99"), AssetClass.GOLD, InstrumentType.GOLD),
     ]
 
 

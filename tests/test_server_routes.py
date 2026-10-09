@@ -1022,6 +1022,94 @@ def test_run_single_backtest_attaches_rolling_oos_validation(monkeypatch):
     assert "not refit parameters per fold" in oos["limitations"][1]
 
 
+def test_run_single_backtest_etf_with_real_data_manager(monkeypatch, tmp_path):
+    import pandas as pd
+
+    from core.types import AssetClass, BarFrequency, Symbol
+    from data.source import DataSource
+    from server.routes import backtest as backtest_routes
+
+    prices = [
+        10.0,
+        9.9,
+        9.8,
+        9.7,
+        9.6,
+        9.7,
+        9.8,
+        9.9,
+        10.0,
+        10.1,
+        10.2,
+        10.3,
+        10.4,
+        10.5,
+    ]
+    dates = pd.bdate_range("2026-01-05", periods=len(prices))
+    df = pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": prices,
+            "high": [price + 0.2 for price in prices],
+            "low": [price - 0.2 for price in prices],
+            "close": prices,
+            "volume": [1_000_000.0] * len(prices),
+        }
+    )
+
+    class MockFixtureSource(DataSource):
+        def __init__(self):
+            self.name = "fixture"
+
+        def fetch_bars(
+            self,
+            symbol,
+            start,
+            end,
+            frequency=BarFrequency.DAILY,
+            asset_class=AssetClass.STOCK,
+        ):
+            return df
+
+        def fetch_ticks(self, symbol, start, end):
+            raise NotImplementedError
+
+        def list_symbols(self):
+            return [Symbol("510300")]
+
+    mock_src = MockFixtureSource()
+    monkeypatch.setattr(
+        "data.manager.build_sources", lambda **kwargs: {"fixture": mock_src}
+    )
+    monkeypatch.setattr(
+        "server.services.backtest_views.strategy_inputs.resolve_backtest_data_plane",
+        lambda config: ({"fixture": mock_src}, None, "fixture"),
+    )
+
+    result = backtest_routes._run_single_backtest(
+        backtest_routes.BacktestRequest(
+            start_date="2026-01-05",
+            end_date="2026-01-23",
+            initial_cash=100000,
+            strategy="dual_ma",
+            short_period=3,
+            long_period=5,
+            assets=[{"symbol": "510300", "asset_class": "etf"}],
+        ),
+        SimpleNamespace(
+            assets=[],
+            data_source="fixture",
+            tushare_token="",
+        ),
+    )
+
+    assert "final_equity" in result
+    assert result["duration_days"] >= 0
+    assert "metrics_json" in result
+    snapshot = result["metrics_json"]["dataset_snapshot"]
+    assert snapshot["symbol_universe"][0]["symbol"] == "510300"
+
+
 def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
     import pandas as pd
 

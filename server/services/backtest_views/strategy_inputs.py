@@ -9,8 +9,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from core.events import MarketEvent
-from core.types import AssetClass, BarFrequency, Symbol
-from server.bootstrap import build_watchlist
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
+from server.bootstrap import build_instrument_watchlist, build_watchlist
 from server.config import BacktestConfig
 from server.contracts.http.backtest import (
     StrategySignalPreviewBar,
@@ -155,11 +155,11 @@ def preview_bar_to_market_event(
     )
 
 
-def signal_preview_symbol_asset_class(
+def signal_preview_symbol_identity(
     symbol: str,
     asset_class: str | None,
-) -> tuple[Symbol, AssetClass]:
-    return build_watchlist(
+) -> tuple[Symbol, AssetClass, InstrumentType]:
+    return build_instrument_watchlist(
         BacktestConfig(
             assets=[
                 {
@@ -169,6 +169,14 @@ def signal_preview_symbol_asset_class(
             ]
         )
     )[0]
+
+
+def signal_preview_symbol_asset_class(
+    symbol: str,
+    asset_class: str | None,
+) -> tuple[Symbol, AssetClass]:
+    sym, ac, _ = signal_preview_symbol_identity(symbol, asset_class)
+    return sym, ac
 
 
 def resolve_backtest_data_plane(
@@ -233,7 +241,7 @@ def load_signal_preview_bars(
             },
         )
 
-    symbol, asset_class = signal_preview_symbol_asset_class(
+    symbol, asset_class, instrument_type = signal_preview_symbol_identity(
         request.symbol,
         request.asset_class,
     )
@@ -254,12 +262,21 @@ def load_signal_preview_bars(
             else str(getattr(config, "data_source", "") or "") or None
         ),
     )
-    handler = manager.get_bars(
-        symbol,
-        datetime.strptime(start_date, "%Y-%m-%d"),
-        datetime.strptime(end_date, "%Y-%m-%d"),
-        asset_class=asset_class,
-    )
+    try:
+        handler = manager.get_bars(
+            symbol,
+            datetime.strptime(start_date, "%Y-%m-%d"),
+            datetime.strptime(end_date, "%Y-%m-%d"),
+            asset_class=asset_class,
+            instrument_type=instrument_type,
+        )
+    except TypeError:
+        handler = manager.get_bars(
+            symbol,
+            datetime.strptime(start_date, "%Y-%m-%d"),
+            datetime.strptime(end_date, "%Y-%m-%d"),
+            asset_class=asset_class,
+        )
     snapshot = build_backtest_dataset_snapshot(
         start_date=start_date,
         end_date=end_date,

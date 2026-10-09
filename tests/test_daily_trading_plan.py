@@ -416,6 +416,31 @@ def test_trading_plan_blocks_sell_when_t1_available_quantity_is_insufficient() -
     assert plan["blockers"][0]["reason"] == "t1_available_quantity_insufficient"
 
 
+def test_trading_plan_blocks_sell_when_candidate_explicitly_has_zero_t1_available_quantity() -> (
+    None
+):
+    for field in ("t1_available_quantity", "sellable_quantity", "available_quantity"):
+        plan = _plan(
+            candidate=_candidate(action="sell", target_weight=0.0, price=12.0)
+            | {field: 0, "quantity": 100.0},
+            positions={
+                "600519": {
+                    "quantity": 100.0,
+                    "avg_cost": 8.0,
+                    "market_value": 1200.0,
+                }
+            },
+        )
+
+        intent = plan["order_intents"][0]
+        assert intent["submission_status"] == "blocked_by_t1_available_quantity"
+        checks = _constraint_map(intent)
+        assert checks["t1_available_quantity"]["status"] == "blocked"
+        assert checks["t1_available_quantity"]["available_quantity"] == 0.0
+        assert checks["t1_available_quantity"]["estimated_quantity"] == 100.0
+        assert plan["blockers"][0]["reason"] == "t1_available_quantity_insufficient"
+
+
 def test_trading_plan_blocks_china_market_price_and_status_constraints() -> None:
     scenarios = [
         (

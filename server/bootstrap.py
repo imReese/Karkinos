@@ -290,12 +290,12 @@ def _configured_instrument_identities(
     return identities
 
 
-def build_watchlist(
+def build_instrument_watchlist(
     config: BacktestConfig,
-) -> list[tuple[Symbol, AssetClass]]:
-    """Build the broad provider watchlist from explicit instrument identities."""
+) -> list[tuple[Symbol, AssetClass, InstrumentType]]:
+    """Build the provider watchlist preserving canonical instrument types."""
 
-    watchlist: list[tuple[Symbol, AssetClass]] = []
+    watchlist: list[tuple[Symbol, AssetClass, InstrumentType]] = []
     for identity in _configured_instrument_identities(config):
         asset_class = _INSTRUMENT_ASSET_CLASS_MAP.get(identity.instrument_type)
         if asset_class is None:
@@ -303,8 +303,19 @@ def build_watchlist(
                 "configured instrument type is unsupported: "
                 f"{identity.instrument_type.value}"
             )
-        watchlist.append((identity.symbol, asset_class))
+        watchlist.append((identity.symbol, asset_class, identity.instrument_type))
     return watchlist
+
+
+def build_watchlist(
+    config: BacktestConfig,
+) -> list[tuple[Symbol, AssetClass]]:
+    """Build the broad provider watchlist from explicit instrument identities."""
+
+    return [
+        (symbol, asset_class)
+        for symbol, asset_class, _ in build_instrument_watchlist(config)
+    ]
 
 
 def build_strategy(config: BacktestConfig, event_bus: Any) -> Any:

@@ -9,6 +9,9 @@ from server.services.daily_trading_plan_support import blocker as _blocker
 from server.services.daily_trading_plan_support import (
     candidate_status as _candidate_status,
 )
+from server.services.daily_trading_plan_support import (
+    first_float as _first_float,
+)
 from server.services.daily_trading_plan_support import float_value as _float
 
 BOARD_LOT_ASSET_CLASSES = {"stock", "etf"}
@@ -161,11 +164,11 @@ def t1_check(
     side: str,
     quantity: float,
 ) -> dict[str, Any]:
-    available_quantity = _float(
-        candidate.get("t1_available_quantity")
-        or candidate.get("sellable_quantity")
-        or candidate.get("available_quantity"),
-        position_float(
+    available_quantity = _first_float(
+        candidate.get("t1_available_quantity"),
+        candidate.get("sellable_quantity"),
+        candidate.get("available_quantity"),
+        fallback=position_float(
             position,
             "t1_available_quantity",
             "sellable_quantity",
@@ -295,11 +298,11 @@ def estimated_quantity(
             "portfolio_allocation_quantity",
         )
     if side == "sell":
-        quantity = _float(
-            candidate.get("current_quantity")
-            or candidate.get("position_quantity")
-            or candidate.get("quantity"),
-            position_float(position, "quantity", "shares"),
+        quantity = _first_float(
+            candidate.get("current_quantity"),
+            candidate.get("position_quantity"),
+            candidate.get("quantity"),
+            fallback=position_float(position, "quantity", "shares"),
         )
         return quantity, "current_position_quantity"
     target_total_quantity = (total_equity * target_weight) / price
