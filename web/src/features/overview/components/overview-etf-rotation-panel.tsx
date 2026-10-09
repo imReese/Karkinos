@@ -83,7 +83,7 @@ export function EtfRotationOverviewPanel({
         <div className="flex items-center justify-between pb-2 border-b border-[var(--app-divider)]/40 app-type-micro">
           <span className="flex items-center gap-1 font-bold text-[var(--app-text-secondary)] uppercase tracking-wider">
             <TrendingUp className="h-3 w-3 text-[var(--app-accent)]" />
-            历史回测表现
+            历史回测表现 (离线基准测算参考)
           </span>
           {data.strategy_periods ? (
             <div className="flex items-center rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/60 p-0.5">
@@ -275,8 +275,12 @@ export function EtfRotationOverviewPanel({
                 <span>
                   测算基准:{' '}
                   {rebalance.capital_source === 'available_cash'
-                    ? '账户可用资金'
-                    : '配置资金'}{' '}
+                    ? '账户可用现金'
+                    : rebalance.capital_source === 'held_positions_rebalance'
+                      ? '持仓轮动净值'
+                      : rebalance.capital_source === 'custom'
+                        ? '自定义本金'
+                        : '演示隔离资金'}{' '}
                   (¥
                   {rebalance.total_equity.toLocaleString('zh-CN', {
                     minimumFractionDigits: 2,
@@ -293,11 +297,19 @@ export function EtfRotationOverviewPanel({
           </div>
         ) : null}
 
+        {data.is_demo ? (
+          <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-2.5 text-xs text-[var(--app-warning-text)] flex items-center justify-between mb-2">
+            <span>
+              演示隔离模式：账户无可用现金，当前仅供试算参考，不可实盘执行。
+            </span>
+          </div>
+        ) : null}
+
         {execution_status === 'already_executed_today' ? (
           <div className="rounded-xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)] p-2.5 text-xs text-[var(--app-success-text)] flex items-center justify-between">
             <span className="flex items-center gap-1.5 font-semibold">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              今日调仓已执行成功
+              已记录模拟调仓试算（未向券商报单）
             </span>
             <a
               href="/trading"
@@ -317,12 +329,12 @@ export function EtfRotationOverviewPanel({
             {executeMutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4" />
-                <span>正在提交调仓委托…</span>
+                <span>正在生成模拟试算…</span>
               </>
             ) : (
               <>
                 <TrendingUp className="h-4 w-4" />
-                <span>确认下单 (一键执行调仓)</span>
+                <span>模拟调仓试算 (计划预览)</span>
               </>
             )}
           </button>

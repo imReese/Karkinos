@@ -108,17 +108,17 @@ def test_export_etf_rebalance_csv_and_script(client: TestClient):
     assert csv_resp.status_code == 200
     assert "text/csv" in csv_resp.headers["content-type"]
     assert (
-        'attachment; filename="etf_rebalance_orders.csv"'
-        in csv_resp.headers["content-disposition"]
+        'filename="etf_rebalance_review.csv"' in csv_resp.headers["content-disposition"]
     )
     csv_text = csv_resp.text
     assert "证券代码,证券名称,买卖方向,委托数量,预估价格,预估金额,调仓说明" in csv_text
 
-    # Script export
+    # Script export as draft template
     script_resp = client.get("/api/trading/etf-rebalance/script")
     assert script_resp.status_code == 200
-    assert "execute_rebalance_miniqmt.py" in script_resp.headers["content-disposition"]
+    assert "draft_rebalance_miniqmt.py" in script_resp.headers["content-disposition"]
     script_text = script_resp.text
+    assert "DRAFT REVIEW TEMPLATE" in script_text
     assert "xtquant" in script_text
     assert "XtQuantTrader" in script_text
 
@@ -131,12 +131,13 @@ def test_get_etf_rebalance_dashboard_provides_strategy_returns_and_orders(
     data = resp.json()
 
     assert data["status"] == "success"
-    # Strategy verified backtest metrics
+    # Strategy offline reference metrics
     assert "strategy" in data
     assert data["strategy"]["cumulative_return_pct"] == 160.53
     assert data["strategy"]["cagr_pct"] == 18.94
     assert data["strategy"]["sharpe_ratio"] == 1.09
     assert data["strategy"]["max_drawdown_pct"] == 11.87
+    assert data["strategy"]["verification_status"] == "offline_reference_unbound"
 
     # Orders and execution readiness
     assert "orders" in data
@@ -144,28 +145,72 @@ def test_get_etf_rebalance_dashboard_provides_strategy_returns_and_orders(
     assert data["has_pending_orders"] is True
 
 
-def test_post_etf_rebalance_execute_places_orders_and_returns_receipt(
+def test_demo_mode_quarantined_when_account_has_no_cash_or_unavailable(
+    client: TestClient,
+    monkeypatch,
+):
+    # Simulate account with zero cash and no ledger availability
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (0, 0, {}, False),
+    )
+    EtfRotationAutomationService.reset_state()
+
+    dash_resp = client.get("/api/trading/etf-rebalance/dashboard")
+    assert dash_resp.status_code == 200
+    dash_data = dash_resp.json()
+    assert dash_data["is_demo"] is True
+    assert dash_data["can_execute"] is False
+    assert dash_data["rebalance"]["capital_source"] == "fallback_demo"
+
+    # In demo mode, script export is blocked and CSV is marked demo
+    demo_script_resp = client.get("/api/trading/etf-rebalance/script")
+    assert demo_script_resp.status_code == 400
+    assert "演示资金隔离模式下禁止导出券商执行脚本" in demo_script_resp.json()["detail"]
+
+    demo_csv_resp = client.get("/api/trading/etf-rebalance/csv")
+    assert demo_csv_resp.status_code == 200
+    assert (
+        'filename="demo_etf_rebalance_review.csv"'
+        in demo_csv_resp.headers["content-disposition"]
+    )
+
+    # In demo mode, execution is rejected
+    demo_exec_resp = client.post(
+        "/api/trading/etf-rebalance/execute", json={"operator": "reese"}
+    )
+    assert demo_exec_resp.status_code == 200
+    assert demo_exec_resp.json()["status"] == "rejected"
+    assert "演示资金隔离模式" in demo_exec_resp.json()["message"]
+
+
+def test_post_etf_rebalance_execute_records_simulated_preview(
     client: TestClient,
 ):
-    payload = {"operator": "reese", "note": "一键执行实盘调仓"}
+    client.post("/api/trading/etf-rebalance/run", json={"total_equity": 200000.0})
+
+    payload = {"operator": "reese", "note": "模拟调仓试算"}
     resp = client.post("/api/trading/etf-rebalance/execute", json=payload)
     assert resp.status_code == 200
     data = resp.json()
 
     assert data["status"] == "success"
+    assert data["is_simulated"] is True
     assert data["operator"] == "reese"
     assert "batch_id" in data
     assert data["orders_count"] > 0
     assert len(data["executed_orders"]) == data["orders_count"]
 
-    # Verify each executed order record
+    # Verify each executed order record is simulated_preview, NOT claiming broker submission
     for record in data["executed_orders"]:
-        assert record["status"] == "submitted"
+        assert record["status"] == "simulated_preview"
+        assert record["is_simulated"] is True
         assert record["order_id"].startswith("ORD-")
         assert record["side"] in ("buy", "sell")
         assert len(record["name"]) > 0
 
-    # Verify dashboard now reflects execution
+    # Verify dashboard reflects execution
     dash_resp = client.get("/api/trading/etf-rebalance/dashboard")
     dash_data = dash_resp.json()
     assert dash_data["execution_status"] == "already_executed_today"

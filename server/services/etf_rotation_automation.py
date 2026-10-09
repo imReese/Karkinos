@@ -69,6 +69,8 @@ VERIFIED_BACKTEST_METRICS_5Y: dict[str, Any] = {
     "benchmark_return_pct": -8.65,
     "excess_return_pct": 169.18,
     "core_advantage": "利用美股龙头(标普500/纳指100)与黄金在A股熊市期间的非相关独立牛市创造超额复利",
+    "verification_status": "offline_reference_unbound",
+    "disclaimer": "离线基准测算参考，未绑定当前不可变 Dataset 报告",
 }
 
 VERIFIED_BACKTEST_METRICS_2025: dict[str, Any] = {
@@ -84,6 +86,8 @@ VERIFIED_BACKTEST_METRICS_2025: dict[str, Any] = {
     "benchmark_return_pct": 14.20,
     "excess_return_pct": 6.81,
     "core_advantage": "在2025年宽基反弹与全球高位震荡中实现稳健正收益并跑赢大盘",
+    "verification_status": "offline_reference_unbound",
+    "disclaimer": "离线基准测算参考，未绑定当前不可变 Dataset 报告",
 }
 
 VERIFIED_BACKTEST_METRICS = VERIFIED_BACKTEST_METRICS_5Y
@@ -160,7 +164,7 @@ class EtfRotationAutomationService:
 
     def resolve_account_capital_and_holdings(
         self,
-    ) -> tuple[Decimal, Decimal, dict[Symbol, int]]:
+    ) -> tuple[Decimal, Decimal, dict[Symbol, int], bool]:
         """Resolve available cash, total equity, and current ETF holdings from account ledger."""
         try:
             from server.db import AppDatabase
@@ -174,10 +178,10 @@ class EtfRotationAutomationService:
                 for sym, pos in rebuilt.portfolio.positions.items()
                 if sym in ETF_METADATA and pos.quantity > 0
             }
-            return cash, cash, holdings
+            return cash, cash, holdings, True
         except Exception as exc:
             logger.debug("Failed to resolve account capital from ledger: %s", exc)
-            return Decimal(0), Decimal(0), {}
+            return Decimal(0), Decimal(0), {}, False
 
     def evaluate_rebalance(
         self,
@@ -240,7 +244,9 @@ class EtfRotationAutomationService:
         }
 
         # 3. Resolve total equity, capital source, and current holdings
-        acct_cash, _, acct_holdings = self.resolve_account_capital_and_holdings()
+        acct_cash, _, acct_holdings, acct_available = (
+            self.resolve_account_capital_and_holdings()
+        )
 
         holdings: dict[Symbol, int] = {}
         if current_holdings is not None:
@@ -249,20 +255,26 @@ class EtfRotationAutomationService:
         else:
             holdings = acct_holdings
 
+        strategy_etf_value = sum(
+            Decimal(holdings.get(sym, 0)) * latest_prices.get(sym, Decimal(0))
+            for sym in symbols
+        )
+        real_account_equity = acct_cash + strategy_etf_value
+
+        is_demo = False
         if total_equity is not None and float(total_equity) > 0:
             eq = Decimal(str(total_equity))
             capital_source = "custom"
-        elif acct_cash > 0:
-            # Bound rotation allocation within available cash plus market value of held strategy ETFs
-            strategy_etf_value = sum(
-                Decimal(holdings.get(sym, 0)) * latest_prices.get(sym, Decimal(0))
-                for sym in symbols
-            )
-            eq = acct_cash + strategy_etf_value
-            capital_source = "available_cash"
+        elif acct_available and real_account_equity > 0:
+            eq = real_account_equity
+            if acct_cash > 0:
+                capital_source = "available_cash"
+            else:
+                capital_source = "held_positions_rebalance"
         else:
             eq = Decimal("100000")
             capital_source = "fallback_demo"
+            is_demo = True
 
         plan = generate_rebalance_plan(
             target_weights=target_weights,
@@ -284,7 +296,10 @@ class EtfRotationAutomationService:
             "as_of_date": latest_date_str,
             "total_equity": float(eq),
             "capital_source": capital_source,
+            "is_demo": is_demo,
+            "account_available": acct_available,
             "available_cash": float(acct_cash) if acct_cash > 0 else None,
+            "strategy_etf_value": float(strategy_etf_value),
             "turnover_ratio": float(plan.turnover_ratio),
             "total_sell_amount": float(plan.total_sell_amount),
             "total_buy_amount": float(plan.total_buy_amount),
@@ -307,7 +322,7 @@ class EtfRotationAutomationService:
             ],
             "markdown_table": plan.to_markdown_table(),
             "csv_content": plan.to_csv(),
-            "miniqmt_script": plan.to_miniqmt_script(),
+            "miniqmt_script": plan.to_miniqmt_script() if not is_demo else "",
         }
 
         EtfRotationAutomationService._cached_plan = plan
@@ -315,10 +330,12 @@ class EtfRotationAutomationService:
         EtfRotationAutomationService._last_evaluated_at = now
 
         logger.info(
-            "ETF rotation rebalance evaluated for %s: %d orders, turnover %.2f%%",
+            "ETF rotation rebalance evaluated for %s: %d orders, turnover %.2f%% (capital: %s, demo=%s)",
             latest_date_str,
             len(plan.all_orders),
             float(plan.turnover_ratio) * 100,
+            capital_source,
+            is_demo,
         )
         return summary
 
@@ -355,6 +372,17 @@ class EtfRotationAutomationService:
         if cls._last_execution_receipt:
             status = "already_executed_today"
 
+        is_demo = summary.get("is_demo", False) if summary else False
+        capital_source = (
+            summary.get("capital_source", "unknown") if summary else "unknown"
+        )
+        is_executable_capital = (not is_demo) and (
+            capital_source in ("available_cash", "held_positions_rebalance", "custom")
+        )
+        can_execute = (
+            has_orders and is_executable_capital and status != "already_executed_today"
+        )
+
         return {
             "status": "success",
             "strategy": VERIFIED_BACKTEST_METRICS_5Y,
@@ -366,7 +394,9 @@ class EtfRotationAutomationService:
             "orders": orders,
             "execution_status": status,
             "has_pending_orders": has_orders,
-            "can_execute": has_orders and status != "already_executed_today",
+            "can_execute": can_execute,
+            "is_demo": is_demo,
+            "capital_quarantined": is_demo,
             "last_execution": cls._last_execution_receipt,
         }
 
@@ -378,16 +408,23 @@ class EtfRotationAutomationService:
         note: str = "",
         broker_mode: str = "auto",
     ) -> dict[str, Any]:
-        """Directly execute actionable rebalance orders into the broker / trading engine.
+        """Record simulated rebalance execution plan (dry run / preview only).
 
-        Performs order execution in sequence (sells first to release cash, then buys),
-        generates official execution receipts, and updates the system's execution state.
+        Does NOT submit real orders to any broker and does NOT mutate actual portfolio cash/holdings.
+        Strictly quarantined when running under demo or unavailable capital.
         """
         summary = cls.get_latest_plan_summary(auto_compute=True)
         if not summary or not summary.get("orders"):
             return {
                 "status": "no_action_needed",
                 "message": "当前资产配置已符合目标权重，无需执行任何买卖委托。",
+                "executed_orders": [],
+            }
+
+        if summary.get("is_demo"):
+            return {
+                "status": "rejected",
+                "message": "当前处于演示资金隔离模式（真实账户资金为 0 或读取不可用），已阻止执行实盘调仓。",
                 "executed_orders": [],
             }
 
@@ -407,7 +444,8 @@ class EtfRotationAutomationService:
                 "quantity": o["quantity"],
                 "price": o["price"],
                 "amount": o["amount"],
-                "status": "submitted",
+                "status": "simulated_preview",
+                "is_simulated": True,
                 "submitted_at": now.isoformat(),
                 "reason": o["reason"],
             }
@@ -415,21 +453,22 @@ class EtfRotationAutomationService:
 
         receipt = {
             "status": "success",
+            "is_simulated": True,
             "batch_id": batch_id,
             "executed_at": now.isoformat(),
             "operator": operator,
-            "note": note or "基于全球大类资产轮动策略收益模型的一键实盘下单",
-            "broker_mode": broker_mode,
+            "note": note or "基于全球大类资产轮动模型的模拟调仓试算",
+            "broker_mode": "simulation_preview",
             "orders_count": len(executed_records),
             "total_sell_amount": summary.get("total_sell_amount", 0.0),
             "total_buy_amount": summary.get("total_buy_amount", 0.0),
             "executed_orders": executed_records,
-            "message": f"成功提交 {len(executed_records)} 笔调仓委托（先卖后买，已完成整手报单）",
+            "message": f"调仓试算完成：已生成 {len(executed_records)} 笔模拟委托清单（未向券商报单，请人工审核后在交易端执行）",
         }
 
         cls._last_execution_receipt = receipt
         logger.info(
-            "Executed %d rebalance orders for batch %s by %s",
+            "Simulated %d rebalance orders for batch %s by %s",
             len(executed_records),
             batch_id,
             operator,

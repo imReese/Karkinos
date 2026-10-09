@@ -88,31 +88,39 @@ def create_router(
 
     @router.get("/csv", response_class=PlainTextResponse)
     async def export_rebalance_csv() -> PlainTextResponse:
-        """Download broker-ready CSV (证券代码, 证券名称, 买卖方向, 委托数量, 委托价格, 预估金额, 调仓说明)."""
+        """Download review-only CSV (证券代码, 证券名称, 买卖方向, 委托数量, 委托价格, 预估金额, 调仓说明)."""
         summary = svc.get_latest_plan_summary()
         if summary is None:
             summary = svc.evaluate_rebalance()
         csv_text = summary.get("csv_content", "")
+        filename = (
+            "demo_etf_rebalance_review.csv"
+            if summary.get("is_demo")
+            else "etf_rebalance_review.csv"
+        )
         return PlainTextResponse(
             content=csv_text,
             media_type="text/csv",
-            headers={
-                "Content-Disposition": 'attachment; filename="etf_rebalance_orders.csv"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @router.get("/script", response_class=PlainTextResponse)
     async def export_miniqmt_script() -> PlainTextResponse:
-        """Download standalone MiniQMT (xtquant) Python execution script."""
+        """Download standalone MiniQMT (xtquant) Python draft reference script."""
         summary = svc.get_latest_plan_summary()
         if summary is None:
             summary = svc.evaluate_rebalance()
+        if summary.get("is_demo"):
+            raise HTTPException(
+                status_code=400,
+                detail="演示资金隔离模式下禁止导出券商执行脚本，请配置真实可用资金或连接账户账本。",
+            )
         script_text = summary.get("miniqmt_script", "")
         return PlainTextResponse(
             content=script_text,
             media_type="text/x-python",
             headers={
-                "Content-Disposition": 'attachment; filename="execute_rebalance_miniqmt.py"'
+                "Content-Disposition": 'attachment; filename="draft_rebalance_miniqmt.py"'
             },
         )
 

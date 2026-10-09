@@ -72,7 +72,7 @@ export function EtfRotationTradingCard({
   const handleExecute = () => {
     executeMutation.mutate({
       operator: 'user',
-      note: '基于全球轮动模型确认一键下单',
+      note: '基于全球大类资产轮动模型生成模拟调仓试算',
     });
   };
 
@@ -102,7 +102,7 @@ export function EtfRotationTradingCard({
           {execution_status === 'already_executed_today' ? (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-success-text)]">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              今日调仓已执行
+              模拟调仓已记录
             </span>
           ) : execution_status === 'ready_to_trade' ? (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-accent)]/30 bg-[var(--app-accent)]/10 px-3 py-1 text-xs font-semibold text-[var(--app-accent)]">
@@ -118,14 +118,13 @@ export function EtfRotationTradingCard({
         </div>
       </div>
 
-      {/* 2. Strategy Real Backtest Track Record (回测收益率指标区) */}
+      {/* 2. Strategy Reference Backtest Track Record (离线基准测算参考) */}
       <div className="my-5 rounded-xl border border-[var(--app-divider)]/80 bg-[var(--app-surface-overlay)]/40 p-4">
         <div className="flex items-center justify-between pb-3 border-b border-[var(--app-divider)]/50">
           <div className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-[var(--app-accent)]" />
             <span className="text-xs font-bold uppercase tracking-wider text-[var(--app-text-secondary)]">
-              5年真实历史数据回测表现 (2021-01 至 2026-10，共 1,391
-              个实际交易日)
+              5年离线基准测算参考 (未绑定当前在线 Dataset Snapshot)
             </span>
           </div>
           <span className="text-xs text-[var(--app-text-tertiary)]">
@@ -205,15 +204,27 @@ export function EtfRotationTradingCard({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h4 className="text-sm font-semibold text-[var(--app-text)]">
-            今日待执行实盘调仓清单 ({orders.length} 笔指令)
+            今日调仓指令清单 (试算预览) ({orders.length} 笔指令)
           </h4>
           {data.rebalance ? (
             <span className="text-xs text-[var(--app-text-tertiary)]">
-              基准资产: {formatCurrency(data.rebalance.total_equity)} |
-              调仓换手率: {(data.rebalance.turnover_ratio * 100).toFixed(1)}%
+              基准资产: {formatCurrency(data.rebalance.total_equity)}{' '}
+              {data.is_demo ? (
+                <span className="text-[var(--app-warning-text)] font-semibold">
+                  (演示隔离资金)
+                </span>
+              ) : null}{' '}
+              | 调仓换手率: {(data.rebalance.turnover_ratio * 100).toFixed(1)}%
             </span>
           ) : null}
         </div>
+
+        {data.is_demo ? (
+          <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-3 text-xs text-[var(--app-warning-text)]">
+            演示隔离模式：真实账户可用现金为 0
+            或读取不可用，当前清单仅供试算参考，不可作为实盘交易依据。
+          </div>
+        ) : null}
 
         {orders.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--app-divider)] p-6 text-center text-sm text-[var(--app-text-secondary)]">
@@ -284,7 +295,7 @@ export function EtfRotationTradingCard({
         <div className="mt-4 rounded-xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)]/40 p-4">
           <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-success-text)]">
             <CheckCircle2 className="h-4 w-4" />
-            <span>委托已成功下达</span>
+            <span>模拟调仓试算已记录 (未向券商报单)</span>
             <span className="text-[var(--app-text-tertiary)] font-normal font-mono">
               批次号: {(executeMutation.data || last_execution)?.batch_id}
             </span>
@@ -328,17 +339,17 @@ export function EtfRotationTradingCard({
             {executeMutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4" />
-                正在下发委托…
+                正在生成模拟试算…
               </>
             ) : execution_status === 'already_executed_today' ? (
               <>
                 <CheckCircle2 className="h-4 w-4" />
-                今日调仓已执行完毕
+                模拟调仓试算已记录
               </>
             ) : (
               <>
                 <TrendingUp className="h-4 w-4" />
-                确认下单（一键执行调仓）
+                模拟调仓试算 (计划预览)
               </>
             )}
           </button>

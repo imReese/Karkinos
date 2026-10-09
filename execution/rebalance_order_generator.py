@@ -122,9 +122,15 @@ class RebalancePlan:
         return "\n".join(lines)
 
     def to_miniqmt_script(self, account_id: str = "YOUR_ACCOUNT_ID") -> str:
-        """Generate standalone MiniQMT (xtquant) Python snippet."""
+        """Generate standalone MiniQMT (xtquant) Python draft reference template."""
         lines = [
-            "# Auto-generated MiniQMT (xtquant) Execution Script",
+            "# ====================================================================",
+            "# CAUTION: DRAFT REVIEW TEMPLATE ONLY — DO NOT EXECUTE DIRECTLY",
+            "# This script is generated for manual inspection and protocol reference.",
+            "# Real-money rebalancing requires polling order status callbacks (成交回报),",
+            "# handling order rejections (废单), and confirming released cash balance",
+            "# before placing buy orders. Never rely on blind time delays.",
+            "# ====================================================================",
             "# Usage: python execute_rebalance.py",
             "import time",
             "from xtquant import xtconstant",
@@ -139,7 +145,7 @@ class RebalancePlan:
             "trader.connect()",
             "trader.register_account(account)",
             "",
-            "# 1. 先执行卖出指令释放资金",
+            "# 1. 计划卖出指令（释放可用资金）",
         ]
         for o in self.sell_orders:
             code = (
@@ -151,8 +157,11 @@ class RebalancePlan:
                 f'{o.quantity}, xtconstant.FIX_PRICE, {float(o.estimated_price):.3f}, "rebalance", "sell")'
             )
 
-        lines.append("\ntime.sleep(1.0)  # 等待卖单确认与资金释放\n")
-        lines.append("# 2. 再执行买入指令")
+        lines.append(
+            "\n# 注意：实盘必须在此处轮询并确认卖单已真实完全成交、可用资金已入账，严禁使用 fixed time.sleep()！"
+            "\n# while True: check trader.query_stock_orders(account) and trader.query_stock_asset(account)\n"
+        )
+        lines.append("# 2. 计划买入指令（需在资金确认后执行）")
         for o in self.buy_orders:
             code = (
                 f"{o.symbol}.SH" if str(o.symbol).startswith("5") else f"{o.symbol}.SZ"
