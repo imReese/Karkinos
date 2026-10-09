@@ -21,7 +21,11 @@ from data.research_market_data import (
     research_market_binding,
 )
 from data.store import DataStore
-from server.ai_runtime.formula_dsl import FORMULA_AST_CONTRACT
+from server.ai_runtime.formula_dsl import (
+    CANONICAL_COST_MODEL_REFERENCE,
+    FORMULA_AST_CONTRACT,
+    FormulaBinding,
+)
 from server.ai_runtime.strategy_research_backtest import (
     RestrictedFormulaBacktestAdapter,
 )
@@ -351,3 +355,70 @@ def test_sealed_replay_cannot_replace_immutable_dataset_with_current_store_rows(
             sealed_end_date=selection.sealed_end_date,
             expected_dataset_snapshot=snapshot,
         )
+
+
+def test_formula_adapter_consumes_immutable_dataset_regardless_of_mutated_cache_bars(
+    tmp_path,
+):
+    from server.ai_runtime.strategy_research_backtest import _load_bound_inputs
+    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from tests.server.test_research_datasets import _backtest_request, _publish
+
+    store = DataStore(tmp_path / "market")
+    research_root = store._root / "research"
+    ref = _publish(research_root)
+    request = _backtest_request(ref)
+    _, original_handlers, binding = load_dataset_backtest_inputs(research_root, request)
+    original_close = float(original_handlers[_SYMBOL]._df["close"].iloc[0])
+
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        configured_source="tdx",
+        source_names=["tdx"],
+        data_handlers=original_handlers,
+        store=store,
+        research_dataset_binding=binding,
+    )
+
+    # Mutate the mutable store cache with doubled prices.
+    mutated = original_handlers[_SYMBOL]._df.copy()
+    mutated["close"] = mutated["close"].astype(float) * 2.0
+    mutated["open"] = mutated["open"].astype(float) * 2.0
+    store.save_bars(
+        _SYMBOL,
+        BarFrequency.DAILY,
+        mutated,
+        provider_name="tdx",
+        data_source="tdx",
+        instrument_type="stock",
+    )
+
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=(str(_SYMBOL),),
+        asset_classes=("stock",),
+        dataset_snapshot_id=snapshot["snapshot_id"],
+        start_date=request.start_date,
+        end_date=request.end_date,
+        frequency="1d",
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+    )
+
+    handlers, instruments, returned_snapshot = _load_bound_inputs(
+        store,
+        selection,
+        expected_dataset_snapshot=snapshot,
+    )
+
+    # Execution handlers must consume the immutable dataset, NOT the mutated cache.
+    loaded_close = float(handlers[_SYMBOL]._df["close"].iloc[0])
+    assert loaded_close == pytest.approx(original_close)
+    assert loaded_close != pytest.approx(original_close * 2.0)
+    assert returned_snapshot["snapshot_id"] == snapshot["snapshot_id"]
+
+    validated = RestrictedFormulaBacktestAdapter(data_store=store).validate_selection(
+        selection,
+        expected_dataset_snapshot=snapshot,
+    )
+    assert validated["snapshot_id"] == snapshot["snapshot_id"]

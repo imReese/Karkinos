@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -832,6 +833,90 @@ def _load_bound_inputs(
     allow_extended_binding: bool = False,
 ) -> tuple[dict[Symbol, DataHandler], dict[Symbol, Any], JsonObject]:
     effective_end = end_date or selection.end_date
+    immutable_dataset_id = (expected_dataset_snapshot or {}).get("immutable_dataset_id")
+    if immutable_dataset_id is not None:
+        if effective_end > selection.end_date and not allow_extended_binding:
+            raise StrategyResearchRejected(
+                "sealed_immutable_dataset_extension_unsupported"
+            )
+        store_root = Path(getattr(data_store, "root", getattr(data_store, "_root", "")))
+        research_root = (
+            store_root if (store_root / "objects").is_dir() else store_root / "research"
+        )
+        from types import SimpleNamespace
+
+        from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+        from server.services.research_datasets import ResearchDatasetError
+
+        request = SimpleNamespace(
+            dataset_id=immutable_dataset_id,
+            start_date=selection.start_date,
+            end_date=selection.end_date,
+            assets=[
+                {"symbol": s, "instrument_type": a}
+                for s, a in zip(
+                    selection.universe, selection.asset_classes, strict=True
+                )
+            ],
+        )
+        try:
+            instruments, handlers, binding = load_dataset_backtest_inputs(
+                research_root, request
+            )
+        except ResearchDatasetError as exc:
+            raise StrategyResearchRejected(exc.code) from exc
+        except Exception as exc:
+            raise StrategyResearchRejected("immutable_dataset_unreadable") from exc
+
+        if effective_end != selection.end_date:
+            sliced_handlers = {}
+            for sym, handler in handlers.items():
+                sliced_df = _slice_frame(
+                    handler._df, selection.start_date, effective_end
+                )
+                if sliced_df.empty:
+                    raise StrategyResearchRejected(f"persisted_window_empty:{sym}")
+                sliced_handlers[sym] = DataHandler(
+                    sliced_df,
+                    sym,
+                    BarFrequency.DAILY,
+                    handler.asset_class,
+                    handler.instrument_type,
+                )
+            handlers = sliced_handlers
+
+        sources = binding.get("source_names") or []
+        store_flag = (
+            data_store
+            if (expected_dataset_snapshot or {})
+            .get("cache", {})
+            .get("store_available", False)
+            else None
+        )
+        snapshot = build_backtest_dataset_snapshot(
+            start_date=selection.start_date,
+            end_date=effective_end,
+            configured_source=sources[0] if len(sources) == 1 else None,
+            data_handlers=handlers,
+            store=store_flag,
+            source_names=sources,
+            research_dataset_binding=binding,
+        )
+        if verify_snapshot and effective_end == selection.end_date:
+            if snapshot.get("snapshot_id") != selection.dataset_snapshot_id:
+                raise StrategyResearchRejected("dataset_snapshot_drift")
+            replay = verify_backtest_dataset_snapshot_replay(
+                expected_dataset_snapshot,
+                store_root=store_root,
+                research_root=research_root,
+            )
+            if replay is None or replay.get("status") != "pass":
+                raise StrategyResearchRejected("dataset_snapshot_drift")
+            snapshot = dict(expected_dataset_snapshot)
+        if snapshot.get("data_quality", {}).get("status") != "ok":
+            raise StrategyResearchRejected("dataset_quality_not_complete")
+        return handlers, instruments, snapshot
+
     handlers: dict[Symbol, DataHandler] = {}
     instruments: dict[Symbol, Any] = {}
     market_binding = (expected_dataset_snapshot or {}).get("market_data_binding")

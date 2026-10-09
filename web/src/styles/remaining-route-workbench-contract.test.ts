@@ -139,9 +139,6 @@ const BACKTEST_METRICS = source(
 const EQUITY_CURVE = source(
   'features/account/components/equity-curve-card.tsx',
 );
-const DAILY_OPERATIONS = source(
-  'features/account/components/daily-operations-tower.tsx',
-);
 const DECISION_QUALITY = source(
   'features/decision/components/decision-quality-panel.tsx',
 );
@@ -205,8 +202,6 @@ describe('remaining route workbench contract', () => {
       'app-card-title mt-1.5 text-[var(--app-text)]',
     );
     expect(EQUITY_CURVE).not.toContain('app-card-title mt-1.5 text-xl');
-    expect(DAILY_OPERATIONS).toContain('app-card-title mt-1.5');
-    expect(DAILY_OPERATIONS).not.toContain('app-card-title mt-1.5 text-xl');
   });
 
   it('keeps high-salience facts and review copy on semantic product roles', () => {

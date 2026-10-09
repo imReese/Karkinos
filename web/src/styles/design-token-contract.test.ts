@@ -28,7 +28,6 @@ const DEPRECATED_TOKEN_BUDGETS = {
 } as const;
 
 const HARDCODED_COLOR_BUDGETS = {
-  'features/account/components/live-holdings-summary-card.tsx': 2,
   'features/backtest/components/backtest-report-view.tsx': 3,
   'features/backtest/components/dataset-snapshot-panel.tsx': 9,
   'features/backtest/components/equity-drawdown-chart.tsx': 5,
@@ -443,8 +442,6 @@ describe('application design token contract', () => {
   it('keeps financial direction helpers independent from state aliases', () => {
     const financialFiles = [
       'app/router.tsx',
-      'features/account/components/overview-cards.tsx',
-      'features/account/components/live-holdings-summary-card.tsx',
       'features/account-strategy/components/strategy-contribution-gate-card.tsx',
       'features/backtest/components/metrics-grid.tsx',
       'features/market/components/price-structure-chart.tsx',

@@ -15,7 +15,6 @@ import contextlib
 import fcntl
 import http.client
 import json
-import math
 import os
 import platform
 import re
@@ -31,7 +30,6 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator
-from urllib.parse import urlsplit
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPOSITORY_ROOT) not in sys.path:
@@ -40,7 +38,6 @@ if str(_REPOSITORY_ROOT) not in sys.path:
 RELEASES_DIRNAME = "releases"
 _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 _HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 _PRIVATE_DIRECTORY_MODE = 0o700
 _PRIVATE_FILE_MODE = 0o600
 _TRANSACTION_NAME = ".release-transaction.json"
@@ -59,8 +56,6 @@ _DELETING_DIRECTORY = re.compile(
     r"^\.deleting-(?:sha|candidate)-[0-9a-f]{40}-[0-9a-f]{32}$"
 )
 _RECOVERY_CONFIRMATION = "RECOVER RELEASE STATE"
-_ADOPTION_CONFIRMATION = "ADOPT LEGACY STATE"
-_LEGACY_CONFIG_NAMES = ("config.json", ".env")
 _ACTIVE_RELEASE_LOCKS: dict[str, tuple[int, str]] = {}
 
 
@@ -1901,19 +1896,6 @@ def _discard_inactive_candidate(home: Path, commit_sha: str) -> dict[str, object
         return {"status": "discarded", "commit_sha": commit_sha}
 
 
-def stage(home: Path, args: argparse.Namespace) -> None:
-    with _lock(home):
-        _require_clean_transaction_state_locked(home)
-        candidate = _stage(home, Path(args.archive), args.commit_sha, args.sha256)
-    print(json.dumps({"status": "staged", "candidate": str(candidate)}, sort_keys=True))
-
-
-def discard(home: Path, args: argparse.Namespace) -> None:
-    print(
-        json.dumps(_discard_inactive_candidate(home, args.commit_sha), sort_keys=True)
-    )
-
-
 def deploy_release(
     home: Path,
     *,
@@ -2005,20 +1987,6 @@ def deploy_release(
             "previous": _path_sha(current),
             **pruned,
         }
-
-
-def promote(home: Path, args: argparse.Namespace) -> None:
-    requested_port = _requested_service_port(args)
-    service_port = _prepare_service_port(home, requested_port)
-    hooks = _service_manager_hooks(home, Path(args.service_manager), port=service_port)
-    result = deploy_release(
-        home,
-        commit_sha=args.commit_sha,
-        confirmation=args.confirm,
-        health_timeout=args.health_timeout,
-        hooks=hooks,
-    )
-    print(json.dumps(result, sort_keys=True))
 
 
 def rollback_release(
@@ -2284,234 +2252,6 @@ def prune_releases(
         }
 
 
-def prune(home: Path, args: argparse.Namespace) -> None:
-    print(json.dumps(prune_releases(home, confirmation=args.confirm), sort_keys=True))
-
-
-def _absolute_source(path: Path) -> Path:
-    source = Path(os.path.abspath(os.fspath(path.expanduser())))
-    for candidate in (source, *source.parents):
-        if candidate.is_symlink():
-            raise ValueError("release_legacy_source_symlink_unsupported")
-        if candidate.parent == candidate:
-            break
-    return source
-
-
-def _validate_private_source_tree(source: Path) -> list[Path]:
-    if source.is_symlink() or not source.is_dir():
-        raise ValueError("release_legacy_data_invalid")
-    entries = sorted(source.rglob("*"))
-    if not entries:
-        raise ValueError("release_legacy_data_empty")
-    for entry in entries:
-        if entry.is_symlink():
-            raise ValueError("release_legacy_source_symlink_unsupported")
-        if not entry.is_dir() and not entry.is_file():
-            raise ValueError("release_legacy_data_entry_invalid")
-    return entries
-
-
-def _require_same_filesystem(source: Path, destination_parent: Path) -> None:
-    try:
-        if (
-            source.stat(follow_symlinks=False).st_dev
-            != destination_parent.stat(follow_symlinks=False).st_dev
-        ):
-            raise ValueError("release_legacy_cross_filesystem_unsupported")
-    except OSError as exc:
-        raise ValueError("release_legacy_filesystem_check_failed") from exc
-
-
-def _paths_overlap(first: Path, second: Path) -> bool:
-    return first == second or first in second.parents or second in first.parents
-
-
-def _prepare_legacy_adoption(
-    home: Path,
-    *,
-    legacy_shared: Path,
-    legacy_data: Path,
-) -> tuple[list[tuple[Path, Path]], tuple[Path, Path]]:
-    shared = _absolute_source(legacy_shared)
-    data_source = _absolute_source(legacy_data)
-    if _paths_overlap(shared, data_source):
-        raise ValueError("release_legacy_source_overlap")
-    if shared.is_symlink() or not shared.is_dir():
-        raise ValueError("release_legacy_shared_invalid")
-    shared_entries = sorted(shared.iterdir())
-    if not shared_entries or any(
-        entry.name not in _LEGACY_CONFIG_NAMES for entry in shared_entries
-    ):
-        raise ValueError("release_legacy_shared_contents_invalid")
-    for entry in shared_entries:
-        if entry.is_symlink() or not entry.is_file():
-            raise ValueError("release_legacy_shared_contents_invalid")
-    _validate_private_source_tree(data_source)
-
-    managed_paths = (
-        home / "releases",
-        home / "data",
-        home / "config",
-        home / "logs",
-    )
-    if any(_paths_overlap(data_source, path) for path in managed_paths) or any(
-        _paths_overlap(shared, path) for path in managed_paths
-    ):
-        raise ValueError("release_legacy_source_overlap")
-
-    config_destination = home / "config"
-    data_destination_root = home / "data"
-    if any(config_destination.iterdir()) or any(data_destination_root.iterdir()):
-        raise ValueError("release_legacy_destination_not_empty")
-    config_moves = [
-        (entry, config_destination / entry.name) for entry in shared_entries
-    ]
-    # ``legacy_data`` is the data root itself. In the known source checkout
-    # layout callers pass ``data/store`` so app.db/meta.db land directly under
-    # ``${KARKINOS_HOME}/data``; the Python package directory is never moved.
-    data_move = (data_source, data_destination_root)
-    for source, _destination in config_moves:
-        _require_same_filesystem(source, config_destination)
-    _require_same_filesystem(data_source, home)
-    return config_moves, data_move
-
-
-def _reverse_moves(
-    moves: list[tuple[Path, Path]],
-    *,
-    recreate_data_root: Path | None,
-) -> None:
-    try:
-        for source, destination in reversed(moves):
-            if destination.is_symlink() or not destination.exists():
-                raise ValueError("release_legacy_move_rollback_failed")
-            if os.path.lexists(source):
-                raise ValueError("release_legacy_move_rollback_failed")
-            os.replace(destination, source)
-        if recreate_data_root is not None:
-            recreate_data_root.mkdir(mode=_PRIVATE_DIRECTORY_MODE)
-            _secure_directory(
-                recreate_data_root, "release_runtime_directory_invalid:data"
-            )
-    except OSError as exc:
-        raise ValueError("release_legacy_move_rollback_failed") from exc
-
-
-def adopt_legacy_state(
-    home: Path,
-    *,
-    legacy_shared: Path,
-    legacy_data: Path,
-    confirmation: str,
-    health_timeout: int,
-    hooks: ReleaseServiceHooks,
-) -> dict[str, object]:
-    """Move explicitly selected private state while the service is stopped."""
-    if confirmation != _ADOPTION_CONFIRMATION:
-        raise ValueError(f"release_confirmation_required:{_ADOPTION_CONFIRMATION}")
-    health_timeout = _require_health_timeout(health_timeout)
-    with _lock(home):
-        _require_clean_transaction_state_locked(home)
-        current, _previous = _pointer_state(home)
-        if current is None:
-            raise ValueError("release_legacy_adoption_requires_current")
-        try:
-            config_moves, data_move = _prepare_legacy_adoption(
-                home,
-                legacy_shared=legacy_shared,
-                legacy_data=legacy_data,
-            )
-        except OSError as exc:
-            raise ValueError("release_legacy_source_validation_failed") from exc
-        _stop_service(hooks)
-        completed: list[tuple[Path, Path]] = []
-        recreate_data_root = home / "data"
-        try:
-            recreate_data_root.rmdir()
-            os.replace(*data_move)
-            completed.append(data_move)
-            for move in config_moves:
-                os.replace(*move)
-                completed.append(move)
-            _secure_private_tree(home / "data")
-            _secure_private_tree(home / "config")
-        except Exception as adoption_error:
-            try:
-                _reverse_moves(completed, recreate_data_root=recreate_data_root)
-            except ValueError as rollback_error:
-                raise rollback_error from adoption_error
-            raise ValueError("release_legacy_adoption_failed") from adoption_error
-
-        service_restarted = False
-        if current is not None:
-            current_manifest = _manifest_for(current)
-            _seal_release_tree(
-                current, expected_sha=str(current_manifest["commit_sha"])
-            )
-            preflight_snapshot_id = uuid.uuid4().hex
-            try:
-                _snapshot_mutable_state(home, preflight_snapshot_id)
-                preflight_snapshot = _validate_state_snapshot(
-                    home, preflight_snapshot_id
-                )
-                _probe_state_compatibility(
-                    current,
-                    current_manifest,
-                    preflight_snapshot,
-                    health_timeout,
-                )
-                _start_service(hooks, health_timeout)
-                service_restarted = True
-                _require_exact_service_health(
-                    hooks, current, current_manifest, health_timeout
-                )
-                try:
-                    _discard_state_snapshot(home, preflight_snapshot_id)
-                except ValueError:
-                    pass
-            except Exception as exc:
-                # State has already been atomically moved. Make a best effort
-                # to leave it closed rather than moving live SQLite files back.
-                try:
-                    _stop_service(hooks)
-                    _restore_mutable_state(home, preflight_snapshot_id)
-                    _discard_state_snapshot(home, preflight_snapshot_id)
-                except Exception as cleanup_error:
-                    raise ValueError(
-                        "release_legacy_adoption_health_failed"
-                    ) from cleanup_error
-                raise ValueError("release_legacy_adoption_health_failed") from exc
-        shared = _absolute_source(legacy_shared)
-        try:
-            shared.rmdir()
-        except OSError:
-            # The state was adopted successfully; an empty legacy directory is
-            # harmless, and an unexpected entry was rejected before the move.
-            pass
-        return {
-            "status": "adopted",
-            "config_files_moved": len(config_moves),
-            "data_adopted": True,
-            "service_restarted": service_restarted,
-        }
-
-
-def adopt_legacy(home: Path, args: argparse.Namespace) -> None:
-    requested_port = _requested_service_port(args)
-    service_port = _prepare_service_port(home, requested_port)
-    hooks = _service_manager_hooks(home, Path(args.service_manager), port=service_port)
-    result = adopt_legacy_state(
-        home,
-        legacy_shared=Path(args.shared),
-        legacy_data=Path(args.data),
-        confirmation=args.confirm,
-        health_timeout=args.health_timeout,
-        hooks=hooks,
-    )
-    print(json.dumps(result, sort_keys=True))
-
-
 def _legacy_bootstrap_callbacks():
     from scripts.release.bootstrap_legacy import (
         BootstrapCallbacks,
@@ -2645,25 +2385,6 @@ def recover_legacy_bootstrap_release(
             raise ValueError("release_candidate_is_active")
         _remove_tree(candidate)
         return True
-
-
-def bootstrap_legacy(home: Path, args: argparse.Namespace) -> None:
-    health_timeout = _require_health_timeout(args.health_timeout)
-    requested_port = _requested_service_port(args)
-    service_port = (
-        requested_port if requested_port is not None else _DEFAULT_SERVICE_PORT
-    )
-    result = bootstrap_legacy_release(
-        home,
-        commit_sha=args.commit_sha,
-        legacy_workdir=Path(args.legacy_workdir),
-        legacy_plist=Path(args.legacy_plist),
-        confirmation=args.confirm,
-        health_timeout=health_timeout,
-        service_manager=Path(args.service_manager),
-        service_port=service_port,
-    )
-    print(json.dumps(result, sort_keys=True))
 
 
 def finalize_legacy_bootstrap(home: Path, args: argparse.Namespace) -> None:
@@ -2850,13 +2571,6 @@ def run_candidate(
             "port": port,
             "returncode": int(result.returncode),
         }
-
-
-def run_candidate_command(home: Path, args: argparse.Namespace) -> None:
-    result = run_candidate(home, commit_sha=args.commit_sha, port=args.port)
-    print(json.dumps(result, sort_keys=True))
-    if result["returncode"] != 0:
-        raise SystemExit(result["returncode"])
 
 
 def candidate(home: Path, args: argparse.Namespace) -> None:
@@ -3060,89 +2774,6 @@ def bootstrap(home: Path, args: argparse.Namespace) -> None:
     if not isinstance(result, dict):
         raise ValueError("legacy_bootstrap_result_invalid")
     print(json.dumps(result, sort_keys=True))
-
-
-def download(_home_path: Path, args: argparse.Namespace) -> None:
-    url = args.url
-    parsed = urlsplit(url)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.fragment
-        or "\x00" in url
-    ):
-        raise ValueError("release_download_url_must_use_https")
-    try:
-        port = parsed.port or 443
-    except ValueError as exc:
-        raise ValueError("release_download_url_must_use_https") from exc
-    if port < 1 or port > 65535:
-        raise ValueError("release_download_url_must_use_https")
-    if _HEX_DIGEST.fullmatch(args.sha256) is None:
-        raise ValueError("release_download_checksum_invalid")
-    if not math.isfinite(args.timeout) or args.timeout <= 0:
-        raise ValueError("release_download_timeout_invalid")
-    output = Path(args.output).expanduser().absolute()
-    for ancestor in (output.parent, *output.parent.parents):
-        if ancestor.is_symlink():
-            raise ValueError("release_download_output_symlink_unsupported")
-        if ancestor.parent == ancestor:
-            break
-    if os.path.lexists(output):
-        raise ValueError("release_download_output_already_exists")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(f".{output.name}.download-{uuid.uuid4().hex}")
-    request_path = parsed.path or "/"
-    if parsed.query:
-        request_path += f"?{parsed.query}"
-    connection = http.client.HTTPSConnection(
-        parsed.hostname, port, timeout=args.timeout
-    )
-    try:
-        connection.request(
-            "GET", request_path, headers={"User-Agent": "karkinos-release-manager/1"}
-        )
-        response = connection.getresponse()
-        if response.status != 200:
-            raise ValueError("release_download_http_status_unexpected")
-        content_length = response.getheader("Content-Length")
-        if content_length is not None:
-            try:
-                declared_size = int(content_length)
-            except ValueError as exc:
-                raise ValueError("release_download_content_length_invalid") from exc
-            if declared_size < 0 or declared_size > _MAX_DOWNLOAD_BYTES:
-                raise ValueError("release_download_too_large")
-        else:
-            declared_size = None
-        total = 0
-        with temporary.open("xb") as stream:
-            while total <= _MAX_DOWNLOAD_BYTES:
-                chunk = response.read(min(1024 * 1024, _MAX_DOWNLOAD_BYTES + 1 - total))
-                if not chunk:
-                    break
-                stream.write(chunk)
-                total += len(chunk)
-        if total > _MAX_DOWNLOAD_BYTES:
-            raise ValueError("release_download_too_large")
-        if declared_size is not None and total != declared_size:
-            raise ValueError("release_download_content_length_mismatch")
-        if _sha256(temporary) != args.sha256:
-            raise ValueError("release_download_checksum_mismatch")
-        os.replace(temporary, output)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-    finally:
-        connection.close()
-    print(
-        json.dumps(
-            {"status": "downloaded", "path": str(output), "sha256": args.sha256},
-            sort_keys=True,
-        )
-    )
 
 
 def _status_locked(home: Path, _args: argparse.Namespace) -> None:

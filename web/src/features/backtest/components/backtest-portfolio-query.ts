@@ -1,17 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { apiClient } from '../../../shared/api/client';
-import type { InstrumentDisplayRecord } from '../../../shared/instrument-display';
-
-type BacktestPortfolioInstrumentSnapshot = {
-  positions: InstrumentDisplayRecord[];
-};
+import type { PortfolioSnapshot } from '../../../shared/portfolio-evidence/contracts';
 
 export function useBacktestPortfolioInstrumentsQuery(enabled = true) {
   return useQuery({
-    queryKey: ['backtest-portfolio-instruments'],
-    queryFn: () =>
-      apiClient<BacktestPortfolioInstrumentSnapshot>('/api/portfolio'),
+    queryKey: ['portfolio-snapshot'],
+    queryFn: () => apiClient<PortfolioSnapshot>('/api/portfolio'),
     staleTime: 10_000,
     enabled,
   });

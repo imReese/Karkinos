@@ -284,24 +284,37 @@ test('backtest API facade preserves its public export surface', () => {
     "export * from './api-hooks';",
   ]);
   const exportPattern = /^export (?:type|function) ([A-Za-z0-9_]+)/gm;
+  const reexportPattern = /^export (?:type )?\{([^}]+)\}/gm;
   expect(readFileSync(API_CONTRACTS, 'utf8')).toContain(
     "export type { CorporateActionEvidence } from './corporate-action-contracts';",
   );
-  const actualExports = [
-    API_CONTRACTS,
-    COST_CONTRACTS,
-    METRIC_CONTRACTS,
-    CORPORATE_ACTION_CONTRACTS,
-    API_GOVERNANCE_CONTRACTS,
-    API_HOOKS,
-  ]
-    .flatMap((path) =>
-      Array.from(
-        readFileSync(path, 'utf8').matchAll(exportPattern),
-        (match) => match[1],
-      ),
-    )
-    .sort();
+  const actualExports = Array.from(
+    new Set(
+      [
+        API_CONTRACTS,
+        COST_CONTRACTS,
+        METRIC_CONTRACTS,
+        CORPORATE_ACTION_CONTRACTS,
+        API_GOVERNANCE_CONTRACTS,
+        API_HOOKS,
+      ].flatMap((path) => {
+        const content = readFileSync(path, 'utf8');
+        const direct = Array.from(
+          content.matchAll(exportPattern),
+          (match) => match[1],
+        );
+        const reexported = Array.from(
+          content.matchAll(reexportPattern),
+          (match) =>
+            match[1]
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean),
+        ).flat();
+        return [...direct, ...reexported];
+      }),
+    ),
+  ).sort();
 
   expect(actualExports).toEqual(PUBLIC_API_EXPORTS);
 });
@@ -317,12 +330,6 @@ test('backtest request URLs stay at the reviewed contract', () => {
 
   expect(urls).toEqual(
     [
-      '/api/account-strategy',
-      '/api/account-strategy',
-      '/api/account-strategy/assignments',
-      '/api/account-strategy/assignments',
-      '/api/account-strategy/attribution',
-      '/api/account-strategy/contribution',
       '/api/analytics/factor-evaluation',
       '/api/backtest/attribution-preview',
       '/api/backtest/compare',
@@ -366,27 +373,16 @@ test('backtest query and invalidation keys stay at the reviewed contract', () =>
 
   expect(queryKeys).toEqual(
     [
-      "['account-strategy-assignment']",
-      "['account-strategy-assignments']",
-      "['account-strategy-assignments']",
-      "['account-strategy-attribution']",
-      "['account-strategy-attribution']",
-      "['account-strategy-attribution']",
-      "['account-strategy-contribution']",
-      "['account-strategy-contribution']",
-      "['account-strategy-contribution']",
       "['backtest-result', report.id]",
       "['backtest-result', resultId]",
       "['backtest-results']",
       "['backtest-results']",
-      "['backtest-portfolio-instruments']",
       "['backtest-results']",
       "['backtest-results']",
       "['backtest-strategies']",
       "['backtest-strategy-promotion-readiness']",
       "['backtest-strategy-validation']",
-      "['holding-strategy-attribution']",
-      "['holding-strategy-attribution']",
+      "['portfolio-snapshot']",
       "['strategy-learning-review']",
     ].sort(),
   );

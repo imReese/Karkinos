@@ -1,11 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, postJson, putJson } from '../../shared/api/client';
+import { apiClient, postJson } from '../../shared/api/client';
 import type {
-  AccountStrategyAssignment,
-  AccountStrategyAssignmentUpdate,
-  AccountStrategyAttributionSummary,
-  AccountStrategyContributionReport,
   BacktestAttributionPreviewRequest,
   BacktestAttributionPreviewResponse,
   BacktestCompareRequest,
@@ -44,51 +40,14 @@ export function useBacktestStrategiesQuery() {
   });
 }
 
-export function useAccountStrategyAssignmentQuery(enabled = true) {
-  return useQuery({
-    queryKey: ['account-strategy-assignment'],
-    queryFn: () =>
-      apiClient<AccountStrategyAssignment>('/api/account-strategy'),
-    staleTime: 10_000,
-    enabled,
-  });
-}
-
-export function useAccountStrategyAssignmentsQuery(enabled = true) {
-  return useQuery({
-    queryKey: ['account-strategy-assignments'],
-    queryFn: () =>
-      apiClient<AccountStrategyAssignment[]>(
-        '/api/account-strategy/assignments',
-      ),
-    staleTime: 10_000,
-    enabled,
-  });
-}
-
-export function useAccountStrategyAttributionQuery(enabled = true) {
-  return useQuery({
-    queryKey: ['account-strategy-attribution'],
-    queryFn: () =>
-      apiClient<AccountStrategyAttributionSummary>(
-        '/api/account-strategy/attribution',
-      ),
-    staleTime: 10_000,
-    enabled,
-  });
-}
-
-export function useAccountStrategyContributionQuery(enabled = true) {
-  return useQuery({
-    queryKey: ['account-strategy-contribution'],
-    queryFn: () =>
-      apiClient<AccountStrategyContributionReport>(
-        '/api/account-strategy/contribution',
-      ),
-    staleTime: 10_000,
-    enabled,
-  });
-}
+export {
+  useAccountStrategyAssignmentQuery,
+  useAccountStrategyAssignmentsQuery,
+  useAccountStrategyAttributionQuery,
+  useAccountStrategyContributionQuery,
+  useUpdateAccountStrategyAssignmentMutation,
+  useUpdateScopedAccountStrategyAssignmentMutation,
+} from './backtest-feature-boundary';
 
 export function useStrategyLearningReviewQuery() {
   return useQuery({
@@ -98,51 +57,6 @@ export function useStrategyLearningReviewQuery() {
         '/api/strategy-learning/review-queue',
       ),
     staleTime: 10_000,
-  });
-}
-
-export function useUpdateAccountStrategyAssignmentMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: AccountStrategyAssignmentUpdate) =>
-      putJson<AccountStrategyAssignment>('/api/account-strategy', payload),
-    onSuccess: (assignment) => {
-      queryClient.setQueryData(['account-strategy-assignment'], assignment);
-      void queryClient.invalidateQueries({
-        queryKey: ['account-strategy-attribution'],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ['account-strategy-contribution'],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ['holding-strategy-attribution'],
-      });
-    },
-  });
-}
-
-export function useUpdateScopedAccountStrategyAssignmentMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: AccountStrategyAssignmentUpdate) =>
-      putJson<AccountStrategyAssignment>(
-        '/api/account-strategy/assignments',
-        payload,
-      ),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ['account-strategy-assignments'],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ['account-strategy-attribution'],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ['account-strategy-contribution'],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ['holding-strategy-attribution'],
-      });
-    },
   });
 }
 

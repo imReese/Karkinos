@@ -72,7 +72,6 @@ const CERTIFIED_CORE_SURFACES = [
     relative(SRC_ROOT, path),
   ),
   'features/account-truth/components/account-truth-review-workspace.tsx',
-  'features/account/components/overview-cards.tsx',
   'features/backtest/components/backtest-page.tsx',
   'features/decision/components/decision-cockpit-page.tsx',
 ] as const;

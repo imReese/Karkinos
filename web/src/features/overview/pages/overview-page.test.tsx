@@ -1522,3 +1522,39 @@ test('renders detailed strategy recommendation with buy and sell prices', async 
   expect(recommendation).toHaveTextContent('100 股');
   expect(recommendation).toHaveTextContent('¥180,050.00');
 });
+
+test('keeps a missing historical drawdown distinct from zero in overview', async () => {
+  const state = accountFixture();
+  state.summary.current_drawdown = null;
+  installFetch(state);
+  renderPage('zh');
+
+  const riskSection = await screen.findByTestId('overview-allocation-risk');
+  expect(within(riskSection).queryByText('当前回撤')).toBeNull();
+  expect(within(riskSection).queryByText('0.00%')).toBeNull();
+});
+
+test('does not treat an expired or degraded valuation as a complete valuation in overview', async () => {
+  const state = accountFixture();
+  state.summary.total_equity = null;
+  state.summary.indicative_total_equity = 18585.11;
+  state.summary.indicative_fund_nav_date = '2026-09-21';
+  state.summary.today_pnl = null;
+  state.summary.cumulative_pnl = null;
+  state.snapshot.valuation_status = 'degraded';
+  state.overview.valuation_usability = 'degraded';
+  installFetch(state);
+  renderPage('zh');
+
+  const summarySection = await screen.findByTestId('overview-summary');
+  expect(
+    within(summarySection).getByTestId('overview-total-value-note'),
+  ).toHaveTextContent('参考估值 · 基金净值截至 2026-09-21');
+  expect(
+    within(summarySection).getByTestId('overview-session-pnl'),
+  ).toHaveTextContent('待估值');
+  expect(
+    within(summarySection).getByTestId('overview-cumulative-pnl'),
+  ).toHaveTextContent('待估值');
+  expect(within(summarySection).queryByText('Evidence complete')).toBeNull();
+});

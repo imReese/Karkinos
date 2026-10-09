@@ -305,7 +305,7 @@ def build_backtest_dataset_snapshot(
         instrument_type = _handler_instrument_type(handler)
         meta = (
             {}
-            if market_data_binding is not None
+            if market_data_binding is not None or research_dataset_binding is not None
             else _safe_store_meta(
                 store,
                 symbol,
