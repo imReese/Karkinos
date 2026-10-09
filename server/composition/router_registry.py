@@ -43,6 +43,7 @@ from server.routes import (
     controlled_submission_ledger_correction,
     controlled_submission_ledger_posting,
     decision,
+    etf_rebalance,
     execution_gateway_verification,
     execution_reconciliation,
     ledger,
@@ -150,6 +151,7 @@ def router_factories() -> tuple[RouterFactory, ...]:
         research_paper_books.create_router,
         settings.create_router,
         trading.create_router,
+        etf_rebalance.create_router,
     )
 
 
