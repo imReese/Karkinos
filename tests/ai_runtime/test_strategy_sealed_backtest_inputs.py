@@ -422,3 +422,61 @@ def test_formula_adapter_consumes_immutable_dataset_regardless_of_mutated_cache_
         expected_dataset_snapshot=snapshot,
     )
     assert validated["snapshot_id"] == snapshot["snapshot_id"]
+
+
+def test_formula_adapter_rejects_missing_or_corrupted_immutable_dataset(tmp_path):
+    from server.ai_runtime.strategy_research_backtest import _load_bound_inputs
+    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from tests.server.test_research_datasets import _backtest_request, _publish
+
+    store = DataStore(tmp_path / "market")
+    research_root = store._root / "research"
+    ref = _publish(research_root)
+    request = _backtest_request(ref)
+    _, original_handlers, binding = load_dataset_backtest_inputs(research_root, request)
+
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        configured_source="tdx",
+        source_names=["tdx"],
+        data_handlers=original_handlers,
+        store=store,
+        research_dataset_binding=binding,
+    )
+
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=(str(_SYMBOL),),
+        asset_classes=("stock",),
+        dataset_snapshot_id=snapshot["snapshot_id"],
+        start_date=request.start_date,
+        end_date=request.end_date,
+        frequency="1d",
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+    )
+
+    # 1. Non-existent immutable dataset ID in object store
+    missing_snapshot = dict(snapshot)
+    missing_snapshot["immutable_dataset_id"] = "sha256:" + "0" * 64
+    with pytest.raises(StrategyResearchRejected, match="immutable_dataset_unreadable"):
+        _load_bound_inputs(
+            store,
+            selection,
+            expected_dataset_snapshot=missing_snapshot,
+        )
+
+    # 2. Corrupted immutable dataset payload on disk
+    raw_id = ref.dataset_id
+    hex_digest = raw_id.split(":", 1)[1]
+    object_file = research_root / "objects" / "sha256" / hex_digest[:2] / hex_digest[2:]
+    assert object_file.is_file()
+    object_file.chmod(0o644)
+    object_file.write_bytes(b"corrupted-invalid-object-bytes")
+    object_file.chmod(0o444)
+    with pytest.raises(StrategyResearchRejected, match="immutable_dataset_unreadable"):
+        _load_bound_inputs(
+            store,
+            selection,
+            expected_dataset_snapshot=snapshot,
+        )

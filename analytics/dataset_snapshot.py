@@ -858,6 +858,8 @@ def load_immutable_dataset_inputs(
         ValueError,
         ObjectStoreError,
         DatasetReaderError,
+        KeyError,
+        RuntimeError,
     ) as exc:
         raise ValueError("immutable_dataset_unreadable") from exc
 

@@ -849,6 +849,16 @@ def _load_bound_inputs(
             instruments, handlers, binding = load_immutable_dataset_inputs(
                 research_root, expected_dataset_snapshot
             )
+        except StrategyResearchRejected:
+            raise
+        except ValueError as exc:
+            reason = (
+                str(exc)
+                if str(exc)
+                in ("immutable_dataset_id_missing", "immutable_dataset_unreadable")
+                else "immutable_dataset_unreadable"
+            )
+            raise StrategyResearchRejected(reason) from exc
         except Exception as exc:
             raise StrategyResearchRejected("immutable_dataset_unreadable") from exc
 
