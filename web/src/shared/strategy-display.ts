@@ -6,6 +6,20 @@ export type StrategyDisplayRecord = {
 
 export type StrategyNameMap = Record<string, string>;
 
+export function isShadowStrategy(
+  strategyId: string | null | undefined,
+): boolean {
+  if (!strategyId) {
+    return false;
+  }
+  const normalized = strategyId.trim().toLowerCase();
+  return (
+    normalized.startsWith('ai_formula_shadow:') ||
+    normalized.startsWith('ai-shadow-candidate-') ||
+    normalized.includes('shadow')
+  );
+}
+
 export function formatStrategyDisplayName(
   strategy: StrategyDisplayRecord | null | undefined,
   localizedNames: StrategyNameMap,
@@ -26,17 +40,25 @@ export function formatStrategyDisplayName(
     return '--';
   }
 
-  const shadowMatch = candidate.match(
-    /(?:shadow[-_]candidate|ai_formula_shadow)[-_:]([a-f0-9]{6,})/i,
-  );
-  if (shadowMatch) {
-    const hash = shadowMatch[1].slice(0, 6);
+  if (
+    candidate.startsWith('ai_formula_shadow:') ||
+    candidate.startsWith('ai-shadow-candidate-') ||
+    /(?:shadow[-_]candidate|ai_formula_shadow)/i.test(candidate)
+  ) {
     const isEn = Object.values(localizedNames).some(
       (val) =>
         val.toLowerCase().includes('average') ||
         val.toLowerCase().includes('reversion'),
     );
-    return isEn ? `Shadow Candidate (#${hash})` : `影子策略候选 (#${hash})`;
+    const candidateNumberMatch = candidate.match(
+      /(?:^|[-_: ])candidate[-_]?(\d+)(?:$|[-_: ])/i,
+    );
+    if (candidateNumberMatch) {
+      return isEn
+        ? `AI Mined Strategy ${candidateNumberMatch[1]}`
+        : `AI 挖掘策略 ${candidateNumberMatch[1]}`;
+    }
+    return isEn ? 'AI Mined Strategy' : 'AI 挖掘策略';
   }
 
   return candidate;

@@ -39,6 +39,7 @@ import {
   decisionCandidateHoldingAttributionHref,
   decisionGateDetailLabels,
 } from './decision-workflow-model';
+import { isShadowStrategy } from '../../../shared/strategy-display';
 
 export function SummaryTile({
   label,
@@ -278,6 +279,7 @@ function DecisionCandidateCard({
     locale,
   );
   const strategyId = candidate.evidence.strategy.strategy_id;
+  const isShadow = isShadowStrategy(strategyId);
   const strategyAuditId = strategyAuditIdFromDisplay(strategyId, strategyNames);
   const backtestHref = decisionCandidateBacktestHref(candidate);
   const holdingDetailHref = `/portfolio/${encodeURIComponent(candidate.symbol)}`;
@@ -302,6 +304,11 @@ function DecisionCandidateCard({
               value={candidate.risk_gate_status}
               prefix={labels.riskGate}
             />
+            {isShadow ? (
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-xs border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] text-[var(--app-text-secondary)]">
+                {locale === 'zh' ? '影子试运行' : 'Shadow trial'}
+              </span>
+            ) : null}
           </div>
           <p className="app-muted mt-2 break-words text-sm">{publicDetail}</p>
         </div>

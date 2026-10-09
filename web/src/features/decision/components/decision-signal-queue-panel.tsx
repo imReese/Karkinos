@@ -21,6 +21,7 @@ import {
   type DecisionResponse,
   type SignalJournalEntry,
 } from '../api';
+import { isShadowStrategy } from '../../../shared/strategy-display';
 import { DecisionOutcomeReviewPanel } from './decision-outcome-review-panel';
 import {
   strategyAuditIdFromDisplay,
@@ -137,6 +138,7 @@ function SignalJournalCard({
     entry.signal.strategy_id,
     strategyNames,
   );
+  const isShadow = isShadowStrategy(entry.signal.strategy_id);
   const latestSourceRef = entry.latest_event?.source_ref;
   const publicSourceRef =
     latestSourceRef && latestSourceRef.includes(':')
@@ -178,10 +180,19 @@ function SignalJournalCard({
             {labels.strategy}
           </dt>
           <dd
-            className="font-medium text-[var(--app-text)] truncate"
-            title={strategyLabel}
+            className="flex items-center gap-1.5 font-medium text-[var(--app-text)] truncate"
+            title={
+              strategyAuditId
+                ? `${strategyLabel} (${strategyAuditId})`
+                : strategyLabel
+            }
           >
-            {strategyLabel}
+            <span className="truncate">{strategyLabel}</span>
+            {isShadow ? (
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-normal border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] text-[var(--app-text-secondary)]">
+                {locale === 'zh' ? '影子试运行' : 'Shadow trial'}
+              </span>
+            ) : null}
           </dd>
         </div>
         {formattedWeight ? (
@@ -217,15 +228,6 @@ function SignalJournalCard({
           </dd>
         </div>
       </dl>
-
-      {strategyAuditId ? (
-        <div
-          className="app-muted mt-1.5 truncate font-mono app-type-micro text-[var(--app-text-tertiary)]"
-          title={`${labels.strategyAuditId}: ${strategyAuditId}`}
-        >
-          {labels.strategyAuditId}: {strategyAuditId}
-        </div>
-      ) : null}
       {publicSourceRef ? (
         <div
           className="mt-1 truncate font-mono app-type-micro text-[var(--app-text-tertiary)]"
