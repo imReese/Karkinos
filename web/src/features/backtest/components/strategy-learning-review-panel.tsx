@@ -1,9 +1,14 @@
 import { useMemo } from 'react';
 
+import { useCopy } from '../../../shared/i18n/context';
 import {
   usePreferences,
   type Locale,
 } from '../../../shared/preferences/context';
+import {
+  formatStrategyDisplayName,
+  isShadowStrategy,
+} from '../../../shared/strategy-display';
 import {
   useStrategyLearningReviewQuery,
   type StrategyLearningReviewItem,
@@ -272,14 +277,36 @@ function LearningItemCard({
   item: StrategyLearningReviewItem;
   locale: Locale;
 }) {
+  const appCopy = useCopy();
   const validBinding = item.audit_integrity_valid && item.target_binding_valid;
+  const strategyLabel = formatStrategyDisplayName(
+    { strategy_id: item.strategy_id },
+    appCopy.backtest.page.strategyNames,
+  );
+  const isShadow = isShadowStrategy(item.strategy_id);
   return (
     <article className="py-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="font-semibold text-[var(--app-text)]">
-            {item.strategy_id}
-            {item.symbol ? ` · ${item.symbol}` : ''}
+          <div
+            className="flex flex-wrap items-center gap-1.5 font-semibold text-[var(--app-text)]"
+            title={item.strategy_id}
+          >
+            <span>{strategyLabel}</span>
+            {isShadow ? (
+              <span className="app-type-micro shrink-0 rounded border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-1.5 py-0.5 font-normal text-[var(--app-text-secondary)]">
+                {locale === 'zh' ? '影子试运行' : 'Shadow trial'}
+              </span>
+            ) : strategyLabel !== item.strategy_id ? (
+              <span className="app-type-micro font-mono font-normal text-[var(--app-text-tertiary)]">
+                ({item.strategy_id})
+              </span>
+            ) : null}
+            {item.symbol ? (
+              <span className="font-normal text-[var(--app-text-secondary)]">
+                · {item.symbol}
+              </span>
+            ) : null}
           </div>
           <div className="app-muted mt-1 text-xs tabular-nums">
             {copy.signal} #{item.signal_id} · {copy.reviewedAt}{' '}

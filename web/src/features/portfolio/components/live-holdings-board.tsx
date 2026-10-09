@@ -1,5 +1,6 @@
 import { useCopy } from '../../../shared/i18n/context';
 import { formatCurrency } from '../../../shared/format';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import type { LiveHoldingGroup } from '../api';
 
 function toneClass(value: number | null) {
@@ -7,32 +8,6 @@ function toneClass(value: number | null) {
     return 'app-pnl-neutral';
   }
   return value > 0 ? 'app-pnl-positive' : 'app-pnl-negative';
-}
-
-function assetClassLabel(
-  assetClass: string,
-  labels: {
-    assetClassStock: string;
-    assetClassEtf: string;
-    assetClassFund: string;
-    assetClassGold: string;
-    assetClassBond: string;
-  },
-) {
-  switch (assetClass) {
-    case 'stock':
-      return labels.assetClassStock;
-    case 'etf':
-      return labels.assetClassEtf;
-    case 'fund':
-      return labels.assetClassFund;
-    case 'gold':
-      return labels.assetClassGold;
-    case 'bond':
-      return labels.assetClassBond;
-    default:
-      return assetClass;
-  }
 }
 
 export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
@@ -70,7 +45,8 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
           >
             <div className="col-span-2 min-w-0 sm:col-span-1">
               <div className="truncate text-sm font-semibold text-[var(--app-text)]">
-                {group.label || assetClassLabel(group.asset_class, copy.common)}
+                {group.label ||
+                  formatAssetClassLabel(group.asset_class, copy.common)}
               </div>
               <div className="mt-0.5 text-xs text-[var(--app-text-tertiary)]">
                 {labels.positionCount(group.items.length)}

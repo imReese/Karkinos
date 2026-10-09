@@ -52,6 +52,8 @@ export const sharedCopy = {
       assetClassBond: 'Bond',
       assetClassCash: 'Cash',
       assetClassIndex: 'Index',
+      assetClassOther: 'Other',
+      assetClassUnknown: 'Unknown',
       staleReasons: {
         noRealDataAvailable: 'No real quote available',
         quoteTimestampMissing: 'Quote timestamp missing',
@@ -233,6 +235,8 @@ export const sharedCopy = {
       assetClassBond: '债券',
       assetClassCash: '现金',
       assetClassIndex: '指数',
+      assetClassOther: '其他',
+      assetClassUnknown: '未知',
       staleReasons: {
         noRealDataAvailable: '暂无可用真实行情',
         quoteTimestampMissing: '缺少行情时间戳',

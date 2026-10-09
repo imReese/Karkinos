@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   useAccountStrategyAssignmentQuery,
   useAccountStrategyAssignmentsQuery,
@@ -157,7 +158,7 @@ export function useBacktestPageController() {
       ? '股票 / ETF 篮子'
       : 'Stock / ETF basket'
     : (assetClassOptions.find((option) => option.value === assetClass)?.label ??
-      assetClass);
+      formatAssetClassLabel(assetClass, common));
   const handoffLabels =
     searchDefaults.handoffSource === 'portfolio'
       ? {
@@ -189,7 +190,7 @@ export function useBacktestPageController() {
         ? '多资产'
         : 'Multiple assets'
       : (assetClassOptions.find((option) => option.value === reportAssetClass)
-          ?.label ?? reportAssetClass);
+          ?.label ?? formatAssetClassLabel(reportAssetClass, common));
   const reportStrategy =
     strategyCatalog.find(
       (item) =>

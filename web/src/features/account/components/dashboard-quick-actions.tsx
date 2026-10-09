@@ -12,6 +12,7 @@ import {
   isUnconfirmedMarketDataStatus,
 } from '../../../shared/market-data-status';
 import { formatStaleReason } from '../../../shared/stale-reason';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import type { AccountOverview } from '../api';
 import {
   useRefreshMarketQuotesMutation,
@@ -66,22 +67,7 @@ function assetClassLabel(
   value: string | null | undefined,
   labels: ReturnType<typeof useCopy>,
 ) {
-  if (value === 'stock') {
-    return labels.common.assetClassStock;
-  }
-  if (value === 'fund') {
-    return labels.common.assetClassFund;
-  }
-  if (value === 'etf') {
-    return labels.common.assetClassEtf;
-  }
-  if (value === 'gold') {
-    return labels.common.assetClassGold;
-  }
-  if (value === 'bond') {
-    return labels.common.assetClassBond;
-  }
-  return normalizeStatus(value);
+  return formatAssetClassLabel(value, labels.common);
 }
 
 function diagnosticActionLabel(

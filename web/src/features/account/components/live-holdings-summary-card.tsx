@@ -1,5 +1,6 @@
 import { useCopy } from '../../../shared/i18n/context';
 import { formatCurrency } from '../../../shared/format';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import type { LiveHoldingGroup } from '../account-feature-boundary';
 
 function toneClass(value: number | null) {
@@ -7,32 +8,6 @@ function toneClass(value: number | null) {
     return 'app-pnl-neutral';
   }
   return value > 0 ? 'app-pnl-positive' : 'app-pnl-negative';
-}
-
-function assetClassLabel(
-  assetClass: string,
-  labels: {
-    assetClassStock: string;
-    assetClassEtf: string;
-    assetClassFund: string;
-    assetClassGold: string;
-    assetClassBond: string;
-  },
-) {
-  switch (assetClass) {
-    case 'stock':
-      return labels.assetClassStock;
-    case 'etf':
-      return labels.assetClassEtf;
-    case 'fund':
-      return labels.assetClassFund;
-    case 'gold':
-      return labels.assetClassGold;
-    case 'bond':
-      return labels.assetClassBond;
-    default:
-      return assetClass;
-  }
 }
 
 export function LiveHoldingsSummaryCard({
@@ -74,7 +49,7 @@ export function LiveHoldingsSummaryCard({
               aria-hidden="true"
             />
             <div className="text-base font-semibold">
-              {assetClassLabel(group.asset_class, copy.common)}
+              {formatAssetClassLabel(group.asset_class, copy.common)}
             </div>
             <div className="mt-3 grid gap-2">
               <Metric

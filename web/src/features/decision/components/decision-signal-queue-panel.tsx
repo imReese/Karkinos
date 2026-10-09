@@ -189,7 +189,7 @@ function SignalJournalCard({
           >
             <span className="truncate">{strategyLabel}</span>
             {isShadow ? (
-              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-normal border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] text-[var(--app-text-secondary)]">
+              <span className="app-type-micro shrink-0 rounded border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-1.5 py-0.5 font-normal text-[var(--app-text-secondary)]">
                 {locale === 'zh' ? '影子试运行' : 'Shadow trial'}
               </span>
             ) : null}

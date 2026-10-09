@@ -36,3 +36,13 @@ test('falls back safely when assetClassIndex is omitted from labels', () => {
   delete (withoutIndexEn as { assetClassIndex?: string }).assetClassIndex;
   expect(formatAssetClassLabel('index', withoutIndexEn)).toBe('Index');
 });
+
+test('formats other, unknown, and fund variants correctly', () => {
+  expect(formatAssetClassLabel('other', zhLabels)).toBe('其他');
+  expect(formatAssetClassLabel('other', enLabels)).toBe('Other');
+  expect(formatAssetClassLabel('unknown', zhLabels)).toBe('未知');
+  expect(formatAssetClassLabel('unknown', enLabels)).toBe('Unknown');
+  expect(formatAssetClassLabel('open_end_fund', zhLabels)).toBe('基金');
+  expect(formatAssetClassLabel('open-end-fund', zhLabels)).toBe('基金');
+  expect(formatAssetClassLabel('convertible_bond', zhLabels)).toBe('债券');
+});

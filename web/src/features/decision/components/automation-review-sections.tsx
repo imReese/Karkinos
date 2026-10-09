@@ -1,5 +1,10 @@
+import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import { handleClientNavigation } from '../../../shared/routing/client-navigate';
+import {
+  formatStrategyDisplayName,
+  isShadowStrategy,
+} from '../../../shared/strategy-display';
 import {
   formatPublicCode,
   formatPublicStatus,
@@ -238,6 +243,7 @@ export function StrategyPromotionStatesSection({
   cockpit: AutomationCockpitResponse;
 }) {
   const { locale } = usePreferences();
+  const copy = useCopy();
   return (
     <>
       {cockpit.promotion_states.length ? (
@@ -266,6 +272,11 @@ export function StrategyPromotionStatesSection({
                 state.lifecycle,
                 locale,
               );
+              const strategyLabel = formatStrategyDisplayName(
+                { strategy_id: state.strategy_id },
+                copy.backtest.page.strategyNames,
+              );
+              const isShadow = isShadowStrategy(state.strategy_id);
               return (
                 <div
                   className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
@@ -273,8 +284,20 @@ export function StrategyPromotionStatesSection({
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="break-words text-sm font-semibold text-[var(--app-text)]">
-                        {state.strategy_id}
+                      <div
+                        className="flex flex-wrap items-center gap-1.5 break-words text-sm font-semibold text-[var(--app-text)]"
+                        title={state.strategy_id}
+                      >
+                        <span>{strategyLabel}</span>
+                        {isShadow ? (
+                          <span className="app-type-micro shrink-0 rounded border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-1.5 py-0.5 font-normal text-[var(--app-text-secondary)]">
+                            {locale === 'zh' ? '影子试运行' : 'Shadow trial'}
+                          </span>
+                        ) : strategyLabel !== state.strategy_id ? (
+                          <span className="app-type-micro font-mono font-normal text-[var(--app-text-tertiary)]">
+                            ({state.strategy_id})
+                          </span>
+                        ) : null}
                       </div>
                       <div className="app-muted mt-1 break-words text-xs leading-5">
                         {strategyPromotionMissingRequirementsLabel(

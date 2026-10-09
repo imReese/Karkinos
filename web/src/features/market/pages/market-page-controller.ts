@@ -242,6 +242,11 @@ export function useMarketPageController() {
     ['fund', copy.common.assetClassFund],
     ['gold', copy.common.assetClassGold],
     ['bond', copy.common.assetClassBond],
+    [
+      'index',
+      copy.common.assetClassIndex ??
+        (copy.common.assetClassStock === '股票' ? '指数' : 'Index'),
+    ],
   ] as const;
 
   const pushToast = (
