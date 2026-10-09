@@ -26,7 +26,7 @@ def _normalize_asset_class(value: Any) -> str:
     normalized = str(normalized).strip().lower().replace("-", "_")
     if normalized in {"open_end_fund", "openend_fund"}:
         return "fund"
-    if normalized in {"stock", "fund", "etf", "gold", "bond", "cash"}:
+    if normalized in {"stock", "fund", "etf", "gold", "bond", "cash", "index"}:
         return normalized
     return "other"
 
@@ -90,10 +90,11 @@ def iter_configured_asset_metadata(state: Any) -> list[dict[str, Any]]:
         raw_collection = getattr(config, field_name, None)
         if raw_collection is None:
             continue
-        if isinstance(raw_collection, dict):
-            iterable = raw_collection.items()
-        else:
-            iterable = enumerate(raw_collection)
+        iterable: Any = (
+            raw_collection.items()
+            if isinstance(raw_collection, dict)
+            else enumerate(raw_collection)
+        )
         for key, raw in iterable:
             symbol = None if isinstance(key, int) else str(key)
             cfg = _coerce_asset_config(symbol, raw, source=field_name)
@@ -266,19 +267,24 @@ def build_asset_metadata_status(state: Any) -> dict[str, Any]:
     db_entries = _db_metadata_entries(state)
     watchlist_entries = _db_watchlist_entries(state)
     configured_assets: list[dict[str, Any]] = []
+    seen_identities: set[tuple[str, str]] = set()
     configured_symbols: set[str] = set()
     for row in db_entries:
         symbol = str(row.get("symbol") or "").strip()
         if not symbol:
             continue
+        asset_class = _normalize_asset_class(
+            row.get("asset_type") or row.get("asset_class")
+        )
+        if (symbol, asset_class) in seen_identities:
+            continue
+        seen_identities.add((symbol, asset_class))
         configured_symbols.add(symbol)
         configured_assets.append(
             {
                 "symbol": symbol,
                 "display_name": str(row.get("display_name") or symbol),
-                "asset_class": _normalize_asset_class(
-                    row.get("asset_type") or row.get("asset_class")
-                ),
+                "asset_class": asset_class,
                 "provider_symbol": row.get("provider_symbol"),
                 "aliases": [],
                 "source": row.get("source") or "db",
@@ -286,17 +292,21 @@ def build_asset_metadata_status(state: Any) -> dict[str, Any]:
         )
     for row in watchlist_entries:
         symbol = str(row.get("symbol") or "").strip()
-        if not symbol or symbol in configured_symbols:
+        if not symbol:
+            continue
+        asset_class = _normalize_asset_class(row.get("asset_class"))
+        if (symbol, asset_class) in seen_identities or symbol in configured_symbols:
             continue
         display_name = str(row.get("display_name") or symbol).strip()
         if not display_name:
             continue
+        seen_identities.add((symbol, asset_class))
         configured_symbols.add(symbol)
         configured_assets.append(
             {
                 "symbol": symbol,
                 "display_name": display_name,
-                "asset_class": _normalize_asset_class(row.get("asset_class")),
+                "asset_class": asset_class,
                 "provider_symbol": row.get("provider_symbol"),
                 "aliases": [],
                 "source": row.get("source") or "watchlist",
@@ -308,13 +318,17 @@ def build_asset_metadata_status(state: Any) -> dict[str, Any]:
         primary_symbol = str(cfg.get("symbol") or next(iter(symbols), "")).strip()
         if not primary_symbol:
             continue
+        asset_class = _normalize_asset_class(cfg.get("asset_class"))
+        if (primary_symbol, asset_class) in seen_identities:
+            continue
+        seen_identities.add((primary_symbol, asset_class))
         configured_assets.append(
             {
                 "symbol": primary_symbol,
                 "display_name": str(
                     cfg.get("display_name") or cfg.get("name") or primary_symbol
                 ),
-                "asset_class": _normalize_asset_class(cfg.get("asset_class")),
+                "asset_class": asset_class,
                 "provider_symbol": cfg.get("provider_symbol")
                 or cfg.get("provider_code")
                 or cfg.get("code"),

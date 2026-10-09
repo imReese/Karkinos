@@ -5,6 +5,7 @@ type AssetClassLabels = {
   assetClassGold: string;
   assetClassBond: string;
   assetClassCash: string;
+  assetClassIndex?: string;
 };
 
 export function formatAssetClassLabel(
@@ -18,5 +19,11 @@ export function formatAssetClassLabel(
   if (normalized === 'gold') return labels.assetClassGold;
   if (normalized === 'bond') return labels.assetClassBond;
   if (normalized === 'cash') return labels.assetClassCash;
+  if (normalized === 'index') {
+    return (
+      labels.assetClassIndex ??
+      (labels.assetClassStock === '股票' ? '指数' : 'Index')
+    );
+  }
   return assetClass || '--';
 }

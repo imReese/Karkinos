@@ -171,7 +171,7 @@ function TrackedAssetPool({
             const isStock = asset.asset_class === 'stock';
             return (
               <div
-                key={asset.symbol}
+                key={`${asset.symbol}-${asset.asset_class ?? 'unknown'}`}
                 className="inline-flex items-center gap-1.5 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-2.5 py-1 text-xs shadow-xs"
               >
                 <span className="font-mono font-bold text-[var(--app-text)]">

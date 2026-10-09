@@ -230,23 +230,34 @@ def insert_asset_identity_if_missing(
         """,
         (symbol, asset_class, display_name, created_at, created_at),
     )
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO instrument_metadata (
-            symbol, asset_type, display_name, provider_symbol, source,
-            fetched_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'trade', ?, ?, ?)
-        """,
-        (
-            symbol,
-            asset_class,
-            display_name,
-            symbol,
-            created_at,
-            created_at,
-            created_at,
-        ),
+    equivalent_types = (
+        ("fund", "open_end_fund")
+        if asset_class in {"fund", "open_end_fund"}
+        else (asset_class,)
     )
+    placeholders = ",".join("?" for _ in equivalent_types)
+    exists = conn.execute(
+        f"SELECT 1 FROM instrument_metadata WHERE symbol = ? AND asset_type IN ({placeholders}) LIMIT 1",
+        (symbol, *equivalent_types),
+    ).fetchone()
+    if not exists:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO instrument_metadata (
+                symbol, asset_type, display_name, provider_symbol, source,
+                fetched_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'trade', ?, ?, ?)
+            """,
+            (
+                symbol,
+                asset_class,
+                display_name,
+                symbol,
+                created_at,
+                created_at,
+                created_at,
+            ),
+        )
 
 
 def load_pending_order(

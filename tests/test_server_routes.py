@@ -574,6 +574,61 @@ def test_asset_metadata_resolver_prefers_local_db_metadata():
     assert status["configured_assets"][0]["display_name"] == "示例能源"
 
 
+def test_asset_metadata_status_deduplicates_by_symbol_and_normalized_class():
+    from server.services.asset_metadata import build_asset_metadata_status
+
+    class FakeDb:
+        def list_instrument_metadata_sync(self):
+            return [
+                {
+                    "symbol": "012710",
+                    "asset_type": "open_end_fund",
+                    "display_name": "华夏核心成长混合C",
+                },
+                {
+                    "symbol": "012710",
+                    "asset_type": "fund",
+                    "display_name": "华夏核心成长混合C",
+                },
+                {
+                    "symbol": "000001",
+                    "asset_type": "index",
+                    "display_name": "上证指数",
+                },
+                {
+                    "symbol": "000001",
+                    "asset_type": "stock",
+                    "display_name": "平安银行",
+                },
+            ]
+
+        def list_watchlist_assets_sync(self):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return []
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(
+            instruments=[],
+            assets={"012710": {"display_name": "华夏核心C", "asset_class": "fund"}},
+        ),
+        scheduler=SimpleNamespace(portfolio=None, watchlist=[], latest_quotes={}),
+        db=FakeDb(),
+    )
+
+    status = build_asset_metadata_status(state)
+    assert status["configured_count"] == 3
+    symbols_and_classes = [
+        (a["symbol"], a["asset_class"]) for a in status["configured_assets"]
+    ]
+    assert symbols_and_classes == [
+        ("012710", "fund"),
+        ("000001", "index"),
+        ("000001", "stock"),
+    ]
+
+
 def test_asset_metadata_status_reports_missing_symbols_and_template():
     from server.services.asset_metadata import build_asset_metadata_status
 
