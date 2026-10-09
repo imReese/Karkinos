@@ -320,18 +320,6 @@ async def _run_claimed_daily_candidate_preparation_check(
     )
 
 
-async def _send_daily_candidate_preparation_notification(
-    *,
-    notifier: Any,
-    preparation: dict[str, Any],
-) -> dict[str, Any]:
-    return await send_daily_candidate_preparation_notification(
-        notifier=notifier,
-        preparation=preparation,
-        timeout_seconds=DAILY_CANDIDATE_NOTIFICATION_TIMEOUT_SECONDS,
-    )
-
-
 async def run_daily_decision_evidence_automation_loop(
     *,
     state: Any,

@@ -211,24 +211,6 @@ def _decision_candidate(
     )
 
 
-def _certainty_evidence(
-    *,
-    data_freshness: dict[str, Any],
-    account_truth: dict[str, Any],
-    risk_gate: dict[str, Any],
-    strategy_order_generation: dict[str, Any],
-    paper_shadow: dict[str, Any],
-) -> dict[str, Any]:
-    return candidate_projection.certainty_evidence(
-        data_freshness=data_freshness,
-        account_truth=account_truth,
-        risk_gate=risk_gate,
-        strategy_order_generation=strategy_order_generation,
-        paper_shadow=paper_shadow,
-        paper_shadow_ticket_gate=_paper_shadow_allows_manual_ticket,
-    )
-
-
 async def today_decision_payload(
     state: Any,
     *,

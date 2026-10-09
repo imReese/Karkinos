@@ -508,34 +508,6 @@ def build_full_market_universe_truth(
     return {**core, "evidence_fingerprint": "sha256:" + content_fingerprint(core)}
 
 
-def _assess_panel_member(
-    *,
-    data_store: DataStore,
-    member: dict[str, Any],
-    start_date: str,
-    end_date: str,
-    initial_cash: Decimal,
-    policy: MarketUniversePolicy,
-) -> dict[str, Any]:
-    symbol_text = str(member["symbol"])
-    frame = data_store.load_bars(
-        Symbol(symbol_text),
-        BarFrequency.DAILY,
-        instrument_type="stock",
-    )
-    return _assess_member_frame(
-        frame=frame,
-        member=member,
-        start_date=start_date,
-        end_date=end_date,
-        minimum_history_rows=policy.minimum_history_rows,
-        lot_size=policy.lot_size,
-        fee_buffer_rate=policy.fee_buffer_rate,
-        per_name_budget=initial_cash * policy.target_weight,
-        enforce_lot_feasibility=True,
-    )
-
-
 def _assess_member_frame(
     *,
     frame: pd.DataFrame | None,

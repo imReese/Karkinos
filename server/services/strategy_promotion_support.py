@@ -627,13 +627,6 @@ def _binding_backtest_source(binding: dict[str, Any], prefix: str) -> dict[str, 
     }
 
 
-def _nonempty_text_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    normalized = [str(item).strip() for item in value]
-    return normalized if normalized and all(normalized) else []
-
-
 def _missing_requirements(readiness: dict[str, Any]) -> list[str]:
     value = readiness.get("missing_requirements") or []
     missing = [str(item) for item in value]

@@ -429,15 +429,6 @@ def _insert_run(
     return row
 
 
-def _same_decimal(left: Any, right: Any) -> bool:
-    if left is None or right is None:
-        return left is None and right is None
-    try:
-        return Decimal(str(left)) == Decimal(str(right))
-    except (InvalidOperation, TypeError, ValueError):
-        return False
-
-
 def _json_object(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)

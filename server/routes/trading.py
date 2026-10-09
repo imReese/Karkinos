@@ -257,62 +257,18 @@ def create_router() -> APIRouter:
         payload: ShadowRunRequest | None = None,
     ) -> dict:
         from server.dependencies import get_app_state
-        from server.services.daily_trading_plan import build_daily_trading_plan
-        from server.services.decision_application import (
-            decision_portfolio_context,
-            today_decision_payload,
-            trading_plan_positions,
+        from server.services.account_paper_shadow import (
+            orchestrate_account_paper_shadow,
         )
-        from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
         state = get_app_state()
-        if state.db is None:
-            raise HTTPException(status_code=503, detail="Database is not initialized")
         body = payload or ShadowRunRequest()
-        if body.base_equity is not None:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "caller-supplied shadow base_equity is disabled; "
-                    "canonical persisted Account Truth must own sizing"
-                ),
-            )
-        portfolio_context = decision_portfolio_context(state)
-        decision_payload = await today_decision_payload(
+        return await orchestrate_account_paper_shadow(
             state,
-            portfolio_context=portfolio_context,
+            run_date=body.run_date,
+            base_equity=body.base_equity,
+            broadcast_event=True,
         )
-        from server.services.decision_projection import (
-            suppress_unverified_daily_scan_candidates,
-        )
-
-        decision_payload = suppress_unverified_daily_scan_candidates(decision_payload)
-        trading_plan = build_daily_trading_plan(
-            decision_payload=decision_payload,
-            config=getattr(state, "config", None),
-            positions=trading_plan_positions(
-                state,
-                portfolio_context=portfolio_context,
-            ),
-        )
-        plan_date = str(trading_plan.get("plan_date") or "")
-        if body.run_date is not None and body.run_date != plan_date:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "requested shadow run_date does not match the canonical "
-                    f"persisted plan date: {plan_date or 'missing'}"
-                ),
-            )
-        result = run_paper_shadow_from_trading_plan(
-            db=state.db,
-            trading_plan=trading_plan,
-            generated_at=(
-                trading_plan.get("generated_at") or decision_payload.get("generated_at")
-            ),
-        )
-        await _broadcast_if_possible(state, "DailyShadowRunRecorded", result)
-        return result
 
     @r.get("/order-facts")
     async def list_order_facts(

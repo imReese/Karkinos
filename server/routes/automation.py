@@ -178,32 +178,17 @@ def create_router() -> APIRouter:
         request: DailyPaperShadowRunRequest,
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.operations_projection import (
-            current_decision_and_trading_plan,
+        from server.services.account_paper_shadow import (
+            orchestrate_account_paper_shadow,
         )
-        from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
         state = get_app_state()
-        trading_plan = request.trading_plan
-        if trading_plan is None:
-            _, trading_plan = await current_decision_and_trading_plan(state)
-        generated_at = request.generated_at or trading_plan.get("generated_at")
-        shadow_run = run_paper_shadow_from_trading_plan(
-            db=state.db,
-            trading_plan=trading_plan,
-            generated_at=generated_at,
+        return await orchestrate_account_paper_shadow(
+            state,
+            trading_plan=request.trading_plan,
+            generated_at=request.generated_at,
+            automation_service=_service(),
         )
-        automation_run = _service().record_paper_shadow_run(
-            run_date=trading_plan.get("plan_date"),
-            source_ref=shadow_run.get("run_id"),
-            paper_shadow_run=shadow_run,
-        )
-        return {
-            "automation_run": automation_run,
-            "paper_shadow_run": shadow_run,
-            "broker_submission_enabled": False,
-            "does_not_submit_broker_order": True,
-        }
 
     @r.post("/run/daily-candidate")
     async def run_daily_candidate(

@@ -30,10 +30,6 @@ def _format_percent(value: float) -> str:
     return f"{value * 100:.1f}%"
 
 
-def _format_currency(value: float) -> str:
-    return f"¥{value:,.2f}"
-
-
 def _build_drawdown_summary(
     equity_curve: list[EquityPoint],
 ) -> tuple[RiskDrawdownSummary | None, list[RiskDrawdownPoint]]:

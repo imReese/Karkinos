@@ -11,6 +11,7 @@ from fastapi.routing import APIRoute
 
 from server.db import AppDatabase
 from server.routes import operations as operations_routes
+from server.services import operations_projection
 from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 
@@ -493,7 +494,7 @@ def test_pilot_readiness_factory_failure_is_a_blocker(monkeypatch):
         fail_write_release_factory,
     )
 
-    readiness = operations_routes._build_controlled_per_order_pilot_readiness(state)
+    readiness = operations_projection.build_controlled_per_order_pilot_readiness(state)
 
     assert readiness["status"] == "blocked"
     assert any(

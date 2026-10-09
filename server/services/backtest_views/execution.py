@@ -195,64 +195,11 @@ def run_single_backtest(
         inputs = preloaded_dataset_inputs or prepare_dataset_backtest_inputs(
             request, db
         )
-        instruments, data_handlers, dataset_binding, dataset_snapshot_json = inputs
         _require_preloaded_dataset_request(request, inputs)
     else:
-        assets = request.assets or config.assets
-        store = None
-        try:
-            store = DataStore()
-        except Exception:
-            pass
+        inputs = prepare_retrieved_dataset_backtest_inputs(request, config)
 
-        sources, source_policy, configured_source = resolve_backtest_data_plane(config)
-        dm = DataManager(
-            sources=sources,
-            store=store,
-            source_policy=source_policy,
-            default_source=(
-                None
-                if source_policy is not None
-                else str(getattr(config, "data_source", "") or "") or None
-            ),
-        )
-
-        watchlist = build_instrument_watchlist(BacktestConfig(assets=assets))
-        instruments = {}
-        data_handlers = {}
-        for sym, ac, itype in watchlist:
-            if hasattr(DataManager, "get_instrument_by_type"):
-                instrument = DataManager.get_instrument_by_type(sym, itype)
-            else:
-                instrument = DataManager.get_instrument(sym, ac)
-            instruments[sym] = instrument
-
-            try:
-                handler = dm.get_bars(
-                    sym,
-                    datetime.strptime(request.start_date, "%Y-%m-%d"),
-                    datetime.strptime(request.end_date, "%Y-%m-%d"),
-                    asset_class=ac,
-                    instrument_type=itype,
-                )
-            except TypeError:
-                handler = dm.get_bars(
-                    sym,
-                    datetime.strptime(request.start_date, "%Y-%m-%d"),
-                    datetime.strptime(request.end_date, "%Y-%m-%d"),
-                    asset_class=ac,
-                )
-            data_handlers[sym] = handler
-
-        source_names = list(sources.keys())
-        dataset_snapshot_json = build_backtest_dataset_snapshot(
-            start_date=request.start_date,
-            end_date=request.end_date,
-            configured_source=configured_source,
-            data_handlers=data_handlers,
-            store=store,
-            source_names=source_names,
-        )
+    instruments, data_handlers, dataset_binding, dataset_snapshot_json = inputs
     data_handlers, execution_window = _windowed_data_handlers(
         request,
         data_handlers,
@@ -419,6 +366,94 @@ def run_single_backtest(
     }
 
 
+def prepare_retrieved_dataset_backtest_inputs(
+    request: BacktestRequest, config: Any
+) -> tuple[dict, dict, dict, dict]:
+    """Retrieve market bars via DataManager and form a canonical Dataset representation."""
+    from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+    from data.manager import DataManager
+    from data.store import DataStore
+    from server.bootstrap import build_instrument_watchlist
+    from server.config import BacktestConfig
+    from server.services.backtest_views.strategy_inputs import (
+        resolve_backtest_data_plane,
+    )
+
+    assets = request.assets or getattr(config, "assets", None) or []
+    store = None
+    try:
+        store = DataStore()
+    except Exception:
+        pass
+
+    sources, source_policy, configured_source = resolve_backtest_data_plane(config)
+    dm = DataManager(
+        sources=sources,
+        store=store,
+        source_policy=source_policy,
+        default_source=(
+            None
+            if source_policy is not None
+            else str(getattr(config, "data_source", "") or "") or None
+        ),
+    )
+
+    watchlist = build_instrument_watchlist(BacktestConfig(assets=assets))
+    instruments = {}
+    data_handlers = {}
+    start_dt = datetime.strptime(request.start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(request.end_date, "%Y-%m-%d")
+
+    for sym, ac, itype in watchlist:
+        if hasattr(DataManager, "get_instrument_by_type"):
+            instrument = DataManager.get_instrument_by_type(sym, itype)
+        else:
+            instrument = DataManager.get_instrument(sym, ac)
+        instruments[sym] = instrument
+
+        try:
+            handler = dm.get_bars(
+                sym,
+                start_dt,
+                end_dt,
+                asset_class=ac,
+                instrument_type=itype,
+            )
+        except TypeError:
+            handler = dm.get_bars(
+                sym,
+                start_dt,
+                end_dt,
+                asset_class=ac,
+            )
+        data_handlers[sym] = handler
+
+    source_names = list(sources.keys())
+    dataset_snapshot_json = build_backtest_dataset_snapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        configured_source=configured_source,
+        data_handlers=data_handlers,
+        store=store,
+        source_names=source_names,
+    )
+    snapshot_id = (
+        dataset_snapshot_json.get("snapshot_id") or "unverified_exploratory_dataset"
+    )
+    dataset_binding = {
+        "dataset_id": snapshot_id,
+        "price_basis": "unadjusted",
+        "source_names": source_names,
+        "cross_source_verified": False,
+        "offline_replay": False,
+        "point_in_time_verified": False,
+        "limitations": [
+            "Exploratory on-the-fly market data retrieval.",
+        ],
+    }
+    return instruments, data_handlers, dataset_binding, dataset_snapshot_json
+
+
 def prepare_dataset_backtest_inputs(
     request: BacktestRequest, db=None
 ) -> tuple[dict, dict, dict, dict]:
@@ -537,6 +572,7 @@ __all__ = (
     "backtest_report_dir",
     "normalize_backtest_payload_from_equity_curve",
     "prepare_dataset_backtest_inputs",
+    "prepare_retrieved_dataset_backtest_inputs",
     "run_single_backtest",
     "write_backtest_report_file",
 )

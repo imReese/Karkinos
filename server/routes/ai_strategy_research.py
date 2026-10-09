@@ -427,16 +427,6 @@ def _build_shadow_read_service(state: Any) -> Any:
     return build_shadow_research_read_service(state)
 
 
-def _read_shadow_research_readiness() -> dict[str, Any]:
-    """Bounded provider-free policy projection for loopback readiness checks."""
-    from server.dependencies import get_app_state
-
-    state = get_app_state()
-    if state.db is None:
-        raise HTTPException(status_code=503, detail="Database is not initialized")
-    return _build_shadow_read_service(state).readiness_status()
-
-
 async def _run_sealed_holdout_test(payload: SealedTestPayload) -> JSONResponse:
     from server.dependencies import get_app_state
 
