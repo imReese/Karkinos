@@ -5,6 +5,7 @@ import {
   StatusBadge as WorkbenchStatusBadge,
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
+import { EtfRotationTradingCard } from './etf-rotation-card';
 import { ExecutionAuditPanel } from './execution-audit-panel';
 import { TradingHistory } from './trading-history';
 import { TradingReviewQueue } from './trading-review-queue';
@@ -68,6 +69,9 @@ export function TradingWorkspace() {
           </WorkbenchStatusBadge>
         </div>
       </section>
+
+      {/* 量化轮动策略收益看板与一键实盘下单 */}
+      <EtfRotationTradingCard />
 
       <div className="app-trading-command-grid grid min-w-0 gap-5 sm:gap-6">
         <TradingReviewQueue controller={controller} />

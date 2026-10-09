@@ -171,6 +171,7 @@ export function OverviewResolvedWorkspace({
             nextTradingDate={state.overview.market_session.next_trading_date}
             planQuery={controller.tradingPlan}
             todayQuery={controller.todayDecision}
+            etfRotationQuery={controller.etfRotation}
             positions={state.snapshot.positions}
             currentWeightBySymbol={weightBySymbol}
           />

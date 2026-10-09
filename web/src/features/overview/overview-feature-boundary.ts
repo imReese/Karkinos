@@ -29,3 +29,12 @@ export {
   operationsNextActionLabel,
   operationsTargetHref,
 } from '../operations/presentation';
+export {
+  useEtfRotationDashboardQuery,
+  useExecuteEtfRotationOrdersMutation,
+} from '../trading/api-etf-rotation';
+export type {
+  EtfRotationDashboardResponse,
+  EtfStrategyMetrics,
+  EtfRebalanceOrder,
+} from '../trading/api-etf-rotation';
