@@ -1719,3 +1719,67 @@ def test_daily_candidate_requires_each_intent_to_bind_current_quote(tmp_path) ->
         "order_intent_0:estimated_price_not_bound_to_market_quote"
         in result["no_action_reasons"]
     )
+
+
+def test_is_sha256_accepts_raw_and_prefixed_fingerprints() -> None:
+    from server.services.daily_candidate_readiness_support import (
+        is_sha256 as is_sha256_support,
+    )
+    from server.services.daily_candidate_trial_values import (
+        is_sha256 as is_sha256_trial,
+    )
+    from server.services.daily_decision_evidence_values import (
+        is_sha256 as is_sha256_evidence,
+    )
+
+    funcs = [is_sha256_evidence, is_sha256_support, is_sha256_trial]
+    hex64 = "a" * 64
+    prefixed = f"sha256:{hex64}"
+
+    for fn in funcs:
+        assert fn(hex64) is True
+        assert fn(prefixed) is True
+        assert fn(f"  sha256:{hex64.upper()}  ") is True
+        assert fn(None) is False
+        assert fn("") is False
+        assert fn("a" * 63) is False
+        assert fn("a" * 65) is False
+        assert fn(f"sha256:{'a' * 63}") is False
+        assert fn(f"sha256:{'a' * 65}") is False
+        assert fn(f"sha256:{'g' * 64}") is False
+        assert fn("not-a-hash") is False
+
+
+def test_financial_preflight_accepts_prefixed_fee_schedule_fingerprint() -> None:
+    inputs = _financial_preflight_inputs()
+    prefixed = "sha256:" + "b" * 64
+    inputs["reviewed_fee_schedule"]["review"]["review_fingerprint"] = prefixed
+    inputs["decision_payload"]["candidates"][0]["evidence"]["strategy"][
+        "order_generation_gate"
+    ]["promotion"]["fee_schedule_binding"]["fee_schedule_review_fingerprint"] = prefixed
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["financial_gate_status"] == "pass"
+    assert (
+        "reviewed_fee_schedule_review_fingerprint_invalid"
+        not in result["no_action_reasons"]
+    )
+
+
+def test_financial_preflight_rejects_malformed_fee_schedule_fingerprint() -> None:
+    inputs = _financial_preflight_inputs()
+    inputs["reviewed_fee_schedule"]["review"]["review_fingerprint"] = "sha256:not-valid"
+    inputs["decision_payload"]["candidates"][0]["evidence"]["strategy"][
+        "order_generation_gate"
+    ]["promotion"]["fee_schedule_binding"][
+        "fee_schedule_review_fingerprint"
+    ] = "sha256:not-valid"
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["financial_gate_status"] == "blocked"
+    assert (
+        "reviewed_fee_schedule_review_fingerprint_invalid"
+        in result["no_action_reasons"]
+    )

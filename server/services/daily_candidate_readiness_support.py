@@ -120,7 +120,7 @@ def is_nonnegative_int(value: Any) -> bool:
 
 
 def is_sha256(value: Any) -> bool:
-    normalized = str(value or "")
+    normalized = str(value or "").strip().lower().removeprefix("sha256:")
     return len(normalized) == 64 and all(
         character in "0123456789abcdef" for character in normalized
     )

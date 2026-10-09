@@ -89,7 +89,7 @@ def single_ref(refs: list[str], prefix: str) -> str | None:
 
 
 def is_sha256(value: Any) -> bool:
-    normalized = str(value or "").strip().lower()
+    normalized = str(value or "").strip().lower().removeprefix("sha256:")
     return len(normalized) == 64 and all(
         character in "0123456789abcdef" for character in normalized
     )
