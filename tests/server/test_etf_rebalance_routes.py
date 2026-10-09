@@ -1,10 +1,57 @@
 """Tests for /api/trading/etf-rebalance HTTP routes."""
 
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from server.routes.etf_rebalance import create_router
+from server.services.etf_rotation_automation import EtfRotationAutomationService
+
+
+@pytest.fixture(autouse=True)
+def isolated_etf_market_data(tmp_path: Path):
+    """Generate isolated deterministic ETF bars so tests do not depend on local downloaded files."""
+    data_dir = tmp_path / "real_etfs"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    dates = pd.bdate_range("2026-01-05", periods=80)
+    trend_rates = {
+        "512890": (2.0, 0.005),  # Strong upward -> Top 1
+        "513100": (10.0, 0.004),  # Strong upward -> Top 2
+        "518880": (4.0, 0.002),
+        "513500": (1.5, 0.001),
+        "510500": (6.0, 0.0002),
+        "159915": (2.0, -0.001),
+        "510300": (4.0, -0.003),  # Downward -> Excluded (below MA)
+        "511010": (100.0, 0.0),  # Cash proxy
+    }
+
+    for sym, (base_px, rate) in trend_rates.items():
+        prices = base_px * ((1.0 + rate) ** np.arange(len(dates)))
+        df = pd.DataFrame(
+            {
+                "timestamp": dates,
+                "open": prices,
+                "high": prices * 1.01,
+                "low": prices * 0.99,
+                "close": prices,
+                "volume": [1000000] * len(dates),
+            }
+        )
+        df.to_csv(data_dir / f"{sym}.csv", index=False)
+
+    original_dir = EtfRotationAutomationService.default_data_dir
+    EtfRotationAutomationService.default_data_dir = data_dir
+    EtfRotationAutomationService.reset_state()
+
+    yield
+
+    EtfRotationAutomationService.default_data_dir = original_dir
+    EtfRotationAutomationService.reset_state()
 
 
 @pytest.fixture

@@ -92,13 +92,23 @@ VERIFIED_BACKTEST_METRICS = VERIFIED_BACKTEST_METRICS_5Y
 class EtfRotationAutomationService:
     """Manages scheduled and automated ETF rotation rebalance evaluation."""
 
+    default_data_dir: Path = Path("data/store/real_etfs")
+
     _cached_plan: RebalancePlan | None = None
     _cached_summary: dict[str, Any] | None = None
     _last_evaluated_at: datetime | None = None
     _last_execution_receipt: dict[str, Any] | None = None
 
     def __init__(self, data_dir: Path | None = None) -> None:
-        self.data_dir = data_dir or Path("data/store/real_etfs")
+        self.data_dir = data_dir or self.default_data_dir
+
+    @classmethod
+    def reset_state(cls) -> None:
+        """Reset cached plan, summary, and execution receipt."""
+        cls._cached_plan = None
+        cls._cached_summary = None
+        cls._last_evaluated_at = None
+        cls._last_execution_receipt = None
 
     def load_aligned_market_data(self) -> dict[Symbol, pd.DataFrame]:
         """Load and align daily bars for the core ETF rotation universe."""

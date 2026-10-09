@@ -33,14 +33,16 @@ class ExecuteOrdersRequest(BaseModel):
     )
 
 
-def create_router() -> APIRouter:
+def create_router(
+    service: EtfRotationAutomationService | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/trading/etf-rebalance", tags=["etf-rebalance"])
-    service = EtfRotationAutomationService()
+    svc = service or EtfRotationAutomationService()
 
     @router.get("/dashboard")
     async def get_dashboard() -> dict[str, Any]:
         """Get full strategy backtest performance, today's actionable orders, and execution status."""
-        return service.get_dashboard_view()
+        return svc.get_dashboard_view()
 
     @router.post("/execute")
     async def execute_rebalance_orders(
@@ -48,7 +50,7 @@ def create_router() -> APIRouter:
     ) -> dict[str, Any]:
         """Perform actual order placement based on the verified strategy yield and recommendations."""
         req = request or ExecuteOrdersRequest()
-        return service.execute_orders(
+        return svc.execute_orders(
             operator=req.operator,
             note=req.note,
             broker_mode=req.broker_mode,
@@ -57,10 +59,10 @@ def create_router() -> APIRouter:
     @router.get("/plan")
     async def get_rebalance_plan() -> dict[str, Any]:
         """Get the latest actionable ETF rebalance plan with Chinese names and order details."""
-        summary = service.get_latest_plan_summary()
+        summary = svc.get_latest_plan_summary()
         if summary is None:
             try:
-                summary = service.evaluate_rebalance()
+                summary = svc.evaluate_rebalance()
             except Exception as exc:
                 raise HTTPException(
                     status_code=500, detail=f"Failed to evaluate ETF rebalance: {exc}"
@@ -74,7 +76,7 @@ def create_router() -> APIRouter:
         """Trigger an on-demand rebalance calculation and update the active rebalance plan."""
         req = request or RebalanceEvaluationRequest()
         try:
-            return service.evaluate_rebalance(
+            return svc.evaluate_rebalance(
                 total_equity=req.total_equity,
                 current_holdings=req.current_holdings,
                 strategy_params=req.strategy_params,
@@ -87,9 +89,9 @@ def create_router() -> APIRouter:
     @router.get("/csv", response_class=PlainTextResponse)
     async def export_rebalance_csv() -> PlainTextResponse:
         """Download broker-ready CSV (证券代码, 证券名称, 买卖方向, 委托数量, 委托价格, 预估金额, 调仓说明)."""
-        summary = service.get_latest_plan_summary()
+        summary = svc.get_latest_plan_summary()
         if summary is None:
-            summary = service.evaluate_rebalance()
+            summary = svc.evaluate_rebalance()
         csv_text = summary.get("csv_content", "")
         return PlainTextResponse(
             content=csv_text,
@@ -102,9 +104,9 @@ def create_router() -> APIRouter:
     @router.get("/script", response_class=PlainTextResponse)
     async def export_miniqmt_script() -> PlainTextResponse:
         """Download standalone MiniQMT (xtquant) Python execution script."""
-        summary = service.get_latest_plan_summary()
+        summary = svc.get_latest_plan_summary()
         if summary is None:
-            summary = service.evaluate_rebalance()
+            summary = svc.evaluate_rebalance()
         script_text = summary.get("miniqmt_script", "")
         return PlainTextResponse(
             content=script_text,
