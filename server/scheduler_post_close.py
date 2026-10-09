@@ -217,6 +217,17 @@ class SchedulerPostCloseMixin:
             result.run_id or "not_required",
             result.replayed,
         )
+        try:
+            from server.services.etf_rotation_automation import (
+                EtfRotationAutomationService,
+            )
+
+            EtfRotationAutomationService().evaluate_rebalance()
+        except Exception:
+            logger.debug(
+                "Automated ETF rotation evaluation skipped or failed",
+                exc_info=True,
+            )
         return result.receipt_fingerprint or "no_stock_scope"
 
     @staticmethod

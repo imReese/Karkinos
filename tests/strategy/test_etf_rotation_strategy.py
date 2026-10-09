@@ -243,3 +243,145 @@ def test_rebalance_targets_stay_within_gross_cap_after_precision_rounding(top_k)
     )
     assert len(result.fills) == top_k
     assert engine.portfolio.cash >= ZERO
+
+
+def test_etf_rotation_composite_momentum_scoring() -> None:
+    bus = EventBus()
+    # 2 windows: 1 day and 3 days, weights: 0.5 and 0.5
+    strategy = EtfRotationStrategy(
+        bus,
+        lookback_period=3,
+        top_k=1,
+        rebalance_interval=1,
+        min_momentum=-1.0,
+        use_risk_adjusted=False,
+        composite_lookback="1,3",
+        composite_weights="0.5,0.5",
+        cash_proxy="511010",
+    )
+    sym_a = Symbol("510300")
+    sym_b = Symbol("510500")
+    sym_cash = Symbol("511010")
+
+    strategy.on_init([sym_a, sym_b, sym_cash])
+    signals: list[SignalEvent] = []
+    bus.subscribe(SignalEvent, signals.append)
+
+    # Day 0: 100, Day 1: 100, Day 2: 100, Day 3: 110 (A: 3d mom = 10%, 1d mom = 10% -> comp = 10%)
+    # B: Day 0: 100, Day 1: 105, Day 2: 108, Day 3: 109 (B: 3d mom = 9%, 1d mom = 0.92% -> comp = ~4.96%)
+    prices_a = [100.0, 100.0, 100.0, 110.0]
+    prices_b = [100.0, 105.0, 108.0, 109.0]
+    prices_c = [100.0, 100.0, 100.0, 100.0]
+
+    for day in range(4):
+        strategy.on_data(_make_event(sym_a, prices_a[day], day))
+        strategy.on_data(_make_event(sym_b, prices_b[day], day))
+        strategy.on_data(_make_event(sym_cash, prices_c[day], day))
+        bus.drain()
+
+    latest_targets = {s.symbol: float(s.target_weight) for s in signals}
+    # sym_a has higher composite momentum (10% vs ~4.96%)
+    assert latest_targets.get(sym_a) == 1.0
+    assert latest_targets.get(sym_b) == 0.0
+
+
+def test_etf_rotation_market_filter_defensive_trigger() -> None:
+    bus = EventBus()
+    # Market filter: 510300 with 2-period MA
+    strategy = EtfRotationStrategy(
+        bus,
+        lookback_period=2,
+        top_k=1,
+        rebalance_interval=1,
+        min_momentum=-1.0,
+        use_risk_adjusted=False,
+        cash_proxy="511010",
+        market_filter_symbol="510300",
+        market_filter_period=2,
+    )
+    sym_market = Symbol("510300")
+    sym_growth = Symbol("510500")
+    sym_cash = Symbol("511010")
+
+    strategy.on_init([sym_market, sym_growth, sym_cash])
+    signals: list[SignalEvent] = []
+    bus.subscribe(SignalEvent, signals.append)
+
+    # 510300 (Market): Day 0: 100, Day 1: 95, Day 2: 90 (MA=92.5, Current=90 < MA -> Bearish!)
+    # 510500 (Growth): Day 0: 100, Day 1: 105, Day 2: 110 (Strong positive momentum)
+    # Even though 510500 has strong momentum, market filter triggers global defensive switch to cash proxy
+    prices_m = [100.0, 95.0, 90.0]
+    prices_g = [100.0, 105.0, 110.0]
+    prices_c = [100.0, 100.1, 100.2]
+
+    for day in range(3):
+        strategy.on_data(_make_event(sym_market, prices_m[day], day))
+        strategy.on_data(_make_event(sym_growth, prices_g[day], day))
+        strategy.on_data(_make_event(sym_cash, prices_c[day], day))
+        bus.drain()
+
+    latest_targets = {s.symbol: float(s.target_weight) for s in signals}
+    assert latest_targets.get(sym_cash) == 1.0
+    assert latest_targets.get(sym_growth) == 0.0
+    assert latest_targets.get(sym_market) == 0.0
+
+
+def test_etf_rotation_sortino_risk_adjustment() -> None:
+    bus = EventBus()
+    strategy = EtfRotationStrategy(
+        bus,
+        lookback_period=2,
+        volatility_window=3,
+        top_k=1,
+        rebalance_interval=1,
+        min_momentum=-1.0,
+        use_risk_adjusted=True,
+        risk_adjusted_mode="sortino",
+        cash_proxy="511010",
+    )
+    sym_a = Symbol("510300")
+    sym_b = Symbol("510500")
+    sym_cash = Symbol("511010")
+
+    strategy.on_init([sym_a, sym_b, sym_cash])
+    signals: list[SignalEvent] = []
+    bus.subscribe(SignalEvent, signals.append)
+
+    # sym_a: smooth upward climb, zero downside return
+    # Day 0: 100, Day 1: 101, Day 2: 102, Day 3: 103 (returns: +1%, +1%, +1%)
+    # sym_b: volatile with a big dip then jump, same net return
+    # Day 0: 100, Day 1: 95, Day 2: 100, Day 3: 103 (returns: -5%, +5.26%, +3%)
+    prices_a = [100.0, 101.0, 102.0, 103.0]
+    prices_b = [100.0, 95.0, 100.0, 103.0]
+    prices_c = [100.0, 100.0, 100.0, 100.0]
+
+    for day in range(4):
+        strategy.on_data(_make_event(sym_a, prices_a[day], day))
+        strategy.on_data(_make_event(sym_b, prices_b[day], day))
+        strategy.on_data(_make_event(sym_cash, prices_c[day], day))
+        bus.drain()
+
+    latest_targets = {s.symbol: float(s.target_weight) for s in signals}
+    # sym_a has no downside volatility, penalizes less, so sym_a is selected
+    assert latest_targets.get(sym_a) == 1.0
+    assert latest_targets.get(sym_b) == 0.0
+
+
+def test_etf_rotation_enhanced_parameter_validations() -> None:
+    bus = EventBus()
+    # Invalid composite lookback string
+    with pytest.raises(ValueError, match="composite_lookback_invalid"):
+        EtfRotationStrategy(bus, composite_lookback="invalid")
+    with pytest.raises(ValueError, match="composite_lookback_invalid"):
+        EtfRotationStrategy(bus, composite_lookback="-1,20")
+
+    # Mismatched weights length
+    with pytest.raises(ValueError, match="composite_weights_invalid"):
+        EtfRotationStrategy(bus, composite_lookback="5,20", composite_weights="0.5")
+
+    # Missing market filter symbol in universe
+    strat = EtfRotationStrategy(
+        bus, market_filter_symbol="510300", market_filter_period=20
+    )
+    with pytest.raises(ValueError, match="market_filter_input_missing:510300"):
+        strat.on_init([Symbol("510500"), Symbol("511010")])

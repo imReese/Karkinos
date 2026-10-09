@@ -419,6 +419,39 @@ STRATEGY_PARAMETER_SCHEMAS = {
             default="511010",
             description="Symbol of defensive asset (e.g. Treasury ETF) to hold unallocated weight.",
         ),
+        StrategyParameterSchema(
+            name="composite_lookback",
+            type="str",
+            default="",
+            description="Comma-separated lookback periods for composite momentum (e.g. '5,20,60'). Empty uses lookback_period.",
+        ),
+        StrategyParameterSchema(
+            name="composite_weights",
+            type="str",
+            default="",
+            description="Comma-separated weights for composite momentum (e.g. '0.2,0.4,0.4'). Empty uses equal weights.",
+        ),
+        StrategyParameterSchema(
+            name="market_filter_symbol",
+            type="str",
+            default="",
+            description="Symbol used for market-level trend defensive filter (e.g. '510300').",
+        ),
+        StrategyParameterSchema(
+            name="market_filter_period",
+            type="int",
+            default=0,
+            min=0,
+            max=500,
+            description="Moving average period for market-level trend defensive filter (0 disables filter).",
+        ),
+        StrategyParameterSchema(
+            name="risk_adjusted_mode",
+            type="str",
+            default="volatility",
+            allowed_values=["volatility", "sortino", "none"],
+            description="Method for risk adjustment ('volatility' or 'sortino').",
+        ),
     ],
 }
 

@@ -77,12 +77,23 @@ def _provider_network_env():
         yield
         return
 
+    import urllib.request
+
+    original_getproxies = urllib.request.getproxies
     original = {key: os.environ.get(key) for key in _PROXY_ENV_KEYS}
+    original_no_proxy = os.environ.get("NO_PROXY")
     for key in _PROXY_ENV_KEYS:
         os.environ.pop(key, None)
+    os.environ["NO_PROXY"] = "*"
+    urllib.request.getproxies = lambda: {}
     try:
         yield
     finally:
+        urllib.request.getproxies = original_getproxies
+        if original_no_proxy is None:
+            os.environ.pop("NO_PROXY", None)
+        else:
+            os.environ["NO_PROXY"] = original_no_proxy
         for key, value in original.items():
             if value is None:
                 os.environ.pop(key, None)

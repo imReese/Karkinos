@@ -35,6 +35,11 @@ class EtfRotationStrategy(Strategy):
         trend_filter_period: int = 0,
         use_risk_adjusted: bool = True,
         cash_proxy: str | None = "511010",
+        composite_lookback: str = "",
+        composite_weights: str = "",
+        market_filter_symbol: str = "",
+        market_filter_period: int = 0,
+        risk_adjusted_mode: str = "volatility",
         strategy_id: str = "etf_rotation",
     ) -> None:
         super().__init__(strategy_id, event_bus)
@@ -49,6 +54,21 @@ class EtfRotationStrategy(Strategy):
                 raise ValueError(f"etf_rotation_{name}_invalid")
         if not math.isfinite(min_momentum):
             raise ValueError("etf_rotation_min_momentum_invalid")
+        if not isinstance(composite_lookback, str):
+            raise ValueError("etf_rotation_composite_lookback_invalid")
+        if not isinstance(composite_weights, str):
+            raise ValueError("etf_rotation_composite_weights_invalid")
+        if not isinstance(market_filter_symbol, str):
+            raise ValueError("etf_rotation_market_filter_symbol_invalid")
+        if (
+            isinstance(market_filter_period, bool)
+            or not isinstance(market_filter_period, int)
+            or market_filter_period < 0
+        ):
+            raise ValueError("etf_rotation_market_filter_period_invalid")
+        if risk_adjusted_mode not in ("volatility", "sharpe", "sortino", "none"):
+            raise ValueError("etf_rotation_risk_adjusted_mode_invalid")
+
         self.lookback_period = lookback_period
         self.volatility_window = volatility_window
         self.top_k = top_k
@@ -57,6 +77,47 @@ class EtfRotationStrategy(Strategy):
         self.trend_filter_period = trend_filter_period
         self.use_risk_adjusted = use_risk_adjusted
         self.cash_proxy_symbol = Symbol(cash_proxy) if cash_proxy else None
+        self.composite_lookback = composite_lookback
+        self.composite_weights = composite_weights
+        self.market_filter_symbol = (
+            Symbol(market_filter_symbol.strip())
+            if market_filter_symbol.strip()
+            else None
+        )
+        self.market_filter_period = market_filter_period
+        self.risk_adjusted_mode = risk_adjusted_mode
+
+        self._parsed_windows: list[int] = []
+        self._parsed_weights: list[float] = []
+        if composite_lookback.strip():
+            parts = [p.strip() for p in composite_lookback.split(",") if p.strip()]
+            try:
+                self._parsed_windows = [int(p) for p in parts]
+            except ValueError:
+                raise ValueError("etf_rotation_composite_lookback_invalid")
+            if not self._parsed_windows or any(w <= 0 for w in self._parsed_windows):
+                raise ValueError("etf_rotation_composite_lookback_invalid")
+
+            if composite_weights.strip():
+                w_parts = [p.strip() for p in composite_weights.split(",") if p.strip()]
+                try:
+                    raw_w = [float(p) for p in w_parts]
+                except ValueError:
+                    raise ValueError("etf_rotation_composite_weights_invalid")
+                if (
+                    len(raw_w) != len(self._parsed_windows)
+                    or any(w < 0 for w in raw_w)
+                    or sum(raw_w) <= 0
+                ):
+                    raise ValueError("etf_rotation_composite_weights_invalid")
+                total_w = sum(raw_w)
+                self._parsed_weights = [w / total_w for w in raw_w]
+            else:
+                n = len(self._parsed_windows)
+                self._parsed_weights = [1.0 / n] * n
+        else:
+            self._parsed_windows = [lookback_period]
+            self._parsed_weights = [1.0]
 
         self._all_symbols: list[Symbol] = []
         self._prices: dict[Symbol, list[float]] = defaultdict(list)
@@ -72,6 +133,10 @@ class EtfRotationStrategy(Strategy):
         if self.cash_proxy_symbol and self.cash_proxy_symbol not in symbols:
             raise ValueError(
                 f"etf_rotation_cash_proxy_input_missing:{self.cash_proxy_symbol}"
+            )
+        if self.market_filter_symbol and self.market_filter_symbol not in symbols:
+            raise ValueError(
+                f"etf_rotation_market_filter_input_missing:{self.market_filter_symbol}"
             )
         self._all_symbols = sorted(symbols)
         self._prices.clear()
@@ -115,12 +180,29 @@ class EtfRotationStrategy(Strategy):
         if not candidates:
             return
 
+        # 检查大盘防御过滤：若配置了 market_filter_symbol 且当前价格低于其均线，触发全局防守
+        if self.market_filter_symbol and self.market_filter_period > 0:
+            m_history = self._prices.get(self.market_filter_symbol, [])
+            if len(m_history) >= self.market_filter_period + 1:
+                m_ma = (
+                    sum(m_history[-self.market_filter_period :])
+                    / self.market_filter_period
+                )
+                m_curr = m_history[-1]
+                if m_curr < m_ma:
+                    self._apply_targets([])
+                    return
+
         # 检查是否有足够的历史数据
+        max_lookback = (
+            max(self._parsed_windows) if self._parsed_windows else self.lookback_period
+        )
         required_len = (
             max(
-                self.lookback_period,
+                max_lookback,
                 self.volatility_window if self.use_risk_adjusted else 1,
                 self.trend_filter_period,
+                self.market_filter_period if self.market_filter_symbol else 0,
             )
             + 1
         )
@@ -132,11 +214,18 @@ class EtfRotationStrategy(Strategy):
                 continue
 
             current_price = history[-1]
-            ref_price = history[-self.lookback_period - 1]
-            if ref_price <= 0:
-                continue
 
-            raw_momentum = (current_price / ref_price) - 1.0
+            # 计算动量（支持单窗口或多周期复合加权）
+            raw_momentum = 0.0
+            valid_mom = True
+            for win, w in zip(self._parsed_windows, self._parsed_weights):
+                ref_price = history[-win - 1]
+                if ref_price <= 0:
+                    valid_mom = False
+                    break
+                raw_momentum += w * ((current_price / ref_price) - 1.0)
+            if not valid_mom:
+                continue
 
             # 绝对动量过滤：动量低于阈值则跳过
             if raw_momentum < self.min_momentum:
@@ -150,22 +239,36 @@ class EtfRotationStrategy(Strategy):
                 if current_price < ma:
                     continue
 
-            # 评分计算
-            if self.use_risk_adjusted and self.volatility_window > 1:
+            # 评分计算（支持波动率调整与 Sortino 下行风险惩罚）
+            if (
+                self.use_risk_adjusted
+                and self.volatility_window > 1
+                and self.risk_adjusted_mode != "none"
+            ):
                 window_slice = history[-self.volatility_window - 1 :]
                 returns = [
                     window_slice[i] / window_slice[i - 1] - 1.0
                     for i in range(1, len(window_slice))
                     if window_slice[i - 1] > 0
                 ]
-                if len(returns) > 1:
-                    mean_ret = sum(returns) / len(returns)
-                    var = sum((r - mean_ret) ** 2 for r in returns) / len(returns)
-                    realized_vol = math.sqrt(var) * math.sqrt(252)
+                if self.risk_adjusted_mode == "sortino":
+                    downside_returns = [r for r in returns if r < 0]
+                    if downside_returns:
+                        downside_var = sum(r**2 for r in downside_returns) / len(
+                            returns
+                        )
+                        downside_vol = math.sqrt(downside_var) * math.sqrt(252)
+                    else:
+                        downside_vol = 0.0
+                    score = raw_momentum / max(downside_vol, 0.03)
                 else:
-                    realized_vol = 0.0
-
-                score = raw_momentum / max(realized_vol, 0.05)
+                    if len(returns) > 1:
+                        mean_ret = sum(returns) / len(returns)
+                        var = sum((r - mean_ret) ** 2 for r in returns) / len(returns)
+                        realized_vol = math.sqrt(var) * math.sqrt(252)
+                    else:
+                        realized_vol = 0.0
+                    score = raw_momentum / max(realized_vol, 0.05)
             else:
                 score = raw_momentum
 
@@ -174,6 +277,10 @@ class EtfRotationStrategy(Strategy):
         # 按得分从高到低排序
         scores.sort(key=lambda x: (-x[1], x[0]))
         selected_symbols = [s for s, _ in scores[: self.top_k]]
+        self._apply_targets(selected_symbols)
+
+    def _apply_targets(self, selected_symbols: list[Symbol]) -> None:
+        """根据选出的标的清单计算并发布目标权重。"""
 
         next_targets = {s: Decimal(0) for s in self._all_symbols}
         precision = Decimal("0.0001")
