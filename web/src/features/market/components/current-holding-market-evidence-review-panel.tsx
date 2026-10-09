@@ -160,13 +160,13 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
   return (
     <section
       id="current-holding-evidence-review"
-      className={`scroll-mt-24 border-y border-[var(--app-divider)] ${
+      className={`min-w-0 scroll-mt-24 border-y border-[var(--app-divider)] ${
         compact ? 'space-y-3 py-3' : 'space-y-4 py-4'
       }`}
       data-testid="current-holding-market-evidence-review"
       data-density={compact ? 'compact' : 'default'}
     >
-      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="app-kicker app-type-overline">
             {labels.holdingEvidenceReview}

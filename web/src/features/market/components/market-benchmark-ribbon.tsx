@@ -163,10 +163,10 @@ export function MarketBenchmarkRibbon({
     <div
       data-testid="market-benchmark-ribbon"
       aria-label={copy.market.marketBenchmarkRibbon}
-      className="flex flex-col gap-3 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_65%,transparent)] p-3 lg:flex-row lg:items-center lg:justify-between"
+      className="flex min-w-0 flex-col gap-3 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-raised)_65%,transparent)] p-3 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between"
     >
       {/* Benchmark Indices */}
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
         {health && !health.market_open ? (
           <span
             data-testid="market-closed-badge"
@@ -259,7 +259,7 @@ export function MarketBenchmarkRibbon({
       {/* Market Breadth Indicator */}
       <div
         data-testid="market-breadth-summary"
-        className="flex flex-wrap items-center gap-3 border-t border-[var(--app-divider)] pt-2 lg:border-t-0 lg:pt-0"
+        className="flex min-w-0 flex-wrap items-center gap-3 border-t border-[var(--app-divider)] pt-2 lg:border-t-0 lg:pt-0"
       >
         <div className="flex items-center gap-2">
           <span className="app-type-micro font-medium text-[var(--app-muted)]">

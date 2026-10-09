@@ -114,15 +114,21 @@ for (const width of [390, 1280]) {
           tdx_configured: false,
           storage_path: '',
           busy: false,
-          datasets: [sourceId, firstId, secondId].map((id, index) => ({
-            dataset_id: id,
-            start_date: '2026-09-14',
-            end_date: ['2026-09-18', '2026-09-21', '2026-09-22'][index],
-            instruments: observation.universe,
-            cross_source_verified: true,
-            point_in_time_verified: false,
-            corporate_action_evidence: { status: 'observed' },
-          })),
+          datasets: [sourceId, firstId, secondId].map((id, index) => {
+            const endDate = ['2026-09-18', '2026-09-21', '2026-09-22'][index];
+            return {
+              dataset_id: id,
+              start_date: '2026-09-14',
+              end_date: endDate,
+              instruments: observation.universe,
+              cross_source_verified: true,
+              point_in_time_verified: false,
+              corporate_action_evidence: {
+                status: 'observed',
+                oldest_captured_at: `${endDate}T07:05:00Z`,
+              },
+            };
+          }),
         };
       else if (path === '/api/research-observations') payload = [observation];
       else if (path === `/api/research-observations/${identity}`)

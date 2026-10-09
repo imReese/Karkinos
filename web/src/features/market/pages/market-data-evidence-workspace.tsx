@@ -209,7 +209,7 @@ export function MarketDataEvidenceWorkspace({
           </dl>
         </details>
       </section>
-      <details className="group border-y border-[var(--app-divider)] py-2">
+      <details className="group min-w-0 border-y border-[var(--app-divider)] py-2">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
           <span>{copy.market.promptsTitle}</span>
           <ChevronDown
@@ -229,7 +229,7 @@ export function MarketDataEvidenceWorkspace({
         </div>
       </details>
       <details
-        className="group border-y border-[var(--app-divider)] py-2"
+        className="group min-w-0 border-y border-[var(--app-divider)] py-2"
         data-testid="market-data-operations-disclosure"
       >
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">

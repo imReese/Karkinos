@@ -37,7 +37,7 @@ export function MarketPageView({
     <>
       <ToastStack toasts={toasts} />
       <section
-        className="app-workbench-route space-y-4 pb-8 sm:space-y-5"
+        className="app-workbench-route min-w-0 max-w-full space-y-4 pb-8 sm:space-y-5"
         data-workbench-route="market"
         data-workbench-width="wide"
       >
@@ -94,7 +94,7 @@ function MarketResolvedWorkspace({
   controller: MarketPageController;
 }) {
   return (
-    <div className="space-y-4 sm:space-y-5">
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-5">
       <MarketBenchmarkRibbon controller={controller} />
       <MarketInstrumentSelection controller={controller} />
       <MarketResearchNotesWorkspace controller={controller} />
@@ -269,7 +269,7 @@ function MarketGlobalDataEvidence({
           />
         </span>
       </summary>
-      <div className="border-t border-[var(--app-divider)] pt-3">
+      <div className="min-w-0 border-t border-[var(--app-divider)] pt-3">
         <MarketDataEvidenceWorkspace controller={controller} active={open} />
       </div>
     </details>
