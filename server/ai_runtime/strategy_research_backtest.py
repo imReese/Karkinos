@@ -843,28 +843,12 @@ def _load_bound_inputs(
         research_root = (
             store_root if (store_root / "objects").is_dir() else store_root / "research"
         )
-        from types import SimpleNamespace
+        from analytics.dataset_snapshot import load_immutable_dataset_inputs
 
-        from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
-        from server.services.research_datasets import ResearchDatasetError
-
-        request = SimpleNamespace(
-            dataset_id=immutable_dataset_id,
-            start_date=selection.start_date,
-            end_date=selection.end_date,
-            assets=[
-                {"symbol": s, "instrument_type": a}
-                for s, a in zip(
-                    selection.universe, selection.asset_classes, strict=True
-                )
-            ],
-        )
         try:
-            instruments, handlers, binding = load_dataset_backtest_inputs(
-                research_root, request
+            instruments, handlers, binding = load_immutable_dataset_inputs(
+                research_root, expected_dataset_snapshot
             )
-        except ResearchDatasetError as exc:
-            raise StrategyResearchRejected(exc.code) from exc
         except Exception as exc:
             raise StrategyResearchRejected("immutable_dataset_unreadable") from exc
 

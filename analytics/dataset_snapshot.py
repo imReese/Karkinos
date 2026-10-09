@@ -831,3 +831,95 @@ def _replay_fingerprint(payload: Mapping[str, Any]) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def load_immutable_dataset_inputs(
+    research_root: Path,
+    snapshot: Mapping[str, Any],
+) -> tuple[dict[Any, Any], dict[Any, Any], dict[str, Any]]:
+    """Load instruments, data handlers, and binding directly from the frozen dataset object."""
+    from core.types import InstrumentType, Symbol
+    from data.dataset.model import DatasetRef
+    from data.dataset.reader import DatasetReaderError, read_daily_bar_dataset
+    from data.handler import DataHandler
+    from data.storage.objects import ContentAddressedObjectStore, ObjectStoreError
+    from domain.instrument import make_etf, make_stock
+
+    dataset_id = snapshot.get("immutable_dataset_id")
+    if not dataset_id:
+        raise ValueError("immutable_dataset_id_missing")
+    store = ContentAddressedObjectStore(research_root / "objects")
+    try:
+        ref = DatasetRef(store.resolve_ref(dataset_id))
+        restored = read_daily_bar_dataset(store, ref)
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ObjectStoreError,
+        DatasetReaderError,
+    ) as exc:
+        raise ValueError("immutable_dataset_unreadable") from exc
+
+    source_names = sorted({part.provider for part in restored.snapshot.partitions})
+    single_source = source_names[0] if len(source_names) == 1 else None
+    instruments: dict[Symbol, Any] = {}
+    handlers: dict[Symbol, DataHandler] = {}
+
+    for key in restored.snapshot.instruments:
+        symbol = Symbol(key.symbol)
+        factory = (
+            make_stock if key.instrument_type is InstrumentType.STOCK else make_etf
+        )
+        instruments[symbol] = factory(key.symbol, key.symbol)
+        bars = [bar for bar in restored.bars if bar.instrument == key]
+        frame = pd.DataFrame(
+            [
+                {
+                    "timestamp": bar.event_time,
+                    "open": bar.open,
+                    "high": bar.high,
+                    "low": bar.low,
+                    "close": bar.close,
+                    "volume": bar.volume,
+                    "amount": bar.amount,
+                    "available_at": bar.available_at,
+                    "captured_at": bar.captured_at,
+                }
+                for bar in bars
+            ]
+        )
+        if frame.empty:
+            raise ValueError(f"dataset_instrument_has_no_rows:{symbol}")
+        frame.attrs.update(
+            provider_name=single_source,
+            data_source=single_source,
+            adjustment_mode="none",
+            dataset_id=ref.dataset_id,
+        )
+        handlers[symbol] = DataHandler(
+            frame,
+            symbol,
+            asset_class=instruments[symbol].asset_class,
+            instrument_type=key.instrument_type,
+        )
+
+    binding = {
+        "dataset_id": ref.dataset_id,
+        "cutoff": restored.snapshot.cutoff.isoformat(),
+        "price_basis": "unadjusted",
+        "source_names": source_names,
+        "cross_source_verified": restored.snapshot.verification_bound,
+        "offline_replay": True,
+        "point_in_time_verified": False,
+        "limitations": [
+            "Historical backfill is a frozen research snapshot, not proof of historical availability.",
+            "Unadjusted prices do not model corporate-action cash flows or total returns.",
+        ],
+        **(
+            {"corporate_action_evidence": restored.corporate_action_evidence}
+            if restored.corporate_action_evidence is not None
+            else {}
+        ),
+    }
+    return instruments, handlers, binding

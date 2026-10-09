@@ -179,6 +179,7 @@ test('localizes the contribution explanation before showing estimates', () => {
 
 test('does not expose contribution amount when evidence chain is unsupported', () => {
   renderCard({
+    schema_version: 'karkinos.account_strategy_contribution.v2',
     strategy_id: 'dual_ma',
     contribution_status: 'no_linked_fills',
     evidence_binding_status: 'not_applicable',
@@ -221,6 +222,7 @@ test('shows readable instrument labels for missing valuation warnings', () => {
     <PreferencesProvider>
       <StrategyContributionGateCard
         report={{
+          schema_version: 'karkinos.account_strategy_contribution.v2',
           strategy_id: 'dual_ma',
           contribution_status: 'valuation_missing',
           evidence_binding_status: 'blocked',
