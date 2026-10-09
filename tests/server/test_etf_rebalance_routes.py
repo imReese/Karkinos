@@ -103,6 +103,8 @@ def test_post_etf_rebalance_run_with_custom_equity_and_holdings(client: TestClie
 
 
 def test_export_etf_rebalance_csv_and_script(client: TestClient):
+    client.post("/api/trading/etf-rebalance/run", json={"total_equity": 200000.0})
+
     # CSV export
     csv_resp = client.get("/api/trading/etf-rebalance/csv")
     assert csv_resp.status_code == 200
