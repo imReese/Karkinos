@@ -34,6 +34,7 @@ export type EtfRebalanceOrder = {
 
 export type EtfRebalancePlanSummary = {
   status: string;
+  plan_id?: string;
   evaluated_at: string;
   as_of_date: string;
   total_equity: number;
@@ -41,9 +42,11 @@ export type EtfRebalancePlanSummary = {
     | 'available_cash'
     | 'held_positions_rebalance'
     | 'custom'
+    | 'custom_simulation'
     | 'fallback_demo'
     | string;
   is_demo?: boolean;
+  is_custom_simulation?: boolean;
   account_available?: boolean;
   available_cash?: number;
   strategy_etf_value?: number;
@@ -60,6 +63,7 @@ export type EtfRebalancePlanSummary = {
 
 export type EtfExecutionReceipt = {
   status: string;
+  plan_id?: string;
   is_simulated?: boolean;
   batch_id: string;
   executed_at: string;
@@ -96,10 +100,14 @@ export type EtfRotationDashboardResponse = {
   rebalance: EtfRebalancePlanSummary | null;
   orders: EtfRebalanceOrder[];
   execution_status:
-    'ready_to_trade' | 'portfolio_balanced' | 'already_executed_today';
+    | 'ready_to_trade'
+    | 'portfolio_balanced'
+    | 'already_executed_today'
+    | 'unavailable';
   has_pending_orders: boolean;
   can_execute: boolean;
   is_demo?: boolean;
+  is_custom_simulation?: boolean;
   capital_quarantined?: boolean;
   last_execution: EtfExecutionReceipt | null;
 };

@@ -91,13 +91,19 @@ def create_router(
         """Download review-only CSV (证券代码, 证券名称, 买卖方向, 委托数量, 委托价格, 预估金额, 调仓说明)."""
         summary = svc.get_latest_plan_summary()
         if summary is None:
-            summary = svc.evaluate_rebalance()
+            try:
+                summary = svc.evaluate_rebalance()
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503, detail=f"调仓计划不可用或测算失败: {exc}"
+                ) from exc
         csv_text = summary.get("csv_content", "")
-        filename = (
-            "demo_etf_rebalance_review.csv"
-            if summary.get("is_demo")
-            else "etf_rebalance_review.csv"
-        )
+        if summary.get("is_demo"):
+            filename = "demo_etf_rebalance_review.csv"
+        elif summary.get("is_custom_simulation"):
+            filename = "custom_etf_rebalance_review.csv"
+        else:
+            filename = "etf_rebalance_review.csv"
         return PlainTextResponse(
             content=csv_text,
             media_type="text/csv",
@@ -109,11 +115,21 @@ def create_router(
         """Download standalone MiniQMT (xtquant) Python draft reference script."""
         summary = svc.get_latest_plan_summary()
         if summary is None:
-            summary = svc.evaluate_rebalance()
+            try:
+                summary = svc.evaluate_rebalance()
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503, detail=f"调仓计划不可用或测算失败: {exc}"
+                ) from exc
         if summary.get("is_demo"):
             raise HTTPException(
                 status_code=400,
                 detail="演示资金隔离模式下禁止导出券商执行脚本，请配置真实可用资金或连接账户账本。",
+            )
+        if summary.get("is_custom_simulation"):
+            raise HTTPException(
+                status_code=400,
+                detail="自定义假设试算模式下禁止导出券商参考脚本，请使用真实账本或导出审核 CSV。",
             )
         script_text = summary.get("miniqmt_script", "")
         return PlainTextResponse(

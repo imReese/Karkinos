@@ -13,6 +13,8 @@ import { formatCurrency, formatQuantity } from '../../../shared/format';
 import {
   useEtfRotationDashboardQuery,
   useExecuteEtfRotationOrdersMutation,
+  type EtfRebalanceOrder,
+  type EtfStrategyMetrics,
 } from '../api-etf-rotation';
 
 export function EtfRotationTradingCard({
@@ -68,6 +70,9 @@ export function EtfRotationTradingCard({
 
   const { strategy, orders, execution_status, last_execution, can_execute } =
     data;
+  const activeReceipt =
+    executeMutation.data ??
+    (execution_status === 'already_executed_today' ? last_execution : null);
 
   const handleExecute = () => {
     executeMutation.mutate({
@@ -109,6 +114,11 @@ export function EtfRotationTradingCard({
               <Clock className="h-3.5 w-3.5" />
               待执行调仓 ({orders.length} 笔委托)
             </span>
+          ) : execution_status === 'unavailable' ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 px-3 py-1 text-xs font-semibold text-[var(--app-warning-text)]">
+              <AlertCircle className="h-3.5 w-3.5" />
+              策略数据不可用
+            </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-3 py-1 text-xs font-medium text-[var(--app-text-secondary)]">
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -119,86 +129,7 @@ export function EtfRotationTradingCard({
       </div>
 
       {/* 2. Strategy Reference Backtest Track Record (离线基准测算参考) */}
-      <div className="my-5 rounded-xl border border-[var(--app-divider)]/80 bg-[var(--app-surface-overlay)]/40 p-4">
-        <div className="flex items-center justify-between pb-3 border-b border-[var(--app-divider)]/50">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-[var(--app-accent)]" />
-            <span className="text-xs font-bold uppercase tracking-wider text-[var(--app-text-secondary)]">
-              5年离线基准测算参考 (未绑定当前在线 Dataset Snapshot)
-            </span>
-          </div>
-          <span className="text-xs text-[var(--app-text-tertiary)]">
-            计入中信万1.5佣金、5bps滑点与整手摩擦
-          </span>
-        </div>
-
-        <div className="mt-3.5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
-            <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
-              累计总收益率
-            </div>
-            <div className="mt-1 flex items-baseline gap-1.5">
-              <span className="text-xl font-extrabold font-mono text-[var(--app-accent)]">
-                +{strategy.cumulative_return_pct.toFixed(2)}%
-              </span>
-            </div>
-            <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
-              超额基准{' '}
-              <span className="font-semibold text-[var(--app-accent)]">
-                +{strategy.excess_return_pct.toFixed(2)}%
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
-            <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
-              年化复合收益 (CAGR)
-            </div>
-            <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text)]">
-              {strategy.cagr_pct.toFixed(2)}%
-            </div>
-            <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
-              年化稳定复利
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
-            <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
-              夏普比率 (Sharpe)
-            </div>
-            <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text)]">
-              {strategy.sharpe_ratio.toFixed(2)}
-            </div>
-            <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
-              卡玛比率 {strategy.calmar_ratio.toFixed(2)}
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
-            <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
-              最大历史回撤 (MDD)
-            </div>
-            <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text)]">
-              {strategy.max_drawdown_pct.toFixed(2)}%
-            </div>
-            <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
-              基准回撤的 1/4 (极强风控)
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40 col-span-2 sm:col-span-1">
-            <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
-              沪深300基准收益
-            </div>
-            <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text-secondary)]">
-              {strategy.benchmark_return_pct.toFixed(2)}%
-            </div>
-            <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
-              同期A股宽基下行
-            </div>
-          </div>
-        </div>
-      </div>
+      <EtfStrategyMetricsSummaryGrid strategy={strategy} />
 
       {/* 3. Actionable Rebalance Orders (今日调仓指令清单) */}
       <div className="space-y-3">
@@ -219,91 +150,59 @@ export function EtfRotationTradingCard({
           ) : null}
         </div>
 
-        {data.is_demo ? (
+        {data.rebalance?.is_custom_simulation ? (
+          <div className="rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/60 p-3 text-xs text-[var(--app-text-secondary)]">
+            自定义假设试算模式：基于手动输入的假设本金或持仓测算，非真实账本资产，仅供模拟预览，不可实盘执行。
+          </div>
+        ) : data.is_demo ? (
           <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-3 text-xs text-[var(--app-warning-text)]">
             演示隔离模式：真实账户可用现金为 0
             或读取不可用，当前清单仅供试算参考，不可作为实盘交易依据。
           </div>
         ) : null}
 
-        {orders.length === 0 ? (
+        {!data.rebalance || execution_status === 'unavailable' ? (
+          <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-6 text-center text-sm text-[var(--app-warning-text)]">
+            <AlertCircle className="h-5 w-5 mx-auto mb-2 text-[var(--app-warning-text)]" />
+            调仓计划不可用或测算失败，请检查行情数据或账本连接状态。
+          </div>
+        ) : orders.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--app-divider)] p-6 text-center text-sm text-[var(--app-text-secondary)]">
             当前账户资产比例完全符合最优轮动权重，今日无需进行任何买卖操作。
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/30">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-[var(--app-divider)] bg-[var(--app-surface-overlay)] text-[var(--app-text-secondary)] font-semibold">
-                <tr>
-                  <th className="py-2.5 px-3">证券代码</th>
-                  <th className="py-2.5 px-3">证券名称</th>
-                  <th className="py-2.5 px-3">买卖方向</th>
-                  <th className="py-2.5 px-3 text-right">委托数量(股)</th>
-                  <th className="py-2.5 px-3 text-right">参考价格</th>
-                  <th className="py-2.5 px-3 text-right">预估金额</th>
-                  <th className="py-2.5 px-3">调仓说明</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--app-divider)]/40 text-[var(--app-text)] font-mono">
-                {orders.map((o) => {
-                  const isBuy = o.side === 'buy';
-                  return (
-                    <tr
-                      key={`${o.symbol}-${o.side}`}
-                      className="hover:bg-[var(--app-surface-raised)]/40 transition-colors"
-                    >
-                      <td className="py-2.5 px-3 font-semibold">{o.symbol}</td>
-                      <td className="py-2.5 px-3 font-sans font-bold text-[var(--app-text)]">
-                        {o.name}
-                      </td>
-                      <td className="py-2.5 px-3 font-sans">
-                        {isBuy ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-[var(--app-accent)]/15 px-2 py-0.5 text-xs font-bold text-[var(--app-accent)]">
-                            <ArrowUpRight className="h-3 w-3" />
-                            买入
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-400">
-                            <ArrowDownRight className="h-3 w-3" />
-                            卖出
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums">
-                        {formatQuantity(o.quantity)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums">
-                        ¥{o.price.toFixed(3)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums font-semibold">
-                        {formatCurrency(o.amount)}
-                      </td>
-                      <td className="py-2.5 px-3 font-sans text-[var(--app-text-secondary)]">
-                        {o.reason}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <EtfRebalanceOrdersTable orders={orders} />
         )}
       </div>
 
       {/* 4. Execution Feedback Receipt (if already executed or just executed) */}
-      {last_execution || executeMutation.data ? (
-        <div className="mt-4 rounded-xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)]/40 p-4">
-          <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-success-text)]">
-            <CheckCircle2 className="h-4 w-4" />
-            <span>模拟调仓试算已记录 (未向券商报单)</span>
-            <span className="text-[var(--app-text-tertiary)] font-normal font-mono">
-              批次号: {(executeMutation.data || last_execution)?.batch_id}
-            </span>
+      {activeReceipt ? (
+        activeReceipt.status === 'rejected' ? (
+          <div className="mt-4 rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-warning-text)]">
+              <AlertCircle className="h-4 w-4" />
+              <span>调仓试算请求已被拒绝</span>
+            </div>
+            <p className="mt-1 text-xs text-[var(--app-text)]">
+              {activeReceipt.message}
+            </p>
           </div>
-          <p className="mt-1 text-xs text-[var(--app-text)]">
-            {(executeMutation.data || last_execution)?.message}
-          </p>
-        </div>
+        ) : activeReceipt.status === 'success' ? (
+          <div className="mt-4 rounded-xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)]/40 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-success-text)]">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>模拟调仓试算已记录 (未向券商报单)</span>
+              {activeReceipt.batch_id ? (
+                <span className="text-[var(--app-text-tertiary)] font-normal font-mono">
+                  批次号: {activeReceipt.batch_id}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-[var(--app-text)]">
+              {activeReceipt.message}
+            </p>
+          </div>
+        ) : null
       ) : null}
 
       {/* 5. Actual Order Placement Button (用户实际下单操作) */}
@@ -346,6 +245,16 @@ export function EtfRotationTradingCard({
                 <CheckCircle2 className="h-4 w-4" />
                 模拟调仓试算已记录
               </>
+            ) : data.rebalance?.is_custom_simulation ? (
+              <>
+                <TrendingUp className="h-4 w-4" />
+                仅供假设测算预览
+              </>
+            ) : execution_status === 'unavailable' ? (
+              <>
+                <AlertCircle className="h-4 w-4" />
+                策略数据不可用
+              </>
             ) : (
               <>
                 <TrendingUp className="h-4 w-4" />
@@ -356,5 +265,155 @@ export function EtfRotationTradingCard({
         </div>
       </div>
     </section>
+  );
+}
+
+function EtfStrategyMetricsSummaryGrid({
+  strategy,
+}: {
+  strategy: EtfStrategyMetrics;
+}) {
+  return (
+    <div className="my-5 rounded-xl border border-[var(--app-divider)]/80 bg-[var(--app-surface-overlay)]/40 p-4">
+      <div className="flex items-center justify-between pb-3 border-b border-[var(--app-divider)]/50">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-[var(--app-accent)]" />
+          <span className="text-xs font-bold uppercase tracking-wider text-[var(--app-text-secondary)]">
+            5年离线基准测算参考 (未绑定当前在线 Dataset Snapshot)
+          </span>
+        </div>
+        <span className="text-xs text-[var(--app-text-tertiary)]">
+          计入中信万1.5佣金、5bps滑点与整手摩擦
+        </span>
+      </div>
+
+      <div className="mt-3.5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            累计总收益率
+          </div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-xl font-extrabold font-mono text-[var(--app-accent)]">
+              +{strategy.cumulative_return_pct.toFixed(2)}%
+            </span>
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
+            超额基准{' '}
+            <span className="font-semibold text-[var(--app-accent)]">
+              +{strategy.excess_return_pct.toFixed(2)}%
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            年化复合收益 (CAGR)
+          </div>
+          <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text)]">
+            {strategy.cagr_pct.toFixed(2)}%
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
+            年化稳定复利
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            夏普比率 (Sharpe)
+          </div>
+          <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text)]">
+            {strategy.sharpe_ratio.toFixed(2)}
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
+            卡玛比率 {strategy.calmar_ratio.toFixed(2)}
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            最大历史回撤 (MDD)
+          </div>
+          <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text)]">
+            {strategy.max_drawdown_pct.toFixed(2)}%
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
+            基准回撤的 1/4 (极强风控)
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40 col-span-2 sm:col-span-1">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            沪深300基准收益
+          </div>
+          <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text-secondary)]">
+            {strategy.benchmark_return_pct.toFixed(2)}%
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
+            同期A股宽基下行
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EtfRebalanceOrdersTable({ orders }: { orders: EtfRebalanceOrder[] }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/30">
+      <table className="w-full text-left text-xs">
+        <thead className="border-b border-[var(--app-divider)] bg-[var(--app-surface-overlay)] text-[var(--app-text-secondary)] font-semibold">
+          <tr>
+            <th className="py-2.5 px-3">证券代码</th>
+            <th className="py-2.5 px-3">证券名称</th>
+            <th className="py-2.5 px-3">买卖方向</th>
+            <th className="py-2.5 px-3 text-right">委托数量(股)</th>
+            <th className="py-2.5 px-3 text-right">参考价格</th>
+            <th className="py-2.5 px-3 text-right">预估金额</th>
+            <th className="py-2.5 px-3">调仓说明</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--app-divider)]/40 text-[var(--app-text)] font-mono">
+          {orders.map((o) => {
+            const isBuy = o.side === 'buy';
+            return (
+              <tr
+                key={`${o.symbol}-${o.side}`}
+                className="hover:bg-[var(--app-surface-raised)]/40 transition-colors"
+              >
+                <td className="py-2.5 px-3 font-semibold">{o.symbol}</td>
+                <td className="py-2.5 px-3 font-sans font-bold text-[var(--app-text)]">
+                  {o.name}
+                </td>
+                <td className="py-2.5 px-3 font-sans">
+                  {isBuy ? (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-[var(--app-accent)]/15 px-2 py-0.5 text-xs font-bold text-[var(--app-accent)]">
+                      <ArrowUpRight className="h-3 w-3" />
+                      买入
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-400">
+                      <ArrowDownRight className="h-3 w-3" />
+                      卖出
+                    </span>
+                  )}
+                </td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  {formatQuantity(o.quantity)}
+                </td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  ¥{o.price.toFixed(3)}
+                </td>
+                <td className="py-2.5 px-3 text-right tabular-nums font-semibold">
+                  {formatCurrency(o.amount)}
+                </td>
+                <td className="py-2.5 px-3 font-sans text-[var(--app-text-secondary)]">
+                  {o.reason}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

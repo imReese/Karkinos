@@ -1,5 +1,6 @@
 """Tests for /api/trading/etf-rebalance HTTP routes."""
 
+from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
@@ -99,11 +100,41 @@ def test_post_etf_rebalance_run_with_custom_equity_and_holdings(client: TestClie
 
     assert data["status"] == "success"
     assert data["total_equity"] == 200000.0
+    assert data["is_custom_simulation"] is True
+    assert data["capital_source"] == "custom_simulation"
     assert len(data["orders"]) >= 1
 
+    # Verify dashboard reflects that this plan cannot be executed as real trading
+    dash_resp = client.get("/api/trading/etf-rebalance/dashboard")
+    dash_data = dash_resp.json()
+    assert dash_data["is_custom_simulation"] is True
+    assert dash_data["can_execute"] is False
+    assert dash_data["capital_quarantined"] is True
 
-def test_export_etf_rebalance_csv_and_script(client: TestClient):
-    client.post("/api/trading/etf-rebalance/run", json={"total_equity": 200000.0})
+    # Verify custom simulation blocks script export
+    script_resp = client.get("/api/trading/etf-rebalance/script")
+    assert script_resp.status_code == 400
+    assert "自定义假设试算模式" in script_resp.json()["detail"]
+
+    # Verify custom simulation marks CSV filename
+    csv_resp = client.get("/api/trading/etf-rebalance/csv")
+    assert csv_resp.status_code == 200
+    assert (
+        'filename="custom_etf_rebalance_review.csv"'
+        in csv_resp.headers["content-disposition"]
+    )
+
+
+def test_export_etf_rebalance_csv_and_script(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    # Simulate a real ledger account with cash
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    EtfRotationAutomationService.reset_state()
 
     # CSV export
     csv_resp = client.get("/api/trading/etf-rebalance/csv")
@@ -115,7 +146,7 @@ def test_export_etf_rebalance_csv_and_script(client: TestClient):
     csv_text = csv_resp.text
     assert "证券代码,证券名称,买卖方向,委托数量,预估价格,预估金额,调仓说明" in csv_text
 
-    # Script export as draft template
+    # Script export as read-only draft template
     script_resp = client.get("/api/trading/etf-rebalance/script")
     assert script_resp.status_code == 200
     assert "draft_rebalance_miniqmt.py" in script_resp.headers["content-disposition"]
@@ -123,6 +154,8 @@ def test_export_etf_rebalance_csv_and_script(client: TestClient):
     assert "DRAFT REVIEW TEMPLATE" in script_text
     assert "xtquant" in script_text
     assert "XtQuantTrader" in script_text
+    # Verify no actual order_stock calls exist in the exported script
+    assert "order_stock" not in script_text
 
 
 def test_get_etf_rebalance_dashboard_provides_strategy_returns_and_orders(
@@ -149,13 +182,13 @@ def test_get_etf_rebalance_dashboard_provides_strategy_returns_and_orders(
 
 def test_demo_mode_quarantined_when_account_has_no_cash_or_unavailable(
     client: TestClient,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     # Simulate account with zero cash and no ledger availability
     monkeypatch.setattr(
         EtfRotationAutomationService,
         "resolve_account_capital_and_holdings",
-        lambda self: (0, 0, {}, False),
+        lambda self: (Decimal(0), Decimal(0), {}, False),
     )
     EtfRotationAutomationService.reset_state()
 
@@ -189,8 +222,15 @@ def test_demo_mode_quarantined_when_account_has_no_cash_or_unavailable(
 
 def test_post_etf_rebalance_execute_records_simulated_preview(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ):
-    client.post("/api/trading/etf-rebalance/run", json={"total_equity": 200000.0})
+    # Set up real account with available cash
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    EtfRotationAutomationService.reset_state()
 
     payload = {"operator": "reese", "note": "模拟调仓试算"}
     resp = client.post("/api/trading/etf-rebalance/execute", json=payload)
@@ -212,11 +252,49 @@ def test_post_etf_rebalance_execute_records_simulated_preview(
         assert record["side"] in ("buy", "sell")
         assert len(record["name"]) > 0
 
-    # Verify dashboard reflects execution
+    # Verify dashboard reflects execution for this exact plan
     dash_resp = client.get("/api/trading/etf-rebalance/dashboard")
     dash_data = dash_resp.json()
     assert dash_data["execution_status"] == "already_executed_today"
     assert dash_data["last_execution"]["batch_id"] == data["batch_id"]
+
+    # Now verify that generating a different plan unblocks execution status for the new plan
+    run_resp = client.post(
+        "/api/trading/etf-rebalance/run", json={"total_equity": 500000.0}
+    )
+    assert run_resp.status_code == 200
+    new_dash = client.get("/api/trading/etf-rebalance/dashboard").json()
+    assert new_dash["execution_status"] == "ready_to_trade"
+    assert new_dash["last_execution"] is None
+
+
+def test_custom_simulation_rejects_execute(client: TestClient):
+    client.post("/api/trading/etf-rebalance/run", json={"total_equity": 200000.0})
+    resp = client.post("/api/trading/etf-rebalance/execute", json={"operator": "reese"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "rejected"
+    assert "自定义假设输入" in data["message"]
+
+
+def test_unavailable_status_when_data_fails(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    def _raise(*args, **kwargs):
+        raise FileNotFoundError("Missing ETF market bars")
+
+    monkeypatch.setattr(
+        EtfRotationAutomationService, "load_aligned_market_data", _raise
+    )
+    EtfRotationAutomationService.reset_state()
+
+    dash_resp = client.get("/api/trading/etf-rebalance/dashboard")
+    assert dash_resp.status_code == 200
+    dash_data = dash_resp.json()
+    assert dash_data["execution_status"] == "unavailable"
+    assert dash_data["can_execute"] is False
+    assert dash_data["rebalance"] is None
+    assert dash_data["orders"] == []
 
 
 def test_etf_rebalance_target_weights_and_cash_budget_bounds(client: TestClient):

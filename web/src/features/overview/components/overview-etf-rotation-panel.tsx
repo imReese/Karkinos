@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  AlertCircle,
   CheckCircle2,
   Clock,
   Loader2,
@@ -24,7 +25,6 @@ export function EtfRotationOverviewPanel({
   );
   const executeMutation = useExecuteEtfRotationOrdersMutation();
   const { strategy, orders, execution_status, can_execute, rebalance } = data;
-  const activeStrategy = data.strategy_periods?.[selectedPeriod] ?? strategy;
 
   const handleExecute = () => {
     executeMutation.mutate({
@@ -69,6 +69,11 @@ export function EtfRotationOverviewPanel({
               <Clock className="h-3 w-3" />
               待调仓 ({orders.length})
             </span>
+          ) : execution_status === 'unavailable' ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 px-2.5 py-0.5 app-type-micro font-semibold text-[var(--app-warning-text)]">
+              <AlertCircle className="h-3 w-3" />
+              数据不可用
+            </span>
           ) : (
             <span className="inline-flex items-center gap-1 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-2.5 py-0.5 app-type-micro font-medium text-[var(--app-text-secondary)]">
               <ShieldCheck className="h-3 w-3" />
@@ -79,101 +84,11 @@ export function EtfRotationOverviewPanel({
       </div>
 
       {/* 2. Track Record Strip with Period Toggle */}
-      <div className="my-3 rounded-xl border border-[var(--app-divider)]/80 bg-[var(--app-surface-overlay)]/40 p-2.5">
-        <div className="flex items-center justify-between pb-2 border-b border-[var(--app-divider)]/40 app-type-micro">
-          <span className="flex items-center gap-1 font-bold text-[var(--app-text-secondary)] uppercase tracking-wider">
-            <TrendingUp className="h-3 w-3 text-[var(--app-accent)]" />
-            历史回测表现 (离线基准测算参考)
-          </span>
-          {data.strategy_periods ? (
-            <div className="flex items-center rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/60 p-0.5">
-              <button
-                type="button"
-                onClick={() => setSelectedPeriod('5y')}
-                className={`rounded px-1.5 py-0.5 app-type-micro font-medium transition-colors ${
-                  selectedPeriod === '5y'
-                    ? 'bg-[var(--app-accent)] text-[var(--app-text-inverse)] font-bold'
-                    : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
-                }`}
-              >
-                5年全周期
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedPeriod('from_2025')}
-                className={`rounded px-1.5 py-0.5 app-type-micro font-medium transition-colors ${
-                  selectedPeriod === 'from_2025'
-                    ? 'bg-[var(--app-accent)] text-[var(--app-text-inverse)] font-bold'
-                    : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
-                }`}
-              >
-                2025至今
-              </button>
-            </div>
-          ) : (
-            <span className="text-[var(--app-text-tertiary)]">
-              基准: {activeStrategy.benchmark_return_pct.toFixed(2)}%
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between py-1 text-[var(--app-text-tertiary)] app-type-micro">
-          <span className="truncate">{activeStrategy.backtest_range}</span>
-          <span className="shrink-0">
-            基准: {activeStrategy.benchmark_return_pct.toFixed(2)}%
-          </span>
-        </div>
-
-        <div className="mt-1 grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-2 border border-[var(--app-divider)]/30">
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              累计总收益
-            </div>
-            <div className="mt-0.5 font-mono font-extrabold text-[var(--app-accent)] text-sm">
-              +{activeStrategy.cumulative_return_pct.toFixed(2)}%
-            </div>
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              超额 +{activeStrategy.excess_return_pct.toFixed(2)}%
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-2 border border-[var(--app-divider)]/30">
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              年化复合 (CAGR)
-            </div>
-            <div className="mt-0.5 font-mono font-extrabold text-[var(--app-text)] text-sm">
-              {activeStrategy.cagr_pct.toFixed(2)}%
-            </div>
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              年化稳定复利
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-2 border border-[var(--app-divider)]/30">
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              夏普比率 (Sharpe)
-            </div>
-            <div className="mt-0.5 font-mono font-extrabold text-[var(--app-text)] text-sm">
-              {activeStrategy.sharpe_ratio.toFixed(2)}
-            </div>
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              卡玛比 {activeStrategy.calmar_ratio.toFixed(2)}
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-2 border border-[var(--app-divider)]/30">
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              最大历史回撤
-            </div>
-            <div className="mt-0.5 font-mono font-extrabold text-[var(--app-text)] text-sm">
-              {activeStrategy.max_drawdown_pct.toFixed(2)}%
-            </div>
-            <div className="app-type-micro text-[var(--app-text-tertiary)]">
-              {selectedPeriod === '5y' ? '基准回撤 1/4' : '超额收益稳健'}
-            </div>
-          </div>
-        </div>
-      </div>
+      <EtfTrackRecordStrip
+        data={data}
+        selectedPeriod={selectedPeriod}
+        onSelectPeriod={setSelectedPeriod}
+      />
 
       {/* 3. Rebalance Orders List */}
       <div className="flex-1 min-w-0">
@@ -186,7 +101,12 @@ export function EtfRotationOverviewPanel({
           ) : null}
         </div>
 
-        {orders.length === 0 ? (
+        {!rebalance || execution_status === 'unavailable' ? (
+          <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-4 text-center text-xs text-[var(--app-warning-text)]">
+            <AlertCircle className="h-4 w-4 mx-auto mb-1 text-[var(--app-warning-text)]" />
+            调仓计划不可用或测算失败，请检查数据。
+          </div>
+        ) : orders.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--app-divider)] p-4 text-center text-xs text-[var(--app-text-secondary)]">
             当前账户资产比例完全符合最优轮动权重，今日无需调整。
           </div>
@@ -278,8 +198,9 @@ export function EtfRotationOverviewPanel({
                     ? '账户可用现金'
                     : rebalance.capital_source === 'held_positions_rebalance'
                       ? '持仓轮动净值'
-                      : rebalance.capital_source === 'custom'
-                        ? '自定义本金'
+                      : rebalance.capital_source === 'custom_simulation' ||
+                          rebalance.capital_source === 'custom'
+                        ? '自定义假设本金'
                         : '演示隔离资金'}{' '}
                   (¥
                   {rebalance.total_equity.toLocaleString('zh-CN', {
@@ -297,7 +218,13 @@ export function EtfRotationOverviewPanel({
           </div>
         ) : null}
 
-        {data.is_demo ? (
+        {rebalance?.is_custom_simulation ? (
+          <div className="rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/60 p-2.5 text-xs text-[var(--app-text-secondary)] flex items-center justify-between mb-2">
+            <span>
+              自定义假设试算：基于手动输入测算，非真实账本资产，仅供模拟预览。
+            </span>
+          </div>
+        ) : data.is_demo ? (
           <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-2.5 text-xs text-[var(--app-warning-text)] flex items-center justify-between mb-2">
             <span>
               演示隔离模式：账户无可用现金，当前仅供试算参考，不可实盘执行。
@@ -348,6 +275,116 @@ export function EtfRotationOverviewPanel({
               : '请重试'}
           </p>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function EtfTrackRecordStrip({
+  data,
+  selectedPeriod,
+  onSelectPeriod,
+}: {
+  data: EtfRotationDashboardResponse;
+  selectedPeriod: '5y' | 'from_2025';
+  onSelectPeriod: (p: '5y' | 'from_2025') => void;
+}) {
+  const activeStrategy =
+    data.strategy_periods?.[selectedPeriod] ?? data.strategy;
+  return (
+    <div className="my-3 rounded-xl border border-[var(--app-divider)]/80 bg-[var(--app-surface-overlay)]/40 p-2.5">
+      <div className="flex items-center justify-between pb-2 border-b border-[var(--app-divider)]/40 app-type-micro">
+        <span className="flex items-center gap-1 font-bold text-[var(--app-text-secondary)] uppercase tracking-wider">
+          <TrendingUp className="h-3 w-3 text-[var(--app-accent)]" />
+          历史回测表现 (离线基准测算参考)
+        </span>
+        {data.strategy_periods ? (
+          <div className="flex items-center rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/60 p-0.5">
+            <button
+              type="button"
+              onClick={() => onSelectPeriod('5y')}
+              className={`rounded px-1.5 py-0.5 app-type-micro font-medium transition-colors ${
+                selectedPeriod === '5y'
+                  ? 'bg-[var(--app-accent)] text-[var(--app-text-inverse)] font-bold'
+                  : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+              }`}
+            >
+              5年全周期
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectPeriod('from_2025')}
+              className={`rounded px-1.5 py-0.5 app-type-micro font-medium transition-colors ${
+                selectedPeriod === 'from_2025'
+                  ? 'bg-[var(--app-accent)] text-[var(--app-text-inverse)] font-bold'
+                  : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+              }`}
+            >
+              2025至今
+            </button>
+          </div>
+        ) : (
+          <span className="text-[var(--app-text-tertiary)]">
+            基准: {activeStrategy.benchmark_return_pct.toFixed(2)}%
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between py-1 text-[var(--app-text-tertiary)] app-type-micro">
+        <span className="truncate">{activeStrategy.backtest_range}</span>
+        <span className="shrink-0">
+          基准: {activeStrategy.benchmark_return_pct.toFixed(2)}%
+        </span>
+      </div>
+
+      <div className="mt-1 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-2 border border-[var(--app-divider)]/30">
+          <div className="app-type-micro text-[var(--app-text-tertiary)]">
+            累计总收益
+          </div>
+          <div className="mt-0.5 font-mono font-extrabold text-[var(--app-accent)] text-sm">
+            +{activeStrategy.cumulative_return_pct.toFixed(2)}%
+          </div>
+          <div className="app-type-micro text-[var(--app-text-tertiary)]">
+            超额 +{activeStrategy.excess_return_pct.toFixed(2)}%
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-2 border border-[var(--app-divider)]/30">
+          <div className="app-type-micro text-[var(--app-text-tertiary)]">
+            年化复合 (CAGR)
+          </div>
+          <div className="mt-0.5 font-mono font-extrabold text-[var(--app-text)] text-sm">
+            {activeStrategy.cagr_pct.toFixed(2)}%
+          </div>
+          <div className="app-type-micro text-[var(--app-text-tertiary)]">
+            年化稳定复利
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-2 border border-[var(--app-divider)]/30">
+          <div className="app-type-micro text-[var(--app-text-tertiary)]">
+            夏普比率 (Sharpe)
+          </div>
+          <div className="mt-0.5 font-mono font-extrabold text-[var(--app-text)] text-sm">
+            {activeStrategy.sharpe_ratio.toFixed(2)}
+          </div>
+          <div className="app-type-micro text-[var(--app-text-tertiary)]">
+            卡玛比 {activeStrategy.calmar_ratio.toFixed(2)}
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-2 border border-[var(--app-divider)]/30">
+          <div className="app-type-micro text-[var(--app-text-tertiary)]">
+            最大历史回撤
+          </div>
+          <div className="mt-0.5 font-mono font-extrabold text-[var(--app-text)] text-sm">
+            {activeStrategy.max_drawdown_pct.toFixed(2)}%
+          </div>
+          <div className="app-type-micro text-[var(--app-text-tertiary)]">
+            {selectedPeriod === '5y' ? '基准回撤 1/4' : '超额收益稳健'}
+          </div>
+        </div>
       </div>
     </div>
   );

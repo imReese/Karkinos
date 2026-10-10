@@ -122,56 +122,60 @@ class RebalancePlan:
         return "\n".join(lines)
 
     def to_miniqmt_script(self, account_id: str = "YOUR_ACCOUNT_ID") -> str:
-        """Generate standalone MiniQMT (xtquant) Python draft reference template."""
+        """Generate standalone MiniQMT (xtquant) Python draft reference template (read-only preview)."""
         lines = [
             "# ====================================================================",
             "# CAUTION: DRAFT REVIEW TEMPLATE ONLY — DO NOT EXECUTE DIRECTLY",
             "# This script is generated for manual inspection and protocol reference.",
+            "# Direct automated broker order submission is intentionally DISABLED.",
             "# Real-money rebalancing requires polling order status callbacks (成交回报),",
             "# handling order rejections (废单), and confirming released cash balance",
             "# before placing buy orders. Never rely on blind time delays.",
+            "# Please review orders via CSV and submit manually in your trading terminal.",
             "# ====================================================================",
-            "# Usage: python execute_rebalance.py",
-            "import time",
+            "# Reference protocol: xtquant (MiniQMT)",
+            f'# Target Account: "{account_id}"',
             "from xtquant import xtconstant",
             "from xtquant.xttrader import XtQuantTrader",
             "from xtquant.xttype import StockAccount",
             "",
             f'ACCOUNT_ID = "{account_id}"',
             "account = StockAccount(ACCOUNT_ID)",
-            "session_id = int(time.time())",
-            'trader = XtQuantTrader(r"D:\\国金QMT交易端\\userdata_mini", session_id)',
-            "trader.start()",
-            "trader.connect()",
-            "trader.register_account(account)",
             "",
-            "# 1. 计划卖出指令（释放可用资金）",
+            "def print_rebalance_review_manifest():",
+            '    print("=== ETF Rotation Rebalance Review Manifest ===")',
+            f'    print("Account: {account_id}")',
+            '    print("Execution mode: READ_ONLY_PREVIEW (No live orders placed)")',
+            "",
+            "    # 1. 计划卖出指令（释放可用资金 - 仅供人工核对）",
         ]
         for o in self.sell_orders:
             code = (
                 f"{o.symbol}.SH" if str(o.symbol).startswith("5") else f"{o.symbol}.SZ"
             )
             lines.append(
-                f'print("Selling {code} {o.quantity} shares...")\n'
-                f'trader.order_stock(account, "{code}", xtconstant.STOCK_SELL, '
-                f'{o.quantity}, xtconstant.FIX_PRICE, {float(o.estimated_price):.3f}, "rebalance", "sell")'
+                f'    print("  [SELL] {code} {o.quantity} 股 @ ¥{float(o.estimated_price):.3f} (预计释放: ¥{float(o.estimated_amount):,.2f})")'
             )
 
-        lines.append(
-            "\n# 注意：实盘必须在此处轮询并确认卖单已真实完全成交、可用资金已入账，严禁使用 fixed time.sleep()！"
-            "\n# while True: check trader.query_stock_orders(account) and trader.query_stock_asset(account)\n"
-        )
-        lines.append("# 2. 计划买入指令（需在资金确认后执行）")
+        lines.append("")
+        lines.append("    # 2. 计划买入指令（需在资金确认后执行 - 仅供人工核对）")
         for o in self.buy_orders:
             code = (
                 f"{o.symbol}.SH" if str(o.symbol).startswith("5") else f"{o.symbol}.SZ"
             )
             lines.append(
-                f'print("Buying {code} {o.quantity} shares...")\n'
-                f'trader.order_stock(account, "{code}", xtconstant.STOCK_BUY, '
-                f'{o.quantity}, xtconstant.FIX_PRICE, {float(o.estimated_price):.3f}, "rebalance", "buy")'
+                f'    print("  [BUY]  {code} {o.quantity} 股 @ ¥{float(o.estimated_price):.3f} (预计占用: ¥{float(o.estimated_amount):,.2f})")'
             )
 
+        lines.extend(
+            [
+                "",
+                '    print("=== End of Manifest: Please inspect review CSV ===")',
+                "",
+                'if __name__ == "__main__":',
+                "    print_rebalance_review_manifest()",
+            ]
+        )
         return "\n".join(lines)
 
 

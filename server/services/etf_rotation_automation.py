@@ -7,6 +7,7 @@ export formatting for broker execution.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime
 from decimal import Decimal
@@ -191,164 +192,216 @@ class EtfRotationAutomationService:
         strategy_params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute automated evaluation and generate actionable rebalance plan."""
-        aligned_dfs = self.load_aligned_market_data()
-        symbols = list(aligned_dfs.keys())
+        try:
+            aligned_dfs = self.load_aligned_market_data()
+            symbols = list(aligned_dfs.keys())
 
-        params = dict(DEFAULT_STRATEGY_PARAMS)
-        if strategy_params:
-            params.update(strategy_params)
+            params = dict(DEFAULT_STRATEGY_PARAMS)
+            if strategy_params:
+                params.update(strategy_params)
 
-        # 1. Resolve target weights cleanly by running strategy evaluation on aligned market data
-        bus = EventBus()
-        strategy = EtfRotationStrategy(bus, **params)
-        strategy.on_init(symbols)
+            # 1. Resolve target weights cleanly by running strategy evaluation on aligned market data
+            bus = EventBus()
+            strategy = EtfRotationStrategy(bus, **params)
+            strategy.on_init(symbols)
 
-        target_weights: dict[Symbol, Decimal] = {sym: Decimal(0) for sym in symbols}
+            target_weights: dict[Symbol, Decimal] = {sym: Decimal(0) for sym in symbols}
 
-        def _on_signal(ev: SignalEvent) -> None:
-            target_weights[ev.symbol] = ev.target_weight
+            def _on_signal(ev: SignalEvent) -> None:
+                target_weights[ev.symbol] = ev.target_weight
 
-        bus.subscribe(SignalEvent, _on_signal)
+            bus.subscribe(SignalEvent, _on_signal)
 
-        # Feed daily history into strategy to populate moving averages and momentum windows
-        dates = sorted(list(set(aligned_dfs[symbols[0]]["timestamp"])))
-        for dt in dates:
-            for sym in symbols:
-                sub = aligned_dfs[sym]
-                row = sub[sub["timestamp"] == dt]
-                if not row.empty:
-                    px = Decimal(str(row["close"].iloc[0]))
-                    ev = MarketEvent(
-                        symbol=sym,
-                        timestamp=dt,
-                        open=px,
-                        high=px,
-                        low=px,
-                        close=px,
-                        volume=100,
+            # Feed daily history into strategy to populate moving averages and momentum windows
+            dates = sorted(list(set(aligned_dfs[symbols[0]]["timestamp"])))
+            for dt in dates:
+                for sym in symbols:
+                    sub = aligned_dfs[sym]
+                    row = sub[sub["timestamp"] == dt]
+                    if not row.empty:
+                        px = Decimal(str(row["close"].iloc[0]))
+                        ev = MarketEvent(
+                            symbol=sym,
+                            timestamp=dt,
+                            open=px,
+                            high=px,
+                            low=px,
+                            close=px,
+                            volume=100,
+                        )
+                        strategy.on_data(ev)
+
+            # Force evaluation as of today's close
+            strategy._evaluate_and_rebalance()
+            bus.drain()
+
+            # If all in cash_proxy, ensure 511010 has 1.0
+            if sum(target_weights.values()) == 0:
+                target_weights[Symbol("511010")] = Decimal("1.0")
+
+            # 2. Extract latest market prices
+            latest_prices: dict[Symbol, Decimal] = {
+                sym: Decimal(str(round(aligned_dfs[sym]["close"].iloc[-1], 3)))
+                for sym in symbols
+            }
+
+            # 3. Resolve total equity, capital source, and current holdings
+            acct_cash, _, acct_holdings, acct_available = (
+                self.resolve_account_capital_and_holdings()
+            )
+
+            # Real account strategy equity is derived strictly from real account ledger cash & ETF holdings
+            real_strategy_etf_value = sum(
+                Decimal(acct_holdings.get(sym, 0)) * latest_prices.get(sym, Decimal(0))
+                for sym in symbols
+            )
+            real_account_equity = acct_cash + real_strategy_etf_value
+
+            is_custom_simulation = (
+                total_equity is not None and float(total_equity) > 0
+            ) or (current_holdings is not None)
+
+            if is_custom_simulation:
+                # Custom hypothetical simulation inputs: kept strictly as simulation
+                holdings: dict[Symbol, int] = {}
+                if current_holdings is not None:
+                    for k, v in current_holdings.items():
+                        holdings[Symbol(str(k))] = int(v)
+                else:
+                    holdings = acct_holdings
+
+                if total_equity is not None and float(total_equity) > 0:
+                    eq = Decimal(str(total_equity))
+                else:
+                    custom_holdings_val = sum(
+                        Decimal(holdings.get(sym, 0))
+                        * latest_prices.get(sym, Decimal(0))
+                        for sym in symbols
                     )
-                    strategy.on_data(ev)
+                    eq = (
+                        custom_holdings_val
+                        if custom_holdings_val > 0
+                        else Decimal("100000")
+                    )
 
-        # Force evaluation as of today's close
-        strategy._evaluate_and_rebalance()
-        bus.drain()
-
-        # If all in cash_proxy, ensure 511010 has 1.0
-        if sum(target_weights.values()) == 0:
-            target_weights[Symbol("511010")] = Decimal("1.0")
-
-        # 2. Extract latest market prices
-        latest_prices: dict[Symbol, Decimal] = {
-            sym: Decimal(str(round(aligned_dfs[sym]["close"].iloc[-1], 3)))
-            for sym in symbols
-        }
-
-        # 3. Resolve total equity, capital source, and current holdings
-        acct_cash, _, acct_holdings, acct_available = (
-            self.resolve_account_capital_and_holdings()
-        )
-
-        holdings: dict[Symbol, int] = {}
-        if current_holdings is not None:
-            for k, v in current_holdings.items():
-                holdings[Symbol(str(k))] = int(v)
-        else:
-            holdings = acct_holdings
-
-        strategy_etf_value = sum(
-            Decimal(holdings.get(sym, 0)) * latest_prices.get(sym, Decimal(0))
-            for sym in symbols
-        )
-        real_account_equity = acct_cash + strategy_etf_value
-
-        is_demo = False
-        if total_equity is not None and float(total_equity) > 0:
-            eq = Decimal(str(total_equity))
-            capital_source = "custom"
-        elif acct_available and real_account_equity > 0:
-            eq = real_account_equity
-            if acct_cash > 0:
-                capital_source = "available_cash"
+                capital_source = "custom_simulation"
+                is_demo = False
+            elif acct_available and real_account_equity > 0:
+                holdings = acct_holdings
+                eq = real_account_equity
+                if acct_cash > 0:
+                    capital_source = "available_cash"
+                else:
+                    capital_source = "held_positions_rebalance"
+                is_demo = False
             else:
-                capital_source = "held_positions_rebalance"
-        else:
-            eq = Decimal("100000")
-            capital_source = "fallback_demo"
-            is_demo = True
+                holdings = acct_holdings
+                eq = Decimal("100000")
+                capital_source = "fallback_demo"
+                is_demo = True
 
-        plan = generate_rebalance_plan(
-            target_weights=target_weights,
-            current_holdings=holdings,
-            latest_prices=latest_prices,
-            total_equity=eq,
-            symbol_names=ETF_METADATA,
-            lot_size=100,
-        )
+            plan = generate_rebalance_plan(
+                target_weights=target_weights,
+                current_holdings=holdings,
+                latest_prices=latest_prices,
+                total_equity=eq,
+                symbol_names=ETF_METADATA,
+                lot_size=100,
+            )
 
-        now = datetime.now(_SHANGHAI)
-        latest_date_str = (
-            aligned_dfs[symbols[0]]["timestamp"].iloc[-1].strftime("%Y-%m-%d")
-        )
+            now = datetime.now(_SHANGHAI)
+            latest_date_str = (
+                aligned_dfs[symbols[0]]["timestamp"].iloc[-1].strftime("%Y-%m-%d")
+            )
 
-        summary = {
-            "status": "success",
-            "evaluated_at": now.isoformat(),
-            "as_of_date": latest_date_str,
-            "total_equity": float(eq),
-            "capital_source": capital_source,
-            "is_demo": is_demo,
-            "account_available": acct_available,
-            "available_cash": float(acct_cash) if acct_cash > 0 else None,
-            "strategy_etf_value": float(strategy_etf_value),
-            "turnover_ratio": float(plan.turnover_ratio),
-            "total_sell_amount": float(plan.total_sell_amount),
-            "total_buy_amount": float(plan.total_buy_amount),
-            "estimated_net_cash_flow": float(plan.estimated_net_cash_flow),
-            "orders_count": len(plan.all_orders),
-            "orders": [
-                {
-                    "symbol": str(o.symbol),
-                    "name": o.name,
-                    "side": "buy" if o.side == OrderSide.BUY else "sell",
-                    "side_display": "买入" if o.side == OrderSide.BUY else "卖出",
-                    "quantity": o.quantity,
-                    "price": float(o.estimated_price),
-                    "amount": float(o.estimated_amount),
-                    "target_weight": float(o.target_weight),
-                    "current_weight": float(o.current_weight),
-                    "reason": o.reason,
-                }
-                for o in plan.all_orders
-            ],
-            "markdown_table": plan.to_markdown_table(),
-            "csv_content": plan.to_csv(),
-            "miniqmt_script": plan.to_miniqmt_script() if not is_demo else "",
-        }
+            orders_sig = ",".join(
+                f"{o.symbol}:{o.side.value}:{o.quantity}" for o in plan.all_orders
+            )
+            raw_key = f"{latest_date_str}|{capital_source}|{float(eq):.2f}|{orders_sig}"
+            plan_id = f"PLAN-{latest_date_str.replace('-', '')}-{hashlib.sha256(raw_key.encode()).hexdigest()[:8]}"
 
-        EtfRotationAutomationService._cached_plan = plan
-        EtfRotationAutomationService._cached_summary = summary
-        EtfRotationAutomationService._last_evaluated_at = now
+            summary = {
+                "status": "success",
+                "plan_id": plan_id,
+                "evaluated_at": now.isoformat(),
+                "as_of_date": latest_date_str,
+                "total_equity": float(eq),
+                "capital_source": capital_source,
+                "is_demo": is_demo,
+                "is_custom_simulation": is_custom_simulation,
+                "account_available": acct_available,
+                "available_cash": float(acct_cash) if acct_cash > 0 else None,
+                "strategy_etf_value": float(real_strategy_etf_value),
+                "turnover_ratio": float(plan.turnover_ratio),
+                "total_sell_amount": float(plan.total_sell_amount),
+                "total_buy_amount": float(plan.total_buy_amount),
+                "estimated_net_cash_flow": float(plan.estimated_net_cash_flow),
+                "orders_count": len(plan.all_orders),
+                "orders": [
+                    {
+                        "symbol": str(o.symbol),
+                        "name": o.name,
+                        "side": "buy" if o.side == OrderSide.BUY else "sell",
+                        "side_display": "买入" if o.side == OrderSide.BUY else "卖出",
+                        "quantity": o.quantity,
+                        "price": float(o.estimated_price),
+                        "amount": float(o.estimated_amount),
+                        "target_weight": float(o.target_weight),
+                        "current_weight": float(o.current_weight),
+                        "reason": o.reason,
+                    }
+                    for o in plan.all_orders
+                ],
+                "markdown_table": plan.to_markdown_table(),
+                "csv_content": plan.to_csv(),
+                "miniqmt_script": (
+                    plan.to_miniqmt_script()
+                    if (not is_demo and not is_custom_simulation)
+                    else ""
+                ),
+            }
 
-        logger.info(
-            "ETF rotation rebalance evaluated for %s: %d orders, turnover %.2f%% (capital: %s, demo=%s)",
-            latest_date_str,
-            len(plan.all_orders),
-            float(plan.turnover_ratio) * 100,
-            capital_source,
-            is_demo,
-        )
-        return summary
+            EtfRotationAutomationService._cached_plan = plan
+            EtfRotationAutomationService._cached_summary = summary
+            EtfRotationAutomationService._last_evaluated_at = now
+
+            logger.info(
+                "ETF rotation rebalance evaluated for %s (plan %s): %d orders, turnover %.2f%% (capital: %s, demo=%s, custom=%s)",
+                latest_date_str,
+                plan_id,
+                len(plan.all_orders),
+                float(plan.turnover_ratio) * 100,
+                capital_source,
+                is_demo,
+                is_custom_simulation,
+            )
+            return summary
+        except Exception:
+            # On failure, clear cached plan so stale state is never returned
+            EtfRotationAutomationService._cached_plan = None
+            EtfRotationAutomationService._cached_summary = None
+            raise
 
     @classmethod
     def get_latest_plan_summary(
         cls, *, auto_compute: bool = True, force_refresh: bool = False
     ) -> dict[str, Any] | None:
-        """Return the latest evaluated plan summary. If not evaluated yet or force_refresh=True, evaluate automatically."""
-        if (cls._cached_summary is None or force_refresh) and auto_compute:
+        """Return the latest evaluated plan summary. If not evaluated yet, force_refresh=True, or stale, evaluate automatically."""
+        is_stale = False
+        if cls._cached_summary is not None and not force_refresh:
+            # If cached summary is not a custom simulation, verify ledger availability hasn't drifted
+            if not cls._cached_summary.get("is_custom_simulation"):
+                _, _, _, acct_available = cls().resolve_account_capital_and_holdings()
+                if acct_available != cls._cached_summary.get("account_available"):
+                    is_stale = True
+
+        if (cls._cached_summary is None or force_refresh or is_stale) and auto_compute:
             try:
-                cls().evaluate_rebalance()
+                return cls().evaluate_rebalance()
             except Exception as e:
                 logger.error("Auto-evaluation of ETF rotation failed: %s", e)
+                cls._cached_plan = None
+                cls._cached_summary = None
                 return None
         return cls._cached_summary
 
@@ -365,22 +418,49 @@ class EtfRotationAutomationService:
         summary = cls.get_latest_plan_summary(
             auto_compute=True, force_refresh=force_refresh
         )
-        orders = summary.get("orders", []) if summary else []
+        if summary is None:
+            return {
+                "status": "unavailable",
+                "strategy": VERIFIED_BACKTEST_METRICS_5Y,
+                "strategy_periods": {
+                    "5y": VERIFIED_BACKTEST_METRICS_5Y,
+                    "from_2025": VERIFIED_BACKTEST_METRICS_2025,
+                },
+                "rebalance": None,
+                "orders": [],
+                "execution_status": "unavailable",
+                "has_pending_orders": False,
+                "can_execute": False,
+                "is_demo": False,
+                "is_custom_simulation": False,
+                "capital_quarantined": True,
+                "last_execution": None,
+            }
+
+        orders = summary.get("orders", [])
         has_orders = len(orders) > 0
+        is_demo = summary.get("is_demo", False)
+        is_custom_simulation = summary.get("is_custom_simulation", False)
 
-        status = "ready_to_trade" if has_orders else "portfolio_balanced"
-        if cls._last_execution_receipt:
+        last_exec = cls._last_execution_receipt
+        is_already_executed_for_current_plan = (
+            last_exec is not None
+            and last_exec.get("status") == "success"
+            and last_exec.get("plan_id") == summary.get("plan_id")
+        )
+
+        if is_already_executed_for_current_plan:
             status = "already_executed_today"
+        elif has_orders:
+            status = "ready_to_trade"
+        else:
+            status = "portfolio_balanced"
 
-        is_demo = summary.get("is_demo", False) if summary else False
-        capital_source = (
-            summary.get("capital_source", "unknown") if summary else "unknown"
-        )
-        is_executable_capital = (not is_demo) and (
-            capital_source in ("available_cash", "held_positions_rebalance", "custom")
-        )
+        is_executable_capital = (not is_demo) and (not is_custom_simulation)
         can_execute = (
-            has_orders and is_executable_capital and status != "already_executed_today"
+            has_orders
+            and is_executable_capital
+            and not is_already_executed_for_current_plan
         )
 
         return {
@@ -396,8 +476,11 @@ class EtfRotationAutomationService:
             "has_pending_orders": has_orders,
             "can_execute": can_execute,
             "is_demo": is_demo,
-            "capital_quarantined": is_demo,
-            "last_execution": cls._last_execution_receipt,
+            "is_custom_simulation": is_custom_simulation,
+            "capital_quarantined": is_demo or is_custom_simulation,
+            "last_execution": (
+                last_exec if is_already_executed_for_current_plan else None
+            ),
         }
 
     @classmethod
@@ -411,20 +494,34 @@ class EtfRotationAutomationService:
         """Record simulated rebalance execution plan (dry run / preview only).
 
         Does NOT submit real orders to any broker and does NOT mutate actual portfolio cash/holdings.
-        Strictly quarantined when running under demo or unavailable capital.
+        Strictly quarantined when running under demo, custom simulation, or unavailable capital.
         """
         summary = cls.get_latest_plan_summary(auto_compute=True)
-        if not summary or not summary.get("orders"):
+        if not summary:
             return {
-                "status": "no_action_needed",
-                "message": "当前资产配置已符合目标权重，无需执行任何买卖委托。",
+                "status": "unavailable",
+                "message": "当前无可用调仓计划或数据读取失败，无法生成模拟试算。",
                 "executed_orders": [],
             }
 
         if summary.get("is_demo"):
             return {
                 "status": "rejected",
-                "message": "当前处于演示资金隔离模式（真实账户资金为 0 或读取不可用），已阻止执行实盘调仓。",
+                "message": "当前处于演示资金隔离模式（真实账户资金为 0 或读取不可用），已阻止执行实盘调仓试算。",
+                "executed_orders": [],
+            }
+
+        if summary.get("is_custom_simulation"):
+            return {
+                "status": "rejected",
+                "message": "当前调仓计划基于自定义假设输入（非真实账户资产），已阻止记录为实盘调仓试算。",
+                "executed_orders": [],
+            }
+
+        if not summary.get("orders"):
+            return {
+                "status": "no_action_needed",
+                "message": "当前资产配置已符合目标权重，无需执行任何买卖委托。",
                 "executed_orders": [],
             }
 
@@ -453,6 +550,7 @@ class EtfRotationAutomationService:
 
         receipt = {
             "status": "success",
+            "plan_id": summary.get("plan_id"),
             "is_simulated": True,
             "batch_id": batch_id,
             "executed_at": now.isoformat(),
@@ -468,9 +566,10 @@ class EtfRotationAutomationService:
 
         cls._last_execution_receipt = receipt
         logger.info(
-            "Simulated %d rebalance orders for batch %s by %s",
+            "Simulated %d rebalance orders for batch %s by %s (plan %s)",
             len(executed_records),
             batch_id,
             operator,
+            summary.get("plan_id"),
         )
         return receipt

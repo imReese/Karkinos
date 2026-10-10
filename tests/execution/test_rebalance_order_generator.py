@@ -73,6 +73,8 @@ def test_rebalance_plan_exports_csv_and_markdown():
     assert "xtquant" in miniqmt_script
     assert "510300.SH" in miniqmt_script
     assert "12345678" in miniqmt_script
+    assert "order_stock" not in miniqmt_script
+    assert "READ_ONLY_PREVIEW" in miniqmt_script
 
 
 def test_rebalance_plan_skips_trivial_amounts():
