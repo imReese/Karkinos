@@ -232,7 +232,9 @@ export function EtfRotationOverviewPanel({
           </div>
         ) : null}
 
-        {execution_status === 'already_executed_today' ? (
+        {execution_status === 'already_executed_today' ||
+        (executeMutation.data?.status === 'success' &&
+          executeMutation.data?.plan_id === rebalance?.plan_id) ? (
           <div className="rounded-xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)] p-2.5 text-xs text-[var(--app-success-text)] flex items-center justify-between">
             <span className="flex items-center gap-1.5 font-semibold">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -267,9 +269,34 @@ export function EtfRotationOverviewPanel({
           </button>
         ) : null}
 
+        {executeMutation.data && executeMutation.data.status === 'rejected' ? (
+          <div className="mt-2 rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-2.5 text-xs text-[var(--app-warning-text)] flex items-start gap-1.5">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <span className="font-semibold block">调仓试算请求已被拒绝</span>
+              <span className="app-type-micro text-[var(--app-text)]">
+                {executeMutation.data.message}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        {executeMutation.data &&
+        executeMutation.data.status === 'unavailable' ? (
+          <div className="mt-2 rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-2.5 text-xs text-[var(--app-warning-text)] flex items-start gap-1.5">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <span className="font-semibold block">调仓服务当前不可用</span>
+              <span className="app-type-micro text-[var(--app-text)]">
+                {executeMutation.data.message}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
         {executeMutation.isError ? (
-          <p className="mt-1.5 text-center app-type-micro text-[var(--app-warning-text)]">
-            下单失败:{' '}
+          <p className="mt-2 text-center app-type-micro text-[var(--app-warning-text)]">
+            请求失败:{' '}
             {executeMutation.error instanceof Error
               ? executeMutation.error.message
               : '请重试'}

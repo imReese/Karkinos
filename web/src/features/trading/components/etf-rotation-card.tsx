@@ -14,16 +14,23 @@ import {
   useEtfRotationDashboardQuery,
   useExecuteEtfRotationOrdersMutation,
   type EtfRebalanceOrder,
+  type EtfRotationDashboardResponse,
   type EtfStrategyMetrics,
 } from '../api-etf-rotation';
 
 export function EtfRotationTradingCard({
   className = '',
+  data: propData,
 }: {
   className?: string;
+  data?: EtfRotationDashboardResponse;
 }) {
-  const { data, isLoading, isError, error, refetch } =
-    useEtfRotationDashboardQuery();
+  const query = useEtfRotationDashboardQuery(propData ? false : undefined);
+  const data = propData ?? query.data;
+  const isLoading = propData ? false : query.isLoading;
+  const isError = propData ? false : query.isError;
+  const error = propData ? null : query.error;
+  const refetch = query.refetch;
   const executeMutation = useExecuteEtfRotationOrdersMutation();
 
   if (isLoading) {
@@ -70,9 +77,29 @@ export function EtfRotationTradingCard({
 
   const { strategy, orders, execution_status, last_execution, can_execute } =
     data;
-  const activeReceipt =
-    executeMutation.data ??
-    (execution_status === 'already_executed_today' ? last_execution : null);
+  const currentPlanId = data.rebalance?.plan_id;
+
+  const isMutationSuccessMatching =
+    executeMutation.data?.status === 'success' &&
+    Boolean(currentPlanId) &&
+    executeMutation.data?.plan_id === currentPlanId;
+
+  const isLastExecutionMatching =
+    execution_status === 'already_executed_today' &&
+    Boolean(currentPlanId) &&
+    last_execution?.status === 'success' &&
+    last_execution?.plan_id === currentPlanId;
+
+  const activeSuccessReceipt = isMutationSuccessMatching
+    ? executeMutation.data
+    : isLastExecutionMatching
+      ? last_execution
+      : null;
+
+  const mutationFeedback =
+    executeMutation.data && executeMutation.data.status !== 'success'
+      ? executeMutation.data
+      : null;
 
   const handleExecute = () => {
     executeMutation.mutate({
@@ -175,34 +202,54 @@ export function EtfRotationTradingCard({
         )}
       </div>
 
-      {/* 4. Execution Feedback Receipt (if already executed or just executed) */}
-      {activeReceipt ? (
-        activeReceipt.status === 'rejected' ? (
-          <div className="mt-4 rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-4">
-            <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-warning-text)]">
-              <AlertCircle className="h-4 w-4" />
-              <span>调仓试算请求已被拒绝</span>
-            </div>
-            <p className="mt-1 text-xs text-[var(--app-text)]">
-              {activeReceipt.message}
-            </p>
+      {/* 4. Execution Feedback Receipt & Alerts */}
+      {executeMutation.isError ? (
+        <div className="mt-4 rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-4">
+          <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-warning-text)]">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>调仓试算请求失败 (网络或服务器异常)</span>
           </div>
-        ) : activeReceipt.status === 'success' ? (
-          <div className="mt-4 rounded-xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)]/40 p-4">
-            <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-success-text)]">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>模拟调仓试算已记录 (未向券商报单)</span>
-              {activeReceipt.batch_id ? (
-                <span className="text-[var(--app-text-tertiary)] font-normal font-mono">
-                  批次号: {activeReceipt.batch_id}
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1 text-xs text-[var(--app-text)]">
-              {activeReceipt.message}
-            </p>
+          <p className="mt-1 text-xs text-[var(--app-text)]">
+            {executeMutation.error instanceof Error
+              ? executeMutation.error.message
+              : '无法连接到调仓服务，请检查网络或后端状态'}
+          </p>
+        </div>
+      ) : null}
+
+      {mutationFeedback ? (
+        <div className="mt-4 rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-4">
+          <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-warning-text)]">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              {mutationFeedback.status === 'rejected'
+                ? '调仓试算请求已被拒绝'
+                : mutationFeedback.status === 'unavailable'
+                  ? '调仓服务当前不可用'
+                  : '调仓试算提示'}
+            </span>
           </div>
-        ) : null
+          <p className="mt-1 text-xs text-[var(--app-text)]">
+            {mutationFeedback.message}
+          </p>
+        </div>
+      ) : null}
+
+      {activeSuccessReceipt ? (
+        <div className="mt-4 rounded-xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)]/40 p-4">
+          <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-success-text)]">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>模拟调仓试算已记录 (未向券商报单)</span>
+            {activeSuccessReceipt.batch_id ? (
+              <span className="text-[var(--app-text-tertiary)] font-normal font-mono">
+                批次号: {activeSuccessReceipt.batch_id}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-[var(--app-text)]">
+            {activeSuccessReceipt.message}
+          </p>
+        </div>
       ) : null}
 
       {/* 5. Actual Order Placement Button (用户实际下单操作) */}

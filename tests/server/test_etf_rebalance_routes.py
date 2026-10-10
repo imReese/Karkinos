@@ -319,3 +319,104 @@ def test_etf_rebalance_target_weights_and_cash_budget_bounds(client: TestClient)
     assert len(buy_symbols) == 2
     assert "512890" in buy_symbols
     assert "513100" in buy_symbols
+
+
+def test_stale_plan_cache_invalidated_when_cash_or_holdings_change(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """P1: Verify cache does not serve stale plan when cash drops to 0 or holdings change."""
+    # 1. Start with 200k cash
+    current_cash = Decimal("200000")
+    current_holdings = {}
+
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (current_cash, current_cash, current_holdings, True),
+    )
+    EtfRotationAutomationService.reset_state()
+
+    resp1 = client.get("/api/trading/etf-rebalance/dashboard")
+    assert resp1.status_code == 200
+    data1 = resp1.json()
+    assert data1["rebalance"]["total_equity"] == 200000.0
+    assert data1["can_execute"] is True
+    assert data1["is_demo"] is False
+    plan_id_1 = data1["rebalance"]["plan_id"]
+
+    # 2. Simulate cash dropping to 0
+    current_cash = Decimal("0")
+    # Call dashboard without force_refresh - it should detect staleness, recompute, and quarantine to demo
+    resp2 = client.get("/api/trading/etf-rebalance/dashboard")
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert data2["is_demo"] is True
+    assert data2["can_execute"] is False
+    assert data2["rebalance"]["capital_source"] == "fallback_demo"
+    assert data2["rebalance"]["plan_id"] != plan_id_1
+
+
+def test_stale_plan_cache_invalidated_when_market_data_advances(
+    client: TestClient, tmp_path: Path
+):
+    """P1: Verify cache does not serve old date when market data advances."""
+    # Run dashboard to populate cache
+    resp1 = client.get("/api/trading/etf-rebalance/dashboard")
+    assert resp1.status_code == 200
+    data1 = resp1.json()
+    old_date = data1["rebalance"]["as_of_date"]
+
+    # Append a new date row to all ETF CSV files in the data dir
+    data_dir = EtfRotationAutomationService.default_data_dir
+    new_date_str = "2026-05-15"
+    for p in data_dir.glob("*.csv"):
+        df = pd.read_csv(p)
+        last_row = df.iloc[-1].copy()
+        last_row["timestamp"] = new_date_str
+        new_df = pd.concat([df, pd.DataFrame([last_row])], ignore_index=True)
+        new_df.to_csv(p, index=False)
+
+    # Next dashboard request should detect that market data date advanced and return new date
+    resp2 = client.get("/api/trading/etf-rebalance/dashboard")
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert data2["rebalance"]["as_of_date"] == new_date_str
+    assert data2["rebalance"]["as_of_date"] != old_date
+
+
+def test_plan_id_incorporates_prices_and_unblocks_execution_on_price_change(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """P2: Verify modifying prices changes plan_id and unblocks already_executed_today."""
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    EtfRotationAutomationService.reset_state()
+
+    # 1. Execute initial plan
+    exec_resp = client.post(
+        "/api/trading/etf-rebalance/execute", json={"operator": "reese"}
+    )
+    assert exec_resp.status_code == 200
+    plan_id_1 = exec_resp.json()["plan_id"]
+
+    dash_1 = client.get("/api/trading/etf-rebalance/dashboard").json()
+    assert dash_1["execution_status"] == "already_executed_today"
+    assert dash_1["can_execute"] is False
+
+    # 2. Modify one ETF price slightly (e.g. from 10.0 to 10.001) in CSV file
+    data_dir = EtfRotationAutomationService.default_data_dir
+    csv_513100 = data_dir / "513100.csv"
+    df = pd.read_csv(csv_513100)
+    df.loc[df.index[-1], "close"] = float(df.loc[df.index[-1], "close"]) + 0.05
+    df.to_csv(csv_513100, index=False)
+
+    # 3. Next dashboard call should detect price change, produce new plan_id, and unblock execution
+    dash_2 = client.get("/api/trading/etf-rebalance/dashboard").json()
+    plan_id_2 = dash_2["rebalance"]["plan_id"]
+    assert plan_id_2 != plan_id_1
+    assert dash_2["execution_status"] == "ready_to_trade"
+    assert dash_2["can_execute"] is True
+    assert dash_2["last_execution"] is None

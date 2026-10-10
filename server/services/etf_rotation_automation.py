@@ -163,6 +163,25 @@ class EtfRotationAutomationService:
 
         return aligned_dfs
 
+    def get_latest_market_snapshot(self) -> tuple[str, dict[str, float]] | None:
+        """Return the latest common trading date and closing prices across universe datasets."""
+        try:
+            aligned_dfs = self.load_aligned_market_data()
+            if not aligned_dfs:
+                return None
+            sym0 = next(iter(aligned_dfs))
+            latest_date_str = (
+                aligned_dfs[sym0]["timestamp"].iloc[-1].strftime("%Y-%m-%d")
+            )
+            latest_prices = {
+                str(sym): float(round(aligned_dfs[sym]["close"].iloc[-1], 3))
+                for sym in aligned_dfs
+            }
+            return latest_date_str, latest_prices
+        except Exception as exc:
+            logger.debug("Failed to inspect latest market snapshot: %s", exc)
+            return None
+
     def resolve_account_capital_and_holdings(
         self,
     ) -> tuple[Decimal, Decimal, dict[Symbol, int], bool]:
@@ -314,10 +333,22 @@ class EtfRotationAutomationService:
                 aligned_dfs[symbols[0]]["timestamp"].iloc[-1].strftime("%Y-%m-%d")
             )
 
-            orders_sig = ",".join(
-                f"{o.symbol}:{o.side.value}:{o.quantity}" for o in plan.all_orders
+            prices_sig = ";".join(
+                f"{sym}:{float(latest_prices[sym]):.4f}"
+                for sym in sorted(latest_prices.keys())
             )
-            raw_key = f"{latest_date_str}|{capital_source}|{float(eq):.2f}|{orders_sig}"
+            orders_sig = ";".join(
+                f"{o.symbol}:{o.side.value}:{o.quantity}:{float(o.estimated_price):.4f}:{float(o.estimated_amount):.2f}:{float(o.target_weight):.4f}"
+                for o in plan.all_orders
+            )
+            weights_sig = ";".join(
+                f"{sym}:{float(target_weights.get(sym, 0)):.4f}"
+                for sym in sorted(symbols)
+            )
+            raw_key = (
+                f"{latest_date_str}|{capital_source}|demo={is_demo}|custom={is_custom_simulation}|"
+                f"eq={float(eq):.2f}|prices={prices_sig}|weights={weights_sig}|orders={orders_sig}"
+            )
             plan_id = f"PLAN-{latest_date_str.replace('-', '')}-{hashlib.sha256(raw_key.encode()).hexdigest()[:8]}"
 
             summary = {
@@ -337,6 +368,12 @@ class EtfRotationAutomationService:
                 "total_buy_amount": float(plan.total_buy_amount),
                 "estimated_net_cash_flow": float(plan.estimated_net_cash_flow),
                 "orders_count": len(plan.all_orders),
+                "_source_cash": float(acct_cash),
+                "_source_holdings": {str(k): int(v) for k, v in holdings.items()},
+                "_source_prices": {
+                    str(sym): round(float(latest_prices[sym]), 3)
+                    for sym in sorted(latest_prices.keys())
+                },
                 "orders": [
                     {
                         "symbol": str(o.symbol),
@@ -389,17 +426,40 @@ class EtfRotationAutomationService:
         """Return the latest evaluated plan summary. If not evaluated yet, force_refresh=True, or stale, evaluate automatically."""
         is_stale = False
         if cls._cached_summary is not None and not force_refresh:
-            # If cached summary is not a custom simulation, verify ledger availability hasn't drifted
-            if not cls._cached_summary.get("is_custom_simulation"):
-                _, _, _, acct_available = cls().resolve_account_capital_and_holdings()
-                if acct_available != cls._cached_summary.get("account_available"):
+            # 1. Verify market data date and prices haven't drifted
+            mkt_snapshot = cls().get_latest_market_snapshot()
+            if mkt_snapshot is None:
+                is_stale = True
+            else:
+                latest_mkt_date, latest_mkt_prices = mkt_snapshot
+                if latest_mkt_date != cls._cached_summary.get("as_of_date"):
+                    is_stale = True
+                elif latest_mkt_prices != cls._cached_summary.get("_source_prices"):
                     is_stale = True
 
-        if (cls._cached_summary is None or force_refresh or is_stale) and auto_compute:
-            try:
-                return cls().evaluate_rebalance()
-            except Exception as e:
-                logger.error("Auto-evaluation of ETF rotation failed: %s", e)
+            # 2. If cached summary is not a custom simulation, verify ledger capital and holdings haven't drifted
+            if not is_stale and not cls._cached_summary.get("is_custom_simulation"):
+                acct_cash, _, acct_holdings, acct_available = (
+                    cls().resolve_account_capital_and_holdings()
+                )
+                curr_holdings_dict = {str(k): int(v) for k, v in acct_holdings.items()}
+                if (
+                    acct_available != cls._cached_summary.get("account_available")
+                    or float(acct_cash) != cls._cached_summary.get("_source_cash")
+                    or curr_holdings_dict != cls._cached_summary.get("_source_holdings")
+                ):
+                    is_stale = True
+
+        if cls._cached_summary is None or force_refresh or is_stale:
+            if auto_compute:
+                try:
+                    return cls().evaluate_rebalance()
+                except Exception as e:
+                    logger.error("Auto-evaluation of ETF rotation failed: %s", e)
+                    cls._cached_plan = None
+                    cls._cached_summary = None
+                    return None
+            else:
                 cls._cached_plan = None
                 cls._cached_summary = None
                 return None
@@ -500,13 +560,17 @@ class EtfRotationAutomationService:
         if not summary:
             return {
                 "status": "unavailable",
+                "plan_id": None,
                 "message": "当前无可用调仓计划或数据读取失败，无法生成模拟试算。",
                 "executed_orders": [],
             }
 
+        plan_id = summary.get("plan_id")
+
         if summary.get("is_demo"):
             return {
                 "status": "rejected",
+                "plan_id": plan_id,
                 "message": "当前处于演示资金隔离模式（真实账户资金为 0 或读取不可用），已阻止执行实盘调仓试算。",
                 "executed_orders": [],
             }
@@ -514,6 +578,7 @@ class EtfRotationAutomationService:
         if summary.get("is_custom_simulation"):
             return {
                 "status": "rejected",
+                "plan_id": plan_id,
                 "message": "当前调仓计划基于自定义假设输入（非真实账户资产），已阻止记录为实盘调仓试算。",
                 "executed_orders": [],
             }
@@ -521,6 +586,7 @@ class EtfRotationAutomationService:
         if not summary.get("orders"):
             return {
                 "status": "no_action_needed",
+                "plan_id": plan_id,
                 "message": "当前资产配置已符合目标权重，无需执行任何买卖委托。",
                 "executed_orders": [],
             }
