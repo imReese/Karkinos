@@ -364,10 +364,62 @@ test('renders interactive sort buttons when onSort is provided and handles sort 
   fireEvent.click(unrealizedAmtBtn);
   expect(onSort).toHaveBeenCalledWith('unrealized_pnl', 'desc');
 
+  const unrealizedTitleBtn = screen.getByTestId(
+    'positions-sort-unrealized_pnl-title',
+  );
+  expect(unrealizedTitleBtn).toBeTruthy();
+  fireEvent.click(unrealizedTitleBtn);
+  expect(onSort).toHaveBeenCalledWith('unrealized_pnl', 'desc');
+
+  const todayTitleBtn = screen.getByTestId('positions-sort-today_change-title');
+  expect(todayTitleBtn).toBeTruthy();
+  fireEvent.click(todayTitleBtn);
+  expect(onSort).toHaveBeenCalledWith('today_change', 'desc');
+
   const symbolBtn = screen.getByTestId('positions-sort-symbol');
   expect(symbolBtn).toBeTruthy();
   fireEvent.click(symbolBtn);
   expect(onSort).toHaveBeenCalledWith('symbol', 'asc');
+});
+
+test('DualSortHeader shows sort arrow on % button when sorting by percentage and on title when sorting by amount', () => {
+  const { rerender } = renderTable(
+    <PositionsTable
+      positions={[basePosition]}
+      variant="dashboard"
+      sortKey="unrealized_pnl_pct"
+      sortDirection="desc"
+      onSort={vi.fn()}
+    />,
+  );
+
+  const pctBtn = screen.getByTestId('positions-sort-unrealized-pct');
+  const titleBtn = screen.getByTestId('positions-sort-unrealized_pnl-title');
+
+  // When sorting by percentage (%), arrow is inside % button, not title
+  expect(pctBtn.querySelector('svg')).toBeTruthy();
+  expect(titleBtn.querySelector('svg')).toBeNull();
+
+  // When sorting by amount (¥), arrow is inside title button, not %
+  rerender(
+    <PreferencesProvider>
+      <PositionsTable
+        positions={[basePosition]}
+        variant="dashboard"
+        sortKey="unrealized_pnl"
+        sortDirection="desc"
+        onSort={vi.fn()}
+      />
+    </PreferencesProvider>,
+  );
+  expect(
+    screen.getByTestId('positions-sort-unrealized-pct').querySelector('svg'),
+  ).toBeNull();
+  expect(
+    screen
+      .getByTestId('positions-sort-unrealized_pnl-title')
+      .querySelector('svg'),
+  ).toBeTruthy();
 });
 
 test('uses the holding link for row clicks without intercepting child keyboard events', () => {

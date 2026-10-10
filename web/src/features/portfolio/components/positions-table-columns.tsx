@@ -173,12 +173,9 @@ function DualSortHeader({
   }
   const isPctActive = activeKey === pctKey;
   const isAmountActive = activeKey === amountKey;
-  const isActive = isPctActive || isAmountActive;
-  const SortIcon = isActive
-    ? direction === 'asc'
-      ? ArrowUp
-      : ArrowDown
-    : ArrowUpDown;
+  const nextAmountDir = nextSortDirection(isAmountActive, direction);
+  const nextPctDir = nextSortDirection(isPctActive, direction);
+  const DirIcon = direction === 'asc' ? ArrowUp : ArrowDown;
 
   return (
     <div className="flex justify-end">
@@ -186,28 +183,31 @@ function DualSortHeader({
         <button
           type="button"
           onClick={(event) => {
-            const targetKey = isAmountActive ? amountKey : pctKey;
-            const nextDir = nextSortDirection(isActive, direction);
-            requestSort(event, onSort, targetKey, nextDir);
+            requestSort(event, onSort, amountKey, nextAmountDir);
           }}
-          data-sort-control={`${pctKey}-title`}
+          data-sort-control={`${amountKey}-title`}
+          data-testid={`positions-sort-${amountKey}-title`}
           className={`group/col-hdr inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 text-xs font-semibold transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
-            isActive
+            isAmountActive
               ? 'text-[var(--app-accent)]'
               : 'text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
           }`}
           title={title}
         >
           <span>{title}</span>
-          <SortIcon
-            size={11}
-            strokeWidth={isActive ? 2.2 : 1.8}
-            className={`shrink-0 ${
-              isActive
-                ? 'text-[var(--app-accent)]'
-                : 'text-[var(--app-text-tertiary)] opacity-40 transition-opacity group-hover/col-hdr:opacity-80'
-            }`}
-          />
+          {isAmountActive ? (
+            <DirIcon
+              size={11}
+              strokeWidth={2.2}
+              className="shrink-0 text-[var(--app-accent)]"
+            />
+          ) : !isPctActive ? (
+            <ArrowUpDown
+              size={11}
+              strokeWidth={1.8}
+              className="shrink-0 text-[var(--app-text-tertiary)] opacity-40 transition-opacity group-hover/col-hdr:opacity-80"
+            />
+          ) : null}
         </button>
         <div
           role="group"
@@ -217,11 +217,10 @@ function DualSortHeader({
           <button
             type="button"
             onClick={(event) => {
-              const nextDir = nextSortDirection(isPctActive, direction);
-              requestSort(event, onSort, pctKey, nextDir);
+              requestSort(event, onSort, pctKey, nextPctDir);
             }}
             data-sort-control={pctKey}
-            className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs font-semibold underline-offset-4 transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
+            className={`inline-flex h-6 min-w-6 items-center justify-center gap-0.5 rounded px-1 text-xs font-semibold underline-offset-4 transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
               isPctActive
                 ? 'text-[var(--app-accent)] underline decoration-2'
                 : 'text-[var(--app-text-tertiary)] hover:text-[var(--app-text)]'
@@ -232,15 +231,21 @@ function DualSortHeader({
             data-testid={pctTestId}
           >
             <span>{pctLabel}</span>
+            {isPctActive ? (
+              <DirIcon
+                size={10}
+                strokeWidth={2.2}
+                className="shrink-0 text-[var(--app-accent)]"
+              />
+            ) : null}
           </button>
           <button
             type="button"
             onClick={(event) => {
-              const nextDir = nextSortDirection(isAmountActive, direction);
-              requestSort(event, onSort, amountKey, nextDir);
+              requestSort(event, onSort, amountKey, nextAmountDir);
             }}
             data-sort-control={amountKey}
-            className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs font-semibold underline-offset-4 transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
+            className={`inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-xs font-semibold underline-offset-4 transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
               isAmountActive
                 ? 'text-[var(--app-accent)] underline decoration-2'
                 : 'text-[var(--app-text-tertiary)] hover:text-[var(--app-text)]'
