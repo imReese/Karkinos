@@ -230,4 +230,21 @@ export async function installOverviewFixture(page: Page) {
   await page.route('**/api/decision/trading-plan', (route) =>
     route.fulfill({ json: overviewTradingPlanFixture }),
   );
+  await page.route('**/api/trading/etf-rebalance/dashboard', (route) =>
+    route.fulfill({
+      json: {
+        status: 'unavailable',
+        strategy: null,
+        rebalance: null,
+        orders: [],
+        execution_status: 'unavailable',
+        has_pending_orders: false,
+        can_execute: false,
+        is_demo: false,
+        is_custom_simulation: false,
+        capital_quarantined: true,
+        last_execution: null,
+      },
+    }),
+  );
 }

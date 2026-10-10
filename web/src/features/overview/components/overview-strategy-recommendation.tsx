@@ -580,7 +580,9 @@ export function OverviewStrategyRecommendation({
           meta={
             marketClosed
               ? undefined
-              : hasEtfData && etfRotationQuery?.data?.rebalance?.as_of_date
+              : !showDetailedActions &&
+                  hasEtfData &&
+                  etfRotationQuery?.data?.rebalance?.as_of_date
                 ? formatDate(etfRotationQuery.data.rebalance.as_of_date)
                 : recommendationDate === '--'
                   ? undefined
@@ -630,6 +632,65 @@ export function OverviewStrategyRecommendation({
             {dashboard.strategyRecommendationResearchAction}
           </a>
         </div>
+      ) : plan && showDetailedActions ? (
+        <div className="flex flex-1 min-w-0 flex-col rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+            <StatusBadge tone={statusTone(presentationLevel)}>
+              {statusLabel(presentationLevel, dashboard)}
+            </StatusBadge>
+            <div className="flex items-center gap-2">
+              <span className="app-type-label text-[var(--app-text-tertiary)]">
+                {locale === 'zh' ? '只读建议' : 'Read only'}
+              </span>
+            </div>
+          </div>
+
+          <ul className="mt-3 flex-1 divide-y divide-[var(--app-divider)] overflow-y-auto overscroll-y-contain pr-1 max-h-[30rem]">
+            {presentationActions.map((action, index) => (
+              <RecommendationActionItem
+                key={
+                  action.action_id ?? `${action.symbol || 'action'}-${index}`
+                }
+                action={action}
+                index={index}
+                plan={plan}
+                positions={positions}
+                currentWeightBySymbol={currentWeightBySymbol}
+                dashboard={dashboard}
+                locale={locale}
+                presentationLevel={presentationLevel}
+                showPortfolioSizing={showPortfolioSizing}
+              />
+            ))}
+          </ul>
+
+          {presentationLevel !== 'manual_review' ? (
+            <p className="app-type-compact mt-3 shrink-0 border-t border-[var(--app-divider)] pt-3 text-[var(--app-text-secondary)]">
+              {presentationLevel === 'portfolio_preview'
+                ? dashboard.strategyRecommendationRefreshForReview
+                : dashboard.strategyRecommendationSignalOnly}
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--app-divider)] pt-3">
+            {presentationLevel === 'manual_review' ? (
+              <a
+                href="/trading"
+                onClick={(e) => handleClientNavigation(e, '/trading')}
+                className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+              >
+                {dashboard.viewTrading}
+              </a>
+            ) : null}
+            <a
+              href="/decision"
+              onClick={(e) => handleClientNavigation(e, '/decision')}
+              className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
+            >
+              {dashboard.viewDecision}
+            </a>
+          </div>
+        </div>
       ) : hasEtfData ? (
         <EtfRotationOverviewPanel data={etfRotationQuery!.data!} />
       ) : planQuery.isLoading && !plan ? (
@@ -647,91 +708,30 @@ export function OverviewStrategyRecommendation({
           title={dashboard.accountRecommendationUnavailable}
         />
       ) : plan ? (
-        showDetailedActions ? (
-          <div className="flex flex-1 min-w-0 flex-col rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-              <StatusBadge tone={statusTone(presentationLevel)}>
-                {statusLabel(presentationLevel, dashboard)}
-              </StatusBadge>
-              <div className="flex items-center gap-2">
-                <span className="app-type-label text-[var(--app-text-tertiary)]">
-                  {locale === 'zh' ? '只读建议' : 'Read only'}
-                </span>
-              </div>
-            </div>
-
-            <ul className="mt-3 flex-1 divide-y divide-[var(--app-divider)] overflow-y-auto overscroll-y-contain pr-1 max-h-[30rem]">
-              {presentationActions.map((action, index) => (
-                <RecommendationActionItem
-                  key={
-                    action.action_id ?? `${action.symbol || 'action'}-${index}`
-                  }
-                  action={action}
-                  index={index}
-                  plan={plan}
-                  positions={positions}
-                  currentWeightBySymbol={currentWeightBySymbol}
-                  dashboard={dashboard}
-                  locale={locale}
-                  presentationLevel={presentationLevel}
-                  showPortfolioSizing={showPortfolioSizing}
-                />
-              ))}
-            </ul>
-
-            {presentationLevel !== 'manual_review' ? (
-              <p className="app-type-compact mt-3 shrink-0 border-t border-[var(--app-divider)] pt-3 text-[var(--app-text-secondary)]">
-                {presentationLevel === 'portfolio_preview'
-                  ? dashboard.strategyRecommendationRefreshForReview
-                  : dashboard.strategyRecommendationSignalOnly}
-              </p>
-            ) : null}
-
-            <div className="mt-4 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--app-divider)] pt-3">
-              {presentationLevel === 'manual_review' ? (
-                <a
-                  href="/trading"
-                  onClick={(e) => handleClientNavigation(e, '/trading')}
-                  className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
-                >
-                  {dashboard.viewTrading}
-                </a>
-              ) : null}
-              <a
-                href="/decision"
-                onClick={(e) => handleClientNavigation(e, '/decision')}
-                className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline"
-              >
-                {dashboard.viewDecision}
-              </a>
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span
+              className={(
+                'inline-flex h-2 w-2 shrink-0 rounded-full ' +
+                indicatorDotClass(indicatorTone(plan))
+              ).trim()}
+            />
+            <p className="app-type-body font-semibold text-[var(--app-text)]">
+              {recommendationHeading(plan, copy)}
+            </p>
           </div>
-        ) : (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span
-                className={(
-                  'inline-flex h-2 w-2 shrink-0 rounded-full ' +
-                  indicatorDotClass(indicatorTone(plan))
-                ).trim()}
-              />
-              <p className="app-type-body font-semibold text-[var(--app-text)]">
-                {recommendationHeading(plan, copy)}
-              </p>
-            </div>
-            <a
-              href="/decision"
-              onClick={(e) => handleClientNavigation(e, '/decision')}
-              className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline shrink-0"
-            >
-              {dashboard.viewDecision}
-            </a>
-          </div>
-        )
+          <a
+            href="/decision"
+            onClick={(e) => handleClientNavigation(e, '/decision')}
+            className="app-type-compact font-semibold text-[var(--app-accent)] hover:underline shrink-0"
+          >
+            {dashboard.viewDecision}
+          </a>
+        </div>
       ) : null}
 
       {!marketClosed &&
-      !hasEtfData &&
+      (showDetailedActions || !hasEtfData) &&
       plan &&
       (currentGeneration || !todayQuery.isLoading || quoteTooOldForReview) ? (
         <div

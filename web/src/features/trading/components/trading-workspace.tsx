@@ -70,13 +70,13 @@ export function TradingWorkspace() {
         </div>
       </section>
 
-      {/* 量化轮动策略收益看板与一键实盘下单 */}
-      <EtfRotationTradingCard />
-
       <div className="app-trading-command-grid grid min-w-0 gap-5 sm:gap-6">
         <TradingReviewQueue controller={controller} />
         <TradingSafetyRail controller={controller} locale={locale} />
       </div>
+
+      {/* 量化轮动策略收益看板与调仓试算 */}
+      <EtfRotationTradingCard />
 
       <ExecutionAuditPanel
         orders={orderFacts.data ?? []}

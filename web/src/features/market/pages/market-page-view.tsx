@@ -251,7 +251,7 @@ function MarketGlobalDataEvidence({
       data-testid="market-global-data-evidence"
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-1 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:px-2 [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
           <span className="app-type-section-title block text-[var(--app-text)]">
             {copy.market.health}
@@ -269,7 +269,7 @@ function MarketGlobalDataEvidence({
           />
         </span>
       </summary>
-      <div className="min-w-0 border-t border-[var(--app-divider)] pt-3">
+      <div className="min-w-0 border-t border-[var(--app-divider)] px-1 pt-3 sm:px-2">
         <MarketDataEvidenceWorkspace controller={controller} active={open} />
       </div>
     </details>
