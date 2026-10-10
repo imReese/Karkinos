@@ -15,8 +15,28 @@ export type EtfStrategyMetrics = {
   benchmark_return_pct: number;
   excess_return_pct: number;
   core_advantage?: string;
-  verification_status?: string;
+  verification_status?:
+    'bound_dataset_verified' | 'offline_reference_unbound' | string;
   disclaimer?: string;
+  dataset_id?: string;
+  source_result_id?: number;
+  report_url?: string;
+};
+
+export type EtfPaperBookSummary = {
+  book_id: string;
+  observation_id: string;
+  settled_sessions: number;
+  equity: string;
+  net_return: string;
+  net_return_pct: number;
+  max_drawdown: string;
+  max_drawdown_pct: number;
+  fees_paid: string;
+  slippage_cost: string;
+  health_status: string;
+  through_session?: string | null;
+  evaluation_start?: string | null;
 };
 
 export type EtfRebalanceOrder = {
@@ -97,6 +117,7 @@ export type EtfRotationDashboardResponse = {
     '5y': EtfStrategyMetrics;
     from_2025: EtfStrategyMetrics;
   };
+  paper_book?: EtfPaperBookSummary | null;
   rebalance: EtfRebalancePlanSummary | null;
   orders: EtfRebalanceOrder[];
   execution_status:

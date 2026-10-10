@@ -1,5 +1,5 @@
-"""Tests for /api/trading/etf-rebalance HTTP routes."""
-
+import json
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -9,6 +9,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from server.db import AppDatabase
+from server.persistence.backtest_results import insert_backtest_result
 from server.routes.etf_rebalance import create_router
 from server.services.etf_rotation_automation import EtfRotationAutomationService
 
@@ -420,3 +422,227 @@ def test_plan_id_incorporates_prices_and_unblocks_execution_on_price_change(
     assert dash_2["execution_status"] == "ready_to_trade"
     assert dash_2["can_execute"] is True
     assert dash_2["last_execution"] is None
+
+
+def test_dashboard_resolves_saved_backtest_result_and_paper_book(
+    client: TestClient, tmp_path: Path
+):
+    """Verify ETF dashboard dynamically binds saved backtest result and paper book."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    import sqlite3
+
+    with sqlite3.connect(db.path) as conn:
+        res_id = insert_backtest_result(
+            conn,
+            created_at=datetime.now().isoformat(),
+            config_json=json.dumps(
+                {
+                    "strategy": "etf_rotation",
+                    "dataset_id": "sha256:112233445566778899aabbccddeeff00",
+                    "start_date": "2021-01-04",
+                    "end_date": "2026-10-09",
+                    "benchmark_return": -8.65,
+                }
+            ),
+            initial_cash=100000.0,
+            final_equity=250000.0,
+            total_return=1.50,
+            sharpe=1.25,
+            max_dd=0.10,
+            equity_curve_json="[]",
+            annual_return=0.18,
+            duration_days=1391,
+            metrics_json=json.dumps(
+                {
+                    "annual_return": 0.18,
+                    "calmar": 1.80,
+                    "benchmark_return": -8.65,
+                }
+            ),
+        )
+
+        obs_id = "obs-etf-test-01"
+        conn.execute(
+            """INSERT INTO research_observations
+               (id, source_backtest_result_id, source_json, code_binding_json, policy_json, universe_json, started_at, lifecycle, version)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 0)""",
+            (
+                obs_id,
+                res_id,
+                json.dumps({"strategy_kind": "etf_rotation"}),
+                json.dumps({}),
+                json.dumps({}),
+                json.dumps([]),
+                "2026-01-01T00:00:00Z",
+            ),
+        )
+
+        book_id = "book-etf-test-01"
+        conn.execute(
+            """INSERT INTO research_paper_books
+               (id, observation_id, source_json, policy_json, code_binding_json, instruments_json, initial_cash, started_at, evaluation_start, lifecycle, version)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1)""",
+            (
+                book_id,
+                obs_id,
+                json.dumps({}),
+                json.dumps({"limitations": [], "health_policy": None}),
+                json.dumps({}),
+                json.dumps([]),
+                "100000",
+                "2026-01-01T00:00:00Z",
+                "2026-01-02",
+            ),
+        )
+
+        conn.execute(
+            """INSERT INTO research_paper_steps
+               (book_id, session, book_version, dataset_id, settled_at, input_json, projection_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                book_id,
+                "2026-01-05",
+                1,
+                "sha256:forward_dataset",
+                "2026-01-05T15:30:00Z",
+                "{}",
+                json.dumps(
+                    {
+                        "session": "2026-01-05",
+                        "cash": "105000",
+                        "equity": "105000",
+                        "dividend_receivable": "0",
+                        "dividend_income": "0",
+                        "positions": {},
+                        "fills": [
+                            {
+                                "commission": "15.00",
+                                "slippage": "25.00",
+                                "fill_price": "2.5",
+                                "fill_quantity": "10000",
+                            }
+                        ],
+                        "attempts": [],
+                    }
+                ),
+            ),
+        )
+        conn.commit()
+
+    EtfRotationAutomationService.set_database_path(db.path)
+    try:
+        resp = client.get("/api/trading/etf-rebalance/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Strategy verification
+        strat = data["strategy"]
+        assert strat["verification_status"] == "bound_dataset_verified"
+        assert strat["dataset_id"] == "sha256:112233445566778899aabbccddeeff00"
+        assert strat["source_result_id"] == res_id
+        assert strat["cumulative_return_pct"] == 150.0
+        assert strat["cagr_pct"] == 18.0
+        assert strat["max_drawdown_pct"] == 10.0
+        assert strat["sharpe_ratio"] == 1.25
+        assert strat["report_url"] == f"/research?tab=backtest&id={res_id}"
+
+        # Paper book summary
+        paper = data["paper_book"]
+        assert paper is not None
+        assert paper["book_id"] == book_id
+        assert paper["observation_id"] == obs_id
+        assert paper["settled_sessions"] == 1
+        assert paper["net_return_pct"] == 5.0
+        assert paper["max_drawdown_pct"] == 0.0
+        assert paper["fees_paid"] == "15"
+        assert paper["slippage_cost"] == "25"
+        assert paper["through_session"] == "2026-01-05"
+    finally:
+        EtfRotationAutomationService.reset_state()
+
+
+def test_dashboard_explicit_binding_with_bind_backtest_result(
+    client: TestClient, tmp_path: Path
+):
+    """Verify bind_backtest_result explicitly pins a specific backtest result."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    import sqlite3
+
+    with sqlite3.connect(db.path) as conn:
+        res1 = insert_backtest_result(
+            conn,
+            created_at=datetime.now().isoformat(),
+            config_json=json.dumps(
+                {
+                    "strategy": "etf_rotation",
+                    "dataset_id": "sha256:first_dataset",
+                }
+            ),
+            initial_cash=100000.0,
+            final_equity=200000.0,
+            total_return=1.00,
+            sharpe=1.1,
+            max_dd=0.15,
+            equity_curve_json="[]",
+            annual_return=0.15,
+            duration_days=1000,
+        )
+        res2 = insert_backtest_result(
+            conn,
+            created_at=datetime.now().isoformat(),
+            config_json=json.dumps(
+                {
+                    "strategy": "etf_rotation",
+                    "dataset_id": "sha256:second_dataset",
+                }
+            ),
+            initial_cash=100000.0,
+            final_equity=300000.0,
+            total_return=2.00,
+            sharpe=1.5,
+            max_dd=0.08,
+            equity_curve_json="[]",
+            annual_return=0.25,
+            duration_days=1200,
+        )
+        conn.commit()
+
+    EtfRotationAutomationService.set_database_path(db.path)
+    try:
+        # Bind res1 explicitly
+        EtfRotationAutomationService.bind_backtest_result(res1)
+        dash1 = client.get("/api/trading/etf-rebalance/dashboard").json()
+        assert dash1["strategy"]["source_result_id"] == res1
+        assert dash1["strategy"]["cumulative_return_pct"] == 100.0
+        assert dash1["strategy"]["dataset_id"] == "sha256:first_dataset"
+
+        # Bind res2 explicitly
+        EtfRotationAutomationService.bind_backtest_result(res2)
+        dash2 = client.get("/api/trading/etf-rebalance/dashboard").json()
+        assert dash2["strategy"]["source_result_id"] == res2
+        assert dash2["strategy"]["cumulative_return_pct"] == 200.0
+        assert dash2["strategy"]["dataset_id"] == "sha256:second_dataset"
+    finally:
+        EtfRotationAutomationService.reset_state()
+
+
+def test_dashboard_falls_back_gracefully_when_no_saved_backtest(
+    client: TestClient, tmp_path: Path
+):
+    """Verify dashboard falls back to baseline offline reference when no etf_rotation report is found."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    EtfRotationAutomationService.set_database_path(db.path)
+    try:
+        resp = client.get("/api/trading/etf-rebalance/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["strategy"]["verification_status"] == "offline_reference_unbound"
+        assert data["paper_book"] is None
+    finally:
+        EtfRotationAutomationService.reset_state()

@@ -318,12 +318,17 @@ function EtfTrackRecordStrip({
 }) {
   const activeStrategy =
     data.strategy_periods?.[selectedPeriod] ?? data.strategy;
+  const isVerified =
+    activeStrategy.verification_status === 'bound_dataset_verified';
+
   return (
     <div className="my-3 rounded-xl border border-[var(--app-divider)]/80 bg-[var(--app-surface-overlay)]/40 p-2.5">
       <div className="flex items-center justify-between pb-2 border-b border-[var(--app-divider)]/40 app-type-micro">
         <span className="flex items-center gap-1 font-bold text-[var(--app-text-secondary)] uppercase tracking-wider">
           <TrendingUp className="h-3 w-3 text-[var(--app-accent)]" />
-          历史回测表现 (离线基准测算参考)
+          {isVerified
+            ? '历史回测表现 (已绑定数据集)'
+            : '历史回测表现 (离线基准参考)'}
         </span>
         {data.strategy_periods ? (
           <div className="flex items-center rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/60 p-0.5">
@@ -413,6 +418,33 @@ function EtfTrackRecordStrip({
           </div>
         </div>
       </div>
+
+      {data.paper_book ? (
+        <div
+          data-testid="overview-paper-book-strip"
+          className="mt-2 flex items-center justify-between rounded-lg border border-[var(--app-divider)]/40 bg-[var(--app-surface-raised)]/60 px-2.5 py-1.5 app-type-micro"
+        >
+          <span className="text-[var(--app-text-secondary)] font-medium">
+            前向 Paper Book:
+          </span>
+          <span
+            className={`font-mono font-bold ${
+              data.paper_book.net_return_pct >= 0
+                ? 'text-[var(--app-accent)]'
+                : 'text-[var(--app-pnl-negative)]'
+            }`}
+          >
+            {data.paper_book.net_return_pct >= 0 ? '+' : ''}
+            {data.paper_book.net_return_pct.toFixed(2)}%
+          </span>
+          <span className="text-[var(--app-text-tertiary)]">
+            回撤 {data.paper_book.max_drawdown_pct.toFixed(2)}%
+          </span>
+          <span className="text-[var(--app-text-tertiary)] font-mono">
+            ({data.paper_book.settled_sessions}日结算)
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

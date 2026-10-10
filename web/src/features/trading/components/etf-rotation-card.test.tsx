@@ -222,3 +222,83 @@ test('overview panel displays rejection feedback when execute mutation is reject
     ).toBeDefined();
   });
 });
+
+test('displays dataset verified badge, dataset id, and report link when bound to verified dataset', () => {
+  const data = makeFixtureData({
+    strategy: {
+      ...makeFixtureData().strategy,
+      verification_status: 'bound_dataset_verified',
+      dataset_id: 'sha256:112233445566778899aabbccddeeff00',
+      report_url: '/research?tab=backtest&id=42',
+    },
+  });
+  renderWithClient(<EtfRotationTradingCard data={data} />);
+
+  expect(screen.getByTestId('dataset-verified-badge')).toBeDefined();
+  expect(screen.getByText('不可变 Dataset 已验证')).toBeDefined();
+  expect(screen.getByText(/数据集: sha256:11223344/)).toBeDefined();
+  expect(screen.getByRole('link', { name: /查看回测报告/ })).toBeDefined();
+});
+
+test('displays forward paper book tracking card when paper_book is provided', () => {
+  const data = makeFixtureData({
+    paper_book: {
+      book_id: 'book-etf-test-1',
+      observation_id: 'obs-etf-test-1',
+      settled_sessions: 15,
+      equity: '105230.50',
+      net_return: '0.0523',
+      net_return_pct: 5.23,
+      max_drawdown: '0.021',
+      max_drawdown_pct: 2.1,
+      fees_paid: '45.00',
+      slippage_cost: '62.50',
+      health_status: 'within_rule',
+      through_session: '2026-10-09',
+      evaluation_start: '2026-09-01',
+    },
+  });
+  renderWithClient(<EtfRotationTradingCard data={data} />);
+
+  expect(screen.getByTestId('etf-paper-book-forward-card')).toBeDefined();
+  expect(screen.getByText('15 个交易日已结算')).toBeDefined();
+  expect(screen.getByTestId('paper-health-status')).toBeDefined();
+  expect(screen.getByText('策略健康度正常 (within_rule)')).toBeDefined();
+  expect(screen.getByTestId('paper-net-return').textContent).toContain(
+    '+5.23%',
+  );
+  expect(screen.getByTestId('paper-max-drawdown').textContent).toContain(
+    '2.10%',
+  );
+  expect(screen.getByTestId('paper-costs').textContent).toContain('¥107.50');
+  expect(screen.getByTestId('paper-equity').textContent).toContain(
+    '105,230.50',
+  );
+});
+
+test('overview panel displays forward paper book strip when paper_book is present', () => {
+  const data = makeFixtureData({
+    paper_book: {
+      book_id: 'book-etf-test-1',
+      observation_id: 'obs-etf-test-1',
+      settled_sessions: 8,
+      equity: '102100.00',
+      net_return: '0.021',
+      net_return_pct: 2.1,
+      max_drawdown: '0.015',
+      max_drawdown_pct: 1.5,
+      fees_paid: '20.00',
+      slippage_cost: '30.00',
+      health_status: 'within_rule',
+      through_session: '2026-10-09',
+      evaluation_start: '2026-09-01',
+    },
+  });
+  renderWithClient(<EtfRotationOverviewPanel data={data} />);
+
+  const strip = screen.getByTestId('overview-paper-book-strip');
+  expect(strip).toBeDefined();
+  expect(strip.textContent).toContain('前向 Paper Book:');
+  expect(strip.textContent).toContain('+2.10%');
+  expect(strip.textContent).toContain('8日结算');
+});

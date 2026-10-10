@@ -13,6 +13,7 @@ import { formatCurrency, formatQuantity } from '../../../shared/format';
 import {
   useEtfRotationDashboardQuery,
   useExecuteEtfRotationOrdersMutation,
+  type EtfPaperBookSummary,
   type EtfRebalanceOrder,
   type EtfRotationDashboardResponse,
   type EtfStrategyMetrics,
@@ -155,8 +156,13 @@ export function EtfRotationTradingCard({
         </div>
       </div>
 
-      {/* 2. Strategy Reference Backtest Track Record (离线基准测算参考) */}
+      {/* 2. Strategy Reference Backtest Track Record (回测验证报告与基准) */}
       <EtfStrategyMetricsSummaryGrid strategy={strategy} />
+
+      {/* 2.1 Forward Paper Book Tracking (前向模拟扣费追踪) */}
+      {data.paper_book ? (
+        <EtfPaperBookForwardCard paperBook={data.paper_book} />
+      ) : null}
 
       {/* 3. Actionable Rebalance Orders (今日调仓指令清单) */}
       <div className="space-y-3">
@@ -320,18 +326,52 @@ function EtfStrategyMetricsSummaryGrid({
 }: {
   strategy: EtfStrategyMetrics;
 }) {
+  const isVerified = strategy.verification_status === 'bound_dataset_verified';
+
   return (
     <div className="my-5 rounded-xl border border-[var(--app-divider)]/80 bg-[var(--app-surface-overlay)]/40 p-4">
-      <div className="flex items-center justify-between pb-3 border-b border-[var(--app-divider)]/50">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-[var(--app-accent)]" />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-[var(--app-divider)]/50">
+        <div className="flex items-center gap-2 flex-wrap">
+          <TrendingUp className="h-4 w-4 text-[var(--app-accent)] shrink-0" />
           <span className="text-xs font-bold uppercase tracking-wider text-[var(--app-text-secondary)]">
-            5年离线基准测算参考 (未绑定当前在线 Dataset Snapshot)
+            {isVerified ? '不可变数据集已绑定验证报告' : '5年离线基准测算参考'}
           </span>
+          {isVerified ? (
+            <span
+              data-testid="dataset-verified-badge"
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-2 py-0.5 text-xs font-semibold text-[var(--app-success-text)]"
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              不可变 Dataset 已验证
+            </span>
+          ) : (
+            <span
+              data-testid="offline-reference-badge"
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 px-2 py-0.5 text-xs font-medium text-[var(--app-warning-text)]"
+            >
+              离线参考 (未绑定 Dataset)
+            </span>
+          )}
         </div>
-        <span className="text-xs text-[var(--app-text-tertiary)]">
-          计入中信万1.5佣金、5bps滑点与整手摩擦
-        </span>
+        <div className="flex items-center gap-2 text-xs text-[var(--app-text-tertiary)] flex-wrap">
+          {strategy.dataset_id ? (
+            <span
+              className="font-mono text-xs text-[var(--app-text-secondary)]"
+              title={strategy.dataset_id}
+            >
+              数据集: {strategy.dataset_id.slice(0, 16)}…
+            </span>
+          ) : null}
+          {strategy.report_url ? (
+            <a
+              href={strategy.report_url}
+              className="text-[var(--app-accent)] underline hover:opacity-80 font-medium"
+            >
+              查看回测报告 →
+            </a>
+          ) : null}
+          <span>计入中信万1.5佣金、5bps滑点与整手摩擦</span>
+        </div>
       </div>
 
       <div className="mt-3.5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -461,6 +501,134 @@ function EtfRebalanceOrdersTable({ orders }: { orders: EtfRebalanceOrder[] }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function EtfPaperBookForwardCard({
+  paperBook,
+}: {
+  paperBook: EtfPaperBookSummary;
+}) {
+  const isNetPositive = paperBook.net_return_pct >= 0;
+  const feesNum = parseFloat(paperBook.fees_paid) || 0;
+  const slipNum = parseFloat(paperBook.slippage_cost) || 0;
+  const equityNum = parseFloat(paperBook.equity) || 0;
+
+  return (
+    <div
+      data-testid="etf-paper-book-forward-card"
+      className="my-5 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/40 p-4"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-[var(--app-divider)]/50 pb-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <ShieldCheck className="h-4 w-4 text-[var(--app-accent)] shrink-0" />
+          <span className="text-xs font-bold text-[var(--app-text)]">
+            前向模拟 Paper Book 跟踪 (扣费真实追踪)
+          </span>
+          <span className="rounded-md border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-0.5 text-xs font-mono text-[var(--app-text-secondary)]">
+            {paperBook.settled_sessions} 个交易日已结算
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {paperBook.health_status === 'within_rule' ? (
+            <span
+              data-testid="paper-health-status"
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-2.5 py-0.5 text-xs font-semibold text-[var(--app-success-text)]"
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              策略健康度正常 (within_rule)
+            </span>
+          ) : paperBook.health_status === 'threshold_breached' ? (
+            <span
+              data-testid="paper-health-status"
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-2.5 py-0.5 text-xs font-semibold text-[var(--app-warning-text)]"
+            >
+              <AlertCircle className="h-3 w-3" />
+              健康度突破阈值
+            </span>
+          ) : (
+            <span
+              data-testid="paper-health-status"
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-2.5 py-0.5 text-xs text-[var(--app-text-secondary)]"
+            >
+              前向样本观察中 ({paperBook.health_status})
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3.5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            前向净收益率
+          </div>
+          <div
+            data-testid="paper-net-return"
+            className={`mt-1 text-xl font-extrabold font-mono ${
+              isNetPositive
+                ? 'text-[var(--app-accent)]'
+                : 'text-[var(--app-pnl-negative)]'
+            }`}
+          >
+            {isNetPositive ? '+' : ''}
+            {paperBook.net_return_pct.toFixed(2)}%
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
+            扣除佣金与滑点后
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            前向最大回撤 (MDD)
+          </div>
+          <div
+            data-testid="paper-max-drawdown"
+            className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text)]"
+          >
+            {paperBook.max_drawdown_pct.toFixed(2)}%
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
+            真实跟踪阶段回撤
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            累计交易摩擦成本
+          </div>
+          <div
+            data-testid="paper-costs"
+            className="mt-1 text-base font-bold font-mono text-[var(--app-text)]"
+          >
+            ¥{(feesNum + slipNum).toFixed(2)}
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
+            佣金 ¥{feesNum.toFixed(2)} / 滑点 ¥{slipNum.toFixed(2)}
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-[var(--app-surface-raised)]/70 p-3 border border-[var(--app-divider)]/40">
+          <div className="text-xs text-[var(--app-text-tertiary)] font-medium">
+            当前模拟净值
+          </div>
+          <div
+            data-testid="paper-equity"
+            className="mt-1 text-base font-bold font-mono text-[var(--app-text)]"
+          >
+            {formatCurrency(equityNum)}
+          </div>
+          <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)] truncate">
+            结算截至: {paperBook.through_session ?? '初始'}
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs text-[var(--app-text-tertiary)]">
+        说明：前向模拟 Paper Book
+        独立于实盘与模拟交易账户，使用不可变前向数据集和标准扣费模型逐日撮合，杜绝未来函数。
+      </p>
     </div>
   );
 }

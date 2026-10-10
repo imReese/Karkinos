@@ -37,4 +37,5 @@ export type {
   EtfRotationDashboardResponse,
   EtfStrategyMetrics,
   EtfRebalanceOrder,
+  EtfPaperBookSummary,
 } from '../trading/api-etf-rotation';
