@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import sqlite3
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -498,190 +497,108 @@ class EtfRotationAutomationService:
             "from_2025": VERIFIED_BACKTEST_METRICS_2025,
         }
         try:
-            from contextlib import closing
-
             from server.db import AppDatabase
-            from server.persistence.connection import connect_sqlite
-            from server.persistence.research_paper_books import (
-                ResearchPaperBooksRepository,
-            )
+            from server.persistence.backtest_results import resolve_etf_backtest_record
 
             resolved_path = (
                 Path(db_path)
                 if db_path is not None
                 else (cls._database_path or AppDatabase().path)
             )
-            if not resolved_path.exists():
+            row_dict, paper_book_summary = resolve_etf_backtest_record(
+                resolved_path, bound_result_id=cls._bound_backtest_result_id
+            )
+            if row_dict is None:
                 return VERIFIED_BACKTEST_METRICS_5Y, default_periods, None
 
-            with closing(connect_sqlite(resolved_path, readonly=True)) as conn:
-                conn.row_factory = sqlite3.Row
-                has_bt_table = conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='backtest_results'"
-                ).fetchone()
-                if not has_bt_table:
-                    return VERIFIED_BACKTEST_METRICS_5Y, default_periods, None
+            result_id = int(row_dict["id"])
+            config = (
+                json.loads(row_dict["config_json"])
+                if row_dict.get("config_json")
+                else {}
+            )
+            metrics = (
+                json.loads(row_dict["metrics_json"])
+                if row_dict.get("metrics_json")
+                else {}
+            )
+            dataset_id = config.get("dataset_id") or (
+                metrics.get("dataset_binding") or {}
+            ).get("dataset_id")
 
-                target_row = None
-                if cls._bound_backtest_result_id is not None:
-                    target_row = conn.execute(
-                        "SELECT * FROM backtest_results WHERE id = ?",
-                        (cls._bound_backtest_result_id,),
-                    ).fetchone()
-                else:
-                    rows = conn.execute(
-                        "SELECT * FROM backtest_results ORDER BY id DESC"
-                    ).fetchall()
-                    for r in rows:
-                        try:
-                            cfg = (
-                                json.loads(r["config_json"]) if r["config_json"] else {}
-                            )
-                            if cfg.get("strategy") == "etf_rotation":
-                                target_row = r
-                                break
-                        except Exception:
-                            continue
-
-                if target_row is None:
-                    return VERIFIED_BACKTEST_METRICS_5Y, default_periods, None
-
-                row_dict = dict(target_row)
-                result_id = int(row_dict["id"])
-                config = (
-                    json.loads(row_dict["config_json"])
-                    if row_dict.get("config_json")
-                    else {}
+            if dataset_id:
+                verification_status = "bound_dataset_verified"
+                disclaimer = (
+                    f"已绑定不可变数据集 ({dataset_id[:16]}...)，回测经过确定性验证"
                 )
-                metrics = (
-                    json.loads(row_dict["metrics_json"])
-                    if row_dict.get("metrics_json")
-                    else {}
-                )
-                dataset_id = config.get("dataset_id") or (
-                    metrics.get("dataset_binding") or {}
-                ).get("dataset_id")
+            else:
+                verification_status = "offline_reference_unbound"
+                disclaimer = "离线基准测算参考，未绑定当前不可变 Dataset 报告"
 
-                if dataset_id:
-                    verification_status = "bound_dataset_verified"
-                    disclaimer = (
-                        f"已绑定不可变数据集 ({dataset_id[:16]}...)，回测经过确定性验证"
+            duration_days = int(row_dict.get("duration_days") or 0)
+            start_date = config.get("start_date", "2021-01-04")
+            end_date = config.get("end_date", "2026-10-09")
+            total_return = float(row_dict.get("total_return") or 0.0)
+            annual_return = float(
+                row_dict.get("annual_return")
+                or metrics.get("annual_return")
+                or metrics.get("cagr")
+                or 0.0
+            )
+            if annual_return == 0.0 and duration_days > 0 and total_return > -1.0:
+                years = duration_days / 250.0
+                if years > 0:
+                    annual_return = round(
+                        (1.0 + total_return) ** (1.0 / years) - 1.0, 4
                     )
-                else:
-                    verification_status = "offline_reference_unbound"
-                    disclaimer = "离线基准测算参考，未绑定当前不可变 Dataset 报告"
+            max_dd = float(row_dict.get("max_drawdown") or 0.0)
+            sharpe = float(row_dict.get("sharpe") or 0.0)
 
-                duration_days = int(row_dict.get("duration_days") or 0)
-                start_date = config.get("start_date", "2021-01-04")
-                end_date = config.get("end_date", "2026-10-09")
-                total_return = float(row_dict.get("total_return") or 0.0)
-                annual_return = float(
-                    row_dict.get("annual_return")
-                    or metrics.get("annual_return")
-                    or metrics.get("cagr")
-                    or 0.0
-                )
-                if annual_return == 0.0 and duration_days > 0 and total_return > -1.0:
-                    years = duration_days / 250.0
-                    if years > 0:
-                        annual_return = round(
-                            (1.0 + total_return) ** (1.0 / years) - 1.0, 4
-                        )
-                max_dd = float(row_dict.get("max_drawdown") or 0.0)
-                sharpe = float(row_dict.get("sharpe") or 0.0)
+            calmar = float(
+                metrics.get("calmar") or (annual_return / max_dd if max_dd > 0 else 0.0)
+            )
+            benchmark_return = float(
+                config.get("benchmark_return")
+                or metrics.get("benchmark_return")
+                or -8.65
+            )
+            cumulative_ret_pct = round(total_return * 100, 2)
+            benchmark_ret_pct = round(benchmark_return, 2)
+            excess_ret_pct = round(cumulative_ret_pct - benchmark_ret_pct, 2)
 
-                calmar = float(
-                    metrics.get("calmar")
-                    or (annual_return / max_dd if max_dd > 0 else 0.0)
-                )
-                benchmark_return = float(
-                    config.get("benchmark_return")
-                    or metrics.get("benchmark_return")
-                    or -8.65
-                )
-                cumulative_ret_pct = round(total_return * 100, 2)
-                benchmark_ret_pct = round(benchmark_return, 2)
-                excess_ret_pct = round(cumulative_ret_pct - benchmark_ret_pct, 2)
+            strategy_metrics: dict[str, Any] = {
+                "strategy_name": (
+                    config.get("strategy_name")
+                    or "全球大类资产跨市场轮动策略 (Global Multi-Asset ETF Rotation)"
+                ),
+                "universe_summary": (
+                    "8 支核心标的 (沪深300/中证500/创业板/纳指100/标普500/红利低波/黄金/国债)"
+                ),
+                "backtest_range": f"{start_date} 至 {end_date} ({duration_days} 个实际交易日)",
+                "cumulative_return_pct": cumulative_ret_pct,
+                "cagr_pct": round(annual_return * 100, 2),
+                "max_drawdown_pct": round(max_dd * 100, 2),
+                "sharpe_ratio": round(sharpe, 2),
+                "calmar_ratio": round(calmar, 2),
+                "benchmark_name": "沪深300ETF (510300)",
+                "benchmark_return_pct": benchmark_ret_pct,
+                "excess_return_pct": excess_ret_pct,
+                "core_advantage": (
+                    "利用美股龙头(标普500/纳指100)与黄金在A股熊市期间的非相关独立牛市创造超额复利"
+                ),
+                "verification_status": verification_status,
+                "disclaimer": disclaimer,
+                "dataset_id": dataset_id,
+                "source_result_id": result_id,
+                "report_url": f"/research?tab=backtest&id={result_id}",
+            }
 
-                strategy_metrics: dict[str, Any] = {
-                    "strategy_name": (
-                        config.get("strategy_name")
-                        or "全球大类资产跨市场轮动策略 (Global Multi-Asset ETF Rotation)"
-                    ),
-                    "universe_summary": (
-                        "8 支核心标的 (沪深300/中证500/创业板/纳指100/标普500/红利低波/黄金/国债)"
-                    ),
-                    "backtest_range": f"{start_date} 至 {end_date} ({duration_days} 个实际交易日)",
-                    "cumulative_return_pct": cumulative_ret_pct,
-                    "cagr_pct": round(annual_return * 100, 2),
-                    "max_drawdown_pct": round(max_dd * 100, 2),
-                    "sharpe_ratio": round(sharpe, 2),
-                    "calmar_ratio": round(calmar, 2),
-                    "benchmark_name": "沪深300ETF (510300)",
-                    "benchmark_return_pct": benchmark_ret_pct,
-                    "excess_return_pct": excess_ret_pct,
-                    "core_advantage": (
-                        "利用美股龙头(标普500/纳指100)与黄金在A股熊市期间的非相关独立牛市创造超额复利"
-                    ),
-                    "verification_status": verification_status,
-                    "disclaimer": disclaimer,
-                    "dataset_id": dataset_id,
-                    "source_result_id": result_id,
-                    "report_url": f"/research?tab=backtest&id={result_id}",
-                }
+            strategy_periods = {
+                "5y": strategy_metrics,
+                "from_2025": VERIFIED_BACKTEST_METRICS_2025,
+            }
 
-                strategy_periods = {
-                    "5y": strategy_metrics,
-                    "from_2025": VERIFIED_BACKTEST_METRICS_2025,
-                }
-
-                paper_book_summary: dict[str, Any] | None = None
-                has_obs = conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_observations'"
-                ).fetchone()
-                has_paper = conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_paper_books'"
-                ).fetchone()
-
-                if has_obs and has_paper:
-                    obs_row = conn.execute(
-                        "SELECT id FROM research_observations WHERE source_backtest_result_id = ? ORDER BY id DESC LIMIT 1",
-                        (result_id,),
-                    ).fetchone()
-                    if obs_row:
-                        obs_id = obs_row["id"]
-                        paper_repo = ResearchPaperBooksRepository(
-                            resolved_path,
-                            clock=lambda: datetime.now(timezone.utc),
-                        )
-                        paper_detail = paper_repo.get(obs_id)
-                        if paper_detail:
-                            perf = paper_detail.get("performance", {})
-                            health = paper_detail.get("health", {})
-                            net_ret = Decimal(str(perf.get("net_return", "0")))
-                            mdd_paper = Decimal(str(perf.get("max_drawdown", "0")))
-                            paper_book_summary = {
-                                "book_id": paper_detail["id"],
-                                "observation_id": obs_id,
-                                "settled_sessions": perf.get("settled_sessions", 0),
-                                "equity": perf.get(
-                                    "equity",
-                                    str(paper_detail.get("initial_cash", "0")),
-                                ),
-                                "net_return": perf.get("net_return", "0"),
-                                "net_return_pct": round(float(net_ret) * 100, 2),
-                                "max_drawdown": perf.get("max_drawdown", "0"),
-                                "max_drawdown_pct": round(float(mdd_paper) * 100, 2),
-                                "fees_paid": perf.get("fees_paid", "0"),
-                                "slippage_cost": perf.get("slippage_cost", "0"),
-                                "health_status": health.get("status", "not_configured"),
-                                "through_session": perf.get("through_session"),
-                                "evaluation_start": paper_detail.get(
-                                    "evaluation_start"
-                                ),
-                            }
-
-                return strategy_metrics, strategy_periods, paper_book_summary
+            return strategy_metrics, strategy_periods, paper_book_summary
         except Exception as exc:
             logger.debug("Failed to resolve dynamic strategy or paper book: %s", exc)
             return VERIFIED_BACKTEST_METRICS_5Y, default_periods, None
