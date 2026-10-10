@@ -2,22 +2,51 @@
 
 ## Current focus
 
-**Evidence-bound research and portfolio decision loop**
+**Zero-manual-strategy automated research to forward simulation decision loop**
 
-The engineering reset is complete. Further cleanup is maintenance, not a separate product track.
+Deliver an end-to-end, reproducible pipeline where a user provides target constraints and risk boundaries—without writing code or inventing strategy formulas—to obtain candidates, forward paper simulation, and a definitive decision report on whether capital allocation is justified.
 
 ```text
-Market Data
--> PIT Dataset
--> Research / Evaluation
--> Published Forecast
--> Portfolio Target
--> Risk Decision
--> Rebalance Plan
--> Simulation / Shadow
--> Accounting / Attribution
--> Evidence / Feedback
+Target / Risk Constraints
+-> Built-in Baseline / Missing-Data Diagnosis
+-> Automated Formula Research (Pre-registered Budget)
+-> Frozen Candidate Selection (40-Stock Unified Panel)
+-> Continuous Verified Observation & Data Prep
+-> Multi-Tier Paper Settlement (Round-Lot & Cost Drag)
+-> Decision-Ready Evidence (Preliminary Edge / Insufficient / No Edge)
 ```
+
+## Four-step delivery sequence
+
+1. **Zero-prior-knowledge research pipeline cold-start**:
+   - Reuse existing Stock Formula Auto-Research -> Candidate Screening -> Independent Paper Book.
+   - Remove the requirement for prior manual backtests: platform initializes with a built-in baseline on the research universe.
+   - Clear diagnostic feedback when data or configuration is missing (market daily bars, trading calendar, or provider credentials) instead of dumping errors or expecting manual strategy construction.
+   - Acceptance: From a clean workspace without user code or manual strategy definitions, produce an evidence-backed candidate report or an explicit "no qualified candidate" explanation.
+
+2. **Bridge research-to-forward-simulation breakpoints**:
+   - Unify universe boundaries: align observation automatic data preparation to admit up to 40 instruments (matching the 40-stock research universe panel), preventing silent dropping of candidate universe members.
+   - Ensure strict 1:1 binding between candidate code, parameters, immutable dataset, cost assumptions, and paper book records. Missing data waits (fails closed); modifications create distinct versions.
+   - Close minor remaining edges in cache invalidation, plan identity, and receipt association.
+   - Acceptance: A frozen 40-stock candidate continuously receives verified daily data, publishes targets, and completes paper settlement; deterministic results across restarts, fail-closed on anomalies without false success.
+
+3. **Answer 'Does automated research add value?' using existing verification**:
+   - Reuse frozen candidates, future holdout intervals, simple & random challenge baselines, and independent paper books (no new validation framework).
+   - Pre-register research scope, candidate count, model call / token budget, benchmark, fees, slippage, and round-lot (100-share) trading constraints before experiments start.
+   - Log all trials and rejections to guard against backtesting / multiple-testing overfitting (Bailey et al.).
+   - Evaluate across paper capital tiers (e.g. 50k, 100k, 500k RMB) to measure round-lot cash drag and concentration without risking real money.
+   - Distinct acceptance gates: engineering workflow completion vs out-of-sample investment edge.
+
+4. **Deliver a decision-ready homepage / overview**:
+   - Clearly explain whether any candidate merits continued observation and why.
+   - Net return after fees, alpha over simple benchmark (capped equal-weight buy & hold).
+   - Max drawdown, longest underwater period, and explicit risks taken.
+   - Thesis invalidation tracking: reasons for pause or retirement.
+   - Incurred data and model expenses, plus remaining missing evidence.
+   - Three canonical decision outcomes:
+     * *Preliminary edge*: continue accumulating forward evidence, decide on small live validation.
+     * *Insufficient evidence*: maintain paper observation, limit research budget.
+     * *No edge across pre-registered cycles*: adjust methodology, narrow scope, or retain simple baseline; pause expansion.
 
 ## In scope
 
@@ -85,7 +114,7 @@ target scheduling does not request providers or backfill missed targets. A separ
 default-off observation data-preparation opt-in lets the existing data worker
 verify the frozen basket and append subsequent closed sessions to its original
 immutable Dataset. It preserves original partitions, uses existing provider budgets,
-and admits at most 32 instruments, appending at most 366 calendar days per batch
+and admits at most 40 instruments, appending at most 366 calendar days per batch
 within the observation's frozen total row budget. Missing,
 conflicting or incomplete sessions do not publish an interval. A new observation may explicitly bind a separate verified warmup Dataset with the
 same typed universe, adequate history and latest closed session. This preserves the

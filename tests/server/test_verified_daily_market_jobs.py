@@ -719,7 +719,7 @@ def test_multi_asset_verified_jobs_are_one_complete_universe_per_day(tmp_path):
         },
         {
             "instruments": [
-                {"symbol": str(510300 + i), "instrument_type": "etf"} for i in range(33)
+                {"symbol": str(510300 + i), "instrument_type": "etf"} for i in range(41)
             ]
         },
         {"symbol": "600000"},

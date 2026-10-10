@@ -30,6 +30,7 @@ from server.services.market_hours import get_shanghai_now
 from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
 
 VERIFIED_DAILY_MARKET_JOB = "market_daily_verified"
+MAX_VERIFIED_DATASET_INSTRUMENTS: int = 40
 logger = logging.getLogger(__name__)
 
 
@@ -178,7 +179,7 @@ def enqueue_verified_daily_market_jobs_for_range(
         instruments = (instrument,)
     instruments = DailyBarRequest(instruments, start_date, end_date).instruments
     if (
-        not 1 <= len(instruments) <= 32
+        not 1 <= len(instruments) <= MAX_VERIFIED_DATASET_INSTRUMENTS
         or any(
             item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
             for item in instruments

@@ -70,7 +70,10 @@ from server.services.verified_daily_market_data import (
     is_verified_daily_resolver_policy,
     verified_daily_resolver_policy_id,
 )
-from server.services.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
+from server.services.verified_daily_market_jobs import (
+    MAX_VERIFIED_DATASET_INSTRUMENTS,
+    VERIFIED_DAILY_MARKET_JOB,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -359,7 +362,7 @@ class ResearchDatasetService:
         refresh: bool = False,
     ) -> dict[str, Any]:
         if (
-            not 1 <= len(request.instruments) <= 32
+            not 1 <= len(request.instruments) <= MAX_VERIFIED_DATASET_INSTRUMENTS
             or any(
                 item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
                 for item in request.instruments
@@ -483,7 +486,7 @@ def publish_verified_interval_dataset(
 ) -> dict[str, Any]:
     """Freeze verified-day jobs, optionally preserving an exact original prefix."""
     if (
-        not 1 <= len(request.instruments) <= 32
+        not 1 <= len(request.instruments) <= MAX_VERIFIED_DATASET_INSTRUMENTS
         or any(
             item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
             for item in request.instruments

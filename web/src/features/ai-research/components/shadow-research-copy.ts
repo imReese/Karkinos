@@ -132,6 +132,18 @@ export const SHADOW_RESEARCH_COPY = {
       kill_switch_enabled: 'The global pause is active.',
       deepseek_provider_not_configured:
         'DeepSeek is not enabled or configured.',
+      deepseek_peak_pricing_window:
+        'Currently in provider peak pricing window. Waiting for policy window.',
+      baseline_universe_replay_missing:
+        'Market universe snapshot is missing. Please sync market universe first.',
+      full_market_daily_receipt_coverage_incomplete:
+        'Market daily ingestion receipts are incomplete.',
+      full_market_persisted_bar_coverage_incomplete:
+        'Persisted daily bars coverage is incomplete (at least 60 trading days required).',
+      full_market_latest_cross_section_incomplete:
+        'Latest cross-sectional market data is incomplete.',
+      eligible_baseline_backtest_missing:
+        'Specified baseline backtest result was not found.',
     },
     noCandidates:
       'No completed automated candidate is in the research pool yet.',
@@ -307,6 +319,15 @@ export const SHADOW_RESEARCH_COPY = {
       research_worker_kill_switch_status_unavailable: '无法读取全局暂停状态。',
       kill_switch_enabled: '全局暂停已生效。',
       deepseek_provider_not_configured: 'DeepSeek 尚未启用或配置。',
+      deepseek_peak_pricing_window:
+        '当前处于服务商高峰计费时段，正在等待策略执行窗口。',
+      baseline_universe_replay_missing:
+        '未找到市场股票池快照，请确认是否已同步股票池。',
+      full_market_daily_receipt_coverage_incomplete: '市场日线采集回执未完成。',
+      full_market_persisted_bar_coverage_incomplete:
+        '本地日线数据覆盖不足（需要至少 60 个交易日）。',
+      full_market_latest_cross_section_incomplete: '最新截面行情数据不完整。',
+      eligible_baseline_backtest_missing: '未找到指定的基线回测记录。',
     },
     noCandidates: '研究池里还没有完成的自动候选。',
     currentCandidates: '当前研究候选',

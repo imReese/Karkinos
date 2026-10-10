@@ -23,6 +23,7 @@ from server.services.verified_daily_market_data import (
     VerifiedDailyMarketJobRequest,
 )
 from server.services.verified_daily_market_jobs import (
+    MAX_VERIFIED_DATASET_INSTRUMENTS,
     VERIFIED_DAILY_MARKET_JOB,
     VerifiedDailyMarketJobPlanningError,
     enqueue_verified_daily_market_jobs_for_range,
@@ -40,7 +41,7 @@ class VerifiedDatasetRangeRequest(BaseModel):
     symbol: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
     instrument_type: Literal["stock", "etf"] | None = None
     instruments: list[DatasetInstrumentRequest] | None = Field(
-        default=None, min_length=1, max_length=32
+        default=None, min_length=1, max_length=MAX_VERIFIED_DATASET_INSTRUMENTS
     )
     start_date: date
     end_date: date

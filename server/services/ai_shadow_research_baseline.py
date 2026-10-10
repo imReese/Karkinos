@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -504,6 +505,19 @@ def _load_baseline_universe(
     return snapshot
 
 
+def _run_coroutine(coro: Any) -> Any:
+    if not asyncio.iscoroutine(coro):
+        return coro
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(asyncio.run, coro).result()
+
+
 def _load_baseline_seed(
     db: Any,
     policy: ShadowResearchPolicy,
@@ -512,13 +526,15 @@ def _load_baseline_seed(
     expected_dataset_snapshot_id: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     """Load a persisted seed and validate the explicitly selected research window."""
-    rows = asyncio.run(db.get_backtest_results())
+    rows = _run_coroutine(db.get_backtest_results())
     seed = None
     if policy.baseline_backtest_result_id is not None:
-        seed = asyncio.run(db.get_backtest_result(policy.baseline_backtest_result_id))
+        seed = _run_coroutine(
+            db.get_backtest_result(policy.baseline_backtest_result_id)
+        )
     else:
         for summary in rows:
-            candidate = asyncio.run(db.get_backtest_result(int(summary["id"])))
+            candidate = _run_coroutine(db.get_backtest_result(int(summary["id"])))
             config = shadow_research_json_object(
                 candidate.get("config_json") if candidate else None
             )
@@ -530,7 +546,14 @@ def _load_baseline_seed(
                 seed = candidate
                 break
     if not isinstance(seed, dict):
-        raise ShadowResearchRejected("eligible_baseline_backtest_missing")
+        if policy.baseline_backtest_result_id is not None:
+            raise ShadowResearchRejected("eligible_baseline_backtest_missing")
+        return _initialize_default_baseline_seed(
+            db=db,
+            policy=policy,
+            research_start_date=research_start_date,
+            expected_dataset_snapshot_id=expected_dataset_snapshot_id,
+        )
     config = shadow_research_json_object(seed.get("config_json"))
     assets = config.get("assets")
     if not isinstance(assets, list) or not assets:
@@ -558,6 +581,70 @@ def _load_baseline_seed(
             ) from exc
     if not start_date:
         raise ShadowResearchRejected("baseline_start_date_missing")
+    return seed, config, start_date
+
+
+def _initialize_default_baseline_seed(
+    *,
+    db: Any,
+    policy: ShadowResearchPolicy,
+    research_start_date: str | None,
+    expected_dataset_snapshot_id: str | None,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    """Initialize a built-in baseline seed on a clean workspace without user strategy code."""
+    if expected_dataset_snapshot_id is not None:
+        raise ShadowResearchRejected("baseline_dataset_snapshot_replay_mismatch")
+    start_date = ""
+    if research_start_date is not None:
+        if (
+            policy.research_capital_mode
+            != SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+        ):
+            raise ShadowResearchRejected("baseline_research_window_override_invalid")
+        try:
+            start_date = date.fromisoformat(research_start_date).isoformat()
+        except ValueError as exc:
+            raise ShadowResearchRejected(
+                "baseline_research_window_override_invalid"
+            ) from exc
+    if not start_date:
+        cutoff_date = (
+            date.fromisoformat(policy.research_end_date)
+            if policy.research_end_date
+            else datetime.now(timezone.utc).date()
+        )
+        start_date = (cutoff_date - timedelta(days=540)).isoformat()
+
+    config = {
+        "strategy": "dual_ma",
+        "short_period": 5,
+        "long_period": 20,
+        "start_date": start_date,
+        "initial_cash": NORMALIZED_RESEARCH_NOTIONAL,
+        "assets": [{"symbol": "600000", "asset_class": "stock"}],
+    }
+
+    seed_id = _run_coroutine(
+        db.save_backtest_result(
+            config_json=json.dumps(config),
+            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+            final_equity=NORMALIZED_RESEARCH_NOTIONAL,
+            total_return=0.0,
+            sharpe=0.0,
+            max_dd=0.0,
+            equity_curve_json="[]",
+        )
+    )
+    saved = _run_coroutine(db.get_backtest_result(seed_id))
+    seed = (
+        saved
+        if isinstance(saved, dict)
+        else {
+            "id": seed_id,
+            "config_json": json.dumps(config),
+            "initial_cash": NORMALIZED_RESEARCH_NOTIONAL,
+        }
+    )
     return seed, config, start_date
 
 
