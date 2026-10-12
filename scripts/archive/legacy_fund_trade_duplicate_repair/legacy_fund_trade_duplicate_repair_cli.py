@@ -9,13 +9,13 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
-from server.runtime_paths import resolve_data_dir
-from server.services.legacy_fund_trade_duplicate_repair import (
+from scripts.archive.legacy_fund_trade_duplicate_repair.legacy_fund_trade_duplicate_repair_service import (
     LEGACY_FUND_TRADE_DUPLICATE_REPAIR_CONFIRMATION,
     LegacyFundTradeDuplicateRepairBlocked,
     LegacyFundTradeDuplicateRepairCommand,
     LegacyFundTradeDuplicateRepairService,
 )
+from server.runtime_paths import resolve_data_dir
 
 
 def main(

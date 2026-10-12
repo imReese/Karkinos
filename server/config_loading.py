@@ -198,7 +198,7 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
             provider = str(provider).strip().lower()
             if provider not in LEGACY_DATA_SOURCE_PROVIDERS:
                 raise ValueError(
-                    "legacy data_source.provider must be akshare or tushare"
+                    f"legacy data_source.provider must be one of {sorted(LEGACY_DATA_SOURCE_PROVIDERS)}"
                 )
             data["data_source"] = provider
             data.setdefault(
@@ -536,7 +536,9 @@ def _validate_core_runtime_values(data: dict) -> None:
         "data_source" in data
         and data["data_source"] not in LEGACY_DATA_SOURCE_PROVIDERS
     ):
-        raise ValueError("legacy data_source provider must be akshare or tushare")
+        raise ValueError(
+            f"legacy data_source provider must be one of {sorted(LEGACY_DATA_SOURCE_PROVIDERS)}"
+        )
     if "live_poll_interval" in data and (
         isinstance(data["live_poll_interval"], bool)
         or not isinstance(data["live_poll_interval"], int)

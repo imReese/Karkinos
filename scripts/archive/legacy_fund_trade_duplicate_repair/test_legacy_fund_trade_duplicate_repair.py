@@ -9,7 +9,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from server import legacy_fund_trade_duplicate_repair_cli as repair_cli
+from scripts.archive.legacy_fund_trade_duplicate_repair import (
+    legacy_fund_trade_duplicate_repair_cli as repair_cli,
+)
+from scripts.archive.legacy_fund_trade_duplicate_repair.legacy_fund_trade_duplicate_repair_service import (
+    LEGACY_FUND_TRADE_DUPLICATE_REPAIR_CONFIRMATION,
+    LegacyFundTradeDuplicateRepairBlocked,
+    LegacyFundTradeDuplicateRepairCommand,
+    LegacyFundTradeDuplicateRepairService,
+)
 from server.ledger.models import LedgerEntry
 from server.persistence import migrations
 from server.persistence.financial_facts_ledger import insert_ledger_entry_on_connection
@@ -23,12 +31,6 @@ from server.projections.legacy_fund_trade_duplicate_correction import (
     resolve_legacy_fund_trade_duplicate_exclusions,
 )
 from server.projections.service import build_portfolio_projection
-from server.services.legacy_fund_trade_duplicate_repair import (
-    LEGACY_FUND_TRADE_DUPLICATE_REPAIR_CONFIRMATION,
-    LegacyFundTradeDuplicateRepairBlocked,
-    LegacyFundTradeDuplicateRepairCommand,
-    LegacyFundTradeDuplicateRepairService,
-)
 
 pytestmark = pytest.mark.unit
 

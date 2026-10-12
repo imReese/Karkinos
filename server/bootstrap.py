@@ -198,7 +198,9 @@ def _parse_runtime_environment_value(env_name: str, raw_value: str) -> Any:
 
         provider = value.lower()
         if provider not in LEGACY_DATA_SOURCE_PROVIDERS:
-            raise ValueError(f"{env_name} must be akshare or tushare")
+            raise ValueError(
+                f"{env_name} must be one of {sorted(LEGACY_DATA_SOURCE_PROVIDERS)}"
+            )
         return provider
     if not value:
         raise ValueError(f"{env_name} must not be empty")

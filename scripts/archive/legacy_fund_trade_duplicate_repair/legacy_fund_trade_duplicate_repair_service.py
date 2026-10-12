@@ -12,16 +12,16 @@ from pathlib import Path
 from typing import Any
 
 from domain.portfolio_accounting import total_trade_fee
-from server.contracts.content_identity import content_fingerprint
-from server.contracts.financial_values import strip_financial_storage_mirrors
-from server.ledger.models import LedgerEntry
-from server.persistence.database_serialization import normalize_timestamp
-from server.persistence.legacy_fund_trade_duplicate_repair import (
+from scripts.archive.legacy_fund_trade_duplicate_repair.legacy_fund_trade_duplicate_repair_persistence import (
     LegacyFundTradeDuplicateRepairBlocked,
     LegacyFundTradeDuplicateRepairPersistence,
     LegacyFundTradeDuplicateRepairUnitOfWork,
     LegacyFundTradeDuplicateTransactionDecision,
 )
+from server.contracts.content_identity import content_fingerprint
+from server.contracts.financial_values import strip_financial_storage_mirrors
+from server.ledger.models import LedgerEntry
+from server.persistence.database_serialization import normalize_timestamp
 from server.persistence.portfolio_trade_repository import validate_trade_projection
 from server.persistence.valuation_transaction import ValuationTransactionWriter
 from server.projections.legacy_fund_trade_duplicate_correction import (

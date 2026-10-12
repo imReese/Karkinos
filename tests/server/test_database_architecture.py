@@ -170,7 +170,6 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "financial_facts_valuation.py": 2,
         "jobs.py": 1,
         "ledger_mutation_uow.py": 2,
-        "legacy_fund_trade_duplicate_repair.py": 1,
         "manual_order_ticket_uow.py": 2,
         "manual_trade_uow.py": 2,
         "market_daily_call_budget.py": 1,
