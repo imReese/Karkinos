@@ -13,7 +13,7 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.live import LiveDataFeed
 from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
-from domain.instrument import Instrument
+from domain.instrument import Instrument, make_index
 from domain.portfolio import Portfolio
 from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
@@ -285,6 +285,13 @@ class TradingScheduler(
         with self._lock:
             targets = list(self._watchlist)
             instruments = dict(self._instruments)
+
+        for asset in default_market_index_assets():
+            sym = Symbol(asset["symbol"])
+            if sym not in instruments:
+                targets.append((sym, AssetClass.INDEX))
+                instruments[sym] = make_index(str(sym), asset["display_name"])
+
         if not targets:
             return
         allow_remote_refresh = self._historical_backfill_remote_refresh_policy(

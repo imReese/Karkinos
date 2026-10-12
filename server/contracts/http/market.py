@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -155,6 +155,30 @@ class QuoteRefreshResponse(BaseModel):
     has_persistent_cache: bool = False
 
 
+class MarketSyncApiRequest(BaseModel):
+    universe: str = "core"
+    symbols: list[str] | None = None
+    start: str = "2020-01-01"
+    end: str | None = None
+    skip_calendar: bool = False
+    skip_quotes: bool = False
+    force: bool = False
+
+
+class MarketSyncApiResponse(BaseModel):
+    status: str
+    started_at: str
+    completed_at: str
+    duration_seconds: float
+    calendar_years: list[int] = Field(default_factory=list)
+    total_targets: int
+    successful_targets: int
+    failed_targets: int
+    quotes_updated: int
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    message: str
+
+
 __all__ = (
     "ConfirmedFundNavRefreshRequest",
     "ConfirmedFundNavRefreshResponse",
@@ -164,6 +188,8 @@ __all__ = (
     "MarketBarsBackfillItem",
     "MarketBarsBackfillRequest",
     "MarketBarsBackfillResponse",
+    "MarketSyncApiRequest",
+    "MarketSyncApiResponse",
     "QuoteRefreshRequest",
     "QuoteRefreshResponse",
     "QuoteRefreshSymbolResult",

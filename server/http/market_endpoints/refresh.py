@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from core.types import AssetClass
-from server.contracts.http.market import QuoteRefreshRequest, QuoteRefreshResponse
+from server.contracts.http.market import (
+    MarketSyncApiRequest,
+    MarketSyncApiResponse,
+    QuoteRefreshRequest,
+    QuoteRefreshResponse,
+)
 from server.http.market_endpoints.dependencies import RefreshEndpointDependencies
 
 
@@ -185,6 +190,95 @@ def create_router(dependencies: RefreshEndpointDependencies) -> APIRouter:
             message=message,
             real_data_available=bool(refreshed) or has_persistent_cache,
             has_persistent_cache=has_persistent_cache,
+        )
+
+    @r.post("/sync", response_model=MarketSyncApiResponse)
+    async def sync_market(request: MarketSyncApiRequest) -> MarketSyncApiResponse:
+        """Trigger comprehensive multi-asset market synchronization."""
+        from server.dependencies import get_app_state
+        from server.services.market_sync import (
+            MarketSyncRequest,
+            get_market_sync_service,
+        )
+
+        state = get_app_state()
+        service = get_market_sync_service(
+            data_dir=getattr(state, "data_dir", None),
+            db=getattr(state, "db", None),
+            config=getattr(state, "config", None),
+        )
+        sync_req = MarketSyncRequest(
+            universe=request.universe,
+            symbols=request.symbols,
+            start_date=request.start,
+            end_date=request.end,
+            skip_calendar=request.skip_calendar,
+            skip_quotes=request.skip_quotes,
+            force=request.force,
+        )
+        asyncio_mod = dependencies.asyncio_provider()
+        summary = await asyncio_mod.to_thread(service.sync, sync_req)
+        return MarketSyncApiResponse(
+            status=summary.status,
+            started_at=summary.started_at,
+            completed_at=summary.completed_at,
+            duration_seconds=summary.duration_seconds,
+            calendar_years=summary.calendar_years,
+            total_targets=summary.total_targets,
+            successful_targets=summary.successful_targets,
+            failed_targets=summary.failed_targets,
+            quotes_updated=summary.quotes_updated,
+            items=[
+                {
+                    "symbol": item.symbol,
+                    "asset_class": item.asset_class,
+                    "instrument_type": item.instrument_type,
+                    "bars_count": item.bars_count,
+                    "status": item.status,
+                    "error": item.error,
+                }
+                for item in summary.items
+            ],
+            message=f"Market sync {summary.status}: {summary.successful_targets}/{summary.total_targets} succeeded",
+        )
+
+    @r.get("/sync/status", response_model=MarketSyncApiResponse | None)
+    async def get_sync_status() -> MarketSyncApiResponse | None:
+        """Query the latest market synchronization outcome."""
+        from server.dependencies import get_app_state
+        from server.services.market_sync import get_market_sync_service
+
+        state = get_app_state()
+        service = get_market_sync_service(
+            data_dir=getattr(state, "data_dir", None),
+            db=getattr(state, "db", None),
+            config=getattr(state, "config", None),
+        )
+        summary = service.get_last_summary()
+        if summary is None:
+            return None
+        return MarketSyncApiResponse(
+            status=summary.status,
+            started_at=summary.started_at,
+            completed_at=summary.completed_at,
+            duration_seconds=summary.duration_seconds,
+            calendar_years=summary.calendar_years,
+            total_targets=summary.total_targets,
+            successful_targets=summary.successful_targets,
+            failed_targets=summary.failed_targets,
+            quotes_updated=summary.quotes_updated,
+            items=[
+                {
+                    "symbol": item.symbol,
+                    "asset_class": item.asset_class,
+                    "instrument_type": item.instrument_type,
+                    "bars_count": item.bars_count,
+                    "status": item.status,
+                    "error": item.error,
+                }
+                for item in summary.items
+            ],
+            message=f"Latest sync {summary.status}: {summary.successful_targets}/{summary.total_targets} succeeded",
         )
 
     return r
