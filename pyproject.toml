@@ -22,6 +22,7 @@ dependencies = [
     "xlrd>=2.0.2",
     "ruff>=0.16.9",
     "baostock>=0.9.4,<1",
+    "pytdx>=1.72",
 ]
 
 [project.optional-dependencies]

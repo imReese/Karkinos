@@ -43,6 +43,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -50,12 +51,12 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from importlib import metadata
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from core.types import InstrumentKey, InstrumentType
+from core.types import AssetClass, BarFrequency, InstrumentKey, InstrumentType, Symbol
 from data.market.contracts import (
     DailyBarCapability,
     DailyBarProviderUnavailableError,
@@ -64,6 +65,7 @@ from data.market.contracts import (
     ProviderDailyBarBatch,
     ProviderDailyBarRow,
 )
+from data.source import DataSource, ProviderQuote
 
 logger = logging.getLogger(__name__)
 
@@ -1144,3 +1146,340 @@ def prepare_tdx_runtime(
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
             config.write(output, space_around_delimiters=False)
         yield runtime / names[0]
+
+
+DEFAULT_TDX_HOSTS: tuple[tuple[str, int], ...] = (
+    ("117.34.114.16", 7709),
+    ("117.34.114.13", 7709),
+    ("117.34.114.14", 7709),
+    ("117.34.114.18", 7709),
+    ("117.34.114.20", 7709),
+    ("117.34.114.27", 7709),
+    ("117.34.114.17", 7709),
+)
+
+
+def resolve_tdx_market(symbol: Symbol | str, asset_class: AssetClass) -> int:
+    """Resolve TDX market id: 0 for Shenzhen (SZ), 1 for Shanghai (SH)."""
+    sym = str(symbol).strip()
+    if asset_class == AssetClass.INDEX:
+        return 0 if sym.startswith("399") else 1
+    if sym.startswith(("6", "9", "5", "7")):
+        return 1
+    if sym.startswith(("0", "3", "1", "2")):
+        return 0
+    return 1
+
+
+def is_tdx_supported_symbol(symbol: Symbol | str, asset_class: AssetClass) -> bool:
+    """Determine whether a symbol is supported on standard TDX Level 1 quote servers."""
+    sym = str(symbol).strip()
+    if not sym or not _SIX_DIGIT_SYMBOL.fullmatch(sym):
+        return False
+    if asset_class == AssetClass.STOCK and sym.startswith(("4", "8", "920")):
+        # Beijing exchange securities are not hosted on standard Level 1 HQ servers
+        return False
+    return True
+
+
+class TdxClientManager:
+    """Thread-local connection manager for pytdx socket connections."""
+
+    def __init__(
+        self,
+        hosts: tuple[tuple[str, int], ...] | None = None,
+    ) -> None:
+        self._hosts = hosts or DEFAULT_TDX_HOSTS
+        self._local = threading.local()
+
+    def execute(
+        self,
+        func: Callable[[Any], Any],
+        *args: Any,
+        timeout_seconds: float = 2.0,
+        **kwargs: Any,
+    ) -> Any:
+        try:
+            from pytdx.hq import TdxHq_API
+        except ImportError:
+            logger.debug("pytdx not installed; TDX connection unavailable")
+            return None
+
+        client = getattr(self._local, "client", None)
+        if client is not None and getattr(client, "client", None) is not None:
+            try:
+                res = func(client, *args, **kwargs)
+                if res is not None:
+                    return res
+            except Exception:
+                self.disconnect()
+
+        for host, port in self._hosts:
+            try:
+                api = TdxHq_API(heartbeat=False)
+                if api.connect(host, port, time_out=max(float(timeout_seconds), 0.5)):
+                    self._local.client = api
+                    try:
+                        res = func(api, *args, **kwargs)
+                        if res is not None:
+                            return res
+                    except Exception:
+                        self.disconnect()
+            except Exception:
+                continue
+        return None
+
+    def disconnect(self) -> None:
+        client = getattr(self._local, "client", None)
+        if client is not None:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+        self._local.client = None
+
+
+_DEFAULT_CLIENT_MANAGER = TdxClientManager()
+
+
+def fetch_tdx_realtime_quote(
+    symbol: Symbol | str,
+    asset_class: AssetClass = AssetClass.STOCK,
+    *,
+    timeout_seconds: float = 3.0,
+    client_manager: TdxClientManager | None = None,
+) -> dict[str, Any] | None:
+    """Fetch realtime quote directly from TDX Level 1 quote servers.
+
+    High-availability, ultra-low latency (<50ms), zero authentication required.
+    """
+    sym = str(symbol).strip()
+    if not is_tdx_supported_symbol(sym, asset_class):
+        return None
+
+    market = resolve_tdx_market(sym, asset_class)
+    mgr = client_manager or _DEFAULT_CLIENT_MANAGER
+
+    try:
+        quotes = mgr.execute(
+            lambda api: api.get_security_quotes([(market, sym)]),
+            timeout_seconds=timeout_seconds,
+        )
+        if not quotes or len(quotes) == 0:
+            return None
+
+        item = quotes[0]
+        # In TDX protocol, ETFs / funds / bonds have 3 decimal places (mills),
+        # but pytdx's _cal_price hardcoded / 100. Apply 0.1 scale factor.
+        is_3_dec = asset_class == AssetClass.FUND or sym.startswith(
+            ("15", "16", "51", "56", "58", "11", "12")
+        )
+        scale = 0.1 if is_3_dec else 1.0
+
+        raw_price = float(item.get("price") or 0)
+        raw_last_close = float(item.get("last_close") or 0)
+        if raw_price <= 0 and raw_last_close <= 0:
+            return None
+
+        price = round(raw_price * scale, 3 if is_3_dec else 2)
+        if price <= 0:
+            price = round(raw_last_close * scale, 3 if is_3_dec else 2)
+        if price <= 0:
+            return None
+
+        prev_close = (
+            round(raw_last_close * scale, 3 if is_3_dec else 2)
+            if raw_last_close > 0
+            else None
+        )
+        change = round(price - prev_close, 4) if prev_close else None
+        pct = (
+            round(change / prev_close, 6)
+            if prev_close and prev_close > 0 and change is not None
+            else None
+        )
+
+        lots = float(item["vol"]) if item.get("vol") is not None else None
+        volume = (
+            lots
+            if asset_class == AssetClass.INDEX
+            else (lots * 100.0 if lots is not None else None)
+        )
+        amount = float(item["amount"]) if item.get("amount") is not None else None
+
+        servertime = str(item.get("servertime") or "")
+        parts = servertime.split(":")
+        now = datetime.now(_SHANGHAI)
+        dt = None
+        if len(parts) >= 2:
+            try:
+                hh_str = parts[0]
+                hh = int(hh_str[-2:]) if len(hh_str) >= 2 else int(hh_str)
+                mm = int(parts[1])
+                ss = int(float(parts[2])) if len(parts) > 2 else 0
+                if 0 <= hh <= 23 and 0 <= mm <= 59 and 0 <= ss <= 59:
+                    dt = datetime.combine(
+                        now.date(), time(hh, mm, ss), tzinfo=_SHANGHAI
+                    )
+            except (ValueError, TypeError):
+                pass
+        if dt is None:
+            dt = now
+
+        exchange = "SH" if market == 1 else "SZ"
+        quote = ProviderQuote(
+            symbol=sym,
+            asset_class=asset_class,
+            provider_name=TDX_PROVIDER_NAME,
+            provider_symbol=f"{sym}.{exchange}",
+            price=price,
+            timestamp=dt.isoformat(timespec="seconds"),
+            volume=volume,
+            turnover=amount,
+            quote_source="tdx_realtime_quote",
+            display_name=None,
+            previous_close=prev_close,
+            change=change,
+            change_percent=pct,
+        )
+        return quote.to_payload()
+    except Exception:
+        logger.warning(
+            "TDX realtime quote fetch failed for %s (%s)",
+            sym,
+            asset_class.value,
+            exc_info=True,
+        )
+        return None
+
+
+class TdxSource(DataSource):
+    """通达信行情适配器，支持实时行情与日线。"""
+
+    def __init__(
+        self,
+        client_manager: TdxClientManager | None = None,
+    ) -> None:
+        self._manager = client_manager or _DEFAULT_CLIENT_MANAGER
+
+    def fetch_latest(
+        self,
+        symbol: Symbol,
+        asset_class: AssetClass = AssetClass.STOCK,
+    ) -> dict[str, Any] | None:
+        """Fetch latest realtime quote from TDX."""
+        return fetch_tdx_realtime_quote(
+            symbol,
+            asset_class=asset_class,
+            client_manager=self._manager,
+        )
+
+    def supports_bars(
+        self,
+        asset_class: AssetClass = AssetClass.STOCK,
+        frequency: BarFrequency = BarFrequency.DAILY,
+    ) -> bool:
+        """TDX supports Daily bars for Stock, ETF/Fund, and Index."""
+        if frequency == BarFrequency.DAILY:
+            return asset_class in (AssetClass.STOCK, AssetClass.FUND, AssetClass.INDEX)
+        return False
+
+    def fetch_bars(
+        self,
+        symbol: Symbol,
+        start: datetime,
+        end: datetime,
+        frequency: BarFrequency = BarFrequency.DAILY,
+        asset_class: AssetClass = AssetClass.STOCK,
+    ) -> pd.DataFrame:
+        """Fetch daily bars directly from TDX Level 1 server."""
+        if not self.supports_bars(asset_class, frequency):
+            raise NotImplementedError(
+                f"TdxSource does not support {frequency} bars for {asset_class}"
+            )
+
+        sym = str(symbol).strip()
+        if not is_tdx_supported_symbol(sym, asset_class):
+            return self._empty_bars_frame()
+
+        market = resolve_tdx_market(sym, asset_class)
+
+        def _fetch(api: Any) -> Any:
+            if asset_class == AssetClass.INDEX:
+                return api.get_index_bars(9, market, sym, 0, 800)
+            return api.get_security_bars(9, market, sym, 0, 800)
+
+        bars = self._manager.execute(_fetch)
+        if not bars:
+            return self._empty_bars_frame()
+
+        try:
+            from pytdx.hq import TdxHq_API
+
+            temp_api = TdxHq_API()
+            df = temp_api.to_df(bars)
+        except Exception:
+            df = pd.DataFrame(bars)
+
+        if df is None or df.empty:
+            return self._empty_bars_frame()
+
+        col_map = {
+            "datetime": "timestamp",
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+            "vol": "volume",
+            "amount": "amount",
+        }
+        df = df.rename(columns=col_map)
+        df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(_SHANGHAI)
+        cols = ["timestamp", "open", "high", "low", "close", "volume", "amount"]
+        df = df[[c for c in cols if c in df.columns]].sort_values("timestamp")
+
+        start_ts = (
+            pd.Timestamp(start).tz_localize(_SHANGHAI)
+            if start.tzinfo is None
+            else pd.Timestamp(start).tz_convert(_SHANGHAI)
+        )
+        end_ts = (
+            pd.Timestamp(end).tz_localize(_SHANGHAI)
+            if end.tzinfo is None
+            else pd.Timestamp(end).tz_convert(_SHANGHAI)
+        )
+        if end_ts.time() == time(0, 0):
+            end_ts = end_ts.replace(hour=23, minute=59, second=59)
+        mask = (df["timestamp"] >= start_ts) & (df["timestamp"] <= end_ts)
+        df = df.loc[mask].reset_index(drop=True)
+        df.attrs["provider_name"] = TDX_PROVIDER_NAME
+        df.attrs["data_source"] = TDX_PROVIDER_NAME
+        return df
+
+    def fetch_ticks(
+        self,
+        symbol: Symbol,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        raise NotImplementedError("TdxSource does not support tick-level data")
+
+    def list_symbols(self) -> list[Symbol]:
+        return []
+
+    @staticmethod
+    def _empty_bars_frame() -> pd.DataFrame:
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "amount",
+            ]
+        )
+
+
+TdxRealtimeSource = TdxSource
