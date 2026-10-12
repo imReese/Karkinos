@@ -98,24 +98,12 @@ class AiShadowResearchBaselineMixin:
             research_start_date=research_start_date,
             expected_dataset_snapshot_id=expected_dataset_snapshot_id,
         )
-        seed_initial_cash = float(
-            config.get("initial_cash") or seed.get("initial_cash") or 0
+        initial_cash = _resolve_baseline_initial_cash(
+            policy,
+            seed,
+            config,
+            initial_cash_override,
         )
-        if initial_cash_override is not None:
-            if (
-                policy.research_capital_mode
-                == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
-                or initial_cash_override <= 0
-            ):
-                raise ShadowResearchRejected("baseline_initial_cash_override_invalid")
-            initial_cash = float(initial_cash_override)
-        else:
-            initial_cash = (
-                NORMALIZED_RESEARCH_NOTIONAL
-                if policy.research_capital_mode
-                == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
-                else seed_initial_cash
-            )
         market_universe_snapshot = _load_baseline_universe(
             store=self._data_store,
             seed=seed,
@@ -127,77 +115,18 @@ class AiShadowResearchBaselineMixin:
             raise ShadowResearchRejected("baseline_universe_replay_missing")
         if expected_market_date is not None and market_date != expected_market_date:
             raise ShadowResearchRejected("baseline_market_date_replay_mismatch")
-        try:
-            trading_dates = verified_trading_dates(
-                self._db,
-                start_date=start_date,
-                end_date=market_date,
-            )
-            receipts = self._data_store.list_market_daily_ingestion_receipts(
-                start_date=start_date,
-                end_date=market_date,
-            )
-            providers = {str(item["provider_name"]) for item in receipts}
-            complete_chains = [
-                [item for item in receipts if item["provider_name"] == provider]
-                for provider in sorted(providers)
-                if [
-                    str(item["trade_date"])
-                    for item in receipts
-                    if item["provider_name"] == provider
-                ]
-                == trading_dates
-            ]
-            if not complete_chains:
-                raise MarketUniverseRejected(
-                    "full_market_daily_receipt_coverage_incomplete"
-                )
-            if len(complete_chains) != 1:
-                raise MarketUniverseRejected("research_daily_provider_ambiguous")
-            receipts = complete_chains[0]
-            market_binding = research_market_binding(receipts)
-            market_frames = load_research_market_frames(
-                self._data_store._root,
-                binding=market_binding,
-                symbols=[
-                    str(item["symbol"])
-                    for item in (market_universe_snapshot or {}).get("members", [])
-                ],
-                start_date=start_date,
-                end_date=market_date,
-            )
-            policy_rules = MarketUniversePolicy()
-            members = (market_universe_snapshot or {}).get("members", [])
-            ready = sum(
-                len(frame) >= policy_rules.minimum_history_rows
-                and frame["timestamp"].iloc[-1].date().isoformat() == market_date
-                for frame in market_frames.values()
-            )
-            if ready < max(policy_rules.panel_size, int(len(members) * 0.8)):
-                raise MarketUniverseRejected(
-                    "full_market_persisted_bar_coverage_incomplete"
-                )
-            if len(
-                set(receipts[-1]["symbols"]) & {str(item["symbol"]) for item in members}
-            ) < max(policy_rules.panel_size, int(len(members) * 0.9)):
-                raise MarketUniverseRejected(
-                    "full_market_latest_cross_section_incomplete"
-                )
-            market_universe_truth = build_market_universe_truth(
-                data_store=self._data_store,
-                snapshot=market_universe_snapshot or {},
-                start_date=start_date,
-                end_date=market_date,
-                initial_cash=initial_cash,
-                receipt_fingerprints=[
-                    str(item.get("receipt_fingerprint") or "") for item in receipts
-                ],
-                required_trading_date_count=len(trading_dates),
-                policy=policy_rules,
-                frames=market_frames,
-            )
-        except ValueError as exc:
-            raise ShadowResearchRejected(str(exc)) from exc
+        (
+            market_universe_truth,
+            market_binding,
+            market_frames,
+        ) = _verify_and_load_baseline_market_truth(
+            self._db,
+            self._data_store,
+            start_date=start_date,
+            market_date=market_date,
+            initial_cash=initial_cash,
+            market_universe_snapshot=market_universe_snapshot,
+        )
         research_panel = market_universe_truth["research_panel"]
         market_date = str(research_panel["trade_date"])
         panel_symbols = [str(symbol) for symbol in research_panel["symbols"]]
@@ -408,22 +337,11 @@ class AiShadowResearchBaselineMixin:
         )
         seed_result_id = seed.get("id")
         if seed_result_id is None:
-            seed_result_id = _run_coroutine(
-                self._db.save_backtest_result(
-                    config_json=json.dumps(config),
-                    initial_cash=float(initial_cash),
-                    final_equity=float(payload["final_equity"]),
-                    total_return=float(payload["total_return"]),
-                    sharpe=float(payload["sharpe"]),
-                    max_dd=float(payload["max_drawdown"]),
-                    equity_curve_json=json.dumps(payload.get("equity_curve", [])),
-                    annual_return=float(payload.get("annual_return", 0.0)),
-                    sortino=float(payload.get("sortino", 0.0)),
-                    win_rate=float(payload.get("win_rate", 0.0)),
-                    duration_days=int(payload.get("duration_days", 0)),
-                    metrics_json=json.dumps(payload.get("metrics_json", {})),
-                    cost_summary_json=json.dumps(payload.get("cost_summary_json", {})),
-                )
+            seed_result_id = _persist_seed_result(
+                self._db,
+                config=config,
+                initial_cash=float(initial_cash),
+                payload=payload,
             )
 
         return PreparedBaseline(
@@ -744,3 +662,138 @@ def _build_or_replay_baseline_snapshot(
     ):
         raise ShadowResearchRejected("baseline_dataset_snapshot_replay_mismatch")
     return snapshot
+
+
+def _resolve_baseline_initial_cash(
+    policy: ShadowResearchPolicy,
+    seed: Mapping[str, Any],
+    config: Mapping[str, Any],
+    initial_cash_override: float | None,
+) -> float:
+    seed_initial_cash = float(
+        config.get("initial_cash") or seed.get("initial_cash") or 0
+    )
+    if initial_cash_override is not None:
+        if (
+            policy.research_capital_mode
+            == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            or initial_cash_override <= 0
+        ):
+            raise ShadowResearchRejected("baseline_initial_cash_override_invalid")
+        return float(initial_cash_override)
+    return (
+        NORMALIZED_RESEARCH_NOTIONAL
+        if policy.research_capital_mode
+        == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+        else seed_initial_cash
+    )
+
+
+def _verify_and_load_baseline_market_truth(
+    db: Any,
+    store: Any,
+    *,
+    start_date: str,
+    market_date: str,
+    initial_cash: float,
+    market_universe_snapshot: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any], Any, dict[str, pd.DataFrame]]:
+    try:
+        trading_dates = verified_trading_dates(
+            db,
+            start_date=start_date,
+            end_date=market_date,
+        )
+        receipts = store.list_market_daily_ingestion_receipts(
+            start_date=start_date,
+            end_date=market_date,
+        )
+        providers = {str(item["provider_name"]) for item in receipts}
+        complete_chains = [
+            [item for item in receipts if item["provider_name"] == provider]
+            for provider in sorted(providers)
+            if [
+                str(item["trade_date"])
+                for item in receipts
+                if item["provider_name"] == provider
+            ]
+            == trading_dates
+        ]
+        if not complete_chains:
+            raise MarketUniverseRejected(
+                "full_market_daily_receipt_coverage_incomplete"
+            )
+        if len(complete_chains) != 1:
+            raise MarketUniverseRejected("research_daily_provider_ambiguous")
+        receipts = complete_chains[0]
+        market_binding = research_market_binding(receipts)
+        market_frames = load_research_market_frames(
+            store._root,
+            binding=market_binding,
+            symbols=[
+                str(item["symbol"])
+                for item in (market_universe_snapshot or {}).get("members", [])
+            ],
+            start_date=start_date,
+            end_date=market_date,
+        )
+        policy_rules = MarketUniversePolicy()
+        members = (market_universe_snapshot or {}).get("members", [])
+        ready = sum(
+            len(frame) >= policy_rules.minimum_history_rows
+            and frame["timestamp"].iloc[-1].date().isoformat() == market_date
+            for frame in market_frames.values()
+        )
+        if ready < max(policy_rules.panel_size, int(len(members) * 0.8)):
+            raise MarketUniverseRejected(
+                "full_market_persisted_bar_coverage_incomplete"
+            )
+        if len(
+            set(receipts[-1]["symbols"]) & {str(item["symbol"]) for item in members}
+        ) < max(policy_rules.panel_size, int(len(members) * 0.9)):
+            raise MarketUniverseRejected("full_market_latest_cross_section_incomplete")
+        market_universe_truth = build_market_universe_truth(
+            data_store=store,
+            snapshot=market_universe_snapshot or {},
+            start_date=start_date,
+            end_date=market_date,
+            initial_cash=initial_cash,
+            receipt_fingerprints=[
+                str(item.get("receipt_fingerprint") or "") for item in receipts
+            ],
+            required_trading_date_count=len(trading_dates),
+            policy=policy_rules,
+            frames=market_frames,
+        )
+    except ValueError as exc:
+        raise ShadowResearchRejected(str(exc)) from exc
+
+    return market_universe_truth, market_binding, market_frames
+
+
+def _persist_seed_result(
+    db: Any,
+    *,
+    config: Mapping[str, Any],
+    initial_cash: float,
+    payload: Mapping[str, Any],
+) -> int:
+    return int(
+        _run_coroutine(
+            db.save_backtest_result(
+                config_json=json.dumps(dict(config)),
+                initial_cash=float(initial_cash),
+                final_equity=float(payload["final_equity"]),
+                total_return=float(payload["total_return"]),
+                sharpe=float(payload["sharpe"]),
+                max_dd=float(payload["max_drawdown"]),
+                equity_curve_json=json.dumps(payload.get("equity_curve", [])),
+                annual_return=float(payload.get("annual_return", 0.0)),
+                sortino=float(payload.get("sortino", 0.0)),
+                win_rate=float(payload.get("win_rate", 0.0)),
+                duration_days=int(payload.get("duration_days", 0)),
+                metrics_json=json.dumps(payload.get("metrics_json", {})),
+                cost_summary_json=json.dumps(payload.get("cost_summary_json", {})),
+            )
+        )
+    )
