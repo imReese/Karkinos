@@ -7,7 +7,6 @@ import {
   useExplainabilityQuery,
   useDailyTradingPlanQuery,
   useTodayDecisionQuery,
-  useEtfRotationDashboardQuery,
   type EquityCurveRange,
 } from '../overview-feature-boundary';
 
@@ -32,9 +31,6 @@ export function useOverviewPageController() {
   );
   const tradingPlan = useDailyTradingPlanQuery(accountReady && !marketClosed);
   const todayDecision = useTodayDecisionQuery(accountReady && !marketClosed);
-  const etfRotation = useEtfRotationDashboardQuery(
-    accountReady && !marketClosed,
-  );
   return {
     copy,
     account,
@@ -42,7 +38,6 @@ export function useOverviewPageController() {
     explainability,
     tradingPlan,
     todayDecision,
-    etfRotation,
     marketClosed,
     analysisView,
     setAnalysisView,

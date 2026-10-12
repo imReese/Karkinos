@@ -16,9 +16,7 @@ import type {
   AccountStateResponse,
   DailyTradingPlanResponse,
   DecisionResponse,
-  EtfRotationDashboardResponse,
 } from '../overview-feature-boundary';
-import { EtfRotationOverviewPanel } from './overview-etf-rotation-panel';
 
 type QueryState<T> = {
   data?: T;
@@ -510,7 +508,6 @@ export function OverviewStrategyRecommendation({
   nextTradingDate,
   planQuery,
   todayQuery,
-  etfRotationQuery,
   positions,
   currentWeightBySymbol,
   className,
@@ -519,7 +516,6 @@ export function OverviewStrategyRecommendation({
   nextTradingDate?: string | null;
   planQuery: QueryState<DailyTradingPlanResponse>;
   todayQuery: QueryState<DecisionResponse>;
-  etfRotationQuery?: QueryState<EtfRotationDashboardResponse>;
   positions: AccountStateResponse['snapshot']['positions'];
   currentWeightBySymbol: Record<string, number>;
   className?: string;
@@ -560,14 +556,6 @@ export function OverviewStrategyRecommendation({
     effectivePlan?.plan_date ?? recommendation?.decision_date,
   );
 
-  const hasEtfData = Boolean(
-    etfRotationQuery?.data &&
-    etfRotationQuery.data.strategy &&
-    (etfRotationQuery.data.orders.length > 0 ||
-      etfRotationQuery.data.execution_status === 'already_executed_today' ||
-      etfRotationQuery.data.execution_status === 'portfolio_balanced'),
-  );
-
   return (
     <section
       data-testid="overview-strategy-recommendation"
@@ -580,13 +568,9 @@ export function OverviewStrategyRecommendation({
           meta={
             marketClosed
               ? undefined
-              : !showDetailedActions &&
-                  hasEtfData &&
-                  etfRotationQuery?.data?.rebalance?.as_of_date
-                ? formatDate(etfRotationQuery.data.rebalance.as_of_date)
-                : recommendationDate === '--'
-                  ? undefined
-                  : recommendationDate
+              : recommendationDate === '--'
+                ? undefined
+                : recommendationDate
           }
           className="overview-spotlight-heading w-full flex-row items-center justify-between sm:items-center"
           actions={
@@ -691,8 +675,6 @@ export function OverviewStrategyRecommendation({
             </a>
           </div>
         </div>
-      ) : hasEtfData ? (
-        <EtfRotationOverviewPanel data={etfRotationQuery!.data!} />
       ) : planQuery.isLoading && !plan ? (
         <div className="flex items-center gap-2.5 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5 text-[var(--app-text-secondary)]">
           <span className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)] opacity-70" />
@@ -731,7 +713,6 @@ export function OverviewStrategyRecommendation({
       ) : null}
 
       {!marketClosed &&
-      (showDetailedActions || !hasEtfData) &&
       plan &&
       (currentGeneration || !todayQuery.isLoading || quoteTooOldForReview) ? (
         <div

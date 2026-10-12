@@ -131,19 +131,41 @@ class EtfRotationAutomationService:
         cls._database_path = Path(db_path) if db_path is not None else None
 
     def load_aligned_market_data(self) -> dict[Symbol, pd.DataFrame]:
-        """Load and align daily bars for the core ETF rotation universe."""
+        """Load and align daily bars for the core ETF rotation universe from canonical store with fallback."""
         raw_dfs: dict[Symbol, pd.DataFrame] = {}
         for sym in ETF_METADATA:
-            p_parquet = self.data_dir / f"{sym}.parquet"
-            p_csv = self.data_dir / f"{sym}.csv"
+            df: pd.DataFrame | None = None
+            try:
+                from core.types import BarFrequency, InstrumentType
+                from data.store import DataStore
 
-            if p_parquet.exists():
-                df = pd.read_parquet(p_parquet)
-            elif p_csv.exists():
-                df = pd.read_csv(p_csv)
-            else:
-                logger.warning("Missing dataset for %s in %s", sym, self.data_dir)
-                continue
+                store_root = (
+                    self.data_dir.parent
+                    if self.data_dir.name == "real_etfs"
+                    else self.data_dir
+                )
+                store = DataStore(store_root)
+                loaded = store.load_bars(
+                    sym,
+                    frequency=BarFrequency.DAILY,
+                    instrument_type=InstrumentType.ETF,
+                )
+                if loaded is not None and not loaded.empty:
+                    df = loaded.copy()
+            except Exception as exc:
+                logger.debug("Canonical DataStore lookup bypassed for %s: %s", sym, exc)
+
+            if df is None or df.empty:
+                p_parquet = self.data_dir / f"{sym}.parquet"
+                p_csv = self.data_dir / f"{sym}.csv"
+
+                if p_parquet.exists():
+                    df = pd.read_parquet(p_parquet)
+                elif p_csv.exists():
+                    df = pd.read_csv(p_csv)
+                else:
+                    logger.warning("Missing dataset for %s in %s", sym, self.data_dir)
+                    continue
 
             df["timestamp"] = pd.to_datetime(df["timestamp"])
             df = (
@@ -261,7 +283,7 @@ class EtfRotationAutomationService:
                             high=px,
                             low=px,
                             close=px,
-                            volume=100,
+                            volume=Decimal(100),
                         )
                         strategy.on_data(ev)
 
@@ -308,9 +330,12 @@ class EtfRotationAutomationService:
                     eq = Decimal(str(total_equity))
                 else:
                     custom_holdings_val = sum(
-                        Decimal(holdings.get(sym, 0))
-                        * latest_prices.get(sym, Decimal(0))
-                        for sym in symbols
+                        (
+                            Decimal(holdings.get(sym, 0))
+                            * latest_prices.get(sym, Decimal(0))
+                            for sym in symbols
+                        ),
+                        Decimal(0),
                     )
                     eq = (
                         custom_holdings_val
@@ -596,10 +621,9 @@ class EtfRotationAutomationService:
             if benchmark_val is not None:
                 try:
                     benchmark_return = float(benchmark_val)
-                    benchmark_ret_pct: float | None = round(benchmark_return, 2)
-                    excess_ret_pct: float | None = round(
-                        cumulative_ret_pct - benchmark_ret_pct, 2
-                    )
+                    benchmark_ret = round(benchmark_return, 2)
+                    benchmark_ret_pct = benchmark_ret
+                    excess_ret_pct = round(cumulative_ret_pct - benchmark_ret, 2)
                 except (ValueError, TypeError):
                     benchmark_ret_pct = None
                     excess_ret_pct = None
@@ -707,7 +731,28 @@ class EtfRotationAutomationService:
             and last_exec.get("plan_id") == summary.get("plan_id")
         )
 
-        if is_already_executed_for_current_plan:
+        is_stale_bars = False
+        try:
+            from server.db import AppDatabase
+            from server.services.market_calendar_dates import project_market_session
+
+            resolved_db = AppDatabase(cls._database_path)
+            session = project_market_session(resolved_db)
+            latest_trade_date = session.get("latest_completed_trade_date")
+            as_of_date = summary.get("as_of_date")
+            if (
+                cls.default_data_dir == Path("data/store/real_etfs")
+                and latest_trade_date
+                and as_of_date
+                and as_of_date < latest_trade_date
+            ):
+                is_stale_bars = True
+        except Exception:
+            is_stale_bars = False
+
+        if is_stale_bars:
+            status = "unavailable"
+        elif is_already_executed_for_current_plan:
             status = "already_executed_today"
         elif has_orders:
             status = "ready_to_trade"
@@ -719,6 +764,7 @@ class EtfRotationAutomationService:
             has_orders
             and is_executable_capital
             and not is_already_executed_for_current_plan
+            and not is_stale_bars
         )
 
         return {
@@ -731,6 +777,7 @@ class EtfRotationAutomationService:
             "execution_status": status,
             "has_pending_orders": has_orders,
             "can_execute": can_execute,
+            "is_stale_data": is_stale_bars,
             "is_demo": is_demo,
             "is_custom_simulation": is_custom_simulation,
             "capital_quarantined": is_demo or is_custom_simulation,
@@ -776,6 +823,33 @@ class EtfRotationAutomationService:
                 "status": "rejected",
                 "plan_id": plan_id,
                 "message": "当前调仓计划基于自定义假设输入（非真实账户资产），已阻止记录为实盘调仓试算。",
+                "executed_orders": [],
+            }
+
+        is_stale_bars = False
+        try:
+            from server.db import AppDatabase
+            from server.services.market_calendar_dates import project_market_session
+
+            resolved_db = AppDatabase(cls._database_path)
+            session = project_market_session(resolved_db)
+            latest_trade_date = session.get("latest_completed_trade_date")
+            as_of_date = summary.get("as_of_date")
+            if (
+                cls.default_data_dir == Path("data/store/real_etfs")
+                and latest_trade_date
+                and as_of_date
+                and as_of_date < latest_trade_date
+            ):
+                is_stale_bars = True
+        except Exception:
+            is_stale_bars = False
+
+        if is_stale_bars:
+            return {
+                "status": "rejected",
+                "plan_id": plan_id,
+                "message": "当前行情数据未同步至最近已闭市交易日，已阻止执行实盘调仓试算。",
                 "executed_orders": [],
             }
 
