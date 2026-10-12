@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.types import AssetClass, Symbol
-from data.legacy_sources.tushare import TushareSource
+from data.providers.tushare import TushareSource
 from domain.instrument import make_etf
 from server.db import AppDatabase
 from server.scheduler_loop import runtime_quotes_from_persisted

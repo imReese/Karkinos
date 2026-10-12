@@ -16,16 +16,24 @@ from data.source import DataSource
 class ProviderRegistration:
     name: str
     upstream_group: str
-    legacy_factory: Callable[[], DataSource] | None = None
+    source_factory: Callable[[], DataSource] | None = None
     daily_bar_factory: Callable[[], DailyBarProvider] | None = None
+    legacy_factory: Callable[[], DataSource] | None = None
 
     def __post_init__(self) -> None:
         name = _text(self.name, field="name")
         upstream_group = _text(self.upstream_group, field="upstream_group")
-        if self.legacy_factory is None and self.daily_bar_factory is None:
+        factory = (
+            self.source_factory
+            if self.source_factory is not None
+            else self.legacy_factory
+        )
+        if factory is None and self.daily_bar_factory is None:
             raise ValueError("provider_registration_has_no_capabilities")
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "upstream_group", upstream_group)
+        object.__setattr__(self, "source_factory", factory)
+        object.__setattr__(self, "legacy_factory", factory)
 
 
 class ProviderRegistry:
@@ -56,13 +64,16 @@ class ProviderRegistry:
         except KeyError as exc:
             raise KeyError(f"provider_not_registered:{normalized}") from exc
 
-    def build_legacy(self, name: str) -> DataSource:
+    def build_source(self, name: str) -> DataSource:
         registration = self.registration(name)
-        if registration.legacy_factory is None:
+        if registration.source_factory is None:
             raise ValueError(
-                f"provider_legacy_capability_unavailable:{registration.name}"
+                f"provider_source_capability_unavailable:{registration.name}"
             )
-        return registration.legacy_factory()
+        return registration.source_factory()
+
+    def build_legacy(self, name: str) -> DataSource:
+        return self.build_source(name)
 
     def build_daily_bar(self, name: str) -> DailyBarProvider:
         registration = self.registration(name)
@@ -75,7 +86,7 @@ class ProviderRegistry:
         self._validate_descriptor(registration, descriptor)
         return provider
 
-    def legacy_sources(
+    def data_sources(
         self,
         candidates: tuple[str, ...] | None = None,
     ) -> dict[str, DataSource]:
@@ -83,10 +94,16 @@ class ProviderRegistry:
         result: dict[str, DataSource] = {}
         for name in names:
             registration = self._registrations.get(name)
-            if registration is None or registration.legacy_factory is None:
+            if registration is None or registration.source_factory is None:
                 continue
-            result[name] = registration.legacy_factory()
+            result[name] = registration.source_factory()
         return result
+
+    def legacy_sources(
+        self,
+        candidates: tuple[str, ...] | None = None,
+    ) -> dict[str, DataSource]:
+        return self.data_sources(candidates)
 
     def daily_bar_providers(
         self,
@@ -117,35 +134,34 @@ def build_provider_registry(
     include_tdx: bool = True,
 ) -> ProviderRegistry:
     """Build the supported local provider registry without performing I/O."""
-    from data.legacy_sources.market import AKShareSource
-    from data.legacy_sources.tushare import TushareSource
+    from data.providers.akshare import AKShareSource
     from data.providers.baostock import BaoStockDailyBarProvider
     from data.providers.eastmoney import AkshareDailyBarProvider
-    from data.providers.tdx import TdxDailyBarProvider
+    from data.providers.tdx import TdxDailyBarProvider, TdxSource
     from data.providers.tencent import (
         AkshareTencentDailyBarProvider,
         TencentDailyBarProvider,
         TencentSource,
     )
-    from data.providers.tushare import TushareDailyBarProvider
+    from data.providers.tushare import TushareDailyBarProvider, TushareSource
 
     registrations: list[ProviderRegistration] = [
         ProviderRegistration(
             name="tencent",
             upstream_group="tencent",
-            legacy_factory=TencentSource,
+            source_factory=TencentSource,
             daily_bar_factory=TencentDailyBarProvider,
         ),
         ProviderRegistration(
             name="akshare_tencent",
             upstream_group="tencent",
-            legacy_factory=TencentSource,
+            source_factory=TencentSource,
             daily_bar_factory=AkshareTencentDailyBarProvider,
         ),
         ProviderRegistration(
             name="akshare",
             upstream_group="eastmoney",
-            legacy_factory=AKShareSource,
+            source_factory=AKShareSource,
             daily_bar_factory=AkshareDailyBarProvider,
         ),
         ProviderRegistration(
@@ -159,7 +175,7 @@ def build_provider_registry(
             ProviderRegistration(
                 name="tushare",
                 upstream_group="tushare",
-                legacy_factory=lambda: TushareSource(token=tushare_token),
+                source_factory=lambda: TushareSource(token=tushare_token),
                 daily_bar_factory=lambda: TushareDailyBarProvider(token=tushare_token),
             )
         )
@@ -168,21 +184,25 @@ def build_provider_registry(
             ProviderRegistration(
                 name="tdx",
                 upstream_group="tdx",
+                source_factory=TdxSource,
                 daily_bar_factory=TdxDailyBarProvider,
             )
         )
     return ProviderRegistry(tuple(registrations))
 
 
-def configured_legacy_sources(
+def configured_data_sources(
     config: object,
     *,
     candidates: tuple[str, ...] | None = None,
 ) -> dict[str, DataSource]:
     return build_provider_registry(
         tushare_token=str(getattr(config, "tushare_token", "") or ""),
-        include_tdx=False,
-    ).legacy_sources(candidates)
+        include_tdx=True,
+    ).data_sources(candidates)
+
+
+configured_legacy_sources = configured_data_sources
 
 
 def _text(value: Any, *, field: str) -> str:

@@ -36,6 +36,7 @@ def test_free_cn_research_policy_prioritizes_zero_subscription_daily_sources() -
     assert route.require_independent_upstream
     assert route.price_basis == "unadjusted"
     assert FREE_CN_RESEARCH_V1.route(MarketDataUseCase.REALTIME_QUOTES).candidates == (
+        "tdx",
         "tencent",
         "akshare",
         "tushare",
@@ -44,11 +45,15 @@ def test_free_cn_research_policy_prioritizes_zero_subscription_daily_sources() -
 
 def test_use_cases_have_distinct_source_routes() -> None:
     assert CN_RESEARCH_V1.route(MarketDataUseCase.REALTIME_QUOTES).candidates == (
+        "tdx",
         "tushare",
         "tencent",
         "akshare",
     )
-    assert CN_RESEARCH_V1.route(MarketDataUseCase.INDEX_BARS).candidates == ("akshare",)
+    assert CN_RESEARCH_V1.route(MarketDataUseCase.INDEX_BARS).candidates == (
+        "tdx",
+        "akshare",
+    )
     assert CN_RESEARCH_V1.route(MarketDataUseCase.FUND_NAV).candidates == (
         "tushare",
         "akshare",

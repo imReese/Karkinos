@@ -635,7 +635,7 @@ class TencentSource(DataSource):
         return []
 
 
-def legacy_index_daily(ak, *, symbol: str, start_date: str, end_date: str):
+def fetch_tencent_index_daily(ak, *, symbol: str, start_date: str, end_date: str):
     """Fetch the AKShare wrapped Tencent index daily series."""
     with provider_network_env():
         return ak.stock_zh_index_daily_tx(
@@ -643,3 +643,6 @@ def legacy_index_daily(ak, *, symbol: str, start_date: str, end_date: str):
             start_date=start_date,
             end_date=end_date,
         )
+
+
+legacy_index_daily = fetch_tencent_index_daily

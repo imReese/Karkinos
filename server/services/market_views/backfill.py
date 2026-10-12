@@ -361,9 +361,9 @@ def extract_provider_display_name(payload: dict | None) -> str | None:
 
 
 def _metadata_sources(config, use_case):
-    from data.source_routing import legacy_sources_for_use_case
+    from data.source_routing import data_sources_for_use_case
 
-    return legacy_sources_for_use_case(config, use_case)
+    return data_sources_for_use_case(config, use_case)
 
 
 def _ordered_metadata_sources(config, use_case, sources):

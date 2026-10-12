@@ -336,7 +336,7 @@ def _aware_utc(value: datetime, *, field: str) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def legacy_daily_bars(
+def fetch_eastmoney_daily_bars(
     ak,
     retry,
     *,
@@ -346,9 +346,9 @@ def legacy_daily_bars(
     end_date: str,
     adjust: str | None = None,
 ):
-    """Fetch the legacy Eastmoney stock, ETF, or index history endpoint."""
+    """Fetch Eastmoney stock, ETF, or index history endpoint."""
     if endpoint not in {"stock_zh_a_hist", "fund_etf_hist_em", "index_zh_a_hist"}:
-        raise ValueError(f"eastmoney_legacy_daily_endpoint_unsupported:{endpoint}")
+        raise ValueError(f"eastmoney_daily_endpoint_unsupported:{endpoint}")
     kwargs = {
         "symbol": symbol,
         "period": "daily",
@@ -360,49 +360,78 @@ def legacy_daily_bars(
     return retry(getattr(ak, endpoint), **kwargs)
 
 
-def legacy_minute_bars(ak, retry, *, asset_class: str, symbol: str, period: str):
-    """Fetch legacy Eastmoney stock or ETF minute history."""
+legacy_daily_bars = fetch_eastmoney_daily_bars
+
+
+def fetch_eastmoney_minute_bars(
+    ak, retry, *, asset_class: str, symbol: str, period: str
+):
+    """Fetch Eastmoney stock or ETF minute history."""
     if asset_class == "stock":
         endpoint = ak.stock_zh_a_hist_min_em
     elif asset_class == "fund":
         endpoint = ak.fund_etf_hist_min_em
     else:
-        raise ValueError(f"eastmoney_legacy_minute_asset_unsupported:{asset_class}")
+        raise ValueError(f"eastmoney_minute_asset_unsupported:{asset_class}")
     return retry(endpoint, symbol=symbol, period=period)
 
 
-def legacy_stock_master(ak):
+legacy_minute_bars = fetch_eastmoney_minute_bars
+
+
+def fetch_eastmoney_stock_master(ak):
     with provider_network_env():
         return ak.stock_zh_a_spot_em()
 
 
-def legacy_stock_bid_ask(ak, retry, *, symbol: str):
+legacy_stock_master = fetch_eastmoney_stock_master
+
+
+def fetch_eastmoney_stock_bid_ask(ak, retry, *, symbol: str):
     return retry(ak.stock_bid_ask_em, symbol=symbol, retry_delay_seconds=0)
 
 
-def legacy_etf_spot(ak, retry):
+legacy_stock_bid_ask = fetch_eastmoney_stock_bid_ask
+
+
+def fetch_eastmoney_etf_spot(ak, retry):
     return retry(ak.fund_etf_spot_em)
 
 
-def legacy_index_spot(ak, *, symbol: str):
+legacy_etf_spot = fetch_eastmoney_etf_spot
+
+
+def fetch_eastmoney_index_spot(ak, *, symbol: str):
     with provider_network_env():
         return ak.stock_zh_index_spot_em(symbol=symbol)
 
 
-def legacy_fund_name_map(ak):
+legacy_index_spot = fetch_eastmoney_index_spot
+
+
+def fetch_eastmoney_fund_name_map(ak):
     with provider_network_env():
         return ak.fund_name_em()
 
 
-def legacy_open_end_fund_info(ak, retry, *, symbol: str):
+legacy_fund_name_map = fetch_eastmoney_fund_name_map
+
+
+def fetch_eastmoney_open_end_fund_info(ak, retry, *, symbol: str):
     return retry(ak.fund_open_fund_info_em, symbol=symbol, indicator="单位净值走势")
 
 
-def legacy_open_end_fund_daily(ak, retry):
+legacy_open_end_fund_info = fetch_eastmoney_open_end_fund_info
+
+
+def fetch_eastmoney_open_end_fund_daily(ak, retry):
     return retry(ak.fund_open_fund_daily_em)
 
 
-def legacy_fund_page(*, fund_code: str) -> str:
+legacy_open_end_fund_daily = fetch_eastmoney_open_end_fund_daily
+
+
+def fetch_eastmoney_fund_page(*, fund_code: str) -> str:
     import requests
 
     url = f"https://fund.eastmoney.com/pingzhongdata/{fund_code}.js"
@@ -410,6 +439,9 @@ def legacy_fund_page(*, fund_code: str) -> str:
         response = requests.get(url, timeout=3)
     response.raise_for_status()
     return response.text
+
+
+legacy_fund_page = fetch_eastmoney_fund_page
 
 
 def fetch_eastmoney_realtime_quote_via_tushare(ts_code: str) -> dict | None:

@@ -15,6 +15,7 @@ def test_registry_without_paid_or_private_credentials_keeps_free_daily_sources()
 ):
     registry = build_provider_registry(tushare_token="", include_tdx=False)
     assert registry.names == ("akshare", "akshare_tencent", "baostock", "tencent")
+    assert set(registry.data_sources()) == {"akshare", "akshare_tencent", "tencent"}
     assert set(registry.legacy_sources()) == {"akshare", "akshare_tencent", "tencent"}
     providers = dict(
         registry.daily_bar_providers(
@@ -40,9 +41,15 @@ def test_registry_adds_tushare_only_when_credentials_are_available() -> None:
         "tencent",
         "tushare",
     )
+    assert tuple(registry.data_sources(("tushare", "akshare", "tdx"))) == (
+        "tushare",
+        "akshare",
+        "tdx",
+    )
     assert tuple(registry.legacy_sources(("tushare", "akshare", "tdx"))) == (
         "tushare",
         "akshare",
+        "tdx",
     )
 
 
@@ -60,10 +67,13 @@ def test_registry_builds_immutable_adapters_from_same_provider_identity() -> Non
     assert tushare.descriptor == TUSHARE_DAILY_BAR_DESCRIPTOR
 
 
-def test_tdx_is_not_a_legacy_datasource() -> None:
+def test_tdx_provides_data_source() -> None:
+    from data.providers.tdx import TdxSource
+
     registry = build_provider_registry(tushare_token="fixture", include_tdx=True)
-    with pytest.raises(ValueError, match="provider_legacy_capability_unavailable:tdx"):
-        registry.build_legacy("tdx")
+    tdx = registry.build_source("tdx")
+    assert isinstance(tdx, TdxSource)
+    assert isinstance(registry.build_legacy("tdx"), TdxSource)
 
 
 def test_missing_provider_is_explicit() -> None:

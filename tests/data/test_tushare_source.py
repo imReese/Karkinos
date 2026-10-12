@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from core.types import AssetClass, BarFrequency, Symbol
-from data.legacy_sources.tushare import TushareSource
+from data.providers.tushare import TushareSource
 
 
 def test_tushare_bars_capability_is_stock_daily_only():

@@ -108,7 +108,7 @@ FREE_CN_RESEARCH_V1 = MarketSourcePolicy(
         ),
         (
             MarketDataUseCase.REALTIME_QUOTES,
-            SourceRoute(candidates=("tencent", "akshare", "tushare")),
+            SourceRoute(candidates=("tdx", "tencent", "akshare", "tushare")),
         ),
         (
             MarketDataUseCase.FUND_NAV,
@@ -124,7 +124,7 @@ FREE_CN_RESEARCH_V1 = MarketSourcePolicy(
         ),
         (
             MarketDataUseCase.INDEX_BARS,
-            SourceRoute(candidates=("akshare",)),
+            SourceRoute(candidates=("tdx", "akshare")),
         ),
         (
             MarketDataUseCase.GOLD_BARS,
@@ -152,7 +152,7 @@ CN_RESEARCH_V1 = MarketSourcePolicy(
         ),
         (
             MarketDataUseCase.REALTIME_QUOTES,
-            SourceRoute(candidates=("tushare", "tencent", "akshare")),
+            SourceRoute(candidates=("tdx", "tushare", "tencent", "akshare")),
         ),
         (
             MarketDataUseCase.FUND_NAV,
@@ -168,7 +168,7 @@ CN_RESEARCH_V1 = MarketSourcePolicy(
         ),
         (
             MarketDataUseCase.INDEX_BARS,
-            SourceRoute(candidates=("akshare",)),
+            SourceRoute(candidates=("tdx", "akshare")),
         ),
         (
             MarketDataUseCase.GOLD_BARS,
@@ -202,7 +202,7 @@ def resolve_market_source_policy(policy_id: str | None) -> MarketSourcePolicy:
     suffix = ".v1"
     if normalized.startswith(prefix) and normalized.endswith(suffix):
         provider = normalized[len(prefix) : -len(suffix)]
-        if provider in {"akshare", "tushare"}:
+        if provider in {"akshare", "tushare", "tdx"}:
             return legacy_preferred_provider_policy(provider)
     raise ValueError(f"market_source_policy_unsupported:{normalized}")
 
@@ -248,7 +248,7 @@ def source_policy_for_config(config: object) -> MarketSourcePolicy:
     legacy_provider = getattr(config, "data_source", None)
     if legacy_provider:
         normalized = str(legacy_provider).strip().lower()
-        if normalized not in {"akshare", "tushare"}:
+        if normalized not in {"akshare", "tushare", "tdx"}:
             raise ValueError(f"legacy_market_source_provider_unsupported:{normalized}")
         return legacy_preferred_provider_policy(normalized)
     return FREE_CN_RESEARCH_V1

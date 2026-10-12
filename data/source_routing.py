@@ -70,21 +70,30 @@ def route_for_config(
     return source_policy_for_config(config).route(use_case)
 
 
-def configured_legacy_provider_names(
+def configured_data_provider_names(
     config: object,
     use_case: MarketDataUseCase,
+    *,
+    include_tdx: bool = False,
 ) -> tuple[str, ...]:
     route = route_for_config(config, use_case)
-    registry = provider_registry_for_config(config, include_tdx=False)
-    available = set(registry.legacy_sources())
+    registry = provider_registry_for_config(config, include_tdx=include_tdx)
+    available = set(registry.data_sources())
     return tuple(name for name in route.candidates if name in available)
 
 
-def preferred_legacy_provider(
+configured_legacy_provider_names = configured_data_provider_names
+
+
+def preferred_data_provider(
     config: object,
     use_case: MarketDataUseCase,
+    *,
+    include_tdx: bool = False,
 ) -> str:
-    candidates = configured_legacy_provider_names(config, use_case)
+    candidates = configured_data_provider_names(
+        config, use_case, include_tdx=include_tdx
+    )
     if not candidates:
         raise MarketSourceRoutingError(
             f"market_source_route_unavailable:{use_case.value}"
@@ -92,11 +101,14 @@ def preferred_legacy_provider(
     return candidates[0]
 
 
-def legacy_sources_for_use_case(
+preferred_legacy_provider = preferred_data_provider
+
+
+def data_sources_for_use_case(
     config: object,
     use_case: MarketDataUseCase,
 ) -> dict[str, DataSource]:
-    """Resolve one legacy adapter route through the injectable manager seam."""
+    """Resolve one data adapter route through the injectable manager seam."""
     route = route_for_config(config, use_case)
     # Import lazily so route tests and extension providers can replace the
     # historical build_sources seam without contacting real providers.
@@ -113,6 +125,9 @@ def legacy_sources_for_use_case(
             f"market_source_route_unavailable:{use_case.value}"
         )
     return resolved
+
+
+legacy_sources_for_use_case = data_sources_for_use_case
 
 
 def resolve_daily_bar_verification_pairs(

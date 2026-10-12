@@ -12,8 +12,8 @@ import pandas as pd
 import pytest
 
 from core.types import AssetClass, BarFrequency, Symbol
-from data.legacy_sources import market as akshare_source_module
-from data.legacy_sources.market import AKShareSource
+from data.providers import akshare as akshare_source_module
+from data.providers.akshare import AKShareSource
 
 
 @pytest.fixture
@@ -135,7 +135,7 @@ class TestAKShareMultiAsset:
         assert source.supports_bars(AssetClass.GOLD, BarFrequency.MIN_1) is False
         assert source.supports_bars(AssetClass.STOCK, BarFrequency.WEEKLY) is False
 
-    @patch("data.legacy_sources.market.AKShareSource.fetch_bars")
+    @patch("data.providers.akshare.AKShareSource.fetch_bars")
     def test_stock_uses_stock_zh_a_hist(self, mock_fetch, source):
         """A 股应调用 stock_zh_a_hist。"""
         # 直接测试内部逻辑
@@ -143,7 +143,7 @@ class TestAKShareMultiAsset:
 
     def test_stock_column_mapping(self, source):
         """A 股列名映射：中文 → 英文。"""
-        from data.legacy_sources.market import _HIST_CONFIG
+        from data.providers.akshare import _HIST_CONFIG
 
         config = _HIST_CONFIG[AssetClass.STOCK]
         _, col_map, has_volume = config
@@ -154,7 +154,7 @@ class TestAKShareMultiAsset:
 
     def test_etf_column_mapping(self, source):
         """ETF 列名映射。"""
-        from data.legacy_sources.market import _HIST_CONFIG
+        from data.providers.akshare import _HIST_CONFIG
 
         config = _HIST_CONFIG[AssetClass.FUND]
         _, col_map, has_volume = config
@@ -163,7 +163,7 @@ class TestAKShareMultiAsset:
 
     def test_gold_column_mapping(self, source):
         """黄金列名映射（英文，无成交量）。"""
-        from data.legacy_sources.market import _HIST_CONFIG
+        from data.providers.akshare import _HIST_CONFIG
 
         config = _HIST_CONFIG[AssetClass.GOLD]
         _, col_map, has_volume = config
@@ -172,7 +172,7 @@ class TestAKShareMultiAsset:
 
     def test_bond_column_mapping(self, source):
         """债券列名映射（英文，无成交量）。"""
-        from data.legacy_sources.market import _HIST_CONFIG
+        from data.providers.akshare import _HIST_CONFIG
 
         config = _HIST_CONFIG[AssetClass.BOND]
         _, col_map, has_volume = config
@@ -181,7 +181,7 @@ class TestAKShareMultiAsset:
 
     def test_normalize_stock_bars(self, source):
         """A 股 normalize：中文列名正确映射。"""
-        from data.legacy_sources.market import _HIST_CONFIG
+        from data.providers.akshare import _HIST_CONFIG
 
         col_map = _HIST_CONFIG[AssetClass.STOCK][1]
         df = _make_stock_df()
@@ -195,7 +195,7 @@ class TestAKShareMultiAsset:
 
     def test_normalize_gold_bars_fills_volume(self, source):
         """黄金 normalize：无成交量时自动填充 volume=0。"""
-        from data.legacy_sources.market import _HIST_CONFIG
+        from data.providers.akshare import _HIST_CONFIG
 
         col_map = _HIST_CONFIG[AssetClass.GOLD][1]
         df = _make_gold_df()
@@ -208,7 +208,7 @@ class TestAKShareMultiAsset:
 
     def test_normalize_bond_bars_fills_volume(self, source):
         """债券 normalize：无成交量时自动填充 volume=0。"""
-        from data.legacy_sources.market import _HIST_CONFIG
+        from data.providers.akshare import _HIST_CONFIG
 
         col_map = _HIST_CONFIG[AssetClass.BOND][1]
         df = _make_bond_df()
@@ -245,7 +245,7 @@ class TestAKShareMultiAsset:
         assert frame.empty
 
     @patch("akshare.fund_etf_hist_em")
-    @patch("data.legacy_sources.market.AKShareSource._open_end_fund_name_map")
+    @patch("data.providers.akshare.AKShareSource._open_end_fund_name_map")
     def test_fetch_bars_etf_calls_akshare(self, mock_name_map, mock_ak, source):
         """ETF fetch_bars 调用 akshare.fund_etf_hist_em。"""
         mock_name_map.return_value = {}
@@ -535,7 +535,7 @@ class TestAKShareFetchLatest:
         )
 
     @patch("akshare.fund_etf_spot_em")
-    @patch("data.legacy_sources.market.AKShareSource._open_end_fund_name_map")
+    @patch("data.providers.akshare.AKShareSource._open_end_fund_name_map")
     def test_fetch_latest_etf(self, mock_name_map, mock_ak, source):
         """ETF 实时行情快照。"""
         mock_name_map.return_value = {}
@@ -556,7 +556,7 @@ class TestAKShareFetchLatest:
         assert result["metadata"]["upstream_group"] == "eastmoney"
 
     @patch("akshare.fund_open_fund_daily_em")
-    @patch("data.legacy_sources.market.AKShareSource._open_end_fund_name_map")
+    @patch("data.providers.akshare.AKShareSource._open_end_fund_name_map")
     def test_fetch_latest_open_end_fund_by_name(
         self, mock_name_map, mock_daily, source
     ):
@@ -585,7 +585,7 @@ class TestAKShareFetchLatest:
     @patch("requests.get")
     @patch("akshare.fund_etf_spot_em")
     @patch("akshare.fund_open_fund_daily_em")
-    @patch("data.legacy_sources.market.AKShareSource._open_end_fund_name_map")
+    @patch("data.providers.akshare.AKShareSource._open_end_fund_name_map")
     def test_fetch_latest_open_end_fund_by_code(
         self, mock_name_map, mock_daily, mock_etf, mock_get, source
     ):
@@ -622,7 +622,7 @@ class TestAKShareFetchLatest:
     @patch("requests.get")
     @patch("akshare.fund_etf_spot_em")
     @patch("akshare.fund_open_fund_daily_em")
-    @patch("data.legacy_sources.market.AKShareSource._open_end_fund_name_map")
+    @patch("data.providers.akshare.AKShareSource._open_end_fund_name_map")
     def test_fetch_latest_open_end_fund_code_skips_name_map(
         self, mock_name_map, mock_daily, mock_etf, mock_get, source
     ):
@@ -675,7 +675,7 @@ class TestAKShareFetchLatest:
     @patch("requests.get")
     @patch("akshare.fund_etf_spot_em")
     @patch("akshare.fund_open_fund_daily_em")
-    @patch("data.legacy_sources.market.AKShareSource._open_end_fund_name_map")
+    @patch("data.providers.akshare.AKShareSource._open_end_fund_name_map")
     def test_fetch_latest_open_end_fund_falls_back_to_single_fund_page(
         self, mock_name_map, mock_daily, mock_etf, mock_get, source
     ):
@@ -780,7 +780,7 @@ class TestAKShareFetchLatest:
             "transport_sdk": "akshare",
         }
 
-    @patch("data.legacy_sources.market.AKShareSource._open_end_fund_name_map")
+    @patch("data.providers.akshare.AKShareSource._open_end_fund_name_map")
     def test_resolve_open_end_fund_code_accepts_alias_name(self, mock_name_map, source):
         """缺少“发起/发起式”的输入别名也应解析到标准基金代码。"""
         mock_name_map.return_value = {

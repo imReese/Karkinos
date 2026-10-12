@@ -60,8 +60,8 @@ def build_sources(
                 ordered.append(name)
     return build_provider_registry(
         tushare_token=tushare_token,
-        include_tdx=False,
-    ).legacy_sources(tuple(ordered))
+        include_tdx=True,
+    ).data_sources(tuple(ordered))
 
 
 def build_sources_for_config(config: object) -> dict[str, DataSource]:

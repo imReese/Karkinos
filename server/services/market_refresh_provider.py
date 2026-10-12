@@ -9,7 +9,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 
 from core.types import AssetClass, Symbol
 from data.source_policy import MarketDataUseCase
-from data.source_routing import legacy_sources_for_use_case
+from data.source_routing import data_sources_for_use_case
 from server.services.market_refresh_errors import provider_error_code
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def _quote_sources(*, config, use_case: MarketDataUseCase):
     """Resolve quote adapters for one source-policy use case."""
-    return legacy_sources_for_use_case(config, use_case)
+    return data_sources_for_use_case(config, use_case)
 
 
 def fetch_provider_latest_with_timeout(
