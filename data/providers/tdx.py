@@ -1404,10 +1404,42 @@ class TdxSource(DataSource):
 
         market = resolve_tdx_market(sym, asset_class)
 
+        start_ts = (
+            pd.Timestamp(start).tz_localize(_SHANGHAI)
+            if start.tzinfo is None
+            else pd.Timestamp(start).tz_convert(_SHANGHAI)
+        )
+        end_ts = (
+            pd.Timestamp(end).tz_localize(_SHANGHAI)
+            if end.tzinfo is None
+            else pd.Timestamp(end).tz_convert(_SHANGHAI)
+        )
+        if end_ts.time() == time(0, 0):
+            end_ts = end_ts.replace(hour=23, minute=59, second=59)
+
         def _fetch(api: Any) -> Any:
-            if asset_class == AssetClass.INDEX:
-                return api.get_index_bars(9, market, sym, 0, 800)
-            return api.get_security_bars(9, market, sym, 0, 800)
+            collected: list[Any] = []
+            start_offset = 0
+            for _ in range(10):  # Up to 8,000 bars (~32 years)
+                if asset_class == AssetClass.INDEX:
+                    batch = api.get_index_bars(9, market, sym, start_offset, 800)
+                else:
+                    batch = api.get_security_bars(9, market, sym, start_offset, 800)
+                if not batch:
+                    break
+                collected = batch + collected
+                if len(batch) < 800:
+                    break
+                earliest = batch[0].get("datetime", "")
+                if earliest:
+                    try:
+                        earliest_dt = pd.Timestamp(earliest).tz_localize(_SHANGHAI)
+                        if earliest_dt <= start_ts:
+                            break
+                    except Exception:
+                        pass
+                start_offset += 800
+            return collected
 
         bars = self._manager.execute(_fetch)
         if not bars:
@@ -1434,23 +1466,29 @@ class TdxSource(DataSource):
             "amount": "amount",
         }
         df = df.rename(columns=col_map)
-        df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(_SHANGHAI)
-        cols = ["timestamp", "open", "high", "low", "close", "volume", "amount"]
-        df = df[[c for c in cols if c in df.columns]].sort_values("timestamp")
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        if frequency == BarFrequency.DAILY:
+            df["timestamp"] = df["timestamp"].dt.normalize()
+            filter_start = (
+                pd.Timestamp(start).tz_localize(None).floor("D")
+                if getattr(start, "tzinfo", None) is not None
+                else pd.Timestamp(start).floor("D")
+            )
+            filter_end = (
+                pd.Timestamp(end).tz_localize(None).floor("D")
+                if getattr(end, "tzinfo", None) is not None
+                else pd.Timestamp(end).floor("D")
+            )
+        else:
+            df["timestamp"] = df["timestamp"].dt.tz_localize(_SHANGHAI)
+            filter_start = start_ts
+            filter_end = end_ts
 
-        start_ts = (
-            pd.Timestamp(start).tz_localize(_SHANGHAI)
-            if start.tzinfo is None
-            else pd.Timestamp(start).tz_convert(_SHANGHAI)
-        )
-        end_ts = (
-            pd.Timestamp(end).tz_localize(_SHANGHAI)
-            if end.tzinfo is None
-            else pd.Timestamp(end).tz_convert(_SHANGHAI)
-        )
-        if end_ts.time() == time(0, 0):
-            end_ts = end_ts.replace(hour=23, minute=59, second=59)
-        mask = (df["timestamp"] >= start_ts) & (df["timestamp"] <= end_ts)
+        df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+        cols = ["timestamp", "open", "high", "low", "close", "volume", "amount"]
+        df = df[[c for c in cols if c in df.columns]]
+
+        mask = (df["timestamp"] >= filter_start) & (df["timestamp"] <= filter_end)
         df = df.loc[mask].reset_index(drop=True)
         df.attrs["provider_name"] = TDX_PROVIDER_NAME
         df.attrs["data_source"] = TDX_PROVIDER_NAME

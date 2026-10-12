@@ -180,10 +180,18 @@ class OpenEndFundMixin:
         df["high"] = df["close"]
         df["low"] = df["close"]
         df["volume"] = 0.0
-        df["amount"] = 0.0
+        start_ts = (
+            pd.Timestamp(start).tz_localize(None)
+            if getattr(start, "tzinfo", None) is not None
+            else pd.Timestamp(start)
+        )
+        end_ts = (
+            pd.Timestamp(end).tz_localize(None)
+            if getattr(end, "tzinfo", None) is not None
+            else pd.Timestamp(end)
+        )
         return df[
-            (df["timestamp"] >= pd.Timestamp(start))
-            & (df["timestamp"] <= pd.Timestamp(end))
+            (df["timestamp"] >= start_ts) & (df["timestamp"] <= end_ts)
         ].reset_index(drop=True)
 
     def _fetch_open_end_fund_latest(self, symbol: Symbol) -> dict | None:
@@ -723,10 +731,20 @@ class AKShareSource(OpenEndFundMixin, DataSource):
 
         # 按日期范围过滤
         if "timestamp" in df.columns and len(df) > 0:
-            df = df[
-                (df["timestamp"] >= pd.Timestamp(start))
-                & (df["timestamp"] <= pd.Timestamp(end))
-            ]
+            start_ts = (
+                pd.Timestamp(start).tz_localize(None)
+                if getattr(start, "tzinfo", None) is not None
+                else pd.Timestamp(start)
+            )
+            end_ts = (
+                pd.Timestamp(end).tz_localize(None)
+                if getattr(end, "tzinfo", None) is not None
+                else pd.Timestamp(end)
+            )
+            ts_series = df["timestamp"]
+            if getattr(ts_series.dt, "tz", None) is not None:
+                ts_series = ts_series.dt.tz_localize(None)
+            df = df[(ts_series >= start_ts) & (ts_series <= end_ts)]
 
         return df.reset_index(drop=True)
 

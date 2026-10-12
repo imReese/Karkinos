@@ -134,7 +134,7 @@ class DataStore(MarketDailyIngestionMixin):
         adjustment_mode: str | None = None,
         instrument_type: InstrumentType | str,
     ) -> None:
-        """Persist bars under an exact identity in typed v2 storage."""
+        """Persist bars under an exact instrument identity."""
         key = InstrumentKey.from_values(symbol, instrument_type)
         freq_dir = self._root / "bars" / frequency.value / key.instrument_type.value
         freq_dir.mkdir(parents=True, exist_ok=True)
@@ -160,7 +160,7 @@ class DataStore(MarketDailyIngestionMixin):
         *,
         instrument_type: InstrumentType | str | None = None,
     ) -> pd.DataFrame | None:
-        """Load exact v2 bars, or read the legacy source when type is omitted."""
+        """Load bars for the requested instrument identity."""
         key = (
             None
             if instrument_type is None
@@ -197,7 +197,7 @@ class DataStore(MarketDailyIngestionMixin):
         adjustment_mode: str | None = None,
         instrument_type: InstrumentType | str,
     ) -> None:
-        """Append bars to one exact v2 identity."""
+        """Append bars to one exact instrument identity."""
         key = InstrumentKey.from_values(symbol, instrument_type)
         existing = self.load_bars(
             symbol,
@@ -302,7 +302,7 @@ class DataStore(MarketDailyIngestionMixin):
         *,
         instrument_type: InstrumentType | str | None = None,
     ) -> dict | None:
-        """Read exact v2 metadata, or the read-only legacy source."""
+        """Read exact instrument metadata."""
         with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
             if instrument_type is None:
@@ -401,7 +401,7 @@ class DataStore(MarketDailyIngestionMixin):
         with connect_meta_sqlite(self._meta_path) as conn:
             if instrument_type is None:
                 rows = conn.execute(
-                    "SELECT DISTINCT symbol FROM market_bars WHERE frequency = ?",
+                    "SELECT DISTINCT symbol FROM market_bars_v2 WHERE frequency = ?",
                     (frequency.value,),
                 ).fetchall()
             else:
@@ -688,7 +688,7 @@ class DataStore(MarketDailyIngestionMixin):
             if key is None:
                 sql = """
                     SELECT timestamp, open, high, low, close, volume, amount
-                    FROM market_bars
+                    FROM market_bars_v2
                     WHERE symbol = ? AND frequency = ?
                     ORDER BY timestamp ASC
                 """
@@ -704,7 +704,7 @@ class DataStore(MarketDailyIngestionMixin):
             df = pd.read_sql_query(sql, conn, params=params)
         if df.empty:
             return None
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
         return df
 
     def migrate_legacy_market_bars_to_v2(

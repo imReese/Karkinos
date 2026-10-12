@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
@@ -253,3 +253,54 @@ def test_tdx_source_fetch_bars() -> None:
     ]
     assert df.iloc[-1]["close"] == 11.73
     assert df.attrs["provider_name"] == "tdx"
+
+
+def test_tdx_source_fetch_bars_pagination() -> None:
+    base_date = datetime(2023, 1, 1)
+    batch0 = [
+        OrderedDict(
+            {
+                "open": 10.0,
+                "close": 10.5,
+                "high": 10.8,
+                "low": 9.9,
+                "vol": 1000.0,
+                "amount": 10000.0,
+                "datetime": (base_date + timedelta(days=i)).strftime("%Y-%m-%d 15:00"),
+            }
+        )
+        for i in range(1, 801)
+    ]
+    batch1 = [
+        OrderedDict(
+            {
+                "open": 8.0,
+                "close": 8.5,
+                "high": 8.8,
+                "low": 7.9,
+                "vol": 1000.0,
+                "amount": 8000.0,
+                "datetime": "2021-01-04 15:00",
+            }
+        )
+    ]
+
+    mock_api = MagicMock()
+    mock_api.get_index_bars.side_effect = [batch0, batch1]
+
+    mock_mgr = MagicMock(spec=TdxClientManager)
+    # execute calls the inner _fetch callback with mock_api
+    mock_mgr.execute.side_effect = lambda fn: fn(mock_api)
+
+    source = TdxSource(client_manager=mock_mgr)
+    df = source.fetch_bars(
+        Symbol("000001"),
+        start=datetime(2021, 1, 1, tzinfo=_SHANGHAI),
+        end=datetime(2026, 10, 12, tzinfo=_SHANGHAI),
+        frequency=BarFrequency.DAILY,
+        asset_class=AssetClass.INDEX,
+    )
+
+    assert not df.empty
+    assert len(df) == 801
+    assert df.iloc[0]["timestamp"].strftime("%Y-%m-%d") == "2021-01-04"
