@@ -5,6 +5,7 @@ import {
   useAccountStateQuery,
   useEquityCurveSeriesQuery,
   useExplainabilityQuery,
+  useMarketCalendarQuery,
   useDailyTradingPlanQuery,
   useTodayDecisionQuery,
   type EquityCurveRange,
@@ -29,6 +30,14 @@ export function useOverviewPageController() {
     undefined,
     accountReady && analysisView === 'calendar',
   );
+  const calendarYear =
+    marketSession?.market_date?.slice(0, 4) ||
+    new Date().getFullYear().toString();
+  const marketCalendar = useMarketCalendarQuery(
+    calendarYear,
+    'SSE',
+    accountReady && analysisView === 'calendar',
+  );
   const tradingPlan = useDailyTradingPlanQuery(accountReady && !marketClosed);
   const todayDecision = useTodayDecisionQuery(accountReady && !marketClosed);
   return {
@@ -36,6 +45,7 @@ export function useOverviewPageController() {
     account,
     equityCurve,
     explainability,
+    marketCalendar,
     tradingPlan,
     todayDecision,
     marketClosed,

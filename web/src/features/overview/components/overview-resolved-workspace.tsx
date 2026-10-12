@@ -30,6 +30,7 @@ export function OverviewResolvedWorkspace({
     analysisView,
     setAnalysisView,
     explainability,
+    marketCalendar,
   } = controller;
   const assetClassBySymbol = Object.fromEntries(
     state.snapshot.allocation.map((item) => [item.symbol, item.asset_class]),
@@ -91,6 +92,7 @@ export function OverviewResolvedWorkspace({
       <ReturnCalendarCard
         timeline={explainability.data?.timeline ?? []}
         positions={state.snapshot.positions}
+        marketCalendar={marketCalendar.data}
         compact
       />
     );

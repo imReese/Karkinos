@@ -284,10 +284,11 @@ export function useMarketDataHealthQuery(enabled = true) {
 export function useMarketCalendarQuery(
   year: string | number | null,
   exchange = 'SSE',
+  enabled = true,
 ) {
   return useQuery({
     queryKey: ['market-calendar', exchange, year],
-    enabled: year !== null && year !== '',
+    enabled: enabled && year !== null && year !== '',
     queryFn: () => {
       const params = new URLSearchParams({
         exchange,

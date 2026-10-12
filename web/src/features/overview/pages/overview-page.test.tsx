@@ -213,6 +213,41 @@ function installFetch(
         ],
         positions: [],
       });
+    if (url.includes('/api/market/calendar'))
+      return Response.json({
+        schema_version: 'karkinos.market_calendar.v1',
+        exchange: 'SSE',
+        year: 2026,
+        provider: 'tushare',
+        status: 'available',
+        trading_day_count: 242,
+        closed_day_count: 123,
+        source_fingerprint: 'mock-fingerprint',
+        official_verification_status: 'verified',
+        official_source_url: null,
+        official_verified_at: null,
+        official_verified_by: null,
+        limitations: [],
+        days: [
+          {
+            schema_version: 'karkinos.market_calendar.v1',
+            date: '2026-09-25',
+            day_type: 'holiday',
+            reason_code: 'market_holiday',
+            reason: '中秋节休市',
+            is_trading_day: false,
+          },
+          {
+            schema_version: 'karkinos.market_calendar.v1',
+            date: '2026-10-01',
+            day_type: 'holiday',
+            reason_code: 'market_holiday',
+            reason: '国庆节休市',
+            is_trading_day: false,
+          },
+        ],
+        updated_at: '2026-09-15T00:00:00',
+      });
     throw new Error(`Unexpected request: ${url}`);
   });
   vi.stubGlobal('fetch', mock);
@@ -1414,6 +1449,11 @@ test('toggles between equity curve and return calendar views', async () => {
   expect(
     fetchMock.mock.calls.some(([url]) =>
       String(url).includes('/api/portfolio/explainability'),
+    ),
+  ).toBe(true);
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/market/calendar'),
     ),
   ).toBe(true);
 

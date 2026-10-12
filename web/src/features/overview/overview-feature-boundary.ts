@@ -17,6 +17,10 @@ export type { PortfolioSnapshot } from '../portfolio/api';
 export { PositionsTable } from '../portfolio/components/positions-table';
 export { resolvePositionAssetClass } from '../portfolio/components/positions-table-model';
 export {
+  useMarketCalendarQuery,
+  type MarketCalendarSnapshot,
+} from '../market/api';
+export {
   useDailyTradingPlanQuery,
   useTodayDecisionQuery,
 } from '../decision/api';
