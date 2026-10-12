@@ -131,6 +131,28 @@ uv run --locked python scripts/data/migrate_market_bars.py \
 源表和原回执保留；已有 typed 行价格冲突则事务回滚，已有来源元数据不覆盖。
 缺少类型证据的行会留在旧表并报告为 blocker，因此迁移成功不表示全部历史或最新行情已齐全。
 
+## 市场数据统一同步与历史回补
+
+行情同步在底层由 [`server/services/market_sync.py`](../server/services/market_sync.py) 统筹，支持交易日历、基准指数、主流ETF、公募基金净值与个股日K线全量/增量同步，以及最新行情快照原子发布。
+
+- **后台自动化（生产与日常运行）**：
+  - 收盘后（15:00 ~ 16:00），`TradingScheduler` 自动同步并补齐基准指数日K、自选池日K与收盘快照；
+  - 晚间（21:30），自动同步场外公募基金最新净值并触发核算；
+  - 零点，`data_worker` 自动核验并更新交易日历。
+- **Web API（管理端一键触发）**：
+  - `POST /api/market/sync`：触发指定宇宙或标的的后台同步任务；
+  - `GET /api/market/sync/status`：查询最近一次同步结果与执行状态。
+- **CLI 脚本（冷启动与深度历史回溯）**：
+  [`data/sync_market_history.py`](data/sync_market_history.py) 作为统一服务的命令行门面，用于离线部署、首次冷启动及任意标的深度回补：
+
+```bash
+# 同步核心宇宙（基准指数 + 主流ETF + 持仓基金 + 自选股）从 2020 至今的所有历史与今日收盘
+uv run --locked python scripts/data/sync_market_history.py --universe core --start 2020-01-01
+
+# 指定任意股票代码高速拉取完整历史并沉淀至本地
+uv run --locked python scripts/data/sync_market_history.py --symbols 600519,300750 --start 2015-01-01
+```
+
 ## TDX 日线手动检查
 
 [`data/check_tdx_daily.py`](data/check_tdx_daily.py) 检查一只股票、一个已经收盘的交易日。
