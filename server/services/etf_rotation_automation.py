@@ -506,7 +506,10 @@ class EtfRotationAutomationService:
                 else (cls._database_path or AppDatabase().path)
             )
             row_dict, paper_book_summary = resolve_etf_backtest_record(
-                resolved_path, bound_result_id=cls._bound_backtest_result_id
+                resolved_path,
+                bound_result_id=cls._bound_backtest_result_id,
+                expected_symbols=list(ETF_METADATA.keys()),
+                expected_params=DEFAULT_STRATEGY_PARAMS,
             )
             if row_dict is None:
                 return VERIFIED_BACKTEST_METRICS_5Y, default_periods, None
@@ -526,14 +529,41 @@ class EtfRotationAutomationService:
                 metrics.get("dataset_binding") or {}
             ).get("dataset_id")
 
+            verification_status = "offline_reference_unbound"
+            disclaimer = "离线基准测算参考，未绑定当前不可变 Dataset 报告"
+
             if dataset_id:
-                verification_status = "bound_dataset_verified"
-                disclaimer = (
-                    f"已绑定不可变数据集 ({dataset_id[:16]}...)，回测经过确定性验证"
-                )
-            else:
-                verification_status = "offline_reference_unbound"
-                disclaimer = "离线基准测算参考，未绑定当前不可变 Dataset 报告"
+                is_catalog_verified = False
+                try:
+                    from data.dataset.catalog import DatasetCatalog
+
+                    possible_roots = []
+                    if resolved_path:
+                        possible_roots.append(resolved_path.parent / "research")
+                        possible_roots.append(resolved_path.parent)
+                    possible_roots.append(Path("data/store/research"))
+                    possible_roots.append(Path("data/research"))
+
+                    for root in possible_roots:
+                        cat = DatasetCatalog(root)
+                        if cat.path.exists():
+                            try:
+                                cat.get(dataset_id)
+                                is_catalog_verified = True
+                                break
+                            except Exception:
+                                continue
+                except Exception:
+                    is_catalog_verified = False
+
+                if is_catalog_verified:
+                    verification_status = "bound_dataset_verified"
+                    disclaimer = (
+                        f"已绑定不可变数据集 ({dataset_id[:16]}...)，回测经过确定性验证"
+                    )
+                else:
+                    verification_status = "unverified_dataset_binding"
+                    disclaimer = f"数据集引用未在本地不可变 Catalog 确认 ({dataset_id[:16]}...)，未经过确定性验证"
 
             duration_days = int(row_dict.get("duration_days") or 0)
             start_date = config.get("start_date", "2021-01-04")
@@ -557,23 +587,63 @@ class EtfRotationAutomationService:
             calmar = float(
                 metrics.get("calmar") or (annual_return / max_dd if max_dd > 0 else 0.0)
             )
-            benchmark_return = float(
-                config.get("benchmark_return")
-                or metrics.get("benchmark_return")
-                or -8.65
-            )
+
+            benchmark_val = config.get("benchmark_return")
+            if benchmark_val is None:
+                benchmark_val = metrics.get("benchmark_return")
+
             cumulative_ret_pct = round(total_return * 100, 2)
-            benchmark_ret_pct = round(benchmark_return, 2)
-            excess_ret_pct = round(cumulative_ret_pct - benchmark_ret_pct, 2)
+            if benchmark_val is not None:
+                try:
+                    benchmark_return = float(benchmark_val)
+                    benchmark_ret_pct: float | None = round(benchmark_return, 2)
+                    excess_ret_pct: float | None = round(
+                        cumulative_ret_pct - benchmark_ret_pct, 2
+                    )
+                except (ValueError, TypeError):
+                    benchmark_ret_pct = None
+                    excess_ret_pct = None
+            else:
+                benchmark_ret_pct = None
+                excess_ret_pct = None
+
+            # Derive universe summary from actual symbols
+            cfg_symbols = []
+            if isinstance(config.get("assets"), list):
+                for item in config["assets"]:
+                    if isinstance(item, dict) and item.get("symbol"):
+                        cfg_symbols.append(str(item["symbol"]))
+                    elif isinstance(item, str):
+                        cfg_symbols.append(item)
+            elif isinstance(config.get("symbols"), list):
+                cfg_symbols = [str(s) for s in config["symbols"]]
+
+            if cfg_symbols and set(cfg_symbols) == set(ETF_METADATA.keys()):
+                universe_summary = "8 支核心标的 (沪深300/中证500/创业板/纳指100/标普500/红利低波/黄金/国债)"
+            elif cfg_symbols:
+                named = [
+                    f"{s} {ETF_METADATA.get(Symbol(s), '')}".strip()
+                    for s in sorted(cfg_symbols)
+                ]
+                universe_summary = f"{len(cfg_symbols)} 支标的 ({'/'.join(named)})"
+            else:
+                universe_summary = "8 支核心标的 (沪深300/中证500/创业板/纳指100/标普500/红利低波/黄金/国债)"
+
+            if cumulative_ret_pct < 0 or (
+                excess_ret_pct is not None and excess_ret_pct <= 0
+            ):
+                core_advantage = "测算区间内策略未跑赢基准或出现净值受损，需进一步累积样本并观察前向表现"
+            else:
+                core_advantage = (
+                    "利用多资产与跨市场非相关性在震荡下行周期控制回撤并积累超额收益"
+                )
 
             strategy_metrics: dict[str, Any] = {
                 "strategy_name": (
                     config.get("strategy_name")
                     or "全球大类资产跨市场轮动策略 (Global Multi-Asset ETF Rotation)"
                 ),
-                "universe_summary": (
-                    "8 支核心标的 (沪深300/中证500/创业板/纳指100/标普500/红利低波/黄金/国债)"
-                ),
+                "universe_summary": universe_summary,
                 "backtest_range": f"{start_date} 至 {end_date} ({duration_days} 个实际交易日)",
                 "cumulative_return_pct": cumulative_ret_pct,
                 "cagr_pct": round(annual_return * 100, 2),
@@ -583,14 +653,12 @@ class EtfRotationAutomationService:
                 "benchmark_name": "沪深300ETF (510300)",
                 "benchmark_return_pct": benchmark_ret_pct,
                 "excess_return_pct": excess_ret_pct,
-                "core_advantage": (
-                    "利用美股龙头(标普500/纳指100)与黄金在A股熊市期间的非相关独立牛市创造超额复利"
-                ),
+                "core_advantage": core_advantage,
                 "verification_status": verification_status,
                 "disclaimer": disclaimer,
                 "dataset_id": dataset_id,
                 "source_result_id": result_id,
-                "report_url": f"/research?tab=backtest&id={result_id}",
+                "report_url": f"/backtest?id={result_id}",
             }
 
             strategy_periods = {

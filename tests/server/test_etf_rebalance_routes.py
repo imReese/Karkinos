@@ -539,14 +539,14 @@ def test_dashboard_resolves_saved_backtest_result_and_paper_book(
 
         # Strategy verification
         strat = data["strategy"]
-        assert strat["verification_status"] == "bound_dataset_verified"
+        assert strat["verification_status"] == "unverified_dataset_binding"
         assert strat["dataset_id"] == "sha256:112233445566778899aabbccddeeff00"
         assert strat["source_result_id"] == res_id
         assert strat["cumulative_return_pct"] == 150.0
         assert strat["cagr_pct"] == 18.0
         assert strat["max_drawdown_pct"] == 10.0
         assert strat["sharpe_ratio"] == 1.25
-        assert strat["report_url"] == f"/research?tab=backtest&id={res_id}"
+        assert strat["report_url"] == f"/backtest?id={res_id}"
 
         # Paper book summary
         paper = data["paper_book"]
@@ -559,6 +559,54 @@ def test_dashboard_resolves_saved_backtest_result_and_paper_book(
         assert paper["fees_paid"] == "15"
         assert paper["slippage_cost"] == "25"
         assert paper["through_session"] == "2026-01-05"
+    finally:
+        EtfRotationAutomationService.reset_state()
+
+
+def test_single_etf_report_does_not_overwrite_core_rotation_plan(
+    client: TestClient, tmp_path: Path
+):
+    """Saving an etf_rotation report with only 1 ETF must not overwrite the 8-ETF rotation plan."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    import sqlite3
+
+    with sqlite3.connect(db.path) as conn:
+        # User saved a 1-ETF backtest
+        single_etf_id = insert_backtest_result(
+            conn,
+            created_at=datetime.now().isoformat(),
+            config_json=json.dumps(
+                {
+                    "strategy": "etf_rotation",
+                    "assets": [{"symbol": "510300"}],
+                    "symbols": ["510300"],
+                    "start_date": "2021-01-04",
+                    "end_date": "2026-10-09",
+                }
+            ),
+            initial_cash=100000.0,
+            final_equity=999999.0,
+            total_return=8.99,
+            sharpe=3.0,
+            max_dd=0.01,
+            equity_curve_json="[]",
+            annual_return=0.50,
+            duration_days=1391,
+        )
+        conn.commit()
+
+    EtfRotationAutomationService.set_database_path(db.path)
+    try:
+        resp = client.get("/api/trading/etf-rebalance/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+        strat = data["strategy"]
+        # Must NOT adopt the 1-ETF report's 899% return!
+        assert strat.get("source_result_id") != single_etf_id
+        assert strat["verification_status"] == "offline_reference_unbound"
+        assert strat["universe_summary"].startswith("8 支核心标的")
     finally:
         EtfRotationAutomationService.reset_state()
 
@@ -644,5 +692,133 @@ def test_dashboard_falls_back_gracefully_when_no_saved_backtest(
         data = resp.json()
         assert data["strategy"]["verification_status"] == "offline_reference_unbound"
         assert data["paper_book"] is None
+    finally:
+        EtfRotationAutomationService.reset_state()
+
+
+def test_benchmark_return_zero_and_missing_are_truthful(
+    client: TestClient, tmp_path: Path
+):
+    """Verify legitimate 0% benchmark is not replaced by -8.65%, and missing benchmark is None."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    import sqlite3
+
+    with sqlite3.connect(db.path) as conn:
+        # Case 1: benchmark_return = 0.0
+        res_zero = insert_backtest_result(
+            conn,
+            created_at=datetime.now().isoformat(),
+            config_json=json.dumps(
+                {
+                    "strategy": "etf_rotation",
+                    "benchmark_return": 0.0,
+                }
+            ),
+            initial_cash=100000.0,
+            final_equity=120000.0,
+            total_return=0.20,
+            sharpe=1.0,
+            max_dd=0.05,
+            equity_curve_json="[]",
+            annual_return=0.10,
+            duration_days=500,
+        )
+        conn.commit()
+
+    EtfRotationAutomationService.set_database_path(db.path)
+    try:
+        EtfRotationAutomationService.bind_backtest_result(res_zero)
+        dash = client.get("/api/trading/etf-rebalance/dashboard").json()
+        strat = dash["strategy"]
+        # Legitimate 0.0 must be preserved, not defaulted to -8.65
+        assert strat["benchmark_return_pct"] == 0.0
+        assert strat["excess_return_pct"] == 20.0
+
+        # Case 2: benchmark_return is omitted
+        with sqlite3.connect(db.path) as conn:
+            res_none = insert_backtest_result(
+                conn,
+                created_at=datetime.now().isoformat(),
+                config_json=json.dumps(
+                    {
+                        "strategy": "etf_rotation",
+                    }
+                ),
+                initial_cash=100000.0,
+                final_equity=120000.0,
+                total_return=0.20,
+                sharpe=1.0,
+                max_dd=0.05,
+                equity_curve_json="[]",
+                annual_return=0.10,
+                duration_days=500,
+            )
+            conn.commit()
+
+        EtfRotationAutomationService.bind_backtest_result(res_none)
+        dash_none = client.get("/api/trading/etf-rebalance/dashboard").json()
+        strat_none = dash_none["strategy"]
+        assert strat_none["benchmark_return_pct"] is None
+        assert strat_none["excess_return_pct"] is None
+    finally:
+        EtfRotationAutomationService.reset_state()
+
+
+def test_paper_book_resolution_not_masked_by_observation_without_paper(
+    client: TestClient, tmp_path: Path
+):
+    """Verify that an observation without a paper book does not mask an earlier/coexisting observation with one."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    import sqlite3
+
+    with sqlite3.connect(db.path) as conn:
+        res_id = insert_backtest_result(
+            conn,
+            created_at=datetime.now().isoformat(),
+            config_json=json.dumps({"strategy": "etf_rotation"}),
+            initial_cash=100000.0,
+            final_equity=150000.0,
+            total_return=0.50,
+            sharpe=1.0,
+            max_dd=0.05,
+            equity_curve_json="[]",
+            annual_return=0.10,
+            duration_days=500,
+        )
+
+        # Obs 1 has paper book
+        conn.execute(
+            """INSERT INTO research_observations
+               (id, source_backtest_result_id, source_json, code_binding_json, policy_json, universe_json, started_at, lifecycle, version)
+               VALUES ('obs-with-paper', ?, '{}', '{}', '{}', '[]', '2026-01-01T00:00:00Z', 'active', 0)""",
+            (res_id,),
+        )
+        conn.execute(
+            """INSERT INTO research_paper_books
+               (id, observation_id, source_json, policy_json, code_binding_json, instruments_json, initial_cash, started_at, evaluation_start, lifecycle, version)
+               VALUES ('book-real', 'obs-with-paper', '{}', ?, '{}', '[]', '100000', '2026-01-01T00:00:00Z', '2026-01-02', 'active', 1)""",
+            (json.dumps({"limitations": [], "health_policy": None}),),
+        )
+
+        # Obs 2 created later (or higher ID) but HAS NO PAPER BOOK
+        conn.execute(
+            """INSERT INTO research_observations
+               (id, source_backtest_result_id, source_json, code_binding_json, policy_json, universe_json, started_at, lifecycle, version)
+               VALUES ('obs-without-paper', ?, '{}', '{}', '{}', '[]', '2026-01-02T00:00:00Z', 'active', 0)""",
+            (res_id,),
+        )
+        conn.commit()
+
+    EtfRotationAutomationService.set_database_path(db.path)
+    try:
+        EtfRotationAutomationService.bind_backtest_result(res_id)
+        dash = client.get("/api/trading/etf-rebalance/dashboard").json()
+        assert dash["paper_book"] is not None
+        assert dash["paper_book"]["book_id"] == "book-real"
+        assert dash["paper_book"]["observation_id"] == "obs-with-paper"
     finally:
         EtfRotationAutomationService.reset_state()

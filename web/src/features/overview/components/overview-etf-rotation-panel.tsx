@@ -357,7 +357,10 @@ function EtfTrackRecordStrip({
           </div>
         ) : (
           <span className="text-[var(--app-text-tertiary)]">
-            基准: {activeStrategy.benchmark_return_pct.toFixed(2)}%
+            基准:{' '}
+            {activeStrategy.benchmark_return_pct !== null
+              ? `${activeStrategy.benchmark_return_pct.toFixed(2)}%`
+              : '--'}
           </span>
         )}
       </div>
@@ -365,7 +368,10 @@ function EtfTrackRecordStrip({
       <div className="flex items-center justify-between py-1 text-[var(--app-text-tertiary)] app-type-micro">
         <span className="truncate">{activeStrategy.backtest_range}</span>
         <span className="shrink-0">
-          基准: {activeStrategy.benchmark_return_pct.toFixed(2)}%
+          基准:{' '}
+          {activeStrategy.benchmark_return_pct !== null
+            ? `${activeStrategy.benchmark_return_pct.toFixed(2)}%`
+            : '--'}
         </span>
       </div>
 
@@ -374,11 +380,21 @@ function EtfTrackRecordStrip({
           <div className="app-type-micro text-[var(--app-text-tertiary)]">
             累计总收益
           </div>
-          <div className="mt-0.5 font-mono font-extrabold text-[var(--app-accent)] text-sm">
-            +{activeStrategy.cumulative_return_pct.toFixed(2)}%
+          <div
+            className={`mt-0.5 font-mono font-extrabold text-sm ${
+              activeStrategy.cumulative_return_pct >= 0
+                ? 'text-[var(--app-accent)]'
+                : 'text-[var(--app-pnl-negative)]'
+            }`}
+          >
+            {activeStrategy.cumulative_return_pct >= 0 ? '+' : ''}
+            {activeStrategy.cumulative_return_pct.toFixed(2)}%
           </div>
           <div className="app-type-micro text-[var(--app-text-tertiary)]">
-            超额 +{activeStrategy.excess_return_pct.toFixed(2)}%
+            超额{' '}
+            {activeStrategy.excess_return_pct !== null
+              ? `${activeStrategy.excess_return_pct >= 0 ? '+' : ''}${activeStrategy.excess_return_pct.toFixed(2)}%`
+              : '--'}
           </div>
         </div>
 
@@ -390,7 +406,11 @@ function EtfTrackRecordStrip({
             {activeStrategy.cagr_pct.toFixed(2)}%
           </div>
           <div className="app-type-micro text-[var(--app-text-tertiary)]">
-            年化稳定复利
+            {activeStrategy.cagr_pct > 0
+              ? '年化复合增长'
+              : activeStrategy.cagr_pct < 0
+                ? '年化资金亏损'
+                : '年化持平'}
           </div>
         </div>
 
@@ -414,7 +434,7 @@ function EtfTrackRecordStrip({
             {activeStrategy.max_drawdown_pct.toFixed(2)}%
           </div>
           <div className="app-type-micro text-[var(--app-text-tertiary)]">
-            {selectedPeriod === '5y' ? '基准回撤 1/4' : '超额收益稳健'}
+            历史最大回撤
           </div>
         </div>
       </div>

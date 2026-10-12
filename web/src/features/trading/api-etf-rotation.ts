@@ -12,11 +12,14 @@ export type EtfStrategyMetrics = {
   sharpe_ratio: number;
   calmar_ratio: number;
   benchmark_name: string;
-  benchmark_return_pct: number;
-  excess_return_pct: number;
+  benchmark_return_pct: number | null;
+  excess_return_pct: number | null;
   core_advantage?: string;
   verification_status?:
-    'bound_dataset_verified' | 'offline_reference_unbound' | string;
+    | 'bound_dataset_verified'
+    | 'unverified_dataset_binding'
+    | 'offline_reference_unbound'
+    | string;
   disclaimer?: string;
   dataset_id?: string;
   source_result_id?: number;

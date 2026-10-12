@@ -123,6 +123,8 @@ class AiShadowResearchBaselineMixin:
             expected_market_date=expected_market_date,
         )
         market_date = str((market_universe_snapshot or {}).get("trade_date") or "")
+        if not market_date:
+            raise ShadowResearchRejected("baseline_universe_replay_missing")
         if expected_market_date is not None and market_date != expected_market_date:
             raise ShadowResearchRejected("baseline_market_date_replay_mismatch")
         try:
@@ -404,8 +406,28 @@ class AiShadowResearchBaselineMixin:
             request,
             payload,
         )
+        seed_result_id = seed.get("id")
+        if seed_result_id is None:
+            seed_result_id = _run_coroutine(
+                self._db.save_backtest_result(
+                    config_json=json.dumps(config),
+                    initial_cash=float(initial_cash),
+                    final_equity=float(payload["final_equity"]),
+                    total_return=float(payload["total_return"]),
+                    sharpe=float(payload["sharpe"]),
+                    max_dd=float(payload["max_drawdown"]),
+                    equity_curve_json=json.dumps(payload.get("equity_curve", [])),
+                    annual_return=float(payload.get("annual_return", 0.0)),
+                    sortino=float(payload.get("sortino", 0.0)),
+                    win_rate=float(payload.get("win_rate", 0.0)),
+                    duration_days=int(payload.get("duration_days", 0)),
+                    metrics_json=json.dumps(payload.get("metrics_json", {})),
+                    cost_summary_json=json.dumps(payload.get("cost_summary_json", {})),
+                )
+            )
+
         return PreparedBaseline(
-            seed_result_id=int(seed["id"]),
+            seed_result_id=int(seed_result_id),
             market_date=market_date,
             snapshot=snapshot,
             request=request,
@@ -494,10 +516,13 @@ def _load_baseline_universe(
             raise ShadowResearchRejected("baseline_universe_replay_binding_missing")
     try:
         if snapshot_id is None:
-            return store.get_market_universe_snapshot(trade_date=expected_market_date)
-        snapshot = store.get_market_universe_snapshot(
-            snapshot_id=snapshot_id, trade_date=expected_market_date
-        )
+            snapshot = store.get_market_universe_snapshot(
+                trade_date=expected_market_date
+            )
+        else:
+            snapshot = store.get_market_universe_snapshot(
+                snapshot_id=snapshot_id, trade_date=expected_market_date
+            )
     except ValueError as exc:
         raise ShadowResearchRejected(str(exc)) from exc
     if snapshot is None:
@@ -543,6 +568,11 @@ def _load_baseline_seed(
                 "",
                 "ai_formula_research",
             }:
+                curve = candidate.get("equity_curve_json") or ""
+                duration = int(candidate.get("duration_days") or 0)
+                tot_ret = float(candidate.get("total_return") or 0.0)
+                if curve in ("[]", "", None) and duration == 0 and tot_ret == 0.0:
+                    continue
                 seed = candidate
                 break
     if not isinstance(seed, dict):
@@ -608,11 +638,13 @@ def _initialize_default_baseline_seed(
                 "baseline_research_window_override_invalid"
             ) from exc
     if not start_date:
-        cutoff_date = (
-            date.fromisoformat(policy.research_end_date)
-            if policy.research_end_date
-            else datetime.now(timezone.utc).date()
-        )
+        if policy.research_end_date:
+            try:
+                cutoff_date = date.fromisoformat(str(policy.research_end_date))
+            except ValueError as exc:
+                raise ShadowResearchRejected("sealed_research_dates_invalid") from exc
+        else:
+            cutoff_date = datetime.now(timezone.utc).date()
         start_date = (cutoff_date - timedelta(days=540)).isoformat()
 
     config = {
@@ -624,27 +656,15 @@ def _initialize_default_baseline_seed(
         "assets": [{"symbol": "600000", "asset_class": "stock"}],
     }
 
-    seed_id = _run_coroutine(
-        db.save_backtest_result(
-            config_json=json.dumps(config),
-            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
-            final_equity=NORMALIZED_RESEARCH_NOTIONAL,
-            total_return=0.0,
-            sharpe=0.0,
-            max_dd=0.0,
-            equity_curve_json="[]",
-        )
-    )
-    saved = _run_coroutine(db.get_backtest_result(seed_id))
-    seed = (
-        saved
-        if isinstance(saved, dict)
-        else {
-            "id": seed_id,
-            "config_json": json.dumps(config),
-            "initial_cash": NORMALIZED_RESEARCH_NOTIONAL,
-        }
-    )
+    # Decouple initialization configuration from completed backtest results:
+    # Do not write dummy 0-return / 0-drawdown rows to backtest_results.
+    # The backtest result will be persisted only after BacktestEngine executes to completion.
+    seed = {
+        "id": None,
+        "config_json": json.dumps(config),
+        "initial_cash": NORMALIZED_RESEARCH_NOTIONAL,
+        "unpersisted_seed": True,
+    }
     return seed, config, start_date
 
 

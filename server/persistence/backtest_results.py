@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -118,6 +119,8 @@ def resolve_etf_backtest_record(
     database_path: str | Path,
     *,
     bound_result_id: int | None = None,
+    expected_symbols: Sequence[str] | set[str] | None = None,
+    expected_params: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Resolve the target ETF rotation backtest row and its forward paper book summary."""
     import json
@@ -131,6 +134,59 @@ def resolve_etf_backtest_record(
     resolved_path = Path(database_path)
     if not resolved_path.exists():
         return None, None
+
+    core_symbols = (
+        set(expected_symbols)
+        if expected_symbols is not None
+        else {
+            "510300",
+            "510500",
+            "159915",
+            "513100",
+            "513500",
+            "512890",
+            "518880",
+            "511010",
+        }
+    )
+
+    def _matches_plan(cfg: dict[str, Any]) -> bool:
+        strategy_name = cfg.get("strategy") or cfg.get("strategy_kind")
+        if strategy_name != "etf_rotation":
+            return False
+
+        extracted_symbols: set[str] = set()
+        if isinstance(cfg.get("assets"), list):
+            for item in cfg["assets"]:
+                if isinstance(item, dict) and item.get("symbol"):
+                    extracted_symbols.add(str(item["symbol"]))
+                elif isinstance(item, str):
+                    extracted_symbols.add(item)
+        if isinstance(cfg.get("symbols"), list):
+            for s in cfg["symbols"]:
+                extracted_symbols.add(str(s))
+        params = cfg.get("params")
+        if isinstance(params, dict) and isinstance(params.get("symbols"), list):
+            for s in params["symbols"]:
+                extracted_symbols.add(str(s))
+
+        # If symbols are explicitly declared, they must match the plan universe
+        if extracted_symbols and extracted_symbols != core_symbols:
+            return False
+
+        params_val = cfg.get("params")
+        cfg_params: dict[str, Any] = params_val if isinstance(params_val, dict) else cfg
+        if expected_params:
+            for k in (
+                "top_k",
+                "lookback_period",
+                "volatility_window",
+                "rebalance_interval",
+            ):
+                if k in expected_params and k in cfg_params:
+                    if str(expected_params[k]) != str(cfg_params[k]):
+                        return False
+        return True
 
     try:
         with closing(connect_sqlite(resolved_path, readonly=True)) as conn:
@@ -148,7 +204,14 @@ def resolve_etf_backtest_record(
                     (bound_result_id,),
                 ).fetchone()
                 if row:
-                    target_row = dict(row)
+                    candidate = dict(row)
+                    cfg = (
+                        json.loads(candidate["config_json"])
+                        if candidate.get("config_json")
+                        else {}
+                    )
+                    if _matches_plan(cfg):
+                        target_row = candidate
             else:
                 rows = conn.execute(
                     "SELECT * FROM backtest_results ORDER BY id DESC"
@@ -156,9 +219,32 @@ def resolve_etf_backtest_record(
                 for r in rows:
                     try:
                         cfg = json.loads(r["config_json"]) if r["config_json"] else {}
-                        if cfg.get("strategy") == "etf_rotation":
-                            target_row = dict(r)
-                            break
+                        if not _matches_plan(cfg):
+                            continue
+                        # Skip unexecuted seed placeholders
+                        curve = (
+                            r["equity_curve_json"]
+                            if "equity_curve_json" in r.keys()
+                            else ""
+                        )
+                        duration = (
+                            int(r["duration_days"] or 0)
+                            if "duration_days" in r.keys()
+                            else 0
+                        )
+                        tot_ret = (
+                            float(r["total_return"] or 0.0)
+                            if "total_return" in r.keys()
+                            else 0.0
+                        )
+                        if (
+                            curve in ("[]", "", None)
+                            and duration == 0
+                            and tot_ret == 0.0
+                        ):
+                            continue
+                        target_row = dict(r)
+                        break
                     except Exception:
                         continue
 
@@ -177,7 +263,14 @@ def resolve_etf_backtest_record(
 
             if has_obs and has_paper:
                 obs_row = conn.execute(
-                    "SELECT id FROM research_observations WHERE source_backtest_result_id = ? ORDER BY id DESC LIMIT 1",
+                    """
+                    SELECT o.id AS id
+                    FROM research_observations o
+                    JOIN research_paper_books p ON p.observation_id = o.id
+                    WHERE o.source_backtest_result_id = ?
+                    ORDER BY COALESCE(p.started_at, o.started_at, '') DESC
+                    LIMIT 1
+                    """,
                     (result_id,),
                 ).fetchone()
                 if obs_row:

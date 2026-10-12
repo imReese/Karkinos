@@ -187,6 +187,14 @@ const tradingRoute = createRoute({
 const backtestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtest',
+  validateSearch: (search: Record<string, unknown>) => ({
+    id:
+      typeof search.id === 'string'
+        ? Number(search.id) || undefined
+        : typeof search.id === 'number'
+          ? search.id
+          : undefined,
+  }),
 }).lazy(() =>
   import('../features/backtest/pages/backtest-page').then(
     (module) => module.Route,

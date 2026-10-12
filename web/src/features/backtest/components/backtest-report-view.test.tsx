@@ -168,3 +168,45 @@ test('retries a failed saved-run read without treating it as an empty history', 
   ).toBeTruthy();
   expect(attempts).toBe(2);
 });
+
+test('auto-selects the report requested by the url query parameter', async () => {
+  window.history.pushState({}, '', '/backtest?id=8');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith('/api/backtest/results')) {
+        return jsonResponse([
+          summary,
+          { ...summary, id: 8, strategy: 'etf_rotation' },
+        ]);
+      }
+      if (url.endsWith('/api/backtest/results/8')) {
+        return jsonResponse({
+          id: 8,
+          created_at: '2026-08-09T08:30:00+08:00',
+          config: { strategy: 'etf_rotation' },
+          initial_cash: 100000,
+          final_equity: 150000,
+          total_return: 0.5,
+          annual_return: 0.15,
+          sharpe: 1.5,
+          max_drawdown: 0.08,
+          equity_curve: [],
+          fills: [],
+        });
+      }
+      return new Response('Not found', { status: 404 });
+    }),
+  );
+
+  renderReportView();
+
+  expect(
+    await screen.findByRole('listbox', { name: 'Select backtest run' }),
+  ).toBeTruthy();
+  const selectedContext = await screen.findByTestId(
+    'backtest-selected-report-context',
+  );
+  expect(selectedContext).toHaveTextContent('Selected report #8');
+});

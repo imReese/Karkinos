@@ -247,18 +247,58 @@ function BacktestReportSkeleton({ title }: { title: string }) {
   );
 }
 
+function useSearchReportId(): number | null {
+  const [id, setId] = useState<number | null>(() => {
+    if (typeof window !== 'undefined' && window.location?.search) {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('id');
+      if (raw) {
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      }
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const updateFromLocation = () => {
+      if (typeof window !== 'undefined' && window.location?.search) {
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('id');
+        if (raw) {
+          const parsed = Number(raw);
+          if (Number.isFinite(parsed) && parsed > 0) {
+            setId(parsed);
+            return;
+          }
+        }
+      }
+      setId(null);
+    };
+    window.addEventListener('popstate', updateFromLocation);
+    return () => window.removeEventListener('popstate', updateFromLocation);
+  }, []);
+
+  return id;
+}
+
 export function BacktestReportView() {
   const copy = useCopy();
   const labels = copy.backtest;
   const results = useBacktestResultsQuery();
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const queryId = useSearchReportId();
+  const [selectedId, setSelectedId] = useState<number | null>(queryId);
 
   useEffect(() => {
+    if (queryId !== null && results.data?.some((item) => item.id === queryId)) {
+      setSelectedId(queryId);
+      return;
+    }
     if (selectedId !== null || !results.data?.length) {
       return;
     }
     setSelectedId(results.data[0].id);
-  }, [results.data, selectedId]);
+  }, [results.data, selectedId, queryId]);
 
   const report = useBacktestResultQuery(selectedId);
   const selectedSummary = useMemo(

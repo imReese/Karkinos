@@ -50,7 +50,7 @@ async def test_clean_workspace_initializes_default_baseline_seed(tmp_path) -> No
         authorization=SHADOW_RESEARCH_POLICY_CONFIRMATION,
     )
 
-    # Calling _load_baseline_seed on a clean workspace initializes the built-in seed
+    # Calling _load_baseline_seed on a clean workspace initializes the built-in seed configuration
     seed, config, start_date = _load_baseline_seed(
         db,
         policy,
@@ -59,27 +59,31 @@ async def test_clean_workspace_initializes_default_baseline_seed(tmp_path) -> No
     )
 
     assert isinstance(seed, dict)
-    assert seed["id"] > 0
+    assert seed.get("id") is None  # Not yet persisted as an uncalculated dummy
+    assert seed.get("unpersisted_seed") is True
     assert config["strategy"] == "dual_ma"
     assert config["short_period"] == 5
     assert config["long_period"] == 20
     assert start_date == "2025-03-30"  # 540 days before 2026-09-21
 
-    # Verify persisted in db
+    # Verify that backtest_results in db remains clean with 0 unexecuted placeholder rows
     post_rows = await db.get_backtest_results()
-    assert len(post_rows) == 1
-    assert int(post_rows[0]["id"]) == seed["id"]
+    assert len(post_rows) == 0
 
-    # Subsequent call reuses the persisted seed idempotently
-    seed2, config2, start_date2 = _load_baseline_seed(
-        db,
-        policy,
-        research_start_date=None,
-        expected_dataset_snapshot_id=None,
+    # Clean workspace missing universe raises baseline_universe_replay_missing gracefully
+    from data.store import DataStore
+    from server.services.ai_shadow_research_qualification_support import (
+        QualificationBaselinePreparer,
     )
-    assert seed2["id"] == seed["id"]
-    assert config2 == config
-    assert start_date2 == start_date
+
+    baseline_service = QualificationBaselinePreparer(
+        db=db, data_store=DataStore(tmp_path / "data")
+    )
+    with pytest.raises(ShadowResearchRejected) as exc_info:
+        baseline_service._prepare_baseline(policy)
+    assert exc_info.value.args[0] == "baseline_universe_replay_missing"
+    # Even after failed preparation, backtest_results remains unpolluted
+    assert await db.get_backtest_results() == []
 
 
 @pytest.mark.asyncio

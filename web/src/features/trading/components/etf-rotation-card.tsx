@@ -380,14 +380,31 @@ function EtfStrategyMetricsSummaryGrid({
             累计总收益率
           </div>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl font-extrabold font-mono text-[var(--app-accent)]">
-              +{strategy.cumulative_return_pct.toFixed(2)}%
+            <span
+              className={`text-xl font-extrabold font-mono ${
+                strategy.cumulative_return_pct >= 0
+                  ? 'text-[var(--app-accent)]'
+                  : 'text-[var(--app-pnl-negative)]'
+              }`}
+            >
+              {strategy.cumulative_return_pct >= 0 ? '+' : ''}
+              {strategy.cumulative_return_pct.toFixed(2)}%
             </span>
           </div>
           <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
             超额基准{' '}
-            <span className="font-semibold text-[var(--app-accent)]">
-              +{strategy.excess_return_pct.toFixed(2)}%
+            <span
+              className={`font-semibold ${
+                strategy.excess_return_pct === null
+                  ? 'text-[var(--app-text-tertiary)]'
+                  : strategy.excess_return_pct >= 0
+                    ? 'text-[var(--app-accent)]'
+                    : 'text-[var(--app-pnl-negative)]'
+              }`}
+            >
+              {strategy.excess_return_pct !== null
+                ? `${strategy.excess_return_pct >= 0 ? '+' : ''}${strategy.excess_return_pct.toFixed(2)}%`
+                : '--'}
             </span>
           </div>
         </div>
@@ -400,7 +417,11 @@ function EtfStrategyMetricsSummaryGrid({
             {strategy.cagr_pct.toFixed(2)}%
           </div>
           <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
-            年化稳定复利
+            {strategy.cagr_pct > 0
+              ? '年化复合增长'
+              : strategy.cagr_pct < 0
+                ? '年化资金亏损'
+                : '年化持平'}
           </div>
         </div>
 
@@ -424,7 +445,7 @@ function EtfStrategyMetricsSummaryGrid({
             {strategy.max_drawdown_pct.toFixed(2)}%
           </div>
           <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
-            基准回撤的 1/4 (极强风控)
+            历史最大回撤幅度
           </div>
         </div>
 
@@ -433,10 +454,18 @@ function EtfStrategyMetricsSummaryGrid({
             沪深300基准收益
           </div>
           <div className="mt-1 text-xl font-extrabold font-mono text-[var(--app-text-secondary)]">
-            {strategy.benchmark_return_pct.toFixed(2)}%
+            {strategy.benchmark_return_pct !== null
+              ? `${strategy.benchmark_return_pct >= 0 ? '+' : ''}${strategy.benchmark_return_pct.toFixed(2)}%`
+              : '--'}
           </div>
           <div className="mt-1 app-type-micro text-[var(--app-text-tertiary)]">
-            同期A股宽基下行
+            {strategy.benchmark_return_pct === null
+              ? '未配置同期基准'
+              : strategy.benchmark_return_pct > 0
+                ? '同期沪深300上涨'
+                : strategy.benchmark_return_pct < 0
+                  ? '同期沪深300下行'
+                  : '同期沪深300持平'}
           </div>
         </div>
       </div>

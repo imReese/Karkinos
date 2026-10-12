@@ -584,8 +584,13 @@ def verified_trading_dates(
     start_date: str,
     end_date: str,
 ) -> list[str]:
-    start = datetime.fromisoformat(start_date).date()
-    end = datetime.fromisoformat(end_date).date()
+    if not start_date or not end_date:
+        raise ValueError("verified_trading_dates_range_invalid")
+    try:
+        start = datetime.fromisoformat(start_date).date()
+        end = datetime.fromisoformat(end_date).date()
+    except ValueError as exc:
+        raise ValueError("verified_trading_dates_range_invalid") from exc
     dates: set[str] = set()
     for year in range(start.year, end.year + 1):
         row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)

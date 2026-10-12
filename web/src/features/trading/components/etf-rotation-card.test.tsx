@@ -229,7 +229,7 @@ test('displays dataset verified badge, dataset id, and report link when bound to
       ...makeFixtureData().strategy,
       verification_status: 'bound_dataset_verified',
       dataset_id: 'sha256:112233445566778899aabbccddeeff00',
-      report_url: '/research?tab=backtest&id=42',
+      report_url: '/backtest?id=42',
     },
   });
   renderWithClient(<EtfRotationTradingCard data={data} />);
@@ -237,7 +237,9 @@ test('displays dataset verified badge, dataset id, and report link when bound to
   expect(screen.getByTestId('dataset-verified-badge')).toBeDefined();
   expect(screen.getByText('不可变 Dataset 已验证')).toBeDefined();
   expect(screen.getByText(/数据集: sha256:11223344/)).toBeDefined();
-  expect(screen.getByRole('link', { name: /查看回测报告/ })).toBeDefined();
+  const link = screen.getByRole('link', { name: /查看回测报告/ });
+  expect(link).toBeDefined();
+  expect(link.getAttribute('href')).toBe('/backtest?id=42');
 });
 
 test('displays forward paper book tracking card when paper_book is provided', () => {

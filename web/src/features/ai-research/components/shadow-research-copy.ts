@@ -144,6 +144,10 @@ export const SHADOW_RESEARCH_COPY = {
         'Latest cross-sectional market data is incomplete.',
       eligible_baseline_backtest_missing:
         'Specified baseline backtest result was not found.',
+      market_universe_missing:
+        'Market data or calendar is missing. Please sync market data and trading calendar first.',
+      verified_trading_dates_range_invalid:
+        'Trading date range is missing or invalid. Please check calendar dates.',
     },
     noCandidates:
       'No completed automated candidate is in the research pool yet.',
@@ -328,6 +332,10 @@ export const SHADOW_RESEARCH_COPY = {
         '本地日线数据覆盖不足（需要至少 60 个交易日）。',
       full_market_latest_cross_section_incomplete: '最新截面行情数据不完整。',
       eligible_baseline_backtest_missing: '未找到指定的基线回测记录。',
+      market_universe_missing:
+        '未找到市场行情或交易日历数据，请先同步交易日历与行情数据。',
+      verified_trading_dates_range_invalid:
+        '交易日历范围缺失或无效，请检查交易日历日期。',
     },
     noCandidates: '研究池里还没有完成的自动候选。',
     currentCandidates: '当前研究候选',
