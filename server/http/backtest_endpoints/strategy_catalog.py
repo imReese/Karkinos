@@ -17,7 +17,7 @@ from server.contracts.http.backtest import (
 from server.http.backtest_endpoints.dependencies import (
     StrategyCatalogEndpointDependencies,
 )
-from server.services.research_datasets import ResearchDatasetError
+from server.services.research.datasets import ResearchDatasetError
 
 
 def create_router(dependencies: StrategyCatalogEndpointDependencies) -> APIRouter:

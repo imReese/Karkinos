@@ -72,8 +72,8 @@ from server.services.asset_metadata import (
     resolve_asset_metadata,
 )
 from server.services.data_health import build_data_health
-from server.services.market_hours import is_cn_trading_session
-from server.services.market_indices import (
+from server.services.market.hours import is_cn_trading_session
+from server.services.market.indices import (
     default_market_index_assets,
 )
 from server.services.market_refresh import (
@@ -247,7 +247,7 @@ from server.services.market_views.health_projection import (
 from server.services.market_views.health_projection import (
     refresh_quote_snapshot as _refresh_quote_snapshot,
 )
-from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 from server.services.verified_source_health import (
     build_verified_source_health_response as _build_verified_source_health_response,
 )

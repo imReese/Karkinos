@@ -8,7 +8,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.services.execution_gateway_verification import (
+from server.services.controlled_execution.gateway import (
     EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
     ExecutionGatewayVerificationRejected,
     ExecutionGatewayVerificationService,

@@ -63,7 +63,7 @@ from server.http.ai_shadow_research_automation import (
 from server.http.ai_shadow_research_qualification import (
     create_router as create_shadow_research_qualification_router,
 )
-from server.services.strategy_research_factory import (
+from server.services.research.factory import (
     strategy_research_model_timeout_seconds as _model_timeout_seconds,
 )
 

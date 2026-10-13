@@ -10,7 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.composition.controlled_execution_services import (
     build_broker_connector_soak_promotion_service,
 )
-from server.services.broker_connector_runtime import build_broker_connectors
 from server.services.broker_connector_soak import BrokerConnectorSoakService
 from server.services.broker_connector_soak_promotion import (
     BROKER_SOAK_PROMOTION_ACKNOWLEDGEMENT,
@@ -21,6 +20,7 @@ from server.services.broker_connector_soak_runbook import (
     BrokerConnectorSoakRestartCheckpointNotFound,
     BrokerConnectorSoakRunbookService,
 )
+from server.services.controlled_execution.broker import build_broker_connectors
 
 
 class BrokerConnectorSoakCaptureRequest(BaseModel):

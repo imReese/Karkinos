@@ -36,7 +36,7 @@ from server.services.asset_metadata import (
     iter_configured_asset_metadata,
     metadata_configured_count,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 from server.services.market_views.health_inputs import (
     provider_supports_funds as _provider_supports_funds,
 )

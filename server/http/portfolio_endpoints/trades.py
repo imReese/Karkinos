@@ -17,7 +17,7 @@ from server.contracts.http.ledger_models import (
 )
 from server.contracts.portfolio_mutations import PortfolioMutationConflict
 from server.http.portfolio_endpoints.dependencies import PortfolioTradeDependencies
-from server.services.portfolio_trade_commands import (
+from server.services.portfolio.trades import (
     CreatedPendingFundOrder,
     ManualTradeRequest,
 )

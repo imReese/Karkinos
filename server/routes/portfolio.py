@@ -186,12 +186,12 @@ from server.services.account_state import build_account_state_projection
 from server.services.current_holding_market_evidence_review import (
     build_current_holding_market_evidence_review,
 )
-from server.services.market_hours import get_shanghai_now
-from server.services.portfolio_cash_flow_commands import (
+from server.services.market.hours import get_shanghai_now
+from server.services.portfolio.cash_flows import (
     PortfolioCashFlowCommandService,
 )
-from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
-from server.services.portfolio_trade_commands import (
+from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
+from server.services.portfolio.trades import (
     PortfolioTradeCommandService,
 )
 from server.services.risk_engine import build_risk_summary

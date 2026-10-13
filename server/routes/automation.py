@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.services.automation_control import AutomationControlService
-from server.services.broker_connector_runtime import build_broker_connectors
+from server.services.controlled_execution.broker import build_broker_connectors
 
 
 class AutomationPolicyRequest(BaseModel):

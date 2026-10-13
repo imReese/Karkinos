@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from server.services.factor_analytics import (
+from server.services.research.factors import (
     get_curated_universe,
     list_curated_universes,
     run_factor_evaluation,

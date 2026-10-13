@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,18 @@ from core.types import BarFrequency
 from data.store import DataStore
 from data.universe import UniverseMember, get_universe, list_universes
 from server.runtime_paths import resolve_data_dir
+
+
+def _active_resolve_data_dir() -> Path:
+    legacy = sys.modules.get("server.services.factor_analytics")
+    if legacy is not None and hasattr(legacy, "resolve_data_dir"):
+        try:
+            resolved = legacy.resolve_data_dir()
+            if resolved is not None:
+                return Path(resolved)
+        except Exception:
+            pass
+    return Path(resolve_data_dir())
 
 
 def list_curated_universes() -> list[dict[str, Any]]:
@@ -85,7 +98,7 @@ def _load_universe_price_panel(
     data_dir: Path | str | None = None,
 ) -> pd.DataFrame:
     """Load daily close prices for symbols into an aligned date-indexed DataFrame."""
-    root = Path(data_dir) if data_dir is not None else Path(resolve_data_dir())
+    root = Path(data_dir) if data_dir is not None else _active_resolve_data_dir()
     store = DataStore(root)
 
     price_series: dict[str, pd.Series] = {}

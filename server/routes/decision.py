@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from server.ai_runtime.store import IdempotencyConflict
 from server.services import decision_application
-from server.services.decision_quality import (
+from server.services.decision.quality import (
     DecisionQualityCaptureRejected,
     DecisionQualityCaptureRequest,
     DecisionQualityService,
@@ -206,8 +206,8 @@ def _build_daily_trading_plan_for_state(
     from server.services.daily_research_operation_preview import (
         resolve_latest_verified_research_operation_preview,
     )
-    from server.services.daily_trading_plan import build_daily_trading_plan
-    from server.services.research_operation_instruments import (
+    from server.services.decision.plan import build_daily_trading_plan
+    from server.services.research.instruments import (
         build_research_operation_instruments,
     )
 

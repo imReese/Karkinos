@@ -16,7 +16,7 @@ from server.contracts.http.strategy_models import (
     BacktestSweepResult,
 )
 from server.http.backtest_endpoints.dependencies import ExecutionEndpointDependencies
-from server.services.research_datasets import ResearchDatasetError
+from server.services.research.datasets import ResearchDatasetError
 
 
 def raise_strategy_input_error(exc: ValueError) -> NoReturn:

@@ -14,7 +14,7 @@ from data.market.contracts import DailyBarRequest
 from data.providers.tdx import TdxRuntimeConfigurationError
 from server.dependencies import get_app_state
 from server.persistence.jobs import JobIdentityConflictError, SQLiteJobStore
-from server.services.research_datasets import (
+from server.services.research.datasets import (
     ResearchDatasetError,
     publish_verified_interval_dataset,
 )

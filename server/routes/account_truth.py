@@ -233,21 +233,21 @@ from server.services.account_truth_views.repositories import (
 from server.services.account_truth_views.repositories import (
     reviewed_fee_schedule_repository_for_state as _reviewed_fee_schedule_repository_for_state,
 )
-from server.services.citic_history_canonical_lineage import (
-    build_citic_history_canonical_lineage_assessment,
-)
-from server.services.citic_source_canonical_resolution import (
+from server.services.controlled_execution.citic.canonical_resolution import (
     record_citic_source_canonical_resolution,
     revoke_citic_source_canonical_resolution,
 )
-from server.services.citic_source_query_window_review import (
+from server.services.controlled_execution.citic.history_lineage import (
+    build_citic_history_canonical_lineage_assessment,
+)
+from server.services.controlled_execution.citic.query_window_review import (
     citic_source_query_window_review_response,
     latest_citic_query_window_reviews_by_intake,
     project_citic_query_window_batch_assessment,
     record_citic_source_query_window_review,
     revoke_citic_source_query_window_review,
 )
-from server.services.citic_source_scope_review import (
+from server.services.controlled_execution.citic.scope_review import (
     active_citic_source_scope_review,
     citic_source_scope_review_response,
     latest_citic_source_scope_reviews_by_intake,

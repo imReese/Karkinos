@@ -10,6 +10,7 @@ import subprocess
 from data.dataset.reader import read_daily_bar_dataset
 from data.providers.tdx import prepare_tdx_runtime
 from server.services.research.datasets import (
+    MAX_VERIFIED_DATASET_INSTRUMENTS,
     ResearchDatasetError,
     ResearchDatasetService,
     dataset_summary,
@@ -20,6 +21,7 @@ from server.services.research.datasets import (
 )
 
 __all__ = [
+    "MAX_VERIFIED_DATASET_INSTRUMENTS",
     "ResearchDatasetError",
     "ResearchDatasetService",
     "dataset_summary",
