@@ -258,7 +258,7 @@ class StaticHolidayLabelProvider:
 
 
 @dataclass(frozen=True)
-class ChinaExchangeHolidayLabelProvider:
+class ChinaExchangeHolidayLabelProvider(HolidayLabelProvider):
     """Conservative labels derived from confirmed China-market closed dates.
 
     This provider never marks a trading day as a holiday. It only names already
@@ -576,7 +576,9 @@ def build_market_calendar_provider(
     holiday_label_provider: HolidayLabelProvider | None = None,
 ) -> MarketCalendarProvider:
     provider_name = (provider or "akshare").strip().lower()
-    labels = holiday_label_provider or ChinaExchangeHolidayLabelProvider()
+    labels: HolidayLabelProvider = (
+        holiday_label_provider or ChinaExchangeHolidayLabelProvider()
+    )
     if provider_name == "tushare":
         return TushareMarketCalendarProvider(
             token=tushare_token,

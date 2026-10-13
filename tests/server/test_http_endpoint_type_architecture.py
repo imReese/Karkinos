@@ -59,6 +59,7 @@ BODY_OPERATIONS = {
     ("post", "/api/market/instrument-metadata/backfill"),
     ("post", "/api/market/quotes/refresh"),
     ("post", "/api/market/research-notes"),
+    ("post", "/api/market/sync"),
     ("post", "/api/market/watchlist"),
     ("put", "/api/market/calendar/verification"),
     ("put", "/api/market/research-notes/{note_id}"),
