@@ -269,7 +269,11 @@ class PromotedStrategyUniverseScanService:
                 for item in self._data_store.list_market_daily_ingestion_receipts(
                     start_date=start_date,
                     end_date=market_date,
-                    provider_name=str(getattr(self._config, "data_source", "") or ""),
+                    provider_name=str(
+                        snapshot.get("provider_name")
+                        or getattr(self._config, "data_source", "")
+                        or ""
+                    ),
                 )
             ]
         except (OSError, ValueError):

@@ -175,7 +175,11 @@ def current_scan_input_blockers(
             for item in data_store.list_market_daily_ingestion_receipts(
                 start_date=start_date,
                 end_date=market_date,
-                provider_name=str(getattr(config, "data_source", "") or ""),
+                provider_name=str(
+                    snapshot.get("provider_name")
+                    or getattr(config, "data_source", "")
+                    or ""
+                ),
             )
         ]
         members = [

@@ -25,6 +25,22 @@ RESEARCH_BAR_NORMALIZATION = "karkinos.receipt_stock_units.v1"
 CANONICAL_STOCK_BAR_UNITS = {"volume": "shares", "amount": "CNY"}
 
 
+def _resolve_market_table(conn: sqlite3.Connection, base: str) -> str:
+    """Return physical table name for typed bar storage."""
+    cursor = conn.cursor()
+    cursor.execute(f"PRAGMA table_info({base})")
+    cols = {row[1] for row in cursor.fetchall()}
+    cursor.execute("SELECT type FROM sqlite_master WHERE name = ?", (base,))
+    row = cursor.fetchone()
+    if row and row[0] == "table" and "instrument_type" in cols:
+        return base
+    cursor.execute("SELECT type FROM sqlite_master WHERE name = ?", (f"{base}_v2",))
+    row_v2 = cursor.fetchone()
+    if row_v2 and row_v2[0] == "table":
+        return f"{base}_v2"
+    return base
+
+
 def is_supported_stock_receipt_identity(receipt: Mapping[str, object]) -> bool:
     """Accept only the exact legacy or typed stock daily-receipt identity."""
 
@@ -199,9 +215,10 @@ class MarketDailyIngestionMixin:
                 return stored
 
             require_frozen_stock_bars_unchanged(conn, records)
+            target_table = _resolve_market_table(conn, "market_bars")
             conn.executemany(
-                """
-                INSERT INTO market_bars_v2 (
+                f"""
+                INSERT INTO {target_table} (
                     symbol, instrument_type, frequency, timestamp,
                     open, high, low, close, volume, amount,
                     identity_provenance, created_at, updated_at
@@ -458,6 +475,16 @@ def _read_market_window_authority(
         conn,
         params=params,
     )
+    if frame.empty and table == "market_bars":
+        return _read_market_window_authority(
+            conn,
+            table="market_bars_v2",
+            identity_filter="instrument_type = 'stock' AND",
+            dates=dates,
+            start=start,
+            end=end,
+            authority_rank=authority_rank,
+        )
     return frame
 
 
@@ -494,6 +521,18 @@ def verify_market_daily_receipt_on_connection(
     ).fetchall()
     wanted = set(str(symbol) for symbol in symbols)
     records = [tuple(row) for row in rows if str(row[0]) in wanted]
+    if len(records) != len(symbols) and storage_table == "market_bars":
+        rows = conn.execute(
+            f"""
+            SELECT symbol, timestamp, open, high, low, close, volume, amount
+            FROM {schema}.market_bars_v2
+            WHERE instrument_type = 'stock' AND frequency = '1d'
+              AND substr(timestamp, 1, 10) = ?
+            ORDER BY symbol
+            """,
+            (str(receipt.get("trade_date") or ""),),
+        ).fetchall()
+        records = [tuple(row) for row in rows if str(row[0]) in wanted]
     if len(records) != len(symbols):
         return False
     expected_dataset_fingerprint = _market_daily_records_fingerprint(

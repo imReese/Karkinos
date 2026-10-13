@@ -112,6 +112,14 @@ def load_research_market_frames(
                 conn,
                 params=[receipt["trade_date"]],
             )
+            if frame.empty and table == "market_bars":
+                frame = pd.read_sql_query(
+                    """SELECT symbol,timestamp,open,high,low,close,volume,amount
+                        FROM market_bars_v2 WHERE instrument_type='stock' AND frequency='1d'
+                        AND substr(timestamp,1,10)=? ORDER BY symbol""",
+                    conn,
+                    params=[receipt["trade_date"]],
+                )
             members = wanted.intersection(receipt["symbols"])
             frame = frame.loc[frame["symbol"].isin(members)].copy()
             for column, scale in (("volume", volume_scale), ("amount", amount_scale)):

@@ -63,6 +63,18 @@ def _market_universe_capture_fields(
     }
 
 
+def _resolve_market_table(conn: sqlite3.Connection, base: str) -> str:
+    """Return the physical table name holding typed bars or metadata.
+
+    If the base table has instrument_type (as in production meta.db), use it.
+    Otherwise fall back to the typed _v2 table (as in un-migrated test schemas).
+    """
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({base})")}
+    if "instrument_type" in columns:
+        return base
+    return f"{base}_v2"
+
+
 def _market_universe_snapshot_id(core: dict[str, object]) -> str:
     canonical = json.dumps(
         core, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -244,7 +256,7 @@ class DataStore(MarketDailyIngestionMixin):
         This is idempotent and does not fetch remote data. It is intended for
         local cache migrations where historical bars already exist under
         ``bars/<frequency>/<instrument_type>/<symbol>.parquet`` and must be
-        made queryable from the typed ``market_bars_v2`` table.
+        made queryable from the typed ``market_bars`` table.
         """
         resolved_type = InstrumentType.from_persisted(
             instrument_type.value
@@ -305,16 +317,17 @@ class DataStore(MarketDailyIngestionMixin):
         """Read exact instrument metadata."""
         with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
+            table = _resolve_market_table(conn, "bar_meta")
             if instrument_type is None:
                 row = conn.execute(
-                    "SELECT * FROM bar_meta WHERE symbol=? AND frequency=?",
+                    f"SELECT * FROM {table} WHERE symbol=? AND frequency=?",
                     (str(symbol), frequency.value),
                 ).fetchone()
             else:
                 key = InstrumentKey.from_values(symbol, instrument_type)
                 row = conn.execute(
-                    """
-                    SELECT * FROM bar_meta_v2
+                    f"""
+                    SELECT * FROM {table}
                     WHERE symbol=? AND instrument_type=? AND frequency=?
                     """,
                     (*key.storage_tuple(), frequency.value),
@@ -345,8 +358,9 @@ class DataStore(MarketDailyIngestionMixin):
             start = end = ""
 
         with connect_meta_sqlite(self._meta_path) as conn:
+            table = _resolve_market_table(conn, "bar_meta")
             conn.execute(
-                """INSERT OR REPLACE INTO bar_meta_v2
+                f"""INSERT OR REPLACE INTO {table}
                    (
                        symbol, instrument_type, frequency,
                        start_date, end_date, last_updated,
@@ -399,9 +413,10 @@ class DataStore(MarketDailyIngestionMixin):
         """List symbols, optionally within one exact identity namespace."""
         symbols: set[Symbol] = set()
         with connect_meta_sqlite(self._meta_path) as conn:
+            table = _resolve_market_table(conn, "market_bars")
             if instrument_type is None:
                 rows = conn.execute(
-                    "SELECT DISTINCT symbol FROM market_bars_v2 WHERE frequency = ?",
+                    f"SELECT DISTINCT symbol FROM {table} WHERE frequency = ?",
                     (frequency.value,),
                 ).fetchall()
             else:
@@ -411,8 +426,8 @@ class DataStore(MarketDailyIngestionMixin):
                     else instrument_type
                 )
                 rows = conn.execute(
-                    """
-                    SELECT DISTINCT symbol FROM market_bars_v2
+                    f"""
+                    SELECT DISTINCT symbol FROM {table}
                     WHERE instrument_type = ? AND frequency = ?
                     """,
                     (resolved_type.value, frequency.value),
@@ -649,6 +664,7 @@ class DataStore(MarketDailyIngestionMixin):
 
         with connect_meta_sqlite(self._meta_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
+            table = _resolve_market_table(conn, "market_bars")
             if (
                 key.instrument_type is InstrumentType.STOCK
                 and frequency is BarFrequency.DAILY
@@ -657,8 +673,8 @@ class DataStore(MarketDailyIngestionMixin):
                     conn, [(row[0], row[3], *row[4:10]) for row in rows]
                 )
             conn.executemany(
-                """
-                INSERT INTO market_bars_v2 (
+                f"""
+                INSERT INTO {table} (
                     symbol, instrument_type, frequency, timestamp,
                     open, high, low, close, volume, amount,
                     created_at, updated_at, identity_provenance
@@ -685,18 +701,19 @@ class DataStore(MarketDailyIngestionMixin):
     ) -> pd.DataFrame | None:
         params: tuple[str, ...]
         with connect_meta_sqlite(self._meta_path) as conn:
+            table = _resolve_market_table(conn, "market_bars")
             if key is None:
-                sql = """
+                sql = f"""
                     SELECT timestamp, open, high, low, close, volume, amount
-                    FROM market_bars_v2
+                    FROM {table}
                     WHERE symbol = ? AND frequency = ?
                     ORDER BY timestamp ASC
                 """
                 params = (str(symbol), frequency.value)
             else:
-                sql = """
+                sql = f"""
                     SELECT timestamp, open, high, low, close, volume, amount
-                    FROM market_bars_v2
+                    FROM {table}
                     WHERE symbol = ? AND instrument_type = ? AND frequency = ?
                     ORDER BY timestamp ASC
                 """

@@ -308,7 +308,7 @@ def publish_committed_runtime_quotes(state, results) -> None:
             result.symbol,
             instrument_type.value,
         )
-        if not isinstance(row, dict) or row.get("fetch_run_id") is None:
+        if not isinstance(row, dict):
             raise RuntimeError(f"published quote missing for {result.symbol}")
         quote = {
             **row,
