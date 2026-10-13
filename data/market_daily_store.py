@@ -77,11 +77,14 @@ def require_frozen_stock_bars_unchanged(
         receipt = json.loads(str(row[1]))
         if not is_supported_stock_receipt_identity(receipt):
             continue
-        table = (
-            "market_bars"
-            if receipt["schema_version"] == "karkinos.market_daily_ingestion_receipt.v1"
-            else "market_bars_v2"
-        )
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
+        has_typed_bars = "instrument_type" in cols
+        if has_typed_bars:
+            table = "market_bars"
+        elif receipt["schema_version"] == "karkinos.market_daily_ingestion_receipt.v1":
+            table = "market_bars"
+        else:
+            table = "market_bars_v2"
         authorities.setdefault(str(row[0]), []).append(
             (table, {str(symbol) for symbol in receipt.get("symbols") or []})
         )
@@ -90,8 +93,9 @@ def require_frozen_stock_bars_unchanged(
         for table, symbols in authorities.get(timestamp[:10], []):
             if symbol not in symbols:
                 continue
+            cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
             identity = (
-                "instrument_type='stock' AND" if table == "market_bars_v2" else ""
+                "instrument_type='stock' AND" if "instrument_type" in cols else ""
             )
             existing = conn.execute(
                 f"""SELECT open, high, low, close, volume, amount FROM {table}
@@ -361,6 +365,10 @@ class MarketDailyIngestionMixin:
         end = (pd.Timestamp(end_date) + pd.Timedelta(days=1)).isoformat()
         legacy_dates, typed_dates = _receipt_storage_dates(receipts or ())
         with connect_meta_sqlite(self._meta_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
+            typed_table = (
+                "market_bars" if "instrument_type" in cols else "market_bars_v2"
+            )
             if receipts:
                 parts = [
                     _read_market_window_authority(
@@ -374,7 +382,7 @@ class MarketDailyIngestionMixin:
                     ),
                     _read_market_window_authority(
                         conn,
-                        table="market_bars_v2",
+                        table=typed_table,
                         identity_filter="instrument_type = 'stock' AND",
                         dates=typed_dates,
                         start=start,
@@ -391,7 +399,7 @@ class MarketDailyIngestionMixin:
             else:
                 frame = _read_market_window_authority(
                     conn,
-                    table="market_bars_v2",
+                    table=typed_table,
                     identity_filter="instrument_type = 'stock' AND",
                     dates=None,
                     start=start,
@@ -476,15 +484,24 @@ def _read_market_window_authority(
         params=params,
     )
     if frame.empty and table == "market_bars":
-        return _read_market_window_authority(
-            conn,
-            table="market_bars_v2",
-            identity_filter="instrument_type = 'stock' AND",
-            dates=dates,
-            start=start,
-            end=end,
-            authority_rank=authority_rank,
-        )
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
+        if "instrument_type" not in cols:
+            has_v2 = (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = 'market_bars_v2'"
+                ).fetchone()
+                is not None
+            )
+            if has_v2:
+                return _read_market_window_authority(
+                    conn,
+                    table="market_bars_v2",
+                    identity_filter="instrument_type = 'stock' AND",
+                    dates=dates,
+                    start=start,
+                    end=end,
+                    authority_rank=authority_rank,
+                )
     return frame
 
 
@@ -503,7 +520,12 @@ def verify_market_daily_receipt_on_connection(
     symbols = receipt.get("symbols")
     if not isinstance(symbols, list) or not symbols:
         return False
-    if schema_version != "karkinos.market_daily_ingestion_receipt.v1":
+    cols = {row[1] for row in conn.execute(f"PRAGMA {schema}.table_info(market_bars)")}
+    has_typed_bars = "instrument_type" in cols
+    if has_typed_bars:
+        storage_table = "market_bars"
+        identity_filter = "instrument_type = 'stock' AND"
+    elif schema_version != "karkinos.market_daily_ingestion_receipt.v1":
         storage_table = "market_bars_v2"
         identity_filter = "instrument_type = 'stock' AND"
     else:
@@ -521,18 +543,29 @@ def verify_market_daily_receipt_on_connection(
     ).fetchall()
     wanted = set(str(symbol) for symbol in symbols)
     records = [tuple(row) for row in rows if str(row[0]) in wanted]
-    if len(records) != len(symbols) and storage_table == "market_bars":
-        rows = conn.execute(
-            f"""
-            SELECT symbol, timestamp, open, high, low, close, volume, amount
-            FROM {schema}.market_bars_v2
-            WHERE instrument_type = 'stock' AND frequency = '1d'
-              AND substr(timestamp, 1, 10) = ?
-            ORDER BY symbol
-            """,
-            (str(receipt.get("trade_date") or ""),),
-        ).fetchall()
-        records = [tuple(row) for row in rows if str(row[0]) in wanted]
+    if (
+        len(records) != len(symbols)
+        and storage_table == "market_bars"
+        and not has_typed_bars
+    ):
+        has_v2 = (
+            conn.execute(
+                f"SELECT 1 FROM {schema}.sqlite_master WHERE type IN ('table', 'view') AND name = 'market_bars_v2'"
+            ).fetchone()
+            is not None
+        )
+        if has_v2:
+            rows = conn.execute(
+                f"""
+                SELECT symbol, timestamp, open, high, low, close, volume, amount
+                FROM {schema}.market_bars_v2
+                WHERE instrument_type = 'stock' AND frequency = '1d'
+                  AND substr(timestamp, 1, 10) = ?
+                ORDER BY symbol
+                """,
+                (str(receipt.get("trade_date") or ""),),
+            ).fetchall()
+            records = [tuple(row) for row in rows if str(row[0]) in wanted]
     if len(records) != len(symbols):
         return False
     expected_dataset_fingerprint = _market_daily_records_fingerprint(

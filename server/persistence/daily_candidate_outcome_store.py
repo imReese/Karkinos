@@ -113,15 +113,23 @@ class CandidateOutcomeReceiptReader:
         elif symbol not in receipt["symbols"]:
             result = (None, "symbol_absent_from_verified_receipt")
         else:
-            table = (
-                "market_bars"
-                if receipt["schema_version"]
+            cols = {
+                row[1] for row in self._conn.execute("PRAGMA table_info(market_bars)")
+            }
+            has_typed_bars = "instrument_type" in cols
+            legacy = (
+                receipt["schema_version"]
                 == "karkinos.market_daily_ingestion_receipt.v1"
-                else "market_bars_v2"
             )
-            stock_filter = (
-                "" if table == "market_bars" else "instrument_type='stock' AND"
-            )
+            if has_typed_bars:
+                table = "market_bars"
+                stock_filter = "instrument_type='stock' AND"
+            elif legacy:
+                table = "market_bars"
+                stock_filter = ""
+            else:
+                table = "market_bars_v2"
+                stock_filter = "instrument_type='stock' AND"
             rows = self._conn.execute(
                 f"""SELECT open, close, volume FROM {table}
                    WHERE {stock_filter} symbol=? AND frequency='1d'

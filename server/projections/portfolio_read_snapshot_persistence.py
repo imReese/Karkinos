@@ -426,19 +426,18 @@ def _read_persisted_market_revision(
                     str(row[1])
                     for row in connection.execute("PRAGMA table_info(bar_meta)")
                 }
-                has_typed_bars = (
-                    "instrument_type" in bar_meta_cols
-                    or {"bar_meta_v2", "market_bars_v2"} <= meta_tables
-                )
                 if "bar_meta" in meta_tables and "instrument_type" in bar_meta_cols:
                     dataset_table = "bar_meta"
                     bar_table = "market_bars"
+                    has_typed_bars = True
                 elif "bar_meta_v2" in meta_tables:
                     dataset_table = "bar_meta_v2"
                     bar_table = "market_bars_v2"
+                    has_typed_bars = True
                 else:
                     dataset_table = "bar_meta"
                     bar_table = "market_bars"
+                    has_typed_bars = False
                 dataset_identity = (
                     "instrument_type, identity_provenance," if has_typed_bars else ""
                 )
