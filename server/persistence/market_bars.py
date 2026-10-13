@@ -24,13 +24,14 @@ def read_market_bars(
 
     uri = f"{db_path.resolve().as_uri()}?mode=ro"
     with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
-        if (
-            connection.execute("""
-                SELECT 1 FROM sqlite_master
-                WHERE type = 'table' AND name = 'market_bars_v2'
-                """).fetchone()
-            is None
-        ):
+        cols = {row[1] for row in connection.execute("PRAGMA table_info(market_bars)")}
+        if "instrument_type" in cols:
+            bars_table = "market_bars"
+        elif connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = 'market_bars_v2'"
+        ).fetchone():
+            bars_table = "market_bars_v2"
+        else:
             return []
 
         legacy_lot_dates: set[str] = set()
@@ -65,9 +66,9 @@ def read_market_bars(
                     pass
 
         rows = connection.execute(
-            """
+            f"""
             SELECT timestamp, open, high, low, close, volume
-            FROM market_bars_v2
+            FROM {bars_table}
             WHERE symbol = ? AND instrument_type = ? AND frequency = ?
               AND timestamp >= ? AND timestamp < ?
             ORDER BY timestamp ASC

@@ -30,6 +30,13 @@ def read_historical_price_observations(
     for offset in range(0, len(symbols), _MAX_IDENTITIES_PER_QUERY):
         chunk = symbols[offset : offset + _MAX_IDENTITIES_PER_QUERY]
         placeholders = ",".join("?" for _ in chunk)
+        meta_cols = {
+            row[1]
+            for row in connection.execute("PRAGMA market_store.table_info(market_bars)")
+        }
+        bars_table = (
+            "market_bars" if "instrument_type" in meta_cols else "market_bars_v2"
+        )
         queries = (
             f"""SELECT symbol, instrument_type, trade_date,
                        trade_date || 'T15:00:00+08:00' AS timestamp,
@@ -39,11 +46,11 @@ def read_historical_price_observations(
                 FROM daily_close_snapshots_v2
                 WHERE symbol IN ({placeholders}) AND trade_date BETWEEN ? AND ?""",
             f"""SELECT symbol, instrument_type, substr(timestamp, 1, 10) AS trade_date,
-                       timestamp, close AS price, 'market_bars_v2' AS source,
+                       timestamp, close AS price, 'market_bars' AS source,
                        updated_at AS captured_at, 'bar' AS kind,
-                       'market_bars_v2:' || symbol || ':' || instrument_type || ':' || timestamp AS evidence_ref,
+                       'market_bars:' || symbol || ':' || instrument_type || ':' || timestamp AS evidence_ref,
                        NULL AS nav_date, NULL AS quote_status, identity_provenance
-                FROM market_store.market_bars_v2
+                FROM market_store.{bars_table}
                 WHERE symbol IN ({placeholders}) AND frequency = '1d'
                   AND substr(timestamp, 1, 10) BETWEEN ? AND ?""",
             f"""SELECT symbol, {_normalized_type_sql("COALESCE(instrument_type, asset_class)")} AS instrument_type,
@@ -207,7 +214,15 @@ def _read_chunk(
                 "ATTACH DATABASE ? AS market_store",
                 (_read_only_uri(meta_database_path),),
             )
-            if _attached_table_exists(
+            meta_cols = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA market_store.table_info(market_bars)"
+                )
+            }
+            if "instrument_type" in meta_cols:
+                bars_table = "market_bars"
+            elif _attached_table_exists(
                 connection,
                 schema="market_store",
                 table="market_bars_v2",
@@ -267,7 +282,7 @@ def _matrix_sql(
                 substr(bars.timestamp, 1, 10) AS trade_date,
                 bars.timestamp,
                 bars.close AS price,
-                'market_bars_v2' AS source,
+                'market_bars' AS source,
                 CASE WHEN bars.instrument_type = 'open_end_fund'
                      THEN 'fund' ELSE bars.instrument_type END AS asset_class,
                 NULL AS generation_id,

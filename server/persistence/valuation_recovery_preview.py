@@ -294,8 +294,14 @@ def _verify_candidate_facts(conn, facts, receipts, observed):
             == receipt["dataset_fingerprint"],
             "candidate_publication_binding_missing_or_drifted",
         )
+        meta_cols = {
+            row[1] for row in conn.execute("PRAGMA market_meta.table_info(market_bars)")
+        }
+        bars_table = (
+            "market_bars" if "instrument_type" in meta_cols else "market_bars_v2"
+        )
         bars = conn.execute(
-            "SELECT * FROM market_meta.market_bars_v2 "
+            f"SELECT * FROM market_meta.{bars_table} "
             "WHERE instrument_type = 'stock' AND symbol = ? AND frequency = '1d' "
             "AND substr(timestamp, 1, 10) = ?",
             (fact["symbol"], fact["session"]),

@@ -103,8 +103,16 @@ def load_research_market_frames(
             else:
                 raise ValueError("research_market_legacy_units_unknown")
             legacy = schema == "karkinos.market_daily_ingestion_receipt.v1"
-            table = "market_bars" if legacy else "market_bars_v2"
-            identity = "" if legacy else "instrument_type='stock' AND"
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
+            if "instrument_type" in cols:
+                table = "market_bars"
+                identity = "instrument_type='stock' AND"
+            elif legacy:
+                table = "market_bars"
+                identity = ""
+            else:
+                table = "market_bars_v2"
+                identity = "instrument_type='stock' AND"
             frame = pd.read_sql_query(
                 f"""SELECT symbol,timestamp,open,high,low,close,volume,amount
                     FROM {table} WHERE {identity} frequency='1d'
@@ -112,7 +120,13 @@ def load_research_market_frames(
                 conn,
                 params=[receipt["trade_date"]],
             )
-            if frame.empty and table == "market_bars":
+            if (
+                frame.empty
+                and table == "market_bars"
+                and conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name='market_bars_v2'"
+                ).fetchone()
+            ):
                 frame = pd.read_sql_query(
                     """SELECT symbol,timestamp,open,high,low,close,volume,amount
                         FROM market_bars_v2 WHERE instrument_type='stock' AND frequency='1d'

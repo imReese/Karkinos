@@ -419,14 +419,26 @@ def _read_persisted_market_revision(
                 meta_tables = {
                     str(row[0])
                     for row in connection.execute(
-                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                        "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
                     )
                 }
-                has_typed_bars = {
-                    "bar_meta_v2",
-                    "market_bars_v2",
-                } <= meta_tables
-                dataset_table = "bar_meta_v2" if has_typed_bars else "bar_meta"
+                bar_meta_cols = {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(bar_meta)")
+                }
+                has_typed_bars = (
+                    "instrument_type" in bar_meta_cols
+                    or {"bar_meta_v2", "market_bars_v2"} <= meta_tables
+                )
+                if "bar_meta" in meta_tables and "instrument_type" in bar_meta_cols:
+                    dataset_table = "bar_meta"
+                    bar_table = "market_bars"
+                elif "bar_meta_v2" in meta_tables:
+                    dataset_table = "bar_meta_v2"
+                    bar_table = "market_bars_v2"
+                else:
+                    dataset_table = "bar_meta"
+                    bar_table = "market_bars"
                 dataset_identity = (
                     "instrument_type, identity_provenance," if has_typed_bars else ""
                 )
@@ -453,7 +465,6 @@ def _read_persisted_market_revision(
                     receipt_rows = []
                 query_count += 1
                 try:
-                    bar_table = "market_bars_v2" if has_typed_bars else "market_bars"
                     write_head_row = connection.execute(f"""
                         SELECT
                             COUNT(*) AS row_count,
@@ -465,7 +476,7 @@ def _read_persisted_market_revision(
                         raise
                     write_head_row = None
             bar_revision = {
-                "storage": "bar_meta_v2" if has_typed_bars else "bar_meta",
+                "storage": dataset_table,
                 "datasets": [dict(row) for row in dataset_rows],
                 "daily_ingestion_receipts": [dict(row) for row in receipt_rows],
                 "market_bars_write_head": (

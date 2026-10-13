@@ -15,11 +15,24 @@ def _instrument_type(raw_type: object) -> str:
     ).value
 
 
-def _project_bar(row: sqlite3.Row, instrument_type: str) -> dict[str, Any]:
+def _resolve_bars_table(conn: sqlite3.Connection) -> str:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
+    if "instrument_type" in cols:
+        return "market_bars"
+    if conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = 'market_bars_v2'"
+    ).fetchone():
+        return "market_bars_v2"
+    return "market_bars"
+
+
+def _project_bar(
+    row: sqlite3.Row, instrument_type: str, *, source: str = "market_bars"
+) -> dict[str, Any]:
     result = dict(row)
     result["trade_date"] = str(result["timestamp"])[:10]
     result["price"] = result["close"]
-    result["source"] = "market_bars_v2"
+    result["source"] = source
     result["asset_class"] = (
         "fund" if instrument_type == "open_end_fund" else instrument_type
     )
@@ -43,13 +56,14 @@ def get_latest_market_bar_before_date(
     try:
         with sqlite3.connect(meta_path) as conn:
             conn.row_factory = sqlite3.Row
+            bars_table = _resolve_bars_table(conn)
             row = conn.execute(
-                """
+                f"""
                 SELECT
                     symbol, instrument_type, frequency, timestamp,
                     open, high, low, close, volume, amount,
                     identity_provenance, created_at, updated_at
-                FROM market_bars_v2
+                FROM {bars_table}
                 WHERE symbol = ? AND instrument_type = ? AND frequency = ?
                   AND substr(timestamp, 1, 10) < ?
                 ORDER BY substr(timestamp, 1, 10) DESC, timestamp DESC
@@ -59,7 +73,7 @@ def get_latest_market_bar_before_date(
             ).fetchone()
     except sqlite3.Error:
         return None
-    return None if row is None else _project_bar(row, resolved_type)
+    return None if row is None else _project_bar(row, resolved_type, source=bars_table)
 
 
 def get_market_bar_on_date(
@@ -79,13 +93,14 @@ def get_market_bar_on_date(
     try:
         with sqlite3.connect(meta_path) as conn:
             conn.row_factory = sqlite3.Row
+            bars_table = _resolve_bars_table(conn)
             row = conn.execute(
-                """
+                f"""
                 SELECT
                     symbol, instrument_type, frequency, timestamp,
                     open, high, low, close, volume, amount,
                     identity_provenance, created_at, updated_at
-                FROM market_bars_v2
+                FROM {bars_table}
                 WHERE symbol = ? AND instrument_type = ? AND frequency = ?
                   AND substr(timestamp, 1, 10) = ?
                 ORDER BY timestamp DESC
@@ -95,7 +110,7 @@ def get_market_bar_on_date(
             ).fetchone()
     except sqlite3.Error:
         return None
-    return None if row is None else _project_bar(row, resolved_type)
+    return None if row is None else _project_bar(row, resolved_type, source=bars_table)
 
 
 __all__ = ["get_latest_market_bar_before_date", "get_market_bar_on_date"]
