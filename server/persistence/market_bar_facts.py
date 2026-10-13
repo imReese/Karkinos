@@ -16,13 +16,6 @@ def _instrument_type(raw_type: object) -> str:
 
 
 def _resolve_bars_table(conn: sqlite3.Connection) -> str:
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
-    if "instrument_type" in cols:
-        return "market_bars"
-    if conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = 'market_bars_v2'"
-    ).fetchone():
-        return "market_bars_v2"
     return "market_bars"
 
 

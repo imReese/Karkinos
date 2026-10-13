@@ -113,7 +113,7 @@ def test_research_normalizes_only_bound_legacy_units_and_replays_both_versions(
             == "pass"
         )
     with sqlite3.connect(store._meta_path) as conn:
-        conn.execute("UPDATE market_bars_v2 SET amount=amount+1 WHERE symbol='600001'")
+        conn.execute("UPDATE market_bars SET amount=amount+1 WHERE symbol='600001'")
     assert (
         verify_backtest_dataset_snapshot_replay(snapshots[1], store_root=tmp_path)[
             "status"

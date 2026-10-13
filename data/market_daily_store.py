@@ -27,17 +27,6 @@ CANONICAL_STOCK_BAR_UNITS = {"volume": "shares", "amount": "CNY"}
 
 def _resolve_market_table(conn: sqlite3.Connection, base: str) -> str:
     """Return physical table name for typed bar storage."""
-    cursor = conn.cursor()
-    cursor.execute(f"PRAGMA table_info({base})")
-    cols = {row[1] for row in cursor.fetchall()}
-    cursor.execute("SELECT type FROM sqlite_master WHERE name = ?", (base,))
-    row = cursor.fetchone()
-    if row and row[0] == "table" and "instrument_type" in cols:
-        return base
-    cursor.execute("SELECT type FROM sqlite_master WHERE name = ?", (f"{base}_v2",))
-    row_v2 = cursor.fetchone()
-    if row_v2 and row_v2[0] == "table":
-        return f"{base}_v2"
     return base
 
 
@@ -77,14 +66,7 @@ def require_frozen_stock_bars_unchanged(
         receipt = json.loads(str(row[1]))
         if not is_supported_stock_receipt_identity(receipt):
             continue
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
-        has_typed_bars = "instrument_type" in cols
-        if has_typed_bars:
-            table = "market_bars"
-        elif receipt["schema_version"] == "karkinos.market_daily_ingestion_receipt.v1":
-            table = "market_bars"
-        else:
-            table = "market_bars_v2"
+        table = "market_bars"
         authorities.setdefault(str(row[0]), []).append(
             (table, {str(symbol) for symbol in receipt.get("symbols") or []})
         )
@@ -353,7 +335,7 @@ class MarketDailyIngestionMixin:
 
         Legacy v1 receipts prove stock identity for their exact dates in
         ``market_bars``; v2 receipts bind their dates to typed
-        ``market_bars_v2`` stock rows.  Reading both authorities through the
+        ``market_bars`` stock rows.  Reading both authorities through the
         verified receipt chain keeps historical windows continuous across the
         storage migration without guessing identity or contacting providers.
         """
@@ -365,10 +347,7 @@ class MarketDailyIngestionMixin:
         end = (pd.Timestamp(end_date) + pd.Timedelta(days=1)).isoformat()
         legacy_dates, typed_dates = _receipt_storage_dates(receipts or ())
         with connect_meta_sqlite(self._meta_path) as conn:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
-            typed_table = (
-                "market_bars" if "instrument_type" in cols else "market_bars_v2"
-            )
+            typed_table = "market_bars"
             if receipts:
                 parts = [
                     _read_market_window_authority(
@@ -463,7 +442,7 @@ def _read_market_window_authority(
 ) -> pd.DataFrame:
     if dates is not None and not dates:
         return pd.DataFrame()
-    if table not in {"market_bars", "market_bars_v2"}:
+    if table not in {"market_bars"}:
         raise ValueError("market_bar_storage_authority_invalid")
     date_sql = ""
     params: list[object] = [start, end]
@@ -483,25 +462,6 @@ def _read_market_window_authority(
         conn,
         params=params,
     )
-    if frame.empty and table == "market_bars":
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
-        if "instrument_type" not in cols:
-            has_v2 = (
-                conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = 'market_bars_v2'"
-                ).fetchone()
-                is not None
-            )
-            if has_v2:
-                return _read_market_window_authority(
-                    conn,
-                    table="market_bars_v2",
-                    identity_filter="instrument_type = 'stock' AND",
-                    dates=dates,
-                    start=start,
-                    end=end,
-                    authority_rank=authority_rank,
-                )
     return frame
 
 
@@ -514,7 +474,6 @@ def verify_market_daily_receipt_on_connection(
     """Replay a receipt on the caller's existing read or publication transaction."""
     if schema not in {"main", "market_meta"}:
         raise ValueError("market_daily_receipt_schema_invalid")
-    schema_version = str(receipt.get("schema_version") or "")
     if not is_supported_stock_receipt_identity(receipt):
         return False
     symbols = receipt.get("symbols")
@@ -522,15 +481,8 @@ def verify_market_daily_receipt_on_connection(
         return False
     cols = {row[1] for row in conn.execute(f"PRAGMA {schema}.table_info(market_bars)")}
     has_typed_bars = "instrument_type" in cols
-    if has_typed_bars:
-        storage_table = "market_bars"
-        identity_filter = "instrument_type = 'stock' AND"
-    elif schema_version != "karkinos.market_daily_ingestion_receipt.v1":
-        storage_table = "market_bars_v2"
-        identity_filter = "instrument_type = 'stock' AND"
-    else:
-        storage_table = "market_bars"
-        identity_filter = ""
+    storage_table = "market_bars"
+    identity_filter = "instrument_type = 'stock' AND" if has_typed_bars else ""
     rows = conn.execute(
         f"""
         SELECT symbol, timestamp, open, high, low, close, volume, amount
@@ -543,29 +495,6 @@ def verify_market_daily_receipt_on_connection(
     ).fetchall()
     wanted = set(str(symbol) for symbol in symbols)
     records = [tuple(row) for row in rows if str(row[0]) in wanted]
-    if (
-        len(records) != len(symbols)
-        and storage_table == "market_bars"
-        and not has_typed_bars
-    ):
-        has_v2 = (
-            conn.execute(
-                f"SELECT 1 FROM {schema}.sqlite_master WHERE type IN ('table', 'view') AND name = 'market_bars_v2'"
-            ).fetchone()
-            is not None
-        )
-        if has_v2:
-            rows = conn.execute(
-                f"""
-                SELECT symbol, timestamp, open, high, low, close, volume, amount
-                FROM {schema}.market_bars_v2
-                WHERE instrument_type = 'stock' AND frequency = '1d'
-                  AND substr(timestamp, 1, 10) = ?
-                ORDER BY symbol
-                """,
-                (str(receipt.get("trade_date") or ""),),
-            ).fetchall()
-            records = [tuple(row) for row in rows if str(row[0]) in wanted]
     if len(records) != len(symbols):
         return False
     expected_dataset_fingerprint = _market_daily_records_fingerprint(

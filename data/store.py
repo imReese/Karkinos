@@ -11,7 +11,6 @@ from pathlib import Path
 import pandas as pd
 
 from core.types import BarFrequency, InstrumentKey, InstrumentType, Symbol
-from data.market_bar_identity import migrate_legacy_market_bars_to_v2
 from data.market_daily_store import (
     MarketDailyIngestionMixin,
     require_frozen_stock_bars_unchanged,
@@ -64,15 +63,8 @@ def _market_universe_capture_fields(
 
 
 def _resolve_market_table(conn: sqlite3.Connection, base: str) -> str:
-    """Return the physical table name holding typed bars or metadata.
-
-    If the base table has instrument_type (as in production meta.db), use it.
-    Otherwise fall back to the typed _v2 table (as in un-migrated test schemas).
-    """
-    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({base})")}
-    if "instrument_type" in columns:
-        return base
-    return f"{base}_v2"
+    """Return the physical table name holding typed bars or metadata."""
+    return base
 
 
 def _market_universe_snapshot_id(core: dict[str, object]) -> str:
@@ -723,17 +715,3 @@ class DataStore(MarketDailyIngestionMixin):
             return None
         df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
         return df
-
-    def migrate_legacy_market_bars_to_v2(
-        self,
-        *,
-        identity_evidence: dict[str, object] | None = None,
-        dry_run: bool = True,
-    ) -> dict[str, object]:
-        """Plan or apply the evidence-bound legacy-to-v2 migration."""
-
-        return migrate_legacy_market_bars_to_v2(
-            self._meta_path,
-            identity_evidence=identity_evidence,
-            dry_run=dry_run,
-        )

@@ -21,7 +21,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Import existing data/store/bars parquet market data into "
-            "data/store/meta.db.market_bars_v2. This command does not fetch remote data."
+            "data/store/meta.db.market_bars. This command does not fetch remote data."
         )
     )
     parser.add_argument(

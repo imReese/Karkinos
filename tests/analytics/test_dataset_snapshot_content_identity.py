@@ -234,7 +234,7 @@ def test_dataset_snapshot_replay_uses_exact_persisted_window_and_detects_drift(
     with sqlite3.connect(tmp_path / "meta.db") as conn:
         conn.execute(
             """
-            UPDATE market_bars_v2
+            UPDATE market_bars
             SET close = 99
             WHERE symbol = ? AND instrument_type = 'stock' AND timestamp = ?
             """,

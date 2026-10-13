@@ -291,7 +291,7 @@ def test_sealed_replay_rejects_changed_frozen_research_observation(tmp_path):
     store, selection, snapshot = _receipt_inputs(tmp_path)
     with sqlite3.connect(store._meta_path) as conn:
         conn.execute(
-            "UPDATE market_bars_v2 SET close=9.95 WHERE symbol=? AND substr(timestamp,1,10)=?",
+            "UPDATE market_bars SET close=9.95 WHERE symbol=? AND substr(timestamp,1,10)=?",
             (str(_SYMBOL), _DATES[0]),
         )
     with pytest.raises(ValueError, match="research_market_receipt_drift"):

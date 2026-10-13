@@ -67,7 +67,7 @@ class TestDataStore:
             count = conn.execute(
                 """
                 SELECT COUNT(*)
-                FROM market_bars_v2
+                FROM market_bars
                 WHERE symbol = ? AND instrument_type = 'stock' AND frequency = ?
                 """,
                 ("600519", BarFrequency.DAILY.value),
@@ -125,7 +125,7 @@ class TestDataStore:
             count = conn.execute(
                 """
                 SELECT COUNT(*)
-                FROM market_bars_v2
+                FROM market_bars
                 WHERE symbol = ? AND instrument_type = 'stock' AND frequency = ?
                 """,
                 ("600519", BarFrequency.DAILY.value),
@@ -291,7 +291,7 @@ class TestDataStore:
 
         with sqlite3.connect(store._meta_path) as conn:
             conn.execute("""
-                UPDATE market_bars_v2 SET close = 99
+                UPDATE market_bars SET close = 99
                 WHERE symbol = '000001' AND instrument_type = 'stock'
                   AND frequency = '1d'
                   AND substr(timestamp, 1, 10) = '2026-08-21'

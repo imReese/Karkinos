@@ -1499,7 +1499,7 @@ def test_scheduler_post_close_rejects_drifted_market_daily_receipt(tmp_path):
     )
     with sqlite3.connect(store._meta_path) as conn:
         conn.execute("""
-            UPDATE market_bars_v2 SET close = 99
+            UPDATE market_bars SET close = 99
             WHERE symbol = '600001' AND instrument_type = 'stock'
               AND frequency = '1d'
               AND substr(timestamp, 1, 10) = '2026-05-29'

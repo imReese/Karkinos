@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from data.market_bar_identity import MARKET_BAR_V2_SCHEMA
+from data.market_bar_identity import _INSTRUMENT_TYPE_CHECK, MARKET_BAR_V2_SCHEMA
 from data.meta_store_connection import connect_meta_sqlite
 
 META_DATABASE_FORMAT_VERSION = 1
@@ -212,6 +212,184 @@ CREATE TABLE IF NOT EXISTS meta_schema_migrations (
 """
 
 
+def _ensure_canonical_market_tables(connection: sqlite3.Connection) -> None:
+    tables = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+        )
+    }
+    if "market_bars" not in tables and "bar_meta" not in tables:
+        return
+
+    cols_bars = (
+        {row[1] for row in connection.execute("PRAGMA table_info(market_bars)")}
+        if "market_bars" in tables
+        else set()
+    )
+    cols_meta = (
+        {row[1] for row in connection.execute("PRAGMA table_info(bar_meta)")}
+        if "bar_meta" in tables
+        else set()
+    )
+
+    if "instrument_type" not in cols_bars and "market_bars" in tables:
+        connection.execute("DROP TABLE IF EXISTS market_bars_legacy_old")
+        connection.execute("ALTER TABLE market_bars RENAME TO market_bars_legacy_old")
+        connection.execute(f"""
+        CREATE TABLE market_bars (
+            symbol TEXT NOT NULL CHECK(trim(symbol) <> ''),
+            instrument_type TEXT NOT NULL
+                CHECK(instrument_type IN ({_INSTRUMENT_TYPE_CHECK})),
+            frequency TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL NOT NULL CHECK(close > 0),
+            volume REAL,
+            amount REAL,
+            identity_provenance TEXT NOT NULL
+                CHECK(trim(identity_provenance) <> ''),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (symbol, instrument_type, frequency, timestamp)
+        )
+        """)
+        connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_market_bars_identity_frequency_ts
+        ON market_bars(symbol, instrument_type, frequency, timestamp)
+        """)
+
+        v2_type = connection.execute(
+            "SELECT type FROM sqlite_master WHERE name = 'market_bars_v2'"
+        ).fetchone()
+        if v2_type and v2_type[0] == "view":
+            connection.execute("DROP VIEW IF EXISTS market_bars_v2")
+        elif v2_type and v2_type[0] == "table":
+            connection.execute("""
+            INSERT OR IGNORE INTO market_bars
+            SELECT symbol, instrument_type, frequency, timestamp,
+                   open, high, low, close, volume, amount,
+                   identity_provenance, created_at, updated_at
+            FROM market_bars_v2
+            """)
+            connection.execute("DROP TABLE IF EXISTS market_bars_v2")
+
+        old_bar_cols = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(market_bars_legacy_old)")
+        }
+        bar_cols = [
+            c
+            for c in (
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "amount",
+                "created_at",
+                "updated_at",
+            )
+            if c in old_bar_cols
+        ]
+        col_names = (", " + ", ".join(bar_cols)) if bar_cols else ""
+        connection.execute(f"""
+        INSERT OR IGNORE INTO market_bars (
+            symbol, instrument_type, frequency, timestamp, identity_provenance{col_names}
+        )
+        SELECT symbol, 'stock', frequency, timestamp, 'legacy_bootstrap'{col_names}
+        FROM market_bars_legacy_old
+        """)
+        connection.execute("DROP TABLE IF EXISTS market_bars_legacy_old")
+
+    if "instrument_type" not in cols_meta and "bar_meta" in tables:
+        connection.execute("DROP TABLE IF EXISTS bar_meta_legacy_old")
+        connection.execute("ALTER TABLE bar_meta RENAME TO bar_meta_legacy_old")
+        connection.execute(f"""
+        CREATE TABLE bar_meta (
+            symbol TEXT NOT NULL CHECK(trim(symbol) <> ''),
+            instrument_type TEXT NOT NULL
+                CHECK(instrument_type IN ({_INSTRUMENT_TYPE_CHECK})),
+            frequency TEXT NOT NULL,
+            start_date TEXT,
+            end_date TEXT,
+            last_updated TEXT,
+            row_count INTEGER DEFAULT 0,
+            provider_name TEXT,
+            data_source TEXT,
+            adjustment_mode TEXT,
+            fetched_at TEXT,
+            dataset_id TEXT,
+            diagnostics_json TEXT,
+            duplicate_timestamp_count INTEGER DEFAULT 0,
+            missing_ohlcv_count INTEGER DEFAULT 0,
+            is_monotonic INTEGER DEFAULT 1,
+            identity_provenance TEXT NOT NULL
+                CHECK(trim(identity_provenance) <> ''),
+            PRIMARY KEY (symbol, instrument_type, frequency)
+        )
+        """)
+
+        meta_v2_type = connection.execute(
+            "SELECT type FROM sqlite_master WHERE name = 'bar_meta_v2'"
+        ).fetchone()
+        if meta_v2_type and meta_v2_type[0] == "view":
+            connection.execute("DROP VIEW IF EXISTS bar_meta_v2")
+        elif meta_v2_type and meta_v2_type[0] == "table":
+            connection.execute("""
+            INSERT OR IGNORE INTO bar_meta
+            SELECT symbol, instrument_type, frequency, start_date, end_date,
+                   last_updated, row_count, provider_name, data_source,
+                   adjustment_mode, fetched_at, dataset_id, diagnostics_json,
+                   duplicate_timestamp_count, missing_ohlcv_count, is_monotonic,
+                   identity_provenance
+            FROM bar_meta_v2
+            """)
+            connection.execute("DROP TABLE IF EXISTS bar_meta_v2")
+
+        old_meta_cols = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(bar_meta_legacy_old)")
+        }
+        common_cols = [
+            c
+            for c in (
+                "start_date",
+                "end_date",
+                "last_updated",
+                "row_count",
+                "provider_name",
+                "data_source",
+                "adjustment_mode",
+                "fetched_at",
+                "dataset_id",
+                "diagnostics_json",
+                "duplicate_timestamp_count",
+                "missing_ohlcv_count",
+                "is_monotonic",
+            )
+            if c in old_meta_cols
+        ]
+        col_names = (", " + ", ".join(common_cols)) if common_cols else ""
+        connection.execute(f"""
+        INSERT OR IGNORE INTO bar_meta (
+            symbol, instrument_type, frequency, identity_provenance{col_names}
+        )
+        SELECT symbol, 'stock', frequency, 'legacy_bootstrap'{col_names}
+        FROM bar_meta_legacy_old
+        """)
+        connection.execute("DROP TABLE IF EXISTS bar_meta_legacy_old")
+
+    for obj_name in ("market_bars_v2", "bar_meta_v2"):
+        connection.execute(f"DROP TRIGGER IF EXISTS trg_{obj_name}_insert")
+        connection.execute(f"DROP TRIGGER IF EXISTS trg_{obj_name}_update")
+        connection.execute(f"DROP TRIGGER IF EXISTS trg_{obj_name}_delete")
+        connection.execute(f"DROP VIEW IF EXISTS {obj_name}")
+        connection.execute(f"DROP TABLE IF EXISTS {obj_name}")
+
+
 def prepare_meta_database(database_path: str | Path) -> None:
     """Bootstrap or verify ``meta.db`` under one schema owner."""
 
@@ -226,6 +404,7 @@ def prepare_meta_database(database_path: str | Path) -> None:
         connection.execute("BEGIN IMMEDIATE")
         try:
             _prepare_on_connection(connection)
+            _ensure_canonical_market_tables(connection)
             if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
                 raise MetaDatabaseSchemaError("meta_database_integrity_failed")
             connection.commit()
@@ -243,6 +422,11 @@ def require_meta_database_ready(database_path: str | Path) -> None:
     with closing(connect_meta_sqlite(path, readonly=True)) as connection:
         applied_count = _assert_migration_history(connection)
         _assert_market_universe_schema(connection, applied_count)
+        bar_cols = {
+            row[1] for row in connection.execute("PRAGMA table_info(market_bars)")
+        }
+        if "instrument_type" not in bar_cols:
+            raise MetaDatabaseSchemaError("meta_database_market_bars_schema_mismatch")
 
 
 def meta_database_requires_preparation(database_path: str | Path) -> bool:
@@ -289,7 +473,14 @@ def meta_database_requires_preparation(database_path: str | Path) -> bool:
         ):
             raise MetaDatabaseSchemaError("meta_database_observation_times_incomplete")
         journal_mode = str(connection.execute("PRAGMA journal_mode").fetchone()[0])
-        return applied_count < len(_META_MIGRATIONS) or journal_mode.lower() != "wal"
+        bar_cols = {
+            row[1] for row in connection.execute("PRAGMA table_info(market_bars)")
+        }
+        return (
+            applied_count < len(_META_MIGRATIONS)
+            or journal_mode.lower() != "wal"
+            or "instrument_type" not in bar_cols
+        )
 
 
 def _prepare_on_connection(connection: sqlite3.Connection) -> None:

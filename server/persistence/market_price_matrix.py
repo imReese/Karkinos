@@ -30,13 +30,7 @@ def read_historical_price_observations(
     for offset in range(0, len(symbols), _MAX_IDENTITIES_PER_QUERY):
         chunk = symbols[offset : offset + _MAX_IDENTITIES_PER_QUERY]
         placeholders = ",".join("?" for _ in chunk)
-        meta_cols = {
-            row[1]
-            for row in connection.execute("PRAGMA market_store.table_info(market_bars)")
-        }
-        bars_table = (
-            "market_bars" if "instrument_type" in meta_cols else "market_bars_v2"
-        )
+        bars_table = "market_bars"
         queries = (
             f"""SELECT symbol, instrument_type, trade_date,
                        trade_date || 'T15:00:00+08:00' AS timestamp,
@@ -214,21 +208,7 @@ def _read_chunk(
                 "ATTACH DATABASE ? AS market_store",
                 (_read_only_uri(meta_database_path),),
             )
-            meta_cols = {
-                row[1]
-                for row in connection.execute(
-                    "PRAGMA market_store.table_info(market_bars)"
-                )
-            }
-            if "instrument_type" in meta_cols:
-                bars_table = "market_bars"
-            elif _attached_table_exists(
-                connection,
-                schema="market_store",
-                table="market_bars_v2",
-            ):
-                bars_table = "market_bars_v2"
-            elif _attached_table_exists(
+            if _attached_table_exists(
                 connection,
                 schema="market_store",
                 table="market_bars",

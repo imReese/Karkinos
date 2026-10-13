@@ -11,7 +11,7 @@ from server.db import AppDatabase
 def _create_market_bars(path) -> None:
     with sqlite3.connect(path) as connection:
         connection.execute("""
-            CREATE TABLE market_bars_v2 (
+            CREATE TABLE market_bars (
                 symbol TEXT NOT NULL,
                 instrument_type TEXT NOT NULL,
                 frequency TEXT NOT NULL,
@@ -22,7 +22,7 @@ def _create_market_bars(path) -> None:
             )
             """)
         connection.executemany(
-            "INSERT INTO market_bars_v2 VALUES (?, 'stock', '1d', ?, ?, 'fixture')",
+            "INSERT INTO market_bars VALUES (?, 'stock', '1d', ?, ?, 'fixture')",
             [
                 ("600001", "2026-08-26T15:00:00+08:00", 10.5),
                 ("600002", "2026-08-26T15:00:00+08:00", 20.5),

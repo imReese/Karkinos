@@ -324,12 +324,12 @@ def _independent_close_evidence(
         uri = f"{meta_path.resolve().as_uri()}?mode=ro"
         with sqlite3.connect(uri, uri=True, timeout=1.0) as meta:
             meta.row_factory = sqlite3.Row
-            if _table_exists(meta, "market_bars_v2"):
+            if _table_exists(meta, "market_bars"):
                 for symbol, instrument_type, trade_date in sorted(requested):
                     for row in meta.execute(
                         """
                         SELECT close
-                        FROM market_bars_v2
+                        FROM market_bars
                         WHERE symbol = ? AND instrument_type = ?
                           AND frequency = '1d'
                           AND substr(timestamp, 1, 10) = ?

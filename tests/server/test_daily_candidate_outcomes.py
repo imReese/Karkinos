@@ -179,7 +179,7 @@ def test_other_provider_or_revised_anchor_cannot_fill_observation(
 
     with sqlite3.connect(tmp_path / "meta.db") as conn:
         conn.execute(
-            "UPDATE market_bars_v2 SET close=99 "
+            "UPDATE market_bars SET close=99 "
             "WHERE symbol='600869' AND substr(timestamp,1,10)='2026-09-22'"
         )
     candidate = evaluate_daily_candidate_outcomes(db, report, as_of=date(2026, 9, 24))[

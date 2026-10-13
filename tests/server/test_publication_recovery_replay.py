@@ -945,7 +945,7 @@ def test_preview_rejects_missing_conflicting_or_drifting_evidence(
     elif variant in {"tampered_receipt", "tampered_bar"}:
         with sqlite3.connect(store._meta_path) as conn:
             if variant == "tampered_bar":
-                conn.execute("UPDATE market_bars_v2 SET close=12 WHERE symbol='600002'")
+                conn.execute("UPDATE market_bars SET close=12 WHERE symbol='600002'")
             else:
                 row = conn.execute(
                     "SELECT receipt_json FROM market_daily_ingestion_receipts"
@@ -1038,7 +1038,7 @@ def test_receipt_and_bars_share_a_read_snapshot_during_concurrent_change(
     writes = []
 
     def change_between_databases(conn, incident_ref, observed):
-        meta_writer.execute("UPDATE market_bars_v2 SET close=12")
+        meta_writer.execute("UPDATE market_bars SET close=12")
         meta_writer.commit()
         app_writer.execute("UPDATE daily_close_snapshots_v2 SET close_price=12")
         app_writer.commit()

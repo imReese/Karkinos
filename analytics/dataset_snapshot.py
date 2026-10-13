@@ -762,13 +762,11 @@ def _verify_symbol_replay(
     frequency = str(manifest.get("frequency") or "")
     if start is None or end is None:
         return "dataset_snapshot_date_range_invalid"
-    cols = {row[1] for row in connection.execute("PRAGMA table_info(market_bars)")}
-    bars_table = "market_bars" if "instrument_type" in cols else "market_bars_v2"
     rows = (
         connection.execute(
-            f"""
+            """
         SELECT timestamp, open, high, low, close, volume, amount
-        FROM {bars_table}
+        FROM market_bars
         WHERE symbol=? AND instrument_type=? AND frequency=?
         ORDER BY timestamp ASC
         """,

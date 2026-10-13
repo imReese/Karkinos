@@ -33,7 +33,7 @@ def _legacy_close(
 def _bar_evidence(store: DataStore) -> None:
     with sqlite3.connect(store._meta_path) as conn:
         conn.execute("""
-            INSERT INTO market_bars_v2 (
+            INSERT INTO market_bars (
                 symbol, instrument_type, frequency, timestamp,
                 open, high, low, close, volume, amount,
                 identity_provenance, created_at, updated_at

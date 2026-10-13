@@ -302,7 +302,7 @@ def test_v5_snapshot_keeps_identity_while_current_authority_remains_strict(
 def _write_bar_revision(path: Path, *, dataset_id: str) -> None:
     with sqlite3.connect(path) as connection:
         connection.execute("""
-            CREATE TABLE IF NOT EXISTS bar_meta_v2 (
+            CREATE TABLE IF NOT EXISTS bar_meta (
                 symbol TEXT NOT NULL,
                 instrument_type TEXT NOT NULL,
                 identity_provenance TEXT NOT NULL,
@@ -316,7 +316,7 @@ def _write_bar_revision(path: Path, *, dataset_id: str) -> None:
             )
             """)
         connection.execute("""
-            CREATE TABLE IF NOT EXISTS market_bars_v2 (
+            CREATE TABLE IF NOT EXISTS market_bars (
                 symbol TEXT NOT NULL,
                 instrument_type TEXT NOT NULL,
                 frequency TEXT NOT NULL,
@@ -327,7 +327,7 @@ def _write_bar_revision(path: Path, *, dataset_id: str) -> None:
             """)
         connection.execute(
             """
-            INSERT INTO bar_meta_v2 VALUES (
+            INSERT INTO bar_meta VALUES (
                 '600001', 'stock', 'fixture', '1d', ?, 1,
                 '2026-08-29', '2026-08-29', ?
             )
@@ -467,7 +467,7 @@ def test_market_bar_write_head_invalidates_before_metadata_publication(
     meta_path = tmp_path / "meta.db"
     with sqlite3.connect(meta_path) as connection:
         connection.execute("""
-            INSERT INTO market_bars_v2 (
+            INSERT INTO market_bars (
                 symbol, instrument_type, frequency, timestamp,
                 open, high, low, close, volume, amount,
                 identity_provenance, created_at, updated_at
@@ -482,7 +482,7 @@ def test_market_bar_write_head_invalidates_before_metadata_publication(
     database.matrix_price = 12.0
     with sqlite3.connect(meta_path) as connection:
         connection.execute("""
-            UPDATE market_bars_v2
+            UPDATE market_bars
             SET close = 12.0, updated_at = 'write-b'
             WHERE symbol = '600001' AND instrument_type = 'stock'
               AND frequency = '1d'

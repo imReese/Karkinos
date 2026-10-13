@@ -175,7 +175,7 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
     db.init_sync()
     with sqlite3.connect(tmp_path / "meta.db") as conn:
         conn.execute("""
-            CREATE TABLE market_bars_v2 (
+            CREATE TABLE market_bars (
                 symbol TEXT NOT NULL,
                 instrument_type TEXT NOT NULL,
                 frequency TEXT NOT NULL,
@@ -194,7 +194,7 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
         """)
         conn.execute(
             """
-            INSERT INTO market_bars_v2 (
+            INSERT INTO market_bars (
                 symbol, instrument_type, frequency, timestamp,
                 open, high, low, close, volume, amount,
                 identity_provenance, created_at, updated_at

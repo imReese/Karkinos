@@ -121,15 +121,8 @@ class CandidateOutcomeReceiptReader:
                 receipt["schema_version"]
                 == "karkinos.market_daily_ingestion_receipt.v1"
             )
-            if has_typed_bars:
-                table = "market_bars"
-                stock_filter = "instrument_type='stock' AND"
-            elif legacy:
-                table = "market_bars"
-                stock_filter = ""
-            else:
-                table = "market_bars_v2"
-                stock_filter = "instrument_type='stock' AND"
+            table = "market_bars"
+            stock_filter = "instrument_type='stock' AND" if has_typed_bars else ""
             rows = self._conn.execute(
                 f"""SELECT open, close, volume FROM {table}
                    WHERE {stock_filter} symbol=? AND frequency='1d'
