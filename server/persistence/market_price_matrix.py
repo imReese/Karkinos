@@ -88,21 +88,57 @@ def read_historical_price_matrix(
     open-end-fund compatibility and can never match an ETF.
     """
 
-    legacy_symbol_result = instrument_keys is None
-    keys = _normalize_requested_keys(instrument_keys, symbols=symbols)
-    if not keys:
-        return {}
+    legacy_symbol_result = instrument_keys is None and symbols is not None
     _validate_date_window(start_date, end_date)
     if symbol_batch_size <= 0 or symbol_batch_size > _MAX_IDENTITIES_PER_QUERY:
         raise ValueError("historical price matrix identity batch size is invalid")
 
     matrix: dict[InstrumentKey, list[dict[str, Any]]] = {}
     meta_database_path = app_database_path.parent / "meta.db"
+
+    if legacy_symbol_result:
+        raw_symbols = sorted(
+            {str(s).strip() for s in (symbols or ()) if str(s).strip()}
+        )
+        if not raw_symbols:
+            return {}
+        for offset in range(0, len(raw_symbols), symbol_batch_size):
+            chunk_symbols = raw_symbols[offset : offset + symbol_batch_size]
+            rows = _read_chunk(
+                app_database_path,
+                meta_database_path,
+                symbols=chunk_symbols,
+                instrument_keys=None,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            for row in rows:
+                key = InstrumentKey.from_values(row[0], row[1])
+                if key.symbol not in chunk_symbols:
+                    raise RuntimeError(
+                        "historical price matrix identity escaped request"
+                    )
+                matrix.setdefault(key, []).append(_price_row(row))
+        for instrument_rows in matrix.values():
+            instrument_rows.sort(
+                key=lambda row: (str(row["trade_date"]), str(row["timestamp"]))
+            )
+        by_symbol: dict[str, list[dict[str, Any]]] = {}
+        for key, p_rows in matrix.items():
+            by_symbol.setdefault(key.symbol, []).extend(p_rows)
+        for p_rows in by_symbol.values():
+            p_rows.sort(key=lambda r: (str(r["trade_date"]), str(r["timestamp"])))
+        return by_symbol
+
+    keys = _normalize_requested_keys(instrument_keys, symbols=symbols)
+    if not keys:
+        return {}
     for offset in range(0, len(keys), symbol_batch_size):
         chunk = keys[offset : offset + symbol_batch_size]
-        rows = _read_typed_chunk(
+        rows = _read_chunk(
             app_database_path,
             meta_database_path,
+            symbols=None,
             instrument_keys=chunk,
             start_date=start_date,
             end_date=end_date,
@@ -117,8 +153,6 @@ def read_historical_price_matrix(
         instrument_rows.sort(
             key=lambda row: (str(row["trade_date"]), str(row["timestamp"]))
         )
-    if legacy_symbol_result:
-        return {key.symbol: rows for key, rows in matrix.items()}
     return matrix
 
 
@@ -154,11 +188,12 @@ def _normalize_requested_keys(
     return sorted(keys, key=lambda key: key.storage_tuple())
 
 
-def _read_typed_chunk(
+def _read_chunk(
     app_database_path: Path,
     meta_database_path: Path,
     *,
-    instrument_keys: list[InstrumentKey],
+    symbols: list[str] | None,
+    instrument_keys: list[InstrumentKey] | None,
     start_date: str,
     end_date: str,
 ) -> list[tuple[Any, ...]]:
@@ -166,32 +201,45 @@ def _read_typed_chunk(
         return []
     uri = _read_only_uri(app_database_path)
     with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
-        include_market_bars = False
+        bars_table: str | None = None
         if meta_database_path.is_file():
             connection.execute(
                 "ATTACH DATABASE ? AS market_store",
                 (_read_only_uri(meta_database_path),),
             )
-            include_market_bars = _attached_table_exists(
+            if _attached_table_exists(
                 connection,
                 schema="market_store",
                 table="market_bars_v2",
-            )
+            ):
+                bars_table = "market_bars_v2"
+            elif _attached_table_exists(
+                connection,
+                schema="market_store",
+                table="market_bars",
+            ):
+                bars_table = "market_bars"
         include_daily_closes = _table_exists(
             connection,
             "daily_close_snapshots_v2",
         )
         quote_columns = _table_columns(connection, "quote_snapshots")
         sql = _matrix_sql(
-            identity_count=len(instrument_keys),
-            include_market_bars=include_market_bars,
+            identity_count=len(symbols)
+            if symbols is not None
+            else len(instrument_keys or []),
+            is_symbol_query=symbols is not None,
+            bars_table=bars_table,
             include_daily_closes=include_daily_closes,
             include_quotes=bool(quote_columns),
             quote_columns=quote_columns,
         )
         params: list[object] = []
-        for key in instrument_keys:
-            params.extend(key.storage_tuple())
+        if symbols is not None:
+            params.extend(symbols)
+        else:
+            for key in instrument_keys or []:
+                params.extend(key.storage_tuple())
         params.extend((start_date, end_date))
         return list(connection.execute(sql, params).fetchall())
 
@@ -199,14 +247,20 @@ def _read_typed_chunk(
 def _matrix_sql(
     *,
     identity_count: int,
-    include_market_bars: bool,
+    is_symbol_query: bool,
+    bars_table: str | None,
     include_daily_closes: bool,
     include_quotes: bool,
     quote_columns: set[str],
 ) -> str:
     observations: list[str] = []
-    if include_market_bars:
-        observations.append("""
+    if bars_table:
+        type_join = (
+            ""
+            if is_symbol_query
+            else "\n             AND wanted.instrument_type = bars.instrument_type"
+        )
+        observations.append(f"""
             SELECT
                 bars.symbol,
                 bars.instrument_type,
@@ -219,10 +273,9 @@ def _matrix_sql(
                 NULL AS generation_id,
                 bars.identity_provenance,
                 0 AS source_priority
-            FROM market_store.market_bars_v2 AS bars
+            FROM market_store.{bars_table} AS bars
             JOIN requested AS wanted
-              ON wanted.symbol = bars.symbol
-             AND wanted.instrument_type = bars.instrument_type
+              ON wanted.symbol = bars.symbol{type_join}
             CROSS JOIN bounds
             WHERE bars.frequency = '1d'
               AND substr(bars.timestamp, 1, 10) <= bounds.end_date
@@ -231,7 +284,7 @@ def _matrix_sql(
                   substr(bars.timestamp, 1, 10) >= bounds.start_date
                   OR bars.timestamp = (
                       SELECT MAX(prior.timestamp)
-                      FROM market_store.market_bars_v2 AS prior
+                      FROM market_store.{bars_table} AS prior
                       WHERE prior.symbol = bars.symbol
                         AND prior.instrument_type = bars.instrument_type
                         AND prior.frequency = bars.frequency
@@ -240,7 +293,12 @@ def _matrix_sql(
               )
             """)
     if include_daily_closes:
-        observations.append("""
+        type_join = (
+            ""
+            if is_symbol_query
+            else "\n             AND wanted.instrument_type = closes.instrument_type"
+        )
+        observations.append(f"""
             SELECT
                 closes.symbol,
                 closes.instrument_type,
@@ -255,8 +313,7 @@ def _matrix_sql(
                 1 AS source_priority
             FROM daily_close_snapshots_v2 AS closes
             JOIN requested AS wanted
-              ON wanted.symbol = closes.symbol
-             AND wanted.instrument_type = closes.instrument_type
+              ON wanted.symbol = closes.symbol{type_join}
             CROSS JOIN bounds
             WHERE closes.trade_date <= bounds.end_date
               AND closes.close_price > 0
@@ -294,6 +351,11 @@ def _matrix_sql(
             "THEN 'legacy_fund_compatibility' "
             "ELSE 'legacy_asset_class_compatibility' END"
         )
+        type_join = (
+            ""
+            if is_symbol_query
+            else f"\n             AND wanted.instrument_type = {normalized_type}"
+        )
         observations.append(f"""
             SELECT
                 quotes.symbol,
@@ -309,8 +371,7 @@ def _matrix_sql(
                 2 AS source_priority
             FROM quote_snapshots AS quotes
             JOIN requested AS wanted
-              ON wanted.symbol = quotes.symbol
-             AND wanted.instrument_type = {normalized_type}
+              ON wanted.symbol = quotes.symbol{type_join}
             CROSS JOIN bounds
             WHERE substr(quotes.timestamp, 1, 10) <= bounds.end_date
               AND quotes.price > 0
@@ -325,19 +386,20 @@ def _matrix_sql(
                   )
               )
             """)
+    requested_def = (
+        f"requested(symbol) AS (\n            VALUES {_requested_values(identity_count, 1)}\n        )"
+        if is_symbol_query
+        else f"requested(symbol, instrument_type) AS (\n            VALUES {_requested_values(identity_count, 2)}\n        )"
+    )
     if not observations:
         return f"""
-            WITH requested(symbol, instrument_type) AS (
-                VALUES {_requested_identity_values(identity_count)}
-            ), bounds(start_date, end_date) AS (VALUES (?, ?))
+            WITH {requested_def}, bounds(start_date, end_date) AS (VALUES (?, ?))
             SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
             WHERE 0
         """
     unioned = "\nUNION ALL\n".join(observations)
     return f"""
-        WITH requested(symbol, instrument_type) AS (
-            VALUES {_requested_identity_values(identity_count)}
-        ),
+        WITH {requested_def},
         bounds(start_date, end_date) AS (VALUES (?, ?)),
         observations AS (
             {unioned}
@@ -382,8 +444,9 @@ def _price_row(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
-def _requested_identity_values(count: int) -> str:
-    return ", ".join("(?, ?)" for _ in range(count))
+def _requested_values(count: int, arity: int) -> str:
+    item = f"({', '.join('?' for _ in range(arity))})"
+    return ", ".join(item for _ in range(count))
 
 
 def _read_only_uri(path: Path) -> str:
@@ -399,7 +462,7 @@ def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     return (
         conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
             (table,),
         ).fetchone()
         is not None
@@ -414,7 +477,7 @@ def _attached_table_exists(
 ) -> bool:
     return (
         conn.execute(
-            f"SELECT 1 FROM {schema}.sqlite_master WHERE type = 'table' AND name = ?",
+            f"SELECT 1 FROM {schema}.sqlite_master WHERE type IN ('table', 'view') AND name = ?",
             (table,),
         ).fetchone()
         is not None

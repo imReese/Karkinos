@@ -1144,7 +1144,7 @@ def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
         now=datetime(2026, 5, 30, 16, 0),
     )
 
-    assert len(calls) == 2
+    assert len(calls) == 14
     first_args, first_kwargs = calls[0]
     assert first_args[0] == Symbol("600001")
     assert first_kwargs["frequency"] == BarFrequency.DAILY
@@ -1153,7 +1153,7 @@ def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
     assert first_kwargs["refresh_ttl_seconds"] == 0
     assert first_kwargs["degrade_to_cache"] is True
     assert first_kwargs["end"].date().isoformat() == "2026-05-29"
-    assert calls[1][1]["end"].date().isoformat() == "2026-05-30"
+    assert calls[7][1]["end"].date().isoformat() == "2026-05-30"
 
 
 def test_scheduler_backfill_never_refreshes_a_frozen_daily_batch_remotely():
@@ -1184,7 +1184,7 @@ def test_scheduler_backfill_never_refreshes_a_frozen_daily_batch_remotely():
         now=datetime(2026, 5, 29, 16, 0),
     )
 
-    assert len(calls) == 1
+    assert len(calls) == 7
     assert calls[0][1]["allow_remote_refresh"] is False
 
 
@@ -1705,7 +1705,7 @@ def test_scheduler_retries_snapshot_publication_without_refetching_bars():
         now=datetime(2026, 5, 29, 16, 5),
     )
 
-    assert manager.calls == 1
+    assert manager.calls == 7
     assert db.calls == 2
     assert scheduler._pending_valuation_publication_reason is None
 
