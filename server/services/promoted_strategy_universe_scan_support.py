@@ -427,6 +427,149 @@ def history_start(config: Any, market_date: str) -> str:
     return start.isoformat()
 
 
+def resolve_daily_bar_receipt_provider(
+    *,
+    data_store: Any,
+    start_date: str,
+    end_date: str,
+    config: Any = None,
+    snapshot: Mapping[str, Any] | None = None,
+    preferred_provider: str | None = None,
+) -> str:
+    """Resolve the authoritative daily bar receipt provider for replay."""
+    preferred = str(preferred_provider or "").strip()
+    available_providers: list[str] = []
+    if hasattr(data_store, "list_market_daily_ingestion_receipt_providers"):
+        try:
+            available_providers = (
+                data_store.list_market_daily_ingestion_receipt_providers(
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            )
+        except Exception:
+            available_providers = []
+
+    if preferred:
+        return preferred
+
+    snapshot_provider = str(
+        (snapshot.get("provider_name") if isinstance(snapshot, Mapping) else "") or ""
+    ).strip()
+    if (
+        snapshot_provider
+        and available_providers
+        and snapshot_provider in available_providers
+    ):
+        return snapshot_provider
+
+    config_candidates: list[str] = []
+    if config is not None:
+        try:
+            from data.source_policy import MarketDataUseCase
+            from data.source_routing import configured_data_provider_names
+
+            config_candidates.extend(
+                configured_data_provider_names(config, MarketDataUseCase.DAILY_BARS)
+            )
+        except Exception:
+            pass
+        data_source = str(getattr(config, "data_source", "") or "").strip()
+        if data_source and data_source not in config_candidates:
+            config_candidates.append(data_source)
+
+    for candidate in config_candidates:
+        if candidate in available_providers:
+            return candidate
+
+    if len(available_providers) == 1:
+        return available_providers[0]
+    if available_providers:
+        return available_providers[0]
+
+    if config_candidates:
+        return config_candidates[0]
+    if snapshot_provider:
+        return snapshot_provider
+    return str(getattr(config, "data_source", "") or "").strip()
+
+
+def resolve_daily_bar_receipts(
+    *,
+    data_store: Any,
+    start_date: str,
+    end_date: str,
+    config: Any = None,
+    snapshot: Mapping[str, Any] | None = None,
+    preferred_provider: str | None = None,
+) -> list[dict[str, Any]]:
+    """Resolve a continuous, date-deduplicated window of verified daily receipts.
+
+    Supports heterogeneous daily bar ingestion across the window (e.g. historical
+    migration or multi-source fallback) while deterministically arbitrating
+    between competing receipts on the same date according to provider priority.
+    """
+    preferred = str(preferred_provider or "").strip()
+    provider_priority: list[str] = []
+    if preferred:
+        provider_priority.append(preferred)
+
+    if config is not None:
+        data_source = str(getattr(config, "data_source", "") or "").strip()
+        if data_source and data_source not in provider_priority:
+            provider_priority.append(data_source)
+        try:
+            from data.source_policy import MarketDataUseCase
+            from data.source_routing import configured_data_provider_names
+
+            for candidate in configured_data_provider_names(
+                config, MarketDataUseCase.DAILY_BARS
+            ):
+                if candidate not in provider_priority:
+                    provider_priority.append(candidate)
+        except Exception:
+            pass
+
+    snapshot_provider = str(
+        (snapshot.get("provider_name") if isinstance(snapshot, Mapping) else "") or ""
+    ).strip()
+    if snapshot_provider and snapshot_provider not in provider_priority:
+        provider_priority.append(snapshot_provider)
+
+    raw_receipts = [
+        dict(item)
+        for item in data_store.list_market_daily_ingestion_receipts(
+            start_date=start_date,
+            end_date=end_date,
+            provider_name=preferred if preferred else None,
+            verify=True,
+        )
+    ]
+
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for item in raw_receipts:
+        date_key = str(item.get("trade_date") or "").strip()
+        if date_key:
+            by_date.setdefault(date_key, []).append(item)
+
+    selected: list[dict[str, Any]] = []
+    for date_key in sorted(by_date.keys()):
+        candidates = by_date[date_key]
+        if len(candidates) == 1:
+            selected.append(candidates[0])
+        else:
+
+            def rank(cand: dict[str, Any]) -> tuple[int, str]:
+                p = str(cand.get("provider_name") or "").strip()
+                idx = provider_priority.index(p) if p in provider_priority else 9999
+                return (idx, p)
+
+            candidates.sort(key=rank)
+            selected.append(candidates[0])
+
+    return selected
+
+
 def formula_history_rows(formula_ast: Mapping[str, Any]) -> int:
     def expression_rows(expression: Any) -> int:
         if not isinstance(expression, Mapping):

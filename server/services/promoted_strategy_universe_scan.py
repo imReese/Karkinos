@@ -36,6 +36,8 @@ from server.services.promoted_strategy_universe_scan_support import (
     positive_float,
     prior_verified_trading_date,
     promoted_scan_evaluation_policy_fingerprint,
+    resolve_daily_bar_receipt_provider,
+    resolve_daily_bar_receipts,
     truth_projection,
 )
 from server.services.promoted_strategy_universe_scan_validation import (
@@ -264,18 +266,13 @@ class PromotedStrategyUniverseScanService:
             blockers.append("verified_market_history_window_incomplete")
         receipts: list[dict[str, Any]] = []
         try:
-            receipts = [
-                dict(item)
-                for item in self._data_store.list_market_daily_ingestion_receipts(
-                    start_date=start_date,
-                    end_date=market_date,
-                    provider_name=str(
-                        snapshot.get("provider_name")
-                        or getattr(self._config, "data_source", "")
-                        or ""
-                    ),
-                )
-            ]
+            receipts = resolve_daily_bar_receipts(
+                data_store=self._data_store,
+                start_date=start_date,
+                end_date=market_date,
+                config=self._config,
+                snapshot=snapshot,
+            )
         except (OSError, ValueError):
             blockers.append("full_market_daily_receipt_replay_failed")
         held_symbols: list[str] = []

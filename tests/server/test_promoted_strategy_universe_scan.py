@@ -88,6 +88,8 @@ def _freeze_market(
     market_dates: list[str],
     *,
     special_symbol: str | None = None,
+    snapshot_provider: str = "fixture",
+    daily_provider: str = "fixture",
 ) -> list[str]:
     symbols = [f"{600000 + index:06d}" for index in range(1, 51)]
     if special_symbol is not None:
@@ -95,14 +97,14 @@ def _freeze_market(
     members = normalize_a_share_members(symbols)
     store.save_market_universe_snapshot(
         trade_date="2026-08-21",
-        provider_name="fixture",
+        provider_name=snapshot_provider,
         members=members,
     )
     for market_date in market_dates:
         closes = [10.0 if symbol == symbols[0] else 20.0 for symbol in symbols]
         store.ingest_market_daily_batch(
             trade_date=market_date,
-            provider_name="fixture",
+            provider_name=daily_provider,
             bars=pd.DataFrame(
                 {
                     "symbol": symbols,
@@ -149,12 +151,20 @@ def _service(
     kill_switch_enabled: bool = False,
     active_strategy_count: int = 1,
     special_symbol: str | None = None,
+    snapshot_provider: str = "fixture",
+    daily_provider: str = "fixture",
 ):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     market_dates = _calendar(db)
     store = DataStore(tmp_path / "market")
-    symbols = _freeze_market(store, market_dates, special_symbol=special_symbol)
+    symbols = _freeze_market(
+        store,
+        market_dates,
+        special_symbol=special_symbol,
+        snapshot_provider=snapshot_provider,
+        daily_provider=daily_provider,
+    )
     strategy_ids = [
         (
             "ai_formula_shadow:fixture-winner"
@@ -1049,3 +1059,272 @@ def test_scan_succeeds_when_fund_valuation_lane_is_missing_but_stock_lane_is_com
     assert "portfolio_total_equity_invalid" not in result["blockers"]
     assert result["selected_signal_count"] == 5
     assert len(result["action_tasks"]) == 5
+
+
+def test_promoted_strategy_scan_succeeds_with_heterogeneous_providers(
+    tmp_path,
+) -> None:
+    db, service, symbols = _service(
+        tmp_path,
+        produces_signals=True,
+        snapshot_provider="akshare",
+        daily_provider="tushare",
+    )
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [symbols[0], "019999"],
+        "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
+        "valuation_snapshot_id": "valuation-fixture",
+    }
+
+    first = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+    second = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+
+    assert first["status"] == "completed"
+    assert first["blockers"] == []
+    assert first["selected_signal_count"] == 5
+    assert second["reused"] is True
+    assert second["blockers"] == []
+
+
+def test_resolve_daily_bar_receipt_provider_resolution(tmp_path) -> None:
+    from server.services.promoted_strategy_universe_scan_support import (
+        resolve_daily_bar_receipt_provider,
+    )
+
+    store = DataStore(tmp_path / "market")
+    # Empty store fallback
+    resolved = resolve_daily_bar_receipt_provider(
+        data_store=store,
+        start_date="2026-01-01",
+        end_date="2026-08-24",
+        snapshot={"provider_name": "akshare"},
+    )
+    assert resolved == "akshare"
+
+    # Store with tushare receipts
+    store.ingest_market_daily_batch(
+        trade_date="2026-08-21",
+        provider_name="tushare",
+        bars=pd.DataFrame(
+            {
+                "symbol": ["600001"],
+                "timestamp": [pd.Timestamp("2026-08-21")],
+                "open": [10.0],
+                "high": [10.2],
+                "low": [9.8],
+                "close": [10.0],
+                "volume": [1_000_000],
+                "amount": [10_000_000],
+            }
+        ),
+    )
+
+    # When snapshot provider matches available
+    assert (
+        resolve_daily_bar_receipt_provider(
+            data_store=store,
+            start_date="2026-01-01",
+            end_date="2026-08-24",
+            snapshot={"provider_name": "tushare"},
+        )
+        == "tushare"
+    )
+
+    # Heterogeneous: snapshot is akshare, receipts are tushare -> resolves to tushare
+    assert (
+        resolve_daily_bar_receipt_provider(
+            data_store=store,
+            start_date="2026-01-01",
+            end_date="2026-08-24",
+            snapshot={"provider_name": "akshare"},
+        )
+        == "tushare"
+    )
+
+    # Explicit preferred override
+    assert (
+        resolve_daily_bar_receipt_provider(
+            data_store=store,
+            start_date="2026-01-01",
+            end_date="2026-08-24",
+            snapshot={"provider_name": "akshare"},
+            preferred_provider="custom_override",
+        )
+        == "custom_override"
+    )
+
+
+def test_resolve_daily_bar_receipts_heterogeneous_window(tmp_path) -> None:
+    from server.services.promoted_strategy_universe_scan_support import (
+        resolve_daily_bar_receipts,
+    )
+
+    store = DataStore(tmp_path / "market")
+
+    def _ingest(date: str, provider: str, close: float) -> None:
+        store.ingest_market_daily_batch(
+            trade_date=date,
+            provider_name=provider,
+            bars=pd.DataFrame(
+                {
+                    "symbol": ["600001"],
+                    "timestamp": [pd.Timestamp(date)],
+                    "open": [close],
+                    "high": [close + 0.2],
+                    "low": [close - 0.2],
+                    "close": [close],
+                    "volume": [1_000_000],
+                    "amount": [10_000_000],
+                }
+            ),
+        )
+
+    # Date 1: tushare, Date 2: akshare
+    _ingest("2026-08-20", "tushare", 10.0)
+    _ingest("2026-08-21", "akshare", 10.5)
+
+    receipts = resolve_daily_bar_receipts(
+        data_store=store,
+        start_date="2026-08-20",
+        end_date="2026-08-21",
+    )
+    assert len(receipts) == 2
+    assert receipts[0]["trade_date"] == "2026-08-20"
+    assert receipts[0]["provider_name"] == "tushare"
+    assert receipts[1]["trade_date"] == "2026-08-21"
+    assert receipts[1]["provider_name"] == "akshare"
+
+    # Date 2 now also has tushare; config prioritizes tushare over akshare
+    _ingest("2026-08-21", "tushare", 10.5)
+    receipts_priority = resolve_daily_bar_receipts(
+        data_store=store,
+        start_date="2026-08-20",
+        end_date="2026-08-21",
+        config=SimpleNamespace(data_source="tushare"),
+    )
+    assert len(receipts_priority) == 2
+    assert receipts_priority[1]["trade_date"] == "2026-08-21"
+    assert receipts_priority[1]["provider_name"] == "tushare"
+
+
+def test_promoted_strategy_scan_succeeds_with_multi_source_daily_receipts(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    market_dates = _calendar(db)
+    store = DataStore(tmp_path / "market")
+
+    symbols = [f"{600000 + index:06d}" for index in range(1, 51)]
+    members = normalize_a_share_members(symbols)
+    store.save_market_universe_snapshot(
+        trade_date="2026-08-21",
+        provider_name="master_fixture",
+        members=members,
+    )
+    # Split dates across two different daily providers: half tushare, half akshare
+    mid = len(market_dates) // 2
+    for index, market_date in enumerate(market_dates):
+        provider = "tushare_daily" if index < mid else "akshare_daily"
+        closes = [10.0 if symbol == symbols[0] else 20.0 for symbol in symbols]
+        store.ingest_market_daily_batch(
+            trade_date=market_date,
+            provider_name=provider,
+            bars=pd.DataFrame(
+                {
+                    "symbol": symbols,
+                    "timestamp": [pd.Timestamp(market_date)] * len(symbols),
+                    "open": closes,
+                    "high": [value + 0.2 for value in closes],
+                    "low": [value - 0.2 for value in closes],
+                    "close": closes,
+                    "volume": [1_000_000 + idx for idx in range(len(symbols))],
+                    "amount": [10_000_000 + idx * 1_000 for idx in range(len(symbols))],
+                }
+            ),
+        )
+
+    strategy_id = "ai_formula_shadow:fixture-winner"
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id=strategy_id,
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload={},
+    )
+    strategy = {
+        "formula_ast": _formula(produces_signals=True),
+        "formula_fingerprint": "sha256:fixture-formula",
+        "selected_universe": symbols[:40],
+    }
+    strategy_fingerprint = content_fingerprint(strategy)
+
+    def gate_resolver(_db, requested_strategy_id, *, as_of_date):
+        return {
+            "status": "pass",
+            "promotion": {
+                "daily_strategy_artifact_binding": {
+                    "winner_candidate_id": "winner",
+                    "run_id": "run-1",
+                    "operating_constraints": {
+                        "strategy_artifact_fingerprint": strategy_fingerprint,
+                    },
+                }
+            },
+        }, []
+
+    def strategy_loader(*, candidate_id, run_id):
+        return {
+            "candidate_id": candidate_id,
+            "run_id": run_id,
+            "strategy_artifact_fingerprint": strategy_fingerprint,
+            "strategy": strategy,
+        }
+
+    service = PromotedStrategyUniverseScanService(
+        db=db,
+        config=SimpleNamespace(data_source="fixture", start_date="2026-04-01"),
+        data_store=store,
+        policy=MarketUniversePolicy(minimum_master_member_count=40),
+        strategy_gate_resolver=gate_resolver,
+        strategy_loader=strategy_loader,
+        safety_gate_reader=lambda: {
+            "default_execution_mode": "manual_confirmation",
+            "manual_confirmation_required": True,
+            "broker_submission_enabled": False,
+            "kill_switch_enabled": False,
+        },
+        clock=lambda: datetime(
+            2026,
+            8,
+            24,
+            9,
+            36,
+            tzinfo=ZoneInfo("Asia/Shanghai"),
+        ),
+    )
+
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [symbols[0], "019999"],
+        "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
+        "valuation_snapshot_id": "valuation-fixture",
+    }
+
+    first = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+    second = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+
+    assert first["status"] == "completed"
+    assert first["blockers"] == []
+    assert first["selected_signal_count"] == 5
+    assert second["reused"] is True
+    assert second["blockers"] == []

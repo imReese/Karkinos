@@ -22,6 +22,8 @@ from server.services.promoted_strategy_universe_scan_support import (
     portfolio_scan_binding,
     prior_verified_trading_date,
     promoted_scan_evaluation_policy_fingerprint,
+    resolve_daily_bar_receipt_provider,
+    resolve_daily_bar_receipts,
 )
 
 
@@ -170,18 +172,13 @@ def current_scan_input_blockers(
         )
         if not trading_dates or trading_dates[-1] != market_date:
             raise ValueError("verified_market_history_window_incomplete")
-        receipts = [
-            dict(item)
-            for item in data_store.list_market_daily_ingestion_receipts(
-                start_date=start_date,
-                end_date=market_date,
-                provider_name=str(
-                    snapshot.get("provider_name")
-                    or getattr(config, "data_source", "")
-                    or ""
-                ),
-            )
-        ]
+        receipts = resolve_daily_bar_receipts(
+            data_store=data_store,
+            start_date=start_date,
+            end_date=market_date,
+            config=config,
+            snapshot=snapshot,
+        )
         members = [
             str(item.get("symbol") or "")
             for item in verified_snapshot["members"]

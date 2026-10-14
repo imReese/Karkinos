@@ -323,6 +323,25 @@ class MarketDailyIngestionMixin:
                 raise ValueError("market_daily_ingestion_receipt_drift")
             return payloads
 
+    def list_market_daily_ingestion_receipt_providers(
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+    ) -> list[str]:
+        """List distinct receipt providers present in the trading date window."""
+
+        with connect_meta_sqlite(self._meta_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT provider_name FROM market_daily_ingestion_receipts
+                WHERE trade_date BETWEEN ? AND ?
+                ORDER BY provider_name
+                """,
+                (str(start_date), str(end_date)),
+            ).fetchall()
+            return [str(row[0]) for row in rows if str(row[0]).strip()]
+
     def load_market_bar_windows(
         self,
         *,

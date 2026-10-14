@@ -411,11 +411,9 @@ def build_full_market_universe_truth(
     for market_date in required_dates:
         receipt = receipt_by_date[market_date]
         fingerprint = str(receipt.get("receipt_fingerprint") or "")
-        if (
-            not is_supported_stock_receipt_identity(receipt)
-            or str(receipt.get("provider_name") or "") != provider_name
-            or not fingerprint.startswith("sha256:")
-        ):
+        if not is_supported_stock_receipt_identity(
+            receipt
+        ) or not fingerprint.startswith("sha256:"):
             raise MarketUniverseRejected("full_market_daily_receipt_invalid")
         receipt_fingerprints.append(fingerprint)
 
