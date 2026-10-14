@@ -302,7 +302,7 @@ test('reads one coherent account projection and a separate canonical history', a
   expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual(
     [
       '/api/portfolio/state',
-      '/api/portfolio/equity-curve/series?range=ytd',
+      '/api/portfolio/equity-curve/series?range=all',
       '/api/decision/today',
       '/api/decision/trading-plan',
     ].sort(),
@@ -378,7 +378,7 @@ test.each(['zh', 'en'] as const)(
     expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual(
       [
         '/api/portfolio/state',
-        '/api/portfolio/equity-curve/series?range=ytd',
+        '/api/portfolio/equity-curve/series?range=all',
       ].sort(),
     );
   },

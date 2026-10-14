@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -29,6 +30,7 @@ from server.contracts.ai_shadow_research_automation import (
     ShadowResearchPolicy,
 )
 from server.contracts.ai_shadow_research_qualification import (
+    SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION,
     ShadowResearchQualificationRejected,
     qualification_formula_semantic_fingerprint,
 )
@@ -74,6 +76,13 @@ from server.services.ai_shadow_research_support import (
     shadow_research_market_close_as_of,
 )
 from server.services.market_calendar_dates import latest_verified_closed_trading_date
+from server.services.strategy_promotion_support import (
+    AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
+    STRATEGY_PROMOTION_SCHEMA_VERSION,
+    resolve_ai_shadow_qualification_promotion_evidence,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class AiShadowResearchQualificationService:
@@ -653,7 +662,166 @@ class AiShadowResearchQualificationService:
             failure_code=terminal["failure_code"],
             now=admission.timestamp(),
         )
+        if (
+            terminal.get("run_status") == "completed"
+            and terminal.get("selection", {}).get("status") == "winner_selected"
+        ):
+            winner_id = terminal["selection"].get("winner_qualification_candidate_id")
+            if winner_id:
+                await self._auto_switch_to_qualified_winner(
+                    winner_qualification_candidate_id=winner_id,
+                    timestamp=admission.timestamp(),
+                )
         return await asyncio.to_thread(public_result, self._store, finished, reused)
+
+    async def _auto_switch_to_qualified_winner(
+        self,
+        *,
+        winner_qualification_candidate_id: str,
+        timestamp: str,
+    ) -> dict[str, Any] | None:
+        try:
+            return await asyncio.to_thread(
+                self._auto_switch_to_qualified_winner_sync,
+                winner_qualification_candidate_id=winner_qualification_candidate_id,
+                timestamp=timestamp,
+            )
+        except Exception:
+            logger.warning(
+                "Automatic paper_shadow switch failed for qualified winner %s",
+                winner_qualification_candidate_id,
+                exc_info=True,
+            )
+            return None
+
+    def _auto_switch_to_qualified_winner_sync(
+        self,
+        *,
+        winner_qualification_candidate_id: str,
+        timestamp: str,
+    ) -> dict[str, Any] | None:
+        approval_method = getattr(
+            self._store, "prepare_qualification_candidate_approval", None
+        )
+        approve_method = getattr(
+            self._store, "approve_qualification_candidate_for_paper_shadow", None
+        )
+        if not callable(approval_method) or not callable(approve_method):
+            return None
+
+        approved_by = "automation:optimal_strategy_gate"
+        notes = "automatically_switched_to_latest_optimal_strategy_passed_gate"
+        try:
+            approval = self._store.prepare_qualification_candidate_approval(
+                winner_qualification_candidate_id,
+                approved_by=approved_by,
+                notes=notes,
+                confirmation=SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION,
+                now=timestamp,
+            )
+        except Exception:
+            logger.warning(
+                "Could not prepare approval for winner %s",
+                winner_qualification_candidate_id,
+                exc_info=True,
+            )
+            return None
+
+        evidence, blockers = resolve_ai_shadow_qualification_promotion_evidence(
+            self._db,
+            winner_qualification_candidate_id,
+            proposed_qualification_approval=approval,
+        )
+        if blockers or evidence.get("status") != "pass":
+            logger.warning(
+                "Automatic paper_shadow switch blocked for winner %s: %s",
+                winner_qualification_candidate_id,
+                blockers,
+            )
+            return None
+
+        source_candidate_id = str(evidence["source_candidate_id"])
+        strategy_id = f"ai_formula_shadow:{source_candidate_id}"
+        readiness = {
+            "schema_version": AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
+            "strategy_id": strategy_id,
+            "promotion_status": "promotable_for_paper_review",
+            "is_promotable": True,
+            "missing_requirements": [],
+            "backtest_result_id": evidence["backtest_result_id"],
+            "candidate_id": source_candidate_id,
+            "qualification_candidate_id": winner_qualification_candidate_id,
+            "qualification_run_id": evidence["qualification_run_id"],
+            "comparison_fingerprint": evidence["comparison_fingerprint"],
+            "human_approval_id": evidence["qualification_approval_id"],
+            "strategy_advancement_gate": evidence["strategy_advancement_gate"],
+            "daily_strategy_artifact_binding": evidence[
+                "daily_strategy_artifact_binding"
+            ],
+            "qualification_binding": evidence["qualification_binding"],
+            "live_like_enabled": False,
+            "broker_submission_enabled": False,
+            "does_not_create_order": True,
+            "does_not_authorize_execution": True,
+            "does_not_change_capital_authority": True,
+        }
+        current = (
+            self._db.get_strategy_promotion_state_sync(strategy_id)
+            if hasattr(self._db, "get_strategy_promotion_state_sync")
+            else None
+        )
+        gate_fingerprint = (readiness.get("strategy_advancement_gate") or {}).get(
+            "evidence_fingerprint"
+        )
+        state_payload = {
+            "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
+            "readiness": readiness,
+            "human_review": {
+                "reviewer": approved_by,
+                "review_note": notes,
+                "confirmation_recorded": True,
+                "strategy_advancement_gate_fingerprint": gate_fingerprint,
+            },
+            "live_like_enabled": False,
+            "broker_submission_enabled": False,
+            "does_not_change_capital_authority": True,
+        }
+        event_payload = {
+            "manual_confirmation_required": True,
+            "manual_confirmation_recorded": True,
+            "reviewer": approved_by,
+            "review_note": notes,
+            "strategy_advancement_gate_fingerprint": gate_fingerprint,
+            "live_like_enabled": False,
+            "broker_submission_enabled": False,
+            "does_not_change_capital_authority": True,
+        }
+
+        def current_evidence_validator():
+            return resolve_ai_shadow_qualification_promotion_evidence(
+                self._db,
+                winner_qualification_candidate_id,
+                proposed_qualification_approval=approval,
+            )
+
+        committed = self._store.approve_qualification_candidate_for_paper_shadow(
+            winner_qualification_candidate_id,
+            approval=approval,
+            strategy_id=strategy_id,
+            readiness=readiness,
+            state_payload=state_payload,
+            event_payload=event_payload,
+            expected_state=current,
+            current_evidence_validator=current_evidence_validator,
+            actor=approved_by,
+            now=timestamp,
+        )
+        logger.info(
+            "Successfully auto-switched to latest optimal strategy %s (qualification candidate %s)",
+            strategy_id,
+            winner_qualification_candidate_id,
+        )
+        return committed
 
     async def _replay_candidate(
         self,

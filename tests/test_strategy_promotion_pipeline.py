@@ -288,3 +288,56 @@ def test_pipeline_rejects_controlled_bridge_pilot_lifecycle_by_default(
     events = service.list_events("dual_ma")
     assert events[-1]["event_type"] == "controlled_bridge_pilot_rejected"
     assert events[-1]["to_stage"] == "controlled_bridge_pilot_blocked"
+
+
+def test_paper_shadow_promotion_supersedes_prior_active_paper_shadow_strategy(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    service = _service(tmp_path)
+    monkeypatch.setattr(
+        "server.services.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
+        lambda db, readiness: None,
+    )
+    monkeypatch.setattr(
+        "server.services.research_final_evaluation.require_new_publication_final_evaluation",
+        lambda db, result_id, expected_candidate_id: None,
+    )
+    strat_1_id = "ai_formula_shadow:candidate_1"
+    strat_2_id = "ai_formula_shadow:candidate_2"
+    readiness_strat_1 = {**_readiness(promotable=True), "strategy_id": strat_1_id}
+    readiness_strat_2 = {**_readiness(promotable=True), "strategy_id": strat_2_id}
+
+    # Promote strategy 1
+    state_1 = service.request_promotion(
+        strat_1_id,
+        target_stage="paper_shadow",
+        readiness=readiness_strat_1,
+        actor="operator",
+        review_note="gen 1 promotion",
+        confirmation=STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
+    )
+    assert state_1["stage"] == "paper_shadow"
+    assert state_1["gate_status"] == "paper_shadow_enabled"
+
+    # Promote strategy 2
+    state_2 = service.request_promotion(
+        strat_2_id,
+        target_stage="paper_shadow",
+        readiness=readiness_strat_2,
+        actor="operator",
+        review_note="gen 2 promotion",
+        confirmation=STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
+    )
+    assert state_2["stage"] == "paper_shadow"
+    assert state_2["gate_status"] == "paper_shadow_enabled"
+
+    # Strategy 1 must now be automatically retired
+    states_by_id = {s["strategy_id"]: s for s in service.list_states()}
+    assert states_by_id[strat_1_id]["stage"] == "retired"
+    assert states_by_id[strat_1_id]["gate_status"] == "lifecycle_retired"
+    assert states_by_id[strat_2_id]["stage"] == "paper_shadow"
+    assert states_by_id[strat_2_id]["gate_status"] == "paper_shadow_enabled"
+
+    events_1 = service.list_events(strat_1_id)
+    assert any(e["event_type"] == "lifecycle_retired" for e in events_1)

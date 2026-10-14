@@ -287,6 +287,52 @@ def test_atomic_qualification_promotion_rejects_stale_state_cas(tmp_path) -> Non
         )
 
 
+def test_atomic_qualification_promotion_supersedes_prior_active_paper_shadow(
+    tmp_path,
+) -> None:
+    AppDatabase(tmp_path / "app.db").init_sync()
+    store, run, candidate = _completed_qualified_candidate(tmp_path)
+    values = _atomic_promotion_args(store, run, candidate)
+
+    prior_id = "ai_formula_shadow:prior_candidate"
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            """
+            INSERT INTO strategy_promotion_states
+            (strategy_id, stage, gate_status, live_like_enabled, missing_requirements_json, backtest_result_id, payload_json, created_at, updated_at)
+            VALUES (?, 'paper_shadow', 'paper_shadow_enabled', 0, '[]', 10, '{}', '2026-09-01T08:00:00+00:00', '2026-09-01T08:00:00+00:00')
+            """,
+            (prior_id,),
+        )
+
+    committed = store.approve_qualification_candidate_for_paper_shadow(**values)
+    assert committed["strategy_promotion"]["stage"] == "paper_shadow"
+
+    with sqlite3.connect(store.path) as conn:
+        conn.row_factory = sqlite3.Row
+        prior_row = conn.execute(
+            "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
+            (prior_id,),
+        ).fetchone()
+        assert prior_row["stage"] == "retired"
+        assert prior_row["gate_status"] == "lifecycle_retired"
+        payload = json.loads(prior_row["payload_json"])
+        assert payload["superseded_by"] == values["strategy_id"]
+
+        new_row = conn.execute(
+            "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
+            (values["strategy_id"],),
+        ).fetchone()
+        assert new_row["stage"] == "paper_shadow"
+        assert new_row["gate_status"] == "paper_shadow_enabled"
+
+        events = conn.execute(
+            "SELECT * FROM strategy_promotion_events WHERE strategy_id=? ORDER BY id ASC",
+            (prior_id,),
+        ).fetchall()
+        assert any(e["event_type"] == "lifecycle_retired" for e in events)
+
+
 def test_atomic_qualification_promotion_rejects_preflight_to_begin_evidence_drift(
     tmp_path,
 ) -> None:

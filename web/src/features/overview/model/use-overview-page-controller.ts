@@ -18,7 +18,7 @@ export function useOverviewPageController() {
   const [analysisView, setAnalysisView] =
     useState<OverviewAnalysisView>('curve');
   const [equityCurveRange, setEquityCurveRange] =
-    useState<EquityCurveRange>('ytd');
+    useState<EquityCurveRange>('all');
   const account = useAccountStateQuery();
   const accountReady = Boolean(account.data);
   const marketSession = account.data?.overview.market_session;

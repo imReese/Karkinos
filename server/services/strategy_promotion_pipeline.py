@@ -219,6 +219,46 @@ class StrategyPromotionPipeline:
                 "does_not_change_capital_authority": True,
             },
         )
+        lister = getattr(self._db, "list_strategy_promotion_states_sync", None)
+        if callable(lister):
+            for prev in lister():
+                prev_id = str(prev.get("strategy_id") or "").strip()
+                if (
+                    prev_id
+                    and prev_id != strategy_id
+                    and str(prev.get("stage")) == "paper_shadow"
+                ):
+                    prev_missing = _json_list(prev.get("missing_requirements_json"))
+                    prev_bt_id = _int_or_none(prev.get("backtest_result_id"))
+                    prev_payload = {
+                        "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
+                        "reason": f"superseded_by_new_optimal_strategy:{strategy_id}",
+                        "from_stage": "paper_shadow",
+                        "to_stage": "retired",
+                        "superseded_by": strategy_id,
+                        "reviewer": normalized_actor,
+                        "live_like_enabled": False,
+                        "broker_submission_enabled": False,
+                        "does_not_submit_broker_orders": True,
+                        "does_not_mutate_production_ledger": True,
+                    }
+                    self._db.upsert_strategy_promotion_state_sync(
+                        strategy_id=prev_id,
+                        stage="retired",
+                        gate_status="lifecycle_retired",
+                        live_like_enabled=False,
+                        missing_requirements=prev_missing,
+                        backtest_result_id=prev_bt_id,
+                        payload=prev_payload,
+                    )
+                    self._db.record_strategy_promotion_event_sync(
+                        strategy_id=prev_id,
+                        event_type="lifecycle_retired",
+                        from_stage="paper_shadow",
+                        to_stage="retired",
+                        actor=normalized_actor,
+                        payload=prev_payload,
+                    )
         return self._normalize_state(state)
 
     def request_lifecycle_transition(

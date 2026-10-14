@@ -233,6 +233,42 @@ class ShadowResearchQualificationPromotionRepositoryMixin:
                     payload=event_payload,
                     now=now,
                 )
+                prior_active = conn.execute(
+                    "SELECT strategy_id, payload_json FROM strategy_promotion_states WHERE stage='paper_shadow' AND strategy_id != ?",
+                    (strategy_id,),
+                ).fetchall()
+                for prior_row in prior_active:
+                    prior_id = str(prior_row["strategy_id"])
+                    prior_payload = _json_object(prior_row["payload_json"])
+                    prior_payload["superseded_by"] = strategy_id
+                    prior_payload["reason"] = (
+                        f"superseded_by_new_optimal_strategy:{strategy_id}"
+                    )
+                    prior_payload_json = canonical_json(prior_payload)
+                    conn.execute(
+                        """
+                        UPDATE strategy_promotion_states
+                        SET stage='retired',
+                            gate_status='lifecycle_retired',
+                            payload_json=?,
+                            updated_at=?
+                        WHERE strategy_id=?
+                        """,
+                        (prior_payload_json, now, prior_id),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO strategy_promotion_events
+                        (strategy_id, event_type, from_stage, to_stage, actor, payload_json, created_at)
+                        VALUES (?, 'lifecycle_retired', 'paper_shadow', 'retired', ?, ?, ?)
+                        """,
+                        (
+                            prior_id,
+                            actor,
+                            prior_payload_json,
+                            now,
+                        ),
+                    )
                 state_row = conn.execute(
                     "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
                     (strategy_id,),
